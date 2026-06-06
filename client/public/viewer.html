@@ -351,6 +351,151 @@
     <span class="spinner"></span>
     <span id="fix-chip-text">Fix · Working</span>
   </div>
+  <!--
+    v2.0.15 (Terry 2026-06-06) — Enhance side panel styles.
+    Right-side dark sheet at toolbar-edge color, 280px wide, slides
+    in from the right edge. Sliders use a single-track + thumb pattern
+    matching the dark theme (slate track, lavender-ish thumb). The
+    bipolar Temperature slider has its track gradient tinted from
+    cool blue (left) to warm orange (right) so direction reads at a
+    glance. Reset button bottom-right, subtle until hovered.
+  -->
+  <style>
+    .enhance-panel {
+      position: fixed;
+      top: 0;
+      right: 0;
+      bottom: 0;
+      width: 280px;
+      background: rgba(18, 18, 42, 0.96);
+      backdrop-filter: blur(8px);
+      -webkit-backdrop-filter: blur(8px);
+      border-left: 1px solid rgba(169, 156, 255, 0.2);
+      display: flex;
+      flex-direction: column;
+      transform: translateX(100%);
+      transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+      z-index: 90;
+      pointer-events: none;
+    }
+    .enhance-panel.open {
+      transform: translateX(0);
+      pointer-events: auto;
+    }
+    .enhance-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 18px 12px 18px;
+      border-bottom: 1px solid rgba(169, 156, 255, 0.12);
+    }
+    .enhance-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #e8e6ff;
+      letter-spacing: 0.01em;
+    }
+    .enhance-close {
+      width: 24px;
+      height: 24px;
+      border: none;
+      background: transparent;
+      color: #aaa;
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: 6px;
+      transition: background 120ms, color 120ms;
+    }
+    .enhance-close:hover {
+      background: rgba(255, 255, 255, 0.08);
+      color: #fff;
+    }
+    .enhance-body {
+      flex: 1;
+      overflow-y: auto;
+      padding: 14px 18px 18px 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+    .enhance-control {
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+    .enhance-label-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 12px;
+      color: #ccc;
+    }
+    .enhance-label-row label {
+      cursor: pointer;
+    }
+    .enhance-val {
+      color: #a99cff;
+      font-variant-numeric: tabular-nums;
+      font-weight: 500;
+    }
+    .enhance-slider {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 100%;
+      height: 4px;
+      background: rgba(169, 156, 255, 0.18);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+    }
+    .enhance-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      background: #a99cff;
+      border-radius: 50%;
+      cursor: pointer;
+      border: 2px solid #1a1a2e;
+      box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.6);
+      transition: transform 80ms;
+    }
+    .enhance-slider::-webkit-slider-thumb:hover {
+      transform: scale(1.1);
+    }
+    .enhance-slider-bipolar {
+      background: linear-gradient(90deg, #4a8cff 0%, rgba(169, 156, 255, 0.18) 50%, #ff9c4a 100%);
+    }
+    .enhance-toggle {
+      width: 16px;
+      height: 16px;
+      accent-color: #a99cff;
+      cursor: pointer;
+    }
+    .enhance-footer {
+      padding: 12px 18px 18px 18px;
+      border-top: 1px solid rgba(169, 156, 255, 0.12);
+      display: flex;
+      justify-content: flex-end;
+    }
+    .enhance-reset-btn {
+      padding: 6px 14px;
+      border: 1px solid rgba(169, 156, 255, 0.3);
+      background: transparent;
+      color: #ccc;
+      font-size: 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 120ms, color 120ms, border-color 120ms;
+    }
+    .enhance-reset-btn:hover {
+      background: rgba(169, 156, 255, 0.12);
+      color: #fff;
+      border-color: rgba(169, 156, 255, 0.5);
+    }
+  </style>
+
   <div class="toolbar">
     <span class="toolbar-title" id="filename">PDR Viewer</span>
     <div class="toolbar-actions">
@@ -361,6 +506,8 @@
       <button class="toolbar-btn" id="btn-zoomOut" title="Zoom out (-)">−</button>
       <button class="toolbar-btn" id="btn-rotateLeft" title="Rotate left 90° (R)">⟲</button>
       <button class="toolbar-btn" id="btn-rotateRight" title="Rotate right 90° (Shift+R)">⟳</button>
+      <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
+      <button class="toolbar-btn" id="btn-enhance" title="Enhance (E)">Enhance</button>
       <button class="toolbar-btn" id="btn-slideshow" title="Start slideshow (Space)" hidden>▶</button>
       <div class="speed-wrap" id="slideshow-wrap" hidden>
         <button class="toolbar-btn" id="btn-slideshowInterval" title="Slideshow interval">5s</button>
@@ -386,6 +533,61 @@
     </div>
   </div>
   <div id="filmstrip" class="filmstrip" style="display:none"></div>
+
+  <!-- v2.0.15 (Terry 2026-06-06) — Enhance side panel. Right-side
+       slide-in, 280px wide, dark theme matching the viewer chrome.
+       CSS-filter-based real-time preview — no canvas, no GPU
+       transcoding. Sliders drive a global filter string that's
+       applied to the current image/video element and re-applied
+       whenever the user navigates to a new photo. Reset button
+       restores defaults. Closed by default — opens via the Enhance
+       toolbar button or the E shortcut. -->
+  <aside id="enhance-panel" class="enhance-panel" aria-hidden="true">
+    <div class="enhance-header">
+      <span class="enhance-title">Enhance</span>
+      <button class="enhance-close" id="enhance-close" title="Close (E)">×</button>
+    </div>
+    <div class="enhance-body">
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-brightness">Brightness</label>
+          <span class="enhance-val" id="val-brightness">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-contrast">Contrast</label>
+          <span class="enhance-val" id="val-contrast">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-saturation">Saturation</label>
+          <span class="enhance-val" id="val-saturation">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-temperature">Temperature</label>
+          <span class="enhance-val" id="val-temperature">0</span>
+        </div>
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-50" max="50" step="1" value="0" title="Negative = cooler, positive = warmer">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="toggle-bw">Black &amp; White</label>
+          <input type="checkbox" class="enhance-toggle" id="toggle-bw">
+        </div>
+      </div>
+    </div>
+    <div class="enhance-footer">
+      <button class="enhance-reset-btn" id="enhance-reset">Reset</button>
+    </div>
+  </aside>
+
   <div id="captionBar" class="caption-bar">
     <span class="caption-label">Caption</span>
     <span class="caption-text" id="captionText"></span>
@@ -1398,6 +1600,158 @@ function zoomTo(newZoom, centreX, centreY) {
           window.pdr.onFixProgress(function (p) { lastProgress = p || null; render(active, lastProgress); });
         }
       } catch (e) { console.warn('[viewer] fix-chip wiring failed:', e); }
+    })();
+
+    // v2.0.15 (Terry 2026-06-06) — Enhance panel.
+    //
+    // Real-time CSS-filter-based image adjustments. Sliders mutate a
+    // global filterState object; applyEnhanceFilter() composes the
+    // CSS filter string and applies it to the current image element.
+    // Persists across image navigation in the same session (a fresh
+    // image gets the same filter applied via the
+    // observer below). Reset restores defaults.
+    //
+    // Why CSS filter (not canvas / sharp): instant preview, no GPU
+    // cost, no transcoding pipeline, works on both <img> and <video>
+    // elements. Non-destructive — original file is never touched.
+    // Cannot save to file in this version; if Terry wants persistent
+    // save later we'll add a "Save adjusted copy" that bakes the
+    // filter via sharp into a sibling JPG.
+    (function setupEnhancePanel() {
+      const panel = document.getElementById('enhance-panel');
+      const openBtn = document.getElementById('btn-enhance');
+      const closeBtn = document.getElementById('enhance-close');
+      const resetBtn = document.getElementById('enhance-reset');
+      const sBright = document.getElementById('slider-brightness');
+      const sContrast = document.getElementById('slider-contrast');
+      const sSat = document.getElementById('slider-saturation');
+      const sTemp = document.getElementById('slider-temperature');
+      const tBW = document.getElementById('toggle-bw');
+      const vBright = document.getElementById('val-brightness');
+      const vContrast = document.getElementById('val-contrast');
+      const vSat = document.getElementById('val-saturation');
+      const vTemp = document.getElementById('val-temperature');
+      if (!panel || !openBtn) return;
+
+      const state = {
+        brightness: 100,
+        contrast: 100,
+        saturation: 100,
+        temperature: 0, // -50..+50 → hue-rotate + sepia approximation
+        bw: false,
+      };
+
+      function composeFilterString() {
+        const parts = [];
+        if (state.brightness !== 100) parts.push('brightness(' + (state.brightness / 100) + ')');
+        if (state.contrast !== 100) parts.push('contrast(' + (state.contrast / 100) + ')');
+        if (state.saturation !== 100 && !state.bw) parts.push('saturate(' + (state.saturation / 100) + ')');
+        if (state.bw) parts.push('grayscale(1)');
+        if (state.temperature !== 0) {
+          // Approximate colour temperature with sepia + a small hue-rotate.
+          // Negative (cool) → blue-shifted; positive (warm) → orange-shifted.
+          const amt = Math.abs(state.temperature) / 100; // 0..0.5
+          parts.push('sepia(' + amt + ')');
+          parts.push('hue-rotate(' + (state.temperature < 0 ? 200 : -25) + 'deg)');
+        }
+        return parts.length ? parts.join(' ') : 'none';
+      }
+
+      function applyEnhanceFilter() {
+        const filterStr = composeFilterString();
+        // Apply to all <img> and <video> elements inside the viewer
+        // container. (Typically one at a time, but a defensive
+        // querySelectorAll handles transitions cleanly.)
+        const containerEl = document.getElementById('container');
+        if (!containerEl) return;
+        const targets = containerEl.querySelectorAll('img, video');
+        targets.forEach(function (el) {
+          el.style.filter = filterStr;
+        });
+      }
+
+      function updateUI() {
+        vBright.textContent = String(state.brightness);
+        vContrast.textContent = String(state.contrast);
+        vSat.textContent = String(state.saturation);
+        vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
+        sBright.value = String(state.brightness);
+        sContrast.value = String(state.contrast);
+        sSat.value = String(state.saturation);
+        sTemp.value = String(state.temperature);
+        tBW.checked = state.bw;
+      }
+
+      function resetState() {
+        state.brightness = 100;
+        state.contrast = 100;
+        state.saturation = 100;
+        state.temperature = 0;
+        state.bw = false;
+        updateUI();
+        applyEnhanceFilter();
+      }
+
+      sBright.addEventListener('input', function () {
+        state.brightness = parseInt(sBright.value, 10) || 100;
+        vBright.textContent = String(state.brightness);
+        applyEnhanceFilter();
+      });
+      sContrast.addEventListener('input', function () {
+        state.contrast = parseInt(sContrast.value, 10) || 100;
+        vContrast.textContent = String(state.contrast);
+        applyEnhanceFilter();
+      });
+      sSat.addEventListener('input', function () {
+        state.saturation = parseInt(sSat.value, 10) || 100;
+        vSat.textContent = String(state.saturation);
+        applyEnhanceFilter();
+      });
+      sTemp.addEventListener('input', function () {
+        state.temperature = parseInt(sTemp.value, 10) || 0;
+        vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
+        applyEnhanceFilter();
+      });
+      tBW.addEventListener('change', function () {
+        state.bw = !!tBW.checked;
+        applyEnhanceFilter();
+      });
+      resetBtn.addEventListener('click', resetState);
+
+      function openPanel() {
+        panel.classList.add('open');
+        panel.setAttribute('aria-hidden', 'false');
+      }
+      function closePanel() {
+        panel.classList.remove('open');
+        panel.setAttribute('aria-hidden', 'true');
+      }
+      openBtn.addEventListener('click', function () {
+        if (panel.classList.contains('open')) closePanel(); else openPanel();
+      });
+      closeBtn.addEventListener('click', closePanel);
+
+      // E shortcut toggles the panel.
+      window.addEventListener('keydown', function (e) {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        if (e.key === 'e' || e.key === 'E') {
+          e.preventDefault();
+          if (panel.classList.contains('open')) closePanel(); else openPanel();
+        }
+      });
+
+      // When the viewer swaps to a new image/video, re-apply the
+      // current filter so it carries across navigation. We use a
+      // MutationObserver on the container — fires whenever children
+      // change (image swap, video swap). Cheap.
+      const containerEl = document.getElementById('container');
+      if (containerEl && typeof MutationObserver !== 'undefined') {
+        const mo = new MutationObserver(function () {
+          // Apply on next frame so the new <img> has its src set first.
+          requestAnimationFrame(applyEnhanceFilter);
+        });
+        mo.observe(containerEl, { childList: true, subtree: true });
+      }
     })();
   </script>
 </body>
