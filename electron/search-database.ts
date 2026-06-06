@@ -68,6 +68,10 @@ export interface IndexedFile {
   // Optional in the type so the indexer's insert payload doesn't have
   // to declare it for every newly-indexed row (DB default is NULL).
   caption?: string | null;
+  // v2.0.15 Phase 3b — Viewer Enhance marker. See migration in
+  // initSearchDatabase for the value taxonomy. NULL for ordinary
+  // photos; populated only when the file came from "Save Enhanced".
+  enhancement_type?: string | null;
 }
 
 export interface SearchQuery {
@@ -149,6 +153,12 @@ export interface SearchQuery {
    *  Powers the gold "Captioned only" chip in S&D's header,
    *  mirrored from AlbumsView / MemoriesView drilldown. */
   hasCaption?: boolean;
+  /** v2.0.15 Phase 3b (Terry 2026-06-06) — restrict to files where
+   *  `enhancement_type IS NOT NULL`. Powers the S&D "Enhanced" chip.
+   *  Filename suffix (_E) is the user-visible marker; the actual
+   *  filter reads the indexed_files column so reliability isn't
+   *  coupled to whether the user has renamed the file later. */
+  isEnhanced?: boolean;
   aiProcessed?: 'all' | 'unprocessed' | 'faces_only' | 'tags_only' | 'both';
   faceCountMin?: number;
   faceCountMax?: number;
@@ -815,6 +825,17 @@ export function initDatabase(): { success: boolean; error?: string } {
       // deleted" sort and any future auto-empty policy.
       { name: 'in_recycle_bin', type: 'INTEGER NOT NULL DEFAULT 0' },
       { name: 'recycled_at', type: 'TEXT' },
+      // v2.0.15 Phase 3b (Terry 2026-06-06) — PDR Viewer Enhance
+      // marker. NULL for ordinary photos; populated when the file
+      // came from the Viewer's "Save Enhanced" flow.
+      //   'manual'      = sliders only (current default in v2.0.15)
+      //   'codeformer'  = AI face restoration (Phase 5)
+      //   'realesrgan'  = AI upscaling (Phase 6)
+      //   'manual+ai'   = sliders + AI in one save (Phase 7)
+      // The S&D "Enhanced" filter chip filters on IS NOT NULL; the
+      // manual/AI split popover (deferred to Phase 5+) reads the
+      // exact value to filter further.
+      { name: 'enhancement_type', type: 'TEXT' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -1674,6 +1695,7 @@ export function insertFiles(runId: number, files: Omit<IndexedFile, 'id' | 'run_
 export async function indexEnhancedSibling(
   sourcePath: string,
   newPath: string,
+  enhancementType: string = 'manual',
 ): Promise<number | null> {
   const database = getDb();
 
@@ -1777,6 +1799,19 @@ export async function indexEnhancedSibling(
   const idRow = database
     .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
     .get(newPath) as { id: number } | undefined;
+
+  // v2.0.15 Phase 3b — stamp enhancement_type on the upserted row so
+  // the S&D "Enhanced" filter chip can pick it up. Kept out of
+  // insertFiles itself (which is the bulk Fix-run path) because the
+  // field is only ever set by this single-file Enhance path; no
+  // reason to bloat the bulk INSERT with a column that's NULL for
+  // every other call site.
+  if (idRow?.id != null) {
+    database
+      .prepare(`UPDATE indexed_files SET enhancement_type = ? WHERE id = ?`)
+      .run(enhancementType, idRow.id);
+  }
+
   return idRow?.id ?? null;
 }
 
@@ -2321,6 +2356,14 @@ export function searchFiles(query: SearchQuery): SearchResult {
   // sub-query needed.
   if (query.hasCaption === true) {
     conditions.push(`f.caption IS NOT NULL AND f.caption != ''`);
+  }
+
+  // v2.0.15 Phase 3b — Enhanced only. enhancement_type is NULL for every
+  // ordinary photo and 'manual' / 'codeformer' / 'realesrgan' / etc.
+  // for files saved through the PDR Viewer Enhance panel. Plain column
+  // predicate, same pattern as Captioned.
+  if (query.isEnhanced === true) {
+    conditions.push(`f.enhancement_type IS NOT NULL`);
   }
 
   // AI: Processed filter (analyzed status)

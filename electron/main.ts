@@ -11369,7 +11369,15 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     // even though file_path is unchanged.
     try {
       const { indexEnhancedSibling } = await import('./search-database.js');
-      const newId = await indexEnhancedSibling(req.filePath, outPath);
+      // Pass the enhancementType through so the upserted row's
+      // enhancement_type column reflects manual vs codeformer vs
+      // realesrgan vs combined. The S&D "Enhanced" filter chip
+      // reads this. Default is 'manual' inside the helper.
+      const newId = await indexEnhancedSibling(
+        req.filePath,
+        outPath,
+        req.enhancementType ?? 'manual',
+      );
       if (newId == null) {
         log.warn(`[viewer:saveEnhanced] source row not in library index (${req.filePath}); _E file written but not indexed`);
       } else {

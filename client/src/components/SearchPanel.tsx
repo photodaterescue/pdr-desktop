@@ -76,6 +76,7 @@ import {
   MessageSquareText,
   HardDrive,
   FolderPlus,
+  Sparkles,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -398,6 +399,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // the backend), so the state drives the SearchQuery.hasCaption flag
   // rather than client-side filtering of the visible page.
   const [hasCaption, setHasCaption] = useState<boolean | undefined>(undefined);
+  // v2.0.15 Phase 3b (Terry 2026-06-06) — "Enhanced only" filter chip.
+  // Reads from indexed_files.enhancement_type (NULL for ordinary photos,
+  // 'manual' for v2.0.15 saves, 'codeformer'/'realesrgan' once Phases 5-6
+  // land). Single chip for now — the manual/AI split popover is deferred
+  // until there's actual AI data to split on (it would be vacuous in
+  // v2.0.15 where every enhanced file is 'manual').
+  const [isEnhanced, setIsEnhanced] = useState<boolean | undefined>(undefined);
   const [selectedCountry, setSelectedCountry] = useState<string[]>([]);
   const [selectedCity, setSelectedCity] = useState<string[]>([]);
   const [isoFrom, setIsoFrom] = useState<number | undefined>(undefined);
@@ -1210,7 +1218,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     cameraModel: selectedCameraModel.length > 0 ? selectedCameraModel : undefined,
     lensModel: selectedLensModel.length > 0 ? selectedLensModel : undefined,
     dateFrom: dateFrom || undefined, dateTo: dateTo || undefined,
-    yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption,
+    yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced,
     country: selectedCountry.length > 0 ? selectedCountry : undefined,
     city: selectedCity.length > 0 ? selectedCity : undefined,
     isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo,
@@ -1232,7 +1240,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch
@@ -1341,7 +1349,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
         setSelectedCameraMake([]); setSelectedCameraModel([]); setSelectedLensModel([]);
         setDateFrom(''); setDateTo('');
         setYearFrom(undefined); setYearTo(undefined); setMonthFrom(undefined); setMonthTo(undefined);
-        setHasGps(undefined); setHasCaption(undefined); setSelectedCountry([]); setSelectedCity([]);
+        setHasGps(undefined); setHasCaption(undefined); setIsEnhanced(undefined); setSelectedCountry([]); setSelectedCity([]);
         setIsoFrom(undefined); setIsoTo(undefined);
         setApertureFrom(undefined); setApertureTo(undefined);
         setFocalLengthFrom(undefined); setFocalLengthTo(undefined);
@@ -1579,7 +1587,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setResults(null);
       setSearchActive(false);
     }
-  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
+  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
   // Contextual counts refresh — debounced so rapid clicks (e.g. the
   // ribbon's Select-all) don't trigger N requests. Calls
@@ -1745,7 +1753,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSelectedExtension([]); setSelectedCameraMake([]); setSelectedCameraModel([]); setSelectedLensModel([]);
     setDateFrom(''); setDateTo('');
     setYearFrom(undefined); setYearTo(undefined); setMonthFrom(undefined); setMonthTo(undefined);
-    setHasGps(undefined); setHasCaption(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
+    setHasGps(undefined); setHasCaption(undefined); setIsEnhanced(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
     setApertureFrom(undefined); setApertureTo(undefined);
     setFocalLengthFrom(undefined); setFocalLengthTo(undefined);
     setFlashFired(undefined); setMegapixelsFrom(undefined); setMegapixelsTo(undefined);
@@ -1758,7 +1766,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setShowAllOverride(false);
   };
 
-  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || hasCaption != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
+  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || hasCaption != null || isEnhanced != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
   // Note: selectedAlbums is intentionally NOT in hasActiveFilters.
   // Terry 2026-05-19 confirmed: "Selecting an album alone is not
   // enough to show the results for it, as it needs the confidence
@@ -1817,7 +1825,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setSelectedCameraMake(q.cameraMake || []);
       setSelectedCameraModel(q.cameraModel || []);
       setYearFrom(q.yearFrom); setYearTo(q.yearTo);
-      setHasGps(q.hasGps); setHasCaption(q.hasCaption);
+      setHasGps(q.hasGps); setHasCaption(q.hasCaption); setIsEnhanced(q.isEnhanced);
       setSelectedDestination(q.destinationPath || []);
       setSelectedAlbums(q.albumIds || []);
       setSortBy(q.sortBy || 'derived_date'); setSortDir(q.sortDir || 'desc');
@@ -4314,6 +4322,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               >
                 <MessageSquareText className="w-3.5 h-3.5" />
                 Captioned only
+              </button>
+            </IconTooltip>
+            {/* v2.0.15 Phase 3b (Terry 2026-06-06) — "Enhanced only" toggle.
+                Mirrors the Captioned chip exactly (h-8 / px-3 / rounded-full /
+                text-xs font-medium / IconTooltip wrapper) so the pair reads
+                as one cluster of "content-attribute" filters. Purple-500
+                fill in the active state matches the _E suffix's purple
+                identity established in the Glossary and Best Practices
+                surfaces; same solid-fill behaviour as Captioned's gold so
+                both toggles signal "active" the same way. Server-side
+                filter (isEnhanced → enhancement_type IS NOT NULL). */}
+            <IconTooltip label={isEnhanced ? 'Show all photos' : 'Show only enhanced photos'} side="bottom">
+              <button
+                type="button"
+                onClick={() => setIsEnhanced((v) => v ? undefined : true)}
+                data-testid="sd-enhanced-only-toggle"
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
+                  isEnhanced
+                    ? 'bg-purple-500 border-purple-500 text-white'
+                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Enhanced only
               </button>
             </IconTooltip>
             {/* Active filter chips — inline between Edit Dates and view
