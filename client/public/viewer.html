@@ -116,52 +116,6 @@
     .toolbar-btn.active:hover {
       background: rgba(169, 156, 255, 0.45);
     }
-    /* v2.0.15 (Terry 2026-06-06 round 2) — video controls overlay.
-       Sits inside the viewer container, anchored to the bottom-right
-       and offset UP enough to clear the native HTML5 control bar (~48px
-       tall in Chromium) so the user can still reach the volume slider
-       and fullscreen button underneath. Mirrors YouTube's positioning
-       rationale: video-control affordances live with the player, not
-       in the window chrome.
-
-       Hidden via display:none on the parent when not viewing a video. */
-    .video-controls-overlay {
-      position: absolute;
-      bottom: 56px;
-      right: 16px;
-      display: none;
-      gap: 6px;
-      z-index: 6;
-    }
-    .video-controls-overlay.show {
-      display: flex;
-    }
-    .video-controls-btn {
-      width: 34px;
-      height: 30px;
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      background: rgba(15, 12, 30, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 6px;
-      color: #ddd;
-      font-size: 16px;
-      line-height: 1;
-      cursor: pointer;
-      backdrop-filter: blur(4px);
-      transition: background 0.15s, color 0.15s, border-color 0.15s;
-    }
-    .video-controls-btn:hover {
-      background: rgba(169, 156, 255, 0.35);
-      color: #fff;
-      border-color: rgba(169, 156, 255, 0.55);
-    }
-    .video-controls-btn.active {
-      background: rgba(169, 156, 255, 0.5);
-      color: #fff;
-      border-color: rgba(169, 156, 255, 0.8);
-    }
     .speed-wrap { position: relative; -webkit-app-region: no-drag; }
     .speed-menu {
       position: absolute;
@@ -899,44 +853,12 @@
         <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
         <div class="speed-menu" id="speed-menu" style="display:none"></div>
       </div>
-      <!-- v2.0.15 (Terry 2026-06-06 round 2) — Repeat / Loop buttons
-           moved from this top toolbar to a floating overlay just above
-           the native video control bar (see #video-controls-overlay
-           in the viewer body). Premium video-player convention puts
-           video-control affordances contextual to the player (same
-           as YouTube's loop / CC / settings cluster), not in the
-           window chrome. -->
       <button class="toolbar-btn" id="btn-openExternal" title="Open in system player" hidden>Open externally</button>
     </div>
   </div>
   <div class="viewer-container" id="container">
     <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
     <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
-    <!-- v2.0.15 (Terry 2026-06-06 round 4) — video-only controls
-         overlay. Shown only when a video is loaded; positioned above
-         the native HTML5 control bar.
-
-         Repeat once = Material Design's `replay` icon (the exact path
-         YouTube uses for the post-video replay button — arrowhead at
-         TOP-LEFT pointing LEFT, indicating "rewind to start". The
-         arrowhead shape itself reads as a play-triangle-inside-circle
-         pattern, which is the visual idiom Terry is matching).
-
-         Loop endlessly = Material Design's `all-inclusive` icon — the
-         classic infinity symbol. Conveys "loops forever" instantly
-         and is distinct from Repeat once at a glance. -->
-    <div class="video-controls-overlay" id="video-controls-overlay">
-      <button class="video-controls-btn" id="btn-repeat-once" type="button" title="Repeat once when video ends">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
-          <path d="M12 5V1L7 6l5 5V7c3.31 0 6 2.69 6 6s-2.69 6-6 6-6-2.69-6-6H4c0 4.42 3.58 8 8 8s8-3.58 8-8-3.58-8-8-8z"/>
-        </svg>
-      </button>
-      <button class="video-controls-btn" id="btn-loop" type="button" title="Loop endlessly">
-        <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor" stroke="none">
-          <path d="M18.6 6.62c-1.44 0-2.8.56-3.77 1.53L7.8 14.39c-.64.64-1.49.99-2.4.99-1.87 0-3.39-1.51-3.39-3.38S3.53 8.62 5.4 8.62c.91 0 1.76.35 2.44 1.03l1.13 1 1.51-1.34L9.22 8.2C8.2 7.18 6.84 6.62 5.4 6.62 2.42 6.62 0 9.04 0 12s2.42 5.38 5.4 5.38c1.44 0 2.8-.56 3.77-1.53l7.03-6.23c.64-.64 1.49-.99 2.4-.99 1.87 0 3.39 1.51 3.39 3.38s-1.52 3.38-3.39 3.38c-.9 0-1.76-.35-2.44-1.03l-1.14-1.01-1.51 1.34 1.27 1.12c1.02 1.01 2.37 1.57 3.82 1.57 2.98 0 5.4-2.41 5.4-5.38s-2.42-5.37-5.4-5.37z"/>
-        </svg>
-      </button>
-    </div>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1126,34 +1048,6 @@
     const btnRotateLeft = document.getElementById('btn-rotateLeft');
     const btnRotateRight = document.getElementById('btn-rotateRight');
     const btnOpenExternal = document.getElementById('btn-openExternal');
-    // v2.0.15 (Terry 2026-06-06) — video repeat controls. Mutually
-    // exclusive: 'off' (no repeat, default), 'once' (replay one more
-    // time on ended), 'loop' (replay forever via video.loop=true).
-    // Reset to 'off' whenever a new file loads.
-    const btnRepeatOnce = document.getElementById('btn-repeat-once');
-    const btnLoop = document.getElementById('btn-loop');
-    let repeatMode = 'off';
-    function applyRepeatModeToVideo() {
-      if (mediaEl && isVideo) {
-        mediaEl.loop = (repeatMode === 'loop');
-      }
-      if (btnRepeatOnce) btnRepeatOnce.classList.toggle('active', repeatMode === 'once');
-      if (btnLoop) btnLoop.classList.toggle('active', repeatMode === 'loop');
-    }
-    function setRepeatMode(mode) {
-      repeatMode = mode;
-      applyRepeatModeToVideo();
-    }
-    if (btnRepeatOnce) {
-      btnRepeatOnce.addEventListener('click', () => {
-        setRepeatMode(repeatMode === 'once' ? 'off' : 'once');
-      });
-    }
-    if (btnLoop) {
-      btnLoop.addEventListener('click', () => {
-        setRepeatMode(repeatMode === 'loop' ? 'off' : 'loop');
-      });
-    }
     const speedWrap = document.getElementById('speed-wrap');
     const btnSpeed = document.getElementById('btn-speed');
     const speedMenu = document.getElementById('speed-menu');
@@ -1431,14 +1325,6 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
-      // v2.0.15 (Terry 2026-06-06 round 2) — Repeat buttons live in a
-      // floating overlay over the video, visible only while a video
-      // is loaded. Reset to 'off' on every new file so a previous
-      // video's loop setting doesn't carry into the next.
-      const overlay = document.getElementById('video-controls-overlay');
-      if (overlay) overlay.classList.toggle('show', isVideo);
-      repeatMode = 'off';
-      applyRepeatModeToVideo();
 
       if (isVideo) {
         // Show a transcoding status while we wait for ffmpeg (no-op for
@@ -1481,20 +1367,8 @@
             showUnplayable(filePath);
           };
           video.src = primaryUrl;
-          // v2.0.15 — wire repeat mode. 'loop' is natively handled by
-          // video.loop=true (set in applyRepeatModeToVideo); 'once'
-          // is one extra replay on ended, then resets to off so the
-          // video doesn't keep restarting silently.
-          video.addEventListener('ended', () => {
-            if (repeatMode === 'once') {
-              setRepeatMode('off');
-              try { video.currentTime = 0; video.play(); } catch (_) {}
-            }
-          });
           container.appendChild(video);
           mediaEl = video;
-          // Re-apply any active repeat mode now that mediaEl is set.
-          applyRepeatModeToVideo();
         };
 
         (async () => {
