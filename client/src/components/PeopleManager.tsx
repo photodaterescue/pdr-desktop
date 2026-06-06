@@ -3228,8 +3228,21 @@ export default function PeopleManager() {
           : null;
         const matchedSoFar = p?.matchedSoFar ?? 0;
         return (
-          <div className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4">
-            <div className="w-[520px] max-w-[92vw] rounded-2xl bg-background border border-border shadow-2xl flex flex-col p-8 gap-5">
+          // v2.0.15 (Terry 2026-06-06) — backdrop is a window-drag
+          // region (-webkit-app-region: drag) so the user can grab
+          // and move PM from anywhere on the dimmed area while the
+          // modal is up. Single-monitor users hated being unable to
+          // reposition the window during a multi-second Improve run.
+          // The card itself is no-drag so clicks inside it behave
+          // normally (the spinner area, eventually any Cancel button).
+          <div
+            className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4"
+            style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+          >
+            <div
+              className="w-[520px] max-w-[92vw] rounded-2xl bg-background border border-border shadow-2xl flex flex-col p-8 gap-5"
+              style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+            >
               <div className="flex items-start gap-4">
                 <div className="shrink-0 w-12 h-12 rounded-full bg-primary/10 flex items-center justify-center">
                   <Sparkles className="w-5 h-5 text-primary" />
