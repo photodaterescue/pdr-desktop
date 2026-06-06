@@ -49,6 +49,7 @@ import {
   setMonthlyThumbnail,
   moveToRecycleBin,
   onRecycleBinChanged,
+  onLibraryFilesAdded,
   type MemoriesYearBucket,
   type MemoriesOnThisDayItem,
   type IndexedFile,
@@ -379,6 +380,21 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   // items until the cache TTL fires).
   useEffect(() => {
     const off = onRecycleBinChanged(() => {
+      invalidatePrefetchedMemories();
+      setRefreshTick(t => t + 1);
+    });
+    return () => off();
+  }, []);
+
+  // v2.0.15 (Terry 2026-06-06) — Phase 3a. When the Viewer's "Save
+  // Enhanced" flow lands a new _E sibling and indexEnhancedSibling
+  // upserts the row, main emits library:filesAdded. Memories needs
+  // the same treatment as a Recycle change: invalidate the Welcome-
+  // screen prefetch cache (so month-card counts pick up the new
+  // file) and bump refreshTick (so the day-grid re-fetches and the
+  // new _E shows next to its source).
+  useEffect(() => {
+    const off = onLibraryFilesAdded(() => {
       invalidatePrefetchedMemories();
       setRefreshTick(t => t + 1);
     });

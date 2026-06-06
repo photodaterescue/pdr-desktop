@@ -750,6 +750,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  // v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions
+  // outside the Fix-run path (currently: the Viewer's "Save Enhanced"
+  // flow). Renderer views (S&D / Memories / Albums) listen for this
+  // so the new file appears live, without a manual rescan.
+  library: {
+    onFilesAdded: (callback: (info: { reason: string; mode?: string; sourcePath?: string; newFilePath?: string; fileId?: number }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('library:filesAdded', handler);
+      return () => ipcRenderer.removeListener('library:filesAdded', handler);
+    },
+  },
+
   dateEditor: {
     open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),
     onThemeChange: (callback: (isDark: boolean) => void) => {

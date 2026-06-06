@@ -159,6 +159,7 @@ import {
   openDateEditor,
   onDateEditorDataChanged,
   onPeopleDataChanged,
+  onLibraryFilesAdded,
   listAlbums,
   getFilterCounts,
   type SearchQuery,
@@ -1661,6 +1662,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   useEffect(() => {
     const unsubscribe = onPeopleDataChanged(async () => {
       await loadAiData();
+      if (searchActive) executeSearchRef.current(undefined, { silent: true });
+    });
+    return unsubscribe;
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchActive]);
+
+  // v2.0.15 (Terry 2026-06-06) — Phase 3a. When the Viewer's "Save
+  // Enhanced" flow writes a new _E sibling and indexes it via
+  // indexEnhancedSibling, main emits library:filesAdded. We re-run
+  // the current query silently so the new file appears in the grid
+  // without a manual rescan. Same silent-pattern as the PM listener
+  // above — keeps the grid in place and only updates the data.
+  useEffect(() => {
+    const unsubscribe = onLibraryFilesAdded(() => {
       if (searchActive) executeSearchRef.current(undefined, { silent: true });
     });
     return unsubscribe;

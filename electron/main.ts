@@ -11359,14 +11359,35 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
       log.warn(`[viewer:saveEnhanced] XMP write failed (non-fatal): ${(xmpErr as Error).message}`);
     }
 
-    // TODO Phase 3 (S&D chips): index the new file immediately so it
-    // appears in S&D / Memories without a manual refresh. The existing
-    // single-file insertion paths in search-indexer.ts all require a
-    // runId (they're built for Fix runs). Adding a true single-file
-    // insert is part of the Phase 3 work where the S&D chip filter
-    // also lands. Until then, new _E files appear after the next
-    // library refresh / scan. Replace mode doesn't need re-indexing
-    // (path unchanged; indexer's mtime check picks up new bytes).
+    // v2.0.15 Phase 3a (Terry 2026-06-06) — single-file indexing so
+    // the new _E sibling shows up in S&D / Memories without a manual
+    // refresh. indexEnhancedSibling inherits the source's run_id +
+    // date + EXIF + GPS (it's the same photo, enhanced), recomputes
+    // size + hash from disk, and upserts via insertFiles. Replace
+    // mode also goes through this path because the file's bytes
+    // changed — size_bytes and hash need to be refreshed in the row
+    // even though file_path is unchanged.
+    try {
+      const { indexEnhancedSibling } = await import('./search-database.js');
+      const newId = await indexEnhancedSibling(req.filePath, outPath);
+      if (newId == null) {
+        log.warn(`[viewer:saveEnhanced] source row not in library index (${req.filePath}); _E file written but not indexed`);
+      } else {
+        // Broadcast so S&D / Memories / Albums can re-fetch and the
+        // new file appears live. Same pattern as recycle:changed.
+        try {
+          mainWindow?.webContents.send('library:filesAdded', {
+            reason: 'enhanced',
+            mode: req.mode,
+            sourcePath: req.filePath,
+            newFilePath: outPath,
+            fileId: newId,
+          });
+        } catch { /* non-fatal */ }
+      }
+    } catch (idxErr) {
+      log.warn(`[viewer:saveEnhanced] index pass failed (file still saved): ${(idxErr as Error).message}`);
+    }
 
     return { success: true, newFilePath: outPath };
   } catch (err) {

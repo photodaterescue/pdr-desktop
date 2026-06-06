@@ -1646,6 +1646,140 @@ export function insertFiles(runId: number, files: Omit<IndexedFile, 'id' | 'run_
   return upsertMany(files);
 }
 
+// ─── Single-file upsert (Enhance save) ───────────────────────────────────────
+
+/**
+ * v2.0.15 (Terry 2026-06-06) — single-file upsert for the PDR Viewer's
+ * "Save Enhanced" flow (Phase 3a).
+ *
+ * The new _E sibling is the same photo as its source — same capture
+ * date, same camera, same GPS — only the pixels differ (sliders baked
+ * in by sharp). So we inherit nearly the entire source row and only
+ * recompute the few fields that genuinely change: size_bytes + hash
+ * (new bytes on disk) and width/height/megapixels (in case orientation
+ * fixed up dimensions during the sharp .rotate() pass).
+ *
+ * Why inherit run_id from the source row: every indexed_files row
+ * points at an indexed_runs entry, and runs are the unit of "what
+ * library scan brought this file in". The _E sibling logically
+ * belongs to the same scan — there's no separate ENHANCE-RUN concept
+ * in PDR, and creating a new run per save would balloon the runs
+ * table for no benefit (and break run-scoped queries like "files
+ * from the last Fix" by treating Enhance saves as their own runs).
+ *
+ * Returns the indexed_files.id of the upserted row, or null if the
+ * source row can't be found (e.g. the source wasn't in the library
+ * index yet — caller decides whether to surface that to the user).
+ */
+export async function indexEnhancedSibling(
+  sourcePath: string,
+  newPath: string,
+): Promise<number | null> {
+  const database = getDb();
+
+  // Look up the source row to inherit run_id + date + EXIF + GPS.
+  // file_path is the unique key, so this is a single-row lookup.
+  const sourceRow = database
+    .prepare(`SELECT * FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(sourcePath) as IndexedFile | undefined;
+
+  if (!sourceRow) {
+    // Source isn't indexed — the caller saved an Enhanced sibling to
+    // a file the library doesn't know about. Without a source row we
+    // have no run_id to attach to (NOT NULL with REFERENCES), and
+    // fabricating a run for one orphan file is wrong. Return null and
+    // let the caller log / surface — most likely path here is a user
+    // opening a file outside their library directly in the viewer.
+    return null;
+  }
+
+  // Fresh size + content hash from the new file. Use a streaming sha256
+  // (same algorithm enrichment-engine uses for indexed_files.hash) so
+  // duplicate-detection treats _E files consistently with the rest of
+  // the library.
+  const stat = await fs.promises.stat(newPath);
+  const sizeBytes = stat.size;
+  const newHash = await new Promise<string>((resolve, reject) => {
+    const crypto = require('crypto');
+    const h = crypto.createHash('sha256');
+    const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
+    stream.on('data', (chunk: Buffer) => h.update(chunk));
+    stream.on('end', () => resolve(h.digest('hex')));
+    stream.on('error', reject);
+  });
+
+  // New dimensions — the sharp .rotate() pass may have permuted width
+  // and height if the source had a non-trivial EXIF orientation. Best-
+  // effort: if dimension extraction fails, fall back to the source row.
+  let width: number | null = sourceRow.width;
+  let height: number | null = sourceRow.height;
+  let megapixels: number | null = sourceRow.megapixels;
+  try {
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(newPath, { failOnError: false }).metadata();
+    if (meta.width && meta.height) {
+      width = meta.width;
+      height = meta.height;
+      megapixels = Math.round((meta.width * meta.height) / 100_000) / 10;
+    }
+  } catch {
+    // keep source dimensions
+  }
+
+  const newFilename = path.basename(newPath);
+  const newExt = path.extname(newPath).toLowerCase().replace(/^\./, '');
+
+  // Build the upsert payload by inheriting from the source, overriding
+  // only the fields that genuinely change for the _E sibling.
+  const payload: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'> = {
+    file_path: newPath,
+    filename: newFilename,
+    extension: newExt,
+    file_type: sourceRow.file_type,
+    size_bytes: sizeBytes,
+    hash: newHash,
+    confidence: sourceRow.confidence,
+    date_source: sourceRow.date_source,
+    original_filename: sourceRow.original_filename,
+    derived_date: sourceRow.derived_date,
+    year: sourceRow.year,
+    month: sourceRow.month,
+    day: sourceRow.day,
+    camera_make: sourceRow.camera_make,
+    camera_model: sourceRow.camera_model,
+    lens_model: sourceRow.lens_model,
+    width,
+    height,
+    megapixels,
+    iso: sourceRow.iso,
+    shutter_speed: sourceRow.shutter_speed,
+    aperture: sourceRow.aperture,
+    focal_length: sourceRow.focal_length,
+    flash_fired: sourceRow.flash_fired,
+    scene_capture_type: sourceRow.scene_capture_type,
+    exposure_program: sourceRow.exposure_program,
+    white_balance: sourceRow.white_balance,
+    orientation: sourceRow.orientation,
+    camera_position: sourceRow.camera_position,
+    gps_lat: sourceRow.gps_lat,
+    gps_lon: sourceRow.gps_lon,
+    gps_alt: sourceRow.gps_alt,
+    geo_country: sourceRow.geo_country,
+    geo_country_code: sourceRow.geo_country_code,
+    geo_city: sourceRow.geo_city,
+    exif_read_ok: sourceRow.exif_read_ok,
+  };
+
+  insertFiles(sourceRow.run_id, [payload]);
+
+  // Look up the just-inserted (or upserted) row's id so callers can
+  // reference it for downstream linking (album membership, etc.).
+  const idRow = database
+    .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(newPath) as { id: number } | undefined;
+  return idRow?.id ?? null;
+}
+
 /**
  * Merge one group of duplicate indexed_files rows onto a single winner.
  * Transfers face_detections (including verified faces), ai_tags (with

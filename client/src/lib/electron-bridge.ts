@@ -2718,6 +2718,26 @@ export function onRecycleBinChanged(callback: (info: { kind: string; count: numb
   catch { return () => {}; }
 }
 
+// v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions outside
+// the Fix-run path (currently: the Viewer's "Save Enhanced" flow).
+// S&D / Memories / Albums views subscribe so the new file appears
+// live, without a manual rescan. Reason payload is open-ended so
+// future single-file paths (Edit Date single-row update, AI Enhance,
+// etc.) can ride the same channel.
+export interface LibraryFilesAddedInfo {
+  reason: string;          // 'enhanced' | future: 'edited' | 'ai-enhanced'
+  mode?: string;           // 'new' | 'replace' (Enhance-specific)
+  sourcePath?: string;
+  newFilePath?: string;
+  fileId?: number;         // indexed_files.id of the upserted row
+}
+
+export function onLibraryFilesAdded(callback: (info: LibraryFilesAddedInfo) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.library?.onFilesAdded?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
 export async function getFaceContext(filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240): Promise<{ success: boolean; dataUrl?: string }> {
   if (isElectron() && (window as any).pdr?.ai) {
     return (window as any).pdr.ai.faceContext(filePath, boxX, boxY, boxW, boxH, size);
