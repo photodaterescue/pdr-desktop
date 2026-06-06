@@ -7200,6 +7200,183 @@ ipcMain.handle('settings:resetToDefaults', async () => {
   return { success: true };
 });
 
+// ─── v2.0.15 Phase 5+6 (Terry 2026-06-06) — Enhance worker manager.
+// Lazy-spawns electron/enhance-worker.cjs on first AI enhance request,
+// keeps it alive across photos. Worker holds the loaded ONNX sessions
+// (~400 MB resident when both models in use) so subsequent presses
+// don't pay the ~500ms-1s model-load cost.
+//
+// Pattern matches ai-manager.ts's ensureWorker(): single Worker
+// thread, lazy-spawned, persistent until app exit (Free AI memory
+// action planned for v2.0.16 polish to allow manual unload).
+
+let enhanceWorker: import('worker_threads').Worker | null = null;
+const enhancePending = new Map<string, {
+  resolve: (info: { outputPath: string; facesProcessed?: number }) => void;
+  reject: (err: Error) => void;
+  onProgress?: (phase: string, percent: number) => void;
+}>();
+
+async function ensureEnhanceWorker(): Promise<import('worker_threads').Worker> {
+  if (enhanceWorker) return enhanceWorker;
+
+  const { Worker } = await import('worker_threads');
+  const workerPath = path.join(__dirname, 'enhance-worker.cjs');
+  const userData = app.getPath('userData');
+  const codeformerPath = path.join(userData, 'ai-models', 'codeformer', 'codeformer.onnx');
+  const realesrganPath = path.join(userData, 'ai-models', 'realesrgan', 'RealESRGAN_x4plus.fp16.onnx');
+
+  enhanceWorker = new Worker(workerPath, {
+    workerData: { codeformerPath, realesrganPath },
+  });
+
+  enhanceWorker.on('message', (msg: any) => {
+    if (!msg || !msg.requestId) return;
+    const pending = enhancePending.get(msg.requestId);
+    if (!pending) return;
+    if (msg.type === 'progress') {
+      pending.onProgress?.(msg.phase, msg.percent);
+    } else if (msg.type === 'done') {
+      enhancePending.delete(msg.requestId);
+      pending.resolve({ outputPath: msg.outputPath, facesProcessed: msg.facesProcessed });
+    } else if (msg.type === 'error') {
+      enhancePending.delete(msg.requestId);
+      pending.reject(new Error(msg.error || 'Enhance worker failed'));
+    }
+  });
+
+  enhanceWorker.on('error', (err) => {
+    log.error(`[enhance-worker] worker error: ${err.message}`);
+    // Reject every pending request, then drop the worker so the next
+    // request lazy-spawns a fresh one.
+    for (const [, pending] of enhancePending) pending.reject(err);
+    enhancePending.clear();
+    try { enhanceWorker?.terminate(); } catch {}
+    enhanceWorker = null;
+  });
+
+  enhanceWorker.on('exit', (code) => {
+    log.info(`[enhance-worker] worker exited code=${code}`);
+    if (code !== 0) {
+      for (const [, pending] of enhancePending) pending.reject(new Error(`enhance-worker exited code=${code}`));
+      enhancePending.clear();
+    }
+    enhanceWorker = null;
+  });
+
+  return enhanceWorker;
+}
+
+ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fidelity?: number }) => {
+  try {
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+
+    // Verify CodeFormer model is installed.
+    const installer = await import('./ai-model-installer.js');
+    if (installer.getInstallState('codeformer') !== 'installed') {
+      return { success: false, error: 'CodeFormer is not installed.', requiresInstall: 'codeformer' };
+    }
+
+    // Look up cached face_detections for this file from search-database.
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db
+      .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+      .get(req.filePath) as { id: number } | undefined;
+
+    if (!fileRow) {
+      return { success: false, error: 'This photo is not in the library index. Add it via a Fix run first.' };
+    }
+
+    const faceRows = db
+      .prepare(`SELECT box_x AS x, box_y AS y, box_width AS w, box_height AS h FROM face_detections WHERE file_id = ?`)
+      .all(fileRow.id) as Array<{ x: number; y: number; w: number; h: number }>;
+
+    if (!faceRows || faceRows.length === 0) {
+      return {
+        success: false,
+        error: 'No faces detected on this photo yet.',
+        requiresAnalysis: true,
+        fileId: fileRow.id,
+      };
+    }
+
+    // Output to a temp file. Caller (viewer) decides whether to save
+    // it permanently via viewer:saveEnhanced with sourceOverride set
+    // to this path.
+    const tmpDir = path.join(app.getPath('temp'), 'pdr-enhance');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+    const requestId = `cf-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const outputPath = path.join(tmpDir, `${requestId}.jpg`);
+
+    const worker = await ensureEnhanceWorker();
+
+    return await new Promise((resolve) => {
+      enhancePending.set(requestId, {
+        resolve: (info) => resolve({
+          success: true,
+          outputPath: info.outputPath,
+          facesProcessed: info.facesProcessed ?? 0,
+        }),
+        reject: (err) => resolve({ success: false, error: err.message }),
+        onProgress: (phase, percent) => {
+          try { event.sender.send('viewer:enhanceProgress', { kind: 'faces', phase, percent }); } catch {}
+        },
+      });
+
+      worker.postMessage({
+        type: 'enhance-faces',
+        requestId,
+        sourcePath: req.filePath,
+        outputPath,
+        faceBoxes: faceRows,
+        fidelity: typeof req.fidelity === 'number' ? req.fidelity : 0.5,
+      });
+    });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('viewer:enhanceWholeImage', async (event, req: { filePath: string; tileSize?: number }) => {
+  try {
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+    const installer = await import('./ai-model-installer.js');
+    if (installer.getInstallState('realesrgan') !== 'installed') {
+      return { success: false, error: 'Real-ESRGAN is not installed.', requiresInstall: 'realesrgan' };
+    }
+
+    const tmpDir = path.join(app.getPath('temp'), 'pdr-enhance');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+    const requestId = `re-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const outputPath = path.join(tmpDir, `${requestId}.jpg`);
+
+    const worker = await ensureEnhanceWorker();
+
+    return await new Promise((resolve) => {
+      enhancePending.set(requestId, {
+        resolve: (info) => resolve({ success: true, outputPath: info.outputPath }),
+        reject: (err) => resolve({ success: false, error: err.message }),
+        onProgress: (phase, percent) => {
+          try { event.sender.send('viewer:enhanceProgress', { kind: 'upscale', phase, percent }); } catch {}
+        },
+      });
+      worker.postMessage({
+        type: 'enhance-upscale',
+        requestId,
+        sourcePath: req.filePath,
+        outputPath,
+        tileSize: req.tileSize ?? 256,
+      });
+    });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // ─── v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model installer
 // IPC. Settings → AI → Photo Enhancement cards call these.
 //
@@ -11287,10 +11464,19 @@ interface SaveEnhancedRequest {
     temperature: number;  // -50..+50, default 0
     bw: boolean;          // default false
   };
-  // 'manual' for slider-only saves; later 'ai' / 'manual+ai' will be
-  // passed by the AI enhance path. Defaults to 'manual'.
-  enhancementType?: 'manual' | 'ai' | 'manual+ai';
-  enhancementMethod?: string; // e.g. 'manual', 'codeformer', 'manual+codeformer'
+  // v2.0.15 Phase 5+ — When set, the sharp pipeline reads from this
+  // path instead of req.filePath. Used by the AI Enhance flows
+  // (CodeFormer / Real-ESRGAN) so save bakes the manual sliders on
+  // top of the AI output (a temp JPEG), not the original. The output
+  // path / _E filename / index inheritance still derive from
+  // req.filePath (the user's original library file).
+  sourceOverride?: string;
+  // 'manual' for slider-only saves; AI flows pass 'codeformer' /
+  // 'realesrgan' / 'manual+ai' depending on what produced the
+  // enhancement. The S&D "Enhanced only" chip filter and Phase 5+
+  // manual/AI split popover read this column.
+  enhancementType?: 'manual' | 'codeformer' | 'realesrgan' | 'manual+ai' | 'ai';
+  enhancementMethod?: string; // free-form, e.g. 'manual', 'codeformer-w0.5', 'realesrgan-x4'
 }
 
 ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) => {
@@ -11348,7 +11534,15 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     const temperature = fs2State.temperature ?? 0;
     const bw = !!fs2State.bw;
 
-    let pipeline = sharp(filePathLong, { failOnError: false }).rotate();
+    // v2.0.15 Phase 5+ — if sourceOverride is set (AI Enhance flows),
+    // bake the manual sliders on top of the AI output temp file
+    // instead of the user's original. The output destination + _E
+    // filename still derive from req.filePath, so the AI-enhanced
+    // file lands next to the original in the user's library.
+    const pipelineSource = req.sourceOverride && fs.existsSync(req.sourceOverride)
+      ? toLongPath(req.sourceOverride)
+      : filePathLong;
+    let pipeline = sharp(pipelineSource, { failOnError: false }).rotate();
 
     // Brightness + saturation via modulate. modulate({ brightness })
     // multiplies pixel values; brightness=1 is neutral. saturation

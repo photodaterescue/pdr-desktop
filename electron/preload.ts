@@ -279,6 +279,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // (People Manager rename / merge, Date Editor apply, Trees save) so
     // the background sidecar-mirror loop picks it up within ~30 seconds.
     bumpDirty: () => ipcRenderer.invoke('library:bumpDirty'),
+
+    // v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions
+    // outside the Fix-run path (currently: the Viewer's "Save Enhanced"
+    // flow). Renderer views (S&D / Memories / Albums) listen for this
+    // so the new file appears live, without a manual rescan.
+    onFilesAdded: (callback: (info: { reason: string; mode?: string; sourcePath?: string; newFilePath?: string; fileId?: number }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('library:filesAdded', handler);
+      return () => ipcRenderer.removeListener('library:filesAdded', handler);
+    },
   },
 
 
@@ -578,9 +588,39 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       filePath: string;
       mode: 'new' | 'replace';
       filterState: { brightness: number; contrast: number; saturation: number; temperature: number; bw: boolean };
-      enhancementType?: 'manual' | 'ai' | 'manual+ai';
+      // v2.0.15 Phase 5+ — AI Enhance flows pass the temp AI-output
+      // file here so save bakes sliders on top of the AI output.
+      sourceOverride?: string;
+      enhancementType?: 'manual' | 'codeformer' | 'realesrgan' | 'manual+ai' | 'ai';
       enhancementMethod?: string;
     }) => ipcRenderer.invoke('viewer:saveEnhanced', req) as Promise<{ success: boolean; newFilePath?: string; error?: string }>,
+
+    // v2.0.15 Phase 5+6 (Terry 2026-06-06) — AI Enhance IPC. The
+    // viewer fires these, listens for viewer:enhanceProgress to update
+    // a progress modal, then routes the returned outputPath through
+    // saveEnhanced() above to land the final file in the library.
+    enhanceFaces: (req: { filePath: string; fidelity?: number }) =>
+      ipcRenderer.invoke('viewer:enhanceFaces', req) as Promise<{
+        success: boolean;
+        outputPath?: string;
+        facesProcessed?: number;
+        error?: string;
+        requiresInstall?: 'codeformer' | 'realesrgan';
+        requiresAnalysis?: boolean;
+        fileId?: number;
+      }>,
+    enhanceWholeImage: (req: { filePath: string; tileSize?: number }) =>
+      ipcRenderer.invoke('viewer:enhanceWholeImage', req) as Promise<{
+        success: boolean;
+        outputPath?: string;
+        error?: string;
+        requiresInstall?: 'codeformer' | 'realesrgan';
+      }>,
+    onEnhanceProgress: (handler: (info: { kind: 'faces' | 'upscale'; phase: string; percent: number }) => void) => {
+      const listener = (_e: any, info: any) => handler(info);
+      ipcRenderer.on('viewer:enhanceProgress', listener);
+      return () => ipcRenderer.removeListener('viewer:enhanceProgress', listener);
+    },
     /** v2.0.14 — broadcast fired by viewer:setRotation. Renderers that
      *  hold cached thumbnails (Memories grid, Albums tiles, viewer
      *  filmstrip) subscribe to drop the stale entry and refetch with
@@ -747,18 +787,6 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       const handler = (_event: any, info: { kind: string; count: number }) => callback(info);
       ipcRenderer.on('recycle:changed', handler);
       return () => ipcRenderer.removeListener('recycle:changed', handler);
-    },
-  },
-
-  // v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions
-  // outside the Fix-run path (currently: the Viewer's "Save Enhanced"
-  // flow). Renderer views (S&D / Memories / Albums) listen for this
-  // so the new file appears live, without a manual rescan.
-  library: {
-    onFilesAdded: (callback: (info: { reason: string; mode?: string; sourcePath?: string; newFilePath?: string; fileId?: number }) => void) => {
-      const handler = (_event: any, info: any) => callback(info);
-      ipcRenderer.on('library:filesAdded', handler);
-      return () => ipcRenderer.removeListener('library:filesAdded', handler);
     },
   },
 

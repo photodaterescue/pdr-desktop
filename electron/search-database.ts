@@ -1725,7 +1725,7 @@ export async function indexEnhancedSibling(
     const crypto = require('crypto');
     const h = crypto.createHash('sha256');
     const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
-    stream.on('data', (chunk: Buffer) => h.update(chunk));
+    stream.on('data', (chunk: string | Buffer) => h.update(chunk));
     stream.on('end', () => resolve(h.digest('hex')));
     stream.on('error', reject);
   });

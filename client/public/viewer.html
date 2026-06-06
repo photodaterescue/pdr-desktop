@@ -560,6 +560,192 @@
       opacity: 0.7;
       cursor: progress;
     }
+    /* v2.0.15 Phase 7 (Terry 2026-06-06) — AI Enhance section.
+       Sits between the manual sliders and the Save panel. Violet
+       palette matching the Settings AI cards established in Phase 4. */
+    .enhance-ai-section {
+      padding: 8px 0 12px;
+      border-top: 1px solid rgba(255, 255, 255, 0.08);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      margin: 4px 0;
+    }
+    .enhance-ai-header {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.4px;
+      text-transform: uppercase;
+      color: #c4b5fd;
+      margin-bottom: 8px;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .enhance-ai-header::before {
+      content: "✨";
+      font-size: 14px;
+    }
+    .enhance-ai-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 6px;
+    }
+    .enhance-ai-btn {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 4px;
+      padding: 8px 4px;
+      background: rgba(124, 92, 255, 0.08);
+      border: 1px solid rgba(167, 139, 250, 0.3);
+      border-radius: 6px;
+      color: #ddd6fe;
+      cursor: pointer;
+      font-size: 11px;
+      font-weight: 500;
+      transition: background 0.15s, border-color 0.15s;
+    }
+    .enhance-ai-btn:hover:not(:disabled) {
+      background: rgba(124, 92, 255, 0.18);
+      border-color: rgba(167, 139, 250, 0.55);
+    }
+    .enhance-ai-btn:disabled {
+      opacity: 0.45;
+      cursor: not-allowed;
+    }
+    .enhance-ai-btn-icon {
+      font-size: 18px;
+      line-height: 1;
+    }
+    .enhance-ai-status {
+      font-size: 10px;
+      color: #9ca3af;
+      margin-top: 6px;
+      text-align: center;
+      min-height: 12px;
+    }
+    .enhance-ai-status.warn { color: #fbbf24; }
+    .enhance-ai-status a { color: #a78bfa; text-decoration: underline; cursor: pointer; }
+    /* Progress modal — sits over the whole viewer during inference. */
+    .enhance-ai-modal {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      backdrop-filter: blur(2px);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10000;
+    }
+    .enhance-ai-modal-card {
+      background: #1e1b2e;
+      border: 1px solid rgba(167, 139, 250, 0.4);
+      border-radius: 10px;
+      padding: 20px 24px;
+      min-width: 320px;
+      max-width: 400px;
+      box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
+    }
+    .enhance-ai-modal-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ddd6fe;
+      margin-bottom: 14px;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .enhance-ai-modal-title::before {
+      content: "✨";
+    }
+    .enhance-ai-modal-progress {
+      height: 6px;
+      background: rgba(255, 255, 255, 0.08);
+      border-radius: 3px;
+      overflow: hidden;
+      margin-bottom: 10px;
+    }
+    .enhance-ai-modal-progress-bar {
+      height: 100%;
+      width: 0%;
+      background: linear-gradient(90deg, #8b5cf6, #a78bfa);
+      transition: width 0.25s ease;
+    }
+    .enhance-ai-modal-phase {
+      font-size: 12px;
+      color: #c4b5fd;
+      text-align: center;
+    }
+    /* Warning modal — confirms slider reset before AI runs. */
+    .enhance-ai-warning {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.55);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10001;
+    }
+    .enhance-ai-warning-card {
+      background: #1e1b2e;
+      border: 1px solid rgba(167, 139, 250, 0.4);
+      border-radius: 10px;
+      padding: 22px 24px;
+      min-width: 340px;
+      max-width: 420px;
+    }
+    .enhance-ai-warning-title {
+      font-size: 14px;
+      font-weight: 600;
+      color: #ddd6fe;
+      margin-bottom: 8px;
+    }
+    .enhance-ai-warning-card p {
+      font-size: 12px;
+      color: #d1d5db;
+      line-height: 1.5;
+      margin: 0 0 14px;
+    }
+    .enhance-ai-warning-dontshow {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      font-size: 11px;
+      color: #9ca3af;
+      margin-bottom: 16px;
+    }
+    .enhance-ai-warning-dontshow input[type="checkbox"] {
+      accent-color: #a78bfa;
+    }
+    .enhance-ai-warning-actions {
+      display: flex;
+      gap: 8px;
+      justify-content: flex-end;
+    }
+    .enhance-ai-warning-cancel,
+    .enhance-ai-warning-continue {
+      padding: 7px 14px;
+      border-radius: 5px;
+      font-size: 12px;
+      font-weight: 500;
+      cursor: pointer;
+      border: 1px solid transparent;
+    }
+    .enhance-ai-warning-cancel {
+      background: transparent;
+      color: #d1d5db;
+      border-color: rgba(255, 255, 255, 0.18);
+    }
+    .enhance-ai-warning-cancel:hover {
+      background: rgba(255, 255, 255, 0.06);
+    }
+    .enhance-ai-warning-continue {
+      background: #8b5cf6;
+      color: white;
+    }
+    .enhance-ai-warning-continue:hover {
+      background: #7c4dff;
+    }
     .enhance-save-success {
       font-size: 11px;
       text-align: center;
@@ -662,6 +848,31 @@
           <input type="checkbox" class="enhance-toggle" id="toggle-bw">
         </div>
       </div>
+
+      <!-- v2.0.15 Phase 7 (Terry 2026-06-06) — AI Enhance buttons. Three
+           one-click actions: Faces (CodeFormer), Whole image (Real-ESRGAN),
+           Both. Buttons are disabled until each corresponding model is
+           installed via Settings → AI → Photo Enhancement. Status line
+           below surfaces install / analysis prerequisites with a tap-
+           through to Settings. -->
+      <div class="enhance-ai-section" id="enhance-ai-section">
+        <div class="enhance-ai-header">AI Enhancement</div>
+        <div class="enhance-ai-buttons">
+          <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled title="Restore blurred or low-quality faces (CodeFormer)">
+            <span class="enhance-ai-btn-icon">😊</span>
+            <span>Faces</span>
+          </button>
+          <button class="enhance-ai-btn" id="enhance-ai-upscale" type="button" disabled title="Upscale the whole image 4× (Real-ESRGAN)">
+            <span class="enhance-ai-btn-icon">🔍</span>
+            <span>Whole image</span>
+          </button>
+          <button class="enhance-ai-btn" id="enhance-ai-both" type="button" disabled title="Restore faces, then upscale (best quality, slowest)">
+            <span class="enhance-ai-btn-icon">✨</span>
+            <span>Both</span>
+          </button>
+        </div>
+        <div class="enhance-ai-status" id="enhance-ai-status"></div>
+      </div>
     </div>
     <div class="enhance-footer">
       <!-- v2.0.15 (Terry 2026-06-06) — Save panel. Three buttons:
@@ -683,6 +894,40 @@
       <button class="enhance-reset-btn" id="enhance-reset">Reset all</button>
     </div>
   </aside>
+
+  <!-- v2.0.15 Phase 7 (Terry 2026-06-06) — AI Enhance progress modal.
+       Shown during inference (loading model + processing). Closes
+       automatically when the worker reports done or error. Static
+       layout (no controls); cancel is via Esc which the JS handles. -->
+  <div class="enhance-ai-modal" id="enhance-ai-modal" style="display:none">
+    <div class="enhance-ai-modal-card">
+      <div class="enhance-ai-modal-title" id="enhance-ai-modal-title">Enhancing…</div>
+      <div class="enhance-ai-modal-progress">
+        <div class="enhance-ai-modal-progress-bar" id="enhance-ai-modal-progress-bar"></div>
+      </div>
+      <div class="enhance-ai-modal-phase" id="enhance-ai-modal-phase">Starting…</div>
+    </div>
+  </div>
+
+  <!-- v2.0.15 Phase 7 (Terry 2026-06-06) — Slider-reset warning. Shown
+       on FIRST AI Enhance press to inform the user that AI will reset
+       the manual sliders. Don't-show-again writes to the
+       viewerEnhanceAiWarningDismissed setting; subsequent presses skip
+       this modal entirely. -->
+  <div class="enhance-ai-warning" id="enhance-ai-warning" style="display:none">
+    <div class="enhance-ai-warning-card">
+      <div class="enhance-ai-warning-title">Heads up</div>
+      <p>Applying AI enhancement will reset your manual sliders to the midpoint. You can adjust them again after AI has finished.</p>
+      <div class="enhance-ai-warning-dontshow">
+        <input type="checkbox" id="enhance-ai-warning-dontshow">
+        <label for="enhance-ai-warning-dontshow">Don&apos;t show this again</label>
+      </div>
+      <div class="enhance-ai-warning-actions">
+        <button class="enhance-ai-warning-cancel" id="enhance-ai-warning-cancel" type="button">Cancel</button>
+        <button class="enhance-ai-warning-continue" id="enhance-ai-warning-continue" type="button">Continue</button>
+      </div>
+    </div>
+  </div>
 
   <div id="captionBar" class="caption-bar">
     <span class="caption-label">Caption</span>
@@ -1925,6 +2170,278 @@ function zoomTo(newZoom, centreX, centreY) {
       } catch (_) { /* preload missing — keep 'new' default */ }
       refreshSaveDefaultLabels();
 
+      // v2.0.15 Phase 7 (Terry 2026-06-06) — AI Enhance wiring.
+      // Buttons start disabled; enabled when the corresponding model
+      // is installed. State live-updates via ai-models:stateChanged
+      // events (e.g. user installs CodeFormer in Settings while the
+      // viewer is open → Faces button enables immediately).
+      const aiFacesBtn = document.getElementById('enhance-ai-faces');
+      const aiUpscaleBtn = document.getElementById('enhance-ai-upscale');
+      const aiBothBtn = document.getElementById('enhance-ai-both');
+      const aiStatusLine = document.getElementById('enhance-ai-status');
+      const aiModal = document.getElementById('enhance-ai-modal');
+      const aiModalTitle = document.getElementById('enhance-ai-modal-title');
+      const aiModalBar = document.getElementById('enhance-ai-modal-progress-bar');
+      const aiModalPhase = document.getElementById('enhance-ai-modal-phase');
+      const aiWarning = document.getElementById('enhance-ai-warning');
+      const aiWarningDontShow = document.getElementById('enhance-ai-warning-dontshow');
+      const aiWarningCancel = document.getElementById('enhance-ai-warning-cancel');
+      const aiWarningContinue = document.getElementById('enhance-ai-warning-continue');
+
+      let modelsInstalled = { codeformer: false, realesrgan: false };
+      let aiWarningDismissed = false;
+      let pendingAiAction = null; // 'faces' | 'upscale' | 'both' | null
+      // After AI runs, this holds the temp file path of the AI output.
+      // Save flow passes it as sourceOverride so save bakes from the
+      // AI result, not the original. Cleared when user navigates to
+      // another photo or saves.
+      let aiResultPath = null;
+      // Track the original filepath the AI result was generated FROM,
+      // so we know which file in the user's library to save it next to
+      // even if the viewer's currentIndex has drifted.
+      let aiResultSourcePath = null;
+
+      function refreshAiButtonState() {
+        if (aiFacesBtn) aiFacesBtn.disabled = !modelsInstalled.codeformer;
+        if (aiUpscaleBtn) aiUpscaleBtn.disabled = !modelsInstalled.realesrgan;
+        if (aiBothBtn) aiBothBtn.disabled = !(modelsInstalled.codeformer && modelsInstalled.realesrgan);
+        if (aiStatusLine) {
+          if (!modelsInstalled.codeformer && !modelsInstalled.realesrgan) {
+            aiStatusLine.innerHTML = 'Models not installed. <a id="enhance-ai-status-install">Open Settings →</a>';
+          } else if (!modelsInstalled.codeformer) {
+            aiStatusLine.innerHTML = 'CodeFormer not installed. <a id="enhance-ai-status-install">Open Settings →</a>';
+          } else if (!modelsInstalled.realesrgan) {
+            aiStatusLine.innerHTML = 'Real-ESRGAN not installed. <a id="enhance-ai-status-install">Open Settings →</a>';
+          } else {
+            aiStatusLine.textContent = '';
+            aiStatusLine.classList.remove('warn');
+          }
+          const installLink = document.getElementById('enhance-ai-status-install');
+          if (installLink && window.pdr && window.pdr.openMainWindow) {
+            installLink.onclick = function () {
+              try { window.pdr.openMainWindow({ openSettings: 'ai' }); } catch (_) {}
+            };
+          }
+        }
+      }
+
+      function fetchAiState() {
+        try {
+          if (window.pdr && window.pdr.aiModels && window.pdr.aiModels.list) {
+            window.pdr.aiModels.list().then(function (res) {
+              if (res && res.success && res.models) {
+                modelsInstalled = {
+                  codeformer: (res.models.codeformer && res.models.codeformer.state === 'installed'),
+                  realesrgan: (res.models.realesrgan && res.models.realesrgan.state === 'installed'),
+                };
+                refreshAiButtonState();
+              }
+            }).catch(function () {});
+          }
+        } catch (_) {}
+      }
+      fetchAiState();
+      try {
+        if (window.pdr && window.pdr.aiModels && window.pdr.aiModels.onStateChanged) {
+          window.pdr.aiModels.onStateChanged(function (info) {
+            if (info && info.key && info.state === 'installed') {
+              modelsInstalled[info.key] = true;
+              refreshAiButtonState();
+            } else if (info && info.key && info.state === 'not-installed') {
+              modelsInstalled[info.key] = false;
+              refreshAiButtonState();
+            }
+          });
+        }
+      } catch (_) {}
+
+      // Read the dismissed-warning flag once on viewer open.
+      try {
+        if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+          window.pdr.settings.get().then(function (s) {
+            aiWarningDismissed = !!(s && s.viewerEnhanceAiWarningDismissed);
+          }).catch(function () {});
+        }
+      } catch (_) {}
+
+      // Reset all sliders to their default values (used after AI runs).
+      function resetSlidersToDefaults() {
+        sBright.value = 100; state.brightness = 100; valBright.textContent = '100';
+        sContrast.value = 100; state.contrast = 100; valContrast.textContent = '100';
+        sSat.value = 100; state.saturation = 100; valSat.textContent = '100';
+        sTemp.value = 0; state.temperature = 0; valTemp.textContent = '0';
+        tBW.checked = false; state.bw = false;
+        applyFilters();
+      }
+
+      function showAiWarning(action) {
+        pendingAiAction = action;
+        if (aiWarningDontShow) aiWarningDontShow.checked = false;
+        if (aiWarning) aiWarning.style.display = 'flex';
+      }
+      function hideAiWarning() {
+        if (aiWarning) aiWarning.style.display = 'none';
+        pendingAiAction = null;
+      }
+
+      if (aiWarningCancel) aiWarningCancel.onclick = hideAiWarning;
+      if (aiWarningContinue) {
+        aiWarningContinue.onclick = function () {
+          const action = pendingAiAction;
+          const dontShow = aiWarningDontShow && aiWarningDontShow.checked;
+          if (dontShow) {
+            aiWarningDismissed = true;
+            try { window.pdr.settings.set('viewerEnhanceAiWarningDismissed', true); } catch (_) {}
+          }
+          hideAiWarning();
+          if (action) runAiAction(action);
+        };
+      }
+
+      function openAiProgress(title) {
+        if (aiModalTitle) aiModalTitle.textContent = title;
+        if (aiModalBar) aiModalBar.style.width = '0%';
+        if (aiModalPhase) aiModalPhase.textContent = 'Starting…';
+        if (aiModal) aiModal.style.display = 'flex';
+      }
+      function setAiProgress(phase, percent) {
+        if (aiModalBar) aiModalBar.style.width = Math.max(0, Math.min(100, percent)) + '%';
+        if (aiModalPhase) aiModalPhase.textContent = phase || '';
+      }
+      function closeAiProgress() {
+        if (aiModal) aiModal.style.display = 'none';
+      }
+
+      let unsubAiProgress = null;
+      try {
+        if (window.pdr && window.pdr.viewer && window.pdr.viewer.onEnhanceProgress) {
+          unsubAiProgress = window.pdr.viewer.onEnhanceProgress(function (info) {
+            if (info) setAiProgress(info.phase, info.percent);
+          });
+        }
+      } catch (_) {}
+
+      async function runAiAction(action) {
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath) return;
+        const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
+        if (!pdrViewer) return;
+
+        // Reset sliders first so the AI processes the SOURCE not the
+        // currently-slidered preview. Source for the worker is the
+        // original file on disk; sliders are display-only until save,
+        // so this is purely a UI reset.
+        resetSlidersToDefaults();
+
+        let title = 'Enhancing…';
+        if (action === 'faces') title = 'Restoring faces…';
+        else if (action === 'upscale') title = 'Upscaling photo…';
+        else if (action === 'both') title = 'Restoring faces + upscaling…';
+        openAiProgress(title);
+
+        try {
+          let result;
+          if (action === 'faces') {
+            result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
+            if (result && result.success && result.outputPath) {
+              applyAiResult(result.outputPath, filePath, 'codeformer');
+            } else {
+              handleAiError(result);
+            }
+          } else if (action === 'upscale') {
+            result = await pdrViewer.enhanceWholeImage({ filePath: filePath });
+            if (result && result.success && result.outputPath) {
+              applyAiResult(result.outputPath, filePath, 'realesrgan');
+            } else {
+              handleAiError(result);
+            }
+          } else if (action === 'both') {
+            // Faces first, then upscale the result.
+            result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
+            if (!result || !result.success) { handleAiError(result); return; }
+            const facesPath = result.outputPath;
+            result = await pdrViewer.enhanceWholeImage({ filePath: facesPath });
+            if (result && result.success && result.outputPath) {
+              applyAiResult(result.outputPath, filePath, 'manual+ai');
+            } else {
+              handleAiError(result);
+            }
+          }
+        } finally {
+          closeAiProgress();
+        }
+      }
+
+      function applyAiResult(tempPath, sourcePath, enhancementType) {
+        aiResultPath = tempPath;
+        aiResultSourcePath = sourcePath;
+        // Load the AI result as the new visible image — uses file:// so
+        // the existing img tag picks it up immediately.
+        const img = document.getElementById('mediaImg') || document.querySelector('#viewerImg, #mainImage, img.viewer-image');
+        if (img) {
+          img.src = 'file:///' + encodeURI(tempPath.replace(/\\/g, '/'));
+        }
+        // Re-evaluate save availability — AI result enables save even
+        // though sliders are at defaults.
+        try { updateSaveAvailability(); } catch (_) {}
+        // Stash enhancementType on the buttons via dataset for the
+        // save handler to read.
+        if (saveNewBtn) saveNewBtn.dataset.aiEnhancementType = enhancementType;
+        if (saveReplaceBtn) saveReplaceBtn.dataset.aiEnhancementType = enhancementType;
+      }
+
+      function handleAiError(result) {
+        const err = (result && result.error) ? result.error : 'AI enhancement failed.';
+        if (result && result.requiresInstall) {
+          if (aiStatusLine) {
+            aiStatusLine.classList.add('warn');
+            aiStatusLine.innerHTML = err + ' <a id="enhance-ai-status-install">Open Settings →</a>';
+            const installLink = document.getElementById('enhance-ai-status-install');
+            if (installLink && window.pdr && window.pdr.openMainWindow) {
+              installLink.onclick = function () {
+                try { window.pdr.openMainWindow({ openSettings: 'ai' }); } catch (_) {}
+              };
+            }
+          }
+        } else if (result && result.requiresAnalysis) {
+          if (aiStatusLine) {
+            aiStatusLine.classList.add('warn');
+            aiStatusLine.textContent = 'Run Face recognition on this photo first (PM → Analyze).';
+          }
+        } else {
+          if (aiStatusLine) {
+            aiStatusLine.classList.add('warn');
+            aiStatusLine.textContent = err;
+          }
+        }
+      }
+
+      function maybeStartAi(action) {
+        if (aiWarningDismissed) {
+          runAiAction(action);
+        } else {
+          showAiWarning(action);
+        }
+      }
+
+      if (aiFacesBtn) aiFacesBtn.onclick = function () { maybeStartAi('faces'); };
+      if (aiUpscaleBtn) aiUpscaleBtn.onclick = function () { maybeStartAi('upscale'); };
+      if (aiBothBtn) aiBothBtn.onclick = function () { maybeStartAi('both'); };
+
+      // Clear the AI result whenever the user navigates to another
+      // photo — the temp file is no longer relevant.
+      const clearAiOnNav = function () {
+        aiResultPath = null;
+        aiResultSourcePath = null;
+        if (saveNewBtn) delete saveNewBtn.dataset.aiEnhancementType;
+        if (saveReplaceBtn) delete saveReplaceBtn.dataset.aiEnhancementType;
+        if (aiStatusLine) aiStatusLine.classList.remove('warn');
+        refreshAiButtonState();
+      };
+      window.addEventListener('keydown', function (e) {
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') clearAiOnNav();
+      });
+
       function isFilterModified() {
         return state.brightness !== 100 ||
                state.contrast !== 100 ||
@@ -1951,7 +2468,10 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.0.15 — viewer.html tracks the current file as files[currentIndex].
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
         const hasFile = !!filePath;
-        const enabled = modified && hasFile;
+        // v2.0.15 Phase 7 — AI result alone (with neutral sliders) is
+        // also a valid save trigger; the AI output is itself a
+        // modification worth saving.
+        const enabled = (modified || !!aiResultPath) && hasFile;
         if (saveNewBtn) saveNewBtn.disabled = !enabled;
         if (saveReplaceBtn) saveReplaceBtn.disabled = !enabled;
         if (savePreview) {
@@ -1990,7 +2510,11 @@ function zoomTo(newZoom, centreX, centreY) {
       async function performSave(mode) {
         // v2.0.15 — viewer.html tracks the current file as files[currentIndex].
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
-        if (!filePath || !isFilterModified()) return;
+        // v2.0.15 Phase 7 — also allow save when an AI result is
+        // pending, even if sliders are at default (the AI result is
+        // itself a non-default modification).
+        const hasAiResult = !!aiResultPath;
+        if (!filePath || (!isFilterModified() && !hasAiResult)) return;
         const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
         if (!pdrViewer || !pdrViewer.saveEnhanced) {
           console.warn('[enhance] saveEnhanced not exposed on window.pdr.viewer');
@@ -2013,6 +2537,26 @@ function zoomTo(newZoom, centreX, centreY) {
         // in main.log (renderer console.log is captured there).
         console.log('[enhance] saving — mode=' + mode + ' state=' + JSON.stringify(state));
         try {
+          // v2.0.15 Phase 7 — if an AI result is pending, pass its
+          // temp file as sourceOverride so the sharp pipeline bakes
+          // any post-AI slider changes on top of the AI output. If
+          // sliders are at default, the pipeline is effectively a
+          // copy/re-encode of the AI result. enhancementType depends
+          // on what AI produced (codeformer / realesrgan / both =
+          // 'manual+ai') AND whether sliders were touched after.
+          const sliderTouched = isFilterModified();
+          let aiType = (saveNewBtn && saveNewBtn.dataset && saveNewBtn.dataset.aiEnhancementType) || '';
+          let finalEnhancementType = 'manual';
+          let finalEnhancementMethod = 'manual';
+          if (aiResultPath && aiType) {
+            if (sliderTouched) {
+              finalEnhancementType = 'manual+ai';
+              finalEnhancementMethod = aiType + '+manual';
+            } else {
+              finalEnhancementType = aiType;
+              finalEnhancementMethod = aiType;
+            }
+          }
           const result = await pdrViewer.saveEnhanced({
             filePath: filePath,
             mode: mode,
@@ -2023,8 +2567,9 @@ function zoomTo(newZoom, centreX, centreY) {
               temperature: state.temperature,
               bw: state.bw,
             },
-            enhancementType: 'manual',
-            enhancementMethod: 'manual',
+            sourceOverride: aiResultPath || undefined,
+            enhancementType: finalEnhancementType,
+            enhancementMethod: finalEnhancementMethod,
           });
           if (result && result.success) {
             const msg = mode === 'new'

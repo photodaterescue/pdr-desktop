@@ -64,6 +64,11 @@ export interface PDRSettings {
    *  WHICH button is highlighted on panel open; the user can
    *  always click the other one per-save. */
   viewerEnhanceSaveDefault: 'new' | 'replace';
+  /** v2.0.15 Phase 7 (Terry 2026-06-06) — set to true after the user
+   *  ticks "Don't show this again" on the AI Enhance slider-reset
+   *  warning. Once true, the warning modal is skipped on subsequent
+   *  AI presses (sliders still reset — the warning is just hidden). */
+  viewerEnhanceAiWarningDismissed: boolean;
 
   /** When true, the titlebar's Recycle Bin icon shows a small live
    *  count badge of how many items are sitting in the bin. Default
@@ -205,6 +210,10 @@ export const optimisedDefaults: PDRSettings = {
   // v2.0.15 Phase 3c — default to the safe "new file" path so an
   // accidental click doesn't overwrite the original.
   viewerEnhanceSaveDefault: 'new',
+  // v2.0.15 Phase 7 — default false; the warning shows on the FIRST
+  // AI Enhance press so the user understands the slider reset, then
+  // can dismiss it forever via the don't-show-again checkbox.
+  viewerEnhanceAiWarningDismissed: false,
   recycleBinShowCountBadge: false,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
@@ -276,6 +285,8 @@ export function getSettings(): PDRSettings {
     aiSearchMatchThreshold: store.get('aiSearchMatchThreshold', optimisedDefaults.aiSearchMatchThreshold),
     aiSearchMatchMode: store.get('aiSearchMatchMode', optimisedDefaults.aiSearchMatchMode),
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
+    viewerEnhanceSaveDefault: store.get('viewerEnhanceSaveDefault', optimisedDefaults.viewerEnhanceSaveDefault),
+    viewerEnhanceAiWarningDismissed: store.get('viewerEnhanceAiWarningDismissed', optimisedDefaults.viewerEnhanceAiWarningDismissed),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
