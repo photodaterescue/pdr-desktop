@@ -216,7 +216,8 @@
     .pdrv-time-sep { opacity: 0.55; padding: 0 2px; }
     .pdrv-spacer { flex: 1; }
     /* Volume slider — collapsed by default, expands when the volume
-       button group is hovered. */
+       button group is hovered. Quarter tick marks mirror PM's
+       Loose/Strict match-sensitivity slider for cross-PDR consistency. */
     .pdrv-vol-group {
       display: flex;
       align-items: center;
@@ -224,25 +225,44 @@
     .pdrv-vol-slider {
       width: 0;
       height: 4px;
-      margin: 0 4px;
+      margin: 0 6px;
       background: rgba(255, 255, 255, 0.22);
       border-radius: 2px;
-      overflow: visible;
       position: relative;
       cursor: pointer;
       transition: width 0.2s;
     }
-    .pdrv-vol-group:hover .pdrv-vol-slider { width: 70px; }
+    .pdrv-vol-group:hover .pdrv-vol-slider,
+    .pdrv-vol-slider.expanded { width: 80px; }
     .pdrv-vol-fill {
       position: absolute;
       top: 0;
       left: 0;
       height: 100%;
-      width: 100%;
+      width: 50%;
       background: #fff;
       border-radius: 2px;
       pointer-events: none;
     }
+    /* Quarter ticks — mirror PeopleManager's Loose/Strict slider:
+       2px wide × ~7px tall, light overlay, positioned at 25/50/75%. */
+    .pdrv-vol-ticks {
+      position: absolute;
+      top: 50%;
+      left: 0;
+      right: 0;
+      transform: translateY(-50%);
+      display: flex;
+      justify-content: space-between;
+      padding: 0 2px;
+      pointer-events: none;
+    }
+    .pdrv-vol-tick {
+      width: 1px;
+      height: 7px;
+      background: rgba(255, 255, 255, 0.55);
+    }
+    .pdrv-vol-tick.edge { background: transparent; }
     /* v2.0.15 — active state for toggle-style toolbar buttons (video
        Repeat once + Loop endlessly). When .active, the button reads
        as engaged via lavender fill + white text + ring. */
@@ -1293,6 +1313,12 @@
     }
     function isVideoPath(filePath) { return VIDEO_EXTS.has(getExt(filePath)); }
 
+    // v2.0.15 (Terry 2026-06-06 round 7) — viewer-wide volume state.
+    // Default 0.5 so videos don't blast on open. Persists across files
+    // within a single viewer window so user adjustments don't reset
+    // each time they change photo.
+    let viewerVolume = 0.5;
+
     // v2.0.15 (Terry 2026-06-06 round 6) — Custom video controls bar.
     // Replaces the native HTML5 controls so we can swap the play
     // button to a replay icon when video.ended fires (the YouTube
@@ -1310,6 +1336,9 @@
       const ICON_FS_OFF  = '<path d="M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z"/>';
       const wrapSvg = (path) => '<svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">' + path + '</svg>';
 
+      // v2.0.15 (Terry 2026-06-06 round 7) — YouTube-style layout:
+      // Play | Volume button | Volume slider | Time | (spacer) | Fullscreen
+      // Volume on the left immediately after Play matches YouTube.
       const bar = document.createElement('div');
       bar.className = 'pdrv-controls';
       bar.innerHTML =
@@ -1319,21 +1348,32 @@
         '</div>' +
         '<div class="pdrv-row">' +
           '<button class="pdrv-btn" data-ctrl="play" type="button" title="Play (Space)">' + wrapSvg(ICON_PLAY) + '</button>' +
+          '<div class="pdrv-vol-group" data-ctrl="vol-group">' +
+            '<button class="pdrv-btn" data-ctrl="vol" type="button" title="Mute (M)">' + wrapSvg(ICON_VOL_ON) + '</button>' +
+            '<div class="pdrv-vol-slider" data-ctrl="vol-slider">' +
+              '<div class="pdrv-vol-fill" data-ctrl="vol-fill"></div>' +
+              '<div class="pdrv-vol-ticks">' +
+                '<div class="pdrv-vol-tick edge"></div>' +
+                '<div class="pdrv-vol-tick"></div>' +
+                '<div class="pdrv-vol-tick"></div>' +
+                '<div class="pdrv-vol-tick"></div>' +
+                '<div class="pdrv-vol-tick edge"></div>' +
+              '</div>' +
+            '</div>' +
+          '</div>' +
           '<div class="pdrv-time">' +
             '<span data-ctrl="time-current">0:00</span>' +
             '<span class="pdrv-time-sep">/</span>' +
             '<span data-ctrl="time-total">0:00</span>' +
           '</div>' +
           '<div class="pdrv-spacer"></div>' +
-          '<div class="pdrv-vol-group">' +
-            '<button class="pdrv-btn" data-ctrl="vol" type="button" title="Mute (M)">' + wrapSvg(ICON_VOL_ON) + '</button>' +
-            '<div class="pdrv-vol-slider" data-ctrl="vol-slider">' +
-              '<div class="pdrv-vol-fill" data-ctrl="vol-fill"></div>' +
-            '</div>' +
-          '</div>' +
           '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" title="Fullscreen (F)">' + wrapSvg(ICON_FS_OFF) + '</button>' +
         '</div>';
       wrap.appendChild(bar);
+
+      // v2.0.15 (Terry 2026-06-06 round 7) — apply the session-wide
+      // viewerVolume default (0.5 on first ever open of the viewer).
+      video.volume = viewerVolume;
 
       const q = (sel) => bar.querySelector('[data-ctrl="' + sel + '"]');
       const playBtn = q('play');
@@ -1342,6 +1382,7 @@
       const seekHandle = q('seek-handle');
       const timeCur = q('time-current');
       const timeTot = q('time-total');
+      const volGroup = q('vol-group');
       const volBtn = q('vol');
       const volSlider = q('vol-slider');
       const volFill = q('vol-fill');
@@ -1363,6 +1404,8 @@
         const muted = video.muted || video.volume === 0;
         volBtn.innerHTML = wrapSvg(muted ? ICON_VOL_OFF : ICON_VOL_ON);
         volFill.style.width = (muted ? 0 : video.volume * 100) + '%';
+        // Persist user's volume choice for the rest of the viewer session.
+        if (!muted) viewerVolume = video.volume;
       }
       function refreshTime() {
         timeCur.textContent = fmt(video.currentTime);
@@ -1410,6 +1453,34 @@
         video.muted = false;
         video.volume = pct;
         refreshVolume();
+      });
+
+      // v2.0.15 (Terry 2026-06-06 round 7) — mouse wheel over the
+      // volume group adjusts volume in 5% steps. Works even when the
+      // slider is collapsed (hover over the speaker icon and scroll).
+      volGroup.addEventListener('wheel', (e) => {
+        e.preventDefault();
+        const dir = e.deltaY < 0 ? 1 : -1;
+        const next = Math.max(0, Math.min(1, (video.muted ? 0 : video.volume) + dir * 0.05));
+        video.muted = false;
+        video.volume = next;
+        refreshVolume();
+        // Keep the slider expanded briefly so the user sees the change.
+        volSlider.classList.add('expanded');
+        clearTimeout(volSlider._collapseTimer);
+        volSlider._collapseTimer = setTimeout(() => volSlider.classList.remove('expanded'), 1200);
+      }, { passive: false });
+
+      // v2.0.15 (Terry 2026-06-06 round 7) — click anywhere on the
+      // video element toggles play/pause (YouTube convention). The
+      // controls bar already swallows its own clicks via the per-
+      // button handlers; the seek bar click handler runs first, so
+      // clicking the seek bar jumps the time without also toggling
+      // play. mediaEl is the same as `video` here.
+      video.addEventListener('click', () => {
+        if (video.ended) { try { video.currentTime = 0; video.play(); } catch (_) {} }
+        else if (video.paused) { try { video.play(); } catch (_) {} }
+        else { try { video.pause(); } catch (_) {} }
       });
 
       // Fullscreen: request on wrap so the controls bar comes too.
@@ -1643,12 +1714,19 @@
 
           const video = document.createElement('video');
           video.controls = false;
-          video.autoplay = false;
+          // v2.0.15 (Terry 2026-06-06 round 7) \u2014 autoplay on open.
+          // Both autoplay=true AND an explicit play() call: the flag
+          // tells Chromium to start as soon as data allows; the
+          // explicit call covers the edge cases (cached metadata,
+          // user switching files quickly) where the flag fires
+          // before the listener is wired.
+          video.autoplay = true;
           video.preload = 'metadata';
           video.onloadedmetadata = () => {
             dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
             video.playbackRate = playbackRate;
             console.log('[video] loaded metadata for', label);
+            try { video.play(); } catch (_) {}
           };
           let retried = false;
           video.onerror = () => {
@@ -2372,6 +2450,27 @@ function zoomTo(newZoom, centreX, centreY) {
       else if (e.key === 'f' || e.key === 'F') { userHasZoomed = false; fitToWindow(); }
       else if (e.key === 'ArrowLeft' && !isVideo) { stopSlideshow(); loadMedia(currentIndex - 1); }
       else if (e.key === 'ArrowRight' && !isVideo) { stopSlideshow(); loadMedia(currentIndex + 1); }
+      // v2.0.15 (Terry 2026-06-06 round 7) — ArrowUp/ArrowDown adjust
+      // video volume in 5% steps. Skip when the user is typing
+      // somewhere; only active when a video is loaded. Briefly show
+      // the slider expanded so the user sees the change.
+      else if (isVideo && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) {
+        const tag = document.activeElement && document.activeElement.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        if (mediaEl) {
+          const delta = e.key === 'ArrowUp' ? 0.05 : -0.05;
+          mediaEl.muted = false;
+          mediaEl.volume = Math.max(0, Math.min(1, mediaEl.volume + delta));
+          viewerVolume = mediaEl.volume;
+          const _slider = document.querySelector('.pdrv-vol-slider');
+          if (_slider) {
+            _slider.classList.add('expanded');
+            clearTimeout(_slider._collapseTimer);
+            _slider._collapseTimer = setTimeout(() => _slider.classList.remove('expanded'), 1200);
+          }
+        }
+      }
       else if (e.key === 'Escape') window.close();
     });
 
