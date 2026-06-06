@@ -1391,14 +1391,34 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const tilePx = drilldownSliderToPx(tileSizeSlider);
   const tileGap = density === 'tight' ? 0 : 12;
   const colsPerRow = Math.max(1, Math.floor((containerWidth - 48 + tileGap) / (tilePx + tileGap)));
+  // v2.0.15 (Terry 2026-06-06) — the CSS grid uses
+  // `repeat(auto-fill, minmax(${tilePx}px, 1fr))`, which means the
+  // RENDERED tile width is the MINIMUM tilePx (and bigger if the row
+  // has leftover space — `1fr` stretches columns to fill). Square
+  // tiles then make the rendered height match the rendered width.
+  // The estimator must use the actual rendered tile size, NOT the
+  // minimum tilePx, or the row height is consistently under-estimated
+  // — measureElement then refines the height after first paint, the
+  // virtualiser adjusts scroll to keep the visual position stable,
+  // and the page reads as "jiggling" for the seconds it takes every
+  // newly-virtualised row to settle. Computing the actual stretched
+  // width up-front eliminates the diff and the layout stays stable.
+  const actualTilePx = colsPerRow > 0
+    ? Math.floor((containerWidth - 48 - (colsPerRow - 1) * tileGap) / colsPerRow)
+    : tilePx;
   const estimateDayRowHeight = (idx: number): number => {
     const group = filesByDay[idx];
     if (!group) return 200;
-    const HEADER_HEIGHT = 44;
+    // Header geometry: text-sm (line-height ~20px) + py-2 (16px) +
+    // border-b 1px = 37px. The previous 44px estimate was a leftover
+    // from an earlier, taller header style and added 7px of error
+    // per day group — multiplied across visible rows it was a major
+    // contributor to the post-jump layout jitter.
+    const HEADER_HEIGHT = 37;
     const ROW_MARGIN_TOP = 12;
     const SECTION_GAP = 20;
     const rows = Math.ceil(group.files.length / colsPerRow);
-    const gridHeight = rows * tilePx + Math.max(0, (rows - 1) * tileGap);
+    const gridHeight = rows * actualTilePx + Math.max(0, (rows - 1) * tileGap);
     return HEADER_HEIGHT + ROW_MARGIN_TOP + gridHeight + SECTION_GAP;
   };
   const rowVirtualizer = useVirtualizer({
@@ -1836,9 +1856,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           if (month == null || !allYearBuckets || allYearBuckets.length === 0) {
             return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
           }
+          // v2.0.15 (Terry 2026-06-06) — newest-first to match the
+          // Year timeline (top = most recent year) and the Day rail
+          // (top = most recent day). December at top, January at
+          // bottom, so all three navigation surfaces share one
+          // direction-of-time convention.
           const monthsForYear = allYearBuckets
             .filter((b) => b.year === year)
-            .sort((a, b) => a.month - b.month);
+            .sort((a, b) => b.month - a.month);
           if (monthsForYear.length <= 1) {
             return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
           }

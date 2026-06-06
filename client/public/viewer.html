@@ -36,6 +36,40 @@
       flex: 1;
       margin-right: 12px;
     }
+    /* v2.0.15 (Terry 2026-06-06) — copy-filename icon next to the
+       title. Subtle by default, lights up on hover. Briefly flashes
+       a green tick after a successful copy. */
+    .toolbar-copy-btn {
+      -webkit-app-region: no-drag;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      margin-right: 8px;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      color: #888;
+      cursor: pointer;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .toolbar-copy-btn:hover {
+      color: #ddd;
+      background: rgba(169, 156, 255, 0.1);
+      border-color: rgba(169, 156, 255, 0.3);
+    }
+    .toolbar-copy-btn.copied {
+      color: #6ee7b7;
+      border-color: rgba(110, 231, 183, 0.3);
+      background: rgba(110, 231, 183, 0.08);
+    }
+    .toolbar-copy-btn svg {
+      width: 14px;
+      height: 14px;
+    }
     .toolbar-actions {
       display: flex;
       gap: 6px;
@@ -57,6 +91,17 @@
       border-color: rgba(169, 156, 255, 0.4);
     }
     .toolbar-btn[hidden] { display: none; }
+    /* v2.0.15 — active state for toggle-style toolbar buttons (video
+       Repeat once + Loop endlessly). When .active, the button reads
+       as engaged via lavender fill + white text + ring. */
+    .toolbar-btn.active {
+      background: rgba(169, 156, 255, 0.35);
+      color: #fff;
+      border-color: rgba(169, 156, 255, 0.7);
+    }
+    .toolbar-btn.active:hover {
+      background: rgba(169, 156, 255, 0.45);
+    }
     .speed-wrap { position: relative; -webkit-app-region: no-drag; }
     .speed-menu {
       position: absolute;
@@ -764,6 +809,15 @@
 
   <div class="toolbar">
     <span class="toolbar-title" id="filename">PDR Viewer</span>
+    <!-- v2.0.15 (Terry 2026-06-06) — copy filename button. Copies the
+         basename (not the full path) to the clipboard since that's what
+         users typically want for sharing / referring to a photo. -->
+    <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" title="Copy filename to clipboard">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    </button>
     <div class="toolbar-actions">
       <span class="toolbar-counter" id="counter" style="display:none"></span>
       <button class="toolbar-btn" id="btn-fit" title="Fit to window (F)">Fit</button>
@@ -783,6 +837,11 @@
         <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
         <div class="speed-menu" id="speed-menu" style="display:none"></div>
       </div>
+      <!-- v2.0.15 (Terry 2026-06-06) — video repeat buttons. Hidden
+           when viewing photos; shown only when isVideo. Mutually
+           exclusive: clicking one turns the other off. -->
+      <button class="toolbar-btn" id="btn-repeat-once" title="Repeat once when video ends" hidden>↻</button>
+      <button class="toolbar-btn" id="btn-loop" title="Loop endlessly" hidden>∞</button>
       <button class="toolbar-btn" id="btn-openExternal" title="Open in system player" hidden>Open externally</button>
     </div>
   </div>
@@ -942,6 +1001,29 @@
     const container = document.getElementById('container');
     const placeholder = document.getElementById('placeholder');
     const filenameEl = document.getElementById('filename');
+    // v2.0.15 (Terry 2026-06-06) — copy filename button. Copies the
+    // basename of the currently displayed file. Brief green-tick
+    // confirmation via the .copied class (auto-clears after 1.2s).
+    const copyFilenameBtn = document.getElementById('btn-copy-filename');
+    if (copyFilenameBtn) {
+      copyFilenameBtn.addEventListener('click', async function () {
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath) return;
+        const sep = Math.max(filePath.lastIndexOf('/'), filePath.lastIndexOf('\\'));
+        const basename = sep >= 0 ? filePath.substring(sep + 1) : filePath;
+        try {
+          await navigator.clipboard.writeText(basename);
+          copyFilenameBtn.classList.add('copied');
+          copyFilenameBtn.title = 'Copied!';
+          setTimeout(function () {
+            copyFilenameBtn.classList.remove('copied');
+            copyFilenameBtn.title = 'Copy filename to clipboard';
+          }, 1200);
+        } catch (err) {
+          console.warn('[viewer] copy filename failed:', err);
+        }
+      });
+    }
     const dimensionsEl = document.getElementById('dimensions');
     const zoomLabelEl = document.getElementById('zoomLabel');
     const filmstripEl = document.getElementById('filmstrip');
@@ -955,6 +1037,34 @@
     const btnRotateLeft = document.getElementById('btn-rotateLeft');
     const btnRotateRight = document.getElementById('btn-rotateRight');
     const btnOpenExternal = document.getElementById('btn-openExternal');
+    // v2.0.15 (Terry 2026-06-06) — video repeat controls. Mutually
+    // exclusive: 'off' (no repeat, default), 'once' (replay one more
+    // time on ended), 'loop' (replay forever via video.loop=true).
+    // Reset to 'off' whenever a new file loads.
+    const btnRepeatOnce = document.getElementById('btn-repeat-once');
+    const btnLoop = document.getElementById('btn-loop');
+    let repeatMode = 'off';
+    function applyRepeatModeToVideo() {
+      if (mediaEl && isVideo) {
+        mediaEl.loop = (repeatMode === 'loop');
+      }
+      if (btnRepeatOnce) btnRepeatOnce.classList.toggle('active', repeatMode === 'once');
+      if (btnLoop) btnLoop.classList.toggle('active', repeatMode === 'loop');
+    }
+    function setRepeatMode(mode) {
+      repeatMode = mode;
+      applyRepeatModeToVideo();
+    }
+    if (btnRepeatOnce) {
+      btnRepeatOnce.addEventListener('click', () => {
+        setRepeatMode(repeatMode === 'once' ? 'off' : 'once');
+      });
+    }
+    if (btnLoop) {
+      btnLoop.addEventListener('click', () => {
+        setRepeatMode(repeatMode === 'loop' ? 'off' : 'loop');
+      });
+    }
     const speedWrap = document.getElementById('speed-wrap');
     const btnSpeed = document.getElementById('btn-speed');
     const speedMenu = document.getElementById('speed-menu');
@@ -1218,6 +1328,13 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
+      // v2.0.15 (Terry 2026-06-06) — Repeat buttons live only with
+      // videos. Reset to 'off' on every new file so a previous
+      // video's loop setting doesn't carry into the next.
+      if (btnRepeatOnce) btnRepeatOnce.hidden = !isVideo;
+      if (btnLoop) btnLoop.hidden = !isVideo;
+      repeatMode = 'off';
+      applyRepeatModeToVideo();
 
       if (isVideo) {
         // Show a transcoding status while we wait for ffmpeg (no-op for
@@ -1260,8 +1377,20 @@
             showUnplayable(filePath);
           };
           video.src = primaryUrl;
+          // v2.0.15 — wire repeat mode. 'loop' is natively handled by
+          // video.loop=true (set in applyRepeatModeToVideo); 'once'
+          // is one extra replay on ended, then resets to off so the
+          // video doesn't keep restarting silently.
+          video.addEventListener('ended', () => {
+            if (repeatMode === 'once') {
+              setRepeatMode('off');
+              try { video.currentTime = 0; video.play(); } catch (_) {}
+            }
+          });
           container.appendChild(video);
           mediaEl = video;
+          // Re-apply any active repeat mode now that mediaEl is set.
+          applyRepeatModeToVideo();
         };
 
         (async () => {
@@ -2397,9 +2526,9 @@ function zoomTo(newZoom, centreX, centreY) {
             aiStatusLine.classList.add('warn');
             aiStatusLine.innerHTML = err + ' <a id="enhance-ai-status-install">Open Settings →</a>';
             const installLink = document.getElementById('enhance-ai-status-install');
-            if (installLink && window.pdr && window.pdr.openMainWindow) {
+            if (installLink && window.pdr && window.pdr.openSettings) {
               installLink.onclick = function () {
-                try { window.pdr.openMainWindow({ openSettings: 'ai' }); } catch (_) {}
+                try { window.pdr.openSettings('ai'); } catch (_) {}
               };
             }
           }
