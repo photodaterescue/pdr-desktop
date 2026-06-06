@@ -4572,8 +4572,22 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
 
   return (
     <TooltipProvider delayDuration={0}>
+    {/* v2.0.15 (Terry 2026-06-05) — outer-row virtualisation via
+        content-visibility: auto. Browser skips rendering / layout /
+        paint for rows that aren't on screen — same effect as
+        react-window's "don't mount offscreen items" but built into
+        Chromium, zero library cost. The protocol-driven thumbnail
+        fetching means there's no IntersectionObserver dependency to
+        break (which was the regression last time we tried this). The
+        Unnamed tab with 12 000+ rows benefits hugely — only the ~5-10
+        rows in the viewport are laid out.
+        contain-intrinsic-size: auto 120px gives the browser a place-
+        holder height per row so the scrollbar sizes correctly before
+        any row has been measured; the "auto" keyword tells the browser
+        to remember each row's real measured size after first render. */}
     <div
       ref={cardRef}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
       className={`rounded-xl border transition-all group ${
         isEditing
           ? 'border-purple-400/60 bg-purple-50/30 dark:bg-purple-950/20 shadow-md'
@@ -4865,9 +4879,21 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
                                     : 'border border-border/50 hover:ring-2 hover:ring-purple-400/50';
                                 const stateBorderNoHover = face.verified ? verifiedBorder : isMatched ? matchedBorder : '';
                                 return sampleCrops[face.face_id] ? (
+                                  // v2.0.15 (Terry 2026-06-05) — loading="lazy" + decoding="async"
+                                  // are the horizontal-strip virtualization layer. Chromium's
+                                  // built-in lazy-load defers fetch until each thumb is within
+                                  // viewport (works inside overflow:scroll containers), so a row
+                                  // with 30 sample faces only triggers ~7-10 protocol fetches
+                                  // initially — the rest fire as the user scrolls horizontally.
+                                  // Explicit width/height attrs let the browser reserve layout
+                                  // space before fetch (required for lazy-load to engage).
                                   <img
                                     src={sampleCrops[face.face_id]}
                                     alt=""
+                                    width={40}
+                                    height={40}
+                                    loading="lazy"
+                                    decoding="async"
                                     className={`w-10 h-10 rounded-full object-cover cursor-pointer transition-all ${
                                       selectedFaces.has(face.face_id)
                                         ? 'ring-2 ring-green-500 ring-offset-1 ring-offset-background'
