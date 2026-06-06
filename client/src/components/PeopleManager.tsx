@@ -3256,58 +3256,79 @@ export default function PeopleManager() {
         const matched = improveResult?.matched ?? 0;
         const personLabel = improvingPersonName ?? 'this person';
         return (
-          // Backdrop is window-drag region so user can reposition PM
-          // mid-run. Card itself is no-drag.
+          // v2.0.15 (Terry 2026-06-06) — REDESIGNED for PM-AI surface:
+          //  • Rich purple-500 (was --primary lavender). Terry prefers
+          //    the saturated AI purple for PM AI flows specifically.
+          //  • Card width 520 → 300 (50% smaller per Terry).
+          //  • Vertical centred layout — icon centred at top, title
+          //    centred, stat is the SHOWCASE element (big number).
+          //  • Body text demoted to small caption under the stat
+          //    instead of swallowing the headline number.
+          //  • Backdrop remains window-drag so user can reposition
+          //    PM mid-run; card stays no-drag.
           <div
             className="fixed inset-0 z-[95] flex items-center justify-center bg-black/40 p-4"
             style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
           >
             <div
-              className="w-[520px] max-w-[92vw] rounded-2xl bg-background border border-border shadow-2xl flex flex-col p-8 gap-5"
+              className="w-[300px] max-w-[92vw] rounded-2xl bg-background border border-border shadow-2xl flex flex-col items-center p-6 gap-4 text-center"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
             >
-              <div className="flex items-start gap-4">
-                <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
-                  isError ? 'bg-red-500/10' : isDone ? 'bg-emerald-500/10' : 'bg-primary/10'
-                }`}>
-                  {isError ? (
-                    <AlertTriangle className="w-5 h-5 text-red-500" />
-                  ) : isDone ? (
-                    <CheckCircle2 className="w-5 h-5 text-emerald-500" />
-                  ) : (
-                    <Sparkles className="w-5 h-5 text-primary" />
-                  )}
-                </div>
-                <div className="min-w-0 flex-1 pt-1">
-                  <h3 className="text-lg font-semibold text-foreground leading-tight">
-                    {isError
-                      ? 'Improve failed'
-                      : isDone && matched > 0
-                        ? `Recognition improved for ${personLabel}`
-                        : isDone
-                          ? `No new matches for ${personLabel}`
-                          : `Improving recognition for ${personLabel}`}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mt-1">
-                    {isError
-                      ? (improveResult?.error ?? 'Unknown error.')
-                      : isDone && matched > 0
-                        ? `${matched} new face${matched === 1 ? '' : 's'} matched and added. They appear under ${personLabel} as unverified — review them and click each to verify, or run Improve again after a few more verifies to find more.`
-                        : isDone
-                          ? `Verify a few more faces and run Improve again — the more verified examples, the better the matching gets.`
-                          : 'Searching unnamed faces for more matches. You can keep working in the main PDR window while this runs.'}
+              {/* Centered icon at top — phase-appropriate accent. */}
+              <div className={`shrink-0 w-12 h-12 rounded-full flex items-center justify-center ${
+                isError ? 'bg-red-500/10' : isDone && matched > 0 ? 'bg-emerald-500/10' : isDone ? 'bg-slate-500/10' : 'bg-purple-500/10'
+              }`}>
+                {isError ? (
+                  <AlertTriangle className="w-5 h-5 text-red-500" />
+                ) : isDone && matched > 0 ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-500" />
+                ) : isDone ? (
+                  <CheckCircle2 className="w-5 h-5 text-slate-500" />
+                ) : (
+                  <Sparkles className="w-5 h-5 text-purple-500" />
+                )}
+              </div>
+              {/* Title — short, sentence case. */}
+              <h3 className="text-base font-semibold text-foreground leading-tight">
+                {isError
+                  ? 'Improve failed'
+                  : isDone && matched > 0
+                    ? `Recognition improved for ${personLabel}`
+                    : isDone
+                      ? `No new matches for ${personLabel}`
+                      : `Improving recognition for ${personLabel}`}
+              </h3>
+              {/* SHOWCASE block — stat for the success case, progress
+                  bar for the in-progress case, error message text for
+                  the error case. */}
+              {isError ? (
+                <p className="text-sm text-muted-foreground">
+                  {improveResult?.error ?? 'Unknown error.'}
+                </p>
+              ) : isDone && matched > 0 ? (
+                <div className="flex flex-col items-center gap-1">
+                  <div className="text-5xl font-bold text-purple-500 tabular-nums leading-none">
+                    {matched}
+                  </div>
+                  <div className="text-sm text-muted-foreground">
+                    new face{matched === 1 ? '' : 's'} matched
+                  </div>
+                  <p className="text-xs text-muted-foreground/85 mt-2 leading-relaxed">
+                    Appear under {personLabel} as unverified — click each to verify, or run Improve again later for more.
                   </p>
                 </div>
-              </div>
-              {/* Progress bar OR Done button depending on phase. */}
-              {!isDone ? (
-                <div className="flex flex-col gap-2">
+              ) : isDone ? (
+                <p className="text-xs text-muted-foreground leading-relaxed">
+                  Verify a few more faces and run Improve again — the more verified examples, the better the matching gets.
+                </p>
+              ) : (
+                <div className="flex flex-col gap-2 w-full">
                   <div className="h-2 rounded-full bg-secondary overflow-hidden">
                     {pct == null ? (
-                      <div className="h-full w-1/3 rounded-full bg-primary/70 animate-pulse" />
+                      <div className="h-full w-1/3 rounded-full bg-purple-500/70 animate-pulse" />
                     ) : (
                       <div
-                        className="h-full bg-primary transition-all duration-200 ease-out"
+                        className="h-full bg-purple-500 transition-all duration-200 ease-out"
                         style={{ width: `${pct}%` }}
                       />
                     )}
@@ -3317,29 +3338,26 @@ export default function PeopleManager() {
                     <span>
                       {pct != null && <span className="tabular-nums">{pct}%</span>}
                       {matchedSoFar > 0 && (
-                        <span className="ml-3 text-foreground font-medium tabular-nums">+{matchedSoFar} match{matchedSoFar === 1 ? '' : 'es'}</span>
+                        <span className="ml-3 text-foreground font-medium tabular-nums">+{matchedSoFar}</span>
                       )}
                     </span>
                   </div>
                 </div>
-              ) : (
-                // v2.0.15 (Terry 2026-06-06) — uses the PDR Button
-                // primitive (variant="primary" size="lg") instead of a
-                // raw bg-purple-500 button. The primitive gives the
-                // proper --primary lavender, text-primary-foreground
-                // white, rounded-full pill shape, and the premium
-                // button-shadow / hover-translate animation the rest
-                // of PDR uses. Same primitive LDM uses for its
-                // "Back to Workspace" primary CTA.
-                <Button
+              )}
+              {/* Done button — only in the done states. Rich purple-500
+                  matching the rest of the PM-AI surface, full width
+                  within the narrower card. Raw button preserves the
+                  rich-purple choice; the PDR Button primitive's
+                  variant="primary" renders lavender which Terry does
+                  not want here. */}
+              {isDone && (
+                <button
                   onClick={handleImproveDone}
-                  variant="primary"
-                  size="lg"
-                  className="w-full"
+                  className="w-full h-11 rounded-full bg-purple-500 hover:bg-purple-600 text-white text-sm font-medium transition-colors mt-1"
                   autoFocus
                 >
                   Done
-                </Button>
+                </button>
               )}
             </div>
           </div>
