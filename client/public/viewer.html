@@ -1568,24 +1568,6 @@
         '<span class="pdrv-trim-status" data-ctrl="trim-status"></span>';
       wrap.appendChild(trimBar);
 
-      // Trim handles on the seek bar — created up-front but hidden
-      // until trim mode flips on. Position is set in pixel-percent
-      // each time the user drags or video metadata changes.
-      const trimRegion = document.createElement('div');
-      trimRegion.className = 'pdrv-trim-region';
-      trimRegion.style.display = 'none';
-      seekBar.appendChild(trimRegion);
-      const trimInHandle = document.createElement('div');
-      trimInHandle.className = 'pdrv-trim-handle';
-      trimInHandle.title = 'Drag to set clip start';
-      trimInHandle.style.display = 'none';
-      seekBar.appendChild(trimInHandle);
-      const trimOutHandle = document.createElement('div');
-      trimOutHandle.className = 'pdrv-trim-handle';
-      trimOutHandle.title = 'Drag to set clip end';
-      trimOutHandle.style.display = 'none';
-      seekBar.appendChild(trimOutHandle);
-
       // v2.0.15 (Terry 2026-06-06 round 7) — apply the session-wide
       // viewerVolume default (0.5 on first ever open of the viewer).
       video.volume = viewerVolume;
@@ -1611,6 +1593,28 @@
       const trimSaveBtn = trimBar.querySelector('[data-ctrl="trim-save"]');
       const trimCancelBtn = trimBar.querySelector('[data-ctrl="trim-cancel"]');
       const trimStatus = trimBar.querySelector('[data-ctrl="trim-status"]');
+
+      // v2.1 (Terry 2026-06-07) — Trim handles on the seek bar.
+      // Created here AFTER `const seekBar = q('seek')` above so the
+      // TDZ doesn't fire on first viewer open. (Earlier placement
+      // referenced seekBar before its declaration, throwing
+      // ReferenceError, which aborted buildCustomVideoControls and
+      // left the video element undisplayed even though audio still
+      // played — exactly what Terry hit.)
+      const trimRegion = document.createElement('div');
+      trimRegion.className = 'pdrv-trim-region';
+      trimRegion.style.display = 'none';
+      seekBar.appendChild(trimRegion);
+      const trimInHandle = document.createElement('div');
+      trimInHandle.className = 'pdrv-trim-handle';
+      trimInHandle.title = 'Drag to set clip start';
+      trimInHandle.style.display = 'none';
+      seekBar.appendChild(trimInHandle);
+      const trimOutHandle = document.createElement('div');
+      trimOutHandle.className = 'pdrv-trim-handle';
+      trimOutHandle.title = 'Drag to set clip end';
+      trimOutHandle.style.display = 'none';
+      seekBar.appendChild(trimOutHandle);
 
       function fmt(s) {
         if (!isFinite(s) || s < 0) s = 0;
