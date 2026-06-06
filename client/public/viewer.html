@@ -1991,8 +1991,23 @@ function zoomTo(newZoom, centreX, centreY) {
               setTimeout(function () { successEl.style.display = 'none'; }, 4100);
             }
             console.log('[enhance] ' + msg);
-            // Reset the sliders to defaults — the just-saved file has
-            // the adjustments baked in, so the next round starts fresh.
+            // v2.0.15 (Terry 2026-06-06) — load the just-saved file into
+            // the viewer so the user sees their result instead of the
+            // viewer reverting visually to the original.
+            //   • 'new'     → insert new file after current and switch to it
+            //   • 'replace' → reload current path so the new bytes show
+            // resetState() runs LAST so sliders reflect the saved state
+            // (default = file already has the adjustments baked in).
+            try {
+              if (mode === 'new' && result.newFilePath) {
+                files.splice(currentIndex + 1, 0, result.newFilePath);
+                loadMedia(currentIndex + 1);
+              } else if (mode === 'replace') {
+                loadMedia(currentIndex);
+              }
+            } catch (navErr) {
+              console.warn('[enhance] post-save viewer reload failed:', navErr);
+            }
             resetState();
           } else {
             const err = (result && result.error) || 'Save failed.';
