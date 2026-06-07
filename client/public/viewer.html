@@ -5040,6 +5040,77 @@ function zoomTo(newZoom, centreX, centreY) {
         layer.innerHTML = parts.join('');
       }
 
+      // v2.1 round 13 (Terry 2026-06-07) — custom confirm + prompt
+      // modals that match PDR chrome. Replaces the previous
+      // window.confirm / window.prompt which Terry rightly
+      // flagged as breaking the premium feel. Same lavender-card
+      // styling as the AI warning modal (#enhance-ai-warning).
+      function showPdrConfirm(opts) {
+        return new Promise(function (resolve) {
+          const overlay = document.createElement('div');
+          overlay.className = 'enhance-ai-warning';
+          overlay.style.display = 'flex';
+          overlay.innerHTML = ''
+            + '<div class="enhance-ai-warning-card">'
+            +   '<div class="enhance-ai-warning-title">' + escapeForFaceLabel(opts.title || 'Confirm') + '</div>'
+            +   '<p>' + escapeForFaceLabel(opts.body || '') + '</p>'
+            +   '<div class="enhance-ai-warning-actions">'
+            +     '<button class="enhance-ai-warning-cancel" type="button" data-action="cancel">' + escapeForFaceLabel(opts.cancelLabel || 'Cancel') + '</button>'
+            +     '<button class="enhance-ai-warning-continue" type="button" data-action="confirm">' + escapeForFaceLabel(opts.confirmLabel || 'OK') + '</button>'
+            +   '</div>'
+            + '</div>';
+          document.body.appendChild(overlay);
+          function close(result) {
+            overlay.remove();
+            resolve(result);
+          }
+          overlay.querySelector('[data-action="cancel"]').onclick = function () { close(false); };
+          overlay.querySelector('[data-action="confirm"]').onclick = function () { close(true); };
+          // Escape = cancel, Enter = confirm. One-shot listener that
+          // self-removes on close.
+          const onKey = function (e) {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); window.removeEventListener('keydown', onKey, true); close(false); }
+            else if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); window.removeEventListener('keydown', onKey, true); close(true); }
+          };
+          window.addEventListener('keydown', onKey, true);
+          // Focus the confirm button so Enter works without an
+          // extra click.
+          setTimeout(function () { try { overlay.querySelector('[data-action="confirm"]').focus(); } catch (_) {} }, 30);
+        });
+      }
+      function showPdrPrompt(opts) {
+        return new Promise(function (resolve) {
+          const overlay = document.createElement('div');
+          overlay.className = 'enhance-ai-warning';
+          overlay.style.display = 'flex';
+          overlay.innerHTML = ''
+            + '<div class="enhance-ai-warning-card">'
+            +   '<div class="enhance-ai-warning-title">' + escapeForFaceLabel(opts.title || 'Enter value') + '</div>'
+            +   (opts.body ? '<p>' + escapeForFaceLabel(opts.body) + '</p>' : '')
+            +   '<input type="text" data-pdr-input value="' + escapeForFaceLabel(opts.defaultValue || '') + '" placeholder="' + escapeForFaceLabel(opts.placeholder || '') + '" style="width:100%;padding:8px 10px;background:rgba(169,156,255,0.10);border:1px solid rgba(169,156,255,0.30);color:#e8e6ff;font-size:13px;border-radius:6px;margin-bottom:14px;outline:none;" />'
+            +   '<div class="enhance-ai-warning-actions">'
+            +     '<button class="enhance-ai-warning-cancel" type="button" data-action="cancel">' + escapeForFaceLabel(opts.cancelLabel || 'Cancel') + '</button>'
+            +     '<button class="enhance-ai-warning-continue" type="button" data-action="confirm">' + escapeForFaceLabel(opts.okLabel || 'OK') + '</button>'
+            +   '</div>'
+            + '</div>';
+          document.body.appendChild(overlay);
+          const input = overlay.querySelector('[data-pdr-input]');
+          function close(result) {
+            window.removeEventListener('keydown', onKey, true);
+            overlay.remove();
+            resolve(result);
+          }
+          overlay.querySelector('[data-action="cancel"]').onclick = function () { close(null); };
+          overlay.querySelector('[data-action="confirm"]').onclick = function () { close(input.value || ''); };
+          const onKey = function (e) {
+            if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(null); }
+            else if (e.key === 'Enter' && document.activeElement === input) { e.preventDefault(); e.stopPropagation(); close(input.value || ''); }
+          };
+          window.addEventListener('keydown', onKey, true);
+          setTimeout(function () { try { input.focus(); input.select(); } catch (_) {} }, 30);
+        });
+      }
+
       // v2.1 round 11 — click delegation on the face-boxes layer for
       // name + delete actions. One listener instead of per-box
       // handlers (which would have to be re-bound on every rAF
@@ -5054,11 +5125,12 @@ function zoomTo(newZoom, centreX, centreY) {
         if (!faceId) return;
         if (action === 'name') {
           e.preventDefault(); e.stopPropagation();
-          // Simple prompt for v1 — autocomplete-against-existing-
-          // persons can come later. window.prompt is bare but it
-          // works, doesn't require any modal infrastructure, and
-          // lets the user act FAST (which is what Terry asked for).
-          const name = window.prompt('Name this person:', '');
+          const name = await showPdrPrompt({
+            title: 'Name this person',
+            body: 'Type a new name to create the person, or an existing name to add this face to them.',
+            placeholder: 'e.g. Anna Smith',
+            okLabel: 'Save',
+          });
           if (!name || !name.trim()) return;
           try {
             const res = await window.pdr.viewer.nameFace({ faceId, clusterId, name: name.trim() });
@@ -5073,7 +5145,13 @@ function zoomTo(newZoom, centreX, centreY) {
           }
         } else if (action === 'delete') {
           e.preventDefault(); e.stopPropagation();
-          if (!window.confirm('Delete this face box from the photo?')) return;
+          const ok = await showPdrConfirm({
+            title: 'Delete face box?',
+            body: 'This removes the box from this photo only. Other photos with the same person are untouched.',
+            confirmLabel: 'Delete',
+            cancelLabel: 'Cancel',
+          });
+          if (!ok) return;
           try {
             const res = await window.pdr.viewer.deleteFaceBox(faceId);
             if (res && res.success) {

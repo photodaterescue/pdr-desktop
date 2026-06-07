@@ -631,7 +631,20 @@ export default function PeopleManager() {
       listPersons(),
       listDiscardedPersons(),
     ]);
-    if (clustersRes.success && clustersRes.data) setClusters(clustersRes.data);
+    if (clustersRes.success && clustersRes.data) {
+      setClusters(clustersRes.data);
+      // v2.1 round 13 (Terry 2026-06-07) — diagnostic. Terry's PM
+      // showed 12333 Unnamed rows but the manual-marks gold banner
+      // never appeared. Need to see whether is_manual is reaching
+      // the renderer, and if so how many rows are flagged. Logs
+      // total / flagged / first few cluster_ids of flagged rows so
+      // we can correlate with what's in the DB.
+      try {
+        const flagged = clustersRes.data.filter((c: any) => c && (c.is_manual === 1 || c.is_manual === true));
+        const totalUnnamed = clustersRes.data.filter((c: any) => c && !c.person_name).length;
+        console.log('[PM] loaded clusters:', clustersRes.data.length, 'unnamed:', totalUnnamed, 'manual:', flagged.length, 'first flagged cluster_ids:', flagged.slice(0, 5).map((c: any) => c.cluster_id));
+      } catch (e) { console.warn('[PM] manual-flag log failed:', e); }
+    }
     if (personsRes.success && personsRes.data) {
       // v2.0.15 (Terry 2026-06-06) — dedupe persons by short+full name
       // before storing. Terry hit a case where his DB had two distinct
