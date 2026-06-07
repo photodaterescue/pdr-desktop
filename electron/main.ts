@@ -11594,12 +11594,23 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
         log.warn(`[viewer:trimVideo] source row not in library index (${req.filePath}); clip written but not indexed`);
       } else {
         try {
-          mainWindow?.webContents.send('library:filesAdded', {
+          // v2.1 (Terry 2026-06-07) — broadcast to EVERY window. The
+          // previous mainWindow-only send meant the viewer (a separate
+          // BrowserWindow) never received the message, so the live
+          // thumb-strip splice didn't fire and the user thought the
+          // clip hadn't been indexed (it was — the broadcast just
+          // didn't reach the viewer renderer).
+          const payload = {
             reason: 'trimmed',
             sourcePath: req.filePath,
             newFilePath: outPath,
             fileId: newId,
-          });
+          };
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              try { win.webContents.send('library:filesAdded', payload); } catch { /* non-fatal */ }
+            }
+          }
         } catch { /* non-fatal */ }
       }
     } catch (idxErr) {
@@ -11796,13 +11807,20 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
         // Broadcast so S&D / Memories / Albums can re-fetch and the
         // new file appears live. Same pattern as recycle:changed.
         try {
-          mainWindow?.webContents.send('library:filesAdded', {
+          // v2.1 — broadcast to every window (see trimVideo above
+          // for the rationale; viewer is a separate BrowserWindow).
+          const payload = {
             reason: 'enhanced',
             mode: req.mode,
             sourcePath: req.filePath,
             newFilePath: outPath,
             fileId: newId,
-          });
+          };
+          for (const win of BrowserWindow.getAllWindows()) {
+            if (!win.isDestroyed()) {
+              try { win.webContents.send('library:filesAdded', payload); } catch { /* non-fatal */ }
+            }
+          }
         } catch { /* non-fatal */ }
       }
     } catch (idxErr) {

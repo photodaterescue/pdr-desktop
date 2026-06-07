@@ -70,54 +70,61 @@
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       flex-shrink: 0;
     }
-    /* v2.1 (Terry 2026-06-07) — drag-to-app handle, next to the
-       copy-filename icon. Text label "D&D" (Terry's request — more
-       universally recognised than an icon at this size). Lavender
-       on hover to signal it's an active interactive control. The
-       cursor flips to grab so the user knows to drag (not click). */
+    /* v2.1 (Terry 2026-06-07) — drag-to-app button. Lavender fill
+       with a 6-dot drag indicator on the left (mirrors PM Unnamed
+       row drag handles), text "D&D" label on the right. The dot
+       grip is the universal "this is draggable" affordance the user
+       expects from PDR. cursor: grab → grabbing communicates the
+       intent through the cursor as well. */
     .toolbar-drag-btn {
       -webkit-app-region: no-drag;
       display: inline-flex;
       align-items: center;
-      justify-content: center;
+      gap: 4px;
       height: 22px;
-      padding: 0 6px;
-      background: transparent;
-      border: 1px solid rgba(255, 255, 255, 0.12);
+      padding: 0 8px 0 4px;
+      background: #A99CFF;
+      border: 1px solid #A99CFF;
       border-radius: 5px;
-      color: #aaa;
+      color: #1a1a2e;
       font-size: 10px;
-      font-weight: 600;
-      letter-spacing: 0.4px;
+      font-weight: 700;
+      letter-spacing: 0.6px;
       cursor: grab;
-      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      transition: background 0.15s, border-color 0.15s, color 0.15s;
       flex-shrink: 0;
       position: relative;
     }
     .toolbar-drag-btn:hover {
-      color: #C4B5FD;
-      background: rgba(169, 156, 255, 0.1);
-      border-color: rgba(169, 156, 255, 0.45);
+      background: #988bf2;
+      border-color: #988bf2;
     }
     .toolbar-drag-btn:active { cursor: grabbing; }
-    /* Subtle amber tint when the current file is large enough that
-       email / WhatsApp / etc. may reject it. Heuristic threshold
-       is 50 MB (see refreshDragBtnSize in the JS). */
+    .toolbar-drag-btn .drag-dots {
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    /* Amber tint when file > 50 MB — premium "informational" hint
+       that some destinations may reject it. No hard restriction. */
     .toolbar-drag-btn.large {
-      color: #f59e0b;
-      border-color: rgba(245, 158, 11, 0.4);
+      background: #f59e0b;
+      border-color: #f59e0b;
+      color: #1a1a2e;
     }
     .toolbar-drag-btn.large:hover {
-      color: #fbbf24;
-      background: rgba(251, 191, 36, 0.1);
-      border-color: rgba(251, 191, 36, 0.5);
+      background: #fbbf24;
+      border-color: #fbbf24;
     }
-    /* v2.1 (Terry 2026-06-07) — Custom tooltip that visually matches
-       PDR's React IconTooltip (Radix-based dark pill). Vanilla CSS
-       hover-only since this is plain viewer.html, not React. The
-       `data-pdr-tooltip` attribute on any element will render its
-       value as a pill on hover. Sits BELOW the element (no arrow —
-       IconTooltip keeps arrows optional too). */
+    /* v2.1 (Terry 2026-06-07) — Tooltip that visually matches PDR's
+       React IconTooltip exactly. IconTooltip uses Radix Tooltip with
+       these Tailwind classes (verified from tooltip.tsx):
+         bg-primary text-primary-foreground rounded-md px-3 py-1.5
+         text-xs   (delayDuration = 120ms)
+       Translates to:
+         bg #A99CFF · text #1a1a2e · rounded 6px · padding 6/12 ·
+         font-size 12px · 120ms hover delay
+       Vanilla CSS pseudo-element here because viewer.html is plain
+       HTML, not React. */
     [data-pdr-tooltip] {
       position: relative;
     }
@@ -127,20 +134,19 @@
       top: calc(100% + 6px);
       left: 50%;
       transform: translateX(-50%);
-      background: #1a1a2e;
-      color: #f3f3fa;
-      font-size: 11px;
+      background: #A99CFF;
+      color: #1a1a2e;
+      font-size: 12px;
       font-weight: 500;
       line-height: 1.3;
-      padding: 5px 8px;
-      border-radius: 4px;
-      border: 1px solid rgba(169, 156, 255, 0.25);
-      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+      padding: 6px 12px;
+      border-radius: 6px;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
       white-space: nowrap;
       pointer-events: none;
       opacity: 0;
       visibility: hidden;
-      transition: opacity 0.12s ease, visibility 0.12s ease;
+      transition: opacity 0.1s ease, visibility 0.1s ease;
       z-index: 1000;
       letter-spacing: 0;
       max-width: 320px;
@@ -149,7 +155,7 @@
     [data-pdr-tooltip]:hover::after {
       opacity: 1;
       visibility: visible;
-      transition-delay: 200ms;
+      transition-delay: 120ms; /* matches IconTooltip delayDuration */
     }
     /* Top-toolbar tooltips that would overflow off the right edge
        should anchor to the right side of the element instead of
@@ -158,6 +164,12 @@
       left: auto;
       right: 0;
       transform: none;
+    }
+    /* Bottom-anchored elements (video controls bar) need the tooltip
+       ABOVE the element, not below — opposite-direction variant. */
+    [data-pdr-tooltip-side="top"]::after {
+      top: auto;
+      bottom: calc(100% + 6px);
     }
     .toolbar-copy-btn:hover {
       color: #ddd;
@@ -956,7 +968,7 @@
   <!-- Cross-window Fix-in-progress chip — populated by JS at the
        bottom of this file via window.pdr.onFixProgress /
        onFixStateChanged. Same amber pill the rest of PDR shows. -->
-  <div class="fix-chip" id="fix-chip" title="A Fix is in progress in PDR">
+  <div class="fix-chip" id="fix-chip" data-pdr-tooltip="A Fix is in progress in PDR">
     <span class="spinner"></span>
     <span id="fix-chip-text">Fix · Working</span>
   </div>
@@ -1371,7 +1383,7 @@
          pushed far right by flex:1 on the title alone. -->
     <div class="toolbar-title-wrap">
       <span class="toolbar-title" id="filename">PDR Viewer</span>
-      <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" title="Copy filename to clipboard">
+      <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" data-pdr-tooltip="Copy filename to clipboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
@@ -1385,33 +1397,40 @@
            webContents.startDrag). Works for photos, videos, AND
            freshly-trimmed clips. Tooltip styled to match PDR's
            IconTooltip pill (dark bg + lavender border). -->
-      <button class="toolbar-drag-btn" id="btn-drag-file" draggable="true" data-pdr-tooltip="Drag and drop to another app or email">D&amp;D</button>
+      <button class="toolbar-drag-btn" id="btn-drag-file" draggable="true" data-pdr-tooltip="Drag and drop to another app or email">
+        <svg class="drag-dots" width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
+          <circle cx="2.5" cy="3" r="1.1" /><circle cx="7.5" cy="3" r="1.1" />
+          <circle cx="2.5" cy="7" r="1.1" /><circle cx="7.5" cy="7" r="1.1" />
+          <circle cx="2.5" cy="11" r="1.1" /><circle cx="7.5" cy="11" r="1.1" />
+        </svg>
+        D&amp;D
+      </button>
     </div>
     <div class="toolbar-actions">
       <span class="toolbar-counter" id="counter" style="display:none"></span>
-      <button class="toolbar-btn" id="btn-fit" title="Fit to window (F)">Fit</button>
-      <button class="toolbar-btn" id="btn-100" title="Actual size (0)">100%</button>
-      <button class="toolbar-btn" id="btn-zoomIn" title="Zoom in (+)">+</button>
-      <button class="toolbar-btn" id="btn-zoomOut" title="Zoom out (-)">−</button>
-      <button class="toolbar-btn" id="btn-rotateLeft" title="Rotate left 90° (R)">⟲</button>
-      <button class="toolbar-btn" id="btn-rotateRight" title="Rotate right 90° (Shift+R)">⟳</button>
+      <button class="toolbar-btn" id="btn-fit" data-pdr-tooltip="Fit to window (F)">Fit</button>
+      <button class="toolbar-btn" id="btn-100" data-pdr-tooltip="Actual size (0)">100%</button>
+      <button class="toolbar-btn" id="btn-zoomIn" data-pdr-tooltip="Zoom in (+)">+</button>
+      <button class="toolbar-btn" id="btn-zoomOut" data-pdr-tooltip="Zoom out (-)">−</button>
+      <button class="toolbar-btn" id="btn-rotateLeft" data-pdr-tooltip="Rotate left 90° (R)">⟲</button>
+      <button class="toolbar-btn" id="btn-rotateRight" data-pdr-tooltip="Rotate right 90° (Shift+R)">⟳</button>
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
-      <button class="toolbar-btn" id="btn-enhance" title="Enhance (E)">Enhance</button>
-      <button class="toolbar-btn" id="btn-slideshow" title="Start slideshow (Space)" hidden>▶</button>
+      <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
+      <button class="toolbar-btn" id="btn-slideshow" data-pdr-tooltip="Start slideshow (Space)" hidden>▶</button>
       <div class="speed-wrap" id="slideshow-wrap" hidden>
-        <button class="toolbar-btn" id="btn-slideshowInterval" title="Slideshow interval">5s</button>
+        <button class="toolbar-btn" id="btn-slideshowInterval" data-pdr-tooltip="Slideshow interval">5s</button>
         <div class="speed-menu" id="slideshow-menu" style="display:none"></div>
       </div>
       <div class="speed-wrap" id="speed-wrap" hidden>
-        <button class="toolbar-btn" id="btn-speed" title="Playback speed (shift+, / shift+.)">1x</button>
+        <button class="toolbar-btn" id="btn-speed" data-pdr-tooltip="Playback speed (shift+, / shift+.)">1x</button>
         <div class="speed-menu" id="speed-menu" style="display:none"></div>
       </div>
-      <button class="toolbar-btn" id="btn-openExternal" title="Open in system player" hidden>Open externally</button>
+      <button class="toolbar-btn" id="btn-openExternal" data-pdr-tooltip="Open in system player" hidden>Open externally</button>
     </div>
   </div>
   <div class="viewer-container" id="container">
-    <button class="nav-arrow left" id="btn-prev" title="Previous (←)">&#8249;</button>
-    <button class="nav-arrow right" id="btn-next" title="Next (→)">&#8250;</button>
+    <button class="nav-arrow left" id="btn-prev" data-pdr-tooltip="Previous (←)">&#8249;</button>
+    <button class="nav-arrow right" id="btn-next" data-pdr-tooltip="Next (→)">&#8250;</button>
     <div class="no-image" id="placeholder">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
@@ -1434,7 +1453,7 @@
   <aside id="enhance-panel" class="enhance-panel" aria-hidden="true">
     <div class="enhance-header">
       <span class="enhance-title">Enhance</span>
-      <button class="enhance-close" id="enhance-close" title="Close (E)">×</button>
+      <button class="enhance-close" id="enhance-close" data-pdr-tooltip="Close (E)">×</button>
     </div>
     <div class="enhance-body">
       <div class="enhance-control">
@@ -1481,15 +1500,15 @@
       <div class="enhance-ai-section" id="enhance-ai-section">
         <div class="enhance-ai-header">AI Enhancement</div>
         <div class="enhance-ai-buttons">
-          <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled title="Restore blurred or low-quality faces (CodeFormer)">
+          <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled data-pdr-tooltip="Restore blurred or low-quality faces (CodeFormer)">
             <span class="enhance-ai-btn-icon">😊</span>
             <span>Faces</span>
           </button>
-          <button class="enhance-ai-btn" id="enhance-ai-upscale" type="button" disabled title="Upscale the whole image 4× (Real-ESRGAN)">
+          <button class="enhance-ai-btn" id="enhance-ai-upscale" type="button" disabled data-pdr-tooltip="Upscale the whole image 4× (Real-ESRGAN)">
             <span class="enhance-ai-btn-icon">🔍</span>
             <span>Whole image</span>
           </button>
-          <button class="enhance-ai-btn" id="enhance-ai-both" type="button" disabled title="Restore faces, then upscale (best quality, slowest)">
+          <button class="enhance-ai-btn" id="enhance-ai-both" type="button" disabled data-pdr-tooltip="Restore faces, then upscale (best quality, slowest)">
             <span class="enhance-ai-btn-icon">✨</span>
             <span>Both</span>
           </button>
@@ -1509,8 +1528,8 @@
         Saves to <span class="enhance-save-filename" id="enhance-save-filename">—</span>
       </div>
       <div class="enhance-save-actions">
-        <button class="enhance-save-btn enhance-save-primary" id="enhance-save-new" disabled title="Save as a new file alongside the original (recommended)">Save as new file</button>
-        <button class="enhance-save-btn enhance-save-secondary" id="enhance-save-replace" disabled title="Overwrite the original file — destructive, can't be undone from here">Replace original</button>
+        <button class="enhance-save-btn enhance-save-primary" id="enhance-save-new" disabled data-pdr-tooltip="Save as a new file alongside the original (recommended)">Save as new file</button>
+        <button class="enhance-save-btn enhance-save-secondary" id="enhance-save-replace" disabled data-pdr-tooltip="Overwrite the original file — destructive, can't be undone from here">Replace original</button>
       </div>
       <!-- v2.0.15 — inline transient success message; fades after 4s. -->
       <div class="enhance-save-success" id="enhance-save-success" style="display:none"></div>
@@ -1576,18 +1595,26 @@
     // file from disk — same payload File Explorer would deliver.
     const dragFileBtn = document.getElementById('btn-drag-file');
     if (dragFileBtn) {
+      // v2.1 (Terry 2026-06-07) — mirrors the Memories tile drag
+      // pattern exactly (see MemoriesView.tsx onDragStart): set
+      // effectAllowed first, preventDefault to stop the browser's
+      // HTML5 drag, then ask main to start the OS-level drag
+      // synchronously via window.pdr.drag.start (no await — the IPC
+      // fires while the OS drag context is still live).
       dragFileBtn.addEventListener('dragstart', (e) => {
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        console.log('[viewer] D&D dragstart fired — file=' + filePath + ' pdr.drag=' + !!(window.pdr && window.pdr.drag));
         if (!filePath) { e.preventDefault(); return; }
-        e.preventDefault(); // browser's HTML5 drag — main starts the real OS drag
+        try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
+        e.preventDefault();
         try {
           if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
-            window.pdr.drag.start([filePath]).catch((err) => {
-              console.warn('[viewer] drag.start failed:', err && (err.message || err));
-            });
+            window.pdr.drag.start([filePath]);
+          } else {
+            console.warn('[viewer] D&D — window.pdr.drag.start missing');
           }
         } catch (err) {
-          console.warn('[viewer] drag.start threw:', err && (err.message || err));
+          console.warn('[viewer] D&D drag.start threw:', err && (err.message || err));
         }
       });
       // The "large file" amber tint is informational — update it
@@ -1801,10 +1828,10 @@
           '<div class="pdrv-seek-handle" data-ctrl="seek-handle"></div>' +
         '</div>' +
         '<div class="pdrv-row">' +
-          '<button class="pdrv-btn" data-ctrl="play" type="button" title="Play (Space)">' + wrapSvg(ICON_PLAY) + '</button>' +
-          '<button class="pdrv-btn" data-ctrl="loop" type="button" title="Loop video">' + wrapSvg(ICON_LOOP) + '</button>' +
+          '<button class="pdrv-btn" data-ctrl="play" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Play (Space)">' + wrapSvg(ICON_PLAY) + '</button>' +
+          '<button class="pdrv-btn" data-ctrl="loop" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Loop video">' + wrapSvg(ICON_LOOP) + '</button>' +
           '<div class="pdrv-vol-group" data-ctrl="vol-group">' +
-            '<button class="pdrv-btn" data-ctrl="vol" type="button" title="Mute (M)">' + wrapSvg(ICON_VOL_ON) + '</button>' +
+            '<button class="pdrv-btn" data-ctrl="vol" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Mute (M)">' + wrapSvg(ICON_VOL_ON) + '</button>' +
             '<div class="pdrv-vol-slider" data-ctrl="vol-slider">' +
               '<div class="pdrv-vol-fill" data-ctrl="vol-fill"></div>' +
               '<div class="pdrv-vol-ticks">' +
@@ -1828,7 +1855,7 @@
           // horizontal speed chips. Trim is an action, not a
           // setting, so it stays on the main view.
           '<div style="position:relative;display:inline-flex;">' +
-            '<button class="pdrv-btn" data-ctrl="gear" type="button" title="Settings">' + wrapSvg(ICON_GEAR) + '</button>' +
+            '<button class="pdrv-btn" data-ctrl="gear" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Settings">' + wrapSvg(ICON_GEAR) + '</button>' +
             '<div class="pdrv-settings-pop" data-ctrl="settings-pop">' +
               '<div class="pdrv-settings-view show" data-ctrl="settings-main">' +
                 '<button class="pdrv-settings-item pdrv-settings-row" data-ctrl="open-speed" type="button">' +
@@ -1837,22 +1864,27 @@
                   '<span class="pdrv-settings-chevron">›</span>' +
                 '</button>' +
                 '<div class="pdrv-settings-divider"></div>' +
-                '<button class="pdrv-settings-item" data-ctrl="trim-enter" type="button"><span class="tick">✂</span>Trim clip…</button>' +
+                // v2.1 (Terry 2026-06-07) — wrap the label in the
+                // same pdrv-settings-label span the Playback-speed
+                // row uses so text vertical position lines up
+                // exactly. Removed the ✂ tick column that was
+                // shifting the label rightward.
+                '<button class="pdrv-settings-item" data-ctrl="trim-enter" type="button"><span class="pdrv-settings-label">Trim clip…</span></button>' +
               '</div>' +
               '<div class="pdrv-settings-view" data-ctrl="settings-speed">' +
                 '<button class="pdrv-settings-back" data-ctrl="back-from-speed" type="button">Playback speed</button>' +
                 '<div class="pdrv-speed-value" data-ctrl="speed-value">1.00x</div>' +
                 '<div class="pdrv-speed-controls">' +
-                  '<button class="pdrv-speed-step" data-ctrl="speed-down" type="button" title="Slower">−</button>' +
+                  '<button class="pdrv-speed-step" data-ctrl="speed-down" type="button" data-pdr-tooltip="Slower">−</button>' +
                   '<input class="pdrv-speed-slider" data-ctrl="speed-slider" type="range" min="0.25" max="2" step="0.05" value="1">' +
-                  '<button class="pdrv-speed-step" data-ctrl="speed-up" type="button" title="Faster">+</button>' +
+                  '<button class="pdrv-speed-step" data-ctrl="speed-up" type="button" data-pdr-tooltip="Faster">+</button>' +
                 '</div>' +
                 '<div class="pdrv-speed-chips" data-ctrl="speed-chips"></div>' +
                 '<div class="pdrv-speed-active-label"><span>Normal</span></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
-          '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" title="Fullscreen (F)">' + wrapSvg(ICON_FS_OPEN) + '</button>' +
+          '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Fullscreen (F)">' + wrapSvg(ICON_FS_OPEN) + '</button>' +
         '</div>';
       wrap.appendChild(bar);
 
