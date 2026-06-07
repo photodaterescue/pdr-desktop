@@ -2290,29 +2290,29 @@ export default function PeopleManager() {
                   </div>
                 ) : (
                   <>
-                    {/* v2.1 round 16 (Terry 2026-06-07) — gold banner
-                        for manually-drawn face boxes (PDRV Mark-a-
-                        face). Better copy this round per Terry's
-                        feedback: "manually marked faces" was
-                        misleading because these are user-drawn
-                        boxes around faces, not marks ON faces.
-                        Now: "N face boxes you drew manually" —
-                        accurate, distinguishable from auto-detected,
-                        plain English. */}
-                    {manualCountInUnnamed > 0 && (
-                      <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40 mb-3">
-                        <span className="text-amber-500 dark:text-amber-400 text-base leading-none">★</span>
-                        <p className="text-sm text-foreground">
-                          <strong>{manualCountInUnnamed} face box{manualCountInUnnamed === 1 ? '' : 'es'} you drew manually</strong>{' '}
-                          <span className="text-muted-foreground">pinned at the top — name {manualCountInUnnamed === 1 ? 'it' : 'them'} next.</span>
+                    {/* v2.1 round 17 (Terry 2026-06-07) — banners on
+                        one row. Two stacked full-width banners ate
+                        too much vertical space (Terry: "they don't
+                        take up excessive amounts of room"). Gold
+                        sits left at fixed width, purple grows to
+                        fill the rest. Both keep their own primitive
+                        shape (rounded-xl + tinted bg + border). */}
+                    <div className="flex items-stretch gap-3 mb-4">
+                      {manualCountInUnnamed > 0 && (
+                        <div className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40 shrink-0">
+                          <span className="text-amber-500 dark:text-amber-400 text-base leading-none">★</span>
+                          <p className="text-sm text-foreground whitespace-nowrap">
+                            <strong>{manualCountInUnnamed} manual box{manualCountInUnnamed === 1 ? '' : 'es'}</strong>{' '}
+                            <span className="text-muted-foreground">at the top</span>
+                          </p>
+                        </div>
+                      )}
+                      <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 flex-1 min-w-0">
+                        <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
+                        <p className="text-sm text-muted-foreground leading-relaxed">
+                          Click face thumbnails to select them, then assign to an existing person (or create a new one) using the panel on the right. Don't recognize someone? Mark <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
                         </p>
                       </div>
-                    )}
-                    <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
-                      <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
-                      <p className="text-sm text-muted-foreground leading-relaxed">
-                        Click face thumbnails to select them, then assign to an existing person (or create a new one) using the panel on the right. Don't recognize someone? Mark <strong>Unsure</strong> to revisit later, or <strong>Ignore</strong> to hide them permanently.
-                      </p>
                     </div>
                     {viewMode === 'card' ? (
                       <DndContext
@@ -2327,12 +2327,38 @@ export default function PeopleManager() {
                           <div className="space-y-2">
                         {unnamedClusters.map((cluster, idx) => {
                           const ck = clusterKey(cluster);
+                          // v2.1 round 17 (Terry 2026-06-07) — visually
+                          // distinguish manual rows from auto-detected.
+                          // Gold left border + faint gold-tinted bg
+                          // mirrors the gold border on the manual face
+                          // boxes in PDRV (single visual vocabulary for
+                          // "manual"). At the boundary between the last
+                          // manual row and the first auto row we drop
+                          // in a subtle "Auto-detected ⌄" divider so
+                          // it's unambiguous where one ends and the
+                          // other begins — no separate tab, no
+                          // collapse, no clutter. Terry: "4 or 5 new
+                          // manually added rows shouldn't be put into
+                          // the same bucket as the auto-detected ones."
+                          const isManual = (cluster as any).is_manual === 1 || (cluster as any).is_manual === true;
+                          const rowClass = isManual
+                            ? 'relative border-l-4 border-amber-400 bg-amber-50/30 dark:bg-amber-950/10 rounded-l-md'
+                            : 'relative';
+                          const isFirstAuto = idx === manualCountInUnnamed && manualCountInUnnamed > 0 && idx < unnamedClusters.length;
                           return (
+                          <React.Fragment key={`row-${ck}`}>
+                          {isFirstAuto && (
+                            <div className="flex items-center gap-2 py-2 px-1 mt-2">
+                              <div className="h-px flex-1 bg-border" />
+                              <span className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Auto-detected</span>
+                              <div className="h-px flex-1 bg-border" />
+                            </div>
+                          )}
                           <SortableClusterRow
                             key={ck}
                             cluster={cluster}
                             clusterKey={ck}
-                            className="relative"
+                            className={rowClass}
                             placeholderHeight={100}
                           >
                             {({ listeners }) => <>
@@ -2410,6 +2436,7 @@ export default function PeopleManager() {
                           />
                           </>}
                           </SortableClusterRow>
+                          </React.Fragment>
                           );
                         })}
                           </div>
