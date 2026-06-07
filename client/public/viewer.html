@@ -2377,6 +2377,7 @@
       //   2. Captions off + transcript present → turn on
       //   3. No transcript → confirm + run Whisper
       ccBtn.addEventListener('click', async function () {
+        console.log('[viewer] CC click — transcript exists:', !!(transcriptSegments && transcriptSegments.length > 0), 'captionsVisible:', captionsVisible);
         if (transcriptSegments && transcriptSegments.length > 0) {
           captionsVisible = !captionsVisible;
           updateCcButtonState();
@@ -2385,7 +2386,11 @@
         }
         // No transcript yet. Confirm + run.
         const filePath = video.dataset.filePath || ((typeof files !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '');
-        if (!filePath) return;
+        console.log('[viewer] CC — no transcript yet, resolved filePath:', filePath);
+        if (!filePath) {
+          console.warn('[viewer] CC click aborted — no file path available');
+          return;
+        }
         const ok = await showPdrConfirm({
           title: 'Transcribe this video?',
           body: 'PDR runs Whisper locally on your computer — nothing is uploaded. First time it downloads the model (~150 MB). After that it transcribes at roughly 0.5-2× the video\'s length depending on your CPU. The transcript becomes captions you can toggle, and powers transcript search in the future.',

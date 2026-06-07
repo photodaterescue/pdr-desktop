@@ -7294,15 +7294,22 @@ async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker
   const workerPath = path.join(__dirname, 'transcribe-worker.cjs');
   const userData = app.getPath('userData');
   const cacheDir = path.join(userData, 'whisper-cache');
-  // ffmpeg-static returns a path string; in dev it's under node_modules,
-  // in packaged builds we copy it next to the binary (handled by
-  // electron-builder extraResources).
-  // eslint-disable-next-line @typescript-eslint/no-var-requires
-  const ffmpegStatic = require('ffmpeg-static') as string;
-  const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
+  // v2.1 round 21 (Terry 2026-06-08) — reuse the module-level
+  // ffmpegPath resolved via createRequire at the top of this file.
+  // The previous `require('ffmpeg-static')` here threw "require is
+  // not defined" because main.ts compiles to ESM (per package.json
+  // "type": "module"), and that was the EXACT reason batch
+  // transcribe silently failed with "require is not defined" on
+  // Terry's first test.
+  if (!ffmpegPath) {
+    throw new Error('ffmpeg-static not available — transcription needs ffmpeg to extract audio from videos.');
+  }
+  // Packaged builds: ffmpeg lives in app.asar.unpacked (Node can't
+  // spawn from inside an asar). Dev: regular node_modules path.
+  const resolvedFfmpegPath = ffmpegPath.replace('app.asar' + path.sep, 'app.asar.unpacked' + path.sep);
 
   transcribeWorker = new Worker(workerPath, {
-    workerData: { cacheDir, ffmpegPath },
+    workerData: { cacheDir, ffmpegPath: resolvedFfmpegPath },
   });
 
   transcribeWorker.on('message', (msg: any) => {
