@@ -1596,20 +1596,42 @@
     const dragFileBtn = document.getElementById('btn-drag-file');
     if (dragFileBtn) {
       // v2.1 (Terry 2026-06-07) — mirrors the Memories tile drag
-      // pattern exactly (see MemoriesView.tsx onDragStart): set
-      // effectAllowed first, preventDefault to stop the browser's
-      // HTML5 drag, then ask main to start the OS-level drag
-      // synchronously via window.pdr.drag.start (no await — the IPC
-      // fires while the OS drag context is still live).
+      // pattern (effectAllowed first, preventDefault, synchronous
+      // drag.start). CRITICAL Windows quirk: Electron's
+      // webContents.startDrag SILENTLY CANCELS if the icon is empty,
+      // which is exactly what was happening — dragstart fired,
+      // drag.start IPC was called, but Windows quietly dropped it.
+      // Memories works because each tile passes its thumbnail
+      // dataURL. The viewer doesn't have a thumb conveniently to
+      // hand, so we generate a small lavender square dataURL once
+      // on load and reuse it for every drag.
+      let dragIconDataUrl = '';
+      try {
+        const c = document.createElement('canvas');
+        c.width = 48; c.height = 48;
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          ctx.fillStyle = '#A99CFF';
+          ctx.fillRect(0, 0, 48, 48);
+          // PDR-shaped corner accent for a hint of branding.
+          ctx.fillStyle = '#1a1a2e';
+          ctx.font = 'bold 22px sans-serif';
+          ctx.textBaseline = 'middle';
+          ctx.textAlign = 'center';
+          ctx.fillText('PDR', 24, 26);
+          dragIconDataUrl = c.toDataURL('image/png');
+        }
+      } catch (_) {}
+
       dragFileBtn.addEventListener('dragstart', (e) => {
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
-        console.log('[viewer] D&D dragstart fired — file=' + filePath + ' pdr.drag=' + !!(window.pdr && window.pdr.drag));
+        console.log('[viewer] D&D dragstart fired — file=' + filePath + ' pdr.drag=' + !!(window.pdr && window.pdr.drag) + ' icon=' + (dragIconDataUrl ? 'yes' : 'no'));
         if (!filePath) { e.preventDefault(); return; }
         try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
         e.preventDefault();
         try {
           if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
-            window.pdr.drag.start([filePath]);
+            window.pdr.drag.start([filePath], dragIconDataUrl);
           } else {
             console.warn('[viewer] D&D — window.pdr.drag.start missing');
           }
@@ -2375,14 +2397,17 @@
       makeDraggable(trimInHandle, 'in');
       makeDraggable(trimOutHandle, 'out');
 
-      // v2.1 (Terry 2026-06-07) — double-click IN handle previews
+      // v2.1 (Terry 2026-06-07) — double-click EITHER handle previews
       // the clip: jump to trimIn, play, auto-pause when currentTime
       // reaches trimOut. If the user clicks play again AFTER the
       // auto-pause (or anywhere outside the trim range), the preview
       // mode clears so they can freely scrub to discover where they
-      // want the OUT point — exactly what Terry asked for.
+      // want the OUT point. v2.1 round 2 — Terry: "the ending clip
+      // drag to have the same double-click action to play from the
+      // start of the first clip drag" — so OUT handle's dblclick
+      // does the same thing as IN handle's.
       let trimPreviewMode = false;
-      trimInHandle.addEventListener('dblclick', (e) => {
+      const previewClip = (e) => {
         if (!trimMode) return;
         e.preventDefault();
         e.stopPropagation();
@@ -2391,7 +2416,9 @@
           trimPreviewMode = true;
           video.play();
         } catch (_) {}
-      });
+      };
+      trimInHandle.addEventListener('dblclick', previewClip);
+      trimOutHandle.addEventListener('dblclick', previewClip);
       // Auto-pause at trimOut while in preview mode.
       video.addEventListener('timeupdate', () => {
         if (trimPreviewMode && trimMode && video.currentTime >= trimOut) {

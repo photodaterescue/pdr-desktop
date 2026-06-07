@@ -9,6 +9,7 @@ import {
   ChevronDown,
   Sparkles,
   Film,
+  Scissors,
   Image as ImageIcon,
   Layers,
   X,
@@ -2458,6 +2459,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       {f.file_type === 'video' && (
                         <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
                           <Film className="w-2.5 h-2.5" /> Video
+                        </div>
+                      )}
+                      {/* v2.1 (Terry 2026-06-07) — Clip badge for files
+                          created by the PDR Viewer's Trim panel.
+                          clip_of_file_id IS NOT NULL means this row is
+                          a derivative of another indexed file. Positioned
+                          top-LEFT so it doesn't collide with the
+                          top-right Video badge above (clips are videos
+                          too, so both badges can render on the same
+                          tile). Cyan matches the `_T` chip family
+                          established in Best Practices → Filename
+                          Conventions. */}
+                      {f.clip_of_file_id != null && (
+                        <div className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded bg-cyan-600/85 text-white text-[9px] font-medium flex items-center gap-1">
+                          <Scissors className="w-2.5 h-2.5" /> Clip
                         </div>
                       )}
                       <CaptionBadge caption={f.caption} />
