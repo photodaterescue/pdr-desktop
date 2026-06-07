@@ -1620,6 +1620,24 @@
     </div>
   </div>
 
+  <!-- v2.1 (Terry 2026-06-07) — AI result modal. Used to surface
+       outcomes that previously only updated the inline status line
+       below the buttons (which Terry didn't notice) — esp. "no
+       faces detected on this photo yet", "model not installed", and
+       generic errors. Same card styling as the warning modal. The
+       secondary button is contextual (Open Settings / Run Analyze
+       / hidden). -->
+  <div class="enhance-ai-warning" id="enhance-ai-result" style="display:none">
+    <div class="enhance-ai-warning-card">
+      <div class="enhance-ai-warning-title" id="enhance-ai-result-title">AI Enhancement</div>
+      <p id="enhance-ai-result-body"></p>
+      <div class="enhance-ai-warning-actions">
+        <button class="enhance-ai-warning-cancel" id="enhance-ai-result-secondary" type="button" style="display:none"></button>
+        <button class="enhance-ai-warning-continue" id="enhance-ai-result-ok" type="button">OK</button>
+      </div>
+    </div>
+  </div>
+
   <div id="captionBar" class="caption-bar">
     <span class="caption-label">Caption</span>
     <span class="caption-text" id="captionText"></span>
@@ -4324,50 +4342,79 @@ function zoomTo(newZoom, centreX, centreY) {
         if (saveReplaceBtn) saveReplaceBtn.dataset.aiEnhancementType = enhancementType;
       }
 
+      // v2.1 (Terry 2026-06-07) — surface AI outcomes via a visible
+      // modal instead of an easy-to-miss inline status line. The
+      // previous handleAiError quietly updated text under the
+      // buttons; users (Terry included) saw the progress modal close
+      // and nothing else happen, with no clear reason.
+      function showAiResult(opts) {
+        const modal = document.getElementById('enhance-ai-result');
+        const titleEl = document.getElementById('enhance-ai-result-title');
+        const bodyEl = document.getElementById('enhance-ai-result-body');
+        const okBtn = document.getElementById('enhance-ai-result-ok');
+        const secBtn = document.getElementById('enhance-ai-result-secondary');
+        if (!modal || !titleEl || !bodyEl || !okBtn || !secBtn) return;
+        titleEl.textContent = opts.title || 'AI Enhancement';
+        bodyEl.textContent = opts.body || '';
+        okBtn.textContent = opts.okLabel || 'OK';
+        okBtn.onclick = function () {
+          modal.style.display = 'none';
+          if (typeof opts.onOk === 'function') opts.onOk();
+        };
+        if (opts.secondary) {
+          secBtn.style.display = '';
+          secBtn.textContent = opts.secondary.label;
+          secBtn.onclick = function () {
+            modal.style.display = 'none';
+            try { opts.secondary.onClick(); } catch (e) { console.warn('[viewer] ai-result secondary action threw:', e); }
+          };
+        } else {
+          secBtn.style.display = 'none';
+          secBtn.onclick = null;
+        }
+        modal.style.display = 'flex';
+      }
+
       function handleAiError(result) {
         const err = (result && result.error) ? result.error : 'AI enhancement failed.';
+        console.log('[viewer] AI error result:', JSON.stringify(result || {}));
         if (result && result.requiresInstall) {
-          if (aiStatusLine) {
-            aiStatusLine.classList.add('warn');
-            aiStatusLine.innerHTML = err + ' <a id="enhance-ai-status-install">Open Settings →</a>';
-            const installLink = document.getElementById('enhance-ai-status-install');
-            // v2.0.15 (Terry 2026-06-06 round 2) — diagnostic logs to
-            // find why Open Settings wasn't reaching main. Renderer
-            // console output is captured into main.log so the trace
-            // shows up regardless of whether DevTools is open.
-            console.log('[viewer] open-settings link: el=' + (!!installLink) + ' pdr=' + (typeof window.pdr) + ' openSettings=' + (typeof (window.pdr && window.pdr.openSettings)));
-            if (installLink && window.pdr && typeof window.pdr.openSettings === 'function') {
-              installLink.onclick = function (e) {
-                console.log('[viewer] open-settings clicked — invoking IPC');
-                e.preventDefault();
-                e.stopPropagation();
+          showAiResult({
+            title: 'Model not installed',
+            body: err + ' Open Settings → AI to download the required model.',
+            okLabel: 'Close',
+            secondary: {
+              label: 'Open Settings',
+              onClick: function () {
                 try {
-                  const r = window.pdr.openSettings('ai');
-                  console.log('[viewer] openSettings returned (sync):', r);
+                  const r = window.pdr && window.pdr.openSettings && window.pdr.openSettings('ai');
                   if (r && typeof r.then === 'function') {
-                    r.then(function (res) { console.log('[viewer] openSettings resolved:', JSON.stringify(res)); })
-                     .catch(function (err) { console.warn('[viewer] openSettings rejected:', err && (err.message || err)); });
+                    r.catch(function (err) { console.warn('[viewer] openSettings rejected:', err && (err.message || err)); });
                   }
-                } catch (err) {
-                  console.warn('[viewer] openSettings threw:', err && (err.message || err));
+                } catch (e) {
+                  console.warn('[viewer] openSettings threw:', e && (e.message || e));
                 }
-              };
-            } else if (installLink) {
-              installLink.onclick = function () {
-                console.warn('[viewer] open-settings clicked but window.pdr.openSettings missing — preload not loaded?');
-              };
-            }
-          }
+              },
+            },
+          });
         } else if (result && result.requiresAnalysis) {
-          if (aiStatusLine) {
-            aiStatusLine.classList.add('warn');
-            aiStatusLine.textContent = 'Run Face recognition on this photo first (PM → Analyze).';
-          }
+          showAiResult({
+            title: 'No faces detected on this photo',
+            body: 'AI face restoration needs face boxes from Face Recognition first. Open People Manager → Faces, run Analyze on this photo, then come back and try again.',
+            okLabel: 'Close',
+          });
         } else {
-          if (aiStatusLine) {
-            aiStatusLine.classList.add('warn');
-            aiStatusLine.textContent = err;
-          }
+          showAiResult({
+            title: 'AI enhancement failed',
+            body: err,
+            okLabel: 'Close',
+          });
+        }
+        // Also keep the inline status line in sync (for users who
+        // dismiss the modal and look back later).
+        if (aiStatusLine) {
+          aiStatusLine.classList.add('warn');
+          aiStatusLine.textContent = err;
         }
       }
 

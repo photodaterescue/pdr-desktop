@@ -7269,13 +7269,16 @@ async function ensureEnhanceWorker(): Promise<import('worker_threads').Worker> {
 
 ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fidelity?: number }) => {
   try {
+    console.log('[viewer:enhanceFaces] start', { filePath: req?.filePath, fidelity: req?.fidelity });
     if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      console.warn('[viewer:enhanceFaces] file missing');
       return { success: false, error: 'Source file not found.' };
     }
 
     // Verify CodeFormer model is installed.
     const installer = await import('./ai-model-installer.js');
     if (installer.getInstallState('codeformer') !== 'installed') {
+      console.warn('[viewer:enhanceFaces] CodeFormer not installed');
       return { success: false, error: 'CodeFormer is not installed.', requiresInstall: 'codeformer' };
     }
 
@@ -7286,6 +7289,7 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
       .get(req.filePath) as { id: number } | undefined;
 
     if (!fileRow) {
+      console.warn('[viewer:enhanceFaces] file not in index');
       return { success: false, error: 'This photo is not in the library index. Add it via a Fix run first.' };
     }
 
@@ -7294,6 +7298,7 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
       .all(fileRow.id) as Array<{ x: number; y: number; w: number; h: number }>;
 
     if (!faceRows || faceRows.length === 0) {
+      console.warn('[viewer:enhanceFaces] no cached face_detections for file_id', fileRow.id);
       return {
         success: false,
         error: 'No faces detected on this photo yet.',
@@ -7301,6 +7306,8 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
         fileId: fileRow.id,
       };
     }
+
+    console.log('[viewer:enhanceFaces] proceeding with', faceRows.length, 'faces');
 
     // Output to a temp file. Caller (viewer) decides whether to save
     // it permanently via viewer:saveEnhanced with sourceOverride set
@@ -7341,11 +7348,14 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
 
 ipcMain.handle('viewer:enhanceWholeImage', async (event, req: { filePath: string; tileSize?: number }) => {
   try {
+    console.log('[viewer:enhanceWholeImage] start', { filePath: req?.filePath, tileSize: req?.tileSize });
     if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      console.warn('[viewer:enhanceWholeImage] file missing');
       return { success: false, error: 'Source file not found.' };
     }
     const installer = await import('./ai-model-installer.js');
     if (installer.getInstallState('realesrgan') !== 'installed') {
+      console.warn('[viewer:enhanceWholeImage] Real-ESRGAN not installed');
       return { success: false, error: 'Real-ESRGAN is not installed.', requiresInstall: 'realesrgan' };
     }
 
@@ -7396,6 +7406,25 @@ ipcMain.handle('ai-models:list', async () => {
   return { success: true, models: out };
 });
 
+// v2.1 (Terry 2026-06-07) — broadcast to ALL windows, not just
+// mainWindow. The viewer is a separate BrowserWindow; sending only
+// to mainWindow meant model installs from Settings never reached
+// the viewer, so the AI buttons stayed greyed out until the user
+// closed + reopened the viewer. Same bug class as the earlier
+// library:filesAdded fix.
+function broadcastAiModelStateChanged(payload: {
+  key: 'codeformer' | 'realesrgan';
+  state: 'downloading' | 'installed' | 'not-installed';
+  progress: { receivedBytes: number; totalBytes: number; percent: number } | null;
+  error?: string;
+}) {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      try { win.webContents.send('ai-models:stateChanged', payload); } catch { /* non-fatal */ }
+    }
+  }
+}
+
 ipcMain.handle('ai-models:install', async (_event, key: 'codeformer' | 'realesrgan') => {
   try {
     const installer = await import('./ai-model-installer.js');
@@ -7404,39 +7433,27 @@ ipcMain.handle('ai-models:install', async (_event, key: 'codeformer' | 'realesrg
     }
     // Broadcast start immediately so the card flips to "Downloading 0%"
     // without waiting for the first progress tick.
-    try {
-      mainWindow?.webContents.send('ai-models:stateChanged', {
-        key, state: 'downloading', progress: { receivedBytes: 0, totalBytes: 0, percent: 0 },
-      });
-    } catch { /* non-fatal */ }
+    broadcastAiModelStateChanged({
+      key, state: 'downloading', progress: { receivedBytes: 0, totalBytes: 0, percent: 0 },
+    });
 
     await installer.installModel(key, {
       onProgress: (info) => {
-        try {
-          mainWindow?.webContents.send('ai-models:stateChanged', {
-            key, state: 'downloading', progress: info,
-          });
-        } catch { /* non-fatal */ }
+        broadcastAiModelStateChanged({ key, state: 'downloading', progress: info });
       },
     });
 
     // Final broadcast — flip to 'installed'. UI uses this to enable
     // the corresponding Viewer Enhance AI buttons.
-    try {
-      mainWindow?.webContents.send('ai-models:stateChanged', {
-        key, state: 'installed', progress: null,
-      });
-    } catch { /* non-fatal */ }
+    broadcastAiModelStateChanged({ key, state: 'installed', progress: null });
 
     return { success: true };
   } catch (err) {
     // Broadcast back to not-installed so the card resets out of
     // the downloading state into something the user can retry.
-    try {
-      mainWindow?.webContents.send('ai-models:stateChanged', {
-        key, state: 'not-installed', progress: null, error: (err as Error).message,
-      });
-    } catch { /* non-fatal */ }
+    broadcastAiModelStateChanged({
+      key, state: 'not-installed', progress: null, error: (err as Error).message,
+    });
     return { success: false, error: (err as Error).message };
   }
 });
@@ -7451,11 +7468,7 @@ ipcMain.handle('ai-models:uninstall', async (_event, key: 'codeformer' | 'reales
   try {
     const { uninstallModel } = await import('./ai-model-installer.js');
     uninstallModel(key);
-    try {
-      mainWindow?.webContents.send('ai-models:stateChanged', {
-        key, state: 'not-installed', progress: null,
-      });
-    } catch { /* non-fatal */ }
+    broadcastAiModelStateChanged({ key, state: 'not-installed', progress: null });
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
