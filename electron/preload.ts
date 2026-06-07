@@ -624,6 +624,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'codeformer' | 'realesrgan';
       }>,
+    /** v2.1 (Terry 2026-06-07) — cancel any in-flight enhance run by
+     *  terminating the underlying worker. */
+    cancelEnhance: () =>
+      ipcRenderer.invoke('viewer:cancelEnhance') as Promise<{ success: boolean; error?: string }>,
     onEnhanceProgress: (handler: (info: { kind: 'faces' | 'upscale'; phase: string; percent: number }) => void) => {
       const listener = (_e: any, info: any) => handler(info);
       ipcRenderer.on('viewer:enhanceProgress', listener);

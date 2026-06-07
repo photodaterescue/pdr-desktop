@@ -7267,6 +7267,32 @@ async function ensureEnhanceWorker(): Promise<import('worker_threads').Worker> {
   return enhanceWorker;
 }
 
+// v2.1 (Terry 2026-06-07) — cancel any in-flight enhance job by
+// terminating the worker outright. Real-ESRGAN tile loops + the
+// CodeFormer ONNX session run synchronously inside the worker;
+// there's no cooperative cancel signal we can send mid-pass.
+// terminate() is the only way to stop fast. The worker will
+// auto-respawn on the next enhance call (ensureEnhanceWorker).
+// Pending requests get rejected so the renderer's await resolves
+// quickly — though the renderer also short-circuits on its own
+// aiCancelled flag.
+ipcMain.handle('viewer:cancelEnhance', async () => {
+  console.log('[viewer:cancelEnhance] terminating enhance-worker on user cancel');
+  try {
+    for (const [, pending] of enhancePending) {
+      try { pending.reject(new Error('User cancelled enhancement')); } catch { /* non-fatal */ }
+    }
+    enhancePending.clear();
+    if (enhanceWorker) {
+      try { await enhanceWorker.terminate(); } catch { /* non-fatal */ }
+      enhanceWorker = null;
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fidelity?: number }) => {
   try {
     console.log('[viewer:enhanceFaces] start', { filePath: req?.filePath, fidelity: req?.fidelity });

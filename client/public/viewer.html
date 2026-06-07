@@ -157,6 +157,13 @@
       visibility: visible;
       transition-delay: 120ms; /* matches IconTooltip delayDuration */
     }
+    /* v2.1 (Terry 2026-06-07) — elements opted-in to the JS-positioned
+       tooltip (which escapes overflow:hidden parents) must suppress
+       the CSS ::after, otherwise the user sees TWO tooltips stacked. */
+    [data-pdr-tooltip-mode="fixed"]::after {
+      content: none !important;
+      display: none !important;
+    }
     /* Top-toolbar tooltips that would overflow off the right edge
        should anchor to the right side of the element instead of
        centering — keeps the tooltip on-screen. */
@@ -1607,6 +1614,13 @@
         <div class="enhance-ai-modal-progress-bar" id="enhance-ai-modal-progress-bar"></div>
       </div>
       <div class="enhance-ai-modal-phase" id="enhance-ai-modal-phase">Starting…</div>
+      <!-- v2.1 (Terry 2026-06-07) — Cancel button. Upscale runs for
+           several minutes per photo and historically had no way to
+           abort. Click aborts the underlying enhance-worker via
+           viewer:cancelEnhance IPC. -->
+      <div style="margin-top: 14px; display: flex; justify-content: center;">
+        <button id="enhance-ai-modal-cancel" type="button" style="background: transparent; color: #d1d5db; border: 1px solid rgba(255,255,255,0.18); padding: 6px 18px; border-radius: 6px; font-size: 12px; cursor: pointer; font-weight: 500;">Cancel</button>
+      </div>
     </div>
   </div>
 
@@ -4285,6 +4299,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (aiModalBar) aiModalBar.style.width = '0%';
         if (aiModalPhase) aiModalPhase.textContent = 'Starting…';
         if (aiModal) aiModal.style.display = 'flex';
+        aiCancelled = false;
       }
       function setAiProgress(phase, percent) {
         if (aiModalBar) aiModalBar.style.width = Math.max(0, Math.min(100, percent)) + '%';
@@ -4292,6 +4307,25 @@ function zoomTo(newZoom, centreX, centreY) {
       }
       function closeAiProgress() {
         if (aiModal) aiModal.style.display = 'none';
+      }
+      // v2.1 (Terry 2026-06-07) — cancel handler. Sets the
+      // aiCancelled flag (read by runAiAction's result-handler so
+      // it skips applyAiResult / handleAiError on the response that
+      // comes back AFTER the user cancelled) and tells main to
+      // terminate the worker.
+      let aiCancelled = false;
+      const aiModalCancelBtn = document.getElementById('enhance-ai-modal-cancel');
+      if (aiModalCancelBtn) {
+        aiModalCancelBtn.addEventListener('click', function () {
+          aiCancelled = true;
+          if (aiModalPhase) aiModalPhase.textContent = 'Cancelling…';
+          try {
+            if (window.pdr && window.pdr.viewer && window.pdr.viewer.cancelEnhance) {
+              window.pdr.viewer.cancelEnhance().catch(function () {});
+            }
+          } catch (_) {}
+          closeAiProgress();
+        });
       }
 
       let unsubAiProgress = null;
@@ -4327,6 +4361,7 @@ function zoomTo(newZoom, centreX, centreY) {
             console.log('[viewer] AI Faces start:', filePath);
             result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
             console.log('[viewer] AI Faces result:', JSON.stringify(result || {}));
+            if (aiCancelled) { console.log('[viewer] AI Faces — user cancelled, ignoring late result'); return; }
             if (result && result.success && result.outputPath) {
               applyAiResult(result.outputPath, filePath, 'codeformer', { facesProcessed: result.facesProcessed });
               showCompareButton();
@@ -4337,6 +4372,7 @@ function zoomTo(newZoom, centreX, centreY) {
             console.log('[viewer] AI Upscale start:', filePath);
             result = await pdrViewer.enhanceWholeImage({ filePath: filePath });
             console.log('[viewer] AI Upscale result:', JSON.stringify(result || {}));
+            if (aiCancelled) { console.log('[viewer] AI Upscale — user cancelled, ignoring late result'); return; }
             if (result && result.success && result.outputPath) {
               applyAiResult(result.outputPath, filePath, 'realesrgan');
               showCompareButton();
@@ -4348,11 +4384,13 @@ function zoomTo(newZoom, centreX, centreY) {
             // Faces first, then upscale the result.
             result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
             console.log('[viewer] AI Both — Faces result:', JSON.stringify(result || {}));
+            if (aiCancelled) { console.log('[viewer] AI Both — cancelled after Faces'); return; }
             if (!result || !result.success) { handleAiError(result); return; }
             const facesPath = result.outputPath;
             const facesProcessed = result.facesProcessed;
             result = await pdrViewer.enhanceWholeImage({ filePath: facesPath });
             console.log('[viewer] AI Both — Upscale result:', JSON.stringify(result || {}));
+            if (aiCancelled) { console.log('[viewer] AI Both — cancelled after Upscale'); return; }
             if (result && result.success && result.outputPath) {
               applyAiResult(result.outputPath, filePath, 'codeformer+realesrgan', { facesProcessed: facesProcessed });
               showCompareButton();
