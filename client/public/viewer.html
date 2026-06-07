@@ -1091,6 +1091,15 @@
       background: rgba(255, 255, 255, 0.08);
       color: #fff;
     }
+    /* v2.1 (Terry 2026-06-07) — pin button hover + pressed states.
+       Matches the Workspace sidebar pin: subtle hover, lavender
+       background + ring when pinned to make the state obvious. */
+    #enhance-pin:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+    #enhance-pin[aria-pressed="true"] {
+      background: rgba(169, 156, 255, 0.18);
+      color: #a99cff;
+      box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.45) inset;
+    }
     .enhance-body {
       flex: 1;
       overflow-y: auto;
@@ -1519,7 +1528,17 @@
   <aside id="enhance-panel" class="enhance-panel" aria-hidden="true">
     <div class="enhance-header">
       <span class="enhance-title">Enhance</span>
-      <button class="enhance-close" id="enhance-close" data-pdr-tooltip="Close (E)">×</button>
+      <div style="display: flex; align-items: center; gap: 6px;">
+        <!-- v2.1 (Terry 2026-06-07) — Pin button. Without pin, the
+             panel auto-hides when the mouse leaves it (hover-only
+             mode). Click pin to keep it open permanently. Mirrors
+             the Workspace sidebar pin pattern. -->
+        <button class="enhance-pin" id="enhance-pin" type="button" data-pdr-tooltip="Pin sidebar open" aria-pressed="false" style="width: 24px; height: 24px; border: none; background: transparent; color: #aaa; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 120ms, color 120ms;">
+          <!-- lucide-react Pin icon, inline SVG to avoid React dep in viewer.html -->
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+        </button>
+        <button class="enhance-close" id="enhance-close" data-pdr-tooltip="Close (E)">×</button>
+      </div>
     </div>
     <div class="enhance-body">
       <div class="enhance-control">
@@ -4059,17 +4078,102 @@ function zoomTo(newZoom, centreX, centreY) {
         panel.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('enhance-panel-open');
       }
-      openBtn.addEventListener('click', function () {
-        if (panel.classList.contains('open')) closePanel(); else openPanel();
-      });
-      closeBtn.addEventListener('click', closePanel);
+      // v2.1 (Terry 2026-06-07) — hover-to-show + pin behaviour.
+      // Pin state persists via settings.viewerEnhancePinned. When
+      // pinned, the panel stays open regardless of mouse position;
+      // when unpinned, it's hover-only (open on Enhance-button or
+      // panel hover; close after a short delay when mouse leaves
+      // both).
+      let isPinned = false;
+      let hoverCloseTimer = null;
+      const pinBtn = document.getElementById('enhance-pin');
 
-      // E shortcut toggles the panel.
+      function setPinned(on) {
+        isPinned = !!on;
+        if (pinBtn) {
+          pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
+          pinBtn.setAttribute('data-pdr-tooltip', isPinned ? 'Unpin (auto-hide on mouse leave)' : 'Pin sidebar open');
+        }
+        try { window.pdr.settings.set('viewerEnhancePinned', isPinned); } catch (_) {}
+        if (isPinned) openPanel();
+      }
+      // Restore the pin state on load — default unpinned (matches
+      // the "hover-only" UX Terry asked for).
+      try {
+        if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+          window.pdr.settings.get().then(function (s) {
+            const pinned = !!(s && s.viewerEnhancePinned);
+            if (pinned) { setPinned(true); } else { setPinned(false); }
+          }).catch(function () {});
+        }
+      } catch (_) {}
+
+      function cancelHoverClose() {
+        if (hoverCloseTimer) { clearTimeout(hoverCloseTimer); hoverCloseTimer = null; }
+      }
+      function scheduleHoverClose() {
+        cancelHoverClose();
+        if (isPinned) return; // pinned — never auto-close
+        // v2.1 — also keep open while an AI result is active so the
+        // Compare button stays reachable without re-hovering.
+        if (typeof aiResultPath !== 'undefined' && aiResultPath) return;
+        hoverCloseTimer = setTimeout(function () {
+          closePanel();
+          hoverCloseTimer = null;
+        }, 350); // small grace period so micro-mouse-jitters don't dismiss
+      }
+
+      // Hover the Enhance toolbar button → open transiently.
+      openBtn.addEventListener('mouseenter', function () {
+        cancelHoverClose();
+        openPanel();
+      });
+      openBtn.addEventListener('mouseleave', function () {
+        scheduleHoverClose();
+      });
+      // While hovering anywhere on the panel, keep it open.
+      panel.addEventListener('mouseenter', cancelHoverClose);
+      panel.addEventListener('mouseleave', scheduleHoverClose);
+
+      // Click Enhance button → toggle pinned state (open + pin, or
+      // unpin + close). Different from hover: this is the
+      // "definitely keep it" click.
+      openBtn.addEventListener('click', function () {
+        if (isPinned) {
+          setPinned(false);
+          closePanel();
+        } else {
+          setPinned(true);
+          openPanel();
+        }
+      });
+      // Pin button toggles JUST the pin state — doesn't close.
+      if (pinBtn) {
+        pinBtn.addEventListener('click', function (e) {
+          e.stopPropagation();
+          setPinned(!isPinned);
+          if (!isPinned) {
+            // Just unpinned — schedule the hover-close. If the mouse
+            // is still over the panel this gets cancelled by the
+            // mouseenter handler.
+            scheduleHoverClose();
+          }
+        });
+      }
+      // X close button always closes + unpins.
+      closeBtn.addEventListener('click', function () {
+        cancelHoverClose();
+        if (isPinned) setPinned(false);
+        closePanel();
+      });
+
+      // E shortcut toggles pinned-open (matches the click behaviour).
       window.addEventListener('keydown', function (e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
-          if (panel.classList.contains('open')) closePanel(); else openPanel();
+          if (isPinned) { setPinned(false); closePanel(); }
+          else { setPinned(true); openPanel(); }
         }
       });
 

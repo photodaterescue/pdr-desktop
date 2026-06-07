@@ -127,8 +127,15 @@ async function getCodeFormerSession(): Promise<ort.InferenceSession> {
   codeformerSession = await ort.InferenceSession.create(config.codeformerPath, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
+    // v2.1 (Terry 2026-06-07) — cap ONNX worker threads to leave
+    // the OS + other apps breathing room. Default behaviour
+    // saturates all cores per inference, which crushed Terry's
+    // PC during Upscale and killed Chrome. Half-cores keeps PDR
+    // responsive without dramatically extending run time.
+    intraOpNumThreads: cpuThreadCap(),
+    interOpNumThreads: 1,
   });
-  log(`CodeFormer loaded in ${Date.now() - t0}ms; inputs=${codeformerSession.inputNames.join(',')} outputs=${codeformerSession.outputNames.join(',')}`);
+  log(`CodeFormer loaded in ${Date.now() - t0}ms; inputs=${codeformerSession.inputNames.join(',')} outputs=${codeformerSession.outputNames.join(',')}; threads=${cpuThreadCap()}`);
   return codeformerSession;
 }
 
@@ -142,9 +149,21 @@ async function getRealesrganSession(): Promise<ort.InferenceSession> {
   realesrganSession = await ort.InferenceSession.create(config.realesrganPath, {
     executionProviders: ['cpu'],
     graphOptimizationLevel: 'all',
+    intraOpNumThreads: cpuThreadCap(),
+    interOpNumThreads: 1,
   });
-  log(`Real-ESRGAN loaded in ${Date.now() - t0}ms; inputs=${realesrganSession.inputNames.join(',')} outputs=${realesrganSession.outputNames.join(',')}`);
+  log(`Real-ESRGAN loaded in ${Date.now() - t0}ms; inputs=${realesrganSession.inputNames.join(',')} outputs=${realesrganSession.outputNames.join(',')}; threads=${cpuThreadCap()}`);
   return realesrganSession;
+}
+
+// v2.1 — cap thread count to half the available cores (floor),
+// minimum 2. On Terry's 8-core box this becomes 4; on a 16-core
+// it'd be 8. Trade-off: each inference takes ~1.6x as long but
+// the OS keeps half its cores available for Chrome / Explorer /
+// PDR's main thread so the desktop doesn't lock up.
+function cpuThreadCap(): number {
+  const cores = require('os').cpus().length;
+  return Math.max(2, Math.floor(cores / 2));
 }
 
 // ─── Image helpers (sharp-based) ─────────────────────────────────────────────
@@ -483,6 +502,13 @@ async function enhanceUpscale(msg: EnhanceUpscaleMessage): Promise<void> {
         phase: `Upscaling tile ${tilesDone} of ${totalTiles}…`,
         percent: 15 + Math.round((tilesDone / totalTiles) * 75),
       });
+      // v2.1 (Terry 2026-06-07) — yield to the worker event loop
+      // between tiles. Without this, the tight tile loop monopolises
+      // the worker thread and the cancel-via-terminate signal from
+      // main has to wait for the next ONNX inference to finish.
+      // setImmediate hands control back to libuv briefly, which is
+      // enough for terminate() to take effect promptly.
+      await new Promise<void>((r) => setImmediate(r));
     }
   }
 
