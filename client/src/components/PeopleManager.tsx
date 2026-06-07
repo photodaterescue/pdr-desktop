@@ -1143,6 +1143,16 @@ export default function PeopleManager() {
   const unnamedClusters = useMemo(() => {
     const arr = [...unnamedClustersRaw];
     arr.sort((a, b) => {
+      // v2.1 round 12 (Terry 2026-06-07) — Manual marks ALWAYS at
+      // top, regardless of any drag-reorder rank the user has set
+      // on other clusters. Previous code let clusterOrder ranks
+      // (0..N) win over POSITIVE_INFINITY for unranked, so any
+      // previously-dragged auto cluster outranked an unranked
+      // manual mark. Terry was hunting through 1200+ rows
+      // because his drag history pushed manuals into the middle.
+      const aManual = (a as any).is_manual === 1 || (a as any).is_manual === true;
+      const bManual = (b as any).is_manual === 1 || (b as any).is_manual === true;
+      if (aManual !== bManual) return aManual ? -1 : 1;
       const oa = clusterOrder[clusterKey(a)] ?? Number.POSITIVE_INFINITY;
       const ob = clusterOrder[clusterKey(b)] ?? Number.POSITIVE_INFINITY;
       if (oa !== ob) return oa - ob;
@@ -1150,6 +1160,13 @@ export default function PeopleManager() {
     });
     return arr;
   }, [unnamedClustersRaw, clusterOrder]);
+
+  // v2.1 round 12 — split for the section-header insertion below.
+  // First N rows are manuals (by the sort above), rest auto.
+  const manualCountInUnnamed = useMemo(
+    () => unnamedClusters.filter((c) => (c as any).is_manual === 1 || (c as any).is_manual === true).length,
+    [unnamedClusters],
+  );
 
   // Flip pmRendering off once the browser is idle — meaning all
   // initial paint/layout work for the rows has completed. With
@@ -2251,6 +2268,22 @@ export default function PeopleManager() {
                   </div>
                 ) : (
                   <>
+                    {/* v2.1 round 12 (Terry 2026-06-07) — Manual-marks
+                        banner. With 1233 unnamed rows, finding the
+                        4 manual marks you just drew is impossible
+                        without a visual cue. Pinned at top, gold
+                        ribbon matching the gold border on the
+                        manual face boxes in PDRV. Only renders when
+                        manuals exist. */}
+                    {manualCountInUnnamed > 0 && (
+                      <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40 mb-3">
+                        <span className="text-amber-500 dark:text-amber-400 text-base leading-none">★</span>
+                        <p className="text-sm text-foreground">
+                          <strong>{manualCountInUnnamed} manually marked face{manualCountInUnnamed === 1 ? '' : 's'}</strong>{' '}
+                          <span className="text-muted-foreground">pinned at the top of this list — name them next.</span>
+                        </p>
+                      </div>
+                    )}
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
                       <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
                       <p className="text-sm text-muted-foreground leading-relaxed">

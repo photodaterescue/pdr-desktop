@@ -2535,6 +2535,11 @@ export interface PersonCluster {
    *  cards. Null when the user hasn't provided one — UI falls back
    *  to the short name. */
   person_full_name: string | null;
+  /** v2.1 (Terry 2026-06-07) — 1 if ANY face in the cluster was
+   *  manually marked (embedding IS NULL); 0 otherwise. Set by the
+   *  unnamed-clusters SQL in getPersonClusters. Used by PM to pin
+   *  manual marks to the top of the Unnamed tab. */
+  is_manual?: 0 | 1;
   face_count: number;
   photo_count: number;
   representative_face_id: number;

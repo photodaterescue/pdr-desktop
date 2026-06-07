@@ -4950,6 +4950,8 @@ function zoomTo(newZoom, centreX, centreY) {
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
         if (!filePath || !window.pdr || !window.pdr.viewer || !window.pdr.viewer.getFaceBoxes) {
           faceBoxesCache = [];
+          lastFaceBoxesRect = null;
+          lastFaceBoxesCount = 0;
           return;
         }
         try {
@@ -4959,15 +4961,44 @@ function zoomTo(newZoom, centreX, centreY) {
           console.warn('[viewer] getFaceBoxes failed:', e && (e.message || e));
           faceBoxesCache = [];
         }
+        // Force a render on next rAF tick (content changed, even if rect is same).
+        lastFaceBoxesRect = null;
+        lastFaceBoxesCount = -1;
       }
 
+      // v2.1 round 12 (Terry 2026-06-07) — cache the last-rendered
+      // rect so the rAF loop only rebuilds layer.innerHTML when the
+      // image actually moved/resized. Previous code wiped + rebuilt
+      // 60 times a second, which raced the click event: mousedown
+      // landed on one DOM node, the rAF tick replaced it, mouseup
+      // landed on a different node, and the browser never fired
+      // 'click'. That's why × delete and Unknown-person-naming
+      // both did nothing. Now innerHTML is only touched when the
+      // image rect actually changes — at rest it's stable, clicks
+      // register normally.
+      let lastFaceBoxesRect = null;
+      let lastFaceBoxesCount = 0;
+      function rectsEqual(a, b) {
+        if (!a || !b) return false;
+        return Math.abs(a.left - b.left) < 0.5 && Math.abs(a.top - b.top) < 0.5 && Math.abs(a.width - b.width) < 0.5 && Math.abs(a.height - b.height) < 0.5;
+      }
       function renderFaceBoxes() {
         if (!faceBoxesEnabled || !mediaEl || mediaEl.tagName !== 'IMG' || faceBoxesCache.length === 0) {
           clearFaceBoxesLayer();
+          lastFaceBoxesRect = null;
+          lastFaceBoxesCount = 0;
           return;
         }
         const layer = ensureFaceBoxesLayer();
         const rect = mediaEl.getBoundingClientRect();
+        // Skip rebuild if the rect AND face count are unchanged.
+        // Face-count guard catches refetches after name / delete
+        // even when the image didn't move.
+        if (rectsEqual(rect, lastFaceBoxesRect) && faceBoxesCache.length === lastFaceBoxesCount) {
+          return;
+        }
+        lastFaceBoxesRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
+        lastFaceBoxesCount = faceBoxesCache.length;
         // v2.1 round 11 — boxes are now INTERACTIVE: label clickable
         // for naming (unnamed only), small × for delete (unnamed
         // only). Named faces are read-only here — the user has to
