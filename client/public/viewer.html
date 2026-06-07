@@ -416,7 +416,7 @@
     .pdrv-vol-tick {
       width: 1px;
       height: 7px;
-      background: rgba(255, 255, 255, 0.55);
+      background: rgba(169, 156, 255, 0.75); /* lavender, matches PDR primary */
     }
     .pdrv-vol-tick.edge { background: transparent; }
     /* v2.0.15 — active state for toggle-style toolbar buttons (video
@@ -1663,11 +1663,12 @@
         else { try { video.pause(); } catch (_) {} }
       });
 
-      // Seek: click anywhere on the bar to jump. v2.1 — suppressed
-      // while trim mode is active so dragging a handle doesn't also
-      // jump the playhead.
+      // Seek: click anywhere on the bar to jump. v2.1 (Terry
+      // 2026-06-07) — was suppressed in trim mode but that meant
+      // the user couldn't scrub to verify their in/out points; now
+      // always works. The handles add click+mousedown stopPropagation
+      // so clicking ON a handle doesn't accidentally seek too.
       seekBar.addEventListener('click', (e) => {
-        if (trimMode) return;
         const r = seekBar.getBoundingClientRect();
         const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
         try { video.currentTime = pct * (video.duration || 0); } catch (_) {}
@@ -1882,24 +1883,38 @@
       // mousemove on the document until mouseup. Position constrained
       // so in < out with a 0.5s minimum gap.
       function makeDraggable(handle, which) {
+        // Stop click bubbling so the seek bar's click-to-seek
+        // doesn't fire when the user just grabs (or just clicks)
+        // a handle.
+        handle.addEventListener('click', (e) => e.stopPropagation());
         handle.addEventListener('mousedown', (e) => {
           if (!trimMode) return;
           e.preventDefault();
           e.stopPropagation();
+          // Pause playback while dragging so the user can scrub to
+          // an exact frame without the audio bouncing around.
+          const wasPlaying = !video.paused && !video.ended;
+          try { video.pause(); } catch (_) {}
           const onMove = (mv) => {
             const r = seekBar.getBoundingClientRect();
             const pct = Math.max(0, Math.min(1, (mv.clientX - r.left) / r.width));
             const t = pct * (video.duration || 0);
             if (which === 'in') {
               trimIn = Math.min(t, Math.max(0, trimOut - 0.5));
+              try { video.currentTime = trimIn; } catch (_) {}
             } else {
               trimOut = Math.max(t, Math.min(video.duration || 0, trimIn + 0.5));
+              try { video.currentTime = trimOut; } catch (_) {}
             }
             refreshTrimUI();
           };
           const onUp = () => {
             document.removeEventListener('mousemove', onMove);
             document.removeEventListener('mouseup', onUp);
+            // Don't auto-resume — leave the video paused at the
+            // handle's frame so the user can examine it. They can
+            // click play (or the seek bar) to continue verifying.
+            void wasPlaying; // intentionally unused
           };
           document.addEventListener('mousemove', onMove);
           document.addEventListener('mouseup', onUp);
