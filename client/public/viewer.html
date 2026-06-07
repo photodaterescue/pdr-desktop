@@ -3171,7 +3171,14 @@
             div.title = getFilename(fp);
             div.dataset.idx = String(i);
             div.dataset.fp = fp;
-            div.addEventListener('click', () => loadMedia(i));
+            // v2.1 — read data-idx at click time, not at bind time.
+            // This lets us splice files[] (eg live trim-clip add) and
+            // simply update data-idx attributes on shifted tiles
+            // without re-binding every handler.
+            div.addEventListener('click', (e) => {
+              const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              loadMedia(idx);
+            });
             filmstripEl.appendChild(div);
             lazyObserver.observe(div);
           } else {
@@ -3185,7 +3192,10 @@
             thumb.title = getFilename(fp);
             thumb.dataset.idx = String(i);
             thumb.dataset.fp = fp;
-            thumb.addEventListener('click', () => loadMedia(i));
+            thumb.addEventListener('click', (e) => {
+              const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              loadMedia(idx);
+            });
             filmstripEl.appendChild(thumb);
             lazyObserver.observe(thumb);
           }
@@ -3221,52 +3231,96 @@
           window.pdr.library.onFilesAdded((info) => {
             if (!info || !info.newFilePath) return;
             if (files.indexOf(info.newFilePath) !== -1) return; // already there
-            files.push(info.newFilePath);
-            const i = files.length - 1;
             const fp = info.newFilePath;
+
+            // v2.1 (Terry 2026-06-07) — insert IN-ORDER, not at the end.
+            // The user-facing surfaces (Memories Dates / Albums / S&D)
+            // sort the trim clip RIGHT NEXT TO its parent (because the
+            // clip inherits the parent's derived_date). The strip
+            // should match that: insert right after the parent.
+            // Falls back to append-at-end if we can't locate the
+            // source (eg manual reveal from File Explorer).
+            const srcIdx = info.sourcePath ? files.indexOf(info.sourcePath) : -1;
+            const insertAt = srcIdx >= 0 ? srcIdx + 1 : files.length;
+            files.splice(insertAt, 0, fp);
+
+            // Bump currentIndex if it was at or past the insertion
+            // point — the file the user is currently viewing has
+            // moved one slot right.
+            if (typeof currentIndex === 'number' && currentIndex >= insertAt) {
+              currentIndex += 1;
+            }
+
             let newTile;
             if (isVideoPath(fp)) {
               newTile = document.createElement('div');
               newTile.className = 'video-thumb';
-              newTile.title = getFilename(fp);
-              newTile.dataset.idx = String(i);
-              newTile.dataset.fp = fp;
-              newTile.addEventListener('click', () => loadMedia(i));
-              filmstripEl.appendChild(newTile);
-              lazyObserver.observe(newTile);
             } else {
               newTile = document.createElement('img');
               newTile.className = 'thumb';
               newTile.src = TRANSPARENT_PIXEL;
-              newTile.title = getFilename(fp);
-              newTile.dataset.idx = String(i);
-              newTile.dataset.fp = fp;
-              newTile.addEventListener('click', () => loadMedia(i));
-              filmstripEl.appendChild(newTile);
-              lazyObserver.observe(newTile);
             }
-            console.log('[viewer] live-added file to strip:', info.newFilePath);
-            // v2.1 (Terry 2026-06-07) — auto-scroll the strip to the
-            // newly-added tile + briefly flash it so the user sees
-            // their just-saved clip. Otherwise with a 500-item strip
-            // the new tile lands off the right edge unnoticed.
-            // setTimeout gives the layout a tick to settle so
-            // scrollIntoView reads the correct width.
-            setTimeout(() => {
-              try {
-                newTile.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
-              } catch (_) {}
-              // Brief lavender pulse — single-shot animation via
-              // inline transient style. Reverts after 1.8s.
-              try {
-                newTile.style.outline = '2px solid #A99CFF';
-                newTile.style.outlineOffset = '2px';
-                newTile.style.transition = 'outline-color 0.5s ease';
-                setTimeout(() => {
-                  newTile.style.outlineColor = 'transparent';
-                }, 1300);
-              } catch (_) {}
-            }, 80);
+            newTile.title = getFilename(fp);
+            newTile.dataset.idx = String(insertAt);
+            newTile.dataset.fp = fp;
+            newTile.addEventListener('click', (e) => {
+              const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              loadMedia(idx);
+            });
+
+            // Locate the tile that currently sits at `insertAt` (the
+            // first tile that needs to shift right). insertBefore it
+            // — or append if none exists yet (rare: viewer opened
+            // mid-build).
+            const allTiles = filmstripEl.querySelectorAll('[data-idx]');
+            let refTile = null;
+            for (const t of allTiles) {
+              if (parseInt(t.dataset.idx || '0', 10) === insertAt) { refTile = t; break; }
+            }
+            if (refTile) {
+              filmstripEl.insertBefore(newTile, refTile);
+            } else {
+              filmstripEl.appendChild(newTile);
+            }
+            lazyObserver.observe(newTile);
+
+            // Bump data-idx on every tile after the insertion point.
+            // Walk the live NodeList AFTER the DOM mutation so we
+            // pick up the new tile too — start the renumber from
+            // insertAt + 1 onwards (everything to the right of the
+            // new tile shifts up by one).
+            const allTiles2 = filmstripEl.querySelectorAll('[data-idx]');
+            // The new tile is now in the DOM at position insertAt;
+            // every tile after it should be renumbered to its DOM
+            // position. We renumber by walking the entire list and
+            // setting data-idx to its position — cheap and avoids
+            // off-by-one.
+            for (let k = 0; k < allTiles2.length; k++) {
+              if (allTiles2[k].dataset.idx !== String(k)) {
+                allTiles2[k].dataset.idx = String(k);
+              }
+            }
+
+            // Refresh active-tile highlight (currentIndex may have
+            // bumped above).
+            try { updateFilmstripActive(); } catch (_) {}
+
+            console.log('[viewer] live-added file to strip at idx', insertAt, ':', fp);
+
+            // Brief lavender pulse so the user's eye lands on the
+            // new tile. No scrollIntoView — the parent was on-screen
+            // (user just viewed it) and the new clip is adjacent.
+            // The earlier smooth scrollIntoView across a 500-item
+            // strip was triggering a cascade of lazy-load IPCs that
+            // could destabilise the renderer; removed.
+            try {
+              newTile.style.outline = '2px solid #A99CFF';
+              newTile.style.outlineOffset = '2px';
+              newTile.style.transition = 'outline-color 0.5s ease';
+              setTimeout(() => {
+                if (newTile && newTile.style) newTile.style.outlineColor = 'transparent';
+              }, 1500);
+            } catch (_) {}
           });
         }
       } catch (err) {
