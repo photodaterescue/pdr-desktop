@@ -905,6 +905,32 @@ export function initDatabase(): { success: boolean; error?: string } {
       try { db.exec(`ALTER TABLE face_detections ADD COLUMN takeout_name_source TEXT`); } catch {}
     }
 
+    // v2.1 round 9 (Terry 2026-06-07) — one-shot backfill for the
+    // brief Mark-a-face bug (between 8427918 and 7cb724f) that
+    // inserted manual face_detection rows with cluster_id = NULL.
+    // PM's getPersonClusters filters those out, so the faces were
+    // invisible. The fix in 7cb724f assigns a fresh unique
+    // cluster_id at insert time, but pre-existing NULL rows from
+    // the broken window stay invisible without this. UPDATE
+    // assigns each affected row a unique cluster_id (max + id) so
+    // they form singleton clusters that PM picks up. Idempotent —
+    // any subsequent launch finds zero matching rows and runs as
+    // a no-op. Filter on `embedding IS NULL` so we ONLY touch
+    // manual marks (auto-detected faces always have embeddings).
+    try {
+      const before = db.prepare(`SELECT COUNT(*) AS n FROM face_detections WHERE cluster_id IS NULL AND embedding IS NULL`).get() as { n: number };
+      if (before.n > 0) {
+        const r = db.prepare(`
+          UPDATE face_detections
+          SET cluster_id = (SELECT COALESCE(MAX(cluster_id), 0) FROM face_detections) + id
+          WHERE cluster_id IS NULL AND embedding IS NULL
+        `).run();
+        console.log(`[search-db] Backfilled ${r.changes} manual face_detection row(s) with fresh cluster_ids (was invisible to PM)`);
+      }
+    } catch (e) {
+      console.warn('[search-db] Manual face_detection backfill failed (non-fatal):', (e as Error).message);
+    }
+
     // Trees v1 — relationship edges between persons.
     // Stored types:
     //   parent_of     — A is parent of B (with optional biological/step/adopted/in_law flags)
