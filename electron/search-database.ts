@@ -931,6 +931,34 @@ export function initDatabase(): { success: boolean; error?: string } {
       console.warn('[search-db] Manual face_detection backfill failed (non-fatal):', (e as Error).message);
     }
 
+    // v2.1 round 18 (Terry 2026-06-07) — one-shot cleanup of bad-
+    // coord manual marks. The viewer:enhanceFacesManual + earlier
+    // addManualFaceBox paths used to insert PIXEL coords into
+    // box_x/y/w/h (e.g. x=1788, y=574 for a face on a 3264x1840
+    // photo) instead of normalised 0..1 fractions. The fix in
+    // 7ac2895 normalises before insert, but rows from the broken
+    // window are stuck with pixel values — both PM (thumbnail
+    // extraction fails with "extract_area: bad extract area") and
+    // PDRV (renders boxes off-screen) treat them as fractions
+    // and choke. Terry hit this on his shadowed sunset photo: PM
+    // showed the cluster with a broken thumbnail, PDRV showed no
+    // box, the photo looked stuck in limbo.
+    //
+    // Delete rows where any coord is > 1.0 — valid normalised
+    // values are always 0..1, anything bigger is a legacy bug
+    // value. Restricted to manual rows (embedding IS NULL) so we
+    // never touch auto-detected faces. Cluster cache also gets
+    // invalidated below via the cleanup logic that follows.
+    try {
+      const bad = db.prepare(`SELECT COUNT(*) AS n FROM face_detections WHERE embedding IS NULL AND (box_x > 1.0 OR box_y > 1.0 OR box_w > 1.0 OR box_h > 1.0)`).get() as { n: number };
+      if (bad.n > 0) {
+        const r = db.prepare(`DELETE FROM face_detections WHERE embedding IS NULL AND (box_x > 1.0 OR box_y > 1.0 OR box_w > 1.0 OR box_h > 1.0)`).run();
+        console.log(`[search-db] Deleted ${r.changes} bad-coord manual face_detection row(s) (pre-normalisation bug, would render off-screen / fail thumbnail extraction)`);
+      }
+    } catch (e) {
+      console.warn('[search-db] Bad-coord manual cleanup failed (non-fatal):', (e as Error).message);
+    }
+
     // Trees v1 — relationship edges between persons.
     // Stored types:
     //   parent_of     — A is parent of B (with optional biological/step/adopted/in_law flags)

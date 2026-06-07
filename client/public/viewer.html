@@ -4999,6 +4999,19 @@ function zoomTo(newZoom, centreX, centreY) {
         }
         lastFaceBoxesRect = { left: rect.left, top: rect.top, width: rect.width, height: rect.height };
         lastFaceBoxesCount = faceBoxesCache.length;
+        // v2.1 round 18 (Terry 2026-06-07) — defensive filter. Any
+        // legacy row with non-normalised coords (x/y/w/h > 1)
+        // would render miles off-screen and show "no boxes" on a
+        // photo that PM claims has faces. The startup migration
+        // deletes those rows, but if any survive (different DB,
+        // future bug), skip them silently rather than draw an
+        // invisible box.
+        const safeBoxes = faceBoxesCache.filter(function (b) {
+          return b && b.x >= 0 && b.y >= 0 && b.w > 0 && b.h > 0 && b.x <= 1 && b.y <= 1 && b.w <= 1 && b.h <= 1;
+        });
+        if (safeBoxes.length !== faceBoxesCache.length) {
+          console.warn('[viewer] skipped', faceBoxesCache.length - safeBoxes.length, 'face box(es) with non-normalised coords');
+        }
         // v2.1 round 11 — boxes are now INTERACTIVE: label clickable
         // for naming (unnamed only), small × for delete (unnamed
         // only). Named faces are read-only here — the user has to
@@ -5008,7 +5021,7 @@ function zoomTo(newZoom, centreX, centreY) {
         // none on the layer/box itself so it doesn't intercept
         // viewer pan/zoom.
         const parts = [];
-        for (const box of faceBoxesCache) {
+        for (const box of safeBoxes) {
           const left = rect.left + box.x * rect.width;
           const top = rect.top + box.y * rect.height;
           const w = box.w * rect.width;
