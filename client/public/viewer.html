@@ -3224,27 +3224,49 @@
             files.push(info.newFilePath);
             const i = files.length - 1;
             const fp = info.newFilePath;
+            let newTile;
             if (isVideoPath(fp)) {
-              const div = document.createElement('div');
-              div.className = 'video-thumb';
-              div.title = getFilename(fp);
-              div.dataset.idx = String(i);
-              div.dataset.fp = fp;
-              div.addEventListener('click', () => loadMedia(i));
-              filmstripEl.appendChild(div);
-              lazyObserver.observe(div);
+              newTile = document.createElement('div');
+              newTile.className = 'video-thumb';
+              newTile.title = getFilename(fp);
+              newTile.dataset.idx = String(i);
+              newTile.dataset.fp = fp;
+              newTile.addEventListener('click', () => loadMedia(i));
+              filmstripEl.appendChild(newTile);
+              lazyObserver.observe(newTile);
             } else {
-              const thumb = document.createElement('img');
-              thumb.className = 'thumb';
-              thumb.src = TRANSPARENT_PIXEL;
-              thumb.title = getFilename(fp);
-              thumb.dataset.idx = String(i);
-              thumb.dataset.fp = fp;
-              thumb.addEventListener('click', () => loadMedia(i));
-              filmstripEl.appendChild(thumb);
-              lazyObserver.observe(thumb);
+              newTile = document.createElement('img');
+              newTile.className = 'thumb';
+              newTile.src = TRANSPARENT_PIXEL;
+              newTile.title = getFilename(fp);
+              newTile.dataset.idx = String(i);
+              newTile.dataset.fp = fp;
+              newTile.addEventListener('click', () => loadMedia(i));
+              filmstripEl.appendChild(newTile);
+              lazyObserver.observe(newTile);
             }
             console.log('[viewer] live-added file to strip:', info.newFilePath);
+            // v2.1 (Terry 2026-06-07) — auto-scroll the strip to the
+            // newly-added tile + briefly flash it so the user sees
+            // their just-saved clip. Otherwise with a 500-item strip
+            // the new tile lands off the right edge unnoticed.
+            // setTimeout gives the layout a tick to settle so
+            // scrollIntoView reads the correct width.
+            setTimeout(() => {
+              try {
+                newTile.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+              } catch (_) {}
+              // Brief lavender pulse — single-shot animation via
+              // inline transient style. Reverts after 1.8s.
+              try {
+                newTile.style.outline = '2px solid #A99CFF';
+                newTile.style.outlineOffset = '2px';
+                newTile.style.transition = 'outline-color 0.5s ease';
+                setTimeout(() => {
+                  newTile.style.outlineColor = 'transparent';
+                }, 1300);
+              } catch (_) {}
+            }, 80);
           });
         }
       } catch (err) {

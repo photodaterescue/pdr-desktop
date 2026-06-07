@@ -11550,18 +11550,34 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
     };
     const fmtFlag = ffmpegFmtMap[sourceExtForFmt] || 'mp4';
 
-    // ffmpeg args: -ss BEFORE -i for fast input seeking on `-c copy`,
-    // -to for end (absolute time, not duration), -c copy for fast
-    // remux, -avoid_negative_ts make_zero to prevent timestamp
-    // issues at the cut point, -f to force the container format
-    // since the .part output extension hides the real type from
-    // ffmpeg's inference.
+    // v2.1 (Terry 2026-06-07) — frame-accurate cuts via re-encode.
+    // The previous `-c copy` path snapped both endpoints to the
+    // nearest keyframe, which for typical phone-camera footage
+    // (keyframe every 1-2s) made cuts land up to 2 seconds off the
+    // requested time — exactly what Terry hit. Re-encoding decodes
+    // every frame between IN and OUT so the cut lands on the
+    // requested millisecond.
+    //
+    // Speed: `-preset veryfast` is fast enough that a 5-30s clip
+    // re-encodes in 1-5 seconds on typical hardware. CRF 18 is
+    // visually lossless for phone footage. -movflags +faststart so
+    // playback can start before the full file is loaded.
+    //
+    // Argument order matters: `-ss <start> -i <input>` (start
+    // BEFORE input) tells ffmpeg to fast-seek to the rough position
+    // then START decoding there. Combined with re-encoding from
+    // that point, the cut is frame-accurate. `-to` is absolute time
+    // from the start of the INPUT (not the seek offset), so we
+    // pass req.endSec directly.
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-ss', String(req.startSec),
-      '-to', String(req.endSec),
       '-i', ffmpegSrc,
-      '-c', 'copy',
+      '-to', String(req.endSec - req.startSec), // duration after the -ss seek
+      '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '18',
+      '-pix_fmt', 'yuv420p',
+      '-c:a', 'aac', '-b:a', '192k',
+      '-movflags', '+faststart',
       '-avoid_negative_ts', 'make_zero',
       '-f', fmtFlag,
       '-y', partPath,
