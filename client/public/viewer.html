@@ -818,11 +818,11 @@
     .nav-arrow.left { left: 16px; }
     .nav-arrow.right { right: 16px; transition: right 220ms cubic-bezier(0.4, 0, 0.2, 1); }
     /* v2.0.15 (Terry 2026-06-06) — when the Enhance panel is open
-       (280 px right-side slide-in), shift the next-photo arrow left
-       so it sits just to the left of the panel instead of being
-       hidden behind it. Terry's UX: navigate to next photo without
-       having to close the panel first. */
-    body.enhance-panel-open .nav-arrow.right { right: 296px; }
+       (320 px right-side slide-in as of v2.1), shift the next-photo
+       arrow left so it sits just to the left of the panel instead
+       of being hidden behind it. Terry's UX: navigate to next photo
+       without having to close the panel first. */
+    body.enhance-panel-open .nav-arrow.right { right: 336px; }
     .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
     /* Cross-window Fix-in-progress chip — same amber pill PDR shows
        on every other window so users always know a Fix is running.
@@ -1036,7 +1036,10 @@
       top: 0;
       right: 0;
       bottom: 0;
-      width: 280px;
+      /* v2.1 (Terry 2026-06-07) — widened 280→320px so the AI
+         button row + the "Saves to <filename>" preview both fit
+         comfortably without forcing a horizontal scrollbar. */
+      width: 320px;
       background: rgba(18, 18, 42, 0.96);
       backdrop-filter: blur(8px);
       -webkit-backdrop-filter: blur(8px);
@@ -1084,6 +1087,13 @@
     .enhance-body {
       flex: 1;
       overflow-y: auto;
+      /* v2.1 (Terry 2026-06-07) — explicit overflow-x: hidden so
+         the implicit-auto behavior (when only overflow-y is set)
+         doesn't paint a horizontal scrollbar when content is close
+         to the panel width. Tooltips on AI buttons opt out of
+         being clipped via data-pdr-tooltip-mode="fixed" + a JS
+         positioner — see the bottom of the file. */
+      overflow-x: hidden;
       padding: 14px 18px 18px 18px;
       display: flex;
       flex-direction: column;
@@ -1549,15 +1559,15 @@
       <div class="enhance-ai-section" id="enhance-ai-section">
         <div class="enhance-ai-header">AI Enhancement</div>
         <div class="enhance-ai-buttons">
-          <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled data-pdr-tooltip="Restore blurred or low-quality faces (CodeFormer)">
+          <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled data-pdr-tooltip="Restore blurred or low-quality faces (CodeFormer)" data-pdr-tooltip-mode="fixed">
             <span class="enhance-ai-btn-icon">😊</span>
             <span>Faces</span>
           </button>
-          <button class="enhance-ai-btn" id="enhance-ai-upscale" type="button" disabled data-pdr-tooltip="Upscale the whole image 4× (Real-ESRGAN)">
+          <button class="enhance-ai-btn" id="enhance-ai-upscale" type="button" disabled data-pdr-tooltip="Upscale the whole image 4× (Real-ESRGAN)" data-pdr-tooltip-mode="fixed">
             <span class="enhance-ai-btn-icon">🔍</span>
             <span>Whole image</span>
           </button>
-          <button class="enhance-ai-btn" id="enhance-ai-both" type="button" disabled data-pdr-tooltip="Restore faces, then upscale (best quality, slowest)">
+          <button class="enhance-ai-btn" id="enhance-ai-both" type="button" disabled data-pdr-tooltip="Restore faces, then upscale (best quality, slowest)" data-pdr-tooltip-mode="fixed">
             <span class="enhance-ai-btn-icon">✨</span>
             <span>Both</span>
           </button>
@@ -3967,23 +3977,32 @@ function zoomTo(newZoom, centreX, centreY) {
         applyEnhanceFilter();
       }
 
+      // v2.1 (Terry 2026-06-07) — BUG FIX. Was `parseInt(...) || 100`
+      // which falls back to 100 when the user slides to exactly 0
+      // (because 0 is falsy in JS). That's why Terry saw Saturation
+      // STAY at "100" even though he'd dragged the thumb to the far
+      // left. Now uses Number.isFinite so the value 0 is honoured.
+      function clampOrDefault(raw, defaultVal) {
+        const n = parseInt(raw, 10);
+        return Number.isFinite(n) ? n : defaultVal;
+      }
       sBright.addEventListener('input', function () {
-        state.brightness = parseInt(sBright.value, 10) || 100;
+        state.brightness = clampOrDefault(sBright.value, 100);
         vBright.textContent = String(state.brightness);
         applyEnhanceFilter();
       });
       sContrast.addEventListener('input', function () {
-        state.contrast = parseInt(sContrast.value, 10) || 100;
+        state.contrast = clampOrDefault(sContrast.value, 100);
         vContrast.textContent = String(state.contrast);
         applyEnhanceFilter();
       });
       sSat.addEventListener('input', function () {
-        state.saturation = parseInt(sSat.value, 10) || 100;
+        state.saturation = clampOrDefault(sSat.value, 100);
         vSat.textContent = String(state.saturation);
         applyEnhanceFilter();
       });
       sTemp.addEventListener('input', function () {
-        state.temperature = parseInt(sTemp.value, 10) || 0;
+        state.temperature = clampOrDefault(sTemp.value, 0);
         vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
         applyEnhanceFilter();
       });
@@ -4217,13 +4236,24 @@ function zoomTo(newZoom, centreX, centreY) {
       } catch (_) {}
 
       // Reset all sliders to their default values (used after AI runs).
+      // v2.1 (Terry 2026-06-07) — BUG FIX. The original referenced
+      // `valBright`/`valContrast`/`valSat`/`valTemp` which don't
+      // exist (the actual span vars are vBright/vContrast/vSat/
+      // vTemp), and `applyFilters()` which also doesn't exist (the
+      // real fn is applyEnhanceFilter). The ReferenceError on the
+      // very first line aborted the WHOLE function, so:
+      //   1. Sliders never visually reset (Terry's complaint)
+      //   2. runAiAction never reached the IPC call so AI never ran
+      //   3. No error modal showed because the throw was uncaught
+      //      in the Continue button's promise chain
+      // Fixed by using the correct identifiers throughout.
       function resetSlidersToDefaults() {
-        sBright.value = 100; state.brightness = 100; valBright.textContent = '100';
-        sContrast.value = 100; state.contrast = 100; valContrast.textContent = '100';
-        sSat.value = 100; state.saturation = 100; valSat.textContent = '100';
-        sTemp.value = 0; state.temperature = 0; valTemp.textContent = '0';
+        sBright.value = 100; state.brightness = 100; vBright.textContent = '100';
+        sContrast.value = 100; state.contrast = 100; vContrast.textContent = '100';
+        sSat.value = 100; state.saturation = 100; vSat.textContent = '100';
+        sTemp.value = 0; state.temperature = 0; vTemp.textContent = '0';
         tBW.checked = false; state.bw = false;
-        applyFilters();
+        applyEnhanceFilter();
       }
 
       function showAiWarning(action) {
@@ -4627,6 +4657,93 @@ function zoomTo(newZoom, centreX, centreY) {
 
       // Initial state.
       updateSaveAvailability();
+    })();
+
+    // ─── v2.1 (Terry 2026-06-07) — JS tooltip manager for elements
+    // marked data-pdr-tooltip-mode="fixed". The CSS-only ::after
+    // tooltips get clipped by overflow:hidden parents (eg the
+    // Enhance panel body), which hid most of the AI button tooltip
+    // text. This manager builds a position:fixed tooltip in a
+    // top-level layer that escapes any overflow container and
+    // clamps its X position to stay on-screen. Same lavender
+    // styling + 120ms delay as the CSS variant.
+    (function () {
+      const layer = document.createElement('div');
+      layer.id = 'pdr-tooltip-layer';
+      layer.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:99999;';
+      document.body.appendChild(layer);
+
+      let activeEl = null;
+      let activeTrigger = null;
+      let showTimer = null;
+
+      function buildTooltipEl(text) {
+        const el = document.createElement('div');
+        el.style.cssText = [
+          'position:fixed',
+          'background:#A99CFF',
+          'color:#1a1a2e',
+          'font-size:12px',
+          'font-weight:500',
+          'line-height:1.3',
+          'padding:6px 12px',
+          'border-radius:6px',
+          'box-shadow:0 4px 14px rgba(0,0,0,0.35)',
+          'max-width:260px',
+          'text-align:center',
+          'white-space:normal',
+          'word-wrap:break-word',
+          'letter-spacing:0',
+        ].join(';') + ';';
+        el.textContent = text;
+        return el;
+      }
+
+      function hide() {
+        if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        if (activeEl) { activeEl.remove(); activeEl = null; }
+        activeTrigger = null;
+      }
+
+      function show(trigger) {
+        const text = trigger.dataset.pdrTooltip;
+        if (!text) return;
+        hide();
+        activeTrigger = trigger;
+        showTimer = setTimeout(function () {
+          if (activeTrigger !== trigger) return;
+          const el = buildTooltipEl(text);
+          layer.appendChild(el);
+          activeEl = el;
+          // Position: prefer below the trigger, fall back to above
+          // if clipped at the viewport bottom. Clamp X to the
+          // viewport with a 6px margin.
+          const rect = trigger.getBoundingClientRect();
+          const tw = el.offsetWidth;
+          const th = el.offsetHeight;
+          const margin = 6;
+          let top = rect.bottom + margin;
+          if (top + th + margin > window.innerHeight) {
+            top = rect.top - th - margin;
+          }
+          let left = rect.left + (rect.width / 2) - (tw / 2);
+          left = Math.max(margin, Math.min(window.innerWidth - tw - margin, left));
+          el.style.left = left + 'px';
+          el.style.top = top + 'px';
+        }, 120);
+      }
+
+      document.addEventListener('mouseover', function (e) {
+        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip-mode="fixed"]') : null;
+        if (trigger && trigger !== activeTrigger) show(trigger);
+      });
+      document.addEventListener('mouseout', function (e) {
+        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip-mode="fixed"]') : null;
+        if (trigger) hide();
+      });
+      document.addEventListener('click', hide);
+      window.addEventListener('scroll', hide, true);
+      window.addEventListener('resize', hide);
     })();
   </script>
 </body>
