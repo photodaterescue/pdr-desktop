@@ -2859,6 +2859,30 @@ app.whenReady().then(() => {
   //   context — wider crop with neutral letterbox bg (matches
   //             ai:faceContext minus the SVG indicator overlay),
   //             default 240px
+  // v2.1 round 19 (Terry 2026-06-07) — neutral placeholder for
+  // pdr-face when extract fails. Returns a tiny solid-colour JPEG
+  // (lavender-tinted grey) the renderer can display as a clean
+  // empty circle instead of showing the OS broken-image icon.
+  // Cached as a Buffer to avoid regenerating per request.
+  let pdrFacePlaceholderCache = new Map<number, Buffer>();
+  async function buildPdrFacePlaceholder(size: number): Promise<Buffer> {
+    const sharp = (await import('sharp')).default;
+    return sharp({
+      create: { width: size, height: size, channels: 3, background: { r: 232, g: 230, b: 245 } },
+    }).jpeg({ quality: 70 }).toBuffer();
+  }
+  async function placeholderResponse(size: number): Promise<Response> {
+    let buf = pdrFacePlaceholderCache.get(size);
+    if (!buf) {
+      buf = await buildPdrFacePlaceholder(size);
+      pdrFacePlaceholderCache.set(size, buf);
+    }
+    return new Response(buf, {
+      status: 200,
+      headers: { 'Content-Type': 'image/jpeg', 'Cache-Control': 'no-store' },
+    });
+  }
+
   protocol.handle('pdr-face', async (request) => {
     try {
       const url = new URL(request.url);
@@ -2928,13 +2952,30 @@ app.whenReady().then(() => {
         py = Math.max(0, Math.round(cy - sideLen / 2));
         pw = Math.min(sideLen, imgW - px);
         ph = Math.min(sideLen, imgH - py);
-        if (pw <= 0 || ph <= 0) return new Response('Invalid crop', { status: 500 });
-        buffer = await sharp(filePathLong, { failOnError: false })
-          .rotate()
-          .extract({ left: px, top: py, width: pw, height: ph })
-          .resize(size, size, { fit: 'cover' })
-          .jpeg({ quality: 85 })
-          .toBuffer();
+        if (pw <= 0 || ph <= 0) {
+          console.warn(`[pdr-face] thumb invalid crop after clamp: fp=${fp} bx=${bx} by=${by} bw=${bw} bh=${bh} imgW=${imgW} imgH=${imgH} px=${px} py=${py} pw=${pw} ph=${ph}`);
+          return placeholderResponse(size);
+        }
+        // v2.1 round 19 (Terry 2026-06-07) — defensive extract.
+        // Some photos hit "extract_area: bad extract area" even
+        // with the clamp above — most often when the image was
+        // re-encoded (e.g. _CF.jpg sibling) and its dimensions
+        // changed between face-detection time and crop time.
+        // Catch the throw and serve a neutral placeholder so PM
+        // shows a clean blank circle instead of a broken-image
+        // icon, with details logged so we can chase the
+        // underlying data issue.
+        try {
+          buffer = await sharp(filePathLong, { failOnError: false })
+            .rotate()
+            .extract({ left: px, top: py, width: pw, height: ph })
+            .resize(size, size, { fit: 'cover' })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+        } catch (extractErr) {
+          console.warn(`[pdr-face] thumb extract failed for fp=${fp} bx=${bx} by=${by} bw=${bw} bh=${bh} imgW=${imgW} imgH=${imgH} px=${px} py=${py} pw=${pw} ph=${ph}: ${(extractErr as Error).message}`);
+          return placeholderResponse(size);
+        }
       } else {
         // Wider crop with neutral letterbox background. Identical math
         // to ai:faceContext's crop step, minus the SVG indicator
@@ -2952,13 +2993,21 @@ app.whenReady().then(() => {
         let cropY = Math.max(0, Math.round(cy - contextSide / 2));
         const cropW = Math.min(contextSide, imgW - cropX);
         const cropH = Math.min(contextSide, imgH - cropY);
-        if (cropW <= 0 || cropH <= 0) return new Response('Invalid crop', { status: 500 });
-        buffer = await sharp(filePathLong, { failOnError: false })
-          .rotate()
-          .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
-          .resize(size, size, { fit: 'contain', background: { r: 245, g: 243, b: 250, alpha: 1 } })
-          .jpeg({ quality: 85 })
-          .toBuffer();
+        if (cropW <= 0 || cropH <= 0) {
+          console.warn(`[pdr-face] context invalid crop after clamp: fp=${fp} cropX=${cropX} cropY=${cropY} cropW=${cropW} cropH=${cropH} imgW=${imgW} imgH=${imgH}`);
+          return placeholderResponse(size);
+        }
+        try {
+          buffer = await sharp(filePathLong, { failOnError: false })
+            .rotate()
+            .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
+            .resize(size, size, { fit: 'contain', background: { r: 245, g: 243, b: 250, alpha: 1 } })
+            .jpeg({ quality: 85 })
+            .toBuffer();
+        } catch (extractErr) {
+          console.warn(`[pdr-face] context extract failed for fp=${fp} cropX=${cropX} cropY=${cropY} cropW=${cropW} cropH=${cropH}: ${(extractErr as Error).message}`);
+          return placeholderResponse(size);
+        }
       }
 
       // Persist to cache for next time (best-effort).
