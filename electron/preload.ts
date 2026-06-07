@@ -644,6 +644,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       error?: string;
       requiresInstall?: 'codeformer' | 'realesrgan';
     }>,
+    /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
+     *  Inserts a face_detections row at the user-drawn box so PM
+     *  picks it up as Unknown person; no AI model invoked. */
+    addManualFaceBox: (req: {
+      filePath: string;
+      manualBox: { x: number; y: number; w: number; h: number };
+    }) => ipcRenderer.invoke('viewer:addManualFaceBox', req) as Promise<{
+      success: boolean;
+      error?: string;
+    }>,
     onEnhanceProgress: (handler: (info: { kind: 'faces' | 'upscale'; phase: string; percent: number }) => void) => {
       const listener = (_e: any, info: any) => handler(info);
       ipcRenderer.on('viewer:enhanceProgress', listener);

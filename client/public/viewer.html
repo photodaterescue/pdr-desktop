@@ -1599,13 +1599,16 @@
         </div>
       </div>
 
-      <!-- v2.0.15 Phase 7 (Terry 2026-06-06) — AI Enhance buttons. Three
-           one-click actions: Faces (CodeFormer), Whole image (Real-ESRGAN),
-           Both. Buttons are disabled until each corresponding model is
-           installed via Settings → AI → Photo Enhancement. Status line
-           below surfaces install / analysis prerequisites with a tap-
-           through to Settings. -->
-      <div class="enhance-ai-section" id="enhance-ai-section">
+      <!-- v2.1 round 8 (Terry 2026-06-07) — AI ENHANCEMENT section
+           hidden (display:none) per Terry's call to omit AI photo
+           enhancement from the v2.1 release. The IPC handlers,
+           worker code, model files, and this entire UI block all
+           stay in place behind the hidden style so re-enabling is
+           a single attribute flip. Replaced for the user with a
+           simple Mark-a-face button below that drops a
+           face_detection row PM picks up — no CodeFormer call,
+           no model dependency. -->
+      <div class="enhance-ai-section" id="enhance-ai-section" style="display:none">
         <div class="enhance-ai-header">AI Enhancement</div>
         <div class="enhance-ai-buttons">
           <button class="enhance-ai-btn" id="enhance-ai-faces" type="button" disabled data-pdr-tooltip="Restore blurred or low-quality faces (CodeFormer)" data-pdr-tooltip-mode="fixed">
@@ -1622,6 +1625,23 @@
           </button>
         </div>
         <div class="enhance-ai-status" id="enhance-ai-status"></div>
+      </div>
+      <!-- v2.1 round 8 (Terry 2026-06-07) — Mark-a-face affordance.
+           Replaces the AI ENHANCEMENT section for v2.1. Drops a
+           face_detections row at the user-drawn box so PM picks the
+           face up as Unknown person, ready to name + cluster with
+           existing people. No CodeFormer dependency. Lavender card
+           matches the panel chrome and is clearly NOT a destructive
+           action. -->
+      <div class="enhance-mark-face-section" style="margin-top: 8px; padding-top: 16px; border-top: 1px solid rgba(169, 156, 255, 0.15);">
+        <div style="font-size: 11px; color: #a99cff; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Faces</div>
+        <button type="button" id="enhance-mark-face-btn" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 12px; border-radius: 8px; background: rgba(169, 156, 255, 0.10); color: #cfc8ff; border: 1px solid rgba(169, 156, 255, 0.30); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 120ms;" data-pdr-tooltip="Drag a box around a face the auto-detector missed. The face appears in People Manager as Unknown person, ready to name.">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="11" r="3"/><path d="M7 19c1.5-2 3-3 5-3s3.5 1 5 3"/></svg>
+          Mark a face
+        </button>
+        <div style="font-size: 11px; color: #888; margin-top: 6px; line-height: 1.4;">
+          For faces the auto-detector missed. Once marked, name them in People Manager.
+        </div>
       </div>
     </div>
     <div class="enhance-footer">
@@ -4860,6 +4880,17 @@ function zoomTo(newZoom, centreX, centreY) {
       if (aiUpscaleBtn) aiUpscaleBtn.onclick = function () { maybeStartAi('upscale'); };
       if (aiBothBtn) aiBothBtn.onclick = function () { maybeStartAi('both'); };
 
+      // v2.1 round 8 — Mark-a-face button (visible replacement for
+      // the hidden AI ENHANCEMENT section). Enters the same
+      // drawing mode used by the AI manual-box flow, but the
+      // confirm action now calls addManualFaceBox (no CodeFormer).
+      const markFaceBtn = document.getElementById('enhance-mark-face-btn');
+      if (markFaceBtn) {
+        markFaceBtn.addEventListener('click', function () {
+          enterManualBoxMode();
+        });
+      }
+
       // ─── v2.1 (Terry 2026-06-07) — Manual face box drawing mode.
       // For shadowed faces the detector can't see. User drags a
       // rectangle on the visible image; we translate viewport
@@ -5033,16 +5064,70 @@ function zoomTo(newZoom, centreX, centreY) {
           'z-index:83',
           'box-shadow:0 6px 20px rgba(0,0,0,0.4)',
         ].join(';') + ';';
+        // v2.1 round 8 — "Mark face" instead of "Enhance face"
+        // (AI Enhancement hidden in v2.1; this just adds the box
+        // to PM as Unknown person). runManualMark calls the
+        // lightweight addManualFaceBox IPC.
         manualBoxToolbar.innerHTML = ''
-          + '<button id="manual-box-enhance" type="button" style="background:#A99CFF;color:#1a1a2e;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Enhance face</button>'
+          + '<button id="manual-box-mark" type="button" style="background:#A99CFF;color:#1a1a2e;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Mark face</button>'
           + '<button id="manual-box-redraw" type="button" style="background:transparent;color:#d1d5db;border:1px solid rgba(255,255,255,0.18);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;">Redraw</button>';
         document.body.appendChild(manualBoxToolbar);
-        document.getElementById('manual-box-enhance').onclick = runManualEnhance;
+        document.getElementById('manual-box-mark').onclick = runManualMark;
         document.getElementById('manual-box-redraw').onclick = function () {
           if (manualBoxRect) { manualBoxRect.remove(); manualBoxRect = null; }
           if (manualBoxToolbar) { manualBoxToolbar.remove(); manualBoxToolbar = null; }
           manualBoxFinal = null;
         };
+      }
+
+      // v2.1 round 8 (Terry 2026-06-07) — Mark-a-face flow. Drops a
+      // face_detections row at the user-drawn box so PM picks it
+      // up as Unknown person. No AI model invoked, returns
+      // immediately. Shows a confirmation banner pointing the user
+      // at PM to name + cluster the face.
+      async function runManualMark() {
+        if (!manualBoxFinal) return;
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath) { exitManualBoxMode(); return; }
+        const imageBox = viewportBoxToImagePixels(manualBoxFinal);
+        if (!imageBox) { exitManualBoxMode(); return; }
+        console.log('[viewer] manual mark: viewport=', manualBoxFinal, ' → imagePixels=', imageBox);
+        exitManualBoxMode();
+        try {
+          const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
+          if (!pdrViewer || !pdrViewer.addManualFaceBox) {
+            showAiResult({
+              title: 'Couldn\'t mark the face',
+              body: 'The PDR bridge is missing — please relaunch PDR and try again.',
+              okLabel: 'Close',
+            });
+            return;
+          }
+          const result = await pdrViewer.addManualFaceBox({
+            filePath: filePath,
+            manualBox: imageBox,
+          });
+          console.log('[viewer] manual mark result:', JSON.stringify(result || {}));
+          if (result && result.success) {
+            showAiResult({
+              title: 'Face marked',
+              body: 'The face has been added to this photo. Open People Manager → Faces to name it (or merge it with an existing person).',
+              okLabel: 'OK',
+            });
+          } else {
+            showAiResult({
+              title: 'Couldn\'t mark the face',
+              body: (result && result.error) ? result.error : 'Unknown error — see PDR\'s log for details.',
+              okLabel: 'Close',
+            });
+          }
+        } catch (err) {
+          showAiResult({
+            title: 'Couldn\'t mark the face',
+            body: (err && err.message) ? err.message : String(err),
+            okLabel: 'Close',
+          });
+        }
       }
 
       // Translate viewport box → image pixel box (account for current

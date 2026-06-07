@@ -130,7 +130,7 @@ import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesPanel from "@/components/MemoriesPanel";
 import RecycleBinView from "@/components/RecycleBinView";
 import { TreesView } from "@/components/trees/TreesView";
-import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
+import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, isAiPhotoEnhancementEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
@@ -14219,6 +14219,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   Cards come first because they're the substantive
                   features; save-default radio is a small preference
                   underneath. */}
+              {isAiPhotoEnhancementEnabled() && (
               <div className="pt-4 border-t border-border">
                 <label className="block text-base font-semibold text-foreground mb-1">Photo Enhancement</label>
                 <p className="text-xs text-muted-foreground mb-3">
@@ -14373,6 +14374,16 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <strong>Privacy:</strong> Photo Enhancement runs entirely on your device. Models download once from HuggingFace and run locally thereafter — no photos are uploaded, shared, or sent anywhere during enhancement.
                   </p>
                 </div>
+              </div>
+              )}
+              {/* v2.1 round 8 (Terry 2026-06-07) — wrapper above hides
+                  the entire Photo Enhancement card block + privacy
+                  callout when isAiPhotoEnhancementEnabled() returns
+                  false. Default-save-action below stays visible
+                  because it's still relevant for manual slider saves
+                  from the Enhance panel. The opening div for this
+                  section sits ~150 lines up, also wrapped. */}
+              <div className="pt-4 border-t border-border">
 
                 {/* Sub-heading for the save preference, distinguishing it
                     from the AI model cards above. */}

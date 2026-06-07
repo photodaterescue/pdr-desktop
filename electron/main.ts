@@ -7536,6 +7536,69 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
   }
 });
 
+// v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only IPC. The
+// full enhanceFacesManual path runs CodeFormer + slider bake;
+// this one just inserts a face_detections row at the user-drawn
+// box and returns. Used by the "Mark a face" button in the
+// Enhance panel after AI Enhancement was hidden from the v2.1
+// release. PM picks the new row up as Unknown person on next
+// open (or after invalidatePersonClustersCache).
+ipcMain.handle('viewer:addManualFaceBox', async (_event, req: {
+  filePath: string;
+  manualBox: { x: number; y: number; w: number; h: number };
+}) => {
+  try {
+    console.log('[viewer:addManualFaceBox] start', { filePath: req?.filePath, manualBox: req?.manualBox });
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+    if (!req.manualBox || req.manualBox.w <= 0 || req.manualBox.h <= 0) {
+      return { success: false, error: 'Manual face box is missing or zero-sized.' };
+    }
+
+    const sharp = (await import('sharp')).default;
+    const meta = await sharp(req.filePath).metadata();
+    const imgW = meta.width || 1;
+    const imgH = meta.height || 1;
+    // Match the auto-detector's normalised 0..1 format so PM treats
+    // this row the same as an auto-detected face.
+    const normBox = {
+      x: req.manualBox.x / imgW,
+      y: req.manualBox.y / imgH,
+      w: req.manualBox.w / imgW,
+      h: req.manualBox.h / imgH,
+    };
+
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db
+      .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+      .get(req.filePath) as { id: number } | undefined;
+    if (!fileRow) {
+      return { success: false, error: 'This photo is not in the library index. Add it via a Fix run first.' };
+    }
+
+    db.prepare(`
+      INSERT INTO face_detections
+        (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id)
+      VALUES (?, NULL, ?, ?, ?, ?, NULL, 1.0, NULL)
+    `).run(
+      fileRow.id,
+      normBox.x, normBox.y, normBox.w, normBox.h,
+    );
+
+    // Refresh PM's clusters cache so the new face shows up on
+    // next People Manager open without a reload.
+    try {
+      invalidatePersonClustersCache();
+    } catch { /* non-fatal if cache helper unavailable */ }
+
+    console.log('[viewer:addManualFaceBox] inserted manual face_detection for file_id', fileRow.id, 'norm box', normBox);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('viewer:enhanceWholeImage', async (event, req: { filePath: string; tileSize?: number }) => {
   try {
     console.log('[viewer:enhanceWholeImage] start', { filePath: req?.filePath, tileSize: req?.tileSize });

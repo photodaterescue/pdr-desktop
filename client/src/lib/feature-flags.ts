@@ -77,3 +77,22 @@ export function isFormatConversionEnabled(): boolean {
 export const TREES_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
 export const EDIT_DATES_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
 export const FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE = 'Coming in v2.1';
+
+/**
+ * Whether the AI Photo Enhancement surface is reachable. v2.1 ships
+ * with this HIDDEN — Terry (2026-06-07): "The AI stuff is
+ * time-consuming, and I'm not impressed... It wont be getting
+ * released in the next version and it's taking too much of my
+ * time." Until results are good enough to ship, the AI ENHANCEMENT
+ * panel section in PDRV and the Photo Enhancement card block in
+ * Settings → AI are both omitted from the UI. The IPC handlers,
+ * worker code, and downloaded model files all stay in place so the
+ * feature can be re-enabled with a single flip of this flag.
+ *
+ * Manual face boxing — drawing a rectangle to mark a face for PM
+ * — stays available; it doesn't depend on the CodeFormer model
+ * and is useful on its own for shadowed/missed faces.
+ */
+export function isAiPhotoEnhancementEnabled(): boolean {
+  return false;
+}
