@@ -4558,11 +4558,17 @@ function zoomTo(newZoom, centreX, centreY) {
         const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
         if (!pdrViewer) return;
 
-        // Reset sliders first so the AI processes the SOURCE not the
-        // currently-slidered preview. Source for the worker is the
-        // original file on disk; sliders are display-only until save,
-        // so this is purely a UI reset.
-        resetSlidersToDefaults();
+        // v2.1 round 5 (Terry 2026-06-07) — DO NOT reset sliders.
+        // The previous reset was a UX flourish that turned out to
+        // be destructive: if Faces returned "no faces detected"
+        // and the user picked Mark-a-face-manually, the brightness
+        // they'd dialled up to see the shadowed face was already
+        // wiped, so they couldn't see what to draw a box around.
+        // Sliders are display-only CSS filters; the backend reads
+        // pixels from disk, so the slider state never affected the
+        // AI run anyway. After AI completes the filter stays
+        // applied to the new image — user can dial it back to
+        // taste if the enhanced version looks too bright.
 
         let title = 'Enhancing…';
         if (action === 'faces') title = 'Restoring faces…';
@@ -4827,11 +4833,11 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       function maybeStartAi(action) {
-        if (aiWarningDismissed) {
-          runAiAction(action);
-        } else {
-          showAiWarning(action);
-        }
+        // v2.1 round 5 — the warning modal used to inform the user
+        // that AI would reset their manual sliders. Now that the
+        // reset is gone (it caused more pain than benefit), there's
+        // nothing to warn about — run directly.
+        runAiAction(action);
       }
 
       if (aiFacesBtn) aiFacesBtn.onclick = function () { maybeStartAi('faces'); };
