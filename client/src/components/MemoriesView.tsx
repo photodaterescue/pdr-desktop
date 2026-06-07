@@ -1155,6 +1155,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // on year/month/day change so a niche filter doesn't silently follow
   // the user across the timeline.
   const [captionedOnly, setCaptionedOnly] = useState(false);
+  // v2.1 (Terry 2026-06-07) — Photos/Videos filter. Three states:
+  // 'all' shows everything (default), 'photos' hides videos,
+  // 'videos' hides photos. Persisted across drilldown view changes
+  // via localStorage so a user who's working on videos doesn't have
+  // to re-toggle every time they jump days. Single-click chips
+  // (clicking the active chip returns to 'all').
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>(() => {
+    try {
+      const v = localStorage.getItem('pdr-memories-media-filter');
+      return (v === 'photos' || v === 'videos') ? v : 'all';
+    } catch { return 'all'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-memories-media-filter', mediaFilter); } catch {}
+  }, [mediaFilter]);
   useEffect(() => { setCaptionedOnly(false); }, [year, month, day]);
 
   // Tile size — Ctrl+scroll to zoom, persisted across sessions.
@@ -1345,8 +1360,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // the underlying total and we don't re-warm thumbs every toggle.
   const visibleFiles = useMemo(() => {
     if (!files) return null;
-    return captionedOnly ? files.filter((f) => f.caption && f.caption.length > 0) : files;
-  }, [files, captionedOnly]);
+    let out = files;
+    // v2.1 (Terry 2026-06-07) — Photos / Videos filter from the
+    // chips in the toolbar. Applied BEFORE captioned-only so the
+    // captioned count in the chip label reflects only what's
+    // visible after the media-type filter (otherwise "Captioned
+    // only · 12" could match captioned VIDEOS while Photos filter
+    // hides them — confusing).
+    if (mediaFilter === 'photos') out = out.filter((f) => f.file_type === 'photo');
+    else if (mediaFilter === 'videos') out = out.filter((f) => f.file_type === 'video');
+    if (captionedOnly) out = out.filter((f) => f.caption && f.caption.length > 0);
+    return out;
+  }, [files, captionedOnly, mediaFilter]);
 
   // v2.0.14 (Terry 2026-05-27) — grid virtualisation for the drilldown.
   // Year drilldowns can hold 6,000+ photos which means 6,000+ React
@@ -1966,6 +1991,53 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 Captioned only · {captionedCount.toLocaleString()}
               </button>
             </IconTooltip>
+          );
+        })()}
+        {/* v2.1 (Terry 2026-06-07) — Photos / Videos filter chips.
+            Same chip primitive as Captioned only (h-8 px-3 rounded-
+            full, IconTooltip, hide-when-zero). Lavender active state
+            instead of gold to distinguish a categorical media-type
+            filter from the gold captioned-only opt-in. Clicking the
+            active chip returns to 'all'. Renders only when both
+            types exist in the current bucket — pointless to offer a
+            filter that's already implicit. */}
+        {files != null && (() => {
+          const photoCount = files.filter((f) => f.file_type === 'photo').length;
+          const videoCount = files.filter((f) => f.file_type === 'video').length;
+          if (photoCount === 0 || videoCount === 0) return null;
+          return (
+            <>
+              <IconTooltip label={mediaFilter === 'photos' ? 'Show everything' : 'Show only photos'} side="bottom">
+                <button
+                  type="button"
+                  onClick={() => setMediaFilter(mediaFilter === 'photos' ? 'all' : 'photos')}
+                  data-testid="memories-photos-only-toggle"
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
+                    mediaFilter === 'photos'
+                      ? 'bg-primary border-primary text-primary-foreground'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                >
+                  <ImageIcon className="w-3.5 h-3.5" />
+                  Photos · {photoCount.toLocaleString()}
+                </button>
+              </IconTooltip>
+              <IconTooltip label={mediaFilter === 'videos' ? 'Show everything' : 'Show only videos'} side="bottom">
+                <button
+                  type="button"
+                  onClick={() => setMediaFilter(mediaFilter === 'videos' ? 'all' : 'videos')}
+                  data-testid="memories-videos-only-toggle"
+                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
+                    mediaFilter === 'videos'
+                      ? 'bg-primary border-primary text-primary-foreground'
+                      : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                  }`}
+                >
+                  <Film className="w-3.5 h-3.5" />
+                  Videos · {videoCount.toLocaleString()}
+                </button>
+              </IconTooltip>
+            </>
           );
         })()}
         {/* Add Info — same checkbox dropdown style as S&D's tile
