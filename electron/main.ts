@@ -7550,7 +7550,8 @@ ipcMain.handle('viewer:getFaceBoxes', async (_event, filePath: string) => {
       .get(filePath) as { id: number } | undefined;
     if (!fileRow) return { success: true, boxes: [] };
     const boxes = db.prepare(`
-      SELECT fd.id, fd.box_x as x, fd.box_y as y, fd.box_w as w, fd.box_h as h,
+      SELECT fd.id, fd.cluster_id, fd.person_id,
+             fd.box_x as x, fd.box_y as y, fd.box_w as w, fd.box_h as h,
              p.name as person_name,
              p.full_name as person_full_name,
              CASE WHEN fd.embedding IS NULL THEN 1 ELSE 0 END as is_manual
@@ -7561,6 +7562,76 @@ ipcMain.handle('viewer:getFaceBoxes', async (_event, filePath: string) => {
     return { success: true, boxes };
   } catch (err) {
     return { success: false, error: (err as Error).message, boxes: [] };
+  }
+});
+
+// v2.1 round 11 (Terry 2026-06-07) — delete a face_detections row.
+// Restricted to UNNAMED faces (person_id IS NULL) so the user
+// can't accidentally wipe a verified-named person from a photo
+// in two clicks. Manual marks (where Terry hits dupes from
+// repeated testing) and auto-detected faces that haven't been
+// named are fair game. For named faces the user must go to PM
+// → Faces → un-name first, which is the documented destructive
+// path with appropriate confirmation.
+ipcMain.handle('viewer:deleteFaceBox', async (_event, faceId: number) => {
+  try {
+    if (!Number.isFinite(faceId) || faceId <= 0) {
+      return { success: false, error: 'Invalid faceId' };
+    }
+    const db = (await import('./search-database.js')).getDb();
+    const row = db.prepare(`SELECT id, person_id FROM face_detections WHERE id = ?`).get(faceId) as { id: number; person_id: number | null } | undefined;
+    if (!row) return { success: false, error: 'Face not found' };
+    if (row.person_id != null) {
+      return { success: false, error: 'This face is assigned to a named person. Open People Manager → Faces and un-name first if you really want to remove it.' };
+    }
+    db.prepare(`DELETE FROM face_detections WHERE id = ?`).run(faceId);
+    try { invalidatePersonClustersCache(); } catch { /* non-fatal */ }
+    // Tell PM (and any other window) to refresh — its onPeopleDataChanged
+    // listener will reload clusters so the deleted face vanishes
+    // from Unnamed live.
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('people:dataChanged'); } catch { /* non-fatal */ }
+    }
+    console.log('[viewer:deleteFaceBox] deleted face_id', faceId);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 round 11 (Terry 2026-06-07) — name a face in-place from PDRV.
+// Wraps the existing namePerson + assignFace flow into one call so
+// the renderer doesn't have to chain two IPCs. If a person with
+// this name already exists, the face joins that person; otherwise
+// a new person is created.
+ipcMain.handle('viewer:nameFace', async (_event, payload: { faceId: number; clusterId: number | null; name: string }) => {
+  try {
+    const name = (payload?.name ?? '').trim();
+    if (!name) return { success: false, error: 'Name is required' };
+    const { upsertPerson, assignPersonToCluster, assignPersonToFace } = await import('./search-database.js');
+    const { rebuildAiFts } = await import('./search-database.js');
+    const personId = upsertPerson(name, undefined, null);
+    if (payload.clusterId != null) {
+      assignPersonToCluster(payload.clusterId, personId);
+    } else if (payload.faceId) {
+      assignPersonToFace(payload.faceId, personId, true);
+    }
+    // Rebuild FTS for affected file so search reflects the new name.
+    try {
+      const db = (await import('./search-database.js')).getDb();
+      const face = db.prepare(`SELECT file_id FROM face_detections WHERE id = ?`).get(payload.faceId) as { file_id: number } | undefined;
+      if (face) rebuildAiFts(face.file_id);
+    } catch { /* non-fatal */ }
+    try { invalidatePersonClustersCache(); } catch { /* non-fatal */ }
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('people:dataChanged'); } catch { /* non-fatal */ }
+    }
+    console.log('[viewer:nameFace] named face', payload.faceId, '→ personId', personId);
+    return { success: true, personId };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
   }
 });
 
@@ -7629,10 +7700,19 @@ ipcMain.handle('viewer:addManualFaceBox', async (_event, req: {
     const newFaceId = Number(insertResult.lastInsertRowid);
 
     // Refresh PM's clusters cache so the new face shows up on
-    // next People Manager open without a reload.
+    // next People Manager open without a reload. v2.1 round 11 —
+    // also broadcast people:dataChanged so PM (if open) reloads
+    // live without the user needing to close + reopen it. This
+    // is what got Terry his 1233-row Unnamed-tab problem: his
+    // already-open PM was running on a cached cluster list that
+    // pre-dated the bug fix.
     try {
       invalidatePersonClustersCache();
     } catch { /* non-fatal if cache helper unavailable */ }
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('people:dataChanged'); } catch { /* non-fatal */ }
+    }
 
     console.log('[viewer:addManualFaceBox] inserted face_id', newFaceId, 'cluster_id', newClusterId, 'for file_id', fileRow.id, 'norm box', normBox);
     return { success: true, faceId: newFaceId, fileId: fileRow.id, clusterId: newClusterId };

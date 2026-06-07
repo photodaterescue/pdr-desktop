@@ -653,12 +653,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         boxes: Array<{
           id: number;
+          cluster_id: number | null;
+          person_id: number | null;
           x: number; y: number; w: number; h: number;
           person_name: string | null;
           person_full_name: string | null;
           is_manual: number;
         }>;
       }>,
+    /** v2.1 round 11 (Terry 2026-06-07) — delete a face_detection
+     *  row. Allowed only on unnamed faces. */
+    deleteFaceBox: (faceId: number) =>
+      ipcRenderer.invoke('viewer:deleteFaceBox', faceId) as Promise<{ success: boolean; error?: string }>,
+    /** v2.1 round 11 — name a face in-place from PDRV. Creates a
+     *  new person if the name doesn't exist; otherwise joins. */
+    nameFace: (payload: { faceId: number; clusterId: number | null; name: string }) =>
+      ipcRenderer.invoke('viewer:nameFace', payload) as Promise<{ success: boolean; personId?: number; error?: string }>,
     /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
      *  Inserts a face_detections row at the user-drawn box so PM
      *  picks it up as Unknown person; no AI model invoked.

@@ -4968,8 +4968,14 @@ function zoomTo(newZoom, centreX, centreY) {
         }
         const layer = ensureFaceBoxesLayer();
         const rect = mediaEl.getBoundingClientRect();
-        // Rebuild layer markup. Cheap because face counts are small
-        // (typically 1-10 per photo).
+        // v2.1 round 11 — boxes are now INTERACTIVE: label clickable
+        // for naming (unnamed only), small × for delete (unnamed
+        // only). Named faces are read-only here — the user has to
+        // un-name in PM first to avoid accidentally wiping a
+        // verified assignment from a photo.
+        // pointer-events:auto on the interactive sub-elements,
+        // none on the layer/box itself so it doesn't intercept
+        // viewer pan/zoom.
         const parts = [];
         for (const box of faceBoxesCache) {
           const left = rect.left + box.x * rect.width;
@@ -4977,17 +4983,79 @@ function zoomTo(newZoom, centreX, centreY) {
           const w = box.w * rect.width;
           const h = box.h * rect.height;
           const colour = box.is_manual ? '#fbbf24' : '#A99CFF';
+          const isUnnamed = !box.person_name;
           const name = box.person_name || 'Unknown person';
+          const labelCursor = isUnnamed ? 'pointer' : 'default';
+          const labelTitle = isUnnamed ? 'Click to name this face' : 'Named in People Manager';
           parts.push(
             '<div style="position:fixed;left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;height:' + h +
             'px;border:2px solid ' + colour + ';border-radius:4px;box-shadow:0 0 0 1px rgba(0,0,0,0.4);pointer-events:none;">' +
-            '<div style="position:absolute;left:-2px;bottom:100%;margin-bottom:4px;background:' + colour + ';color:#1a1a2e;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;">' +
+            // Clickable label
+            '<div data-face-id="' + box.id + '"' +
+            (box.cluster_id != null ? ' data-cluster-id="' + box.cluster_id + '"' : '') +
+            ' data-face-action="' + (isUnnamed ? 'name' : 'none') + '"' +
+            ' title="' + escapeForFaceLabel(labelTitle) + '"' +
+            ' style="position:absolute;left:-2px;bottom:100%;margin-bottom:4px;background:' + colour + ';color:#1a1a2e;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:auto;cursor:' + labelCursor + ';">' +
             escapeForFaceLabel(name) +
-            '</div></div>'
+            '</div>' +
+            // × delete button (unnamed only)
+            (isUnnamed ?
+              ('<button type="button" data-face-id="' + box.id + '" data-face-action="delete" title="Delete this face box" style="position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:11px;background:#1a1a2e;color:' + colour + ';border:2px solid ' + colour + ';font-size:14px;font-weight:700;line-height:1;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;padding:0;">×</button>')
+              : ''
+            ) +
+            '</div>'
           );
         }
         layer.innerHTML = parts.join('');
       }
+
+      // v2.1 round 11 — click delegation on the face-boxes layer for
+      // name + delete actions. One listener instead of per-box
+      // handlers (which would have to be re-bound on every rAF
+      // rebuild).
+      document.addEventListener('click', async function (e) {
+        const target = e.target && e.target.closest ? e.target.closest('[data-face-action]') : null;
+        if (!target) return;
+        const action = target.getAttribute('data-face-action');
+        const faceId = parseInt(target.getAttribute('data-face-id') || '0', 10);
+        const clusterIdStr = target.getAttribute('data-cluster-id');
+        const clusterId = clusterIdStr ? parseInt(clusterIdStr, 10) : null;
+        if (!faceId) return;
+        if (action === 'name') {
+          e.preventDefault(); e.stopPropagation();
+          // Simple prompt for v1 — autocomplete-against-existing-
+          // persons can come later. window.prompt is bare but it
+          // works, doesn't require any modal infrastructure, and
+          // lets the user act FAST (which is what Terry asked for).
+          const name = window.prompt('Name this person:', '');
+          if (!name || !name.trim()) return;
+          try {
+            const res = await window.pdr.viewer.nameFace({ faceId, clusterId, name: name.trim() });
+            if (res && res.success) {
+              await fetchFaceBoxesForCurrent();
+              renderFaceBoxes();
+            } else {
+              showAiResult({ title: 'Couldn\'t name face', body: (res && res.error) || 'Unknown error', okLabel: 'Close' });
+            }
+          } catch (err) {
+            showAiResult({ title: 'Couldn\'t name face', body: (err && err.message) || String(err), okLabel: 'Close' });
+          }
+        } else if (action === 'delete') {
+          e.preventDefault(); e.stopPropagation();
+          if (!window.confirm('Delete this face box from the photo?')) return;
+          try {
+            const res = await window.pdr.viewer.deleteFaceBox(faceId);
+            if (res && res.success) {
+              await fetchFaceBoxesForCurrent();
+              renderFaceBoxes();
+            } else {
+              showAiResult({ title: 'Couldn\'t delete face box', body: (res && res.error) || 'Unknown error', okLabel: 'Close' });
+            }
+          } catch (err) {
+            showAiResult({ title: 'Couldn\'t delete face box', body: (err && err.message) || String(err), okLabel: 'Close' });
+          }
+        }
+      });
       function escapeForFaceLabel(s) {
         return String(s).replace(/[&<>"']/g, function (c) {
           return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c;
