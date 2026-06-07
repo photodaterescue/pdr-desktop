@@ -1104,33 +1104,24 @@
       background: rgba(255, 255, 255, 0.08);
       color: #fff;
     }
-    /* v2.1 (Terry 2026-06-07) — pin button hover + pressed states.
-       Hover: subtle white tint. Pressed: gold-amber outline +
-       gold icon colour. Terry asked specifically for gold (he
-       liked how the browser's default focus ring looked but
-       wanted it tied to the pinned state, not to keyboard focus.) */
+    /* v2.1 round 4 (Terry 2026-06-07) — gold ring via BOX-SHADOW
+       instead of outline. outline was only painting briefly during
+       the focus transition (Terry: "It seems to only flash if it's
+       clicked"). box-shadow is part of the element's own paint and
+       stays put for as long as aria-pressed="true". */
+    #enhance-pin { outline: none !important; }
     #enhance-pin:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-    #enhance-pin[aria-pressed="true"] {
-      background: rgba(251, 191, 36, 0.10);
-      color: #fbbf24;  /* gold-400 — same as the lock/license amber elsewhere in PDR */
-      outline: 2px solid #fbbf24;
-      outline-offset: 1px;
-    }
-    /* v2.1 round 2 — suppress the browser's default focus ring on
-       the pin. After E unpinned the panel, the orange/blue
-       focus-visible outline lingered because the button still had
-       focus, making it look like the pin was still active. Now the
-       only "active" affordance is the aria-pressed gold outline. */
-    #enhance-pin:focus,
-    #enhance-pin:focus-visible {
-      outline: none;
-    }
+    #enhance-pin[aria-pressed="true"],
+    #enhance-pin[aria-pressed="true"]:hover,
     #enhance-pin[aria-pressed="true"]:focus,
     #enhance-pin[aria-pressed="true"]:focus-visible {
-      /* Pressed state always wins back its gold outline. */
-      outline: 2px solid #fbbf24 !important;
-      outline-offset: 1px;
+      background: rgba(251, 191, 36, 0.18);
+      color: #fbbf24;  /* gold-400 — same as the lock/license amber elsewhere in PDR */
+      box-shadow: 0 0 0 2px #fbbf24;
+      outline: none !important;
     }
+    /* Old outline-based rules removed — gold ring now lives in
+       the consolidated [aria-pressed="true"] block above. */
     .enhance-body {
       flex: 1;
       overflow-y: auto;
@@ -4098,6 +4089,67 @@ function zoomTo(newZoom, centreX, centreY) {
         return (v > 0 ? '+' : '') + String(v);
       });
 
+      // v2.1 round 4 (Terry 2026-06-07) — click the value label to
+      // type a number directly. Same shortcut Photoshop / Lightroom
+      // use. Enter or blur commits; Escape reverts; clamps to the
+      // slider's min/max.
+      function attachClickToEditValue(valSpan, slider, prop, fmt) {
+        valSpan.style.cursor = 'text';
+        valSpan.setAttribute('data-pdr-tooltip', 'Click to type a value');
+        valSpan.addEventListener('click', function () {
+          if (valSpan.querySelector('input')) return; // already editing
+          const original = valSpan.textContent;
+          const min = parseInt(slider.min, 10);
+          const max = parseInt(slider.max, 10);
+          const input = document.createElement('input');
+          input.type = 'number';
+          input.min = String(min);
+          input.max = String(max);
+          input.value = String(state[prop]);
+          input.style.cssText = [
+            'width: 56px',
+            'padding: 0 4px',
+            'background: rgba(169, 156, 255, 0.12)',
+            'border: 1px solid rgba(169, 156, 255, 0.4)',
+            'color: #a99cff',
+            'font: inherit',
+            'text-align: right',
+            'border-radius: 4px',
+            'outline: none',
+          ].join(';') + ';';
+          valSpan.textContent = '';
+          valSpan.appendChild(input);
+          input.focus();
+          input.select();
+          // Stop the keystroke-handlers on window (E to toggle pin,
+          // arrow keys for nav) from firing while the user types.
+          input.addEventListener('keydown', function (e) {
+            e.stopPropagation();
+            if (e.key === 'Enter') { e.preventDefault(); commit(); }
+            else if (e.key === 'Escape') { e.preventDefault(); cancel(); }
+          });
+          input.addEventListener('blur', commit);
+
+          function commit() {
+            const raw = parseInt(input.value, 10);
+            const clamped = Number.isFinite(raw) ? Math.max(min, Math.min(max, raw)) : state[prop];
+            state[prop] = clamped;
+            slider.value = String(clamped);
+            valSpan.textContent = fmt ? fmt(clamped) : String(clamped);
+            applyEnhanceFilter();
+          }
+          function cancel() {
+            valSpan.textContent = original;
+          }
+        });
+      }
+      attachClickToEditValue(vBright, sBright, 'brightness');
+      attachClickToEditValue(vContrast, sContrast, 'contrast');
+      attachClickToEditValue(vSat, sSat, 'saturation');
+      attachClickToEditValue(vTemp, sTemp, 'temperature', function (v) {
+        return (v > 0 ? '+' : '') + String(v);
+      });
+
       function openPanel() {
         panel.classList.add('open');
         panel.setAttribute('aria-hidden', 'false');
@@ -4578,14 +4630,22 @@ function zoomTo(newZoom, centreX, centreY) {
         aiResultSourcePath = sourcePath;
         aiResultEnhancementType = enhancementType;
         aiResultExtra = extra || null;
-        // Load the AI result as the new visible image — uses file:// so
-        // the existing img tag picks it up immediately.
-        const img = document.getElementById('mediaImg') || document.querySelector('#viewerImg, #mainImage, img.viewer-image');
+        // v2.1 round 4 (Terry 2026-06-07) — BUG FIX. Previously
+        // looked up the image via getElementById('mediaImg') which
+        // never matched — the img element is created dynamically
+        // with no id (see loadMedia). The closure-scoped `mediaEl`
+        // IS the active media element. Net effect of the old bug:
+        // applyAiResult ran, set src on a NULL, the visible image
+        // never changed — every AI run looked like a no-op to the
+        // user (Terry hit this repeatedly). Now we read mediaEl.
+        const img = (mediaEl && mediaEl.tagName === 'IMG') ? mediaEl : null;
         if (img) {
           // Stash original src for the compare toggle. Capture
           // BEFORE swapping in the new src.
           aiOriginalSrc = img.src;
           img.src = 'file:///' + encodeURI(tempPath.replace(/\\/g, '/'));
+        } else {
+          console.warn('[viewer] applyAiResult: mediaEl is not an IMG, can\'t swap to AI result');
         }
         // Re-evaluate save availability — AI result enables save even
         // though sliders are at defaults.
@@ -4634,7 +4694,7 @@ function zoomTo(newZoom, centreX, centreY) {
       // away or saves.
       let compareOn = false;
       function setCompareMode(on) {
-        const img = document.getElementById('mediaImg') || document.querySelector('#viewerImg, #mainImage, img.viewer-image');
+        const img = (mediaEl && mediaEl.tagName === 'IMG') ? mediaEl : null;
         if (!img || !aiOriginalSrc || !aiResultPath) return;
         compareOn = !!on;
         const aiSrc = 'file:///' + encodeURI(aiResultPath.replace(/\\/g, '/'));
@@ -4797,9 +4857,11 @@ function zoomTo(newZoom, centreX, centreY) {
         if (manualBoxActive) return;
         manualBoxActive = true;
         console.log('[viewer] manual face-box mode: enter');
-        const img = document.getElementById('mediaImg');
+        // v2.1 round 4 — use mediaEl (the closure var) not a
+        // non-existent ID. Manual box only works on still images.
+        const img = (mediaEl && mediaEl.tagName === 'IMG') ? mediaEl : null;
         if (!img) {
-          console.warn('[viewer] manual face-box: no mediaImg element');
+          console.warn('[viewer] manual face-box: current media is not an image (mediaEl=' + (mediaEl ? mediaEl.tagName : 'null') + ')');
           manualBoxActive = false;
           return;
         }
@@ -4959,7 +5021,7 @@ function zoomTo(newZoom, centreX, centreY) {
       // viewport (x,y,w,h) into that, then scale by
       // naturalWidth / displayedWidth.
       function viewportBoxToImagePixels(box) {
-        const img = document.getElementById('mediaImg');
+        const img = (mediaEl && mediaEl.tagName === 'IMG') ? mediaEl : null;
         if (!img) return null;
         const rect = img.getBoundingClientRect();
         const rotation = (typeof currentRotation === 'number') ? (currentRotation % 360) : 0;
