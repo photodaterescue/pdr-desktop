@@ -157,10 +157,14 @@
       visibility: visible;
       transition-delay: 120ms; /* matches IconTooltip delayDuration */
     }
-    /* v2.1 (Terry 2026-06-07) — elements opted-in to the JS-positioned
-       tooltip (which escapes overflow:hidden parents) must suppress
-       the CSS ::after, otherwise the user sees TWO tooltips stacked. */
-    [data-pdr-tooltip-mode="fixed"]::after {
+    /* v2.1 round 3 (Terry 2026-06-07) — RULE OF THUMB. ALL
+       data-pdr-tooltip elements use the JS-positioned tooltip
+       manager (see bottom of file) so the tooltip is ALWAYS
+       clamped to the viewport. No tooltip ever clips off-screen.
+       The CSS ::after styles above stay defined for backwards
+       compat / future opt-out, but are suppressed here so only
+       the JS variant renders. */
+    [data-pdr-tooltip]::after {
       content: none !important;
       display: none !important;
     }
@@ -1054,15 +1058,14 @@
       display: flex;
       flex-direction: column;
       transform: translateX(100%);
-      /* v2.1 (Terry 2026-06-07 round 2) — slower, gentler easing for
-         the hover-to-show entry/exit. Previous 220 ms felt snappy
-         enough to be jarring; 320 ms with an over-damped curve reads
-         as deliberate and premium without crossing into sluggish.
-         Also added a small box-shadow that fades in with the open
-         state so the slide is visually anchored rather than just
-         appearing. */
-      transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
-                  box-shadow 320ms ease;
+      /* v2.1 round 3 (Terry 2026-06-07) — slower again. 320 ms
+         still read as rushed. Bumped to 520 ms with a gentle
+         deceleration easing that lingers a touch at the end —
+         feels like the panel is settling into place, not snapping
+         to it. Premium apps default to ~500 ms for full-sidebar
+         transitions. */
+      transition: transform 520ms cubic-bezier(0.16, 0.84, 0.32, 1),
+                  box-shadow 520ms ease;
       z-index: 90;
       pointer-events: none;
       box-shadow: none;
@@ -1102,28 +1105,31 @@
       color: #fff;
     }
     /* v2.1 (Terry 2026-06-07) — pin button hover + pressed states.
-       Matches the Workspace sidebar pin: subtle hover, lavender
-       background + ring when pinned to make the state obvious. */
+       Hover: subtle white tint. Pressed: gold-amber outline +
+       gold icon colour. Terry asked specifically for gold (he
+       liked how the browser's default focus ring looked but
+       wanted it tied to the pinned state, not to keyboard focus.) */
     #enhance-pin:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
     #enhance-pin[aria-pressed="true"] {
-      background: rgba(169, 156, 255, 0.18);
-      color: #a99cff;
-      box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.45) inset;
+      background: rgba(251, 191, 36, 0.10);
+      color: #fbbf24;  /* gold-400 — same as the lock/license amber elsewhere in PDR */
+      outline: 2px solid #fbbf24;
+      outline-offset: 1px;
     }
     /* v2.1 round 2 — suppress the browser's default focus ring on
        the pin. After E unpinned the panel, the orange/blue
        focus-visible outline lingered because the button still had
        focus, making it look like the pin was still active. Now the
-       only "active" affordance is the aria-pressed lavender bg. */
+       only "active" affordance is the aria-pressed gold outline. */
     #enhance-pin:focus,
     #enhance-pin:focus-visible {
-      outline: none !important;
-      box-shadow: none;
+      outline: none;
     }
     #enhance-pin[aria-pressed="true"]:focus,
     #enhance-pin[aria-pressed="true"]:focus-visible {
-      /* Pressed state always wins back its inset ring. */
-      box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.45) inset !important;
+      /* Pressed state always wins back its gold outline. */
+      outline: 2px solid #fbbf24 !important;
+      outline-offset: 1px;
     }
     .enhance-body {
       flex: 1;
@@ -1560,7 +1566,7 @@
            close path. The element stays mounted (display:none) so
            any code that references it via getElementById doesn't
            NPE — JS rebinds it as a no-op. -->
-      <button class="enhance-pin" id="enhance-pin" type="button" data-pdr-tooltip="Pin sidebar open" aria-pressed="false" style="width: 24px; height: 24px; border: none; background: transparent; color: #aaa; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 120ms, color 120ms; outline: none;">
+      <button class="enhance-pin" id="enhance-pin" type="button" data-pdr-tooltip="Pin sidebar open (E)" aria-pressed="false" style="width: 24px; height: 24px; border: none; background: transparent; color: #aaa; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 120ms, color 120ms; outline: none;">
         <!-- lucide-react Pin icon, inline SVG to avoid React dep in viewer.html -->
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
       </button>
@@ -4118,7 +4124,7 @@ function zoomTo(newZoom, centreX, centreY) {
         isPinned = !!on;
         if (pinBtn) {
           pinBtn.setAttribute('aria-pressed', isPinned ? 'true' : 'false');
-          pinBtn.setAttribute('data-pdr-tooltip', isPinned ? 'Unpin (auto-hide on mouse leave)' : 'Pin sidebar open');
+          pinBtn.setAttribute('data-pdr-tooltip', isPinned ? 'Unpin sidebar (E) — auto-hide on mouse leave' : 'Pin sidebar open (E)');
         }
         try { window.pdr.settings.set('viewerEnhancePinned', isPinned); } catch (_) {}
         if (isPinned) openPanel();
@@ -5047,11 +5053,15 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       document.addEventListener('mouseover', function (e) {
-        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip-mode="fixed"]') : null;
+        // v2.1 round 3 — handle EVERY data-pdr-tooltip, not just
+        // the opt-in fixed-mode ones. Single source of truth for
+        // tooltip positioning so we can't accidentally clip one
+        // off-screen.
+        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip]') : null;
         if (trigger && trigger !== activeTrigger) show(trigger);
       });
       document.addEventListener('mouseout', function (e) {
-        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip-mode="fixed"]') : null;
+        const trigger = e.target && e.target.closest ? e.target.closest('[data-pdr-tooltip]') : null;
         if (trigger) hide();
       });
       document.addEventListener('click', hide);
