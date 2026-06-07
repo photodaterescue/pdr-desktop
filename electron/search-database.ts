@@ -979,6 +979,44 @@ export function initDatabase(): { success: boolean; error?: string } {
       console.warn('[search-db] Bad-coord manual cleanup failed (non-fatal):', (e as Error).message);
     }
 
+    // v2.1 round 22 (Terry 2026-06-08) — one-shot cleanup of garbage
+    // transcripts. Whisper's silence-hallucination output (chunks
+    // of only "!!!" / "..." / one-token repeats) snuck through the
+    // initial worker because there was no quality filter. The
+    // filter shipped in this round drops those at the source, but
+    // any rows persisted before that need removing or PDRV will
+    // keep showing exclamation-mark "captions". Match: plain_text
+    // mostly non-letters (<30% letters) OR single-segment + few
+    // unique tokens. Idempotent.
+    try {
+      // table may not exist on very old DBs — wrap with check
+      const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='video_transcripts'`).get();
+      if (tableExists) {
+        const candidates = db.prepare(`SELECT file_id, plain_text FROM video_transcripts`).all() as Array<{ file_id: number; plain_text: string }>;
+        const toDelete: number[] = [];
+        for (const row of candidates) {
+          const text = (row.plain_text || '').trim();
+          if (!text) { toDelete.push(row.file_id); continue; }
+          const letters = text.replace(/[^\p{L}]/gu, '');
+          if (letters.length < 3 || letters.length / text.length < 0.3) {
+            toDelete.push(row.file_id);
+            continue;
+          }
+          const tokens = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+          if (tokens.length > 3 && new Set(tokens).size <= 2) {
+            toDelete.push(row.file_id);
+          }
+        }
+        if (toDelete.length > 0) {
+          const stmt = db.prepare(`DELETE FROM video_transcripts WHERE file_id = ?`);
+          for (const id of toDelete) stmt.run(id);
+          console.log(`[search-db] Deleted ${toDelete.length} garbage transcript row(s) (pre-filter Whisper hallucinations like "!!!!" / "you you you")`);
+        }
+      }
+    } catch (e) {
+      console.warn('[search-db] Garbage-transcript cleanup failed (non-fatal):', (e as Error).message);
+    }
+
     // Trees v1 — relationship edges between persons.
     // Stored types:
     //   parent_of     — A is parent of B (with optional biological/step/adopted/in_law flags)

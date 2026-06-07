@@ -2422,6 +2422,17 @@
               body: 'Whisper transcribed ' + (res.durationSeconds ? res.durationSeconds.toFixed(0) + ' seconds of audio into ' + res.segments.length + ' caption segments. ' : '') + 'Captions are now visible — click the CC button to toggle off, or click again to turn back on.',
               okLabel: 'OK',
             });
+          } else if (res && res.success && res.noSpeech) {
+            // v2.1 round 22 (Terry 2026-06-08) — explicit no-speech
+            // surface. Whisper finished but returned only silence-
+            // hallucination tokens ("!!!" / "you you you" / etc.)
+            // which we filter out at the worker. No row persisted;
+            // user can retry later if the video gets re-encoded.
+            showAiResult({
+              title: 'No speech found',
+              body: 'Whisper analysed ' + (res.durationSeconds ? res.durationSeconds.toFixed(0) + ' seconds of audio' : 'the audio') + ' but didn\'t find any usable dialogue. Likely causes: the video has no speech (music / ambient sound only), the audio is too quiet for the model to pick out words, or the voices are too far from the mic. No transcript was saved — you can try again later if the audio quality improves.',
+              okLabel: 'OK',
+            });
           } else if (res && res.success) {
             showAiResult({
               title: 'No speech found',

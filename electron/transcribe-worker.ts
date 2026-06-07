@@ -252,9 +252,29 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : 0;
       const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : (start + 5);
       const text = (c.text ?? '').trim();
-      if (text) segments.push({ start, end, text });
+      if (!text) continue;
+      // v2.1 round 22 (Terry 2026-06-08) — filter out Whisper's
+      // hallucinated-silence garbage. When fed non-speech audio
+      // (music, background noise, ambient room tone) Whisper
+      // tends to return chunks like "!!!!!!!" or "...........",
+      // or "you" / " you you you you" repeated. Terry hit this
+      // on a 2-minute video that produced one segment of ~100
+      // exclamation marks. Heuristic: require at least 30% real
+      // letters (so any text where punctuation dominates gets
+      // tossed) AND at least 3 letters total. Multi-language safe
+      // via \p{L} unicode letter class.
+      const letters = text.replace(/[^\p{L}]/gu, '');
+      if (letters.length < 3) continue;
+      if (letters.length / text.length < 0.3) continue;
+      // Also drop the lone-token repeat artefact ("you you you you").
+      const tokens = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
+      if (tokens.length > 3) {
+        const unique = new Set(tokens).size;
+        if (unique <= 2) continue; // 4+ tokens but only 1-2 distinct
+      }
+      segments.push({ start, end, text });
     }
-    const plainText = (result?.text ?? segments.map(s => s.text).join(' ')).trim();
+    const plainText = segments.map(s => s.text).join(' ').trim();
     const detectedLanguage = (result?.language ?? language ?? 'en').toString();
 
     // Clean up the temp wav.

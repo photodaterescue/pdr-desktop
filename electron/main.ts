@@ -7418,6 +7418,26 @@ ipcMain.handle('viewer:transcribeVideo', async (event, req: { filePath: string; 
       worker.postMessage({ type: 'transcribe', requestId, sourcePath: req.filePath, language: req.language });
     });
 
+    // v2.1 round 22 (Terry 2026-06-08) — if every segment was
+    // filtered as garbage (or Whisper found nothing speech-like),
+    // DON'T persist an empty row. Return a clean "noSpeech: true"
+    // so the renderer can tell the user this video has no usable
+    // dialogue instead of showing an empty CC toggle that does
+    // nothing. The user can retry later (e.g. after re-encoding)
+    // and the IPC will re-run rather than serving an empty cache.
+    if (!result.segments || result.segments.length === 0) {
+      console.log('[viewer:transcribeVideo] no usable speech found in file_id', fileRow.id, '(' + result.durationSeconds.toFixed(1) + 's audio) — not persisting');
+      return {
+        success: true,
+        existed: false,
+        noSpeech: true,
+        segments: [],
+        plainText: '',
+        language: result.language,
+        durationSeconds: result.durationSeconds,
+      };
+    }
+
     // Persist transcript to DB.
     const generatedAt = new Date().toISOString();
     db.prepare(`

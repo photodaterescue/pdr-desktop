@@ -1185,34 +1185,50 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
 
     setBatchTranscribing(true);
     let unsubProgress: (() => void) | null = null;
-    let innerPhase = 'Starting…';
     let currentIdx = 0;
+    let currentPct = 0;
+    let currentPhaseShort = 'Starting';
     const failures: { filePath: string; error: string }[] = [];
     let alreadyTranscribed = 0;
     let freshlyTranscribed = 0;
-    const toastId = toast.loading(`Transcribing 1 of ${filePaths.length}…`, {
-      description: 'Preparing…',
-    });
+    let noSpeech = 0;
+    // v2.1 round 22 (Terry 2026-06-08) — stable toast layout. The
+    // earlier version put the raw worker phase (incl. varying
+    // filenames like "onnx/decoder_model_merged.onnx") in the
+    // description, so the toast bounced in height as long
+    // filenames wrapped. Now: title carries the running count +
+    // percent (fixed-width feel), description is a short phase
+    // label ("Downloading model" / "Transcribing audio" / etc.)
+    // that doesn't change line count.
+    function shortPhase(raw: string): string {
+      // Strip filename / quoted path noise from the worker's phase.
+      // e.g. "Downloading model: onnx/encoder_model.onnx" → "Downloading model"
+      const cut = raw.indexOf(':');
+      return (cut >= 0 ? raw.slice(0, cut) : raw).replace(/[…]/g, '').trim();
+    }
+    function buildTitle(): string {
+      return `Transcribing ${currentIdx + 1} of ${filePaths.length} · ${currentPct}%`;
+    }
+    const toastId = toast.loading(buildTitle(), { description: shortPhase('Starting'), duration: Infinity });
     try {
       if (pdrViewer.onTranscribeProgress) {
         unsubProgress = pdrViewer.onTranscribeProgress((info: { phase: string; percent: number }) => {
-          if (info) {
-            innerPhase = info.phase;
-            toast.loading(`Transcribing ${currentIdx + 1} of ${filePaths.length}…`, {
-              id: toastId,
-              description: innerPhase,
-            });
-          }
+          if (!info) return;
+          currentPct = Math.max(0, Math.min(100, Math.round(info.percent)));
+          currentPhaseShort = shortPhase(info.phase);
+          toast.loading(buildTitle(), { id: toastId, description: currentPhaseShort, duration: Infinity });
         });
       }
       for (let i = 0; i < filePaths.length; i++) {
         currentIdx = i;
-        innerPhase = 'Starting…';
-        toast.loading(`Transcribing ${i + 1} of ${filePaths.length}…`, { id: toastId, description: innerPhase });
+        currentPct = 0;
+        currentPhaseShort = 'Starting';
+        toast.loading(buildTitle(), { id: toastId, description: currentPhaseShort, duration: Infinity });
         try {
           const res = await pdrViewer.transcribeVideo({ filePath: filePaths[i] });
           if (res?.success) {
             if (res.existed) alreadyTranscribed++;
+            else if ((res as any).noSpeech) noSpeech++;
             else freshlyTranscribed++;
           } else {
             failures.push({ filePath: filePaths[i], error: res?.error ?? 'Unknown error' });
@@ -1221,19 +1237,26 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           failures.push({ filePath: filePaths[i], error: (err as Error)?.message ?? String(err) });
         }
       }
-      // Final summary toast.
+      // Final summary toast — stays visible until the user
+      // dismisses (duration: Infinity) so they don't miss it like
+      // Terry did mid-typing this round.
       const parts: string[] = [];
       if (freshlyTranscribed > 0) parts.push(`${freshlyTranscribed} transcribed`);
       if (alreadyTranscribed > 0) parts.push(`${alreadyTranscribed} already done`);
+      if (noSpeech > 0) parts.push(`${noSpeech} with no speech`);
       if (failures.length > 0) parts.push(`${failures.length} failed`);
       if (failures.length === 0) {
-        toast.success(`Transcription complete`, { id: toastId, description: parts.join(' · ') });
+        toast.success(`Transcription complete`, {
+          id: toastId,
+          description: parts.join(' · ') || 'No changes',
+          duration: Infinity,
+        });
       } else {
         toast.warning(`Transcription finished with errors`, {
           id: toastId,
           description: `${parts.join(' · ')}. See PDR log for details.`,
+          duration: Infinity,
         });
-        // Log specifics so the user can chase if they want.
         console.warn('[memories] batch transcribe failures:', failures);
       }
     } finally {
