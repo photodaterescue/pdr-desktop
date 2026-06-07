@@ -4669,9 +4669,25 @@ function zoomTo(newZoom, centreX, centreY) {
         // back to the unprocessed version so the user can verify.
         let title = 'AI enhancement complete';
         let body = 'Enhancement applied to the visible image.';
+        const n = (extra && typeof extra.facesProcessed === 'number') ? extra.facesProcessed : null;
+        // v2.1 round 6 — when CodeFormer ran but processed 0 faces,
+        // surface a clear "couldn't find a face in that box" message
+        // instead of the misleading "restored 0 faces" line Terry
+        // hit. Also offers a re-draw path back into manual box mode.
+        if (enhancementType === 'codeformer' && n === 0) {
+          showAiResult({
+            title: 'CodeFormer couldn\'t find a face in that box',
+            body: 'The model needs to detect facial features inside the rectangle you drew. The box may be too tight, too loose, or off the face. Try drawing a slightly larger box centred on the face — include hairline + chin + a little space either side.',
+            okLabel: 'Close',
+            secondary: {
+              label: 'Draw again',
+              onClick: function () { enterManualBoxMode(); },
+            },
+          });
+          return;
+        }
         if (enhancementType === 'codeformer') {
           title = 'Face restoration complete';
-          const n = (extra && typeof extra.facesProcessed === 'number') ? extra.facesProcessed : null;
           body = (n !== null)
             ? ('CodeFormer restored ' + n + ' face' + (n === 1 ? '' : 's') + '. The visible image now shows the enhanced result.')
             : 'CodeFormer restored the detected faces. The visible image now shows the enhanced result.';
@@ -4688,7 +4704,7 @@ function zoomTo(newZoom, centreX, centreY) {
           body: body,
           okLabel: 'OK',
           secondary: {
-            label: 'Compare to original',
+            label: 'Show original photo',
             onClick: function () { setCompareMode(true); },
           },
         });
@@ -4705,7 +4721,7 @@ function zoomTo(newZoom, centreX, centreY) {
         compareOn = !!on;
         const aiSrc = 'file:///' + encodeURI(aiResultPath.replace(/\\/g, '/'));
         img.src = compareOn ? aiOriginalSrc : aiSrc;
-        if (compareBtn) compareBtn.textContent = compareOn ? 'Show enhanced' : 'Show original';
+        if (compareBtn) compareBtn.textContent = compareOn ? 'Show AI result' : 'Show original photo';
         if (compareBtn) compareBtn.style.display = '';
       }
       // The compare button itself — appended to the Enhance panel
@@ -4720,7 +4736,7 @@ function zoomTo(newZoom, centreX, centreY) {
         compareBtn = document.createElement('button');
         compareBtn.id = 'enhance-ai-compare';
         compareBtn.type = 'button';
-        compareBtn.textContent = 'Show original';
+        compareBtn.textContent = 'Show original photo';
         compareBtn.style.cssText = [
           'margin-top:8px',
           'width:100%',
@@ -4743,7 +4759,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (btn) {
           btn.style.display = '';
           compareOn = false;
-          btn.textContent = 'Show original';
+          btn.textContent = 'Show original photo';
         }
       }
       function hideCompareButton() {

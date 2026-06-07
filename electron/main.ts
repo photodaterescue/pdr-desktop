@@ -7432,9 +7432,9 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
     const tmpDir = path.join(app.getPath('temp'), 'pdr-enhance');
     try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
 
+    const sharp = (await import('sharp')).default;
     let sourceForWorker = req.filePath;
     if (!filterIsDefault) {
-      const sharp = (await import('sharp')).default;
       const bakedPath = path.join(tmpDir, `manual-baked-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`);
       let pipeline = sharp(req.filePath).modulate({ brightness: b, saturation: s });
       // contrast via linear(): out = slope * in + intercept; intercept
@@ -7447,6 +7447,24 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
       sourceForWorker = bakedPath;
       console.log('[viewer:enhanceFacesManual] baked filter to', bakedPath, { b, c, s });
     }
+
+    // v2.1 round 6 (Terry 2026-06-07) — BUG FIX. The enhance-worker
+    // treats faceBoxes' x/y/w/h as NORMALISED (0..1) and multiplies
+    // by src dims internally. I was passing pixel coords, so the
+    // multiplication blew up to millions, clamping rejected the
+    // crop as "too small", and CodeFormer was never called.
+    // Result: facesProcessed=0, no visible enhancement, Terry
+    // (rightly) thought nothing happened. Normalise here.
+    const meta = await sharp(req.filePath).metadata();
+    const imgW = meta.width || 1;
+    const imgH = meta.height || 1;
+    const normBox = {
+      x: req.manualBox.x / imgW,
+      y: req.manualBox.y / imgH,
+      w: req.manualBox.w / imgW,
+      h: req.manualBox.h / imgH,
+    };
+    console.log('[viewer:enhanceFacesManual] image dims', { imgW, imgH }, 'normalised box', normBox);
 
     // Look up the indexed file id (for the post-enhance
     // face_detections insert). Best-effort — if the file isn't in
@@ -7478,12 +7496,7 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
         requestId,
         sourcePath: sourceForWorker,
         outputPath,
-        faceBoxes: [{
-          x: Math.round(req.manualBox.x),
-          y: Math.round(req.manualBox.y),
-          w: Math.round(req.manualBox.w),
-          h: Math.round(req.manualBox.h),
-        }],
+        faceBoxes: [normBox], // normalised, as the worker expects
         fidelity: typeof req.fidelity === 'number' ? req.fidelity : 0.5,
       });
     });
@@ -7498,16 +7511,18 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
     // explicit.
     if (fileRow) {
       try {
+        // Match the format the auto-detector uses (see ai-worker.ts
+        // ~line 431 — normalised 0..1 box coords).
         db.prepare(`
           INSERT INTO face_detections
             (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id)
           VALUES (?, NULL, ?, ?, ?, ?, NULL, 1.0, NULL)
         `).run(
           fileRow.id,
-          req.manualBox.x,
-          req.manualBox.y,
-          req.manualBox.w,
-          req.manualBox.h,
+          normBox.x,
+          normBox.y,
+          normBox.w,
+          normBox.h,
         );
         console.log('[viewer:enhanceFacesManual] inserted manual face_detection for file_id', fileRow.id);
       } catch (insErr) {
