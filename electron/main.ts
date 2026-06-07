@@ -11531,10 +11531,31 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
     const partPath = outPath + '.part';
     try { if (fs.existsSync(partPath)) fs.unlinkSync(partPath); } catch {}
 
+    // v2.1 (Terry 2026-06-07) — explicit -f format flag is REQUIRED
+    // because the .part suffix prevents ffmpeg from inferring the
+    // container from the output extension. Map common extensions to
+    // ffmpeg format names; fall back to mp4 for anything unknown
+    // (works for the vast majority of phone-camera footage).
+    const sourceExtForFmt = path.extname(req.filePath).toLowerCase();
+    const ffmpegFmtMap: Record<string, string> = {
+      '.mp4': 'mp4', '.m4v': 'mp4',
+      '.mov': 'mov',
+      '.mkv': 'matroska',
+      '.webm': 'webm',
+      '.avi': 'avi',
+      '.wmv': 'asf',
+      '.flv': 'flv',
+      '.3gp': '3gp', '.3g2': '3g2',
+      '.mpg': 'mpeg', '.mpeg': 'mpeg',
+    };
+    const fmtFlag = ffmpegFmtMap[sourceExtForFmt] || 'mp4';
+
     // ffmpeg args: -ss BEFORE -i for fast input seeking on `-c copy`,
     // -to for end (absolute time, not duration), -c copy for fast
     // remux, -avoid_negative_ts make_zero to prevent timestamp
-    // issues at the cut point.
+    // issues at the cut point, -f to force the container format
+    // since the .part output extension hides the real type from
+    // ffmpeg's inference.
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-ss', String(req.startSec),
@@ -11542,6 +11563,7 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
       '-i', ffmpegSrc,
       '-c', 'copy',
       '-avoid_negative_ts', 'make_zero',
+      '-f', fmtFlag,
       '-y', partPath,
     ];
 
