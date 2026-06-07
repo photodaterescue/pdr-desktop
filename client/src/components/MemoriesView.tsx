@@ -25,12 +25,14 @@ import {
   RotateCcw,
   Star,
   MessageSquareText,
+  Captions,
   Trash2,
   ZoomIn,
   ZoomOut,
   Search,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { promptConfirm } from '@/components/trees/promptConfirm';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
 import {
@@ -1146,6 +1148,99 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     setSelectedFileIds(new Set());
     lastClickedIndexRef.current = null;
   };
+
+  // v2.1 (Terry 2026-06-07) — batch video transcription. Loops the
+  // existing single-video viewer:transcribeVideo IPC (idempotent —
+  // already-transcribed videos return instantly from the DB cache,
+  // so the per-call cost on a re-run is one round-trip). Progress
+  // surfaces in a sonner promise toast with current/total + the
+  // inner Whisper phase. Worker is serial (one Whisper inference
+  // at a time keeps CPU spikes within the half-cores cap), so this
+  // is genuinely a queue.
+  const [batchTranscribing, setBatchTranscribing] = useState(false);
+  const transcribeSelectedVideos = async (filePaths: string[]) => {
+    if (filePaths.length === 0 || batchTranscribing) return;
+    const pdrViewer = (window as any).pdr?.viewer;
+    if (!pdrViewer?.transcribeVideo) {
+      toast.error('Transcription unavailable', { description: 'Bridge missing — please relaunch PDR.' });
+      return;
+    }
+    // Confirm before running — Whisper is heavy and the user might
+    // have selected accidentally. promptConfirm matches the
+    // destructive-Send and Remove-from-library patterns elsewhere.
+    const ok = await promptConfirm({
+      eyebrow: 'TRANSCRIBE VIDEOS',
+      title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
+      message: (
+        <>
+          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. The model downloads once (~150 MB) and then transcribes at roughly 0.5–2× each video's length depending on your CPU. Videos already transcribed are skipped instantly.
+          <br /><br />
+          You can keep using PDR while this runs.
+        </>
+      ),
+      confirmLabel: 'Transcribe',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
+
+    setBatchTranscribing(true);
+    let unsubProgress: (() => void) | null = null;
+    let innerPhase = 'Starting…';
+    let currentIdx = 0;
+    const failures: { filePath: string; error: string }[] = [];
+    let alreadyTranscribed = 0;
+    let freshlyTranscribed = 0;
+    const toastId = toast.loading(`Transcribing 1 of ${filePaths.length}…`, {
+      description: 'Preparing…',
+    });
+    try {
+      if (pdrViewer.onTranscribeProgress) {
+        unsubProgress = pdrViewer.onTranscribeProgress((info: { phase: string; percent: number }) => {
+          if (info) {
+            innerPhase = info.phase;
+            toast.loading(`Transcribing ${currentIdx + 1} of ${filePaths.length}…`, {
+              id: toastId,
+              description: innerPhase,
+            });
+          }
+        });
+      }
+      for (let i = 0; i < filePaths.length; i++) {
+        currentIdx = i;
+        innerPhase = 'Starting…';
+        toast.loading(`Transcribing ${i + 1} of ${filePaths.length}…`, { id: toastId, description: innerPhase });
+        try {
+          const res = await pdrViewer.transcribeVideo({ filePath: filePaths[i] });
+          if (res?.success) {
+            if (res.existed) alreadyTranscribed++;
+            else freshlyTranscribed++;
+          } else {
+            failures.push({ filePath: filePaths[i], error: res?.error ?? 'Unknown error' });
+          }
+        } catch (err) {
+          failures.push({ filePath: filePaths[i], error: (err as Error)?.message ?? String(err) });
+        }
+      }
+      // Final summary toast.
+      const parts: string[] = [];
+      if (freshlyTranscribed > 0) parts.push(`${freshlyTranscribed} transcribed`);
+      if (alreadyTranscribed > 0) parts.push(`${alreadyTranscribed} already done`);
+      if (failures.length > 0) parts.push(`${failures.length} failed`);
+      if (failures.length === 0) {
+        toast.success(`Transcription complete`, { id: toastId, description: parts.join(' · ') });
+      } else {
+        toast.warning(`Transcription finished with errors`, {
+          id: toastId,
+          description: `${parts.join(' · ')}. See PDR log for details.`,
+        });
+        // Log specifics so the user can chase if they want.
+        console.warn('[memories] batch transcribe failures:', failures);
+      }
+    } finally {
+      if (unsubProgress) { try { unsubProgress(); } catch {} }
+      setBatchTranscribing(false);
+    }
+  };
   // Clear selection on drilldown navigation — when the user clicks
   // a different year/month/day, the old selection is no longer
   // referenceable in the new file list.
@@ -2215,6 +2310,33 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 Delete
               </Button>
             </IconTooltip>
+            {/* v2.1 (Terry 2026-06-07) — batch transcribe action.
+                Renders only when at least one selected file is a
+                video; count reflects video subset (mixed-type
+                selection processes just the videos). Uses the
+                lavender Button default (constructive action — same
+                tier as "Open in Viewer" CTA below). Backend IPC is
+                idempotent — already-transcribed videos return
+                instantly from the cache, so re-running on the same
+                selection is cheap. */}
+            {(() => {
+              const base = visibleFiles ?? files ?? [];
+              const selectedVideos = base.filter(f => selectedFileIds.has(f.id) && f.file_type === 'video');
+              if (selectedVideos.length === 0) return null;
+              return (
+                <IconTooltip label={`Transcribe ${selectedVideos.length} video${selectedVideos.length === 1 ? '' : 's'} with Whisper (runs locally on your computer)`} side="bottom">
+                  <Button
+                    variant="default"
+                    size="sm"
+                    onClick={() => transcribeSelectedVideos(selectedVideos.map(v => v.file_path))}
+                    data-testid="memories-selection-transcribe"
+                  >
+                    <Captions className="w-3.5 h-3.5 mr-1.5" />
+                    Transcribe {selectedVideos.length}
+                  </Button>
+                </IconTooltip>
+              );
+            })()}
           </>
         )}
         {files != null && files.length > 1 && (
