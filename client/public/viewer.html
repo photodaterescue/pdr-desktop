@@ -1996,6 +1996,9 @@
       // diagonal arrows pointing outward to corners) for entering,
       // close_fullscreen (arrows pointing inward) for exiting.
       const ICON_FS_OPEN  = '<path d="M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z"/>';
+      // v2.1 (Terry 2026-06-07) — CC (closed captions) icon. Two
+      // letters in a rounded rectangle, YouTube-style.
+      const ICON_CC = '<path d="M19 4H5C3.9 4 3 4.9 3 6v12c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm-8 7H9.5v-.5h-2v3h2V13H11v1c0 .55-.45 1-1 1H7c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1zm7 0h-1.5v-.5h-2v3h2V13H18v1c0 .55-.45 1-1 1h-3c-.55 0-1-.45-1-1v-4c0-.55.45-1 1-1h3c.55 0 1 .45 1 1v1z"/>';
       const ICON_FS_CLOSE = '<path d="M22 3.41L16.71 8.7 20 12h-8V4l3.29 3.29L20.59 2 22 3.41zM3.41 22l5.29-5.29L12 20v-8H4l3.29 3.29L2 20.59 3.41 22z"/>';
       // Material `repeat` icon — the YouTube loop indicator (two
       // arrows curving around a rectangle).
@@ -2081,9 +2084,25 @@
               '</div>' +
             '</div>' +
           '</div>' +
+          // v2.1 (Terry 2026-06-07) — CC button. Toggle for the
+          // captions overlay. Tooltip text dynamically reflects
+          // state: "Transcribe video" when no transcript exists,
+          // "Hide captions" / "Show captions" when one does.
+          '<button class="pdrv-btn" data-ctrl="cc" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Transcribe video">' + wrapSvg(ICON_CC) + '</button>' +
           '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" data-pdr-tooltip-side="top" data-pdr-tooltip="Fullscreen (F)">' + wrapSvg(ICON_FS_OPEN) + '</button>' +
         '</div>';
       wrap.appendChild(bar);
+
+      // v2.1 (Terry 2026-06-07) — Captions overlay. Absolute-
+      // positioned near the bottom of the video; updated on
+      // video.timeupdate to show the active segment text. Hidden
+      // by default (display:none) until the user enables CC and a
+      // transcript exists.
+      const captionsLayer = document.createElement('div');
+      captionsLayer.className = 'pdrv-captions';
+      captionsLayer.style.cssText = 'position:absolute;left:0;right:0;bottom:64px;display:none;justify-content:center;pointer-events:none;z-index:20;padding:0 12%;';
+      captionsLayer.innerHTML = '<span class="pdrv-captions-text" style="display:inline-block;max-width:100%;padding:6px 14px;background:rgba(0,0,0,0.72);color:#fff;font-size:18px;line-height:1.35;border-radius:6px;text-align:center;font-weight:500;text-shadow:0 1px 2px rgba(0,0,0,0.5);"></span>';
+      wrap.appendChild(captionsLayer);
 
       // Fullscreen-exit X overlay at top-center, shown only while
       // fullscreen is active. ESC also exits via the native API.
@@ -2136,6 +2155,8 @@
       const speedCurrentLabel = q('speed-current-label'); // shown on main view
       const trimEnterBtn = q('trim-enter');
       const fsBtn = q('fullscreen');
+      const ccBtn = q('cc');
+      const captionsTextEl = captionsLayer.querySelector('.pdrv-captions-text');
       const trimRangeLbl = trimBar.querySelector('[data-ctrl="trim-range"]');
       const trimSaveBtn = trimBar.querySelector('[data-ctrl="trim-save"]');
       const trimCancelBtn = trimBar.querySelector('[data-ctrl="trim-cancel"]');
@@ -2278,6 +2299,147 @@
       });
       fsClose.addEventListener('click', () => {
         try { document.exitFullscreen(); } catch (_) {}
+      });
+
+      // ─── v2.1 (Terry 2026-06-07) — Video transcription + captions.
+      // First click of CC on an un-transcribed video: confirm modal
+      // → run Whisper → cache transcript → captions live on
+      // automatically. Subsequent clicks toggle captions display.
+      // Existing transcripts auto-load silently on video open
+      // (CC button lights gold when one is available), so opening a
+      // previously-transcribed video gives instant captions on toggle.
+      let transcriptSegments = null;   // [{start, end, text}] when present
+      let captionsVisible = false;
+      let lastCaptionIdx = -1;
+
+      function updateCcButtonState() {
+        if (!ccBtn) return;
+        if (transcriptSegments && transcriptSegments.length > 0) {
+          ccBtn.classList.add('active');
+          ccBtn.style.color = captionsVisible ? '#fbbf24' : '';
+          ccBtn.setAttribute('data-pdr-tooltip', captionsVisible ? 'Hide captions' : 'Show captions');
+        } else {
+          ccBtn.classList.remove('active');
+          ccBtn.style.color = '';
+          ccBtn.setAttribute('data-pdr-tooltip', 'Transcribe video');
+        }
+      }
+
+      function renderCaptionForTime(t) {
+        if (!captionsVisible || !transcriptSegments || transcriptSegments.length === 0) {
+          captionsLayer.style.display = 'none';
+          return;
+        }
+        // Linear scan from lastCaptionIdx (forward + backward) — for
+        // typical clip lengths this is faster than binary search and
+        // avoids the index-drift bugs that come with seeking.
+        let idx = -1;
+        for (let i = 0; i < transcriptSegments.length; i++) {
+          const s = transcriptSegments[i];
+          if (t >= s.start && t <= s.end) { idx = i; break; }
+        }
+        if (idx === lastCaptionIdx) return;
+        lastCaptionIdx = idx;
+        if (idx < 0) {
+          captionsLayer.style.display = 'none';
+        } else {
+          captionsTextEl.textContent = transcriptSegments[idx].text;
+          captionsLayer.style.display = 'flex';
+        }
+      }
+
+      video.addEventListener('timeupdate', function () {
+        renderCaptionForTime(video.currentTime);
+      });
+      video.addEventListener('seeked', function () {
+        lastCaptionIdx = -1; // force re-render after a seek
+        renderCaptionForTime(video.currentTime);
+      });
+
+      // Try to load any existing transcript on video open. Silent —
+      // doesn't auto-trigger the modal, just lights up CC.
+      (async function loadExistingTranscript() {
+        try {
+          if (!window.pdr || !window.pdr.viewer || !window.pdr.viewer.getTranscript) return;
+          const filePath = video.dataset.filePath || ((typeof files !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '');
+          if (!filePath) return;
+          const res = await window.pdr.viewer.getTranscript(filePath);
+          if (res && res.success && res.transcript && res.transcript.segments && res.transcript.segments.length > 0) {
+            transcriptSegments = res.transcript.segments;
+            updateCcButtonState();
+            console.log('[viewer] loaded existing transcript:', transcriptSegments.length, 'segments,', (res.transcript.durationSeconds || 0).toFixed(1) + 's audio');
+          }
+        } catch (e) { console.warn('[viewer] getTranscript load failed:', e && (e.message || e)); }
+      })();
+
+      // CC click — three branches:
+      //   1. Captions on  → turn off
+      //   2. Captions off + transcript present → turn on
+      //   3. No transcript → confirm + run Whisper
+      ccBtn.addEventListener('click', async function () {
+        if (transcriptSegments && transcriptSegments.length > 0) {
+          captionsVisible = !captionsVisible;
+          updateCcButtonState();
+          renderCaptionForTime(video.currentTime);
+          return;
+        }
+        // No transcript yet. Confirm + run.
+        const filePath = video.dataset.filePath || ((typeof files !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '');
+        if (!filePath) return;
+        const ok = await showPdrConfirm({
+          title: 'Transcribe this video?',
+          body: 'PDR runs Whisper locally on your computer — nothing is uploaded. First time it downloads the model (~150 MB). After that it transcribes at roughly 0.5-2× the video\'s length depending on your CPU. The transcript becomes captions you can toggle, and powers transcript search in the future.',
+          confirmLabel: 'Transcribe',
+          cancelLabel: 'Cancel',
+        });
+        if (!ok) return;
+
+        // Subscribe to progress events for the duration of this call.
+        let unsubProgress = null;
+        try {
+          if (window.pdr.viewer.onTranscribeProgress) {
+            unsubProgress = window.pdr.viewer.onTranscribeProgress(function (info) {
+              if (info) setAiProgress(info.phase, info.percent);
+            });
+          }
+        } catch (_) {}
+
+        openAiProgress('Transcribing video…');
+        try {
+          const res = await window.pdr.viewer.transcribeVideo({ filePath: filePath });
+          if (res && res.success && res.segments && res.segments.length > 0) {
+            transcriptSegments = res.segments;
+            captionsVisible = true; // auto-on after a fresh transcribe
+            updateCcButtonState();
+            renderCaptionForTime(video.currentTime);
+            showAiResult({
+              title: 'Transcription complete',
+              body: 'Whisper transcribed ' + (res.durationSeconds ? res.durationSeconds.toFixed(0) + ' seconds of audio into ' + res.segments.length + ' caption segments. ' : '') + 'Captions are now visible — click the CC button to toggle off, or click again to turn back on.',
+              okLabel: 'OK',
+            });
+          } else if (res && res.success) {
+            showAiResult({
+              title: 'No speech found',
+              body: 'Whisper ran successfully but didn\'t find any spoken audio to transcribe. This usually means the video has no dialogue or the audio is too quiet / noisy for the model to pick out words.',
+              okLabel: 'OK',
+            });
+          } else {
+            showAiResult({
+              title: 'Transcription failed',
+              body: (res && res.error) ? res.error : 'Unknown error — see PDR\'s log for details.',
+              okLabel: 'Close',
+            });
+          }
+        } catch (err) {
+          showAiResult({
+            title: 'Transcription failed',
+            body: (err && err.message) ? err.message : String(err),
+            okLabel: 'Close',
+          });
+        } finally {
+          closeAiProgress();
+          if (unsubProgress) { try { unsubProgress(); } catch (_) {} }
+        }
       });
 
       // v2.0.15 (Terry 2026-06-06 round 8) — Loop toggle. Lavender
