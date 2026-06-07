@@ -7293,8 +7293,13 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
       return { success: false, error: 'This photo is not in the library index. Add it via a Fix run first.' };
     }
 
+    // v2.1 (Terry 2026-06-07) — BUG FIX. The schema columns are
+    // box_w / box_h (see search-database.ts:435-436), NOT box_width
+    // / box_height. The previous SQL threw "no such column:
+    // box_width" which surfaced verbatim in the AI Enhancement
+    // result modal — Terry hit it on every Faces click.
     const faceRows = db
-      .prepare(`SELECT box_x AS x, box_y AS y, box_width AS w, box_height AS h FROM face_detections WHERE file_id = ?`)
+      .prepare(`SELECT box_x AS x, box_y AS y, box_w AS w, box_h AS h FROM face_detections WHERE file_id = ?`)
       .all(fileRow.id) as Array<{ x: number; y: number; w: number; h: number }>;
 
     if (!faceRows || faceRows.length === 0) {

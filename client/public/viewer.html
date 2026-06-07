@@ -4324,27 +4324,38 @@ function zoomTo(newZoom, centreX, centreY) {
         try {
           let result;
           if (action === 'faces') {
+            console.log('[viewer] AI Faces start:', filePath);
             result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
+            console.log('[viewer] AI Faces result:', JSON.stringify(result || {}));
             if (result && result.success && result.outputPath) {
-              applyAiResult(result.outputPath, filePath, 'codeformer');
+              applyAiResult(result.outputPath, filePath, 'codeformer', { facesProcessed: result.facesProcessed });
+              showCompareButton();
             } else {
               handleAiError(result);
             }
           } else if (action === 'upscale') {
+            console.log('[viewer] AI Upscale start:', filePath);
             result = await pdrViewer.enhanceWholeImage({ filePath: filePath });
+            console.log('[viewer] AI Upscale result:', JSON.stringify(result || {}));
             if (result && result.success && result.outputPath) {
               applyAiResult(result.outputPath, filePath, 'realesrgan');
+              showCompareButton();
             } else {
               handleAiError(result);
             }
           } else if (action === 'both') {
+            console.log('[viewer] AI Both (Faces+Upscale) start:', filePath);
             // Faces first, then upscale the result.
             result = await pdrViewer.enhanceFaces({ filePath: filePath, fidelity: 0.5 });
+            console.log('[viewer] AI Both — Faces result:', JSON.stringify(result || {}));
             if (!result || !result.success) { handleAiError(result); return; }
             const facesPath = result.outputPath;
+            const facesProcessed = result.facesProcessed;
             result = await pdrViewer.enhanceWholeImage({ filePath: facesPath });
+            console.log('[viewer] AI Both — Upscale result:', JSON.stringify(result || {}));
             if (result && result.success && result.outputPath) {
-              applyAiResult(result.outputPath, filePath, 'manual+ai');
+              applyAiResult(result.outputPath, filePath, 'codeformer+realesrgan', { facesProcessed: facesProcessed });
+              showCompareButton();
             } else {
               handleAiError(result);
             }
@@ -4354,13 +4365,25 @@ function zoomTo(newZoom, centreX, centreY) {
         }
       }
 
-      function applyAiResult(tempPath, sourcePath, enhancementType) {
+      // v2.1 (Terry 2026-06-07) — held while AI result is showing so
+      // the compare button can swap back to the original. Cleared
+      // on navigation / save / Reset all.
+      let aiOriginalSrc = null;
+      let aiResultEnhancementType = null;
+      let aiResultExtra = null; // {facesProcessed?: number} etc.
+
+      function applyAiResult(tempPath, sourcePath, enhancementType, extra) {
         aiResultPath = tempPath;
         aiResultSourcePath = sourcePath;
+        aiResultEnhancementType = enhancementType;
+        aiResultExtra = extra || null;
         // Load the AI result as the new visible image — uses file:// so
         // the existing img tag picks it up immediately.
         const img = document.getElementById('mediaImg') || document.querySelector('#viewerImg, #mainImage, img.viewer-image');
         if (img) {
+          // Stash original src for the compare toggle. Capture
+          // BEFORE swapping in the new src.
+          aiOriginalSrc = img.src;
           img.src = 'file:///' + encodeURI(tempPath.replace(/\\/g, '/'));
         }
         // Re-evaluate save availability — AI result enables save even
@@ -4370,6 +4393,96 @@ function zoomTo(newZoom, centreX, centreY) {
         // save handler to read.
         if (saveNewBtn) saveNewBtn.dataset.aiEnhancementType = enhancementType;
         if (saveReplaceBtn) saveReplaceBtn.dataset.aiEnhancementType = enhancementType;
+
+        // Surface the success — previously SILENT. Terry hit this:
+        // "I just clicked Reset All, but saw no visual changes…"
+        // because the upscale completed without any banner / modal /
+        // log line confirming it. Now: a clear modal with what ran
+        // and a "Compare to original" button that flips the image
+        // back to the unprocessed version so the user can verify.
+        let title = 'AI enhancement complete';
+        let body = 'Enhancement applied to the visible image.';
+        if (enhancementType === 'codeformer') {
+          title = 'Face restoration complete';
+          const n = (extra && typeof extra.facesProcessed === 'number') ? extra.facesProcessed : null;
+          body = (n !== null)
+            ? ('CodeFormer restored ' + n + ' face' + (n === 1 ? '' : 's') + '. The visible image now shows the enhanced result.')
+            : 'CodeFormer restored the detected faces. The visible image now shows the enhanced result.';
+        } else if (enhancementType === 'realesrgan') {
+          title = 'Upscale complete';
+          body = 'Real-ESRGAN upscaled the image 4× (every pixel reconstructed by the model). The visible image now shows the upscaled result.';
+        } else if (enhancementType === 'manual+ai' || enhancementType === 'codeformer+realesrgan') {
+          title = 'Faces restored + image upscaled';
+          body = 'CodeFormer restored detected faces, then Real-ESRGAN upscaled the result 4×. The visible image now shows the final output.';
+        }
+        body += ' Click "Save as new file" below to keep it on disk.';
+        showAiResult({
+          title: title,
+          body: body,
+          okLabel: 'OK',
+          secondary: {
+            label: 'Compare to original',
+            onClick: function () { setCompareMode(true); },
+          },
+        });
+      }
+
+      // v2.1 — compare toggle. When true, the visible image swaps
+      // back to the pre-AI src; when false, swaps back to the AI
+      // result. Idempotent. Auto-clears when the user navigates
+      // away or saves.
+      let compareOn = false;
+      function setCompareMode(on) {
+        const img = document.getElementById('mediaImg') || document.querySelector('#viewerImg, #mainImage, img.viewer-image');
+        if (!img || !aiOriginalSrc || !aiResultPath) return;
+        compareOn = !!on;
+        const aiSrc = 'file:///' + encodeURI(aiResultPath.replace(/\\/g, '/'));
+        img.src = compareOn ? aiOriginalSrc : aiSrc;
+        if (compareBtn) compareBtn.textContent = compareOn ? 'Show enhanced' : 'Show original';
+        if (compareBtn) compareBtn.style.display = '';
+      }
+      // The compare button itself — appended to the Enhance panel
+      // body after AI runs so the user can flip back and forth
+      // without re-opening any modal. Click toggles. Hidden until
+      // an AI result is present.
+      let compareBtn = null;
+      function ensureCompareButton() {
+        if (compareBtn) return compareBtn;
+        const aiSection = document.getElementById('enhance-ai-section');
+        if (!aiSection) return null;
+        compareBtn = document.createElement('button');
+        compareBtn.id = 'enhance-ai-compare';
+        compareBtn.type = 'button';
+        compareBtn.textContent = 'Show original';
+        compareBtn.style.cssText = [
+          'margin-top:8px',
+          'width:100%',
+          'padding:7px 14px',
+          'border-radius:8px',
+          'font-size:12px',
+          'font-weight:500',
+          'cursor:pointer',
+          'background:transparent',
+          'color:#a99cff',
+          'border:1px solid rgba(169,156,255,0.4)',
+          'display:none',
+        ].join(';') + ';';
+        compareBtn.addEventListener('click', function () { setCompareMode(!compareOn); });
+        aiSection.appendChild(compareBtn);
+        return compareBtn;
+      }
+      function showCompareButton() {
+        const btn = ensureCompareButton();
+        if (btn) {
+          btn.style.display = '';
+          compareOn = false;
+          btn.textContent = 'Show original';
+        }
+      }
+      function hideCompareButton() {
+        if (compareBtn) compareBtn.style.display = 'none';
+        compareOn = false;
+        aiOriginalSrc = null;
       }
 
       // v2.1 (Terry 2026-06-07) — surface AI outcomes via a visible
@@ -4465,9 +4578,14 @@ function zoomTo(newZoom, centreX, centreY) {
       const clearAiOnNav = function () {
         aiResultPath = null;
         aiResultSourcePath = null;
+        aiResultEnhancementType = null;
+        aiResultExtra = null;
         if (saveNewBtn) delete saveNewBtn.dataset.aiEnhancementType;
         if (saveReplaceBtn) delete saveReplaceBtn.dataset.aiEnhancementType;
         if (aiStatusLine) aiStatusLine.classList.remove('warn');
+        // v2.1 — also hide the compare button (the AI result is
+        // gone, there's nothing to compare against).
+        try { hideCompareButton(); } catch (_) {}
         refreshAiButtonState();
       };
       window.addEventListener('keydown', function (e) {
