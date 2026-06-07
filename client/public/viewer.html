@@ -4704,7 +4704,7 @@ function zoomTo(newZoom, centreX, centreY) {
           body: body,
           okLabel: 'OK',
           secondary: {
-            label: 'Show original photo',
+            label: 'Compare to original',
             onClick: function () { setCompareMode(true); },
           },
         });
@@ -5130,6 +5130,20 @@ function zoomTo(newZoom, centreX, centreY) {
           if (result && result.success && result.outputPath) {
             applyAiResult(result.outputPath, filePath, 'codeformer', { facesProcessed: result.facesProcessed });
             showCompareButton();
+            // v2.1 round 7 (Terry 2026-06-07) — the slider values
+            // are now BAKED into the AI output file by the backend.
+            // If we leave the CSS filter applied on top, the user
+            // sees DOUBLE brightness/contrast (the bake × the filter)
+            // — that's why Terry's sky was blown out white. Reset
+            // the sliders so display matches what's in the file.
+            // Compare-to-original now shows the genuinely dark
+            // original (accurate); the brightened preview was just
+            // a viewing aid for drawing the box, not the
+            // ground-truth comparison target.
+            const hadBake = state.brightness !== 100 || state.contrast !== 100 || state.saturation !== 100 || state.bw;
+            if (hadBake) {
+              resetSlidersToDefaults();
+            }
           } else {
             handleAiError(result);
           }
