@@ -2925,10 +2925,26 @@ app.whenReady().then(() => {
         }
       } catch { /* fall through to fresh render */ }
 
-      // Cache miss → generate via sharp
+      // Cache miss → generate via sharp.
+      // v2.1 round 20 (Terry 2026-06-07) — rotate to a BUFFER first,
+      // then read metadata + extract from THAT buffer. sharp's
+      // `.rotate().extract()` chain is misleading: .metadata()
+      // returns post-rotation dimensions but .extract() applies its
+      // bounds to the PRE-rotation image. For a portrait-stored
+      // landscape-displayed photo (2176×4608 stored, 4608×2176
+      // post-rotation), a (0,0,2197×2176) crop computed against
+      // 4608 width goes 21 px past the actual 2176-wide source and
+      // sharp throws "extract_area: bad extract area". Materialising
+      // the rotated pixels into a buffer first puts metadata and
+      // extract in the same coordinate space. Slight extra memory
+      // hit per request; only matters on the cache MISS path so
+      // it's a one-off cost per face per session.
       const sharp = (await import('sharp')).default;
       const filePathLong = toLongPath(fp);
-      const metadata = await sharp(filePathLong, { failOnError: false }).rotate().metadata();
+      const rotatedBuffer = await sharp(filePathLong, { failOnError: false })
+        .rotate()
+        .toBuffer();
+      const metadata = await sharp(rotatedBuffer).metadata();
       if (!metadata.width || !metadata.height) {
         return new Response('Could not read image', { status: 500 });
       }
@@ -2966,8 +2982,7 @@ app.whenReady().then(() => {
         // icon, with details logged so we can chase the
         // underlying data issue.
         try {
-          buffer = await sharp(filePathLong, { failOnError: false })
-            .rotate()
+          buffer = await sharp(rotatedBuffer)
             .extract({ left: px, top: py, width: pw, height: ph })
             .resize(size, size, { fit: 'cover' })
             .jpeg({ quality: 85 })
@@ -2998,8 +3013,7 @@ app.whenReady().then(() => {
           return placeholderResponse(size);
         }
         try {
-          buffer = await sharp(filePathLong, { failOnError: false })
-            .rotate()
+          buffer = await sharp(rotatedBuffer)
             .extract({ left: cropX, top: cropY, width: cropW, height: cropH })
             .resize(size, size, { fit: 'contain', background: { r: 245, g: 243, b: 250, alpha: 1 } })
             .jpeg({ quality: 85 })
