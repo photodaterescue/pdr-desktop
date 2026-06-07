@@ -1635,6 +1635,19 @@
            action. -->
       <div class="enhance-mark-face-section" style="margin-top: 8px; padding-top: 16px; border-top: 1px solid rgba(169, 156, 255, 0.15);">
         <div style="font-size: 11px; color: #a99cff; letter-spacing: 0.05em; text-transform: uppercase; font-weight: 600; margin-bottom: 8px;">Faces</div>
+        <!-- v2.1 round 10 (Terry 2026-06-07) — Show face boxes
+             toggle. Off by default. When on, every detected face
+             on the current photo gets a coloured rectangle overlay
+             (lavender for auto-detected, gold for manual marks)
+             with the person's name on hover. Lets the user see at
+             a glance whether everyone in the photo has been
+             identified. Uses the same .enhance-label-row pattern
+             as the B&W toggle above so the visual vocabulary is
+             consistent. -->
+        <div class="enhance-label-row" style="margin-bottom: 10px;">
+          <label for="toggle-face-boxes" style="cursor: pointer;">Show face boxes</label>
+          <input type="checkbox" class="enhance-toggle" id="toggle-face-boxes">
+        </div>
         <button type="button" id="enhance-mark-face-btn" style="display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 9px 12px; border-radius: 8px; background: rgba(169, 156, 255, 0.10); color: #cfc8ff; border: 1px solid rgba(169, 156, 255, 0.30); font-size: 12px; font-weight: 500; cursor: pointer; transition: background 120ms;" data-pdr-tooltip="Drag a box around a face the auto-detector missed. The face appears in People Manager as Unknown person, ready to name.">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="12" cy="11" r="3"/><path d="M7 19c1.5-2 3-3 5-3s3.5 1 5 3"/></svg>
           Mark a face
@@ -2927,6 +2940,10 @@
       // v2.1 — refresh the drag-to-app button's size badge for this
       // new file (defined near the top of the script).
       try { if (window.__refreshDragBtnSize) window.__refreshDragBtnSize(filePath); } catch (_) {}
+      // v2.1 round 10 — refresh the face-boxes overlay for the new
+      // photo (no-op if the toggle is off). Defined later in the
+      // script so we call it via window.pdrViewerOnMediaSwap.
+      try { if (window.pdrViewerOnMediaSwap) window.pdrViewerOnMediaSwap(); } catch (_) {}
 
       // Remove old media. v2.0.15 (Terry 2026-06-06 round 3) — for
       // videos, calling .pause() alone isn't always enough — the
@@ -4890,6 +4907,142 @@ function zoomTo(newZoom, centreX, centreY) {
           enterManualBoxMode();
         });
       }
+
+      // ─── v2.1 round 10 (Terry 2026-06-07) — Show face boxes
+      // toggle. Overlays a coloured rectangle on every detected
+      // face on the current photo so the user can tell at a glance
+      // whether everyone is identified. Off by default; persisted
+      // via settings.viewerShowFaceBoxes.
+      //
+      // Implementation: overlay divs live in a single layer
+      // appended to <body> (position:fixed), so they don't disturb
+      // the image's existing transform stack. A rAF loop while the
+      // toggle is on recomputes their viewport position from the
+      // image's getBoundingClientRect() — that way zoom, pan,
+      // resize, rotate all just work without us hooking into each
+      // transform path individually. Loop stops when toggle is
+      // off, image swap fires (reload), or the panel closes.
+      const faceBoxesToggle = document.getElementById('toggle-face-boxes');
+      let faceBoxesEnabled = false;
+      let faceBoxesCache = [];
+      let faceBoxesLayer = null;
+      let faceBoxesRafHandle = 0;
+
+      function ensureFaceBoxesLayer() {
+        if (faceBoxesLayer) return faceBoxesLayer;
+        faceBoxesLayer = document.createElement('div');
+        faceBoxesLayer.id = 'pdr-face-boxes-layer';
+        faceBoxesLayer.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:60;';
+        document.body.appendChild(faceBoxesLayer);
+        return faceBoxesLayer;
+      }
+      function clearFaceBoxesLayer() {
+        if (faceBoxesLayer) faceBoxesLayer.innerHTML = '';
+      }
+      function stopFaceBoxesLoop() {
+        if (faceBoxesRafHandle) {
+          cancelAnimationFrame(faceBoxesRafHandle);
+          faceBoxesRafHandle = 0;
+        }
+      }
+
+      async function fetchFaceBoxesForCurrent() {
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath || !window.pdr || !window.pdr.viewer || !window.pdr.viewer.getFaceBoxes) {
+          faceBoxesCache = [];
+          return;
+        }
+        try {
+          const res = await window.pdr.viewer.getFaceBoxes(filePath);
+          faceBoxesCache = (res && res.success && Array.isArray(res.boxes)) ? res.boxes : [];
+        } catch (e) {
+          console.warn('[viewer] getFaceBoxes failed:', e && (e.message || e));
+          faceBoxesCache = [];
+        }
+      }
+
+      function renderFaceBoxes() {
+        if (!faceBoxesEnabled || !mediaEl || mediaEl.tagName !== 'IMG' || faceBoxesCache.length === 0) {
+          clearFaceBoxesLayer();
+          return;
+        }
+        const layer = ensureFaceBoxesLayer();
+        const rect = mediaEl.getBoundingClientRect();
+        // Rebuild layer markup. Cheap because face counts are small
+        // (typically 1-10 per photo).
+        const parts = [];
+        for (const box of faceBoxesCache) {
+          const left = rect.left + box.x * rect.width;
+          const top = rect.top + box.y * rect.height;
+          const w = box.w * rect.width;
+          const h = box.h * rect.height;
+          const colour = box.is_manual ? '#fbbf24' : '#A99CFF';
+          const name = box.person_name || 'Unknown person';
+          parts.push(
+            '<div style="position:fixed;left:' + left + 'px;top:' + top + 'px;width:' + w + 'px;height:' + h +
+            'px;border:2px solid ' + colour + ';border-radius:4px;box-shadow:0 0 0 1px rgba(0,0,0,0.4);pointer-events:none;">' +
+            '<div style="position:absolute;left:-2px;bottom:100%;margin-bottom:4px;background:' + colour + ';color:#1a1a2e;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;">' +
+            escapeForFaceLabel(name) +
+            '</div></div>'
+          );
+        }
+        layer.innerHTML = parts.join('');
+      }
+      function escapeForFaceLabel(s) {
+        return String(s).replace(/[&<>"']/g, function (c) {
+          return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c] || c;
+        });
+      }
+
+      function startFaceBoxesLoop() {
+        stopFaceBoxesLoop();
+        const tick = function () {
+          renderFaceBoxes();
+          faceBoxesRafHandle = requestAnimationFrame(tick);
+        };
+        faceBoxesRafHandle = requestAnimationFrame(tick);
+      }
+
+      async function setFaceBoxesEnabled(on, persist) {
+        faceBoxesEnabled = !!on;
+        if (faceBoxesToggle) faceBoxesToggle.checked = faceBoxesEnabled;
+        if (persist) {
+          try { await window.pdr.settings.set('viewerShowFaceBoxes', faceBoxesEnabled); } catch (_) {}
+        }
+        if (faceBoxesEnabled) {
+          await fetchFaceBoxesForCurrent();
+          startFaceBoxesLoop();
+        } else {
+          stopFaceBoxesLoop();
+          clearFaceBoxesLayer();
+        }
+      }
+
+      if (faceBoxesToggle) {
+        faceBoxesToggle.addEventListener('change', function () {
+          setFaceBoxesEnabled(faceBoxesToggle.checked, true);
+        });
+      }
+      // Restore persisted state on init.
+      try {
+        if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+          window.pdr.settings.get().then(function (s) {
+            const want = !!(s && s.viewerShowFaceBoxes);
+            if (want) setFaceBoxesEnabled(true, false);
+          }).catch(function () {});
+        }
+      } catch (_) {}
+
+      // Refetch boxes whenever the visible media changes (arrow
+      // navigation, filmstrip click). loadMedia is fired from many
+      // places; tap into the existing prev/next clearAiOnNav hook
+      // by adding a listener for the same key events + a polling
+      // on currentIndex change isn't easy without state. Simpler:
+      // expose a callback we invoke from loadMedia.
+      window.pdrViewerOnMediaSwap = function () {
+        if (!faceBoxesEnabled) return;
+        fetchFaceBoxesForCurrent().then(renderFaceBoxes);
+      };
 
       // ─── v2.1 (Terry 2026-06-07) — Manual face box drawing mode.
       // For shadowed faces the detector can't see. User drags a

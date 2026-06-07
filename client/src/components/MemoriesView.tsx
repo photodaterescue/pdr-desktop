@@ -2268,7 +2268,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               <div
                 key={virtualRow.key}
                 data-index={virtualRow.index}
-                ref={rowVirtualizer.measureElement}
+                /* v2.1 round 10 (Terry 2026-06-07) — measureElement ref
+                   REMOVED. ResizeObserver was re-measuring every row
+                   on mount/unmount, the virtualiser kept adjusting
+                   the total-size + scroll position to compensate,
+                   and the result was the "nodding goose" judder
+                   Terry described when scrolling or jumping between
+                   days. estimateDayRowHeight is now the authoritative
+                   row size — the math is accurate enough (header
+                   geometry, tile grid, gaps all spec'd to the px)
+                   that a real measurement isn't needed. Any tiny
+                   sub-pixel drift in tightly-packed grids is
+                   invisible and doesn't compound. */
                 data-day-key={group.dayKey}
                 style={{
                   position: 'absolute',

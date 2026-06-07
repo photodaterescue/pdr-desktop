@@ -644,6 +644,21 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       error?: string;
       requiresInstall?: 'codeformer' | 'realesrgan';
     }>,
+    /** v2.1 round 10 (Terry 2026-06-07) — read face boxes for one
+     *  photo. Used by the Boxes toggle in the Enhance panel to
+     *  overlay every detected face on the image. */
+    getFaceBoxes: (filePath: string) =>
+      ipcRenderer.invoke('viewer:getFaceBoxes', filePath) as Promise<{
+        success: boolean;
+        error?: string;
+        boxes: Array<{
+          id: number;
+          x: number; y: number; w: number; h: number;
+          person_name: string | null;
+          person_full_name: string | null;
+          is_manual: number;
+        }>;
+      }>,
     /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
      *  Inserts a face_detections row at the user-drawn box so PM
      *  picks it up as Unknown person; no AI model invoked.

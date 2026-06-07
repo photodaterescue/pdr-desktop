@@ -7536,6 +7536,34 @@ ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
   }
 });
 
+// v2.1 round 10 (Terry 2026-06-07) — read all face boxes for one
+// photo so the Enhance panel "Show face boxes" toggle can overlay
+// them on the image. Returns normalised 0..1 coords + the
+// assigned person name (when one exists) + a manual flag so the
+// renderer can colour-code auto vs manual.
+ipcMain.handle('viewer:getFaceBoxes', async (_event, filePath: string) => {
+  try {
+    if (!filePath) return { success: false, error: 'No file path', boxes: [] };
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db
+      .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+      .get(filePath) as { id: number } | undefined;
+    if (!fileRow) return { success: true, boxes: [] };
+    const boxes = db.prepare(`
+      SELECT fd.id, fd.box_x as x, fd.box_y as y, fd.box_w as w, fd.box_h as h,
+             p.name as person_name,
+             p.full_name as person_full_name,
+             CASE WHEN fd.embedding IS NULL THEN 1 ELSE 0 END as is_manual
+      FROM face_detections fd
+      LEFT JOIN persons p ON fd.person_id = p.id
+      WHERE fd.file_id = ?
+    `).all(fileRow.id);
+    return { success: true, boxes };
+  } catch (err) {
+    return { success: false, error: (err as Error).message, boxes: [] };
+  }
+});
+
 // v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only IPC. The
 // full enhanceFacesManual path runs CodeFormer + slider bake;
 // this one just inserts a face_detections row at the user-drawn

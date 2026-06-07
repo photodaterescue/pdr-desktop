@@ -4318,6 +4318,12 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
   const namedClusters = [...realNamedClusters, ...specialClusters];
 
   // Unnamed clusters: faces with no person assigned, grouped by cluster_id
+  // v2.1 round 10 (Terry 2026-06-07) — clusters that contain a
+  // manually-marked face (embedding IS NULL) sort to the TOP so the
+  // user can immediately find the face they just drew. Terry hit
+  // this with a 1233-row Unnamed list and rightly refused to scroll
+  // through it. Within each group (manual-first then auto), the
+  // existing largest-cluster-first ordering is preserved.
   const unnamedClusters = database.prepare(`
     SELECT
       fd.cluster_id,
@@ -4325,11 +4331,12 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       NULL as person_name,
       COUNT(fd.id) as face_count,
       COUNT(DISTINCT fd.file_id) as photo_count,
-      MIN(fd.id) as representative_face_id
+      MIN(fd.id) as representative_face_id,
+      MAX(CASE WHEN fd.embedding IS NULL THEN 1 ELSE 0 END) as is_manual
     FROM face_detections fd
     WHERE fd.cluster_id IS NOT NULL AND fd.person_id IS NULL
     GROUP BY fd.cluster_id
-    ORDER BY face_count DESC
+    ORDER BY is_manual DESC, face_count DESC
   `).all() as any[];
 
   const clusters = [...namedClusters, ...unnamedClusters];
