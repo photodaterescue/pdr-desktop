@@ -5109,10 +5109,35 @@ function zoomTo(newZoom, centreX, centreY) {
           });
           console.log('[viewer] manual mark result:', JSON.stringify(result || {}));
           if (result && result.success) {
+            // v2.1 round 9 — stash the focus payload so PM can jump
+            // straight to the new face on open. Without this the
+            // user lands on PM Unnamed (which can have 100+
+            // clusters) and has to hunt — Terry's exact complaint.
+            try {
+              if (window.pdr && window.pdr.people && window.pdr.people.setPendingFocus && typeof result.fileId === 'number' && typeof result.clusterId === 'number' && typeof result.faceId === 'number') {
+                await window.pdr.people.setPendingFocus({
+                  fileId: result.fileId,
+                  clusterId: result.clusterId,
+                  faceId: result.faceId,
+                });
+              }
+            } catch (e) { console.warn('[viewer] setPendingFocus failed:', e && (e.message || e)); }
             showAiResult({
               title: 'Face marked',
-              body: 'The face has been added to this photo. Open People Manager → Faces to name it (or merge it with an existing person).',
-              okLabel: 'OK',
+              body: 'Open People Manager to name the new face, or merge it with an existing person.',
+              okLabel: 'Close',
+              secondary: {
+                label: 'Open People Manager',
+                onClick: function () {
+                  try {
+                    if (window.pdr && window.pdr.people && window.pdr.people.open) {
+                      window.pdr.people.open().catch(function (err) {
+                        console.warn('[viewer] people.open failed:', err && (err.message || err));
+                      });
+                    }
+                  } catch (e) { console.warn('[viewer] people.open threw:', e && (e.message || e)); }
+                },
+              },
             });
           } else {
             showAiResult({

@@ -1178,6 +1178,55 @@ export default function PeopleManager() {
     return document.querySelector(`[data-cluster-row][data-cluster-key="${CSS.escape(key)}"]`) as HTMLElement | null;
   };
 
+  // v2.1 round 9 (Terry 2026-06-07) — Pending-focus consumer.
+  // Set by PDR Viewer's "Mark a face" success modal via
+  // window.pdr.people.setPendingFocus, then PM picks it up on
+  // mount, bumps the new cluster to the TOP of Unnamed via
+  // clusterOrder, switches to the Unnamed tab, scrolls the row
+  // into view, and pulses a gold ring around it for ~2.5s. Without
+  // this the user has to hunt through a 100-cluster list to find
+  // the face they just marked. Stale-guards to 60s in main.ts so a
+  // user who marks a face then opens PM via the sidebar an hour
+  // later doesn't get yanked anywhere unexpected.
+  useEffect(() => {
+    if (isLoading) return;
+    if (clusters.length === 0) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const consume = (window as any).pdr?.people?.consumePendingFocus;
+        if (typeof consume !== 'function') return;
+        const res = await consume();
+        if (cancelled) return;
+        const focus = res?.focus;
+        if (!focus) return;
+        const target = unnamedClustersRaw.find((c) => c.cluster_id === focus.clusterId);
+        if (!target) {
+          console.warn('[PM] pending focus cluster not found in unnamed list:', focus);
+          return;
+        }
+        const key = clusterKey(target);
+        // Bump to top — negative rank wins against everything
+        // (other ranks are 0..N or POSITIVE_INFINITY).
+        persistClusterOrder({ ...clusterOrder, [key]: -1 });
+        setActiveTab('unnamed');
+        // After paint settles, scroll + pulse gold ring.
+        setTimeout(() => {
+          const el = findClusterRowEl(key);
+          if (!el) return;
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          el.style.transition = 'box-shadow 0.4s ease';
+          el.style.boxShadow = '0 0 0 3px #fbbf24';
+          setTimeout(() => { el.style.boxShadow = ''; }, 2500);
+        }, 280);
+      } catch (e) {
+        console.warn('[PM] consume pending focus failed:', e);
+      }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading, clusters.length]);
+
   const handleClusterDragStart = (e: React.DragEvent, key: string) => {
     e.dataTransfer.effectAllowed = 'move';
     // Drag preview: a small lavender-bordered chip with a person

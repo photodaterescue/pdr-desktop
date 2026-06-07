@@ -7577,14 +7577,28 @@ ipcMain.handle('viewer:addManualFaceBox', async (_event, req: {
       return { success: false, error: 'This photo is not in the library index. Add it via a Fix run first.' };
     }
 
-    db.prepare(`
+    // v2.1 round 9 (Terry 2026-06-07) — BUG FIX. getPersonClusters
+    // filters WHERE cluster_id IS NOT NULL on the unnamed query
+    // (search-database.ts:4304). A NULL cluster_id means the face
+    // is INVISIBLE to People Manager — Terry saw "not at top, not
+    // at bottom" because it was actually missing entirely.
+    // Assign a unique cluster_id per manual face so it forms its
+    // own singleton cluster and surfaces in PM. We use MAX+1
+    // (across both INTEGER NOT NULL and NULL rows) so we don't
+    // collide with auto-generated clusters from ai-worker.
+    const maxRow = db.prepare(`SELECT COALESCE(MAX(cluster_id), 0) AS m FROM face_detections`).get() as { m: number };
+    const newClusterId = (maxRow?.m ?? 0) + 1;
+
+    const insertResult = db.prepare(`
       INSERT INTO face_detections
         (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id)
-      VALUES (?, NULL, ?, ?, ?, ?, NULL, 1.0, NULL)
+      VALUES (?, NULL, ?, ?, ?, ?, NULL, 1.0, ?)
     `).run(
       fileRow.id,
       normBox.x, normBox.y, normBox.w, normBox.h,
+      newClusterId,
     );
+    const newFaceId = Number(insertResult.lastInsertRowid);
 
     // Refresh PM's clusters cache so the new face shows up on
     // next People Manager open without a reload.
@@ -7592,8 +7606,8 @@ ipcMain.handle('viewer:addManualFaceBox', async (_event, req: {
       invalidatePersonClustersCache();
     } catch { /* non-fatal if cache helper unavailable */ }
 
-    console.log('[viewer:addManualFaceBox] inserted manual face_detection for file_id', fileRow.id, 'norm box', normBox);
-    return { success: true };
+    console.log('[viewer:addManualFaceBox] inserted face_id', newFaceId, 'cluster_id', newClusterId, 'for file_id', fileRow.id, 'norm box', normBox);
+    return { success: true, faceId: newFaceId, fileId: fileRow.id, clusterId: newClusterId };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -10513,6 +10527,32 @@ function prewarmPeopleWindow(): void {
     peopleWindowIsWarm = false;
   }
 }
+
+// v2.1 round 9 (Terry 2026-06-07) — pending-focus handoff for the
+// "Open in People Manager" button on the Mark-a-face success
+// modal. Renderer sets the focus payload (file_id + cluster_id),
+// fires people:open, and PM consumes the payload on mount to
+// scroll + highlight the just-marked face — so the user doesn't
+// have to hunt for it in a 100-cluster Unnamed list. Main-process
+// state because cross-window localStorage isn't reliable for
+// file:// origins.
+let pendingPmFocus: { fileId: number; clusterId: number; faceId: number; ts: number } | null = null;
+ipcMain.handle('people:setPendingFocus', async (_event, payload: { fileId: number; clusterId: number; faceId: number }) => {
+  pendingPmFocus = { ...payload, ts: Date.now() };
+  return { success: true };
+});
+ipcMain.handle('people:consumePendingFocus', async () => {
+  const out = pendingPmFocus;
+  // Stale-guard: ignore anything older than 60s (a user who marked
+  // a face an hour ago and then opens PM via the sidebar shouldn't
+  // get yanked to that face).
+  if (out && Date.now() - out.ts > 60_000) {
+    pendingPmFocus = null;
+    return { focus: null };
+  }
+  pendingPmFocus = null;
+  return { focus: out };
+});
 
 ipcMain.handle('people:open', async () => {
   try {

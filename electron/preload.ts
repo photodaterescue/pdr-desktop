@@ -646,12 +646,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     }>,
     /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
      *  Inserts a face_detections row at the user-drawn box so PM
-     *  picks it up as Unknown person; no AI model invoked. */
+     *  picks it up as Unknown person; no AI model invoked.
+     *  Returns the new face_id / cluster_id so the renderer can
+     *  ask PM to jump straight to it. */
     addManualFaceBox: (req: {
       filePath: string;
       manualBox: { x: number; y: number; w: number; h: number };
     }) => ipcRenderer.invoke('viewer:addManualFaceBox', req) as Promise<{
       success: boolean;
+      faceId?: number;
+      fileId?: number;
+      clusterId?: number;
       error?: string;
     }>,
     onEnhanceProgress: (handler: (info: { kind: 'faces' | 'upscale'; phase: string; percent: number }) => void) => {
@@ -772,6 +777,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   people: {
     open: () => ipcRenderer.invoke('people:open'),
+    /** v2.1 round 9 — set/consume a pending focus payload so PM
+     *  can jump to + highlight a specific face on open. Renderer
+     *  flow: setPendingFocus({fileId, clusterId, faceId}) → open().
+     *  PM flow on mount: consumePendingFocus() → if non-null,
+     *  scroll to + flash that cluster. */
+    setPendingFocus: (payload: { fileId: number; clusterId: number; faceId: number }) =>
+      ipcRenderer.invoke('people:setPendingFocus', payload),
+    consumePendingFocus: () =>
+      ipcRenderer.invoke('people:consumePendingFocus') as Promise<{ focus: { fileId: number; clusterId: number; faceId: number; ts: number } | null }>,
     notifyChange: () => ipcRenderer.invoke('people:changed'),
     onThemeChange: (callback: (isDark: boolean) => void) => {
       const handler = (_event: any, isDark: boolean) => callback(isDark);
