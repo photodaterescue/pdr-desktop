@@ -7377,6 +7377,150 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
   }
 });
 
+// v2.1 (Terry 2026-06-07) — Manual-box face enhancement. For the
+// shadowed-face case where PDR's face detector can't find the face
+// (too dark for it to see) but the user can: the user drags a
+// rectangle on the image in PDRV, optionally adjusts the
+// Enhance sliders so the face is visible, and clicks Enhance.
+// This IPC:
+//   1. Bakes the brightness/contrast/saturation/B&W slider state
+//      into a temp file (so CodeFormer sees the brighter pixels
+//      the user can see).
+//   2. Runs CodeFormer on that baked image using just the one
+//      manual box.
+//   3. Inserts a face_detections row for the manual box (unverified,
+//      no embedding) so the face shows up in PM as "Unknown person"
+//      and the user can name + group it.
+// Returns the temp output path. The renderer's existing
+// applyAiResult flow takes care of swapping the image + offering
+// Compare + Save.
+ipcMain.handle('viewer:enhanceFacesManual', async (event, req: {
+  filePath: string;
+  manualBox: { x: number; y: number; w: number; h: number };
+  filter?: { brightness?: number; contrast?: number; saturation?: number; bw?: boolean };
+  fidelity?: number;
+}) => {
+  try {
+    console.log('[viewer:enhanceFacesManual] start', {
+      filePath: req?.filePath,
+      manualBox: req?.manualBox,
+      filter: req?.filter,
+    });
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      console.warn('[viewer:enhanceFacesManual] file missing');
+      return { success: false, error: 'Source file not found.' };
+    }
+    if (!req.manualBox || req.manualBox.w <= 0 || req.manualBox.h <= 0) {
+      console.warn('[viewer:enhanceFacesManual] invalid manual box', req.manualBox);
+      return { success: false, error: 'Manual face box is missing or zero-sized.' };
+    }
+
+    const installer = await import('./ai-model-installer.js');
+    if (installer.getInstallState('codeformer') !== 'installed') {
+      console.warn('[viewer:enhanceFacesManual] CodeFormer not installed');
+      return { success: false, error: 'CodeFormer is not installed.', requiresInstall: 'codeformer' };
+    }
+
+    // Bake filter into a temp file IF any slider is non-default.
+    // Otherwise pass the original path straight to the worker.
+    const filter = req.filter || {};
+    const b = (filter.brightness ?? 100) / 100;
+    const c = (filter.contrast ?? 100) / 100;
+    const s = filter.bw ? 0 : (filter.saturation ?? 100) / 100;
+    const filterIsDefault = Math.abs(b - 1) < 1e-3 && Math.abs(c - 1) < 1e-3 && Math.abs(s - 1) < 1e-3;
+
+    const tmpDir = path.join(app.getPath('temp'), 'pdr-enhance');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+
+    let sourceForWorker = req.filePath;
+    if (!filterIsDefault) {
+      const sharp = (await import('sharp')).default;
+      const bakedPath = path.join(tmpDir, `manual-baked-${Date.now()}-${Math.floor(Math.random() * 1e6)}.jpg`);
+      let pipeline = sharp(req.filePath).modulate({ brightness: b, saturation: s });
+      // contrast via linear(): out = slope * in + intercept; intercept
+      // centred on 128 keeps midtones in place while scaling toward
+      // the extremes.
+      if (Math.abs(c - 1) > 1e-3) {
+        pipeline = pipeline.linear(c, -(128 * c) + 128);
+      }
+      await pipeline.jpeg({ quality: 95 }).toFile(bakedPath);
+      sourceForWorker = bakedPath;
+      console.log('[viewer:enhanceFacesManual] baked filter to', bakedPath, { b, c, s });
+    }
+
+    // Look up the indexed file id (for the post-enhance
+    // face_detections insert). Best-effort — if the file isn't in
+    // the index (rare; user opened from disk), we still produce
+    // the enhanced output, just skip the DB insert.
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db
+      .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+      .get(req.filePath) as { id: number } | undefined;
+
+    const requestId = `cfm-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const outputPath = path.join(tmpDir, `${requestId}.jpg`);
+    const worker = await ensureEnhanceWorker();
+
+    const workerResult = await new Promise<{ success: boolean; outputPath?: string; facesProcessed?: number; error?: string }>((resolve) => {
+      enhancePending.set(requestId, {
+        resolve: (info) => resolve({
+          success: true,
+          outputPath: info.outputPath,
+          facesProcessed: info.facesProcessed ?? 1,
+        }),
+        reject: (err) => resolve({ success: false, error: err.message }),
+        onProgress: (phase, percent) => {
+          try { event.sender.send('viewer:enhanceProgress', { kind: 'faces', phase, percent }); } catch {}
+        },
+      });
+      worker.postMessage({
+        type: 'enhance-faces',
+        requestId,
+        sourcePath: sourceForWorker,
+        outputPath,
+        faceBoxes: [{
+          x: Math.round(req.manualBox.x),
+          y: Math.round(req.manualBox.y),
+          w: Math.round(req.manualBox.w),
+          h: Math.round(req.manualBox.h),
+        }],
+        fidelity: typeof req.fidelity === 'number' ? req.fidelity : 0.5,
+      });
+    });
+
+    if (!workerResult.success) return workerResult;
+
+    // Insert a face_detections row for the manual box so PM picks
+    // it up as Unknown person. Verified=0 so the user has to name
+    // it, but it persists across re-detect (verified rule).
+    // Embedding is NULL — no auto-clustering possible — until the
+    // user names it manually, at which point the cluster join is
+    // explicit.
+    if (fileRow) {
+      try {
+        db.prepare(`
+          INSERT INTO face_detections
+            (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id)
+          VALUES (?, NULL, ?, ?, ?, ?, NULL, 1.0, NULL)
+        `).run(
+          fileRow.id,
+          req.manualBox.x,
+          req.manualBox.y,
+          req.manualBox.w,
+          req.manualBox.h,
+        );
+        console.log('[viewer:enhanceFacesManual] inserted manual face_detection for file_id', fileRow.id);
+      } catch (insErr) {
+        console.warn('[viewer:enhanceFacesManual] face_detection insert failed (non-fatal):', (insErr as Error).message);
+      }
+    }
+
+    return workerResult;
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('viewer:enhanceWholeImage', async (event, req: { filePath: string; tileSize?: number }) => {
   try {
     console.log('[viewer:enhanceWholeImage] start', { filePath: req?.filePath, tileSize: req?.tileSize });

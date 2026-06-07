@@ -628,6 +628,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  terminating the underlying worker. */
     cancelEnhance: () =>
       ipcRenderer.invoke('viewer:cancelEnhance') as Promise<{ success: boolean; error?: string }>,
+    /** v2.1 (Terry 2026-06-07) — manual-box face enhance. User
+     *  drags a rectangle around a face that the auto-detector
+     *  missed (e.g. in shadow), optionally with slider filter
+     *  baked in so CodeFormer sees the brightened pixels. */
+    enhanceFacesManual: (req: {
+      filePath: string;
+      manualBox: { x: number; y: number; w: number; h: number };
+      filter?: { brightness?: number; contrast?: number; saturation?: number; bw?: boolean };
+      fidelity?: number;
+    }) => ipcRenderer.invoke('viewer:enhanceFacesManual', req) as Promise<{
+      success: boolean;
+      outputPath?: string;
+      facesProcessed?: number;
+      error?: string;
+      requiresInstall?: 'codeformer' | 'realesrgan';
+    }>,
     onEnhanceProgress: (handler: (info: { kind: 'faces' | 'upscale'; phase: string; percent: number }) => void) => {
       const listener = (_e: any, info: any) => handler(info);
       ipcRenderer.on('viewer:enhanceProgress', listener);

@@ -4744,8 +4744,12 @@ function zoomTo(newZoom, centreX, centreY) {
         } else if (result && result.requiresAnalysis) {
           showAiResult({
             title: 'No faces detected on this photo',
-            body: 'AI face restoration needs face boxes from Face Recognition first. Open People Manager → Faces, run Analyze on this photo, then come back and try again.',
+            body: 'The face detector couldn\'t find a face here — sometimes the lighting hides one even when you can see it. You can draw a box around it manually and PDR will enhance just that area. Tip: brighten the sliders first if needed; PDR will bake the values into the enhance pass so CodeFormer sees what you see.',
             okLabel: 'Close',
+            secondary: {
+              label: 'Mark a face manually',
+              onClick: function () { enterManualBoxMode(); },
+            },
           });
         } else {
           showAiResult({
@@ -4773,6 +4777,274 @@ function zoomTo(newZoom, centreX, centreY) {
       if (aiFacesBtn) aiFacesBtn.onclick = function () { maybeStartAi('faces'); };
       if (aiUpscaleBtn) aiUpscaleBtn.onclick = function () { maybeStartAi('upscale'); };
       if (aiBothBtn) aiBothBtn.onclick = function () { maybeStartAi('both'); };
+
+      // ─── v2.1 (Terry 2026-06-07) — Manual face box drawing mode.
+      // For shadowed faces the detector can't see. User drags a
+      // rectangle on the visible image; we translate viewport
+      // coords → image pixel coords (accounting for the current
+      // zoom + pan + rotation) and call viewer:enhanceFacesManual
+      // with the box + current slider values. The backend bakes
+      // the sliders into a temp file before running CodeFormer so
+      // the model sees brightened pixels.
+      let manualBoxActive = false;
+      let manualBoxOverlay = null;     // semi-transparent dim layer
+      let manualBoxRect = null;         // the live lavender rectangle div
+      let manualBoxStart = null;        // {x, y} viewport coords
+      let manualBoxFinal = null;        // {x, y, w, h} viewport coords (final)
+      let manualBoxToolbar = null;      // confirm/cancel pill
+
+      function enterManualBoxMode() {
+        if (manualBoxActive) return;
+        manualBoxActive = true;
+        console.log('[viewer] manual face-box mode: enter');
+        const img = document.getElementById('mediaImg');
+        if (!img) {
+          console.warn('[viewer] manual face-box: no mediaImg element');
+          manualBoxActive = false;
+          return;
+        }
+        // Dim overlay that captures the drag. Sits over the image
+        // but BELOW any modals (z-index 80 vs modals at 10000+).
+        manualBoxOverlay = document.createElement('div');
+        manualBoxOverlay.id = 'manual-box-overlay';
+        manualBoxOverlay.style.cssText = [
+          'position:fixed',
+          'inset:0',
+          'background:rgba(0,0,0,0.35)',
+          'cursor:crosshair',
+          'z-index:80',
+          'user-select:none',
+        ].join(';') + ';';
+        document.body.appendChild(manualBoxOverlay);
+
+        // Banner at the top with instructions.
+        const banner = document.createElement('div');
+        banner.style.cssText = [
+          'position:fixed',
+          'top:60px',
+          'left:50%',
+          'transform:translateX(-50%)',
+          'background:#1e1b2e',
+          'border:1px solid rgba(169,156,255,0.4)',
+          'color:#e8e6ff',
+          'padding:10px 18px',
+          'border-radius:8px',
+          'font-size:13px',
+          'z-index:81',
+          'box-shadow:0 6px 24px rgba(0,0,0,0.4)',
+          'pointer-events:auto',
+        ].join(';') + ';';
+        banner.innerHTML = 'Drag a rectangle around the face. <button id="manual-box-cancel" type="button" style="margin-left:10px;background:transparent;color:#d1d5db;border:1px solid rgba(255,255,255,0.18);padding:3px 10px;border-radius:5px;font-size:11px;cursor:pointer;">Cancel</button>';
+        manualBoxOverlay.appendChild(banner);
+        document.getElementById('manual-box-cancel').onclick = exitManualBoxMode;
+
+        manualBoxOverlay.addEventListener('mousedown', onManualBoxDown);
+        window.addEventListener('keydown', onManualBoxEscape);
+      }
+
+      function exitManualBoxMode() {
+        console.log('[viewer] manual face-box mode: exit');
+        manualBoxActive = false;
+        if (manualBoxOverlay) {
+          manualBoxOverlay.remove();
+          manualBoxOverlay = null;
+        }
+        if (manualBoxRect) {
+          manualBoxRect.remove();
+          manualBoxRect = null;
+        }
+        if (manualBoxToolbar) {
+          manualBoxToolbar.remove();
+          manualBoxToolbar = null;
+        }
+        manualBoxStart = null;
+        manualBoxFinal = null;
+        window.removeEventListener('keydown', onManualBoxEscape);
+      }
+
+      function onManualBoxEscape(e) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          exitManualBoxMode();
+        }
+      }
+
+      function onManualBoxDown(e) {
+        // Don't start a new drag if the user clicked the cancel
+        // button inside the banner.
+        if (e.target && e.target.id === 'manual-box-cancel') return;
+        if (manualBoxToolbar) {
+          // Clicking again with a finalised box: discard and start over.
+          manualBoxToolbar.remove(); manualBoxToolbar = null;
+          if (manualBoxRect) { manualBoxRect.remove(); manualBoxRect = null; }
+          manualBoxFinal = null;
+        }
+        manualBoxStart = { x: e.clientX, y: e.clientY };
+        manualBoxRect = document.createElement('div');
+        manualBoxRect.style.cssText = [
+          'position:fixed',
+          'border:2px solid #A99CFF',
+          'background:rgba(169,156,255,0.18)',
+          'pointer-events:none',
+          'z-index:82',
+          'box-shadow:0 0 0 1px rgba(0,0,0,0.5)',
+        ].join(';') + ';';
+        manualBoxRect.style.left = e.clientX + 'px';
+        manualBoxRect.style.top = e.clientY + 'px';
+        manualBoxRect.style.width = '0px';
+        manualBoxRect.style.height = '0px';
+        document.body.appendChild(manualBoxRect);
+        window.addEventListener('mousemove', onManualBoxMove);
+        window.addEventListener('mouseup', onManualBoxUp);
+      }
+
+      function onManualBoxMove(e) {
+        if (!manualBoxStart || !manualBoxRect) return;
+        const x = Math.min(manualBoxStart.x, e.clientX);
+        const y = Math.min(manualBoxStart.y, e.clientY);
+        const w = Math.abs(e.clientX - manualBoxStart.x);
+        const h = Math.abs(e.clientY - manualBoxStart.y);
+        manualBoxRect.style.left = x + 'px';
+        manualBoxRect.style.top = y + 'px';
+        manualBoxRect.style.width = w + 'px';
+        manualBoxRect.style.height = h + 'px';
+      }
+
+      function onManualBoxUp(e) {
+        window.removeEventListener('mousemove', onManualBoxMove);
+        window.removeEventListener('mouseup', onManualBoxUp);
+        if (!manualBoxStart) return;
+        const x = Math.min(manualBoxStart.x, e.clientX);
+        const y = Math.min(manualBoxStart.y, e.clientY);
+        const w = Math.abs(e.clientX - manualBoxStart.x);
+        const h = Math.abs(e.clientY - manualBoxStart.y);
+        manualBoxStart = null;
+        if (w < 20 || h < 20) {
+          // Tiny click — treat as no-op so user can try again.
+          if (manualBoxRect) { manualBoxRect.remove(); manualBoxRect = null; }
+          return;
+        }
+        manualBoxFinal = { x: x, y: y, w: w, h: h };
+        // Floating toolbar near the box with Enhance + Redraw.
+        manualBoxToolbar = document.createElement('div');
+        manualBoxToolbar.style.cssText = [
+          'position:fixed',
+          'left:' + (x + w / 2) + 'px',
+          'top:' + (y + h + 10) + 'px',
+          'transform:translateX(-50%)',
+          'display:flex',
+          'gap:6px',
+          'background:#1e1b2e',
+          'border:1px solid rgba(169,156,255,0.4)',
+          'padding:8px 10px',
+          'border-radius:8px',
+          'z-index:83',
+          'box-shadow:0 6px 20px rgba(0,0,0,0.4)',
+        ].join(';') + ';';
+        manualBoxToolbar.innerHTML = ''
+          + '<button id="manual-box-enhance" type="button" style="background:#A99CFF;color:#1a1a2e;border:none;padding:6px 14px;border-radius:6px;font-size:12px;font-weight:600;cursor:pointer;">Enhance face</button>'
+          + '<button id="manual-box-redraw" type="button" style="background:transparent;color:#d1d5db;border:1px solid rgba(255,255,255,0.18);padding:6px 14px;border-radius:6px;font-size:12px;cursor:pointer;">Redraw</button>';
+        document.body.appendChild(manualBoxToolbar);
+        document.getElementById('manual-box-enhance').onclick = runManualEnhance;
+        document.getElementById('manual-box-redraw').onclick = function () {
+          if (manualBoxRect) { manualBoxRect.remove(); manualBoxRect = null; }
+          if (manualBoxToolbar) { manualBoxToolbar.remove(); manualBoxToolbar = null; }
+          manualBoxFinal = null;
+        };
+      }
+
+      // Translate viewport box → image pixel box (account for current
+      // displayed scale + rotation). For an unrotated image, the
+      // image's getBoundingClientRect gives us display-space; map
+      // viewport (x,y,w,h) into that, then scale by
+      // naturalWidth / displayedWidth.
+      function viewportBoxToImagePixels(box) {
+        const img = document.getElementById('mediaImg');
+        if (!img) return null;
+        const rect = img.getBoundingClientRect();
+        const rotation = (typeof currentRotation === 'number') ? (currentRotation % 360) : 0;
+        // Position relative to the image's displayed top-left.
+        const relX = box.x - rect.left;
+        const relY = box.y - rect.top;
+        const dispW = rect.width;
+        const dispH = rect.height;
+        const natW = img.naturalWidth;
+        const natH = img.naturalHeight;
+        // When rotated 90/270, the displayed width corresponds to the
+        // image's natural HEIGHT (and vice versa). Compute scale on
+        // the matching axis.
+        let scaleX, scaleY;
+        if (rotation === 90 || rotation === 270) {
+          scaleX = natH / dispW;
+          scaleY = natW / dispH;
+        } else {
+          scaleX = natW / dispW;
+          scaleY = natH / dispH;
+        }
+        // Box in display space (unrotated reference).
+        const dispBox = {
+          x: relX,
+          y: relY,
+          w: box.w,
+          h: box.h,
+        };
+        // Apply rotation back into image-pixel coords. For each
+        // rotation, the (x, y) origin of the image as the user sees
+        // it maps to a different corner of the natural image.
+        // For v1, support rotation 0 fully; warn on rotated and use
+        // unrotated mapping (corner mismatch may push the box off
+        // the face but the user can always re-draw).
+        if (rotation !== 0) {
+          console.warn('[viewer] manual face-box on rotated image — coords may need adjustment, current rotation=', rotation);
+        }
+        return {
+          x: Math.max(0, Math.round(dispBox.x * scaleX)),
+          y: Math.max(0, Math.round(dispBox.y * scaleY)),
+          w: Math.max(1, Math.round(dispBox.w * scaleX)),
+          h: Math.max(1, Math.round(dispBox.h * scaleY)),
+        };
+      }
+
+      async function runManualEnhance() {
+        if (!manualBoxFinal) return;
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath) { exitManualBoxMode(); return; }
+        const imageBox = viewportBoxToImagePixels(manualBoxFinal);
+        if (!imageBox) { exitManualBoxMode(); return; }
+        console.log('[viewer] manual enhance: viewport=', manualBoxFinal, ' → imagePixels=', imageBox);
+        // Bake the current slider state.
+        const filter = {
+          brightness: state.brightness,
+          contrast: state.contrast,
+          saturation: state.saturation,
+          bw: !!state.bw,
+        };
+        exitManualBoxMode();
+        openAiProgress('Restoring face (manual box)…');
+        try {
+          const pdrViewer = (window.pdr && window.pdr.viewer) ? window.pdr.viewer : null;
+          if (!pdrViewer || !pdrViewer.enhanceFacesManual) {
+            handleAiError({ error: 'Manual enhance bridge missing — please relaunch PDR.' });
+            return;
+          }
+          const result = await pdrViewer.enhanceFacesManual({
+            filePath: filePath,
+            manualBox: imageBox,
+            filter: filter,
+            fidelity: 0.5,
+          });
+          console.log('[viewer] manual enhance result:', JSON.stringify(result || {}));
+          if (aiCancelled) return;
+          if (result && result.success && result.outputPath) {
+            applyAiResult(result.outputPath, filePath, 'codeformer', { facesProcessed: result.facesProcessed });
+            showCompareButton();
+          } else {
+            handleAiError(result);
+          }
+        } finally {
+          closeAiProgress();
+        }
+      }
 
       // Clear the AI result whenever the user navigates to another
       // photo — the temp file is no longer relevant.
