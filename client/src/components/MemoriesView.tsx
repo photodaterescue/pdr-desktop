@@ -1238,6 +1238,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     return () => { cancelled = true; };
   }, [year, month, day, runIdsKey, drilldownRefreshTick]);
 
+  // v2.1 (Terry 2026-06-07) — Phase 3a's listener bumps the
+  // year-level `refreshTick` but NOT the day-level
+  // `drilldownRefreshTick`, so an Enhance or Trim save fired
+  // library:filesAdded but the user's day grid (where the new
+  // sibling should appear alongside its parent) never re-fetched.
+  // This second listener fixes that — same broadcast, day-grid
+  // re-runs its getMemoriesDayFiles query and the new file pops in.
+  useEffect(() => {
+    const off = onLibraryFilesAdded(() => {
+      setDrilldownRefreshTick(t => t + 1);
+    });
+    return () => off();
+  }, []);
+
   // v2.0.15 — when ANY recycle change happens (this view's context
   // menu, the top-bar Delete button, a restore from the Recycle Bin
   // tab), re-fetch the visible files. Without this the just-deleted

@@ -1,6 +1,7 @@
 import { app } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
@@ -1731,7 +1732,12 @@ export async function indexEnhancedSibling(
   const stat = await fs.promises.stat(newPath);
   const sizeBytes = stat.size;
   const newHash = await new Promise<string>((resolve, reject) => {
-    const crypto = require('crypto');
+    // v2.1 (Terry 2026-06-07) — top-level `import * as crypto` instead
+    // of `require('crypto')`. The require() form blew up at runtime
+    // with "require is not defined" because search-database compiles
+    // to ESM in the dev build, silently breaking BOTH Enhance and
+    // Trim indexing (logged as "[viewer:*] index pass failed: require
+    // is not defined") for the entire week the bug was live.
     const h = crypto.createHash('sha256');
     const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
     stream.on('data', (chunk: string | Buffer) => h.update(chunk));
@@ -1856,7 +1862,12 @@ export async function indexTrimmedClip(
   const stat = await fs.promises.stat(newPath);
   const sizeBytes = stat.size;
   const newHash = await new Promise<string>((resolve, reject) => {
-    const crypto = require('crypto');
+    // v2.1 (Terry 2026-06-07) — top-level `import * as crypto` instead
+    // of `require('crypto')`. The require() form blew up at runtime
+    // with "require is not defined" because search-database compiles
+    // to ESM in the dev build, silently breaking BOTH Enhance and
+    // Trim indexing (logged as "[viewer:*] index pass failed: require
+    // is not defined") for the entire week the bug was live.
     const h = crypto.createHash('sha256');
     const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
     stream.on('data', (chunk: string | Buffer) => h.update(chunk));
