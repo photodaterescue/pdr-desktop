@@ -229,12 +229,28 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
     return;
   }
 
+  // v2.1 round 23 (Terry 2026-06-08) — heartbeat ticks while the
+  // pipeline is running. The HuggingFace ASR pipeline doesn't
+  // expose per-chunk progress callbacks, so without this the
+  // worker emits 25% before inference and 90% after — user sees
+  // "stuck at 25%" for the entire actual transcription. Now ticks
+  // every 2 s with a smooth 25→89 ramp based on estimated total
+  // time (audio duration × ~1× realtime floor). Ramp asymptotes
+  // toward 89% so it never falsely hits 100 before the model
+  // genuinely finishes. Clamped at 89 so the final 90 → done jump
+  // remains an unambiguous "saving" signal.
+  const inferenceStartTs = Date.now();
+  const estimatedSec = Math.max(5, durationSeconds * 1.0); // 1× realtime as a conservative midpoint
+  const heartbeat = setInterval(() => {
+    const elapsedSec = (Date.now() - inferenceStartTs) / 1000;
+    const ramp = Math.min(0.99, elapsedSec / estimatedSec); // 0→0.99 over estimated time
+    const pct = Math.min(89, Math.round(25 + ramp * 64));
+    post({ type: 'progress', requestId, phase: 'Transcribing audio…', percent: pct });
+  }, 2000);
+
   try {
     // return_timestamps: true → pipeline returns { text, chunks: [{timestamp: [start, end], text}] }
     // chunk_length_s: 30 → standard Whisper window (one inference per 30s chunk)
-    // Pipeline has no native progress callback per chunk; we estimate
-    // by emitting periodic ticks while we wait. Simple: just emit a
-    // final 90% before save.
     const result: any = await pipe(audio, {
       language: language && language !== 'auto' ? language : undefined,
       task: 'transcribe',
@@ -242,6 +258,20 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       chunk_length_s: 30,
       stride_length_s: 5,
     });
+    clearInterval(heartbeat);
+
+    // v2.1 round 23 — dump raw Whisper output to the log BEFORE
+    // filtering so we can see exactly what the model returned when
+    // a "no speech" result is unexpected (Terry's case: a video
+    // with clear dialogue came back empty). With this we can tell
+    // whether the model itself returned nothing, whether it
+    // returned garbage that got filtered, or whether the pipeline
+    // call errored silently.
+    log(`raw pipeline result: text=${JSON.stringify((result?.text ?? '').slice(0, 200))} chunks.length=${(result?.chunks ?? []).length}`);
+    const rawChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
+    if (rawChunks.length > 0 && rawChunks.length <= 10) {
+      log(`raw chunks: ${JSON.stringify(rawChunks.map(c => ({ ts: c.timestamp, text: (c.text ?? '').slice(0, 80) })))}`);
+    }
 
     post({ type: 'progress', requestId, phase: 'Saving transcript…', percent: 90 });
 
@@ -291,6 +321,7 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       durationSeconds,
     });
   } catch (err) {
+    clearInterval(heartbeat);
     post({ type: 'error', requestId, error: `Whisper inference failed: ${(err as Error).message}` });
   }
 }
