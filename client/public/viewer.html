@@ -547,6 +547,24 @@
       border-radius: 2px;
       pointer-events: none;
     }
+    /* v2.1 (Terry 2026-06-07) — Trim mode audio waveform. Shown
+       only while in trim mode; helps the user line the in/out
+       handles up to word boundaries by sight. Generated client-side
+       via Web Audio API (fetch → AudioContext.decodeAudioData →
+       canvas draw). For typical phone-camera clips this finishes
+       in ~100-500ms; long videos can take a few seconds (no
+       progress UI for v1 — just shows the empty canvas until
+       decode completes). Hidden + skipped silently when the file
+       has no audio or decode fails. */
+    .pdrv-waveform {
+      width: 100%;
+      height: 42px;
+      display: none;
+      margin-bottom: 6px;
+      background: rgba(0, 0, 0, 0.35);
+      border-radius: 3px;
+    }
+    .pdrv-waveform.show { display: block; }
     /* v2.1 (Terry 2026-06-07) — Trim mode handles on the seek bar.
        Two draggable knobs (in / out) with a lavender-highlighted
        region between them; the seek-bar's normal click-to-seek is
@@ -1845,6 +1863,11 @@
       const bar = document.createElement('div');
       bar.className = 'pdrv-controls';
       bar.innerHTML =
+        // v2.1 (Terry 2026-06-07) — audio waveform canvas above the
+        // seek bar; only visible in trim mode (toggled via the `show`
+        // class). Helps the user place in/out handles on word
+        // boundaries by sight.
+        '<canvas class="pdrv-waveform" data-ctrl="waveform"></canvas>' +
         '<div class="pdrv-seek" data-ctrl="seek">' +
           '<div class="pdrv-seek-played" data-ctrl="seek-played"></div>' +
           '<div class="pdrv-seek-handle" data-ctrl="seek-handle"></div>' +
@@ -1965,6 +1988,7 @@
       const trimSaveBtn = trimBar.querySelector('[data-ctrl="trim-save"]');
       const trimCancelBtn = trimBar.querySelector('[data-ctrl="trim-cancel"]');
       const trimStatus = trimBar.querySelector('[data-ctrl="trim-status"]');
+      const waveformCanvas = q('waveform');
 
       // v2.1 (Terry 2026-06-07) — Trim handles on the seek bar.
       // Created here AFTER `const seekBar = q('seek')` above so the
@@ -2263,6 +2287,88 @@
       let savedState = false;
       let savedFilePath = ''; // full path of the most recently saved clip
 
+      // ─── Audio waveform for trim mode (v2.1, Terry 2026-06-07) ──
+      // Decodes the video's audio track via Web Audio API on first
+      // trim-mode entry and draws peak amplitudes onto the canvas
+      // overlay above the seek bar. Cached per-video — only the
+      // first enterTrim pays the decode cost; subsequent trims of
+      // the same file reuse the already-drawn canvas.
+      let waveformReady = false;
+      let waveformInFlight = false;
+      async function ensureWaveform() {
+        if (!waveformCanvas || waveformReady || waveformInFlight) return;
+        if (!video.duration || video.duration < 0.5) return;
+        waveformInFlight = true;
+        try {
+          // currentSrc covers both the pdr-file:// protocol AND any
+          // file:// fallback the video element settled on, so we
+          // hit the same URL the browser already cached.
+          const url = video.currentSrc;
+          if (!url) return;
+          const resp = await fetch(url);
+          if (!resp.ok) throw new Error('fetch HTTP ' + resp.status);
+          const buf = await resp.arrayBuffer();
+          const Ctx = window.AudioContext || window.webkitAudioContext;
+          if (!Ctx) throw new Error('AudioContext unavailable');
+          const audioCtx = new Ctx();
+          const audioBuf = await audioCtx.decodeAudioData(buf);
+          drawWaveform(audioBuf);
+          try { audioCtx.close(); } catch (_) {}
+          waveformReady = true;
+        } catch (err) {
+          // Silent — file has no audio, codec unsupported, or
+          // fetch blocked. Trim still works without the waveform.
+          console.warn('[trim] waveform generation skipped:', err && (err.message || err));
+        } finally {
+          waveformInFlight = false;
+        }
+      }
+      function drawWaveform(audioBuf) {
+        const rect = waveformCanvas.getBoundingClientRect();
+        if (rect.width < 10) return; // not laid out yet
+        const dpr = window.devicePixelRatio || 1;
+        waveformCanvas.width = Math.round(rect.width * dpr);
+        waveformCanvas.height = Math.round(rect.height * dpr);
+        const ctx = waveformCanvas.getContext('2d');
+        if (!ctx) return;
+        ctx.scale(dpr, dpr);
+        ctx.clearRect(0, 0, rect.width, rect.height);
+
+        // Sample the FIRST channel only — stereo's left channel is a
+        // representative-enough peak map for word-boundary placement.
+        const ch = audioBuf.getChannelData(0);
+        const total = ch.length;
+        const w = Math.floor(rect.width);
+        const h = rect.height;
+        const halfH = h / 2;
+        const samplesPerPixel = Math.max(1, Math.floor(total / w));
+
+        ctx.strokeStyle = '#A99CFF'; // PDR primary lavender
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        for (let x = 0; x < w; x++) {
+          let peak = 0;
+          const start = x * samplesPerPixel;
+          const end = Math.min(start + samplesPerPixel, total);
+          for (let i = start; i < end; i++) {
+            const v = Math.abs(ch[i]);
+            if (v > peak) peak = v;
+          }
+          const lineH = peak * (halfH - 1);
+          // Crisp 1-pixel vertical line centered on x+0.5.
+          ctx.moveTo(x + 0.5, halfH - lineH);
+          ctx.lineTo(x + 0.5, halfH + lineH);
+        }
+        ctx.stroke();
+
+        // Thin centre line to anchor silence visually.
+        ctx.strokeStyle = 'rgba(169, 156, 255, 0.25)';
+        ctx.beginPath();
+        ctx.moveTo(0, halfH);
+        ctx.lineTo(w, halfH);
+        ctx.stroke();
+      }
+
       function fmtSec(s) { return fmt(s); }
 
       function refreshTrimUI() {
@@ -2311,12 +2417,21 @@
         trimSaveBtn.textContent = 'Save clip';
         refreshTrimUI();
         settingsPop.classList.remove('show');
+        // v2.1 (Terry 2026-06-07) — kick off waveform generation
+        // when the user enters trim mode. Show the canvas
+        // immediately (empty) so the layout doesn't shift when
+        // the decode finishes.
+        if (waveformCanvas) {
+          waveformCanvas.classList.add('show');
+          ensureWaveform();
+        }
       }
       function exitTrim() {
         trimMode = false;
         savedState = false;
         trimStatus.textContent = '';
         refreshTrimUI();
+        if (waveformCanvas) waveformCanvas.classList.remove('show');
       }
 
       // Gear-menu "Trim clip…" item.
