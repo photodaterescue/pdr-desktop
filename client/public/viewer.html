@@ -558,7 +558,7 @@
        has no audio or decode fails. */
     .pdrv-waveform {
       width: 100%;
-      height: 42px;
+      height: 50px; /* v2.1 (Terry 2026-06-07) — bumped 42→50 (~20% taller) so silence gaps between words are easier to spot */
       display: none;
       margin-bottom: 6px;
       background: rgba(0, 0, 0, 0.35);
@@ -604,9 +604,13 @@
     }
     /* Trim toolbar — floats below the controls bar inside the wrap
        when trim mode is on. */
+    /* v2.1 (Terry 2026-06-07 round 2) — bottom bumped 56→110 so the
+       toolbar sits above the waveform + seek bar + controls row
+       stack (~96px tall in trim mode) and doesn't block the view
+       of the waves. */
     .pdrv-trim-bar {
       position: absolute;
-      bottom: 56px;
+      bottom: 110px;
       left: 50%;
       transform: translateX(-50%);
       display: none;
