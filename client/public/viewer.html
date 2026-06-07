@@ -4869,10 +4869,18 @@ function zoomTo(newZoom, centreX, centreY) {
         // but BELOW any modals (z-index 80 vs modals at 10000+).
         manualBoxOverlay = document.createElement('div');
         manualBoxOverlay.id = 'manual-box-overlay';
+        // v2.1 round 5 (Terry 2026-06-07) — TRANSPARENT overlay.
+        // The previous 35 % black dim sat between the user and
+        // the image, cancelling the brightness boost from the
+        // Enhance sliders — Terry ended up looking at the same
+        // dark photo he was trying to escape. Now the overlay
+        // only captures pointer events (crosshair + drag) without
+        // tinting the view. The crosshair cursor + top banner
+        // are enough to signal "you're in drawing mode."
         manualBoxOverlay.style.cssText = [
           'position:fixed',
           'inset:0',
-          'background:rgba(0,0,0,0.35)',
+          'background:transparent',
           'cursor:crosshair',
           'z-index:80',
           'user-select:none',
