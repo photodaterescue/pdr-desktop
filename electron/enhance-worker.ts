@@ -363,8 +363,17 @@ async function enhanceFaces(msg: EnhanceFacesMessage): Promise<void> {
   <rect width="100%" height="100%" fill="black"/>
   <ellipse cx="${cropW / 2}" cy="${cropH / 2}" rx="${cropW / 2 - featherRadius}" ry="${cropH / 2 - featherRadius}" fill="white"/>
 </svg>`;
+    // v2.1 round 6 (Terry 2026-06-07) — BUG FIX. Was calling
+    // .toBuffer() without .raw() so sharp returned PNG-encoded
+    // bytes (~85k for this crop), then joinChannel with the raw
+    // option below tried to interpret them as 561k raw bytes
+    // (width × height × 1 channel) and threw VipsImage: memory
+    // area too small. Force greyscale + raw output so the buffer
+    // matches the {raw: {channels:1}} declaration.
     const mask = await sharp(Buffer.from(maskSvg))
       .blur(featherRadius)
+      .greyscale()
+      .raw()
       .toBuffer();
 
     // Apply mask as alpha to the restored face crop.
