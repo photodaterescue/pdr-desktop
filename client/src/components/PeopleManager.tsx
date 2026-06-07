@@ -2290,23 +2290,24 @@ export default function PeopleManager() {
                   </div>
                 ) : (
                   <>
-                    {/* v2.1 round 15 (Terry 2026-06-07) — DEBUG bar.
-                        Render unconditionally with the manual count
-                        so we can see at runtime what value the memo
-                        is producing. If this shows 0, is_manual
-                        isn't reaching the renderer; if > 0, the
-                        previous conditional was wrong somewhere.
-                        Will be removed once the banner is confirmed
-                        working. */}
-                    <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40 mb-3">
-                      <span className="text-amber-500 dark:text-amber-400 text-base leading-none">★</span>
-                      <p className="text-sm text-foreground">
-                        <strong>{manualCountInUnnamed} manually marked face{manualCountInUnnamed === 1 ? '' : 's'}</strong>{' '}
-                        <span className="text-muted-foreground">pinned at the top of this list — name them next.</span>
-                        {' '}
-                        <span className="text-xs text-muted-foreground/70">(debug: total clusters={clusters.length}, unnamed={unnamedClustersRaw.length})</span>
-                      </p>
-                    </div>
+                    {/* v2.1 round 16 (Terry 2026-06-07) — gold banner
+                        for manually-drawn face boxes (PDRV Mark-a-
+                        face). Better copy this round per Terry's
+                        feedback: "manually marked faces" was
+                        misleading because these are user-drawn
+                        boxes around faces, not marks ON faces.
+                        Now: "N face boxes you drew manually" —
+                        accurate, distinguishable from auto-detected,
+                        plain English. */}
+                    {manualCountInUnnamed > 0 && (
+                      <div className="flex items-center gap-3 p-3 rounded-xl bg-amber-50/60 dark:bg-amber-950/20 border border-amber-300/50 dark:border-amber-700/40 mb-3">
+                        <span className="text-amber-500 dark:text-amber-400 text-base leading-none">★</span>
+                        <p className="text-sm text-foreground">
+                          <strong>{manualCountInUnnamed} face box{manualCountInUnnamed === 1 ? '' : 'es'} you drew manually</strong>{' '}
+                          <span className="text-muted-foreground">pinned at the top — name {manualCountInUnnamed === 1 ? 'it' : 'them'} next.</span>
+                        </p>
+                      </div>
+                    )}
                     <div className="flex items-start gap-3 p-3 rounded-xl bg-purple-50/50 dark:bg-purple-950/20 border border-purple-200/30 dark:border-purple-800/20 mb-4">
                       <Sparkles className="w-4 h-4 text-purple-500 shrink-0 mt-0.5" />
                       <p className="text-sm text-muted-foreground leading-relaxed">

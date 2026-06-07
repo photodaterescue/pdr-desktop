@@ -4496,6 +4496,15 @@ export function getPersonClusters(): { cluster_id: number; person_id: number | n
       person_id: c.person_id,
       person_name: c.person_name,
       person_full_name: c.person_full_name ?? null,
+      // v2.1 round 16 (Terry 2026-06-07) — explicit pass-through. The
+      // SQL SELECT computes is_manual but this object literal was
+      // dropping it on the floor, so the renderer always saw
+      // undefined → manualCountInUnnamed was always 0 → the gold
+      // banner could never appear even though sort-to-top worked
+      // (sort uses the raw SQL result before this map). Forward
+      // the flag so PM can render the count + apply its own
+      // pin-manual-to-top sort that survives drag-reorder ranks.
+      is_manual: (c.is_manual === 1 ? 1 : 0) as 0 | 1,
       face_count: c.face_count,
       photo_count: c.photo_count,
       representative_face_id: rep?.face_id ?? c.representative_face_id,
