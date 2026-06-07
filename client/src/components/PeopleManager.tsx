@@ -1205,7 +1205,16 @@ export default function PeopleManager() {
   // that contain quotes / special chars (cluster keys are mostly
   // numeric IDs but defensive).
   const findClusterRowEl = (key: string): HTMLElement | null => {
-    return document.querySelector(`[data-cluster-row][data-cluster-key="${CSS.escape(key)}"]`) as HTMLElement | null;
+    // v2.1 round 14 (Terry 2026-06-07) — was using CSS.escape, which
+    // the Vite production bundle minified into something that
+    // threw "yt.escape is not a function" at runtime in PM's
+    // pending-focus consumer effect (right after a Mark-a-face).
+    // Cluster keys are always alphanumeric (`c123` / `p456`), so
+    // no special CSS chars need escaping — drop the call entirely
+    // and use the key verbatim. The crash was killing PM after
+    // clusters loaded but BEFORE the manual-marks banner rendered,
+    // which is why Terry couldn't see it.
+    return document.querySelector(`[data-cluster-row][data-cluster-key="${key}"]`) as HTMLElement | null;
   };
 
   // v2.1 round 9 (Terry 2026-06-07) — Pending-focus consumer.

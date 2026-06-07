@@ -3803,6 +3803,15 @@ export function getPersonById(personId: number): PersonRecord | null {
 /** Get all face embeddings for clustering */
 export function getAllFaceEmbeddings(): { id: number; file_id: number; embedding: Buffer; cluster_id: number | null }[] {
   const database = getDb();
+  // The `embedding IS NOT NULL` filter is load-bearing — it's the
+  // ONE place clustering / similarity work reads faces from, and it
+  // explicitly excludes manually-marked faces (v2.1 Terry 2026-06-07:
+  // "manually added checkboxes must not contribute to any of the
+  // face improvements"). Manual marks have embedding=NULL by
+  // construction (the user draws a box; no encoder runs over it)
+  // so they're inert here. Do NOT add a path that reads face rows
+  // for ML work without this filter — manual marks would otherwise
+  // pollute the embedding space the auto-detector has built up.
   return database.prepare(`SELECT id, file_id, embedding, cluster_id FROM face_detections WHERE embedding IS NOT NULL`).all() as any[];
 }
 
