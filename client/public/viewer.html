@@ -1054,13 +1054,23 @@
       display: flex;
       flex-direction: column;
       transform: translateX(100%);
-      transition: transform 220ms cubic-bezier(0.4, 0, 0.2, 1);
+      /* v2.1 (Terry 2026-06-07 round 2) — slower, gentler easing for
+         the hover-to-show entry/exit. Previous 220 ms felt snappy
+         enough to be jarring; 320 ms with an over-damped curve reads
+         as deliberate and premium without crossing into sluggish.
+         Also added a small box-shadow that fades in with the open
+         state so the slide is visually anchored rather than just
+         appearing. */
+      transition: transform 320ms cubic-bezier(0.22, 0.61, 0.36, 1),
+                  box-shadow 320ms ease;
       z-index: 90;
       pointer-events: none;
+      box-shadow: none;
     }
     .enhance-panel.open {
       transform: translateX(0);
       pointer-events: auto;
+      box-shadow: -16px 0 40px rgba(0, 0, 0, 0.35);
     }
     .enhance-header {
       display: flex;
@@ -1099,6 +1109,21 @@
       background: rgba(169, 156, 255, 0.18);
       color: #a99cff;
       box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.45) inset;
+    }
+    /* v2.1 round 2 — suppress the browser's default focus ring on
+       the pin. After E unpinned the panel, the orange/blue
+       focus-visible outline lingered because the button still had
+       focus, making it look like the pin was still active. Now the
+       only "active" affordance is the aria-pressed lavender bg. */
+    #enhance-pin:focus,
+    #enhance-pin:focus-visible {
+      outline: none !important;
+      box-shadow: none;
+    }
+    #enhance-pin[aria-pressed="true"]:focus,
+    #enhance-pin[aria-pressed="true"]:focus-visible {
+      /* Pressed state always wins back its inset ring. */
+      box-shadow: 0 0 0 1px rgba(169, 156, 255, 0.45) inset !important;
     }
     .enhance-body {
       flex: 1;
@@ -1528,17 +1553,18 @@
   <aside id="enhance-panel" class="enhance-panel" aria-hidden="true">
     <div class="enhance-header">
       <span class="enhance-title">Enhance</span>
-      <div style="display: flex; align-items: center; gap: 6px;">
-        <!-- v2.1 (Terry 2026-06-07) — Pin button. Without pin, the
-             panel auto-hides when the mouse leaves it (hover-only
-             mode). Click pin to keep it open permanently. Mirrors
-             the Workspace sidebar pin pattern. -->
-        <button class="enhance-pin" id="enhance-pin" type="button" data-pdr-tooltip="Pin sidebar open" aria-pressed="false" style="width: 24px; height: 24px; border: none; background: transparent; color: #aaa; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 120ms, color 120ms;">
-          <!-- lucide-react Pin icon, inline SVG to avoid React dep in viewer.html -->
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
-        </button>
-        <button class="enhance-close" id="enhance-close" data-pdr-tooltip="Close (E)">×</button>
-      </div>
+      <!-- v2.1 (Terry 2026-06-07 round 2) — X close button removed
+           per Terry: "I would like the X to go when it's open, it's
+           pointless to keep it." Pin button (toggle pinned/unpinned)
+           plus the auto-hide-on-mouse-leave behaviour cover every
+           close path. The element stays mounted (display:none) so
+           any code that references it via getElementById doesn't
+           NPE — JS rebinds it as a no-op. -->
+      <button class="enhance-pin" id="enhance-pin" type="button" data-pdr-tooltip="Pin sidebar open" aria-pressed="false" style="width: 24px; height: 24px; border: none; background: transparent; color: #aaa; cursor: pointer; border-radius: 6px; display: flex; align-items: center; justify-content: center; transition: background 120ms, color 120ms; outline: none;">
+        <!-- lucide-react Pin icon, inline SVG to avoid React dep in viewer.html -->
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="17" x2="12" y2="22"></line><path d="M5 17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24Z"></path></svg>
+      </button>
+      <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
       <div class="enhance-control">
@@ -4108,11 +4134,28 @@ function zoomTo(newZoom, centreX, centreY) {
         }
       } catch (_) {}
 
+      // v2.1 round 2 (Terry 2026-06-07) — premium hover feel:
+      //   • OPEN-DELAY 140 ms: a mouse just passing over the Enhance
+      //     button on its way somewhere else doesn't trigger the
+      //     panel. The delay matches the IconTooltip 120 ms feel,
+      //     a fraction longer because the visual change (full
+      //     sidebar slide-in) is bigger than a tooltip.
+      //   • CLOSE-GRACE 600 ms: long enough that a swipe across the
+      //     header to reach the panel doesn't dismiss; short enough
+      //     that an obviously-elsewhere mouse releases the panel
+      //     within ~half a second.
+      // Both timers cancel each other so the system is always in a
+      // consistent state.
+      let hoverOpenTimer = null;
       function cancelHoverClose() {
         if (hoverCloseTimer) { clearTimeout(hoverCloseTimer); hoverCloseTimer = null; }
       }
+      function cancelHoverOpen() {
+        if (hoverOpenTimer) { clearTimeout(hoverOpenTimer); hoverOpenTimer = null; }
+      }
       function scheduleHoverClose() {
         cancelHoverClose();
+        cancelHoverOpen();
         if (isPinned) return; // pinned — never auto-close
         // v2.1 — also keep open while an AI result is active so the
         // Compare button stays reachable without re-hovering.
@@ -4120,25 +4163,38 @@ function zoomTo(newZoom, centreX, centreY) {
         hoverCloseTimer = setTimeout(function () {
           closePanel();
           hoverCloseTimer = null;
-        }, 350); // small grace period so micro-mouse-jitters don't dismiss
+        }, 600);
+      }
+      function scheduleHoverOpen() {
+        cancelHoverClose();
+        cancelHoverOpen();
+        if (panel.classList.contains('open')) return;
+        hoverOpenTimer = setTimeout(function () {
+          openPanel();
+          hoverOpenTimer = null;
+        }, 140);
       }
 
-      // Hover the Enhance toolbar button → open transiently.
-      openBtn.addEventListener('mouseenter', function () {
-        cancelHoverClose();
-        openPanel();
-      });
+      // Hover the Enhance toolbar button → schedule a delayed open.
+      openBtn.addEventListener('mouseenter', scheduleHoverOpen);
       openBtn.addEventListener('mouseleave', function () {
+        // If the open hasn't fired yet, cancel it cleanly so a
+        // mouse pass-by doesn't pop the panel for nothing.
+        cancelHoverOpen();
         scheduleHoverClose();
       });
       // While hovering anywhere on the panel, keep it open.
-      panel.addEventListener('mouseenter', cancelHoverClose);
+      panel.addEventListener('mouseenter', function () {
+        cancelHoverClose();
+        cancelHoverOpen();
+      });
       panel.addEventListener('mouseleave', scheduleHoverClose);
 
       // Click Enhance button → toggle pinned state (open + pin, or
       // unpin + close). Different from hover: this is the
       // "definitely keep it" click.
       openBtn.addEventListener('click', function () {
+        cancelHoverOpen();
         if (isPinned) {
           setPinned(false);
           closePanel();
@@ -4148,32 +4204,29 @@ function zoomTo(newZoom, centreX, centreY) {
         }
       });
       // Pin button toggles JUST the pin state — doesn't close.
+      // After toggling, blur() so the focus ring doesn't linger
+      // (Terry: "the orange outline of the icon stays on" after
+      //  pressing E to unpin).
       if (pinBtn) {
         pinBtn.addEventListener('click', function (e) {
           e.stopPropagation();
           setPinned(!isPinned);
-          if (!isPinned) {
-            // Just unpinned — schedule the hover-close. If the mouse
-            // is still over the panel this gets cancelled by the
-            // mouseenter handler.
-            scheduleHoverClose();
-          }
+          if (!isPinned) scheduleHoverClose();
+          try { pinBtn.blur(); } catch (_) {}
         });
       }
-      // X close button always closes + unpins.
-      closeBtn.addEventListener('click', function () {
-        cancelHoverClose();
-        if (isPinned) setPinned(false);
-        closePanel();
-      });
 
       // E shortcut toggles pinned-open (matches the click behaviour).
+      // Explicit pinBtn.blur() so the keyboard handler doesn't leave
+      // focus on the button — that was the source of the persistent
+      // outline Terry hit.
       window.addEventListener('keydown', function (e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
           if (isPinned) { setPinned(false); closePanel(); }
           else { setPinned(true); openPanel(); }
+          try { if (pinBtn) pinBtn.blur(); } catch (_) {}
         }
       });
 

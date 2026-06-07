@@ -5442,6 +5442,29 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
   // fileFaces so the UI reflects the new detections immediately.
   const handleRedetect = async () => {
     if (redetecting) return;
+    // v2.1 (Terry 2026-06-07) — confirmation before running. Terry's
+    // ask: "This needs to be notified to the user after they click on
+    // re-detect in S&D. This isn't that destructive." So this isn't
+    // a danger dialog — informational with a one-click confirm.
+    // Verified faces ARE safe (the worker explicitly preserves
+    // verified rows); unverified detections (auto-clustered, not
+    // yet named by the user) get replaced. The dialog spells that
+    // out so the user isn't surprised if a tentative "Unknown
+    // person" disappears.
+    const ok = await promptConfirm({
+      eyebrow: 'RE-DETECT FACES',
+      title: 'Re-scan this photo for faces?',
+      message: (
+        <>
+          We&apos;ll re-run face detection on this photo. <strong className="text-foreground">Verified (named) people are preserved.</strong> Any unverified detections on this photo are replaced with the new scan.
+          <br /><br />
+          Only affects this one photo — your other photos and named people are untouched.
+        </>
+      ),
+      confirmLabel: 'Re-detect',
+      cancelLabel: 'Cancel',
+    });
+    if (!ok) return;
     setRedetecting(true);
     try {
       const res = await redetectFile(file.id);
