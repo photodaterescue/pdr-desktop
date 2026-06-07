@@ -442,6 +442,26 @@ export function initDatabase(): { success: boolean; error?: string } {
       CREATE INDEX IF NOT EXISTS idx_face_person  ON face_detections(person_id);
       CREATE INDEX IF NOT EXISTS idx_face_cluster ON face_detections(cluster_id);
 
+      -- v2.1 (Terry 2026-06-07) — Video transcripts. One row per
+      -- video file_id (1:1). plain_text is what the FTS5 index
+      -- will hit for the S&D "Transcripts contain..." filter;
+      -- segments_json is the [{start, end, text}] timeline the
+      -- caption overlay + the click-to-seek transcript panel
+      -- both read from. Source column lets us distinguish
+      -- whisper-local from future hand-edited / imported
+      -- transcripts without changing the table shape.
+      CREATE TABLE IF NOT EXISTS video_transcripts (
+        file_id            INTEGER PRIMARY KEY REFERENCES indexed_files(id) ON DELETE CASCADE,
+        generated_at       TEXT NOT NULL,
+        model              TEXT NOT NULL,
+        language           TEXT,
+        duration_seconds   REAL,
+        plain_text         TEXT NOT NULL,
+        segments_json      TEXT NOT NULL,
+        source             TEXT NOT NULL DEFAULT 'whisper-local'
+      );
+      CREATE INDEX IF NOT EXISTS idx_video_transcripts_generated ON video_transcripts(generated_at);
+
       -- Named people (user assigns names to face clusters)
       CREATE TABLE IF NOT EXISTS persons (
         id              INTEGER PRIMARY KEY AUTOINCREMENT,

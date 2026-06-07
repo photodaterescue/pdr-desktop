@@ -7273,6 +7273,232 @@ ipcMain.handle('settings:resetToDefaults', async () => {
 // thread, lazy-spawned, persistent until app exit (Free AI memory
 // action planned for v2.0.16 polish to allow manual unload).
 
+// ─── v2.1 (Terry 2026-06-07) — Video transcription worker manager
+// + IPC handlers. Whisper-base via @huggingface/transformers, on-
+// demand per video. Pattern mirrors the enhance-worker below:
+// lazy spawn, resident across requests, terminate-to-free. First
+// transcribe in a fresh PDR session downloads the model (~150 MB)
+// into <userData>/whisper-cache; subsequent runs hit the disk
+// cache. CPU-bound at roughly 0.5-2× realtime.
+
+let transcribeWorker: import('worker_threads').Worker | null = null;
+const transcribePending = new Map<string, {
+  resolve: (info: { segments: Array<{ start: number; end: number; text: string }>; plainText: string; language: string; durationSeconds: number }) => void;
+  reject: (err: Error) => void;
+  onProgress?: (phase: string, percent: number) => void;
+}>();
+
+async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker> {
+  if (transcribeWorker) return transcribeWorker;
+  const { Worker } = await import('worker_threads');
+  const workerPath = path.join(__dirname, 'transcribe-worker.cjs');
+  const userData = app.getPath('userData');
+  const cacheDir = path.join(userData, 'whisper-cache');
+  // ffmpeg-static returns a path string; in dev it's under node_modules,
+  // in packaged builds we copy it next to the binary (handled by
+  // electron-builder extraResources).
+  // eslint-disable-next-line @typescript-eslint/no-var-requires
+  const ffmpegStatic = require('ffmpeg-static') as string;
+  const ffmpegPath = ffmpegStatic.replace('app.asar', 'app.asar.unpacked');
+
+  transcribeWorker = new Worker(workerPath, {
+    workerData: { cacheDir, ffmpegPath },
+  });
+
+  transcribeWorker.on('message', (msg: any) => {
+    if (!msg || !msg.requestId) return;
+    const pending = transcribePending.get(msg.requestId);
+    if (!pending) return;
+    if (msg.type === 'progress') {
+      pending.onProgress?.(msg.phase, msg.percent);
+    } else if (msg.type === 'done') {
+      transcribePending.delete(msg.requestId);
+      pending.resolve({
+        segments: msg.segments,
+        plainText: msg.plainText,
+        language: msg.language,
+        durationSeconds: msg.durationSeconds,
+      });
+    } else if (msg.type === 'error') {
+      transcribePending.delete(msg.requestId);
+      pending.reject(new Error(msg.error || 'Transcribe worker failed'));
+    }
+  });
+
+  transcribeWorker.on('error', (err) => {
+    log.error(`[transcribe-worker] worker error: ${err.message}`);
+    for (const [, pending] of transcribePending) pending.reject(err);
+    transcribePending.clear();
+    try { transcribeWorker?.terminate(); } catch {}
+    transcribeWorker = null;
+  });
+
+  transcribeWorker.on('exit', (code) => {
+    log.info(`[transcribe-worker] worker exited code=${code}`);
+    if (code !== 0) {
+      for (const [, pending] of transcribePending) pending.reject(new Error(`transcribe-worker exited code=${code}`));
+      transcribePending.clear();
+    }
+    transcribeWorker = null;
+  });
+
+  return transcribeWorker;
+}
+
+// Build a .vtt sidecar string from Whisper segments.
+function segmentsToVtt(segments: Array<{ start: number; end: number; text: string }>): string {
+  function fmt(t: number) {
+    const total = Math.max(0, t);
+    const h = Math.floor(total / 3600);
+    const m = Math.floor((total % 3600) / 60);
+    const s = Math.floor(total % 60);
+    const ms = Math.floor((total - Math.floor(total)) * 1000);
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}.${String(ms).padStart(3, '0')}`;
+  }
+  const lines: string[] = ['WEBVTT', ''];
+  for (const seg of segments) {
+    lines.push(`${fmt(seg.start)} --> ${fmt(seg.end)}`);
+    lines.push(seg.text);
+    lines.push('');
+  }
+  return lines.join('\n');
+}
+
+ipcMain.handle('viewer:transcribeVideo', async (event, req: { filePath: string; language?: string }) => {
+  try {
+    console.log('[viewer:transcribeVideo] start', { filePath: req?.filePath, language: req?.language });
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+
+    // If a transcript already exists in the DB, return it directly
+    // (idempotent — UI uses this same IPC for both "transcribe now"
+    // and "load existing"). Caller can pass force:true to re-run.
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db
+      .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+      .get(req.filePath) as { id: number } | undefined;
+    if (!fileRow) {
+      return { success: false, error: 'This video is not in the library index. Add it via a Fix run first.' };
+    }
+    const existing = db
+      .prepare(`SELECT segments_json, plain_text, language, duration_seconds, generated_at, model FROM video_transcripts WHERE file_id = ?`)
+      .get(fileRow.id) as { segments_json: string; plain_text: string; language: string | null; duration_seconds: number | null; generated_at: string; model: string } | undefined;
+    if (existing) {
+      console.log('[viewer:transcribeVideo] returning existing transcript for file_id', fileRow.id);
+      return {
+        success: true,
+        existed: true,
+        segments: JSON.parse(existing.segments_json),
+        plainText: existing.plain_text,
+        language: existing.language,
+        durationSeconds: existing.duration_seconds,
+        generatedAt: existing.generated_at,
+        model: existing.model,
+      };
+    }
+
+    const requestId = `tr-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const worker = await ensureTranscribeWorker();
+    const result = await new Promise<{ segments: any[]; plainText: string; language: string; durationSeconds: number }>((resolve, reject) => {
+      transcribePending.set(requestId, {
+        resolve,
+        reject,
+        onProgress: (phase, percent) => {
+          try { event.sender.send('viewer:transcribeProgress', { phase, percent }); } catch { /* non-fatal */ }
+        },
+      });
+      worker.postMessage({ type: 'transcribe', requestId, sourcePath: req.filePath, language: req.language });
+    });
+
+    // Persist transcript to DB.
+    const generatedAt = new Date().toISOString();
+    db.prepare(`
+      INSERT INTO video_transcripts
+        (file_id, generated_at, model, language, duration_seconds, plain_text, segments_json, source)
+      VALUES (?, ?, ?, ?, ?, ?, ?, 'whisper-local')
+    `).run(
+      fileRow.id,
+      generatedAt,
+      'whisper-base',
+      result.language,
+      result.durationSeconds,
+      result.plainText,
+      JSON.stringify(result.segments),
+    );
+
+    // Write .vtt sidecar next to the video for portability (any external
+    // player that reads sidecar subtitles will pick this up automatically).
+    try {
+      const vttPath = req.filePath.replace(/\.[^.]+$/, '.vtt');
+      fs.writeFileSync(vttPath, segmentsToVtt(result.segments), 'utf-8');
+    } catch (sidecarErr) {
+      console.warn('[viewer:transcribeVideo] .vtt sidecar write failed (non-fatal):', (sidecarErr as Error).message);
+    }
+
+    console.log('[viewer:transcribeVideo] persisted transcript for file_id', fileRow.id, ';', result.segments.length, 'segments,', result.durationSeconds.toFixed(1) + 's audio');
+    return {
+      success: true,
+      existed: false,
+      segments: result.segments,
+      plainText: result.plainText,
+      language: result.language,
+      durationSeconds: result.durationSeconds,
+      generatedAt,
+      model: 'whisper-base',
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('viewer:getTranscript', async (_event, filePath: string) => {
+  try {
+    if (!filePath) return { success: false, error: 'No file path' };
+    const db = (await import('./search-database.js')).getDb();
+    const row = db.prepare(`
+      SELECT vt.segments_json, vt.plain_text, vt.language, vt.duration_seconds, vt.generated_at, vt.model
+      FROM video_transcripts vt
+      INNER JOIN indexed_files f ON vt.file_id = f.id
+      WHERE f.file_path = ?
+      LIMIT 1
+    `).get(filePath) as { segments_json: string; plain_text: string; language: string | null; duration_seconds: number | null; generated_at: string; model: string } | undefined;
+    if (!row) return { success: true, transcript: null };
+    return {
+      success: true,
+      transcript: {
+        segments: JSON.parse(row.segments_json),
+        plainText: row.plain_text,
+        language: row.language,
+        durationSeconds: row.duration_seconds,
+        generatedAt: row.generated_at,
+        model: row.model,
+      },
+    };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('viewer:deleteTranscript', async (_event, filePath: string) => {
+  try {
+    if (!filePath) return { success: false, error: 'No file path' };
+    const db = (await import('./search-database.js')).getDb();
+    const fileRow = db.prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`).get(filePath) as { id: number } | undefined;
+    if (!fileRow) return { success: false, error: 'File not indexed' };
+    db.prepare(`DELETE FROM video_transcripts WHERE file_id = ?`).run(fileRow.id);
+    // Also delete the .vtt sidecar if it exists.
+    try {
+      const vttPath = filePath.replace(/\.[^.]+$/, '.vtt');
+      if (fs.existsSync(vttPath)) fs.unlinkSync(vttPath);
+    } catch { /* non-fatal */ }
+    console.log('[viewer:deleteTranscript] deleted transcript for file_id', fileRow.id);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 let enhanceWorker: import('worker_threads').Worker | null = null;
 const enhancePending = new Map<string, {
   resolve: (info: { outputPath: string; facesProcessed?: number }) => void;

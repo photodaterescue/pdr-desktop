@@ -669,6 +669,45 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  new person if the name doesn't exist; otherwise joins. */
     nameFace: (payload: { faceId: number; clusterId: number | null; name: string }) =>
       ipcRenderer.invoke('viewer:nameFace', payload) as Promise<{ success: boolean; personId?: number; error?: string }>,
+    /** v2.1 (Terry 2026-06-07) — video transcription. Whisper-base
+     *  local. Idempotent: if a transcript already exists for the
+     *  file, returns it; otherwise runs the worker + persists. */
+    transcribeVideo: (req: { filePath: string; language?: string }) =>
+      ipcRenderer.invoke('viewer:transcribeVideo', req) as Promise<{
+        success: boolean;
+        existed?: boolean;
+        segments?: Array<{ start: number; end: number; text: string }>;
+        plainText?: string;
+        language?: string | null;
+        durationSeconds?: number | null;
+        generatedAt?: string;
+        model?: string;
+        error?: string;
+      }>,
+    /** v2.1 — read-only fetch of an existing transcript (no
+     *  inference). Returns transcript: null if none. */
+    getTranscript: (filePath: string) =>
+      ipcRenderer.invoke('viewer:getTranscript', filePath) as Promise<{
+        success: boolean;
+        transcript: {
+          segments: Array<{ start: number; end: number; text: string }>;
+          plainText: string;
+          language: string | null;
+          durationSeconds: number | null;
+          generatedAt: string;
+          model: string;
+        } | null;
+        error?: string;
+      }>,
+    deleteTranscript: (filePath: string) =>
+      ipcRenderer.invoke('viewer:deleteTranscript', filePath) as Promise<{ success: boolean; error?: string }>,
+    /** Progress events fired by viewer:transcribeVideo while the
+     *  worker is running. Returns an unsubscribe fn. */
+    onTranscribeProgress: (handler: (info: { phase: string; percent: number }) => void) => {
+      const listener = (_e: any, info: any) => handler(info);
+      ipcRenderer.on('viewer:transcribeProgress', listener);
+      return () => ipcRenderer.removeListener('viewer:transcribeProgress', listener);
+    },
     /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
      *  Inserts a face_detections row at the user-drawn box so PM
      *  picks it up as Unknown person; no AI model invoked.
