@@ -272,7 +272,9 @@
       background: rgba(255, 255, 255, 0.08);
       margin: 4px 0;
     }
-    /* Speed sub-view: back button + horizontal chip row. */
+    /* Speed sub-view: YouTube-style — back button, current-value
+       label, slider row with [−] / [+] step buttons, quick-pick
+       chips, "Normal" label under the 1.0 chip. */
     .pdrv-settings-back {
       display: flex;
       align-items: center;
@@ -289,14 +291,67 @@
     }
     .pdrv-settings-back:hover { background: rgba(255, 255, 255, 0.10); }
     .pdrv-settings-back::before { content: '‹'; font-size: 16px; line-height: 1; color: rgba(255, 255, 255, 0.7); }
+    .pdrv-speed-value {
+      text-align: center;
+      font-size: 18px;
+      font-weight: 600;
+      color: #fff;
+      font-variant-numeric: tabular-nums;
+      padding: 14px 14px 8px;
+    }
+    .pdrv-speed-controls {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 0 14px 12px;
+    }
+    .pdrv-speed-step {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.12);
+      border: 1px solid rgba(255, 255, 255, 0.18);
+      color: #fff;
+      font-size: 16px;
+      line-height: 1;
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      padding: 0;
+      flex-shrink: 0;
+      transition: background 0.12s;
+    }
+    .pdrv-speed-step:hover { background: rgba(255, 255, 255, 0.22); }
+    .pdrv-speed-slider {
+      flex: 1;
+      -webkit-appearance: none;
+      appearance: none;
+      height: 4px;
+      background: rgba(255, 255, 255, 0.22);
+      border-radius: 2px;
+      outline: none;
+      cursor: pointer;
+      padding: 0;
+    }
+    .pdrv-speed-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #fff;
+      cursor: pointer;
+      border: none;
+    }
     .pdrv-speed-chips {
       display: flex;
-      flex-wrap: wrap;
       gap: 6px;
-      padding: 8px 14px 10px;
+      padding: 0 14px 4px;
+      justify-content: space-between;
     }
     .pdrv-speed-chip {
-      padding: 5px 10px;
+      flex: 1;
+      padding: 5px 0;
       background: rgba(255, 255, 255, 0.08);
       border: 1px solid transparent;
       border-radius: 14px;
@@ -304,6 +359,7 @@
       font-size: 12px;
       font-variant-numeric: tabular-nums;
       cursor: pointer;
+      text-align: center;
       transition: background 0.12s, border-color 0.12s;
     }
     .pdrv-speed-chip:hover { background: rgba(255, 255, 255, 0.16); }
@@ -313,10 +369,20 @@
       color: #fff;
     }
     .pdrv-speed-active-label {
+      /* Anchored under the 1.0 chip (the second of the five chips).
+         Grid placement = column 2 of 5 below. */
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 6px;
+      padding: 0 14px 10px;
+      pointer-events: none;
+    }
+    .pdrv-speed-active-label > span {
+      grid-column: 1 / 2;
       text-align: center;
-      padding: 0 14px 8px;
-      font-size: 11px;
+      font-size: 10px;
       color: rgba(255, 255, 255, 0.55);
+      margin-top: 2px;
     }
     /* v2.0.15 (Terry 2026-06-06 round 8) — Fullscreen exit overlay.
        Small X button at top-center of the viewer, shown only while
@@ -461,6 +527,15 @@
       border-color: rgba(255, 255, 255, 0.2);
     }
     .pdrv-trim-cancel:hover { background: rgba(255, 255, 255, 0.08); }
+    /* v2.1 — Show-in-File-Explorer button (repurposed Cancel slot
+       in the post-save success state). Same shape as cancel but
+       lavender border + text to read as a discoverable action. */
+    .pdrv-trim-fe {
+      background: transparent;
+      color: #C4B5FD;
+      border-color: rgba(169, 156, 255, 0.5);
+    }
+    .pdrv-trim-fe:hover { background: rgba(169, 156, 255, 0.15); }
     .pdrv-trim-status {
       color: #c4b5fd;
       font-size: 11px;
@@ -1618,8 +1693,14 @@
               '</div>' +
               '<div class="pdrv-settings-view" data-ctrl="settings-speed">' +
                 '<button class="pdrv-settings-back" data-ctrl="back-from-speed" type="button">Playback speed</button>' +
+                '<div class="pdrv-speed-value" data-ctrl="speed-value">1.00x</div>' +
+                '<div class="pdrv-speed-controls">' +
+                  '<button class="pdrv-speed-step" data-ctrl="speed-down" type="button" title="Slower">−</button>' +
+                  '<input class="pdrv-speed-slider" data-ctrl="speed-slider" type="range" min="0.25" max="2" step="0.05" value="1">' +
+                  '<button class="pdrv-speed-step" data-ctrl="speed-up" type="button" title="Faster">+</button>' +
+                '</div>' +
                 '<div class="pdrv-speed-chips" data-ctrl="speed-chips"></div>' +
-                '<div class="pdrv-speed-active-label" data-ctrl="speed-active-label">Normal</div>' +
+                '<div class="pdrv-speed-active-label"><span>Normal</span></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -1670,9 +1751,12 @@
       const settingsSpeed = q('settings-speed');
       const openSpeedBtn = q('open-speed');
       const backFromSpeedBtn = q('back-from-speed');
+      const speedValueLbl = q('speed-value');     // big "1.00x" header
+      const speedSlider = q('speed-slider');       // <input type=range>
+      const speedDownBtn = q('speed-down');
+      const speedUpBtn = q('speed-up');
       const speedChips = q('speed-chips');
       const speedCurrentLabel = q('speed-current-label'); // shown on main view
-      const speedActiveLabel = q('speed-active-label');   // shown on sub view
       const trimEnterBtn = q('trim-enter');
       const fsBtn = q('fullscreen');
       const trimRangeLbl = trimBar.querySelector('[data-ctrl="trim-range"]');
@@ -1830,9 +1914,18 @@
       // v2.1 (Terry 2026-06-07) — Settings popover with YouTube-style
       // two-view structure. Main view lists "Playback speed [Normal >]"
       // and Trim clip. Selecting Playback speed reveals a sub-view
-      // with horizontal speed chips.
-      const SPEED_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+      // with the YouTube-style controls: big current-value label,
+      // [−] / slider / [+] row, quick-pick chips below.
+      const SPEED_MIN = 0.25;
+      const SPEED_MAX = 2;
+      const SPEED_STEP = 0.25;       // [−] / [+] button increment
+      const SPEED_QUICK_CHIPS = [1, 1.25, 1.5, 1.75, 2]; // chip values
       function speedLabel(r) { return r === 1 ? 'Normal' : (r + 'x'); }
+      function fmtSpeedValue(r) {
+        // YouTube format: "1.00x" / "1.25x" / "0.75x" — always 2 decimals.
+        return r.toFixed(2) + 'x';
+      }
+      function clampSpeed(r) { return Math.max(SPEED_MIN, Math.min(SPEED_MAX, r)); }
 
       function showSettingsView(which) {
         if (which === 'speed') {
@@ -1843,43 +1936,63 @@
           settingsMain.classList.add('show');
         }
       }
+
+      function setSpeed(r) {
+        r = clampSpeed(Math.round(r * 100) / 100); // 2-decimal precision
+        video.playbackRate = r;
+        playbackRate = r;
+        if (typeof btnSpeed !== 'undefined' && btnSpeed) btnSpeed.textContent = r === 1 ? '1x' : (r + 'x');
+        refreshSpeedUI();
+      }
+
+      function refreshSpeedUI() {
+        const r = video.playbackRate;
+        if (speedValueLbl) speedValueLbl.textContent = fmtSpeedValue(r);
+        if (speedSlider) speedSlider.value = String(r);
+        if (speedCurrentLabel) speedCurrentLabel.textContent = speedLabel(r);
+        // Highlight any chip whose value matches (within 0.001).
+        if (speedChips) {
+          Array.from(speedChips.children).forEach((chip) => {
+            const v = parseFloat(chip.dataset.rate || '0');
+            chip.classList.toggle('active', Math.abs(v - r) < 0.001);
+          });
+        }
+      }
+
       function renderSpeedChips() {
         speedChips.innerHTML = '';
-        SPEED_RATES.forEach((r) => {
+        SPEED_QUICK_CHIPS.forEach((r) => {
           const chip = document.createElement('button');
           chip.type = 'button';
-          chip.className = 'pdrv-speed-chip' + (Math.abs(video.playbackRate - r) < 0.001 ? ' active' : '');
+          chip.className = 'pdrv-speed-chip';
+          chip.dataset.rate = String(r);
           chip.textContent = r === 1 ? '1x' : (r + 'x');
           chip.addEventListener('click', (ev) => {
             ev.stopPropagation();
-            video.playbackRate = r;
-            playbackRate = r;
-            if (typeof btnSpeed !== 'undefined' && btnSpeed) btnSpeed.textContent = r === 1 ? '1x' : (r + 'x');
-            speedCurrentLabel.textContent = speedLabel(r);
-            speedActiveLabel.textContent = speedLabel(r);
-            renderSpeedChips();
-            // Auto-return to the main view + close the popover after
-            // a brief delay so the user sees the chip light up.
-            setTimeout(() => {
-              showSettingsView('main');
-              settingsPop.classList.remove('show');
-              // Bar auto-hide guard (same rationale as before — the
-              // popover sits inside the bar, so a click here doesn't
-              // trigger bar.mouseleave even when the popover closes).
-              mouseOverBar = false;
-              if (!video.paused && !video.ended) scheduleHide();
-            }, 250);
+            setSpeed(r);
           });
           speedChips.appendChild(chip);
         });
-        // Keep the main-view "current value" + sub-view "active label"
-        // in sync with whatever's currently selected (covers
-        // shift+,/. keyboard speed nudges + first render).
-        const current = speedLabel(video.playbackRate);
-        speedCurrentLabel.textContent = current;
-        speedActiveLabel.textContent = current;
+        refreshSpeedUI();
       }
       renderSpeedChips();
+
+      // Slider drag = live speed change (no auto-close).
+      if (speedSlider) {
+        speedSlider.addEventListener('input', (ev) => {
+          ev.stopPropagation();
+          setSpeed(parseFloat(speedSlider.value));
+        });
+      }
+      // [−] / [+] step buttons.
+      if (speedDownBtn) speedDownBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        setSpeed(video.playbackRate - SPEED_STEP);
+      });
+      if (speedUpBtn) speedUpBtn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        setSpeed(video.playbackRate + SPEED_STEP);
+      });
       gearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         const willOpen = !settingsPop.classList.contains('show');
@@ -1946,6 +2059,7 @@
       // a "Done" affordance with a persistent success message. Reset
       // on enterTrim so a second trim starts fresh.
       let savedState = false;
+      let savedFilePath = ''; // full path of the most recently saved clip
 
       function fmtSec(s) { return fmt(s); }
 
@@ -1985,10 +2099,13 @@
         // Reset the toolbar to its initial layout in case the user
         // previously saved a clip and left the success state up.
         savedState = false;
+        savedFilePath = '';
         trimStatus.textContent = '';
         trimRangeLbl.style.display = '';
         trimCancelBtn.style.display = '';
         trimCancelBtn.disabled = false;
+        trimCancelBtn.textContent = 'Cancel';
+        trimCancelBtn.className = 'pdrv-trim-btn pdrv-trim-cancel';
         trimSaveBtn.textContent = 'Save clip';
         refreshTrimUI();
         settingsPop.classList.remove('show');
@@ -2007,7 +2124,18 @@
           enterTrim();
         });
       }
-      trimCancelBtn.addEventListener('click', exitTrim);
+      // v2.1 — the same button slot is "Cancel" during trim setup
+      // and "Show in File Explorer" in the post-save success state.
+      // savedState distinguishes which action to fire on click.
+      trimCancelBtn.addEventListener('click', () => {
+        if (savedState && savedFilePath) {
+          try { window.pdr.revealInFolder(savedFilePath); } catch (err) {
+            console.warn('[trim] revealInFolder failed:', err);
+          }
+        } else {
+          exitTrim();
+        }
+      });
 
       // Drag handles. mousedown on a handle starts tracking
       // mousemove on the document until mouseup. Position constrained
@@ -2053,6 +2181,42 @@
       makeDraggable(trimInHandle, 'in');
       makeDraggable(trimOutHandle, 'out');
 
+      // v2.1 (Terry 2026-06-07) — double-click IN handle previews
+      // the clip: jump to trimIn, play, auto-pause when currentTime
+      // reaches trimOut. If the user clicks play again AFTER the
+      // auto-pause (or anywhere outside the trim range), the preview
+      // mode clears so they can freely scrub to discover where they
+      // want the OUT point — exactly what Terry asked for.
+      let trimPreviewMode = false;
+      trimInHandle.addEventListener('dblclick', (e) => {
+        if (!trimMode) return;
+        e.preventDefault();
+        e.stopPropagation();
+        try {
+          video.currentTime = trimIn;
+          trimPreviewMode = true;
+          video.play();
+        } catch (_) {}
+      });
+      // Auto-pause at trimOut while in preview mode.
+      video.addEventListener('timeupdate', () => {
+        if (trimPreviewMode && trimMode && video.currentTime >= trimOut) {
+          try { video.pause(); } catch (_) {}
+          trimPreviewMode = false;
+        }
+      });
+      // Manual play after the auto-pause = free-play mode (no
+      // re-engaging the preview unless the user double-clicks the
+      // IN handle again).
+      video.addEventListener('play', () => {
+        // If user manually pressed play (not from our preview
+        // dblclick), preview mode should be off. The dblclick
+        // handler sets it BEFORE calling play, so by the time the
+        // 'play' event fires, the flag is already true. We don't
+        // clear it here — we only clear it on auto-pause above or
+        // when the user navigates / exits trim.
+      });
+
       // Save button → IPC. Status text feedback during the ffmpeg
       // shell-out; toast on success/failure handled by viewer-wide
       // patterns (no toast lib in viewer.html, so we keep status
@@ -2075,18 +2239,22 @@
           });
           if (r && r.success) {
             const name = (r.newFilePath || '').split(/[\\/]/).pop();
+            const savedFullPath = r.newFilePath || '';
             console.log('[trim] saved clip to', r.newFilePath);
             // v2.1 (Terry 2026-06-07) — persistent success state.
-            // Previous 1.4s auto-dismiss was too short for the user
-            // to read where the clip went. Now: hide the In/Out
-            // range label + Cancel button, repurpose the Save
-            // button as Done, and show a multi-line success message
-            // in the status area explaining where to find the file
-            // and what the _T suffix means. Bar stays open until
-            // the user clicks Done (or starts navigating away).
+            // Hide the In/Out + Cancel; repurpose Save → Done; show
+            // a multi-line success message explaining where to find
+            // the file and what the _T suffix means. Add a "Show in
+            // File Explorer" action right next to Done so the user
+            // can jump straight to the new file in the OS. (No
+            // indexing wait needed — revealInFolder just opens
+            // Explorer at the path.)
             savedState = true;
+            savedFilePath = savedFullPath;
             trimRangeLbl.style.display = 'none';
-            trimCancelBtn.style.display = 'none';
+            trimCancelBtn.style.display = '';
+            trimCancelBtn.textContent = 'Show in File Explorer';
+            trimCancelBtn.className = 'pdrv-trim-btn pdrv-trim-fe';
             trimSaveBtn.textContent = 'Done';
             trimSaveBtn.disabled = false;
             trimStatus.innerHTML =
