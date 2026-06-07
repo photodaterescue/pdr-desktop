@@ -339,6 +339,10 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                       <dt className="font-medium text-foreground">_E — Enhanced</dt>
                       <dd className="text-muted-foreground mt-0.5">A new file created by the PDR Viewer&apos;s Enhance panel — brightness, contrast, saturation, temperature, or B&amp;W adjustments baked into a fresh JPG alongside the original. The original is untouched; this is your edited copy. The enhancement type (manual or AI) is recorded in the file&apos;s XMP metadata so Search &amp; Discovery can filter for it.</dd>
                     </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_T — Trimmed</dt>
+                      <dd className="text-muted-foreground mt-0.5">A new video clip created by the PDR Viewer&apos;s Trim panel — a shorter segment cut out of the original video, written as a sibling file next to it. The original is untouched; this is your shortened version. Clips inherit the original&apos;s date so they sort alongside it in Memories. If you trim the same video multiple times, you&apos;ll see <span className="font-mono">_T_2</span>, <span className="font-mono">_T_3</span>, etc.</dd>
+                    </div>
                   </dl>
                 </div>
 

@@ -10497,6 +10497,10 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-300/50 shrink-0 mt-0.5">_E</span>
                       <span className="text-muted-foreground"><span className="text-foreground font-medium">Enhanced</span> — a copy created by the PDR Viewer&apos;s Enhance panel (brightness / contrast / saturation / temperature / B&amp;W adjustments baked in). Original is untouched.</span>
                     </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-300/50 shrink-0 mt-0.5">_T</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Trimmed</span> — a shorter video clip cut from the original via the PDR Viewer&apos;s Trim panel. The original is untouched; the clip inherits the original&apos;s date so it sorts alongside it in Memories.</span>
+                    </div>
                   </div>
                   <p className="text-xs text-muted-foreground/85 pt-1">The Glossary in Help &amp; Support has a more detailed entry for each suffix.</p>
                 </div>

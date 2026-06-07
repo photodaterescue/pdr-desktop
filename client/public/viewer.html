@@ -214,45 +214,110 @@
     .pdrv-btn.active:hover { color: #C4B5FD; }
     /* v2.0.15 (Terry 2026-06-06 round 8) — Settings popover above
        the gear button. Anchored to the right edge of the gear so it
-       doesn't overflow the player. */
+       doesn't overflow the player. v2.1 (Terry 2026-06-07) — two-
+       view structure (main / speed) mirrors YouTube's submenu UX. */
     .pdrv-settings-pop {
       position: absolute;
       bottom: calc(100% + 8px);
       right: 0;
-      background: rgba(28, 28, 28, 0.94);
+      background: rgba(28, 28, 28, 0.95);
       border: 1px solid rgba(255, 255, 255, 0.1);
       border-radius: 6px;
       padding: 6px 0;
-      min-width: 150px;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+      min-width: 240px;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
       display: none;
       z-index: 20;
+      overflow: hidden;
     }
     .pdrv-settings-pop.show { display: block; }
-    .pdrv-settings-section {
-      padding: 4px 12px 6px;
-      font-size: 10px;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: rgba(255, 255, 255, 0.45);
-    }
+    .pdrv-settings-view { display: none; }
+    .pdrv-settings-view.show { display: block; }
     .pdrv-settings-item {
       display: flex;
       align-items: center;
       width: 100%;
-      padding: 6px 12px;
+      padding: 8px 14px;
       background: transparent;
       border: none;
       color: #fff;
+      font-size: 13px;
+      text-align: left;
+      cursor: pointer;
+      gap: 10px;
+    }
+    .pdrv-settings-item:hover { background: rgba(255, 255, 255, 0.10); }
+    .pdrv-settings-item.active { color: #A99CFF; }
+    .pdrv-settings-item .tick { width: 14px; opacity: 0; }
+    .pdrv-settings-item.active .tick { opacity: 1; }
+    /* Row with a right-aligned current-value + chevron — used by
+       the main view's "Playback speed" entry to mirror YouTube's
+       "Playback speed > Normal" pattern. */
+    .pdrv-settings-row {
+      justify-content: space-between;
+    }
+    .pdrv-settings-row .pdrv-settings-label { flex: 1; }
+    .pdrv-settings-row .pdrv-settings-value {
+      color: rgba(255, 255, 255, 0.65);
       font-size: 12px;
+      font-variant-numeric: tabular-nums;
+    }
+    .pdrv-settings-row .pdrv-settings-chevron {
+      color: rgba(255, 255, 255, 0.45);
+      font-size: 16px;
+      line-height: 1;
+    }
+    .pdrv-settings-divider {
+      height: 1px;
+      background: rgba(255, 255, 255, 0.08);
+      margin: 4px 0;
+    }
+    /* Speed sub-view: back button + horizontal chip row. */
+    .pdrv-settings-back {
+      display: flex;
+      align-items: center;
+      width: 100%;
+      padding: 8px 14px;
+      background: transparent;
+      border: none;
+      color: #fff;
+      font-size: 13px;
+      font-weight: 500;
       text-align: left;
       cursor: pointer;
       gap: 8px;
     }
-    .pdrv-settings-item:hover { background: rgba(255, 255, 255, 0.12); }
-    .pdrv-settings-item.active { color: #A99CFF; }
-    .pdrv-settings-item .tick { width: 12px; opacity: 0; }
-    .pdrv-settings-item.active .tick { opacity: 1; }
+    .pdrv-settings-back:hover { background: rgba(255, 255, 255, 0.10); }
+    .pdrv-settings-back::before { content: '‹'; font-size: 16px; line-height: 1; color: rgba(255, 255, 255, 0.7); }
+    .pdrv-speed-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      padding: 8px 14px 10px;
+    }
+    .pdrv-speed-chip {
+      padding: 5px 10px;
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid transparent;
+      border-radius: 14px;
+      color: #fff;
+      font-size: 12px;
+      font-variant-numeric: tabular-nums;
+      cursor: pointer;
+      transition: background 0.12s, border-color 0.12s;
+    }
+    .pdrv-speed-chip:hover { background: rgba(255, 255, 255, 0.16); }
+    .pdrv-speed-chip.active {
+      background: rgba(169, 156, 255, 0.35);
+      border-color: rgba(169, 156, 255, 0.7);
+      color: #fff;
+    }
+    .pdrv-speed-active-label {
+      text-align: center;
+      padding: 0 14px 8px;
+      font-size: 11px;
+      color: rgba(255, 255, 255, 0.55);
+    }
     /* v2.0.15 (Terry 2026-06-06 round 8) — Fullscreen exit overlay.
        Small X button at top-center of the viewer, shown only while
        document.fullscreenElement matches. ESC also works (native). */
@@ -1534,14 +1599,28 @@
             '<span data-ctrl="time-total">0:00</span>' +
           '</div>' +
           '<div class="pdrv-spacer"></div>' +
-          // Settings (gear) wrapped so the popover positions relative.
+          // v2.1 (Terry 2026-06-07) — YouTube-style two-view menu:
+          // top view lists items + their current values + chevrons;
+          // clicking "Playback speed" reveals a sub-view with the
+          // horizontal speed chips. Trim is an action, not a
+          // setting, so it stays on the main view.
           '<div style="position:relative;display:inline-flex;">' +
             '<button class="pdrv-btn" data-ctrl="gear" type="button" title="Settings">' + wrapSvg(ICON_GEAR) + '</button>' +
             '<div class="pdrv-settings-pop" data-ctrl="settings-pop">' +
-              '<div class="pdrv-settings-section">Playback speed</div>' +
-              '<div data-ctrl="speed-list"></div>' +
-              '<div class="pdrv-settings-section" style="border-top:1px solid rgba(255,255,255,0.08);margin-top:4px;padding-top:8px;">Tools</div>' +
-              '<button class="pdrv-settings-item" data-ctrl="trim-enter" type="button"><span class="tick">✂</span>Trim clip…</button>' +
+              '<div class="pdrv-settings-view show" data-ctrl="settings-main">' +
+                '<button class="pdrv-settings-item pdrv-settings-row" data-ctrl="open-speed" type="button">' +
+                  '<span class="pdrv-settings-label">Playback speed</span>' +
+                  '<span class="pdrv-settings-value" data-ctrl="speed-current-label">Normal</span>' +
+                  '<span class="pdrv-settings-chevron">›</span>' +
+                '</button>' +
+                '<div class="pdrv-settings-divider"></div>' +
+                '<button class="pdrv-settings-item" data-ctrl="trim-enter" type="button"><span class="tick">✂</span>Trim clip…</button>' +
+              '</div>' +
+              '<div class="pdrv-settings-view" data-ctrl="settings-speed">' +
+                '<button class="pdrv-settings-back" data-ctrl="back-from-speed" type="button">Playback speed</button>' +
+                '<div class="pdrv-speed-chips" data-ctrl="speed-chips"></div>' +
+                '<div class="pdrv-speed-active-label" data-ctrl="speed-active-label">Normal</div>' +
+              '</div>' +
             '</div>' +
           '</div>' +
           '<button class="pdrv-btn" data-ctrl="fullscreen" type="button" title="Fullscreen (F)">' + wrapSvg(ICON_FS_OPEN) + '</button>' +
@@ -1587,7 +1666,13 @@
       const volFill = q('vol-fill');
       const gearBtn = q('gear');
       const settingsPop = q('settings-pop');
-      const speedList = q('speed-list');
+      const settingsMain = q('settings-main');
+      const settingsSpeed = q('settings-speed');
+      const openSpeedBtn = q('open-speed');
+      const backFromSpeedBtn = q('back-from-speed');
+      const speedChips = q('speed-chips');
+      const speedCurrentLabel = q('speed-current-label'); // shown on main view
+      const speedActiveLabel = q('speed-active-label');   // shown on sub view
       const trimEnterBtn = q('trim-enter');
       const fsBtn = q('fullscreen');
       const trimRangeLbl = trimBar.querySelector('[data-ctrl="trim-range"]');
@@ -1742,43 +1827,73 @@
         loopBtn.title = video.loop ? 'Loop on (click to turn off)' : 'Loop video';
       });
 
-      // v2.0.15 (Terry 2026-06-06 round 8) — Settings popover with
-      // Playback Speed. Click gear toggles; click outside closes.
-      function renderSpeeds() {
-        const rates = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
-        speedList.innerHTML = '';
-        rates.forEach((r) => {
-          const item = document.createElement('button');
-          item.type = 'button';
-          item.className = 'pdrv-settings-item' + (Math.abs(video.playbackRate - r) < 0.001 ? ' active' : '');
-          item.innerHTML = '<span class="tick">✓</span>' + (r === 1 ? 'Normal' : r + 'x');
-          item.addEventListener('click', (ev) => {
+      // v2.1 (Terry 2026-06-07) — Settings popover with YouTube-style
+      // two-view structure. Main view lists "Playback speed [Normal >]"
+      // and Trim clip. Selecting Playback speed reveals a sub-view
+      // with horizontal speed chips.
+      const SPEED_RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
+      function speedLabel(r) { return r === 1 ? 'Normal' : (r + 'x'); }
+
+      function showSettingsView(which) {
+        if (which === 'speed') {
+          settingsMain.classList.remove('show');
+          settingsSpeed.classList.add('show');
+        } else {
+          settingsSpeed.classList.remove('show');
+          settingsMain.classList.add('show');
+        }
+      }
+      function renderSpeedChips() {
+        speedChips.innerHTML = '';
+        SPEED_RATES.forEach((r) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'pdrv-speed-chip' + (Math.abs(video.playbackRate - r) < 0.001 ? ' active' : '');
+          chip.textContent = r === 1 ? '1x' : (r + 'x');
+          chip.addEventListener('click', (ev) => {
             ev.stopPropagation();
             video.playbackRate = r;
-            playbackRate = r; // keep the legacy top-toolbar state in sync
+            playbackRate = r;
             if (typeof btnSpeed !== 'undefined' && btnSpeed) btnSpeed.textContent = r === 1 ? '1x' : (r + 'x');
-            renderSpeeds();
-            settingsPop.classList.remove('show');
-            // v2.0.15 (Terry 2026-06-07) — popover sits above the bar
-            // and is a DOM descendant of it, so clicking a speed
-            // item never triggers bar.mouseleave (the cursor didn't
-            // physically move outside the bar's DOM tree, even
-            // though it visually went off-screen after the popover
-            // closed). Without resetting mouseOverBar, the auto-hide
-            // timer's `!mouseOverBar` check kept the bar pinned
-            // visible indefinitely. Reset + schedule hide; if the
-            // cursor is genuinely still over the bar, the next
-            // mousemove will flip mouseOverBar back to true.
-            mouseOverBar = false;
-            if (!video.paused && !video.ended) scheduleHide();
+            speedCurrentLabel.textContent = speedLabel(r);
+            speedActiveLabel.textContent = speedLabel(r);
+            renderSpeedChips();
+            // Auto-return to the main view + close the popover after
+            // a brief delay so the user sees the chip light up.
+            setTimeout(() => {
+              showSettingsView('main');
+              settingsPop.classList.remove('show');
+              // Bar auto-hide guard (same rationale as before — the
+              // popover sits inside the bar, so a click here doesn't
+              // trigger bar.mouseleave even when the popover closes).
+              mouseOverBar = false;
+              if (!video.paused && !video.ended) scheduleHide();
+            }, 250);
           });
-          speedList.appendChild(item);
+          speedChips.appendChild(chip);
         });
+        // Keep the main-view "current value" + sub-view "active label"
+        // in sync with whatever's currently selected (covers
+        // shift+,/. keyboard speed nudges + first render).
+        const current = speedLabel(video.playbackRate);
+        speedCurrentLabel.textContent = current;
+        speedActiveLabel.textContent = current;
       }
-      renderSpeeds();
+      renderSpeedChips();
       gearBtn.addEventListener('click', (e) => {
         e.stopPropagation();
+        const willOpen = !settingsPop.classList.contains('show');
         settingsPop.classList.toggle('show');
+        if (willOpen) showSettingsView('main'); // always reset to main on open
+      });
+      openSpeedBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        renderSpeedChips(); // refresh active state in case it drifted
+        showSettingsView('speed');
+      });
+      backFromSpeedBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        showSettingsView('main');
       });
       document.addEventListener('click', (e) => {
         if (!settingsPop.contains(e.target) && e.target !== gearBtn) {
@@ -1827,6 +1942,10 @@
       let trimMode = false;
       let trimIn = 0;
       let trimOut = 0;
+      // savedState — after a successful save the toolbar swaps to
+      // a "Done" affordance with a persistent success message. Reset
+      // on enterTrim so a second trim starts fresh.
+      let savedState = false;
 
       function fmtSec(s) { return fmt(s); }
 
@@ -1852,7 +1971,9 @@
         trimBar.classList.add('show');
         seekBar.classList.add('trimming');
         trimRangeLbl.textContent = 'In ' + fmtSec(trimIn) + ' → Out ' + fmtSec(trimOut) + ' · ' + fmtSec(Math.max(0, trimOut - trimIn));
-        trimSaveBtn.disabled = (trimOut - trimIn) < 0.5;
+        // Don't override the Done button's enabled state during the
+        // post-save success layout.
+        if (!savedState) trimSaveBtn.disabled = (trimOut - trimIn) < 0.5;
       }
 
       function enterTrim() {
@@ -1861,12 +1982,20 @@
         // Default: full clip (in=0, out=duration). User drags inward.
         trimIn = 0;
         trimOut = video.duration;
+        // Reset the toolbar to its initial layout in case the user
+        // previously saved a clip and left the success state up.
+        savedState = false;
         trimStatus.textContent = '';
+        trimRangeLbl.style.display = '';
+        trimCancelBtn.style.display = '';
+        trimCancelBtn.disabled = false;
+        trimSaveBtn.textContent = 'Save clip';
         refreshTrimUI();
         settingsPop.classList.remove('show');
       }
       function exitTrim() {
         trimMode = false;
+        savedState = false;
         trimStatus.textContent = '';
         refreshTrimUI();
       }
@@ -1930,6 +2059,9 @@
       // inline + log).
       trimSaveBtn.addEventListener('click', async () => {
         if (!trimMode) return;
+        // v2.1 — after a save, the same button acts as Done to
+        // dismiss the persistent success state and exit trim mode.
+        if (savedState) { exitTrim(); return; }
         const filePath = files[currentIndex];
         if (!filePath) return;
         trimSaveBtn.disabled = true;
@@ -1943,10 +2075,23 @@
           });
           if (r && r.success) {
             const name = (r.newFilePath || '').split(/[\\/]/).pop();
-            trimStatus.textContent = '✓ Saved ' + name;
             console.log('[trim] saved clip to', r.newFilePath);
-            // Brief delay so the user sees the success, then exit.
-            setTimeout(() => { exitTrim(); }, 1400);
+            // v2.1 (Terry 2026-06-07) — persistent success state.
+            // Previous 1.4s auto-dismiss was too short for the user
+            // to read where the clip went. Now: hide the In/Out
+            // range label + Cancel button, repurpose the Save
+            // button as Done, and show a multi-line success message
+            // in the status area explaining where to find the file
+            // and what the _T suffix means. Bar stays open until
+            // the user clicks Done (or starts navigating away).
+            savedState = true;
+            trimRangeLbl.style.display = 'none';
+            trimCancelBtn.style.display = 'none';
+            trimSaveBtn.textContent = 'Done';
+            trimSaveBtn.disabled = false;
+            trimStatus.innerHTML =
+              '<div style="font-size:12px;color:#d1fae5;margin-bottom:3px;"><span style="font-weight:600;">✓ Saved as</span> <span style="font-family:monospace;color:#fff;">' + name + '</span></div>' +
+              '<div style="font-size:11px;color:#c4b5fd;line-height:1.45;max-width:480px;">Find it next to the original in <strong style="color:#fff;">Memories &mdash; Dates</strong> and <strong style="color:#fff;">Search &amp; Discovery</strong>. The <span style="font-family:monospace;">_T</span> in the filename marks it as trimmed. See Help &rarr; Glossary for the full suffix guide.</div>';
           } else {
             trimStatus.textContent = '✗ ' + (r && r.error ? r.error : 'Trim failed');
             console.warn('[trim] failed:', r && r.error);
