@@ -70,6 +70,44 @@
       transition: color 0.15s, background 0.15s, border-color 0.15s;
       flex-shrink: 0;
     }
+    /* v2.1 (Terry 2026-06-07) — drag-to-app handle, next to the
+       copy-filename icon. Same dimensions as copy, lavender on
+       hover to signal it's an active interactive control. The
+       cursor flips to grab so the user knows to drag (not click). */
+    .toolbar-drag-btn {
+      -webkit-app-region: no-drag;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 5px;
+      color: #888;
+      cursor: grab;
+      transition: color 0.15s, background 0.15s, border-color 0.15s;
+      flex-shrink: 0;
+    }
+    .toolbar-drag-btn:hover {
+      color: #C4B5FD;
+      background: rgba(169, 156, 255, 0.1);
+      border-color: rgba(169, 156, 255, 0.3);
+    }
+    .toolbar-drag-btn:active { cursor: grabbing; }
+    .toolbar-drag-btn svg { width: 14px; height: 14px; }
+    /* Subtle amber tint when the current file is large enough that
+       email / WhatsApp / etc. may reject it. Heuristic threshold
+       is 50 MB (see refreshDragBtnSize in the JS). */
+    .toolbar-drag-btn.large {
+      color: #f59e0b;
+    }
+    .toolbar-drag-btn.large:hover {
+      color: #fbbf24;
+      background: rgba(251, 191, 36, 0.1);
+      border-color: rgba(251, 191, 36, 0.3);
+    }
     .toolbar-copy-btn:hover {
       color: #ddd;
       background: rgba(169, 156, 255, 0.1);
@@ -1288,6 +1326,19 @@
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
       </button>
+      <!-- v2.1 (Terry 2026-06-07) — drag-to-app handle. The user
+           drags this icon to WhatsApp, an email, Photoshop, or any
+           file-drop-accepting app — the receiver gets the original
+           file from disk (Electron's webContents.startDrag). Works
+           for photos, videos, AND freshly-trimmed clips (no
+           indexing wait). Tooltip shows file size; amber tint
+           when >50 MB so the user knows some destinations may
+           reject it. -->
+      <button class="toolbar-drag-btn" id="btn-drag-file" draggable="true" title="Drag to email, WhatsApp, or any other app">
+        <svg viewBox="0 0 24 24" fill="currentColor">
+          <path d="M19 19H5V5h7V3H5c-1.11 0-2 .9-2 2v14c0 1.1.89 2 2 2h14c1.1 0 2-.9 2-2v-7h-2v7zM14 3v2h3.59l-9.83 9.83 1.41 1.41L19 6.41V10h2V3h-7z"/>
+        </svg>
+      </button>
     </div>
     <div class="toolbar-actions">
       <span class="toolbar-counter" id="counter" style="display:none"></span>
@@ -1470,6 +1521,55 @@
     // v2.0.15 (Terry 2026-06-06) — copy filename button. Copies the
     // basename of the currently displayed file. Brief green-tick
     // confirmation via the .copied class (auto-clears after 1.2s).
+    // v2.1 (Terry 2026-06-07) — drag-to-app button. Native OS drag
+    // via the existing window.pdr.drag.start IPC (used by Memories
+    // tile drag). The button is draggable=true; dragstart asks main
+    // to hand the current file path over via webContents.startDrag.
+    // Receivers (WhatsApp, email, Photoshop, etc.) get the original
+    // file from disk — same payload File Explorer would deliver.
+    const dragFileBtn = document.getElementById('btn-drag-file');
+    if (dragFileBtn) {
+      dragFileBtn.addEventListener('dragstart', (e) => {
+        const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
+        if (!filePath) { e.preventDefault(); return; }
+        e.preventDefault(); // browser's HTML5 drag — main starts the real OS drag
+        try {
+          if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
+            window.pdr.drag.start([filePath]).catch((err) => {
+              console.warn('[viewer] drag.start failed:', err && (err.message || err));
+            });
+          }
+        } catch (err) {
+          console.warn('[viewer] drag.start threw:', err && (err.message || err));
+        }
+      });
+      // The "large file" amber tint is informational — update it
+      // each time the current file changes by reading the size via
+      // browser fetch HEAD on the file:// URL (cheap, cached). Also
+      // refresh the tooltip with the human-readable size + MB-aware
+      // hint when the threshold is crossed.
+      window.__refreshDragBtnSize = (filePath) => {
+        if (!filePath) { dragFileBtn.classList.remove('large'); dragFileBtn.title = 'Drag to email, WhatsApp, or any other app'; return; }
+        try {
+          const url = 'file:///' + encodeURI(filePath.replace(/\\/g, '/'));
+          fetch(url, { method: 'HEAD' }).then((r) => {
+            const lenHdr = r.headers.get('content-length');
+            const bytes = lenHdr ? parseInt(lenHdr, 10) : 0;
+            const mb = bytes / (1024 * 1024);
+            const sizeLabel = mb >= 1 ? mb.toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+            const large = mb >= 50;
+            dragFileBtn.classList.toggle('large', large);
+            dragFileBtn.title = large
+              ? 'Drag to email, WhatsApp, or any other app (' + sizeLabel + ' — some apps reject files over ~25 MB)'
+              : 'Drag to email, WhatsApp, or any other app (' + sizeLabel + ')';
+          }).catch(() => {
+            dragFileBtn.classList.remove('large');
+            dragFileBtn.title = 'Drag to email, WhatsApp, or any other app';
+          });
+        } catch (_) {}
+      };
+    }
+
     const copyFilenameBtn = document.getElementById('btn-copy-filename');
     if (copyFilenameBtn) {
       copyFilenameBtn.addEventListener('click', async function () {
@@ -2128,9 +2228,23 @@
       // and "Show in File Explorer" in the post-save success state.
       // savedState distinguishes which action to fire on click.
       trimCancelBtn.addEventListener('click', () => {
+        console.log('[trim] cancel/FE click — savedState=' + savedState + ' path=' + savedFilePath);
         if (savedState && savedFilePath) {
-          try { window.pdr.revealInFolder(savedFilePath); } catch (err) {
-            console.warn('[trim] revealInFolder failed:', err);
+          const hasFn = !!(window.pdr && typeof window.pdr.revealInFolder === 'function');
+          console.log('[trim] revealInFolder available=' + hasFn);
+          if (!hasFn) {
+            console.warn('[trim] window.pdr.revealInFolder missing — preload not loaded?');
+            return;
+          }
+          try {
+            const ret = window.pdr.revealInFolder(savedFilePath);
+            console.log('[trim] revealInFolder called, returned:', ret);
+            if (ret && typeof ret.then === 'function') {
+              ret.then((res) => console.log('[trim] revealInFolder resolved:', JSON.stringify(res)))
+                 .catch((err) => console.warn('[trim] revealInFolder rejected:', err && (err.message || err)));
+            }
+          } catch (err) {
+            console.warn('[trim] revealInFolder threw:', err && (err.message || err));
           }
         } else {
           exitTrim();
@@ -2403,6 +2517,9 @@
       try { window.pdr?.search?.notifyViewerIndex?.(currentIndex, filePath); } catch {}
       // Fetch the caption for this photo in parallel with media load.
       loadCaptionFor(filePath);
+      // v2.1 — refresh the drag-to-app button's size badge for this
+      // new file (defined near the top of the script).
+      try { if (window.__refreshDragBtnSize) window.__refreshDragBtnSize(filePath); } catch (_) {}
 
       // Remove old media. v2.0.15 (Terry 2026-06-06 round 3) — for
       // videos, calling .pause() alone isn't always enough — the
