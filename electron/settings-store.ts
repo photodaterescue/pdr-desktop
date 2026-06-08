@@ -69,6 +69,14 @@ export interface PDRSettings {
    *  warning. Once true, the warning modal is skipped on subsequent
    *  AI presses (sliders still reset — the warning is just hidden). */
   viewerEnhanceAiWarningDismissed: boolean;
+  /** v2.1 (Terry 2026-06-08) — Global "Hide captions" privacy toggle.
+   *  When true, every PDR surface that displays caption text or
+   *  the gold caption badge hides them (Memories tile badges,
+   *  Albums tile badges, PDRV caption bar, S&D result captions).
+   *  The captions themselves remain in the DB — this is purely a
+   *  render-time switch the user flips when sharing their screen
+   *  or showing PDR to family. Default OFF — captions visible. */
+  hideCaptions: boolean;
   /** v2.0.15 (Terry 2026-06-06 round 3) — whether the PDR Viewer's
    *  slideshow should include videos. Default false because a 30-second
    *  video derails a "browse my photos" rhythm; users who want videos
@@ -220,6 +228,7 @@ export const optimisedDefaults: PDRSettings = {
   // AI Enhance press so the user understands the slider reset, then
   // can dismiss it forever via the don't-show-again checkbox.
   viewerEnhanceAiWarningDismissed: false,
+  hideCaptions: false,
   // v2.0.15 — slideshow skips videos by default. Toggle on for users
   // who want videos in the slideshow (advances when the video ends).
   slideshowIncludeVideos: false,
@@ -296,6 +305,7 @@ export function getSettings(): PDRSettings {
     openPeopleOnStartup: store.get('openPeopleOnStartup', optimisedDefaults.openPeopleOnStartup),
     viewerEnhanceSaveDefault: store.get('viewerEnhanceSaveDefault', optimisedDefaults.viewerEnhanceSaveDefault),
     viewerEnhanceAiWarningDismissed: store.get('viewerEnhanceAiWarningDismissed', optimisedDefaults.viewerEnhanceAiWarningDismissed),
+    hideCaptions: store.get('hideCaptions', optimisedDefaults.hideCaptions),
     slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),

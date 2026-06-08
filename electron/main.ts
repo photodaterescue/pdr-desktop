@@ -7249,6 +7249,14 @@ ipcMain.handle('settings:get', async () => {
 
 ipcMain.handle('settings:set', async (_event, key: keyof PDRSettings, value: PDRSettings[keyof PDRSettings]) => {
   setSetting(key, value);
+  // v2.1 (Terry 2026-06-08) — broadcast the change to every open
+  // window so surfaces with live UI tied to a setting (e.g. the
+  // global "Hide captions" privacy toggle that affects Memories
+  // tiles, Albums, PDRV, S&D) can re-read without polling.
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key, value }); } catch { /* non-fatal */ }
+  }
   return { success: true };
 });
 

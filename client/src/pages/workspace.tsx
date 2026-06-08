@@ -12644,6 +12644,13 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // streaming engine on real 50 GB Google Takeouts before deciding
   // whether the temp-extract step can be retired entirely. Default off.
   const [bypassLargeZipPreExtract, setBypassLargeZipPreExtract] = useState(false);
+  // v2.1 (Terry 2026-06-08) — Global Hide-captions privacy toggle.
+  // When on, every caption-displaying surface (Memories tile
+  // badges, Albums tile badges, PDRV caption bar, S&D result
+  // caption blocks) suppresses captions at render time. The
+  // captions themselves stay in the DB — flipping this back
+  // restores them everywhere.
+  const [hideCaptions, setHideCaptionsState] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -12671,6 +12678,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setViewerEnhanceSaveDefaultState(((settings as any).viewerEnhanceSaveDefault as 'new' | 'replace') ?? 'new');
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
+      setHideCaptionsState(((settings as any).hideCaptions as boolean) ?? false);
     });
   }, []);
 
@@ -12814,6 +12822,16 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     // toggle live without a relaunch — same pattern other settings
     // use to push updates to consumers outside this Settings modal.
     window.dispatchEvent(new CustomEvent('pdr:settingsChanged', { detail: { key: 'recycleBinShowCountBadge', value: checked } }));
+  };
+
+  // v2.1 (Terry 2026-06-08) — Hide-captions global toggle. setSetting
+  // broadcasts settings:changed via the main process to every open
+  // window, so useHideCaptions() in surfaces re-renders live. Local
+  // state mirrored so the Settings UI itself reflects the toggle
+  // immediately without a round-trip.
+  const handleHideCaptionsToggle = (checked: boolean) => {
+    setHideCaptionsState(checked);
+    setSetting('hideCaptions' as any, checked);
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -13331,6 +13349,28 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     checked={recycleBinShowCountBadge}
                     onCheckedChange={(checked) => handleRecycleBinShowCountBadgeToggle(!!checked)}
                     data-testid="checkbox-recycle-bin-count-badge"
+                  />
+                </label>
+              </div>
+
+              {/* v2.1 (Terry 2026-06-08) — Hide captions globally.
+                  Privacy lever for users who want to show off PDR
+                  (Memories tiles, Albums, PDRV) without revealing
+                  caption notes — they're personal annotations that
+                  shouldn't be on display when sharing the screen.
+                  Same Switch primitive + row shape as the Recycle
+                  Bin toggle directly above; lives in General
+                  because the lever is view-agnostic. */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Hide captions everywhere</span>
+                    <span className="text-xs text-muted-foreground">Suppresses caption text and the gold caption badge across PDR — Memories tiles, Albums, PDR Viewer, and search results. The captions themselves stay in the database; flipping this back restores them everywhere. Useful when sharing your screen or showing PDR to family.</span>
+                  </div>
+                  <Switch
+                    checked={hideCaptions}
+                    onCheckedChange={(checked) => handleHideCaptionsToggle(!!checked)}
+                    data-testid="checkbox-hide-captions"
                   />
                 </label>
               </div>

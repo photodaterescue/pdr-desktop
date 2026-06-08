@@ -16,6 +16,7 @@
 // floating-pill surfaces so it sits cleanly over any image.
 
 import { MessageSquareText } from 'lucide-react';
+import { useHideCaptions } from '@/hooks/useHideCaptions';
 
 interface CaptionBadgeProps {
   /** Truthy → render badge. Empty / null / undefined → render nothing. */
@@ -25,7 +26,14 @@ interface CaptionBadgeProps {
 }
 
 export function CaptionBadge({ caption, position = 'bottom-right' }: CaptionBadgeProps) {
-  if (!caption || caption.length === 0) return null;
+  // v2.1 (Terry 2026-06-08) — global Hide-captions privacy toggle.
+  // When on, the gold badge is suppressed everywhere it renders
+  // (Memories tiles, Albums tiles, S&D FileCard) — even the
+  // existence-indicator is hidden, not just the caption text, so
+  // a guest viewing the user's screen can't tell which photos
+  // are captioned. Setting flips live via settings:changed.
+  const hidden = useHideCaptions();
+  if (hidden || !caption || caption.length === 0) return null;
   const pos = {
     'bottom-right': 'bottom-1.5 right-1.5',
     'top-right': 'top-1.5 right-1.5',

@@ -3074,34 +3074,62 @@
     const captionBarEl = document.getElementById('captionBar');
     const captionTextEl = document.getElementById('captionText');
     let captionFetchToken = 0;
+    // v2.1 (Terry 2026-06-08) — global Hide-captions privacy toggle.
+    // Loaded once on init + live-updated via settings:changed. When
+    // true, the caption bar stays hidden regardless of whether the
+    // current photo HAS a caption. Re-render the bar's visibility
+    // whenever the setting flips so the user sees captions
+    // disappear/reappear without navigating to another photo.
+    let captionsHidden = false;
+    let lastCaptionForCurrent = '';
+    function applyCaptionVisibility() {
+      if (captionsHidden || !lastCaptionForCurrent || lastCaptionForCurrent.length === 0) {
+        captionBarEl.classList.remove('has-caption');
+      } else {
+        captionTextEl.textContent = lastCaptionForCurrent;
+        captionBarEl.classList.add('has-caption');
+      }
+    }
+    try {
+      if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+        window.pdr.settings.get().then((s) => {
+          captionsHidden = !!(s && s.hideCaptions);
+          applyCaptionVisibility();
+        }).catch(() => {});
+      }
+      if (window.pdr && window.pdr.settings && window.pdr.settings.onChanged) {
+        window.pdr.settings.onChanged((payload) => {
+          if (payload && payload.key === 'hideCaptions') {
+            captionsHidden = !!payload.value;
+            applyCaptionVisibility();
+          }
+        });
+      }
+    } catch (_) { /* setting bridge missing — default visible */ }
+
     function loadCaptionFor(filePath) {
       const token = ++captionFetchToken;
       try {
         if (!window.pdr || !window.pdr.captions || !window.pdr.captions.getByPath) {
           // Bridge not exposed (older preload) — hide row.
-          captionBarEl.classList.remove('has-caption');
-          captionTextEl.textContent = '';
+          lastCaptionForCurrent = '';
+          applyCaptionVisibility();
           return;
         }
         window.pdr.captions.getByPath(filePath).then((res) => {
           // Stale response — user has already navigated to another photo.
           if (token !== captionFetchToken) return;
           const caption = res && res.success && typeof res.data === 'string' ? res.data : null;
-          if (caption && caption.length > 0) {
-            captionTextEl.textContent = caption;
-            captionBarEl.classList.add('has-caption');
-          } else {
-            captionTextEl.textContent = '';
-            captionBarEl.classList.remove('has-caption');
-          }
+          lastCaptionForCurrent = (caption && caption.length > 0) ? caption : '';
+          applyCaptionVisibility();
         }).catch(() => {
           if (token !== captionFetchToken) return;
-          captionBarEl.classList.remove('has-caption');
-          captionTextEl.textContent = '';
+          lastCaptionForCurrent = '';
+          applyCaptionVisibility();
         });
       } catch {
-        captionBarEl.classList.remove('has-caption');
-        captionTextEl.textContent = '';
+        lastCaptionForCurrent = '';
+        applyCaptionVisibility();
       }
     }
 

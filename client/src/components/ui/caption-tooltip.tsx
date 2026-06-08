@@ -3,6 +3,7 @@
 import * as React from 'react';
 import * as TooltipPrimitive from '@radix-ui/react-tooltip';
 import { cn } from '@/lib/utils';
+import { useHideCaptions } from '@/hooks/useHideCaptions';
 
 /**
  * CaptionTooltip — v2.0.13.
@@ -41,7 +42,14 @@ interface CaptionTooltipProps {
 }
 
 export function CaptionTooltip({ caption, side = 'top', delayMs = 250, children }: CaptionTooltipProps) {
-  if (!caption || caption.length === 0) return children;
+  // v2.1 (Terry 2026-06-08) — global Hide-captions privacy toggle.
+  // When on, every CaptionTooltip across PDR (Memories tiles,
+  // Albums, S&D, anywhere else this primitive renders) short-
+  // circuits to the bare children — no gold pill ever appears.
+  // Setting flips live via the settings:changed broadcast, so
+  // the user sees captions disappear / reappear without a reload.
+  const hidden = useHideCaptions();
+  if (hidden || !caption || caption.length === 0) return children;
   return (
     <TooltipPrimitive.Provider delayDuration={delayMs} skipDelayDuration={0}>
       <TooltipPrimitive.Root>

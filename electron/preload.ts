@@ -183,6 +183,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     set: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
     setAll: (settings: any) => ipcRenderer.invoke('settings:setAll', settings),
     resetToDefaults: () => ipcRenderer.invoke('settings:resetToDefaults'),
+    /** v2.1 (Terry 2026-06-08) — subscribe to settings changes from
+     *  any window. Used by the global Hide-captions toggle so
+     *  Memories, Albums, PDRV, S&D etc. all re-render when the
+     *  user flips it in Settings. Returns an unsubscribe fn. */
+    onChanged: (callback: (payload: { key: string; value: any }) => void) => {
+      const listener = (_e: any, payload: any) => callback(payload);
+      ipcRenderer.on('settings:changed', listener);
+      return () => ipcRenderer.removeListener('settings:changed', listener);
+    },
   },
   
     license: {
