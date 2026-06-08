@@ -7571,6 +7571,18 @@ async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker
 
   transcribeWorker = new Worker(workerPath, {
     workerData: { cacheDir, ffmpegPath: resolvedFfmpegPath },
+    // v2.1 round 43 (Terry 2026-06-08) — bump worker heap to 6 GB.
+    // Default Node worker_threads heap is ~2 GB, which Whisper
+    // Large-v3 Turbo + return_timestamps:'word' + overlapping 20s
+    // chunks blows through after ~25 minutes on a ~2 min video.
+    // Caught from main.log:
+    //   "Whisper inference failed: Array buffer allocation failed"
+    // Word-level alignment in particular retains per-word cross-
+    // attention tensors during inference, so the working set is
+    // much larger than segment-level. 6 GB is generous headroom
+    // and matches the typical free-RAM ceiling on a modern laptop
+    // without crowding the rest of the app.
+    execArgv: ['--max-old-space-size=6144'],
   });
 
   transcribeWorker.on('message', (msg: any) => {
