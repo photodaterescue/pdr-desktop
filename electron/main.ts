@@ -7291,7 +7291,7 @@ ipcMain.handle('settings:resetToDefaults', async () => {
 
 let transcribeWorker: import('worker_threads').Worker | null = null;
 const transcribePending = new Map<string, {
-  resolve: (info: { segments: Array<{ start: number; end: number; text: string }>; plainText: string; language: string; durationSeconds: number }) => void;
+  resolve: (info: { segments: Array<{ start: number; end: number; text: string }>; plainText: string; language: string; durationSeconds: number; rawChunkCount?: number; rawPreview?: string; audioRms?: number }) => void;
   reject: (err: Error) => void;
   onProgress?: (phase: string, percent: number) => void;
 }>();
@@ -7321,6 +7321,15 @@ async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker
   });
 
   transcribeWorker.on('message', (msg: any) => {
+    // v2.1 round 25 (Terry 2026-06-08) — worker log lines piped
+    // through the message channel. Without this, worker_threads
+    // stdout doesn't reach electron-log so diagnostic info (audio
+    // RMS, raw Whisper output, etc) is invisible when something
+    // goes wrong.
+    if (msg && msg.type === 'log') {
+      log.info(`[transcribe-worker] ${msg.message}`);
+      return;
+    }
     if (!msg || !msg.requestId) return;
     const pending = transcribePending.get(msg.requestId);
     if (!pending) return;
@@ -7333,6 +7342,9 @@ async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker
         plainText: msg.plainText,
         language: msg.language,
         durationSeconds: msg.durationSeconds,
+        rawChunkCount: msg.rawChunkCount,
+        rawPreview: msg.rawPreview,
+        audioRms: msg.audioRms,
       });
     } else if (msg.type === 'error') {
       transcribePending.delete(msg.requestId);
@@ -7415,7 +7427,7 @@ ipcMain.handle('viewer:transcribeVideo', async (event, req: { filePath: string; 
 
     const requestId = `tr-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
     const worker = await ensureTranscribeWorker();
-    const result = await new Promise<{ segments: any[]; plainText: string; language: string; durationSeconds: number }>((resolve, reject) => {
+    const result = await new Promise<{ segments: any[]; plainText: string; language: string; durationSeconds: number; rawChunkCount?: number; rawPreview?: string; audioRms?: number }>((resolve, reject) => {
       transcribePending.set(requestId, {
         resolve,
         reject,
@@ -7434,7 +7446,17 @@ ipcMain.handle('viewer:transcribeVideo', async (event, req: { filePath: string; 
     // nothing. The user can retry later (e.g. after re-encoding)
     // and the IPC will re-run rather than serving an empty cache.
     if (!result.segments || result.segments.length === 0) {
-      console.log('[viewer:transcribeVideo] no usable speech found in file_id', fileRow.id, '(' + result.durationSeconds.toFixed(1) + 's audio) — not persisting');
+      // v2.1 round 25 (Terry 2026-06-08) — log the diagnostic
+      // bundle so we can tell at a glance whether the audio
+      // extraction was bad (RMS near 0), Whisper returned
+      // nothing (rawChunkCount === 0), or Whisper returned
+      // garbage the filter rejected (rawChunkCount > 0).
+      const dx = (result as any);
+      console.log('[viewer:transcribeVideo] no usable speech found in file_id', fileRow.id,
+        '— duration=' + result.durationSeconds.toFixed(1) + 's',
+        'rawChunks=' + (dx.rawChunkCount ?? '?'),
+        'audioRMS=' + (typeof dx.audioRms === 'number' ? dx.audioRms.toFixed(4) : '?'),
+        'rawPreview=' + JSON.stringify((dx.rawPreview ?? '').slice(0, 120)));
       return {
         success: true,
         existed: false,

@@ -65,6 +65,22 @@ interface DoneOut {
   plainText: string;
   language: string;
   durationSeconds: number;
+  /** v2.1 round 25 — diagnostic: number of chunks Whisper returned
+   *  BEFORE the hallucination filter. Lets main log "Whisper
+   *  returned N chunks, filter rejected all" when the toast says
+   *  "no speech" but the video clearly had dialogue. */
+  rawChunkCount?: number;
+  /** v2.1 round 25 — diagnostic: first 200 chars of the raw
+   *  pipeline text (un-filtered). Lets us tell at a glance
+   *  whether Whisper hallucinated ("!!!!"), returned garbage in
+   *  the wrong language, or just produced empty chunks. */
+  rawPreview?: string;
+  /** v2.1 round 25 — diagnostic: RMS amplitude of the audio fed
+   *  to Whisper. Near-zero ≈ silence (extraction problem); a
+   *  healthy speech mix is typically 0.05–0.3. Helps distinguish
+   *  audio-extraction failure from Whisper-side recognition
+   *  failure. */
+  audioRms?: number;
 }
 
 interface ErrorOut {
@@ -73,7 +89,12 @@ interface ErrorOut {
   error: string;
 }
 
-type OutboundMessage = ProgressOut | DoneOut | ErrorOut;
+interface LogOut {
+  type: 'log';
+  message: string;
+}
+
+type OutboundMessage = ProgressOut | DoneOut | ErrorOut | LogOut;
 
 const config = workerData as WorkerConfig;
 
@@ -89,7 +110,13 @@ function post(msg: OutboundMessage) {
 }
 
 function log(msg: string) {
+  // v2.1 round 25 (Terry 2026-06-08) — worker_threads stdout isn't
+  // captured by electron-log, so worker log lines were invisible
+  // when diagnosing "no speech" results. Pipe through the message
+  // channel so main's logger picks them up too. Keep the local
+  // console.log so they still appear in the dev console.
   console.log(`[transcribe-worker] ${msg}`);
+  try { post({ type: 'log', message: msg }); } catch { /* before parentPort wired */ }
 }
 
 // ─── Whisper pipeline (lazy + resident) ──────────────────────────────────────
@@ -109,7 +136,16 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   env.cacheDir = config.cacheDir;
   env.allowLocalModels = true;
 
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-base', {
+  // v2.1 round 25 (Terry 2026-06-08) — switched from whisper-base
+  // (~150 MB) to whisper-small (~244 MB). Base is the smallest
+  // multilingual model and genuinely struggles with: phone-quality
+  // compressed audio, distant speakers, background noise, casual
+  // accented English. Terry's real-world test (a 2-minute video
+  // with clear English dialogue) came back "no speech" — small
+  // handles that comfortably. ~1.5× slower per second of audio
+  // but the quality jump is the difference between "useful" and
+  // "broken". One-time 244 MB model download.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small', {
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
       if (info?.status === 'progress' && typeof info.progress === 'number') {
@@ -200,6 +236,26 @@ function readWavAsFloat32(wavPath: string): Float32Array {
   return new Float32Array(buf.buffer, buf.byteOffset + offset, sampleCount);
 }
 
+// v2.1 round 25 (Terry 2026-06-08) — RMS amplitude check on the
+// extracted audio. Lets us distinguish "ffmpeg produced silence"
+// (RMS ~0) from "audio is real but Whisper failed" (RMS healthy
+// but no segments survived the hallucination filter). A typical
+// speech track has RMS in the 0.05–0.3 range; ambient/room tone
+// is more like 0.005–0.02; true silence is < 0.001. Sample at
+// every 1000th sample to keep the cost negligible on a 2-minute
+// clip (~1.9 M samples → ~1.9 K probes).
+function computeAudioRms(samples: Float32Array): number {
+  if (samples.length === 0) return 0;
+  let sumSq = 0;
+  let count = 0;
+  for (let i = 0; i < samples.length; i += 1000) {
+    const v = samples[i];
+    sumSq += v * v;
+    count++;
+  }
+  return count > 0 ? Math.sqrt(sumSq / count) : 0;
+}
+
 // ─── Main transcribe handler ─────────────────────────────────────────────────
 
 async function transcribe(msg: TranscribeMessage): Promise<void> {
@@ -241,6 +297,14 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
     post({ type: 'error', requestId, error: `Audio read failed: ${(err as Error).message}` });
     return;
   }
+
+  // v2.1 round 25 (Terry 2026-06-08) — log the RMS of the audio
+  // we're about to hand Whisper. Distinguishes ffmpeg / loudnorm
+  // failure (RMS near zero) from Whisper recognition failure (RMS
+  // healthy but no usable text). Surfaced in the done message
+  // too, so main can log it alongside the "no speech" outcome.
+  const audioRms = computeAudioRms(audio);
+  log(`audio RMS = ${audioRms.toFixed(4)} (healthy speech ≈ 0.05–0.3, silence < 0.001)`);
 
   // v2.1 round 23 (Terry 2026-06-08) — heartbeat ticks while the
   // pipeline is running. The HuggingFace ASR pipeline doesn't
@@ -325,21 +389,29 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       const letters = text.replace(/[^\p{L}]/gu, '');
       if (letters.length < 3) continue;
       if (letters.length / text.length < 0.3) continue;
-      // Also drop the lone-token repeat artefact ("you you you you").
+      // v2.1 round 25 (Terry 2026-06-08) — relaxed the lone-token
+      // repeat heuristic. The old rule "4+ tokens but ≤ 2 unique →
+      // drop" was rejecting legitimate excited speech like "yes yes
+      // yes yes" or "no no no no", which Whisper-small picks up
+      // accurately. Now only drop if EVERY token is identical (a
+      // true loop), and require at least 6 of them so short
+      // affirmations survive.
       const tokens = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
-      if (tokens.length > 3) {
+      if (tokens.length >= 6) {
         const unique = new Set(tokens).size;
-        if (unique <= 2) continue; // 4+ tokens but only 1-2 distinct
+        if (unique === 1) continue; // pure single-token loop
       }
       segments.push({ start, end, text });
     }
     const plainText = segments.map(s => s.text).join(' ').trim();
     const detectedLanguage = (result?.language ?? language ?? 'en').toString();
+    const rawPreview = (result?.text ?? '').toString().slice(0, 200);
+    const rawChunkCount = rawChunks.length;
 
     // Clean up the temp wav.
     try { fs.unlinkSync(wavPath); } catch { /* non-fatal */ }
 
-    log(`transcribed ${durationSeconds.toFixed(1)}s of audio in ${((Date.now() - t0) / 1000).toFixed(1)}s; ${segments.length} segments`);
+    log(`transcribed ${durationSeconds.toFixed(1)}s of audio in ${((Date.now() - t0) / 1000).toFixed(1)}s; ${segments.length} segments kept (${rawChunkCount} raw chunks, RMS ${audioRms.toFixed(4)})`);
 
     post({
       type: 'done',
@@ -348,6 +420,9 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       plainText,
       language: detectedLanguage,
       durationSeconds,
+      rawChunkCount,
+      rawPreview,
+      audioRms,
     });
   } catch (err) {
     clearInterval(heartbeat);
