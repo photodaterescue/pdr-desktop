@@ -1998,6 +1998,16 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           // line so the two surfaces speak the same language.
           const photoCount = files.filter(f => f.file_type === 'photo').length;
           const videoCount = files.filter(f => f.file_type === 'video').length;
+          // v2.1 round 38 (Terry 2026-06-08) — leftmost count label
+          // hides when a filter narrows the view. With "Photos" or
+          // "Videos" or "Captioned" active, the filter chip already
+          // carries the count ("Photos · 1,910") so repeating the
+          // breakdown here is just noise. Only the All-media default
+          // state keeps the photo/video split visible — that's the
+          // case where the breakdown actually adds information
+          // beyond what the chip already says ("All media · 2,075").
+          const filterNarrows = mediaFilter !== 'all' || captionedOnly;
+          if (filterNarrows) return null;
           const parts: string[] = [];
           if (photoCount > 0) parts.push(`${photoCount.toLocaleString()} ${photoCount === 1 ? 'photo' : 'photos'}`);
           if (videoCount > 0) parts.push(`${videoCount.toLocaleString()} ${videoCount === 1 ? 'video' : 'videos'}`);
@@ -2186,7 +2196,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             original Add Info button's active-state behaviour
             before this round's restructure. */}
         {(() => {
-          const insightsActive = tileSizeSlider !== 35 || selectionMode || metaFields.length > 0;
+          // v2.1 round 38 (Terry 2026-06-08) — count of active items
+          // inside Insights. Tile size away from default = 1, selection
+          // mode on = 1, each tile-info checkbox = 1. Surfaced as a
+          // small numeric badge next to the label so the user can
+          // remember they've toggled things on without having to open
+          // the popover. Same "(N)" pattern the old Add Info button
+          // used pre-restructure.
+          const insightsCount =
+            (tileSizeSlider !== 35 ? 1 : 0) +
+            (selectionMode ? 1 : 0) +
+            metaFields.length;
+          const insightsActive = insightsCount > 0;
           return (
             <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
               <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
@@ -2198,6 +2219,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   >
                     <Info className="w-3.5 h-3.5 mr-1.5" />
                     Insights
+                    {insightsActive && (
+                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                        {insightsCount}
+                      </span>
+                    )}
                   </Button>
                 </PopoverTrigger>
               </IconTooltip>
@@ -2416,16 +2442,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             last. */}
         <div className="ml-auto flex items-center gap-2">
           {files != null && files.length > 1 && selectedFileIds.size === 0 && (
-            <button
+            <Button
+              variant="primary"
+              size="sm"
               onClick={() => {
                 const base = visibleFiles ?? files;
                 openSearchViewer(base.map(f => f.file_path), base.map(f => f.filename));
               }}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
               data-testid="button-open-in-viewer"
             >
+              <PlayCircle className="w-3.5 h-3.5 mr-1.5" />
               Open {title} in Viewer
-            </button>
+            </Button>
           )}
           <DensityToggle value={density} onChange={onDensityChange} />
         </div>
