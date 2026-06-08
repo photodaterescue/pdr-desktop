@@ -77,10 +77,12 @@ import {
   HardDrive,
   FolderPlus,
   Sparkles,
+  Captions,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -575,6 +577,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   }, []);
   const [selectedFile, setSelectedFile] = useState<IndexedFile | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<Set<number>>(new Set());
+  // v2.1 round 35 (Terry 2026-06-08) — Transcribe hook used by the
+  // right-click context menu on video tiles. Wired through to
+  // FileCard via the onTranscribe prop, same shape as onAddToAlbum.
+  const { transcribe: transcribeVideoPaths } = useTranscribeVideos();
   // Parallel store of the actual file objects for every checked item,
   // keyed by file id. Persists across searches so a user can compose a
   // "Custom selection" by ticking 3 photos in one search, switching the
@@ -4715,6 +4721,21 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             }
                             setAddToAlbumOpenTick(t => t + 1);
                           }}
+                          onTranscribe={() => {
+                            // v2.1 round 35 (Terry 2026-06-08) — same
+                            // selection-aware pattern as onAddToAlbum.
+                            // If the right-clicked video is part of a
+                            // multi-select, transcribe the whole
+                            // selection's videos; otherwise just this
+                            // one. Hook handles the modal + Whisper
+                            // batch + progress toast.
+                            const inMulti = selectedFiles.size > 0 && selectedFiles.has(file.id);
+                            const targets = inMulti
+                              ? Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'video').map(f => f.file_path)
+                              : [file.file_path];
+                            if (targets.length === 0) return;
+                            void transcribeVideoPaths(targets);
+                          }}
                           onCheckboxClick={(e: React.MouseEvent) => {
                             const multiSelectActive = selectedFiles.size > 0;
                             if (e.shiftKey && multiSelectActive && lastClickedIndexRef.current !== null) {
@@ -5188,7 +5209,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon, count }: { labe
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -5312,6 +5333,22 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
           <MessageSquareText className="w-3.5 h-3.5 mr-2" />
           {file.caption ? 'Edit caption…' : 'Add caption…'}
         </ContextMenuItem>
+        {/* v2.1 round 35 (Terry 2026-06-08) — Transcribe video. Only
+            renders on video tiles. Parent (SearchPanel) decides what
+            the selection is when this fires — if the right-clicked
+            tile is part of an active multi-select, transcribe the
+            whole selection's videos; otherwise just this file. Same
+            useTranscribeVideos hook the MemoriesView and AlbumsView
+            menus use. */}
+        {file.file_type === 'video' && onTranscribe && (
+          <ContextMenuItem
+            onSelect={() => onTranscribe()}
+            data-testid={`filecard-transcribe-${file.id}`}
+          >
+            <Captions className="w-3.5 h-3.5 mr-2" />
+            Transcribe…
+          </ContextMenuItem>
+        )}
         {/* v2.0.15 (Terry 2026-06-02) — Add to album. Mirrors the
             MemoriesView / AlbumsView per-tile context menu's
             equivalent item. Parent (SearchPanel) wires the actual

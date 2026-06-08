@@ -7329,13 +7329,28 @@ function getWhisperCacheRoot(): string {
 
 function isCurrentWhisperModelReady(): boolean {
   try {
-    // transformers.js drops models into <cache>/Xenova/<modelName>/.
-    // The decoder ONNX is the largest file and the last one written,
-    // so its existence is a reliable "fully downloaded" signal.
-    const dir = path.join(getWhisperCacheRoot(), 'Xenova', CURRENT_WHISPER_MODEL_DIR);
-    const decoder = path.join(dir, 'onnx', 'decoder_model_merged.onnx');
-    const encoder = path.join(dir, 'onnx', 'encoder_model.onnx');
-    return fs.existsSync(decoder) && fs.existsSync(encoder);
+    // transformers.js drops models into <cache>/Xenova/<modelName>/onnx/.
+    // The exact decoder filename depends on the dtype config we pass at
+    // pipeline() time — fp32 → decoder_model_merged.onnx, q8/quantized
+    // → decoder_model_merged_quantized.onnx, fp16 → decoder_model_merged_fp16.onnx,
+    // etc. So scan for ANY file whose name starts with
+    // "decoder_model_merged" and ends with ".onnx" rather than hard-
+    // coding one variant. Same for the encoder (we currently use the
+    // base encoder_model.onnx but a future fp16-everywhere config
+    // would land at encoder_model_fp16.onnx).
+    //
+    // v2.1 round 35 (Terry 2026-06-08) — this is what was making the
+    // "First time only" download notice show on every transcribe even
+    // after a successful run: the check looked for decoder_model_merged.onnx
+    // but the q8 dtype config we ship downloads
+    // decoder_model_merged_quantized.onnx, so the check always returned
+    // false and the notice always rendered.
+    const onnxDir = path.join(getWhisperCacheRoot(), 'Xenova', CURRENT_WHISPER_MODEL_DIR, 'onnx');
+    if (!fs.existsSync(onnxDir)) return false;
+    const files = fs.readdirSync(onnxDir);
+    const hasDecoder = files.some(f => f.startsWith('decoder_model_merged') && f.endsWith('.onnx'));
+    const hasEncoder = files.some(f => f.startsWith('encoder_model') && f.endsWith('.onnx'));
+    return hasDecoder && hasEncoder;
   } catch { return false; }
 }
 

@@ -32,6 +32,7 @@ import {
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
+  Captions,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -68,6 +69,15 @@ import {
 } from '../lib/electron-bridge';
 import { promptConfirm } from './trees/promptConfirm';
 import { editPhotoCaption } from '@/lib/caption-actions';
+import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
+
+// v2.1 round 35 (Terry 2026-06-08) — extension-based video detector
+// for the right-click Transcribe item. AlbumsView's photo objects
+// don't carry file_type the way MemoriesView's do; the path's ext
+// is the cheapest reliable signal. Matches the VIDEO_EXTS set in
+// the main process / viewer.html so behaviour is consistent.
+const VIDEO_EXT_RE = /\.(mp4|mov|webm|avi|mkv|m4v|wmv|flv|3gp|3g2|ogv|mts|m2ts|ts)$/i;
+function isVideoPathExt(fp: string): boolean { return VIDEO_EXT_RE.test(fp || ''); }
 import { CaptionBadge } from '@/components/CaptionBadge';
 import { CaptionTooltip } from '@/components/ui/caption-tooltip';
 import {
@@ -1501,6 +1511,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // actions on AlbumsView. Cleared whenever the user navigates to a
   // different album so we never carry a stale selection across views.
   const [selectedAlbumPhotoIds, setSelectedAlbumPhotoIds] = useState<Set<number>>(new Set());
+  // v2.1 round 35 (Terry 2026-06-08) — Transcribe hook for the
+  // right-click context menu item below. Same Whisper-batch pipeline
+  // MemoriesView and SearchPanel use; one source of truth.
+  const { transcribe: transcribeVideoPaths } = useTranscribeVideos();
   const lastAlbumClickedIndexRef = useRef<number | null>(null);
   useEffect(() => { setSelectedAlbumPhotoIds(new Set()); lastAlbumClickedIndexRef.current = null; }, [selection]);
   const handleAlbumPhotoClick = (
@@ -2841,6 +2855,34 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <MessageSquareText className="w-3.5 h-3.5 mr-2" />
                         {p.caption ? 'Edit caption…' : 'Add caption…'}
                       </ContextMenuItem>
+                      {/* v2.1 round 35 (Terry 2026-06-08) — Transcribe
+                          video. Only shows for video files (detected
+                          by extension). If the right-clicked tile is
+                          part of an active multi-select, transcribe
+                          the whole selection (filtered to videos);
+                          otherwise just this one. Same hook the
+                          MemoriesView + SearchPanel context menus and
+                          the Memories toolbar button drive — single
+                          source of truth for the confirm modal +
+                          progress toast + Whisper batch pipeline. */}
+                      {isVideoPathExt(p.file_path) && (
+                        <ContextMenuItem
+                          onSelect={() => {
+                            const inMulti = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id);
+                            const targets = inMulti
+                              ? albumPhotos.filter(ph => selectedAlbumPhotoIds.has(ph.id) && isVideoPathExt(ph.file_path)).map(ph => ph.file_path)
+                              : [p.file_path];
+                            if (targets.length === 0) return;
+                            void transcribeVideoPaths(targets);
+                          }}
+                          data-testid={`album-photo-transcribe-${p.id}`}
+                        >
+                          <Captions className="w-3.5 h-3.5 mr-2" />
+                          Transcribe{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
+                            ? ` (${albumPhotos.filter(ph => selectedAlbumPhotoIds.has(ph.id) && isVideoPathExt(ph.file_path)).length})`
+                            : ''}…
+                        </ContextMenuItem>
+                      )}
                       {/* v2.0.13 (Terry 2026-05-26) — "Set as album
                           thumbnail" overrides the auto-picked first-by-
                           date cover. Writes to albums.cover_file_id and
