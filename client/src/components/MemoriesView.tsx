@@ -2169,13 +2169,48 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </PopoverTrigger>
               </IconTooltip>
               <PopoverContent align="start" className="w-64 p-1">
-                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
-                  Show
+                {/* v2.1 round 25 (Terry 2026-06-08) — restructure to
+                    make the semantic clear: Photos/Videos are TYPE
+                    selectors, Captioned is an ADDITIONAL filter that
+                    narrows what's already chosen. The previous flat
+                    list of three checkboxes implied additive
+                    selection — ticking all three confusingly produced
+                    "Captioned · 1" because the captioned filter
+                    AND'd against the type filter. Two sections + a
+                    divider + the word "only" on Captioned make the
+                    structural difference visible. */}
+                {/* Show all reset — sets all defaults in one click. */}
+                {/* Reset row — matches the popover's row primitive
+                    (px-3 py-1.5 rounded-md text-sm hover:bg-muted/50)
+                    used by the type + filter rows below it.
+                    text-foreground for body content (per style guide:
+                    text-primary on white reads as faint body text;
+                    reserve text-primary for icons / bg-primary CTAs).
+                    Icon picks up text-muted-foreground for the same
+                    treatment as the icons on rows below. Disabled
+                    state when already-default. */}
+                {(() => {
+                  const isDefault = showPhotos && showVideos && !captionedOnly;
+                  return (
+                    <button
+                      type="button"
+                      onClick={() => { setShowPhotos(true); setShowVideos(true); setCaptionedOnly(false); }}
+                      disabled={isDefault}
+                      data-testid="memories-show-filter-reset"
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isDefault ? 'text-muted-foreground/60 cursor-not-allowed' : 'text-foreground hover:bg-muted/50 cursor-pointer'}`}
+                    >
+                      <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
+                      Show all media
+                    </button>
+                  );
+                })()}
+                <div className="h-px bg-border my-1" />
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
+                  Type
                 </p>
                 {([
                   { key: 'photos' as const, label: 'Photos', count: photoCount, Icon: ImageIcon, checked: showPhotos, setChecked: setShowPhotos, disabled: photoCount === 0 },
                   { key: 'videos' as const, label: 'Videos', count: videoCount, Icon: Film, checked: showVideos, setChecked: setShowVideos, disabled: videoCount === 0 },
-                  { key: 'captioned' as const, label: 'Captioned', count: captionedCount, Icon: MessageSquareText, checked: captionedOnly, setChecked: setCaptionedOnly, disabled: captionedCount === 0 },
                 ]).map(({ key, label, count, Icon, checked, setChecked, disabled }) => (
                   <label
                     key={key}
@@ -2196,6 +2231,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     </span>
                   </label>
                 ))}
+                <div className="h-px bg-border my-1" />
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
+                  Also filter
+                </p>
+                <label
+                  data-testid="memories-show-filter-captioned"
+                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${captionedCount === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
+                >
+                  <span className="inline-flex items-center gap-2 text-foreground">
+                    <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
+                    Captioned only
+                  </span>
+                  <span className="inline-flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
+                    <Checkbox
+                      checked={captionedOnly}
+                      disabled={captionedCount === 0}
+                      onCheckedChange={(v) => setCaptionedOnly(!!v)}
+                    />
+                  </span>
+                </label>
               </PopoverContent>
             </Popover>
           );
