@@ -2176,19 +2176,31 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             jumble. Trigger button matches the Actions
             DropdownMenuTrigger in height + padding so the two
             "hubs" sit shoulder-to-shoulder visually. */}
-        <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
-          <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
-            <PopoverTrigger asChild>
-              <Button
-                variant="secondary"
-                size="sm"
-                data-testid="memories-insights-trigger"
-              >
-                <Info className="w-3.5 h-3.5 mr-1.5" />
-                Insights
-              </Button>
-            </PopoverTrigger>
-          </IconTooltip>
+        {/* v2.1 round 37 (Terry 2026-06-08) — Insights trigger
+            tracks active state of EVERYTHING inside the popover
+            (tile size away from default, selection mode on, or
+            any tile-info checkboxes ticked). Default = ghost
+            (neutral, doesn't pretend to be active); active =
+            lavender-bordered secondary so the button reads as
+            "you've changed something in here". Matches the
+            original Add Info button's active-state behaviour
+            before this round's restructure. */}
+        {(() => {
+          const insightsActive = tileSizeSlider !== 35 || selectionMode || metaFields.length > 0;
+          return (
+            <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
+              <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
+                <PopoverTrigger asChild>
+                  <Button
+                    variant={insightsActive ? 'secondary' : 'ghost'}
+                    size="sm"
+                    data-testid="memories-insights-trigger"
+                  >
+                    <Info className="w-3.5 h-3.5 mr-1.5" />
+                    Insights
+                  </Button>
+                </PopoverTrigger>
+              </IconTooltip>
           <PopoverContent className="w-64 p-3" align="start">
             {/* — Tile size section — */}
             <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
@@ -2262,11 +2274,90 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
             </p>
           </PopoverContent>
-        </Popover>
+            </Popover>
+          );
+        })()}
         {/* Selection bar — only renders when user has checked items.
             Mirrors the S&D selection-bar contract: dismissable chip
             with count + AddToAlbumPopover sit between the static
             controls and the "Open all in Viewer" CTA. */}
+        {/* v2.1 round 37 (Terry 2026-06-08) — Actions dropdown
+            moved ahead of the selection chip so the two "hub"
+            buttons (Insights + Actions) sit shoulder-to-shoulder.
+            Terry: "Actions dropdown should be next to Insights
+            and not be sandwiched by the No. selected." The chip
+            now follows Actions, keeping the visual chain:
+            view-options hub → do-stuff hub → "you have N picked"
+            indicator. AddToAlbumPopover anchor renders alongside
+            the chip since both depend on having a selection. */}
+        {selectedFileIds.size > 0 && (() => {
+          const base = visibleFiles ?? files ?? [];
+          const selectedVideos = base.filter(f => selectedFileIds.has(f.id) && f.file_type === 'video');
+          return (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button
+                  size="sm"
+                  data-testid="memories-selection-actions"
+                  className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
+                >
+                  Actions
+                  <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="min-w-[260px]">
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const target = base.filter(f => selectedFileIds.has(f.id));
+                    if (target.length === 0) return;
+                    openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
+                  }}
+                  data-testid="memories-actions-open-viewer"
+                >
+                  <PlayCircle className="w-3.5 h-3.5 mr-2" />
+                  Open {selectedFileIds.size} Selected in Viewer
+                </DropdownMenuItem>
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
+                  data-testid="memories-actions-add-to-album"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                  Add to album…
+                </DropdownMenuItem>
+                {selectedVideos.length > 0 && (
+                  <DropdownMenuItem
+                    onSelect={() => transcribeSelectedVideos(selectedVideos.map(v => v.file_path))}
+                    data-testid="memories-actions-transcribe"
+                  >
+                    <Captions className="w-3.5 h-3.5 mr-2" />
+                    Transcribe {selectedVideos.length} video{selectedVideos.length === 1 ? '' : 's'}…
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                <DropdownMenuItem
+                  onSelect={async () => {
+                    const ids = Array.from(selectedFileIds);
+                    if (ids.length === 0) return;
+                    const r = await moveToRecycleBin(ids);
+                    if (r.success) {
+                      toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                      clearSelection();
+                      onRequestRefresh();
+                    } else {
+                      toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                    }
+                  }}
+                  className="text-destructive focus:text-destructive"
+                  data-testid="memories-actions-delete"
+                >
+                  <Trash2 className="w-3.5 h-3.5 mr-2" />
+                  Move {selectedFileIds.size} to Recycle Bin
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          );
+        })()}
         {selectedFileIds.size > 0 && (
           <>
             <IconTooltip label="Clear selection" side="bottom">
@@ -2311,122 +2402,33 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 openTrigger={addToAlbumOpenTick}
               />
             </div>
-            {(() => {
-              const base = visibleFiles ?? files ?? [];
-              const selectedVideos = base.filter(f => selectedFileIds.has(f.id) && f.file_type === 'video');
-              return (
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    {/* v2.1 round 36 (Terry 2026-06-08) — Actions
-                        button goes gold when there's a selection.
-                        Matches the gold selection chip to its left
-                        and the gold checks on the selected photo
-                        tiles below — "this dropdown holds the
-                        things you can do with what you've picked."
-                        bg-[var(--color-gold)] + dark text matches
-                        the same gold pattern the selection chip
-                        uses (see ~30 lines up). */}
-                    <Button
-                      size="sm"
-                      data-testid="memories-selection-actions"
-                      className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
-                    >
-                      Actions
-                      <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  {/* min-w-[260px] so the longest item ("Open N
-                      Selected in Viewer" + "Move N to Recycle Bin")
-                      fits without ellipsis at any selection size. */}
-                  <DropdownMenuContent align="end" className="min-w-[260px]">
-                    {/* v2.1 round 36 (Terry 2026-06-08) — Open
-                        Selected in Viewer moved into the Actions
-                        dropdown per Terry's restructure ask. Same
-                        click handler as the toolbar Open button
-                        used to have, just filtered to the
-                        selection. */}
-                    <DropdownMenuItem
-                      onSelect={() => {
-                        const target = base.filter(f => selectedFileIds.has(f.id));
-                        if (target.length === 0) return;
-                        openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
-                      }}
-                      data-testid="memories-actions-open-viewer"
-                    >
-                      <PlayCircle className="w-3.5 h-3.5 mr-2" />
-                      Open {selectedFileIds.size} Selected in Viewer
-                    </DropdownMenuItem>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
-                      data-testid="memories-actions-add-to-album"
-                    >
-                      <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                      Add to album…
-                    </DropdownMenuItem>
-                    {selectedVideos.length > 0 && (
-                      <DropdownMenuItem
-                        onSelect={() => transcribeSelectedVideos(selectedVideos.map(v => v.file_path))}
-                        data-testid="memories-actions-transcribe"
-                      >
-                        <Captions className="w-3.5 h-3.5 mr-2" />
-                        Transcribe {selectedVideos.length} video{selectedVideos.length === 1 ? '' : 's'}…
-                      </DropdownMenuItem>
-                    )}
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem
-                      onSelect={async () => {
-                        const ids = Array.from(selectedFileIds);
-                        if (ids.length === 0) return;
-                        const r = await moveToRecycleBin(ids);
-                        if (r.success) {
-                          toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
-                          clearSelection();
-                          onRequestRefresh();
-                        } else {
-                          toast.error('Couldn’t move to Recycle Bin', { description: r.error });
-                        }
-                      }}
-                      className="text-destructive focus:text-destructive"
-                      data-testid="memories-actions-delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5 mr-2" />
-                      Move {selectedFileIds.size} to Recycle Bin
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              );
-            })()}
           </>
         )}
-        {/* v2.1 round 36 (Terry 2026-06-08) — Density toggle pushed
-            to the far right. Replaces the slot the "Open X Selected"
-            button used to fill when a selection was active (that
-            action is now a DropdownMenuItem inside Actions). When
-            there's no selection the toggle sits to the left of the
-            Open-all-in-Viewer button below. ml-auto puts it to the
-            right of all the toolbar controls regardless of how many
-            preceding items render. */}
-        <div className="ml-auto">
+        {/* v2.1 round 37 (Terry 2026-06-08) — far-right cluster.
+            Terry: "Spacious/Tight toggle should be moved to the
+            right of Open March button, since the positioning will
+            remain constant for it." Right — DensityToggle is now
+            ALWAYS the rightmost item, regardless of whether the
+            Open button is rendered (which depends on selection
+            state). ml-auto on the wrapping container pushes the
+            whole group to the right edge; inside, Open button
+            (conditional) comes first, DensityToggle is always
+            last. */}
+        <div className="ml-auto flex items-center gap-2">
+          {files != null && files.length > 1 && selectedFileIds.size === 0 && (
+            <button
+              onClick={() => {
+                const base = visibleFiles ?? files;
+                openSearchViewer(base.map(f => f.file_path), base.map(f => f.filename));
+              }}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
+              data-testid="button-open-in-viewer"
+            >
+              Open {title} in Viewer
+            </button>
+          )}
           <DensityToggle value={density} onChange={onDensityChange} />
         </div>
-        {/* "Open X in Viewer" — now only shown when there is NO
-            selection. When the user has a selection, the equivalent
-            action lives inside the Actions dropdown as "Open N
-            Selected in Viewer". This stops the toolbar from
-            duplicating the affordance. */}
-        {files != null && files.length > 1 && selectedFileIds.size === 0 && (
-          <button
-            onClick={() => {
-              const base = visibleFiles ?? files;
-              openSearchViewer(base.map(f => f.file_path), base.map(f => f.filename));
-            }}
-            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
-            data-testid="button-open-in-viewer"
-          >
-            Open {title} in Viewer
-          </button>
-        )}
       </div>
 
       <div className="flex-1 flex min-h-0">
