@@ -7311,17 +7311,30 @@ const transcribePending = new Map<string, {
 // answer "is the download done?" + by the launch-cleanup helper to
 // purge superseded model directories from disk so users on the new
 // build don't carry hundreds of MB of dead model data forever.
-// v2.1 round 32 (Terry 2026-06-08) — Xenova/distil-medium.en 401'd
-// from HuggingFace (the model doesn't exist under that account).
-// Switched to whisper-small.en — verified-available, English-only
-// (smaller download than multilingual small, no language-misdetect
-// failure mode), ~2× realtime with q8 decoder quantization.
+// v2.1 round 42 (Terry 2026-06-08) — switched to Whisper Large-v3
+// Turbo via the onnx-community account. Per ChatGPT's second
+// opinion + verified ONNX file inventory: this is the proper
+// "YouTube-like captions, offline, fast on laptops" target.
+// Distilled-from-Large accuracy, ~720 MB on disk with q4
+// quantisation (smaller than the whisper-small.en we're replacing).
 //
-// Added the failed-download distil-medium.en folder to the legacy
-// cleanup list so the partial-download leftover from the previous
-// build gets purged.
-const CURRENT_WHISPER_MODEL_DIR = 'whisper-small.en';
-const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small', 'whisper-medium', 'distil-medium.en'];
+// Repo lives under `onnx-community/`, NOT `Xenova/` (Xenova's
+// transformers.js Whisper repos were merged into the
+// onnx-community org). CURRENT_WHISPER_MODEL_ORG carries the
+// HF account name so isCurrentWhisperModelReady() probes the
+// right cache subpath.
+const CURRENT_WHISPER_MODEL_ORG = 'onnx-community';
+const CURRENT_WHISPER_MODEL_DIR = 'whisper-large-v3-turbo';
+// Legacy model folders to purge on launch. Includes every prior
+// model we shipped this cycle (under both the Xenova org and the
+// onnx-community org) so users upgrading reclaim disk space.
+const LEGACY_WHISPER_MODELS: Array<{ org: string; dir: string }> = [
+  { org: 'Xenova', dir: 'whisper-base' },
+  { org: 'Xenova', dir: 'whisper-small' },
+  { org: 'Xenova', dir: 'whisper-medium' },
+  { org: 'Xenova', dir: 'distil-medium.en' },
+  { org: 'Xenova', dir: 'whisper-small.en' },
+];
 
 function getWhisperCacheRoot(): string {
   return path.join(app.getPath('userData'), 'whisper-cache');
@@ -7329,23 +7342,16 @@ function getWhisperCacheRoot(): string {
 
 function isCurrentWhisperModelReady(): boolean {
   try {
-    // transformers.js drops models into <cache>/Xenova/<modelName>/onnx/.
-    // The exact decoder filename depends on the dtype config we pass at
-    // pipeline() time — fp32 → decoder_model_merged.onnx, q8/quantized
-    // → decoder_model_merged_quantized.onnx, fp16 → decoder_model_merged_fp16.onnx,
-    // etc. So scan for ANY file whose name starts with
-    // "decoder_model_merged" and ends with ".onnx" rather than hard-
-    // coding one variant. Same for the encoder (we currently use the
-    // base encoder_model.onnx but a future fp16-everywhere config
-    // would land at encoder_model_fp16.onnx).
-    //
-    // v2.1 round 35 (Terry 2026-06-08) — this is what was making the
-    // "First time only" download notice show on every transcribe even
-    // after a successful run: the check looked for decoder_model_merged.onnx
-    // but the q8 dtype config we ship downloads
-    // decoder_model_merged_quantized.onnx, so the check always returned
-    // false and the notice always rendered.
-    const onnxDir = path.join(getWhisperCacheRoot(), 'Xenova', CURRENT_WHISPER_MODEL_DIR, 'onnx');
+    // transformers.js drops models into <cache>/<org>/<modelName>/onnx/.
+    // The exact filename depends on the dtype config we pass at
+    // pipeline() time — fp32 → encoder_model.onnx, q4 →
+    // encoder_model_q4.onnx, etc. We scan for ANY file matching the
+    // expected prefix so future dtype tweaks don't break the check
+    // the same way the original q8-only check did (see round 35
+    // history note for the bug that fix replaced).
+    // v2.1 round 42 (Terry 2026-06-08) — model now lives under
+    // onnx-community/, not Xenova/ — see CURRENT_WHISPER_MODEL_ORG.
+    const onnxDir = path.join(getWhisperCacheRoot(), CURRENT_WHISPER_MODEL_ORG, CURRENT_WHISPER_MODEL_DIR, 'onnx');
     if (!fs.existsSync(onnxDir)) return false;
     const files = fs.readdirSync(onnxDir);
     const hasDecoder = files.some(f => f.startsWith('decoder_model_merged') && f.endsWith('.onnx'));
@@ -7501,15 +7507,22 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
 // One-shot cleanup of legacy Whisper model folders. Called once per
 // process at startup. Logs what it removed so the freed bytes show
 // up in main.log for support tickets.
+//
+// v2.1 round 42 (Terry 2026-06-08) — entries now carry the HF org
+// name too, because the active model moved from Xenova/ to
+// onnx-community/. Doesn't touch the current model under whatever
+// org it currently lives in.
 function cleanupLegacyWhisperModels(): void {
   try {
-    const root = path.join(getWhisperCacheRoot(), 'Xenova');
+    const root = getWhisperCacheRoot();
     if (!fs.existsSync(root)) return;
-    for (const legacy of LEGACY_WHISPER_MODEL_DIRS) {
-      const dir = path.join(root, legacy);
-      if (!fs.existsSync(dir)) continue;
+    for (const { org, dir } of LEGACY_WHISPER_MODELS) {
+      const target = path.join(root, org, dir);
+      // Belt-and-braces: don't delete the active model even if it
+      // somehow appears in the legacy list.
+      if (org === CURRENT_WHISPER_MODEL_ORG && dir === CURRENT_WHISPER_MODEL_DIR) continue;
+      if (!fs.existsSync(target)) continue;
       try {
-        // Estimate size for the log message (best-effort).
         let bytes = 0;
         try {
           const walk = (p: string) => {
@@ -7520,12 +7533,12 @@ function cleanupLegacyWhisperModels(): void {
               bytes += st.size;
             }
           };
-          walk(dir);
+          walk(target);
         } catch { /* keep going */ }
-        fs.rmSync(dir, { recursive: true, force: true });
-        log.info(`[whisper-cleanup] removed legacy model "${legacy}" (~${Math.round(bytes / (1024 * 1024))} MB)`);
+        fs.rmSync(target, { recursive: true, force: true });
+        log.info(`[whisper-cleanup] removed legacy model "${org}/${dir}" (~${Math.round(bytes / (1024 * 1024))} MB)`);
       } catch (err) {
-        log.warn(`[whisper-cleanup] failed to remove "${legacy}": ${(err as Error).message}`);
+        log.warn(`[whisper-cleanup] failed to remove "${org}/${dir}": ${(err as Error).message}`);
       }
     }
   } catch (err) {

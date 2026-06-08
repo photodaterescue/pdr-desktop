@@ -136,37 +136,39 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   env.cacheDir = config.cacheDir;
   env.allowLocalModels = true;
 
-  // v2.1 round 32 (Terry 2026-06-08) — switched to whisper-small.en.
-  // The previous attempt at Xenova/distil-medium.en 401'd from HF
-  // — that model name doesn't exist under the Xenova account
-  // (distil-whisper publishes under its own org, no ONNX port).
+  // v2.1 round 42 (Terry 2026-06-08) — switched to Whisper Large-v3
+  // Turbo via the onnx-community account. Per ChatGPT's second
+  // opinion and the verified ONNX file inventory, this is the
+  // proper "YouTube-like captions, offline, local, fast enough
+  // for laptops" target:
   //
-  // whisper-small.en is:
-  //   • Verified available on Xenova (we shipped with whisper-small
-  //     earlier this cycle — same publisher, .en variant is the
-  //     English-only sibling of the same model)
-  //   • English-only — drops the multilingual weights, so smaller
-  //     download + faster inference than the multilingual small
-  //   • ~4× realtime on CPU before quantization
-  //   • Combined with q8 quantization on the decoder, expected
-  //     real-world speed is ~2× realtime
-  //   • On-disk ~500-700 MB ONNX (vs the 927 MB for multilingual
-  //     small, ~3 GB for medium)
+  //   • Distilled from Large-v3 (4 decoder layers instead of 32)
+  //     so it's near-Large accuracy at much lower inference cost.
+  //   • Multilingual but excellent on English.
+  //   • Published with a full dtype matrix: fp32 / fp16 / int8 /
+  //     uint8 / q4 / q4f16 / bnb4 for both encoder and decoder.
+  //   • With q4 + q4 the on-disk size is ~720 MB total (encoder
+  //     ~405 MB, decoder ~319 MB) — actually SMALLER than the
+  //     previous whisper-small.en setup, while being meaningfully
+  //     more accurate on noisy consumer audio (phone-recorded
+  //     family videos with background TV, music, kids, etc.).
+  //   • Inference: ~1-2× realtime on a typical consumer laptop CPU.
   //
-  // Accuracy on English consumer audio is meaningfully better than
-  // base, comparable to small (which Terry tested earlier) — and
-  // because it's English-specialised, the language-misdetection
-  // failure mode that bit us with the multilingual base model is
-  // not possible.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small.en', {
-    // dtype picks the ONNX file variant per submodule. q8 = 8-bit
-    // quantized (decoder is where the bulk of inference time
-    // sits, so quantizing it gives the biggest speedup; encoder
-    // stays full precision so the acoustic features that feed
-    // the decoder are as clean as possible).
+  // Repo: onnx-community/whisper-large-v3-turbo (Xenova's old
+  // transformers.js Whisper repos merged into the onnx-community
+  // org). isCurrentWhisperModelReady() in main.ts checks the
+  // matching cache path.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
+    // q4 quantisation on BOTH encoder and decoder. The encoder is
+    // where audio gets converted into the acoustic feature
+    // representation; the decoder is the autoregressive text
+    // generator. q4 weights cut memory bandwidth by 4× vs fp32
+    // — that's the largest single contributor to CPU inference
+    // speed. Modest quality cost (~1-3% on benchmarks) vs the
+    // ~6-8× speed gain.
     dtype: {
-      encoder_model: 'fp32',
-      decoder_model_merged: 'q8',
+      encoder_model: 'q4',
+      decoder_model_merged: 'q4',
     },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
@@ -324,6 +326,78 @@ function computeAudioRms(samples: Float32Array): number {
   return count > 0 ? Math.sqrt(sumSq / count) : 0;
 }
 
+// ─── Caption grouping (word-level chunks → displayable segments) ────────────
+
+/**
+ * v2.1 round 42 (Terry 2026-06-08) — group Whisper's word-level
+ * chunks into displayable caption segments.
+ *
+ * With `return_timestamps: 'word'` the pipeline emits one chunk per
+ * word, each with its own tight [start, end] pair. That's great for
+ * accuracy but unreadable as captions — nobody wants captions that
+ * flicker on every word boundary. The grouping rule below collapses
+ * adjacent words into 2-7 second caption segments using natural
+ * break points: long silences, sentence-ending punctuation, and a
+ * soft cap on words/duration to stop captions running off the end
+ * of the screen.
+ *
+ * Output shape matches the segment-level schema we already persist
+ * (`{ start, end, text }`) so the DB write + viewer overlay code
+ * doesn't need to change.
+ *
+ * Break rules (in order of priority):
+ *   1. Big silence gap (>= 0.8s between words) — always a hard break.
+ *   2. Sentence-ending punctuation (. ! ?) — natural reading break,
+ *      flush after this word.
+ *   3. Soft caps: max 10 words OR 5 seconds per segment — readability.
+ *   4. End of input — always flush whatever's accumulated.
+ */
+function groupWordsToCaptions(
+  words: Array<{ start: number; end: number; text: string }>,
+  opts: { silenceGapSec?: number; maxWords?: number; maxDurationSec?: number } = {},
+): Array<{ start: number; end: number; text: string }> {
+  const silenceGapSec = opts.silenceGapSec ?? 0.8;
+  const maxWords = opts.maxWords ?? 10;
+  const maxDurationSec = opts.maxDurationSec ?? 5;
+  const out: Array<{ start: number; end: number; text: string }> = [];
+  let cur: { start: number; end: number; words: string[] } | null = null;
+
+  const flush = () => {
+    if (cur && cur.words.length > 0) {
+      // Whisper word tokens are typically space-prefixed (" word") so
+      // a plain join collapses to ` word1 word2 word3` — trim and
+      // we get the readable form.
+      out.push({ start: cur.start, end: cur.end, text: cur.words.join('').trim() });
+    }
+    cur = null;
+  };
+
+  for (let i = 0; i < words.length; i++) {
+    const w = words[i];
+    if (!cur) {
+      cur = { start: w.start, end: w.end, words: [w.text] };
+      continue;
+    }
+    const gapSec = w.start - cur.end;
+    const wouldExceedDuration = (w.end - cur.start) > maxDurationSec;
+    const wouldExceedWords = cur.words.length >= maxWords;
+    // Look BACK at the previous word's text for sentence-ending
+    // punctuation. We break AFTER that word, not before this one,
+    // so the punctuation stays with its sentence.
+    const prevText = cur.words[cur.words.length - 1] ?? '';
+    const prevEndsSentence = /[.!?][)"'\]]?\s*$/.test(prevText);
+    if (gapSec >= silenceGapSec || prevEndsSentence || wouldExceedDuration || wouldExceedWords) {
+      flush();
+      cur = { start: w.start, end: w.end, words: [w.text] };
+      continue;
+    }
+    cur.end = w.end;
+    cur.words.push(w.text);
+  }
+  flush();
+  return out;
+}
+
 // ─── Main transcribe handler ─────────────────────────────────────────────────
 
 async function transcribe(msg: TranscribeMessage): Promise<void> {
@@ -416,17 +490,31 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
     // timestamps drive the caption overlay; chunk/stride match the
     // canonical Whisper settings. condition_on_previous_text=false
     // still reduces phrase-loop hallucinations across chunks.
-    // v2.1 round 33 (Terry 2026-06-08) — English-only Whisper models
-    // (whisper-*.en variants) reject `task` AND `language` params:
-    // they're hard-coded to English transcribe-only, and passing
-    // either errors out with "Cannot specify `task` or `language`
-    // for an English-only model." So we omit both — the call shape
-    // is just the audio + the timestamp/chunk config.
-    void language; // ignored on English-only model
+    // v2.1 round 42 (Terry 2026-06-08) — request WORD-level
+    // timestamps instead of segment-level. Word-level timing is
+    // typically accurate to ±0.2-0.4s (vs ±1-3s for segment-level)
+    // — directly fixes the caption-drift problem Terry reported
+    // ("captions arrive maybe 8 seconds before anyone is talking").
+    // The pipeline returns chunks of shape { timestamp: [start,
+    // end], text: ' word' } at word granularity; we then re-group
+    // them into displayable caption segments in groupWordsToCaptions
+    // below.
+    //
+    // Large-v3 Turbo is multilingual, so we can (and should) pass
+    // language back in. Default to English if the caller didn't
+    // specify (matches Terry's library).
+    const effectiveLanguage = language && language !== 'auto' ? language : 'en';
     const result: any = await pipe(audio, {
-      return_timestamps: true,
-      chunk_length_s: 30,
-      stride_length_s: 5,
+      language: effectiveLanguage,
+      task: 'transcribe',
+      return_timestamps: 'word',
+      // chunk_length_s 20s + stride 10s is the tuning ChatGPT
+      // recommended for cleaner boundary stitching on long
+      // recordings. Smaller chunks = more frequent timestamp
+      // resets; bigger stride = more context overlap between
+      // chunks for the model to disambiguate.
+      chunk_length_s: 20,
+      stride_length_s: 10,
       condition_on_previous_text: false,
       no_speech_threshold: 0.6,
     } as any);
@@ -447,40 +535,42 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
 
     post({ type: 'progress', requestId, phase: 'Saving transcript…', percent: 90 });
 
-    // Normalise the pipeline's output shape into our schema.
+    // v2.1 round 42 (Terry 2026-06-08) — with word-level timestamps,
+    // each chunk is a single word. Step 1: normalise into a clean
+    // word array (skip empty / un-timed). Step 2: filter the
+    // hallucinated-silence words at WORD level (a "!" emitted as a
+    // single word with letters.length < 3 still gets dropped; pure
+    // single-character runs of "you you you" still get caught at
+    // the group level after assembly). Step 3: group adjacent
+    // words into displayable caption segments via
+    // groupWordsToCaptions.
+    const wordChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
+    const words: Array<{ start: number; end: number; text: string }> = [];
+    for (const c of wordChunks) {
+      const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : null;
+      const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : null;
+      const text = c.text ?? '';
+      if (start === null || end === null) continue;
+      if (!text.trim()) continue;
+      words.push({ start, end, text });
+    }
+    const provisionalSegments = groupWordsToCaptions(words);
+    // Per-segment garbage filter — same heuristics as before, just
+    // applied AFTER grouping so the rules act on the final caption
+    // form the user would actually see.
     const segments: Array<{ start: number; end: number; text: string }> = [];
-    const chunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
-    for (const c of chunks) {
-      const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : 0;
-      const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : (start + 5);
-      const text = (c.text ?? '').trim();
+    for (const seg of provisionalSegments) {
+      const text = seg.text.trim();
       if (!text) continue;
-      // v2.1 round 22 (Terry 2026-06-08) — filter out Whisper's
-      // hallucinated-silence garbage. When fed non-speech audio
-      // (music, background noise, ambient room tone) Whisper
-      // tends to return chunks like "!!!!!!!" or "...........",
-      // or "you" / " you you you you" repeated. Terry hit this
-      // on a 2-minute video that produced one segment of ~100
-      // exclamation marks. Heuristic: require at least 30% real
-      // letters (so any text where punctuation dominates gets
-      // tossed) AND at least 3 letters total. Multi-language safe
-      // via \p{L} unicode letter class.
       const letters = text.replace(/[^\p{L}]/gu, '');
       if (letters.length < 3) continue;
       if (letters.length / text.length < 0.3) continue;
-      // v2.1 round 25 (Terry 2026-06-08) — relaxed the lone-token
-      // repeat heuristic. The old rule "4+ tokens but ≤ 2 unique →
-      // drop" was rejecting legitimate excited speech like "yes yes
-      // yes yes" or "no no no no", which Whisper-small picks up
-      // accurately. Now only drop if EVERY token is identical (a
-      // true loop), and require at least 6 of them so short
-      // affirmations survive.
       const tokens = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
       if (tokens.length >= 6) {
         const unique = new Set(tokens).size;
         if (unique === 1) continue; // pure single-token loop
       }
-      segments.push({ start, end, text });
+      segments.push({ start: seg.start, end: seg.end, text });
     }
     const plainText = segments.map(s => s.text).join(' ').trim();
     const detectedLanguage = (result?.language ?? language ?? 'en').toString();

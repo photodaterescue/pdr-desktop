@@ -98,7 +98,7 @@ export function useTranscribeVideos(): {
 
     const downloadNotice = !modelReady ? (
       <div className="mb-3 text-sm text-muted-foreground">
-        First time only: PDR will download a ~700 MB language model before this transcription can start.
+        First time only: PDR will download a ~750 MB language model before this transcription can start.
       </div>
     ) : null;
 
