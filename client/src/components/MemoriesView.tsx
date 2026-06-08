@@ -1161,11 +1161,26 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // at a time keeps CPU spikes within the half-cores cap), so this
   // is genuinely a queue.
   const [batchTranscribing, setBatchTranscribing] = useState(false);
+  // v2.1 round 34 (Terry 2026-06-08) — useRef guard against multi-fire.
+  // Terry: "you're able to press the Transcribe button multiple times
+  // and... each of these times compounds to make the screen darker
+  // each time." Right — the toolbar button fires this function
+  // synchronously; the await on promptConfirm() yields the event loop;
+  // a second click registers BEFORE batchTranscribing flips, opens a
+  // second modal, third opens a third. Each Radix modal pushes its
+  // own backdrop, so they stack visually. Ref-based guard (not state)
+  // because state updates batch — by the time setState resolves, the
+  // second click has already passed the check. A ref flips
+  // synchronously and is read on the next event-loop tick.
+  const transcribeInFlightRef = useRef(false);
   const transcribeSelectedVideos = async (filePaths: string[]) => {
     if (filePaths.length === 0 || batchTranscribing) return;
+    if (transcribeInFlightRef.current) return; // synchronous re-entry guard
+    transcribeInFlightRef.current = true;
     const pdrViewer = (window as any).pdr?.viewer;
     if (!pdrViewer?.transcribeVideo) {
       toast.error('Transcription unavailable', { description: 'Bridge missing — please relaunch PDR.' });
+      transcribeInFlightRef.current = false;
       return;
     }
 
@@ -1243,19 +1258,53 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       </div>
     ) : null;
 
+    // v2.1 round 34 (Terry 2026-06-08) — single-file modal shows the
+    // video filename + a copy-to-clipboard button. Terry: "the names
+    // aren't exactly memorable, but the copy allows the user to
+    // paste it in somewhere like S&D and see what it is." Render only
+    // when filePaths.length === 1 (a batch summary doesn't need a
+    // single-file affordance). Filename is monospace so the
+    // user can read the timestamp parts without ambiguity.
+    const singleFileBanner = filePaths.length === 1 ? (() => {
+      const fp = filePaths[0];
+      const filename = fp.split(/[/\\]/).pop() || fp;
+      return (
+        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/30">
+          <span className="text-xs text-muted-foreground shrink-0">File:</span>
+          <span className="text-sm font-mono text-foreground truncate flex-1" title={filename}>{filename}</span>
+          <IconTooltip label="Copy filename" side="top">
+            <button
+              type="button"
+              onClick={() => {
+                try {
+                  navigator.clipboard.writeText(filename);
+                  toast.success('Filename copied', { duration: 2000 });
+                } catch { /* clipboard API restricted — non-fatal */ }
+              }}
+              className="shrink-0 p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+              data-testid="copy-transcribe-filename"
+            >
+              <Copy className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+        </div>
+      );
+    })() : null;
+
     const ok = await promptConfirm({
       eyebrow: 'TRANSCRIBE VIDEOS',
       title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
       message: (
         <>
           {downloadNotice}
+          {filePaths.length === 1 ? singleFileBanner : null}
           {summary}
         </>
       ),
       confirmLabel: 'Transcribe',
       cancelLabel: 'Cancel',
     });
-    if (!ok) return;
+    if (!ok) { transcribeInFlightRef.current = false; return; }
 
     setBatchTranscribing(true);
     let unsubProgress: (() => void) | null = null;
@@ -1346,6 +1395,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     } finally {
       if (unsubProgress) { try { unsubProgress(); } catch {} }
       setBatchTranscribing(false);
+      transcribeInFlightRef.current = false;
     }
   };
   // Clear selection on drilldown navigation — when the user clicks
@@ -3021,6 +3071,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <MessageSquareText className="w-3.5 h-3.5 mr-2" />
                     {f.caption ? 'Edit caption…' : 'Add caption…'}
                   </ContextMenuItem>
+                  {/* v2.1 round 34 (Terry 2026-06-08) — Transcribe video.
+                      Only shows on video tiles (Whisper is audio-only).
+                      Behaves like Send-to-S&D above: if the right-clicked
+                      tile is part of an active multi-select, transcribe
+                      the whole selection; otherwise just this one. Same
+                      transcribeSelectedVideos pipeline as the toolbar
+                      button, so the same modal + ref-guard + Whisper
+                      worker handle it. */}
+                  {f.file_type === 'video' && (
+                    <ContextMenuItem
+                      onSelect={() => {
+                        const inMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                        const targets = inMulti
+                          ? files.filter(file => selectedFileIds.has(file.id) && file.file_type === 'video').map(file => file.file_path)
+                          : [f.file_path];
+                        if (targets.length === 0) return;
+                        void transcribeSelectedVideos(targets);
+                      }}
+                      data-testid={`memories-tile-transcribe-${f.id}`}
+                    >
+                      <Captions className="w-3.5 h-3.5 mr-2" />
+                      Transcribe{selectedFileIds.size > 0 && selectedFileIds.has(f.id)
+                        ? ` (${files.filter(file => selectedFileIds.has(file.id) && file.file_type === 'video').length})`
+                        : ''}…
+                    </ContextMenuItem>
+                  )}
                   {/* Monthly-thumbnail override — only shown when the user
                       is inside a month context (month != null). Lets them
                       override the auto-picked sample shown on the month

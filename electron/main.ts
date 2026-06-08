@@ -7469,9 +7469,16 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
     // load + segment persistence.
     const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 20;
     const etaSec = Math.round(totalDurationSec * 2.0) + overheadSec;
+    // v2.1 round 34 (Terry 2026-06-08) — diagnostic log so we can
+    // see what the modal showed and why. Surfaces the probe
+    // success rate (probed vs failed) and the final tally —
+    // helps diagnose "Total playing time: < 1s" when there's
+    // actually video selected.
+    const probedThisRun = needsProbe.filter(r => typeof r.duration_seconds === 'number' && r.duration_seconds > 0).length;
+    log.info(`[transcribe:estimateBatch] files=${filePaths.length} matched=${rowsAll.length} alreadyDone=${alreadyDoneCount} needed-probe=${needsProbe.length} probed-ok=${probedThisRun} totalDuration=${totalDurationSec.toFixed(1)}s eta=${etaSec}s`);
     return { totalDurationSec, etaSec, fileCount, alreadyDoneCount };
   } catch (err) {
-    console.warn('[transcribe:estimateBatch] failed:', (err as Error).message);
+    log.warn(`[transcribe:estimateBatch] failed: ${(err as Error).message}`);
     return { totalDurationSec: 0, etaSec: 0, fileCount: filePaths.length, alreadyDoneCount: 0 };
   }
 });
