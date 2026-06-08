@@ -2332,6 +2332,16 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="min-w-[260px]">
+                {/* v2.1 round 39 (Terry 2026-06-08) — these items mirror
+                    the per-tile right-click context menu so the
+                    Actions dropdown is a viable second entry point
+                    when the user's working from the toolbar. Each
+                    routes through the exact same handlers the
+                    context menu uses (same revealInFolder bridge,
+                    same pdr:sendToSearchPile event, same
+                    setMonthlyThumbnail helper) — single source of
+                    truth for the underlying action, two surfaces
+                    for invoking it. */}
                 <DropdownMenuItem
                   onSelect={() => {
                     const target = base.filter(f => selectedFileIds.has(f.id));
@@ -2342,6 +2352,60 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 >
                   <PlayCircle className="w-3.5 h-3.5 mr-2" />
                   Open {selectedFileIds.size} Selected in Viewer
+                </DropdownMenuItem>
+                {selectedFileIds.size === 1 && (
+                  <DropdownMenuItem
+                    onSelect={() => {
+                      const target = base.find(f => selectedFileIds.has(f.id));
+                      if (!target) return;
+                      (window as any).pdr?.revealInFolder?.(target.file_path);
+                    }}
+                    data-testid="memories-actions-reveal"
+                  >
+                    <HardDrive className="w-3.5 h-3.5 mr-2" />
+                    Show in File Explorer
+                  </DropdownMenuItem>
+                )}
+                <DropdownMenuSeparator />
+                {/* Send to S&D (replace) + Add to S&D pile (accumulate)
+                    — same event the per-tile context menu fires, just
+                    targeting the selection set. setMemoriesReturnSource
+                    so the back-pill jumps back to this drilldown. */}
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const fileIds = Array.from(selectedFileIds);
+                    if (fileIds.length === 0) return;
+                    void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({
+                      tab: 'byDate',
+                      label: 'Memories — Dates',
+                      drilldown: { year, month, day },
+                    }));
+                    window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                      detail: { fileIds, source: 'memories', mode: 'replace' },
+                    }));
+                  }}
+                  data-testid="memories-actions-send-to-sd"
+                >
+                  <Search className="w-3.5 h-3.5 mr-2" />
+                  Send {selectedFileIds.size} to S&amp;D
+                </DropdownMenuItem>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const fileIds = Array.from(selectedFileIds);
+                    if (fileIds.length === 0) return;
+                    void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({
+                      tab: 'byDate',
+                      label: 'Memories — Dates',
+                      drilldown: { year, month, day },
+                    }));
+                    window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                      detail: { fileIds, source: 'memories', mode: 'accumulate' },
+                    }));
+                  }}
+                  data-testid="memories-actions-add-to-sd-pile"
+                >
+                  <Search className="w-3.5 h-3.5 mr-2" />
+                  Add {selectedFileIds.size} to S&amp;D pile
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
@@ -2360,6 +2424,61 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     Transcribe {selectedVideos.length} video{selectedVideos.length === 1 ? '' : 's'}…
                   </DropdownMenuItem>
                 )}
+                {/* Set as monthly thumbnail — single-photo + month
+                    drilldown only. Mirrors the per-tile menu's
+                    same-conditional item exactly. */}
+                {selectedFileIds.size === 1 && month != null && (
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      const target = base.find(f => selectedFileIds.has(f.id));
+                      if (!target) return;
+                      const result = await setMonthlyThumbnail({ year, month, fileId: target.id });
+                      if (result.success) {
+                        invalidatePrefetchedMemories();
+                        onRequestRefresh();
+                        toast.success('Monthly thumbnail set', {
+                          description: `${MONTH_NAMES[month - 1]} ${year} now uses this photo`,
+                        });
+                      } else {
+                        toast.error("Couldn't set monthly thumbnail", { description: result.error });
+                      }
+                    }}
+                    data-testid="memories-actions-set-monthly-thumb"
+                  >
+                    <Star className="w-3.5 h-3.5 mr-2" />
+                    Set as monthly thumbnail
+                  </DropdownMenuItem>
+                )}
+                {/* Copy filename(s) — newline-separated for multi-select.
+                    Terry asked whether space-separated would be best;
+                    newline is the safer call because (a) filenames CAN
+                    contain spaces (rare in PDR-organised libraries but
+                    possible for imported files), (b) newline gives
+                    proper list formatting when pasted into Notepad /
+                    Excel / email, and (c) most text inputs collapse
+                    newlines to spaces on paste anyway — so newline is
+                    a superset of space's usefulness without the
+                    parsing-ambiguity downside. */}
+                <DropdownMenuItem
+                  onSelect={async () => {
+                    const target = base.filter(f => selectedFileIds.has(f.id));
+                    if (target.length === 0) return;
+                    const names = target.map(f => f.filename).join('\n');
+                    try {
+                      await navigator.clipboard.writeText(names);
+                      toast.success(
+                        target.length === 1 ? 'Filename copied' : `Copied ${target.length} filenames`,
+                        target.length === 1 ? { description: target[0].filename } : undefined,
+                      );
+                    } catch {
+                      toast.error("Couldn't copy filename" + (target.length === 1 ? '' : 's'));
+                    }
+                  }}
+                  data-testid="memories-actions-copy-filenames"
+                >
+                  <Copy className="w-3.5 h-3.5 mr-2" />
+                  {selectedFileIds.size === 1 ? 'Copy filename' : `Copy ${selectedFileIds.size} filenames`}
+                </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
                   onSelect={async () => {
