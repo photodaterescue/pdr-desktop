@@ -416,9 +416,14 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
     // timestamps drive the caption overlay; chunk/stride match the
     // canonical Whisper settings. condition_on_previous_text=false
     // still reduces phrase-loop hallucinations across chunks.
-    void language; // legacy param ignored on the English-only model
+    // v2.1 round 33 (Terry 2026-06-08) — English-only Whisper models
+    // (whisper-*.en variants) reject `task` AND `language` params:
+    // they're hard-coded to English transcribe-only, and passing
+    // either errors out with "Cannot specify `task` or `language`
+    // for an English-only model." So we omit both — the call shape
+    // is just the audio + the timestamp/chunk config.
+    void language; // ignored on English-only model
     const result: any = await pipe(audio, {
-      task: 'transcribe',
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
