@@ -263,15 +263,18 @@
       pointer-events: none;
     }
     /* Seek bar — full width, slim by default, fattens on hover */
+    /* v2.1 round 30 (Terry 2026-06-08) — bumped the seek bar from
+       4px → 8px default and dropped the hover-grow animation.
+       Terry was finding the line "too thin to grab"; doubling the
+       hit target matches the same fix we applied to the filmstrip
+       scrollbar earlier this cycle. */
     .pdrv-seek {
       position: relative;
-      height: 4px;
+      height: 8px;
       background: rgba(255, 255, 255, 0.22);
-      border-radius: 2px;
+      border-radius: 4px;
       cursor: pointer;
-      transition: height 0.12s;
     }
-    .pdrv-seek:hover { height: 6px; }
     .pdrv-seek-played {
       position: absolute;
       top: 0;
@@ -279,24 +282,30 @@
       height: 100%;
       width: 0;
       background: #A99CFF;
-      border-radius: 2px;
+      border-radius: 4px;
       pointer-events: none;
     }
+    /* v2.1 round 30 (Terry 2026-06-08) — handle is always visible
+       whenever the controls bar is visible (which is whenever the
+       mouse is over the video). Previously opacity: 0 → 1 on
+       seek-bar hover ONLY, so Terry could see the bar but the
+       playhead circle stayed hidden until he hovered the thin
+       strip — easy to miss. Bumped to 14×14 too so the playhead
+       sits proud of the 8px track. */
     .pdrv-seek-handle {
       position: absolute;
       top: 50%;
       left: 0;
-      width: 12px;
-      height: 12px;
-      margin-left: -6px;
+      width: 14px;
+      height: 14px;
+      margin-left: -7px;
       transform: translateY(-50%);
       background: #A99CFF;
       border-radius: 50%;
-      opacity: 0;
-      transition: opacity 0.12s;
+      opacity: 1;
+      box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
       pointer-events: none;
     }
-    .pdrv-seek:hover .pdrv-seek-handle { opacity: 1; }
     /* Bottom buttons row */
     .pdrv-row {
       display: flex;

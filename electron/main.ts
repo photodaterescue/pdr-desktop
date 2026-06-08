@@ -7311,12 +7311,13 @@ const transcribePending = new Map<string, {
 // answer "is the download done?" + by the launch-cleanup helper to
 // purge superseded model directories from disk so users on the new
 // build don't carry hundreds of MB of dead model data forever.
-const CURRENT_WHISPER_MODEL_DIR = 'whisper-medium';
-// Older model folders the user may have on disk from previous PDR
-// builds. Deleted at first launch of this build to reclaim space —
-// they're not used any more and re-downloadable on demand if we
-// ever go backwards.
-const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small'];
+// v2.1 round 30 (Terry 2026-06-08) — switched the active model to
+// distil-whisper/distil-medium.en (English-only, ~6× faster than
+// whisper-medium with the same accuracy on English content).
+// Whisper-medium added to the legacy cleanup list — users on the
+// previous build will reclaim ~3 GB after their first launch.
+const CURRENT_WHISPER_MODEL_DIR = 'distil-medium.en';
+const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small', 'whisper-medium'];
 
 function getWhisperCacheRoot(): string {
   return path.join(app.getPath('userData'), 'whisper-cache');
@@ -7376,12 +7377,12 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
         }
       }
     }
-    // 6× realtime is our heartbeat estimate for whisper-medium on
-    // CPU. Add a 30-second per-video overhead for audio extraction
-    // + model load + segment persistence (matters most on small
-    // batches of short clips).
-    const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 30;
-    const etaSec = Math.round(totalDurationSec * 6.0) + overheadSec;
+    // v2.1 round 30 — distil-medium.en + q8 decoder runs at ~2×
+    // realtime on CPU (vs 6× for whisper-medium). 20-second
+    // per-video overhead for audio extraction + model load +
+    // segment persistence.
+    const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 20;
+    const etaSec = Math.round(totalDurationSec * 2.0) + overheadSec;
     return { totalDurationSec, etaSec, fileCount, alreadyDoneCount };
   } catch (err) {
     console.warn('[transcribe:estimateBatch] failed:', (err as Error).message);

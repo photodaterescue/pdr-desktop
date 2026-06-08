@@ -136,16 +136,33 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   env.cacheDir = config.cacheDir;
   env.allowLocalModels = true;
 
-  // v2.1 round 29 (Terry 2026-06-08) — switched from whisper-small
-  // to whisper-medium. Terry: "PDR is meant to be Premium and
-  // Optimal, and I just don't think cutting corners on transcript
-  // captions is aligned with its ethos." Whisper-small was still
-  // dropping ~20% of words on consumer audio; medium catches
-  // most of those. On-disk ONNX is ~3 GB (much bigger than the
-  // HF README quoted size). Per-video inference is roughly 6×
-  // realtime on CPU (so 2 minutes of audio = ~12 minutes of
-  // inference). One-time model download.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-medium', {
+  // v2.1 round 30 (Terry 2026-06-08) — switched to distil-medium.en.
+  // Terry: "20m to transcribe 13% of this 1m 2s video seems crazily
+  // long... can we get this down to a shorter length?" Right.
+  // distil-whisper is the proper fix:
+  //   • Distilled FROM whisper-medium (matches its accuracy)
+  //   • ~6× faster inference than whisper-medium
+  //   • Smaller on-disk (~1.5 GB ONNX vs ~3 GB for whisper-medium)
+  // Combined with q8 quantization on the decoder (where most of
+  // the inference time lives), expected real-world speed is
+  // around 1.5–2× realtime — a 1-minute video transcribes in
+  // ~1-2 minutes instead of 20.
+  //
+  // Trade-off: distil-medium.en is ENGLISH-ONLY. Terry's library
+  // is UK family videos; English-only is the right call here.
+  // If users with non-English content surface, we can wire a
+  // Settings option later to switch back to the multilingual
+  // Xenova/whisper-medium.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/distil-medium.en', {
+    // dtype picks the ONNX file variant per submodule. q8 = 8-bit
+    // quantized (decoder is where the bulk of inference time
+    // sits, so quantizing it gives the biggest speedup; encoder
+    // stays full precision so the acoustic features that feed
+    // the decoder are as clean as possible).
+    dtype: {
+      encoder_model: 'fp32',
+      decoder_model_merged: 'q8',
+    },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
       if (info?.status === 'progress' && typeof info.progress === 'number') {
@@ -371,9 +388,10 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   // switches to "wrapping up" once we hit the ceiling so the user
   // knows the bar parking at 89% isn't a hang.
   const inferenceStartTs = Date.now();
-  // v2.1 round 29 — whisper-medium runs at roughly 6× realtime on
-  // CPU (vs ~4.5× for small). Bumped estimate to match.
-  const estimatedSec = Math.max(10, durationSeconds * 6.0);
+  // v2.1 round 30 — distil-medium.en + q8 decoder runs at roughly
+  // 1.5-2× realtime on CPU. Set the ramp denominator to 2× so the
+  // bar tracks closely without finishing early.
+  const estimatedSec = Math.max(5, durationSeconds * 2.0);
   const heartbeat = setInterval(() => {
     const elapsedSec = (Date.now() - inferenceStartTs) / 1000;
     const ramp = Math.min(0.99, elapsedSec / estimatedSec);
@@ -387,26 +405,18 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   try {
     // return_timestamps: true → pipeline returns { text, chunks: [{timestamp: [start, end], text}] }
     // chunk_length_s: 30 → standard Whisper window (one inference per 30s chunk)
-    // v2.1 round 24 (Terry 2026-06-08) — default to English instead
-    // of Whisper's auto-detect. With Whisper-base (the smallest
-    // multilingual model), auto-detect frequently misfires on quiet
-    // or accented English audio and locks the entire transcription
-    // into a non-English language → garbage tokens out → caught by
-    // the hallucination filter → user sees "no speech detected" on
-    // a video that clearly had English speech. Terry's case
-    // 2026-06-08 was the canonical version of this failure mode.
-    // The English bias is fine for Terry's library (UK family
-    // videos); a future per-video language picker can override.
-    const effectiveLanguage = language && language !== 'auto' ? language : 'en';
+    // v2.1 round 30 — distil-medium.en is English-only by design,
+    // so we don't need (and the model doesn't accept) a language
+    // parameter. Same `return_timestamps: true` so the segment
+    // timestamps drive the caption overlay; chunk/stride match the
+    // canonical Whisper settings. condition_on_previous_text=false
+    // still reduces phrase-loop hallucinations across chunks.
+    void language; // legacy param ignored on the English-only model
     const result: any = await pipe(audio, {
-      language: effectiveLanguage,
       task: 'transcribe',
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
-      // condition_on_previous_text=false reduces "looping" — when
-      // one chunk hallucinates a phrase, the next chunk's prompt
-      // doesn't carry that phrase forward and amplify it.
       condition_on_previous_text: false,
       no_speech_threshold: 0.6,
     } as any);

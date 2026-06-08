@@ -1189,51 +1189,64 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       estimate = est;
     } catch { /* fall through with safe defaults */ }
 
-    // Pretty-print a duration in seconds → "X min Y sec" / "Y sec"
-    // for short estimates. Drops the seconds component once the
-    // value crosses ~10 minutes, where second-precision is noise.
+    // v2.1 round 30 (Terry 2026-06-08) — duration formatter for
+    // the summary rows. "1m 02s" style — compact, readable, no
+    // bold gymnastics.
     const fmt = (sec: number): string => {
-      if (sec <= 0) return 'less than a minute';
-      if (sec < 60) return `${Math.round(sec)} sec`;
+      if (sec <= 0) return '< 1s';
+      if (sec < 60) return `${Math.round(sec)}s`;
       const minutes = Math.floor(sec / 60);
       const seconds = Math.round(sec % 60);
-      if (minutes >= 10) return `${minutes} min`;
-      if (seconds === 0) return `${minutes} min`;
-      return `${minutes} min ${seconds} sec`;
+      if (minutes >= 60) {
+        const hours = Math.floor(minutes / 60);
+        const mins = minutes % 60;
+        return mins > 0 ? `${hours}h ${mins}m` : `${hours}h`;
+      }
+      return seconds > 0 ? `${minutes}m ${String(seconds).padStart(2, '0')}s` : `${minutes}m`;
     };
 
     const remaining = estimate ? Math.max(0, estimate.fileCount - estimate.alreadyDoneCount) : filePaths.length;
 
-    // Short-form (model present, just confirm + show estimate).
-    const shortMessage = estimate ? (
-      <>
-        <strong className="text-foreground">{remaining}</strong> video{remaining === 1 ? '' : 's'} to transcribe — <strong className="text-foreground">{fmt(estimate.totalDurationSec)}</strong> of audio in total. Estimated time to finish: <strong className="text-foreground">~{fmt(estimate.etaSec)}</strong> on your CPU.
-        {estimate.alreadyDoneCount > 0 && (
-          <>
-            <br /><br />
-            {estimate.alreadyDoneCount} of the {filePaths.length} selected {estimate.alreadyDoneCount === 1 ? 'is' : 'are'} already transcribed and will be skipped.
-          </>
-        )}
-      </>
-    ) : (
-      <>Each video takes roughly 6× its length to transcribe on your CPU. Videos already transcribed are skipped instantly.</>
+    // v2.1 round 30 (Terry 2026-06-08) — Terry: "Summary of video
+    // selected to transcribe: No. Videos — 4 / Total playing time
+    // — 6m 38s / PDR estimated time to transcribe — 22m 15s."
+    // Right shape. Two-column key/value rows with a leading
+    // label, neutral typography, no bold-everything.
+    const Row = ({ label, value }: { label: string; value: React.ReactNode }) => (
+      <div className="flex items-baseline justify-between gap-4 py-1 border-b border-border/40 last:border-0">
+        <span className="text-sm text-muted-foreground">{label}</span>
+        <span className="text-sm font-medium text-foreground tabular-nums">{value}</span>
+      </div>
     );
 
-    // First-time-only long-form (download warning + estimate).
-    const longMessage = (
-      <>
-        PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. The <strong className="text-foreground">first time only</strong>, PDR downloads a ~3 GB language model; after that every transcription starts straight away.
-        <br /><br />
-        {shortMessage}
-        <br /><br />
-        You can keep using PDR while this runs.
-      </>
+    const summary = (
+      <div className="rounded-lg border border-border bg-secondary/30 p-3">
+        <Row label="Videos to transcribe" value={remaining} />
+        {estimate && estimate.alreadyDoneCount > 0 && (
+          <Row label="Already transcribed (skipped)" value={estimate.alreadyDoneCount} />
+        )}
+        <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
+        <Row label="Estimated time to finish" value={estimate ? `~${fmt(estimate.etaSec)}` : '—'} />
+      </div>
     );
+
+    // First-time-only download notice. Concise — one sentence
+    // above the summary table, not a paragraph wrapped around it.
+    const downloadNotice = !modelReady ? (
+      <div className="mb-3 text-sm text-muted-foreground">
+        First time only: PDR will download a ~1.5 GB language model before transcription starts. After that, every transcribe runs straight away.
+      </div>
+    ) : null;
 
     const ok = await promptConfirm({
       eyebrow: 'TRANSCRIBE VIDEOS',
       title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
-      message: modelReady ? shortMessage : longMessage,
+      message: (
+        <>
+          {downloadNotice}
+          {summary}
+        </>
+      ),
       confirmLabel: 'Transcribe',
       cancelLabel: 'Cancel',
     });
