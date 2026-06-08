@@ -2204,32 +2204,42 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
                   Also filter
                 </p>
-                {/* v2.1 round 27 (Terry 2026-06-08) — renamed to
-                    "Captions" (was: "Captioned only" — Terry asked
-                    for the shorter label now that the section
-                    header "Also filter" supplies the
-                    "only-ifies-the-type-selection" semantic). The
-                    checkbox is no longer disabled when count=0:
-                    Terry asked for it to be toggle-able regardless,
-                    so the user can stage the filter ahead of
-                    captions being added or apply it to other
-                    buckets via persistence. */}
-                <label
-                  data-testid="memories-show-filter-captioned"
-                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-muted/50"
-                >
-                  <span className="inline-flex items-center gap-2 text-foreground">
-                    <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
-                    Captions
-                  </span>
-                  <span className="inline-flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
-                    <Checkbox
-                      checked={captionedOnly}
-                      onCheckedChange={(v) => setCaptionedOnly(!!v)}
-                    />
-                  </span>
-                </label>
+                {/* v2.1 round 28 (Terry 2026-06-08) — reverted the
+                    "always toggle-able" change. Toggling Captions
+                    on in a bucket with zero captioned items just
+                    produces an explicit empty grid for no benefit,
+                    so disable when count=0. BUT: explain why via
+                    an IconTooltip wrapper, because seeing "0" next
+                    to a checkbox you can't click is mildly
+                    frustrating (Terry's word) — the tooltip closes
+                    the loop. */}
+                {(() => {
+                  const disabled = captionedCount === 0;
+                  const row = (
+                    <label
+                      data-testid="memories-show-filter-captioned"
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
+                    >
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
+                        Captions
+                      </span>
+                      <span className="inline-flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
+                        <Checkbox
+                          checked={captionedOnly}
+                          disabled={disabled}
+                          onCheckedChange={(v) => setCaptionedOnly(!!v)}
+                        />
+                      </span>
+                    </label>
+                  );
+                  return disabled ? (
+                    <IconTooltip label="No media in this view has a caption — nothing to filter to" side="left">
+                      <div>{row}</div>
+                    </IconTooltip>
+                  ) : row;
+                })()}
               </PopoverContent>
             </Popover>
           );
