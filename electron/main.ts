@@ -7462,12 +7462,15 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
       ).all(...slice) as Row[];
       rowsAll.push(...rows);
     }
-    // Step 2 — probe any video whose duration we haven't cached yet
-    // (skipping ones already transcribed; their duration doesn't
-    // affect the estimate). Probes run in parallel, capped at 6
-    // concurrent ffmpeg processes so we don't melt the CPU on a
-    // large selection.
-    const needsProbe = rowsAll.filter(r => r.transcript_id == null && (typeof r.duration_seconds !== 'number' || r.duration_seconds <= 0));
+    // Step 2 — probe any video whose duration we haven't cached yet.
+    // v2.1 round 46 (Terry 2026-06-08) — probe EVERY selected video,
+    // not just the ones still-to-transcribe. The "Total playing
+    // time" row in the modal should reflect what the user PICKED,
+    // even if all of it has already been transcribed. Previously
+    // we skipped already-done rows here, so a selection of one
+    // already-done video showed "< 1s" instead of the real
+    // duration — which Terry rightly called bullshit on.
+    const needsProbe = rowsAll.filter(r => (typeof r.duration_seconds !== 'number' || r.duration_seconds <= 0));
     if (needsProbe.length > 0) {
       const updateStmt = database.prepare(`UPDATE indexed_files SET duration_seconds = ? WHERE id = ?`);
       const queue = [...needsProbe];
@@ -7488,22 +7491,28 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
       }
       await Promise.all(workers);
     }
-    // Step 3 — tally.
+    // Step 3 — tally. v2.1 round 46 (Terry 2026-06-08) —
+    // totalDurationSec now reflects EVERY selected video (so
+    // "Total playing time" honestly answers "how much footage
+    // did I pick"). etaTargetDurationSec separately tracks only
+    // the new-to-transcribe slice so the time-to-finish estimate
+    // doesn't include work that's already cached.
+    let etaTargetDurationSec = 0;
     for (const r of rowsAll) {
       fileCount++;
+      const dur = typeof r.duration_seconds === 'number' && r.duration_seconds > 0
+        ? r.duration_seconds : 0;
+      totalDurationSec += dur;
       if (r.transcript_id != null) {
         alreadyDoneCount++;
         continue;
       }
-      if (typeof r.duration_seconds === 'number' && r.duration_seconds > 0) {
-        totalDurationSec += r.duration_seconds;
-      }
+      etaTargetDurationSec += dur;
     }
-    // distil-medium.en + q8 decoder runs at ~2× realtime on CPU.
-    // 20-second per-video overhead for audio extraction + model
-    // load + segment persistence.
+    // Per-video overhead: audio extraction + model load + segment
+    // persistence. Only counts the videos that will actually run.
     const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 20;
-    const etaSec = Math.round(totalDurationSec * 2.0) + overheadSec;
+    const etaSec = Math.round(etaTargetDurationSec * 2.0) + overheadSec;
     // v2.1 round 34 (Terry 2026-06-08) — diagnostic log so we can
     // see what the modal showed and why. Surfaces the probe
     // success rate (probed vs failed) and the final tally —
