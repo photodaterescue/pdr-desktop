@@ -1176,7 +1176,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
       message: (
         <>
-          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. The model downloads once (~240 MB) and then transcribes at roughly 4–5× each video's length depending on your CPU (so a 2-minute clip takes around 8–10 minutes). Videos already transcribed are skipped instantly.
+          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. <strong className="text-foreground">The first time only</strong>, PDR downloads a ~240 MB language model; after that every transcription starts straight away. Each video takes roughly 4–5× its length to transcribe depending on your CPU (so a 2-minute clip takes around 8–10 minutes). Videos already transcribed are skipped instantly.
           <br /><br />
           You can keep using PDR while this runs.
         </>
@@ -1249,16 +1249,23 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       if (noSpeech > 0) parts.push(`${noSpeech} with no speech`);
       if (failures.length > 0) parts.push(`${failures.length} failed`);
       if (failures.length === 0) {
+        // v2.1 round 27 (Terry 2026-06-08) — explicit Dismiss action
+        // on the right of the toast. The x is there but feels
+        // accidental for a result toast people are reading carefully.
+        // Sonner's `action` prop renders a button on the right that
+        // dismisses the toast automatically.
         toast.success(`Transcription complete`, {
           id: toastId,
           description: parts.join(' · ') || 'No changes',
           duration: Infinity,
+          action: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
         });
       } else {
         toast.warning(`Transcription finished with errors`, {
           id: toastId,
           description: `${parts.join(' · ')}. See PDR log for details.`,
           duration: Infinity,
+          action: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
         });
         console.warn('[memories] batch transcribe failures:', failures);
       }

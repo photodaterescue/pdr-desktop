@@ -86,6 +86,16 @@ export interface PDRSettings {
    *  for videos regardless of per-video CC state. The transcripts
    *  + .vtt sidecars remain on disk. Default OFF. */
   hideVideoTranscripts: boolean;
+  /** v2.1 round 27 (Terry 2026-06-08) — caption text size on
+   *  videos in PDR Viewer. Three discrete sizes so the user can
+   *  match the captions to their viewing distance / vision /
+   *  accessibility needs without an awkward pixel slider:
+   *    'small'  — 14px (compact, less screen real estate)
+   *    'medium' — 18px (default — matches the previous hardcoded value)
+   *    'large'  — 24px (high-readability / accessibility)
+   *  Live-applied via the settings:changed broadcast so the user
+   *  sees the new size immediately without re-opening the video. */
+  videoCaptionSize: 'small' | 'medium' | 'large';
   /** v2.0.15 (Terry 2026-06-06 round 3) — whether the PDR Viewer's
    *  slideshow should include videos. Default false because a 30-second
    *  video derails a "browse my photos" rhythm; users who want videos
@@ -239,6 +249,7 @@ export const optimisedDefaults: PDRSettings = {
   viewerEnhanceAiWarningDismissed: false,
   hideCaptions: false,
   hideVideoTranscripts: false,
+  videoCaptionSize: 'medium',
   // v2.0.15 — slideshow skips videos by default. Toggle on for users
   // who want videos in the slideshow (advances when the video ends).
   slideshowIncludeVideos: false,
@@ -317,6 +328,7 @@ export function getSettings(): PDRSettings {
     viewerEnhanceAiWarningDismissed: store.get('viewerEnhanceAiWarningDismissed', optimisedDefaults.viewerEnhanceAiWarningDismissed),
     hideCaptions: store.get('hideCaptions', optimisedDefaults.hideCaptions),
     hideVideoTranscripts: store.get('hideVideoTranscripts', optimisedDefaults.hideVideoTranscripts),
+    videoCaptionSize: store.get('videoCaptionSize', optimisedDefaults.videoCaptionSize),
     slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),

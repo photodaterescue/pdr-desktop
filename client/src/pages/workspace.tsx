@@ -12657,6 +12657,13 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // not user-added). Lets the user keep their personal note captions
   // hidden but transcripts visible, or vice versa.
   const [hideVideoTranscripts, setHideVideoTranscriptsState] = useState(false);
+  // v2.1 round 27 (Terry 2026-06-08) — caption text size on
+  // videos in PDR Viewer. Three discrete tiers (small/medium/
+  // large) so the user can match captions to their viewing
+  // distance / vision. Lives in Settings → Privacy & Security
+  // alongside the other caption controls. Live-applied via
+  // settings:changed broadcast.
+  const [videoCaptionSize, setVideoCaptionSizeState] = useState<'small' | 'medium' | 'large'>('medium');
 
   // Load settings on mount
   useEffect(() => {
@@ -12686,6 +12693,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
       setHideCaptionsState(((settings as any).hideCaptions as boolean) ?? false);
       setHideVideoTranscriptsState(((settings as any).hideVideoTranscripts as boolean) ?? false);
+      setVideoCaptionSizeState(((settings as any).videoCaptionSize as 'small' | 'medium' | 'large') ?? 'medium');
     });
   }, []);
 
@@ -12844,6 +12852,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleHideVideoTranscriptsToggle = (checked: boolean) => {
     setHideVideoTranscriptsState(checked);
     setSetting('hideVideoTranscripts' as any, checked);
+  };
+
+  const handleVideoCaptionSizeChange = (size: 'small' | 'medium' | 'large') => {
+    setVideoCaptionSizeState(size);
+    setSetting('videoCaptionSize' as any, size);
   };
 
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
@@ -14522,6 +14535,42 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     data-testid="checkbox-hide-video-transcripts"
                   />
                 </label>
+                {/* v2.1 round 27 (Terry 2026-06-08) — caption size
+                    chooser. Reuses the radio-card recipe from the
+                    Default save action setting (lavender border +
+                    bg-primary/5 highlight on the active option) so
+                    it reads as of-a-piece with the rest of Settings. */}
+                <div className="p-3 rounded-lg border border-border">
+                  <span className="text-sm font-medium text-foreground">Video caption size</span>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">Text size of the auto-generated transcript overlay shown in PDR Viewer when CC is on. Applies to videos only; user-added photo captions are unaffected.</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'small',  label: 'Small',  px: '14 px', preview: 'text-xs'  },
+                      { value: 'medium', label: 'Medium', px: '18 px', preview: 'text-sm'  },
+                      { value: 'large',  label: 'Large',  px: '24 px', preview: 'text-base'},
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col items-center gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          videoCaptionSize === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-video-caption-size-${opt.value}`}
+                      >
+                        <input
+                          type="radio"
+                          name="videoCaptionSize"
+                          value={opt.value}
+                          checked={videoCaptionSize === opt.value}
+                          onChange={() => handleVideoCaptionSizeChange(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className={`${opt.preview} font-medium text-foreground`}>Aa</span>
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.px}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}

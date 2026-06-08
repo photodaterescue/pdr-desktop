@@ -2359,10 +2359,29 @@
       // per-video captionsVisible state. Live-updated via the
       // settings:changed broadcast.
       let hideVideoTranscripts = false;
+      // v2.1 round 27 (Terry 2026-06-08) — caption font-size mirror
+      // of the Settings → Privacy & Security → Video caption size
+      // chooser. Three discrete sizes; default medium matches the
+      // previously-hardcoded 18px. Live-applied via settings:changed
+      // so flipping the size in Settings updates the open viewer
+      // immediately without re-opening the video.
+      const CAPTION_SIZE_PX = { small: 14, medium: 18, large: 24 };
+      let videoCaptionSize = 'medium';
+      function applyCaptionFontSize() {
+        try {
+          const px = CAPTION_SIZE_PX[videoCaptionSize] || CAPTION_SIZE_PX.medium;
+          captionsTextEl.style.fontSize = px + 'px';
+        } catch (_) {}
+      }
       try {
         if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
           window.pdr.settings.get().then((s) => {
             hideVideoTranscripts = !!(s && s.hideVideoTranscripts);
+            const sz = s && s.videoCaptionSize;
+            if (sz === 'small' || sz === 'medium' || sz === 'large') {
+              videoCaptionSize = sz;
+            }
+            applyCaptionFontSize();
             try { updateCcButtonState(); } catch (_) {}
             try { renderCaptionForTime(video.currentTime); } catch (_) {}
           }).catch(() => {});
@@ -2373,6 +2392,12 @@
               hideVideoTranscripts = !!payload.value;
               try { updateCcButtonState(); } catch (_) {}
               try { renderCaptionForTime(video.currentTime); } catch (_) {}
+            } else if (payload && payload.key === 'videoCaptionSize') {
+              const sz = payload.value;
+              if (sz === 'small' || sz === 'medium' || sz === 'large') {
+                videoCaptionSize = sz;
+                applyCaptionFontSize();
+              }
             }
           });
         }
