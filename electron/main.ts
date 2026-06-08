@@ -7571,18 +7571,25 @@ async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker
 
   transcribeWorker = new Worker(workerPath, {
     workerData: { cacheDir, ffmpegPath: resolvedFfmpegPath },
-    // v2.1 round 43 (Terry 2026-06-08) — bump worker heap to 6 GB.
-    // Default Node worker_threads heap is ~2 GB, which Whisper
-    // Large-v3 Turbo + return_timestamps:'word' + overlapping 20s
-    // chunks blows through after ~25 minutes on a ~2 min video.
-    // Caught from main.log:
+    // v2.1 round 43 (Terry 2026-06-08) — bump worker heap to 6 GB
+    // via resourceLimits, NOT execArgv. Electron's worker_threads
+    // rejects --max-old-space-size in execArgv ("Initiated Worker
+    // with invalid execArgv flags"), even though plain Node and
+    // PDR's other workers' execArgv array tolerate it. The
+    // canonical way to set per-worker memory is resourceLimits
+    // (a typed Worker constructor option that goes straight to
+    // V8, no flag-string parsing).
+    //
+    // Why we need it: default Node worker_threads heap is ~2 GB,
+    // and Whisper Large-v3 Turbo + return_timestamps:'word' +
+    // overlapping 20s chunks blows through that ceiling after
+    // ~25 minutes on a ~2 min video. Caught from main.log:
     //   "Whisper inference failed: Array buffer allocation failed"
     // Word-level alignment in particular retains per-word cross-
-    // attention tensors during inference, so the working set is
-    // much larger than segment-level. 6 GB is generous headroom
-    // and matches the typical free-RAM ceiling on a modern laptop
-    // without crowding the rest of the app.
-    execArgv: ['--max-old-space-size=6144'],
+    // attention tensors during inference. 6 GB is generous
+    // headroom for a typical laptop without crowding the rest
+    // of the app.
+    resourceLimits: { maxOldGenerationSizeMb: 6144 },
   });
 
   transcribeWorker.on('message', (msg: any) => {
