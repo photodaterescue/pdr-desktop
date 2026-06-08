@@ -226,14 +226,60 @@ function extractAudio(sourcePath: string, outPath: string): Promise<{ durationSe
 }
 
 // Read the WAV body into a Float32Array for Whisper's pipeline.
+//
+// v2.1 round 26 (Terry 2026-06-08) — PROPERLY scan for the 'data'
+// chunk instead of hard-coding offset 44. The hard-coded offset
+// worked for plain `ffmpeg -i ... -acodec pcm_f32le -f wav`, but
+// the moment we added `-af loudnorm` the filter inserts a longer
+// header (extra fmt extension fields + a LIST chunk with the
+// gain metadata), so the actual audio sample data sits somewhere
+// past byte 44 — typically around 80-128 bytes in. Reading from
+// 44 fed Whisper a chunk of HEADER bytes interpreted as float32
+// samples, which produced NaN amplitudes and the canonical
+// silence-hallucination output ("!!!!"). Smoking-gun symptom in
+// the worker log: "audio RMS = NaN".
+//
+// Standard WAV chunk format:
+//   bytes 0-3:   'RIFF'
+//   bytes 4-7:   file size - 8  (little-endian uint32)
+//   bytes 8-11:  'WAVE'
+//   then a sequence of chunks, each:
+//     bytes 0-3: chunk id (4 ASCII chars, e.g. 'fmt ', 'data', 'LIST')
+//     bytes 4-7: chunk size (little-endian uint32, payload length)
+//     bytes 8+:  payload
+// We scan from byte 12 onwards until we hit 'data', then return
+// a view over `dataOffset+8 .. dataOffset+8+dataSize`.
 function readWavAsFloat32(wavPath: string): Float32Array {
   const buf = fs.readFileSync(wavPath);
-  // Skip standard 44-byte WAV header. (Sharp/precise: scan for the
-  // 'data' chunk marker if header size varies; for our ffmpeg-
-  // generated WAVs the header is always exactly 44 bytes.)
-  const offset = 44;
-  const sampleCount = (buf.length - offset) / 4;
-  return new Float32Array(buf.buffer, buf.byteOffset + offset, sampleCount);
+  if (buf.length < 12) throw new Error(`WAV too short: ${buf.length} bytes`);
+  if (buf.toString('ascii', 0, 4) !== 'RIFF') throw new Error('Not a RIFF file');
+  if (buf.toString('ascii', 8, 12) !== 'WAVE') throw new Error('Not a WAVE file');
+  let cursor = 12;
+  while (cursor + 8 <= buf.length) {
+    const chunkId = buf.toString('ascii', cursor, cursor + 4);
+    const chunkSize = buf.readUInt32LE(cursor + 4);
+    if (chunkId === 'data') {
+      const dataStart = cursor + 8;
+      const dataEnd = Math.min(buf.length, dataStart + chunkSize);
+      const dataLen = dataEnd - dataStart;
+      const sampleCount = Math.floor(dataLen / 4);
+      // Float32Array view over the underlying ArrayBuffer slice. We
+      // copy into a fresh ArrayBuffer when alignment isn't 4-byte
+      // (rare but possible after Buffer pooling) to keep
+      // Float32Array's contract.
+      const byteOffset = buf.byteOffset + dataStart;
+      if (byteOffset % 4 === 0) {
+        return new Float32Array(buf.buffer, byteOffset, sampleCount);
+      }
+      const copy = Buffer.allocUnsafe(sampleCount * 4);
+      buf.copy(copy, 0, dataStart, dataStart + sampleCount * 4);
+      return new Float32Array(copy.buffer, copy.byteOffset, sampleCount);
+    }
+    // Chunks are 2-byte aligned per the RIFF spec — pad the cursor
+    // by 1 if chunkSize is odd.
+    cursor += 8 + chunkSize + (chunkSize % 2);
+  }
+  throw new Error(`No 'data' chunk found in ${buf.length}-byte WAV`);
 }
 
 // v2.1 round 25 (Terry 2026-06-08) — RMS amplitude check on the
@@ -316,13 +362,24 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   // toward 89% so it never falsely hits 100 before the model
   // genuinely finishes. Clamped at 89 so the final 90 → done jump
   // remains an unambiguous "saving" signal.
+  // v2.1 round 26 (Terry 2026-06-08) — heartbeat estimate bumped
+  // from 1× realtime to 4.5× to match Whisper-small's actual
+  // inference speed on a typical CPU (observed 4.7× realtime in
+  // the previous run). At 1× the ramp hit 89% within seconds and
+  // then sat there for minutes → looked stuck. At 4.5× the ramp
+  // tracks much closer to actual progress, and the message
+  // switches to "wrapping up" once we hit the ceiling so the user
+  // knows the bar parking at 89% isn't a hang.
   const inferenceStartTs = Date.now();
-  const estimatedSec = Math.max(5, durationSeconds * 1.0); // 1× realtime as a conservative midpoint
+  const estimatedSec = Math.max(10, durationSeconds * 4.5);
   const heartbeat = setInterval(() => {
     const elapsedSec = (Date.now() - inferenceStartTs) / 1000;
-    const ramp = Math.min(0.99, elapsedSec / estimatedSec); // 0→0.99 over estimated time
+    const ramp = Math.min(0.99, elapsedSec / estimatedSec);
     const pct = Math.min(89, Math.round(25 + ramp * 64));
-    post({ type: 'progress', requestId, phase: 'Transcribing audio…', percent: pct });
+    const phase = pct >= 89
+      ? 'Transcribing audio… (wrapping up)'
+      : 'Transcribing audio…';
+    post({ type: 'progress', requestId, phase, percent: pct });
   }, 2000);
 
   try {

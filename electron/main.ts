@@ -223,7 +223,17 @@ const VIDEO_THUMB_GIVE_UP_AFTER = 3;
 // the longest legitimate extract time we've seen on slow USB drives
 // and prevents a single hung ffmpeg from holding a slot in the
 // (forthcoming) concurrency limiter.
-const FFMPEG_ATTEMPT_TIMEOUT_MS = 5_000;
+// v2.1 round 26 (Terry 2026-06-08) — bumped from 5s to 12s. The
+// previous 5s killed ffmpeg mid-decode on large CodeFormer-
+// enhanced clips ("file=...CF_001.mp4: <no stderr — likely killed
+// / crashed>") whenever the CPU was already loaded by something
+// else — most painfully when Whisper transcription was running
+// in parallel and Terry's filmstrip tried to lazy-load thumbs at
+// the same time. Cascade × per-attempt budget is now 4 × 12s =
+// 48s max per file, still bounded by VIDEO_THUMB_FAILURE_COUNT
+// so a genuinely undecodable file can't churn the subprocess
+// forever.
+const FFMPEG_ATTEMPT_TIMEOUT_MS = 12_000;
 
 /**
  * Extract a single frame from a video using ffmpeg-static. Returns a JPEG buffer
