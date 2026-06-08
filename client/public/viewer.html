@@ -2103,6 +2103,20 @@
                   '<span class="pdrv-settings-value" data-ctrl="speed-current-label">Normal</span>' +
                   '<span class="pdrv-settings-chevron">›</span>' +
                 '</button>' +
+                // v2.1 round 28 (Terry 2026-06-08) — caption size
+                // row, available alongside Playback speed in the
+                // same gear menu. Single source of truth =
+                // videoCaptionSize in PDR settings; this row both
+                // displays and writes to it. Picking a size here
+                // updates Settings → Privacy & Security via the
+                // settings:set IPC; flipping it in Settings
+                // re-renders this row's value via the
+                // settings:changed broadcast.
+                '<button class="pdrv-settings-item pdrv-settings-row" data-ctrl="open-captionsize" type="button">' +
+                  '<span class="pdrv-settings-label">Caption size</span>' +
+                  '<span class="pdrv-settings-value" data-ctrl="captionsize-current-label">Medium</span>' +
+                  '<span class="pdrv-settings-chevron">›</span>' +
+                '</button>' +
                 '<div class="pdrv-settings-divider"></div>' +
                 // v2.1 (Terry 2026-06-07) — wrap the label in the
                 // same pdrv-settings-label span the Playback-speed
@@ -2121,6 +2135,18 @@
                 '</div>' +
                 '<div class="pdrv-speed-chips" data-ctrl="speed-chips"></div>' +
                 '<div class="pdrv-speed-active-label"><span>Normal</span></div>' +
+              '</div>' +
+              // v2.1 round 28 (Terry 2026-06-08) — caption size
+              // sub-view. Same Back/chip layout the speed view
+              // uses so the gear menu reads as one consistent
+              // primitive (no new chrome introduced for one
+              // feature). Chips reuse .pdrv-speed-chip for
+              // styling; their values are 'small' / 'medium' /
+              // 'large'.
+              '<div class="pdrv-settings-view" data-ctrl="settings-captionsize">' +
+                '<button class="pdrv-settings-back" data-ctrl="back-from-captionsize" type="button">Caption size</button>' +
+                '<div class="pdrv-speed-chips" data-ctrl="captionsize-chips"></div>' +
+                '<div class="pdrv-speed-active-label" style="font-size:11px;line-height:1.3;padding:0 4px;text-align:center"><span>Applies everywhere. Change anytime — your choice becomes the default in Settings.</span></div>' +
               '</div>' +
             '</div>' +
           '</div>' +
@@ -2185,6 +2211,12 @@
       const settingsPop = q('settings-pop');
       const settingsMain = q('settings-main');
       const settingsSpeed = q('settings-speed');
+      const settingsCaptionSize = q('settings-captionsize');
+      const captionSizeChips = q('captionsize-chips');
+      const captionSizeCurrentLabel = q('captionsize-current-label');
+      const openCaptionSizeBtn = q('open-captionsize');
+      const backFromCaptionSizeBtn = q('back-from-captionsize');
+      const CAPTION_SIZE_LABEL = { small: 'Small', medium: 'Medium', large: 'Large' };
       const openSpeedBtn = q('open-speed');
       const backFromSpeedBtn = q('back-from-speed');
       const speedValueLbl = q('speed-value');     // big "1.00x" header
@@ -2382,6 +2414,12 @@
               videoCaptionSize = sz;
             }
             applyCaptionFontSize();
+            // v2.1 round 28 — refresh the gear-menu caption row +
+            // chip highlight once Settings load resolves, so the
+            // popover reflects the saved value (not the default
+            // 'medium' that renderCaptionSizeChips ran with at
+            // script-eval time).
+            try { refreshCaptionSizeUI(); } catch (_) {}
             try { updateCcButtonState(); } catch (_) {}
             try { renderCaptionForTime(video.currentTime); } catch (_) {}
           }).catch(() => {});
@@ -2397,6 +2435,9 @@
               if (sz === 'small' || sz === 'medium' || sz === 'large') {
                 videoCaptionSize = sz;
                 applyCaptionFontSize();
+                // Refresh the gear-menu row's value + active chip
+                // so the popover stays in lockstep with Settings.
+                try { refreshCaptionSizeUI(); } catch (_) {}
               }
             }
           });
@@ -2585,12 +2626,57 @@
       function showSettingsView(which) {
         if (which === 'speed') {
           settingsMain.classList.remove('show');
+          settingsCaptionSize && settingsCaptionSize.classList.remove('show');
           settingsSpeed.classList.add('show');
+        } else if (which === 'captionsize') {
+          settingsMain.classList.remove('show');
+          settingsSpeed.classList.remove('show');
+          if (settingsCaptionSize) settingsCaptionSize.classList.add('show');
         } else {
           settingsSpeed.classList.remove('show');
+          settingsCaptionSize && settingsCaptionSize.classList.remove('show');
           settingsMain.classList.add('show');
         }
       }
+
+      // v2.1 round 28 (Terry 2026-06-08) — caption-size chip
+      // builder. Mirrors renderSpeedChips. Active chip's lavender
+      // tint is the same .active state speed chips use. Writes
+      // back to videoCaptionSize via the settings:set IPC; the
+      // settings:changed broadcast (subscribed to above for live
+      // font-size update) refreshes the chip highlight + the
+      // gear-menu row's display value.
+      function refreshCaptionSizeUI() {
+        if (captionSizeCurrentLabel) {
+          captionSizeCurrentLabel.textContent = CAPTION_SIZE_LABEL[videoCaptionSize] || 'Medium';
+        }
+        if (captionSizeChips) {
+          Array.from(captionSizeChips.children).forEach((chip) => {
+            chip.classList.toggle('active', chip.dataset.size === videoCaptionSize);
+          });
+        }
+      }
+      function renderCaptionSizeChips() {
+        if (!captionSizeChips) return;
+        captionSizeChips.innerHTML = '';
+        ['small','medium','large'].forEach((sz) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.className = 'pdrv-speed-chip';
+          chip.dataset.size = sz;
+          chip.textContent = CAPTION_SIZE_LABEL[sz];
+          chip.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            videoCaptionSize = sz;
+            applyCaptionFontSize();
+            refreshCaptionSizeUI();
+            try { window.pdr?.settings?.set?.('videoCaptionSize', sz); } catch (_) {}
+          });
+          captionSizeChips.appendChild(chip);
+        });
+        refreshCaptionSizeUI();
+      }
+      renderCaptionSizeChips();
 
       function setSpeed(r) {
         r = clampSpeed(Math.round(r * 100) / 100); // 2-decimal precision
@@ -2663,6 +2749,20 @@
         e.stopPropagation();
         showSettingsView('main');
       });
+      // v2.1 round 28 (Terry 2026-06-08) — caption-size menu open/back.
+      if (openCaptionSizeBtn) {
+        openCaptionSizeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          refreshCaptionSizeUI();
+          showSettingsView('captionsize');
+        });
+      }
+      if (backFromCaptionSizeBtn) {
+        backFromCaptionSizeBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          showSettingsView('main');
+        });
+      }
       document.addEventListener('click', (e) => {
         if (!settingsPop.contains(e.target) && e.target !== gearBtn) {
           settingsPop.classList.remove('show');
@@ -3673,7 +3773,16 @@
           if (isVideoPath(fp)) {
             const div = document.createElement('div');
             div.className = 'video-thumb';
-            div.title = getFilename(fp);
+            // v2.1 round 28 (Terry 2026-06-08, third time asked) —
+            // use PDR's lavender tooltip primitive, not the
+            // browser-native `title` system tooltip. tooltip-side=top
+            // places the pill ABOVE the tile (the filmstrip lives
+            // at the bottom of the viewer; default-side=bottom
+            // would clip off-screen). Same data-pdr-tooltip
+            // mechanism the toolbar buttons use, JS-positioned at
+            // the bottom of this file so it's viewport-clamped.
+            div.setAttribute('data-pdr-tooltip', getFilename(fp));
+            div.setAttribute('data-pdr-tooltip-side', 'top');
             div.dataset.idx = String(i);
             div.dataset.fp = fp;
             // v2.1 — read data-idx at click time, not at bind time.
@@ -3694,7 +3803,11 @@
             // fallback that was making the strip look "wrong" for the
             // ~100 ms before each tile's real thumbnail resolved.
             thumb.src = TRANSPARENT_PIXEL;
-            thumb.title = getFilename(fp);
+            thumb.setAttribute('data-pdr-tooltip', getFilename(fp));
+            thumb.setAttribute('data-pdr-tooltip-side', 'top');
+            // alt attribute kept blank-but-present for a11y; the
+            // tooltip handles visible naming.
+            thumb.alt = '';
             thumb.dataset.idx = String(i);
             thumb.dataset.fp = fp;
             thumb.addEventListener('click', (e) => {
@@ -3764,8 +3877,13 @@
               newTile = document.createElement('img');
               newTile.className = 'thumb';
               newTile.src = TRANSPARENT_PIXEL;
+              newTile.alt = '';
             }
-            newTile.title = getFilename(fp);
+            // v2.1 round 28 (Terry 2026-06-08) — PDR tooltip, not
+            // the browser-native `title`. Same recipe as the
+            // initial filmstrip build above.
+            newTile.setAttribute('data-pdr-tooltip', getFilename(fp));
+            newTile.setAttribute('data-pdr-tooltip-side', 'top');
             newTile.dataset.idx = String(insertAt);
             newTile.dataset.fp = fp;
             newTile.addEventListener('click', (e) => {

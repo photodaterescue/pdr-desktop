@@ -1176,7 +1176,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
       message: (
         <>
-          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. <strong className="text-foreground">The first time only</strong>, PDR downloads a ~240 MB language model; after that every transcription starts straight away. Each video takes roughly 4–5× its length to transcribe depending on your CPU (so a 2-minute clip takes around 8–10 minutes). Videos already transcribed are skipped instantly.
+          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. <strong className="text-foreground">The first time only</strong>, PDR downloads a ~930 MB language model (the on-disk ONNX format is bigger than the compressed model size you may have seen quoted elsewhere); after that every transcription starts straight away. Each video takes roughly 4–5× its length to transcribe depending on your CPU (so a 2-minute clip takes around 8–10 minutes). Videos already transcribed are skipped instantly.
           <br /><br />
           You can keep using PDR while this runs.
         </>
