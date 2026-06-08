@@ -1231,10 +1231,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
     );
 
     // First-time-only download notice. Concise — one sentence
-    // above the summary table, not a paragraph wrapped around it.
+    // above the summary table, only rendered when the Whisper
+    // model isn't cached yet. v2.1 round 31 (Terry 2026-06-08) —
+    // dropped the "every transcribe runs straight away" claim:
+    // it read as "no modal at all" but every transcribe DOES
+    // still show this summary modal. The user just won't see
+    // THIS download notice line again after the download.
     const downloadNotice = !modelReady ? (
       <div className="mb-3 text-sm text-muted-foreground">
-        First time only: PDR will download a ~1.5 GB language model before transcription starts. After that, every transcribe runs straight away.
+        First time only: PDR will download a ~1.5 GB language model before this transcription can start.
       </div>
     ) : null;
 

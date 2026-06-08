@@ -7339,13 +7339,57 @@ ipcMain.handle('transcribe:isModelReady', () => {
   return { ready: isCurrentWhisperModelReady(), modelDir: CURRENT_WHISPER_MODEL_DIR };
 });
 
+// v2.1 round 31 (Terry 2026-06-08) — probe a single video's
+// duration via ffmpeg stderr. ffmpeg prints `Duration: HH:MM:SS.cc`
+// in its banner output before bailing on -f null (no encoding,
+// just demux to dev/null). Cheap (~30-80ms per file) and accurate
+// to the centisecond. Result cached in indexed_files.duration_seconds
+// so a second estimate run on the same files reads from DB
+// instantly.
+function probeVideoDuration(videoPath: string): Promise<number | null> {
+  return new Promise((resolve) => {
+    if (!ffmpegPath) { resolve(null); return; }
+    const ffmpegSrc = fromLongPath(videoPath);
+    const args = ['-hide_banner', '-i', ffmpegSrc, '-f', 'null', '-'];
+    const proc = spawn(ffmpegPath, args, { windowsHide: true });
+    let stderr = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      if (stderr.length < 32 * 1024) stderr += chunk.toString('utf8');
+    });
+    const done = (val: number | null) => {
+      try { proc.kill('SIGKILL'); } catch { /* best-effort */ }
+      resolve(val);
+    };
+    const timeoutHandle = setTimeout(() => done(null), 8000);
+    proc.on('close', () => {
+      clearTimeout(timeoutHandle);
+      // Match the LAST "Duration:" in the banner — Stream-specific
+      // lines are above the global one in some containers but the
+      // global "Duration:" is the canonical track length.
+      const m = stderr.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{1,3})/);
+      if (m) {
+        const h = parseInt(m[1], 10);
+        const mn = parseInt(m[2], 10);
+        const s = parseInt(m[3], 10);
+        const cs = parseInt(m[4].padEnd(2, '0').slice(0, 2), 10);
+        const total = h * 3600 + mn * 60 + s + cs / 100;
+        resolve(total > 0 ? total : null);
+      } else {
+        resolve(null);
+      }
+    });
+    proc.on('error', () => { clearTimeout(timeoutHandle); resolve(null); });
+  });
+}
+
 // v2.1 round 29 (Terry 2026-06-08) — pre-flight estimate for the
-// transcribe confirm modal. Sums duration_seconds across the
-// selected videos (skipping any already-transcribed) and returns
-// the inference budget at ~6× realtime (whisper-medium on CPU).
-// Skipping the already-done set means the estimate honestly
-// reflects what the user is committing to — not what the worker
-// would no-op past.
+// transcribe confirm modal. Sums duration across the selected
+// videos (probing ffmpeg + backfilling the DB for any video that
+// hasn't been measured yet) and skips ones already transcribed.
+// v2.1 round 31 — now actually returns real durations, not zero.
+// Before this fix indexed_files.duration_seconds was always NULL
+// (the column existed in the schema but nothing populated it),
+// so the modal showed every batch as "Total playing time: < 1s".
 ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) => {
   if (!Array.isArray(filePaths) || filePaths.length === 0) {
     return { totalDurationSec: 0, etaSec: 0, fileCount: 0, alreadyDoneCount: 0 };
@@ -7356,31 +7400,62 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
     let totalDurationSec = 0;
     let alreadyDoneCount = 0;
     let fileCount = 0;
+    // Step 1 — pull the cached duration + transcript flag + file_id
+    // for every selected path in one query batch.
+    type Row = { file_id: number; file_path: string; duration_seconds: number | null; transcript_id: number | null };
+    const rowsAll: Row[] = [];
     const BATCH = 500;
     for (let i = 0; i < filePaths.length; i += BATCH) {
       const slice = filePaths.slice(i, i + BATCH);
       const ph = slice.map(() => '?').join(',');
       const rows = database.prepare(
-        `SELECT f.file_path, f.duration_seconds, t.id AS transcript_id
+        `SELECT f.id AS file_id, f.file_path, f.duration_seconds, t.id AS transcript_id
          FROM indexed_files f
          LEFT JOIN video_transcripts t ON t.file_id = f.id
          WHERE f.file_path IN (${ph})`
-      ).all(...slice) as { file_path: string; duration_seconds: number | null; transcript_id: number | null }[];
-      for (const r of rows) {
-        fileCount++;
-        if (r.transcript_id != null) {
-          alreadyDoneCount++;
-          continue;
-        }
-        if (typeof r.duration_seconds === 'number' && r.duration_seconds > 0) {
-          totalDurationSec += r.duration_seconds;
-        }
+      ).all(...slice) as Row[];
+      rowsAll.push(...rows);
+    }
+    // Step 2 — probe any video whose duration we haven't cached yet
+    // (skipping ones already transcribed; their duration doesn't
+    // affect the estimate). Probes run in parallel, capped at 6
+    // concurrent ffmpeg processes so we don't melt the CPU on a
+    // large selection.
+    const needsProbe = rowsAll.filter(r => r.transcript_id == null && (typeof r.duration_seconds !== 'number' || r.duration_seconds <= 0));
+    if (needsProbe.length > 0) {
+      const updateStmt = database.prepare(`UPDATE indexed_files SET duration_seconds = ? WHERE id = ?`);
+      const queue = [...needsProbe];
+      const CONCURRENCY = 6;
+      const workers: Promise<void>[] = [];
+      for (let w = 0; w < CONCURRENCY; w++) {
+        workers.push((async () => {
+          while (queue.length > 0) {
+            const r = queue.shift();
+            if (!r) break;
+            const d = await probeVideoDuration(r.file_path);
+            if (d != null && d > 0) {
+              r.duration_seconds = d;
+              try { updateStmt.run(d, r.file_id); } catch { /* non-fatal */ }
+            }
+          }
+        })());
+      }
+      await Promise.all(workers);
+    }
+    // Step 3 — tally.
+    for (const r of rowsAll) {
+      fileCount++;
+      if (r.transcript_id != null) {
+        alreadyDoneCount++;
+        continue;
+      }
+      if (typeof r.duration_seconds === 'number' && r.duration_seconds > 0) {
+        totalDurationSec += r.duration_seconds;
       }
     }
-    // v2.1 round 30 — distil-medium.en + q8 decoder runs at ~2×
-    // realtime on CPU (vs 6× for whisper-medium). 20-second
-    // per-video overhead for audio extraction + model load +
-    // segment persistence.
+    // distil-medium.en + q8 decoder runs at ~2× realtime on CPU.
+    // 20-second per-video overhead for audio extraction + model
+    // load + segment persistence.
     const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 20;
     const etaSec = Math.round(totalDurationSec * 2.0) + overheadSec;
     return { totalDurationSec, etaSec, fileCount, alreadyDoneCount };
