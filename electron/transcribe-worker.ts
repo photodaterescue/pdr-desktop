@@ -134,13 +134,26 @@ function extractAudio(sourcePath: string, outPath: string): Promise<{ durationSe
     // We write as WAV (-f wav) instead of raw so we can read it back
     // with header parsing instead of a separate sample-rate / channel
     // metadata channel.
+    //
+    // v2.1 round 24 (Terry 2026-06-08) — loudnorm audio filter. Real-
+    // world consumer videos routinely capture dialogue at low levels
+    // (phone in pocket, distant subject, road noise mixed in). Feeding
+    // raw quiet audio to Whisper-base gives the "!!!!" hallucination
+    // every time — the model genuinely can't pick out speech below a
+    // certain SNR threshold. EBU R128 loudnorm brings the whole track
+    // up to broadcast loudness (I=-16 LUFS) and compresses dynamic
+    // range (LRA=11), so the speech bits land in Whisper's sweet
+    // spot. Terry 2026-06-08: "there was English conversation being
+    // had at good volume and clarity" — but "good to the human ear"
+    // ≠ "good for Whisper's tiny acoustic model" without normalising.
     const args = [
       '-hide_banner', '-loglevel', 'error',
       '-i', sourcePath,
-      '-vn',                            // no video
-      '-ac', '1',                       // mono
-      '-ar', '16000',                   // 16 kHz
-      '-acodec', 'pcm_f32le',          // float32 little-endian
+      '-vn',                                                  // no video
+      '-af', 'loudnorm=I=-16:LRA=11:TP=-1.5',                 // normalise loudness to broadcast level
+      '-ac', '1',                                              // mono
+      '-ar', '16000',                                          // 16 kHz
+      '-acodec', 'pcm_f32le',                                  // float32 little-endian
       '-f', 'wav',
       '-y', outPath,
     ];
@@ -251,13 +264,29 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   try {
     // return_timestamps: true → pipeline returns { text, chunks: [{timestamp: [start, end], text}] }
     // chunk_length_s: 30 → standard Whisper window (one inference per 30s chunk)
+    // v2.1 round 24 (Terry 2026-06-08) — default to English instead
+    // of Whisper's auto-detect. With Whisper-base (the smallest
+    // multilingual model), auto-detect frequently misfires on quiet
+    // or accented English audio and locks the entire transcription
+    // into a non-English language → garbage tokens out → caught by
+    // the hallucination filter → user sees "no speech detected" on
+    // a video that clearly had English speech. Terry's case
+    // 2026-06-08 was the canonical version of this failure mode.
+    // The English bias is fine for Terry's library (UK family
+    // videos); a future per-video language picker can override.
+    const effectiveLanguage = language && language !== 'auto' ? language : 'en';
     const result: any = await pipe(audio, {
-      language: language && language !== 'auto' ? language : undefined,
+      language: effectiveLanguage,
       task: 'transcribe',
       return_timestamps: true,
       chunk_length_s: 30,
       stride_length_s: 5,
-    });
+      // condition_on_previous_text=false reduces "looping" — when
+      // one chunk hallucinates a phrase, the next chunk's prompt
+      // doesn't carry that phrase forward and amplify it.
+      condition_on_previous_text: false,
+      no_speech_threshold: 0.6,
+    } as any);
     clearInterval(heartbeat);
 
     // v2.1 round 23 — dump raw Whisper output to the log BEFORE

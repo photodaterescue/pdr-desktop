@@ -10722,6 +10722,41 @@ ipcMain.handle('viewer:getPendingFileList', () => {
   return payload ?? { files: [], startIndex: 0 };
 });
 
+// v2.1 round 24 (Terry 2026-06-08) — date lookup for the viewer's
+// filmstrip date-pill overlay. While the user drags the filmstrip
+// scrollbar, the viewer shows a floating pill with the date of the
+// currently-centred tile (mirrors the Memories Dates scroll pill).
+// Rather than do one IPC per tile we batch the lookup at viewer
+// open: one query for the entire file list. Returns an object
+// keyed by file path → ISO date (YYYY-MM-DD) so the viewer can
+// resolve `files[centerIdx]` in O(1).
+ipcMain.handle('viewer:getFileDates', async (_event, filePaths: string[]): Promise<{ dates: Record<string, string | null> }> => {
+  if (!Array.isArray(filePaths) || filePaths.length === 0) return { dates: {} };
+  try {
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    // Chunk in batches of 500 — SQLite has a 999-parameter ceiling
+    // and we want headroom. The viewer routinely opens with a few
+    // thousand paths from Memories' large date buckets.
+    const dates: Record<string, string | null> = {};
+    const BATCH = 500;
+    for (let i = 0; i < filePaths.length; i += BATCH) {
+      const slice = filePaths.slice(i, i + BATCH);
+      const placeholders = slice.map(() => '?').join(',');
+      const rows = database
+        .prepare(`SELECT file_path, derived_date FROM indexed_files WHERE file_path IN (${placeholders})`)
+        .all(...slice) as { file_path: string; derived_date: string | null }[];
+      for (const r of rows) {
+        dates[r.file_path] = r.derived_date;
+      }
+    }
+    return { dates };
+  } catch (err) {
+    console.warn('[viewer:getFileDates] failed:', (err as Error).message);
+    return { dates: {} };
+  }
+});
+
 ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileNames: string[], startIndex?: number) => {
   // Skip if a previous open is mid-flight. Returns success:true on
   // purpose — the caller doesn't need to retry; the previous load

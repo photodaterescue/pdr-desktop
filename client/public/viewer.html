@@ -1022,6 +1022,39 @@
       border-bottom: 6px solid transparent;
       filter: drop-shadow(0 0 4px rgba(0,0,0,0.6));
     }
+    /* v2.1 (Terry 2026-06-08) — floating date pill that appears
+       while the user is dragging the filmstrip scrollbar (or wheel-
+       scrolling). Mirrors the Memories Dates scroll pill style so
+       the affordance reads as "of-a-piece" with the rest of PDR.
+       Anchored to the filmstrip wrapper, top-centred above the
+       strip. Pointer-events:none so it never intercepts clicks. */
+    .filmstrip-wrap {
+      position: relative;
+      flex-shrink: 0;
+    }
+    .filmstrip-date-pill {
+      position: absolute;
+      top: -36px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 6px 12px;
+      border-radius: 9999px;
+      background: rgba(18, 18, 42, 0.95);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      border: 1px solid rgba(169, 156, 255, 0.35);
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
+      color: #eaeaff;
+      font-size: 12px;
+      font-weight: 500;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 180ms ease;
+      z-index: 30;
+    }
+    .filmstrip-date-pill.visible { opacity: 1; }
   </style>
 </head>
 <body>
@@ -1537,7 +1570,14 @@
       <span>No image loaded</span>
     </div>
   </div>
-  <div id="filmstrip" class="filmstrip" style="display:none"></div>
+  <!-- v2.1 (Terry 2026-06-08) — filmstrip wrapper hosts the floating
+       date-pill overlay that appears while the user drags the
+       scrollbar. The wrapper is purely a positioning context (no
+       layout impact) so the strip itself behaves exactly as before. -->
+  <div class="filmstrip-wrap" id="filmstrip-wrap" style="display:none">
+    <div id="filmstrip-date-pill" class="filmstrip-date-pill" aria-hidden="true"></div>
+    <div id="filmstrip" class="filmstrip"></div>
+  </div>
 
   <!-- v2.0.15 (Terry 2026-06-06) — Enhance side panel. Right-side
        slide-in, 280px wide, dark theme matching the viewer chrome.
@@ -3437,7 +3477,86 @@
     }
 
     if (files.length > 1) {
+      // v2.1 (Terry 2026-06-08) — show the wrapper (which holds the
+      // strip + the date pill). The strip itself stays display:flex.
+      const filmstripWrapEl = document.getElementById('filmstrip-wrap');
+      if (filmstripWrapEl) filmstripWrapEl.style.display = 'block';
       filmstripEl.style.display = 'flex';
+
+      // v2.1 (Terry 2026-06-08) — fetch derived_date for every file
+      // in the strip on viewer mount (one IPC, batched in main).
+      // Used by the filmstrip-date-pill overlay below to label the
+      // tile currently under the centre of the scroll viewport.
+      // Fire-and-forget: the pill simply doesn't appear until the
+      // map populates, which is fine because the user has to
+      // physically interact with the scrollbar first.
+      const fileDates = new Map();
+      try {
+        if (window.pdr && window.pdr.viewer && window.pdr.viewer.getFileDates) {
+          window.pdr.viewer.getFileDates(files).then((res) => {
+            if (res && res.dates) {
+              for (const [k, v] of Object.entries(res.dates)) {
+                if (v) fileDates.set(k, v);
+              }
+            }
+          }).catch(() => {});
+        }
+      } catch (_) {}
+
+      // v2.1 (Terry 2026-06-08) — drag-date overlay. Mirrors the
+      // Memories Dates floating scroll pill: while the user is
+      // actively scrubbing the filmstrip, a pill above the strip
+      // shows the date of whichever tile is under the centre of
+      // the visible area. Fades out 600 ms after the last scroll
+      // event. Pure DOM read on scroll — no layout thrash beyond
+      // the cheap getBoundingClientRect probe at the strip centre.
+      const filmstripDatePillEl = document.getElementById('filmstrip-date-pill');
+      let datePillHideTimer = null;
+      const MONTHS_SHORT = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+      function formatPillDate(isoDate) {
+        // derived_date is stored as YYYY-MM-DD (or YYYY-MM-DDTHH:MM:SS).
+        // Format as "27 May 2021" — same shape as the Memories pill.
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(isoDate);
+        if (!m) return isoDate;
+        const yyyy = m[1];
+        const mm = parseInt(m[2], 10) - 1;
+        const dd = parseInt(m[3], 10);
+        if (mm < 0 || mm > 11) return isoDate;
+        return `${dd} ${MONTHS_SHORT[mm]} ${yyyy}`;
+      }
+      function updateFilmstripDatePill() {
+        if (!filmstripDatePillEl) return;
+        const rect = filmstripEl.getBoundingClientRect();
+        const centerX = rect.left + rect.width / 2;
+        // elementFromPoint with the strip's centre Y picks up the
+        // tile (or its content) sitting under the centre column.
+        const probeY = rect.top + rect.height / 2;
+        const hit = document.elementFromPoint(centerX, probeY);
+        // Walk up to the tile that carries data-fp.
+        let tile = hit;
+        while (tile && tile !== filmstripEl && !tile.dataset?.fp) {
+          tile = tile.parentElement;
+        }
+        const fp = tile?.dataset?.fp;
+        if (!fp) return;
+        const iso = fileDates.get(fp);
+        if (!iso) {
+          // Hide if we have no date for this tile rather than show
+          // a stale label from the previous tile.
+          filmstripDatePillEl.classList.remove('visible');
+          return;
+        }
+        filmstripDatePillEl.textContent = formatPillDate(iso);
+        filmstripDatePillEl.classList.add('visible');
+      }
+      function bumpDatePillVisible() {
+        updateFilmstripDatePill();
+        if (datePillHideTimer) clearTimeout(datePillHideTimer);
+        datePillHideTimer = setTimeout(() => {
+          if (filmstripDatePillEl) filmstripDatePillEl.classList.remove('visible');
+        }, 600);
+      }
+      filmstripEl.addEventListener('scroll', bumpDatePillVisible, { passive: true });
 
       // Vertical mouse-wheel input scrolls the strip horizontally —
       // same pattern PM's face-thumb strip uses (see PeopleManager.tsx

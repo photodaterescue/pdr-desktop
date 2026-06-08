@@ -588,6 +588,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  JSON-stringified into the URL). Returns one-shot — consumed on
      *  read so a stale list can't leak across opens. */
     getPendingFileList: () => ipcRenderer.invoke('viewer:getPendingFileList') as Promise<{ files: string[]; startIndex: number }>,
+    /** v2.1 (Terry 2026-06-08) — batched date lookup for the
+     *  filmstrip date-pill overlay. Pass the whole file list once
+     *  on viewer mount; map indexed_files.derived_date back to
+     *  each path. */
+    getFileDates: (filePaths: string[]) => ipcRenderer.invoke('viewer:getFileDates', filePaths) as Promise<{ dates: Record<string, string | null> }>,
     // v2.0.15 (Terry 2026-06-06) — bake Enhance panel adjustments into
     // a real JPG. mode='new' creates <original>_E.jpg sibling;
     // mode='replace' overwrites the original. XMP metadata records the
