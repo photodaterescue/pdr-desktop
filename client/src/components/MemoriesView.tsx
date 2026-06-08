@@ -1168,19 +1168,72 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       toast.error('Transcription unavailable', { description: 'Bridge missing — please relaunch PDR.' });
       return;
     }
-    // Confirm before running — Whisper is heavy and the user might
-    // have selected accidentally. promptConfirm matches the
-    // destructive-Send and Remove-from-library patterns elsewhere.
+
+    // v2.1 round 29 (Terry 2026-06-08) — smart confirm modal.
+    // Terry: the download paragraph should only appear the FIRST
+    // time, and the time estimate should be specific to what the
+    // user just selected — not generic prose. Two pre-flight IPCs
+    // resolve in parallel: is-model-ready (decides whether to
+    // show the download warning) and estimate-batch (gives the
+    // "X minutes of video → Y minutes ETA" maths). Fail-open: if
+    // either IPC errors, fall back to the long-form prose so the
+    // user still has context.
+    let modelReady = true;
+    let estimate: { totalDurationSec: number; etaSec: number; fileCount: number; alreadyDoneCount: number } | null = null;
+    try {
+      const [modelInfo, est] = await Promise.all([
+        pdrViewer.isTranscribeModelReady?.() ?? Promise.resolve({ ready: true }),
+        pdrViewer.estimateTranscribeBatch?.(filePaths) ?? Promise.resolve(null),
+      ]);
+      modelReady = !!(modelInfo && modelInfo.ready);
+      estimate = est;
+    } catch { /* fall through with safe defaults */ }
+
+    // Pretty-print a duration in seconds → "X min Y sec" / "Y sec"
+    // for short estimates. Drops the seconds component once the
+    // value crosses ~10 minutes, where second-precision is noise.
+    const fmt = (sec: number): string => {
+      if (sec <= 0) return 'less than a minute';
+      if (sec < 60) return `${Math.round(sec)} sec`;
+      const minutes = Math.floor(sec / 60);
+      const seconds = Math.round(sec % 60);
+      if (minutes >= 10) return `${minutes} min`;
+      if (seconds === 0) return `${minutes} min`;
+      return `${minutes} min ${seconds} sec`;
+    };
+
+    const remaining = estimate ? Math.max(0, estimate.fileCount - estimate.alreadyDoneCount) : filePaths.length;
+
+    // Short-form (model present, just confirm + show estimate).
+    const shortMessage = estimate ? (
+      <>
+        <strong className="text-foreground">{remaining}</strong> video{remaining === 1 ? '' : 's'} to transcribe — <strong className="text-foreground">{fmt(estimate.totalDurationSec)}</strong> of audio in total. Estimated time to finish: <strong className="text-foreground">~{fmt(estimate.etaSec)}</strong> on your CPU.
+        {estimate.alreadyDoneCount > 0 && (
+          <>
+            <br /><br />
+            {estimate.alreadyDoneCount} of the {filePaths.length} selected {estimate.alreadyDoneCount === 1 ? 'is' : 'are'} already transcribed and will be skipped.
+          </>
+        )}
+      </>
+    ) : (
+      <>Each video takes roughly 6× its length to transcribe on your CPU. Videos already transcribed are skipped instantly.</>
+    );
+
+    // First-time-only long-form (download warning + estimate).
+    const longMessage = (
+      <>
+        PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. The <strong className="text-foreground">first time only</strong>, PDR downloads a ~3 GB language model; after that every transcription starts straight away.
+        <br /><br />
+        {shortMessage}
+        <br /><br />
+        You can keep using PDR while this runs.
+      </>
+    );
+
     const ok = await promptConfirm({
       eyebrow: 'TRANSCRIBE VIDEOS',
       title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
-      message: (
-        <>
-          PDR runs Whisper <strong className="text-foreground">locally</strong> on your computer — nothing is uploaded. <strong className="text-foreground">The first time only</strong>, PDR downloads a ~930 MB language model (the on-disk ONNX format is bigger than the compressed model size you may have seen quoted elsewhere); after that every transcription starts straight away. Each video takes roughly 4–5× its length to transcribe depending on your CPU (so a 2-minute clip takes around 8–10 minutes). Videos already transcribed are skipped instantly.
-          <br /><br />
-          You can keep using PDR while this runs.
-        </>
-      ),
+      message: modelReady ? shortMessage : longMessage,
       confirmLabel: 'Transcribe',
       cancelLabel: 'Cancel',
     });
@@ -1249,23 +1302,26 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       if (noSpeech > 0) parts.push(`${noSpeech} with no speech`);
       if (failures.length > 0) parts.push(`${failures.length} failed`);
       if (failures.length === 0) {
-        // v2.1 round 27 (Terry 2026-06-08) — explicit Dismiss action
-        // on the right of the toast. The x is there but feels
-        // accidental for a result toast people are reading carefully.
-        // Sonner's `action` prop renders a button on the right that
-        // dismisses the toast automatically.
+        // v2.1 round 29 (Terry 2026-06-08) — Dismiss uses Sonner's
+        // `cancel` slot, NOT `action`. Sonner styles action buttons
+        // as the primary CTA (overrides our lavender className with
+        // a hard-coded black background on success/warning variants),
+        // which Terry rightly flagged as wrong for a Dismiss. The
+        // cancel slot picks up our cancelButton className (bg-muted
+        // text-muted-foreground) — neutral grey, matches the style
+        // guide's "secondary / cancel" tier.
         toast.success(`Transcription complete`, {
           id: toastId,
           description: parts.join(' · ') || 'No changes',
           duration: Infinity,
-          action: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
+          cancel: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
         });
       } else {
         toast.warning(`Transcription finished with errors`, {
           id: toastId,
           description: `${parts.join(' · ')}. See PDR log for details.`,
           duration: Infinity,
-          action: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
+          cancel: { label: 'Dismiss', onClick: () => toast.dismiss(toastId) },
         });
         console.warn('[memories] batch transcribe failures:', failures);
       }
@@ -2123,7 +2179,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         {files != null && (() => {
           const photoCount = files.filter((f) => f.file_type === 'photo').length;
           const videoCount = files.filter((f) => f.file_type === 'video').length;
-          const captionedCount = files.filter((f) => f.caption && f.caption.length > 0).length;
+          // v2.1 round 29 (Terry 2026-06-08) — Captions count must
+          // respect the active TYPE filter. Before this fix, the
+          // count showed all captioned items regardless of whether
+          // the user had Photos or Videos selected; picking the
+          // Captions checkbox then yielded an empty grid because
+          // the only captioned items were of the other type.
+          // Recompute per TYPE so the number always matches what
+          // the user would see if they ticked the box right now.
+          const captionedCount = files.filter((f) => {
+            if (!f.caption || f.caption.length === 0) return false;
+            if (mediaFilter === 'photos') return f.file_type === 'photo';
+            if (mediaFilter === 'videos') return f.file_type === 'video';
+            return true;
+          }).length;
           if (files.length === 0) return null;
           // v2.1 round 26 (Terry 2026-06-08) — chip label reflects the
           // radio-Type + checkbox-Captioned state. Empty-grid impossible

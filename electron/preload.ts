@@ -683,7 +683,20 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
      *  new person if the name doesn't exist; otherwise joins. */
     nameFace: (payload: { faceId: number; clusterId: number | null; name: string }) =>
       ipcRenderer.invoke('viewer:nameFace', payload) as Promise<{ success: boolean; personId?: number; error?: string }>,
-    /** v2.1 (Terry 2026-06-07) — video transcription. Whisper-base
+    /** v2.1 round 29 (Terry 2026-06-08) — "is the Whisper model
+     *  already downloaded?" so the transcribe modal can show the
+     *  ~3 GB download warning ONLY the first time, not every
+     *  click forever. Returns { ready, modelDir }. */
+    isTranscribeModelReady: () =>
+      ipcRenderer.invoke('transcribe:isModelReady') as Promise<{ ready: boolean; modelDir: string }>,
+    /** v2.1 round 29 — pre-flight time estimate for the confirm
+     *  modal. Returns total duration in seconds + ETA seconds at
+     *  the medium model's ~6× realtime + per-video overhead.
+     *  Skips already-transcribed videos so the estimate matches
+     *  what the worker will actually do. */
+    estimateTranscribeBatch: (filePaths: string[]) =>
+      ipcRenderer.invoke('transcribe:estimateBatch', filePaths) as Promise<{ totalDurationSec: number; etaSec: number; fileCount: number; alreadyDoneCount: number }>,
+    /** v2.1 (Terry 2026-06-07) — video transcription. Whisper-medium
      *  local. Idempotent: if a transcript already exists for the
      *  file, returns it; otherwise runs the worker + persists. */
     transcribeVideo: (req: { filePath: string; language?: string }) =>

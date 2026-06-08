@@ -7306,6 +7306,127 @@ const transcribePending = new Map<string, {
   onProgress?: (phase: string, percent: number) => void;
 }>();
 
+// v2.1 round 29 (Terry 2026-06-08) — known sub-folder name for the
+// current default Whisper model. Used by transcribe:isModelReady to
+// answer "is the download done?" + by the launch-cleanup helper to
+// purge superseded model directories from disk so users on the new
+// build don't carry hundreds of MB of dead model data forever.
+const CURRENT_WHISPER_MODEL_DIR = 'whisper-medium';
+// Older model folders the user may have on disk from previous PDR
+// builds. Deleted at first launch of this build to reclaim space —
+// they're not used any more and re-downloadable on demand if we
+// ever go backwards.
+const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small'];
+
+function getWhisperCacheRoot(): string {
+  return path.join(app.getPath('userData'), 'whisper-cache');
+}
+
+function isCurrentWhisperModelReady(): boolean {
+  try {
+    // transformers.js drops models into <cache>/Xenova/<modelName>/.
+    // The decoder ONNX is the largest file and the last one written,
+    // so its existence is a reliable "fully downloaded" signal.
+    const dir = path.join(getWhisperCacheRoot(), 'Xenova', CURRENT_WHISPER_MODEL_DIR);
+    const decoder = path.join(dir, 'onnx', 'decoder_model_merged.onnx');
+    const encoder = path.join(dir, 'onnx', 'encoder_model.onnx');
+    return fs.existsSync(decoder) && fs.existsSync(encoder);
+  } catch { return false; }
+}
+
+ipcMain.handle('transcribe:isModelReady', () => {
+  return { ready: isCurrentWhisperModelReady(), modelDir: CURRENT_WHISPER_MODEL_DIR };
+});
+
+// v2.1 round 29 (Terry 2026-06-08) — pre-flight estimate for the
+// transcribe confirm modal. Sums duration_seconds across the
+// selected videos (skipping any already-transcribed) and returns
+// the inference budget at ~6× realtime (whisper-medium on CPU).
+// Skipping the already-done set means the estimate honestly
+// reflects what the user is committing to — not what the worker
+// would no-op past.
+ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) => {
+  if (!Array.isArray(filePaths) || filePaths.length === 0) {
+    return { totalDurationSec: 0, etaSec: 0, fileCount: 0, alreadyDoneCount: 0 };
+  }
+  try {
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    let totalDurationSec = 0;
+    let alreadyDoneCount = 0;
+    let fileCount = 0;
+    const BATCH = 500;
+    for (let i = 0; i < filePaths.length; i += BATCH) {
+      const slice = filePaths.slice(i, i + BATCH);
+      const ph = slice.map(() => '?').join(',');
+      const rows = database.prepare(
+        `SELECT f.file_path, f.duration_seconds, t.id AS transcript_id
+         FROM indexed_files f
+         LEFT JOIN video_transcripts t ON t.file_id = f.id
+         WHERE f.file_path IN (${ph})`
+      ).all(...slice) as { file_path: string; duration_seconds: number | null; transcript_id: number | null }[];
+      for (const r of rows) {
+        fileCount++;
+        if (r.transcript_id != null) {
+          alreadyDoneCount++;
+          continue;
+        }
+        if (typeof r.duration_seconds === 'number' && r.duration_seconds > 0) {
+          totalDurationSec += r.duration_seconds;
+        }
+      }
+    }
+    // 6× realtime is our heartbeat estimate for whisper-medium on
+    // CPU. Add a 30-second per-video overhead for audio extraction
+    // + model load + segment persistence (matters most on small
+    // batches of short clips).
+    const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 30;
+    const etaSec = Math.round(totalDurationSec * 6.0) + overheadSec;
+    return { totalDurationSec, etaSec, fileCount, alreadyDoneCount };
+  } catch (err) {
+    console.warn('[transcribe:estimateBatch] failed:', (err as Error).message);
+    return { totalDurationSec: 0, etaSec: 0, fileCount: filePaths.length, alreadyDoneCount: 0 };
+  }
+});
+
+// One-shot cleanup of legacy Whisper model folders. Called once per
+// process at startup. Logs what it removed so the freed bytes show
+// up in main.log for support tickets.
+function cleanupLegacyWhisperModels(): void {
+  try {
+    const root = path.join(getWhisperCacheRoot(), 'Xenova');
+    if (!fs.existsSync(root)) return;
+    for (const legacy of LEGACY_WHISPER_MODEL_DIRS) {
+      const dir = path.join(root, legacy);
+      if (!fs.existsSync(dir)) continue;
+      try {
+        // Estimate size for the log message (best-effort).
+        let bytes = 0;
+        try {
+          const walk = (p: string) => {
+            const st = fs.statSync(p);
+            if (st.isDirectory()) {
+              for (const child of fs.readdirSync(p)) walk(path.join(p, child));
+            } else {
+              bytes += st.size;
+            }
+          };
+          walk(dir);
+        } catch { /* keep going */ }
+        fs.rmSync(dir, { recursive: true, force: true });
+        log.info(`[whisper-cleanup] removed legacy model "${legacy}" (~${Math.round(bytes / (1024 * 1024))} MB)`);
+      } catch (err) {
+        log.warn(`[whisper-cleanup] failed to remove "${legacy}": ${(err as Error).message}`);
+      }
+    }
+  } catch (err) {
+    log.warn(`[whisper-cleanup] root scan failed: ${(err as Error).message}`);
+  }
+}
+
+// Fire-and-forget — runs once on module load, never blocks anything.
+cleanupLegacyWhisperModels();
+
 async function ensureTranscribeWorker(): Promise<import('worker_threads').Worker> {
   if (transcribeWorker) return transcribeWorker;
   const { Worker } = await import('worker_threads');

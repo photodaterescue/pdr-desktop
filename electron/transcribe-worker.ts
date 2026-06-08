@@ -136,16 +136,16 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   env.cacheDir = config.cacheDir;
   env.allowLocalModels = true;
 
-  // v2.1 round 25 (Terry 2026-06-08) — switched from whisper-base
-  // (~150 MB) to whisper-small (~244 MB). Base is the smallest
-  // multilingual model and genuinely struggles with: phone-quality
-  // compressed audio, distant speakers, background noise, casual
-  // accented English. Terry's real-world test (a 2-minute video
-  // with clear English dialogue) came back "no speech" — small
-  // handles that comfortably. ~1.5× slower per second of audio
-  // but the quality jump is the difference between "useful" and
-  // "broken". One-time 244 MB model download.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small', {
+  // v2.1 round 29 (Terry 2026-06-08) — switched from whisper-small
+  // to whisper-medium. Terry: "PDR is meant to be Premium and
+  // Optimal, and I just don't think cutting corners on transcript
+  // captions is aligned with its ethos." Whisper-small was still
+  // dropping ~20% of words on consumer audio; medium catches
+  // most of those. On-disk ONNX is ~3 GB (much bigger than the
+  // HF README quoted size). Per-video inference is roughly 6×
+  // realtime on CPU (so 2 minutes of audio = ~12 minutes of
+  // inference). One-time model download.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-medium', {
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
       if (info?.status === 'progress' && typeof info.progress === 'number') {
@@ -371,7 +371,9 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   // switches to "wrapping up" once we hit the ceiling so the user
   // knows the bar parking at 89% isn't a hang.
   const inferenceStartTs = Date.now();
-  const estimatedSec = Math.max(10, durationSeconds * 4.5);
+  // v2.1 round 29 — whisper-medium runs at roughly 6× realtime on
+  // CPU (vs ~4.5× for small). Bumped estimate to match.
+  const estimatedSec = Math.max(10, durationSeconds * 6.0);
   const heartbeat = setInterval(() => {
     const elapsedSec = (Date.now() - inferenceStartTs) / 1000;
     const ramp = Math.min(0.99, elapsedSec / estimatedSec);
