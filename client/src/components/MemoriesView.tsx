@@ -26,6 +26,7 @@ import {
   Star,
   MessageSquareText,
   Captions,
+  Files,
   Trash2,
   ZoomIn,
   ZoomOut,
@@ -2111,51 +2112,76 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </IconTooltip>
           );
         })()}
-        {/* v2.1 (Terry 2026-06-07) — Photos / Videos filter chips.
-            Same chip primitive as Captioned only (h-8 px-3 rounded-
-            full, IconTooltip, hide-when-zero). Lavender active state
-            instead of gold to distinguish a categorical media-type
-            filter from the gold captioned-only opt-in. Clicking the
-            active chip returns to 'all'. Renders only when both
-            types exist in the current bucket — pointless to offer a
-            filter that's already implicit. */}
+        {/* v2.1 round 23 (Terry 2026-06-08) — Media dropdown. Earlier
+            two-chip layout (Photos · N + Videos · M) ate too much
+            horizontal space on narrow screens. Collapsed into a
+            single dropdown chip: label reflects the active filter,
+            popover lists all three options with counts (so Terry's
+            "I kinda like knowing how many there are of each" stays
+            true — counts just live in the menu now). Same primitive
+            shape as Captioned only (h-8 px-3 rounded-full border,
+            IconTooltip wrapper, lavender bg-primary when filter
+            non-default). Render only when both types exist. */}
         {files != null && (() => {
           const photoCount = files.filter((f) => f.file_type === 'photo').length;
           const videoCount = files.filter((f) => f.file_type === 'video').length;
           if (photoCount === 0 || videoCount === 0) return null;
+          const label =
+            mediaFilter === 'photos' ? `Photos · ${photoCount.toLocaleString()}` :
+            mediaFilter === 'videos' ? `Videos · ${videoCount.toLocaleString()}` :
+            `All media · ${(photoCount + videoCount).toLocaleString()}`;
+          const ActiveIcon =
+            mediaFilter === 'photos' ? ImageIcon :
+            mediaFilter === 'videos' ? Film :
+            Files;
+          const isFiltered = mediaFilter !== 'all';
           return (
-            <>
-              <IconTooltip label={mediaFilter === 'photos' ? 'Show everything' : 'Show only photos'} side="bottom">
-                <button
-                  type="button"
-                  onClick={() => setMediaFilter(mediaFilter === 'photos' ? 'all' : 'photos')}
-                  data-testid="memories-photos-only-toggle"
-                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
-                    mediaFilter === 'photos'
-                      ? 'bg-primary border-primary text-primary-foreground'
-                      : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                  }`}
-                >
-                  <ImageIcon className="w-3.5 h-3.5" />
-                  Photos · {photoCount.toLocaleString()}
-                </button>
+            <Popover>
+              <IconTooltip label="Filter by photos or videos" side="bottom">
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    data-testid="memories-media-filter"
+                    className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
+                      isFiltered
+                        ? 'bg-primary border-primary text-primary-foreground'
+                        : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                    }`}
+                  >
+                    <ActiveIcon className="w-3.5 h-3.5" />
+                    {label}
+                    <ChevronDown className="w-3 h-3 opacity-70" />
+                  </button>
+                </PopoverTrigger>
               </IconTooltip>
-              <IconTooltip label={mediaFilter === 'videos' ? 'Show everything' : 'Show only videos'} side="bottom">
-                <button
-                  type="button"
-                  onClick={() => setMediaFilter(mediaFilter === 'videos' ? 'all' : 'videos')}
-                  data-testid="memories-videos-only-toggle"
-                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
-                    mediaFilter === 'videos'
-                      ? 'bg-primary border-primary text-primary-foreground'
-                      : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                  }`}
-                >
-                  <Film className="w-3.5 h-3.5" />
-                  Videos · {videoCount.toLocaleString()}
-                </button>
-              </IconTooltip>
-            </>
+              <PopoverContent align="start" className="w-56 p-1">
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                  Show
+                </p>
+                {([
+                  { key: 'all' as const, label: 'All media', count: photoCount + videoCount, Icon: Files },
+                  { key: 'photos' as const, label: 'Photos only', count: photoCount, Icon: ImageIcon },
+                  { key: 'videos' as const, label: 'Videos only', count: videoCount, Icon: Film },
+                ]).map(({ key, label, count, Icon }) => {
+                  const isActive = mediaFilter === key;
+                  return (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => setMediaFilter(key)}
+                      data-testid={`memories-media-filter-${key}`}
+                      className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left rounded-md text-sm transition-colors ${isActive ? 'bg-secondary text-foreground font-semibold' : 'text-foreground hover:bg-muted/50'}`}
+                    >
+                      <span className="inline-flex items-center gap-2">
+                        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                        {label}
+                      </span>
+                      <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
+                    </button>
+                  );
+                })}
+              </PopoverContent>
+            </Popover>
           );
         })()}
         {/* Add Info — same checkbox dropdown style as S&D's tile
