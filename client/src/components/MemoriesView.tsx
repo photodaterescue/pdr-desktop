@@ -63,6 +63,7 @@ import {
 } from '../lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
+import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -1239,6 +1240,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const [showMetaDropdown, setShowMetaDropdown] = useState(false);
   const showFilename = metaFields.includes('filename');
   const showDate = metaFields.includes('date');
+  // v2.1 round 41 (Terry 2026-06-08) — grace-close hooks for the
+  // three toolbar dropdowns. 1500 ms after the mouse leaves both
+  // trigger and content, the dropdown auto-closes. Re-entry cancels.
+  const mediaFilterGrace = usePopoverGraceClose(1500);
+  const insightsGrace = usePopoverGraceClose(1500);
+  const actionsGrace = usePopoverGraceClose(1500);
 
   // v2.1 round 40 (Terry 2026-06-08, take 2) — capture Ctrl/Cmd at
   // mousedown time rather than relying on the click event's modifier
@@ -2096,13 +2103,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             (mediaFilter === 'videos' && !captionedOnly) ? Film :
             (captionedOnly && mediaFilter === 'all') ? MessageSquareText :
             Files;
+          const filterGrace = mediaFilterGrace;
           return (
-            <Popover>
+            <Popover open={filterGrace.open} onOpenChange={filterGrace.setOpen}>
               <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
                 <PopoverTrigger asChild>
                   <button
                     type="button"
                     data-testid="memories-show-filter"
+                    {...filterGrace.triggerHoverProps}
                     className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
                       !isDefault
                         ? 'bg-primary border-primary text-primary-foreground'
@@ -2115,7 +2124,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   </button>
                 </PopoverTrigger>
               </IconTooltip>
-              <PopoverContent align="start" className="w-64 p-1">
+              <PopoverContent align="start" className="w-64 p-1" {...filterGrace.contentHoverProps}>
                 {/* v2.1 round 27 (Terry 2026-06-08) — "Show all media"
                     reset removed: "All media" is already the first
                     radio option and accomplishes the same thing in
@@ -2233,13 +2242,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             metaFields.length;
           const insightsActive = insightsCount > 0;
           return (
-            <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
+            <Popover open={insightsGrace.open} onOpenChange={insightsGrace.setOpen}>
               <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
                 <PopoverTrigger asChild>
                   <Button
                     variant={insightsActive ? 'secondary' : 'ghost'}
                     size="sm"
                     data-testid="memories-insights-trigger"
+                    {...insightsGrace.triggerHoverProps}
                   >
                     <Info className="w-3.5 h-3.5 mr-1.5" />
                     Insights
@@ -2251,7 +2261,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   </Button>
                 </PopoverTrigger>
               </IconTooltip>
-          <PopoverContent className="w-64 p-3" align="start">
+          <PopoverContent className="w-64 p-3" align="start" {...insightsGrace.contentHoverProps}>
             {/* — Tile size section — */}
             <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
             <div className="flex items-center gap-1 mb-3">
@@ -2344,18 +2354,19 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           const base = visibleFiles ?? files ?? [];
           const selectedVideos = base.filter(f => selectedFileIds.has(f.id) && f.file_type === 'video');
           return (
-            <DropdownMenu>
+            <DropdownMenu open={actionsGrace.open} onOpenChange={actionsGrace.setOpen}>
               <DropdownMenuTrigger asChild>
                 <Button
                   size="sm"
                   data-testid="memories-selection-actions"
                   className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
+                  {...actionsGrace.triggerHoverProps}
                 >
                   Actions
                   <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
                 </Button>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="min-w-[260px]">
+              <DropdownMenuContent align="end" className="min-w-[260px]" {...actionsGrace.contentHoverProps}>
                 {/* v2.1 round 39 (Terry 2026-06-08) — these items mirror
                     the per-tile right-click context menu so the
                     Actions dropdown is a viable second entry point
