@@ -2164,23 +2164,81 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </Popover>
           );
         })()}
-        {/* Add Info — same checkbox dropdown style as S&D's tile
-            metadata picker, so muscle-memory transfers. Defaults to
-            NONE (clean photo wall) and lets the user opt into
-            filename / date as they prefer. */}
+        {/* v2.1 round 36 (Terry 2026-06-08) — INSIGHTS dropdown.
+            Renamed from "Add Info" + absorbed three previously-
+            standalone toolbar controls (zoom %, Select toggle,
+            Filename/Date checkboxes). Terry: "I realise things
+            are going to have an extra hub, but it will bring
+            peace and tranquillity to this space." Right. The
+            popover keeps each control in its own section
+            separated by a horizontal divider so the dropdown
+            reads as 3 distinct concerns, not a kitchen-drawer
+            jumble. Trigger button matches the Actions
+            DropdownMenuTrigger in height + padding so the two
+            "hubs" sit shoulder-to-shoulder visually. */}
         <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
-          <IconTooltip label="Choose which details show below each photo" side="bottom">
+          <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
             <PopoverTrigger asChild>
-              <button
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${metaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
+              <Button
+                variant="secondary"
+                size="sm"
+                data-testid="memories-insights-trigger"
               >
-                <Info className="w-3.5 h-3.5" />
-                <span>Add Info{metaFields.length > 0 ? ` (${metaFields.length})` : ''}</span>
-              </button>
+                <Info className="w-3.5 h-3.5 mr-1.5" />
+                Insights
+              </Button>
             </PopoverTrigger>
           </IconTooltip>
-          <PopoverContent className="w-56 p-2" align="start">
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">Show below each tile</p>
+          <PopoverContent className="w-64 p-3" align="start">
+            {/* — Tile size section — */}
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
+            <div className="flex items-center gap-1 mb-3">
+              <button
+                type="button"
+                onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))}
+                disabled={tileSizeSlider <= 0}
+                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-bydate-zoom-out"
+                aria-label="Zoom out"
+              >
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button
+                type="button"
+                onClick={() => setTileSizeSlider(35)}
+                className="flex-1 text-xs font-medium text-foreground tabular-nums hover:bg-secondary/40 rounded py-1 transition-colors"
+                data-testid="button-bydate-zoom-reset"
+                aria-label="Reset zoom"
+              >
+                {tileSizeSlider}% <span className="text-muted-foreground/70 text-[10px]">(click to reset)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))}
+                disabled={tileSizeSlider >= 100}
+                className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                data-testid="button-bydate-zoom-in"
+                aria-label="Zoom in"
+              >
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="border-t border-border my-2" />
+            {/* — Selection mode section — */}
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Selection mode</p>
+            <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectionMode}
+                onChange={() => setSelectionMode(v => !v)}
+                className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                data-testid="button-selection-mode"
+              />
+              <span className="text-sm text-foreground flex-1">Show checkboxes on every tile</span>
+            </label>
+            <div className="border-t border-border my-2" />
+            {/* — Tile info section — */}
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
             {([
               { key: 'filename' as DrilldownMetaField, label: 'Filename' },
               { key: 'date' as DrilldownMetaField, label: 'Date' },
@@ -2200,85 +2258,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </label>
               );
             })}
-            {metaFields.length > 0 && (
-              <button
-                onClick={() => setMetaFields([])}
-                className="w-full mt-2 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-secondary text-muted-foreground transition-colors"
-              >
-                Clear all
-              </button>
-            )}
             <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
-              Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll to zoom tile size.
+              Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
             </p>
           </PopoverContent>
         </Popover>
-        {/* v2.0.15 (Terry 2026-05-29) — REMOVED per-view refresh
-            button. Refresh consolidated into the titlebar
-            (next to the Recycle Bin icon) — universally recognised
-            position, frees per-view header real estate, fixes
-            positioning inconsistency across Albums/By Date/S&D.
-            The drilldown listens to pdr:refreshActiveView and
-            re-fetches when fired. */}
-        {/* v2.0.15 (Terry 2026-05-29) — zoom pill mirrored from
-            AlbumsView so By Date matches. Mouse Ctrl+wheel still
-            works; the buttons + percentage chip give discoverable
-            access AND show the current zoom level. Click the percent
-            to reset to 35 (the historical default for By Date). */}
-        <div className="inline-flex items-center gap-0.5 h-8 px-1 rounded-md border border-border bg-background shrink-0">
-          <IconTooltip label="Zoom out" side="bottom">
-            <button
-              type="button"
-              onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))}
-              disabled={tileSizeSlider <= 0}
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              data-testid="button-bydate-zoom-out"
-              aria-label="Zoom out"
-            >
-              <ZoomOut className="w-3.5 h-3.5" />
-            </button>
-          </IconTooltip>
-          <IconTooltip label="Reset to 35%" side="bottom">
-            <button
-              type="button"
-              onClick={() => setTileSizeSlider(35)}
-              className="px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
-              data-testid="button-bydate-zoom-reset"
-              aria-label="Reset zoom"
-            >
-              {tileSizeSlider}%
-            </button>
-          </IconTooltip>
-          <IconTooltip label="Zoom in" side="bottom">
-            <button
-              type="button"
-              onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))}
-              disabled={tileSizeSlider >= 100}
-              className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-              data-testid="button-bydate-zoom-in"
-              aria-label="Zoom in"
-            >
-              <ZoomIn className="w-3.5 h-3.5" />
-            </button>
-          </IconTooltip>
-        </div>
-        {/* Density toggle — same control as the main timeline view,
-            so the user can switch spacious/tight while drilled in
-            (Terry 2026-05-19: "Spacious - Tight should still be an
-            option when drilling into look at the months photos"). */}
-        <DensityToggle value={density} onChange={onDensityChange} />
-        {/* Select toggle — when on, checkboxes are visible by default.
-            Mouse-only / accessibility alternative to Ctrl/Shift+click. */}
-        <IconTooltip label={selectionMode ? 'Exit selection mode' : 'Show checkboxes on every photo'} side="bottom">
-          <button
-            onClick={() => setSelectionMode(v => !v)}
-            className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/40'}`}
-            data-testid="button-selection-mode"
-          >
-            <ListChecks className="w-3.5 h-3.5" />
-            {selectionMode ? 'Selecting' : 'Select'}
-          </button>
-        </IconTooltip>
         {/* Selection bar — only renders when user has checked items.
             Mirrors the S&D selection-bar contract: dismissable chip
             with count + AddToAlbumPopover sit between the static
@@ -2333,16 +2317,46 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               return (
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
+                    {/* v2.1 round 36 (Terry 2026-06-08) — Actions
+                        button goes gold when there's a selection.
+                        Matches the gold selection chip to its left
+                        and the gold checks on the selected photo
+                        tiles below — "this dropdown holds the
+                        things you can do with what you've picked."
+                        bg-[var(--color-gold)] + dark text matches
+                        the same gold pattern the selection chip
+                        uses (see ~30 lines up). */}
                     <Button
-                      variant="default"
                       size="sm"
                       data-testid="memories-selection-actions"
+                      className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
                     >
                       Actions
                       <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
                     </Button>
                   </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
+                  {/* min-w-[260px] so the longest item ("Open N
+                      Selected in Viewer" + "Move N to Recycle Bin")
+                      fits without ellipsis at any selection size. */}
+                  <DropdownMenuContent align="end" className="min-w-[260px]">
+                    {/* v2.1 round 36 (Terry 2026-06-08) — Open
+                        Selected in Viewer moved into the Actions
+                        dropdown per Terry's restructure ask. Same
+                        click handler as the toolbar Open button
+                        used to have, just filtered to the
+                        selection. */}
+                    <DropdownMenuItem
+                      onSelect={() => {
+                        const target = base.filter(f => selectedFileIds.has(f.id));
+                        if (target.length === 0) return;
+                        openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
+                      }}
+                      data-testid="memories-actions-open-viewer"
+                    >
+                      <PlayCircle className="w-3.5 h-3.5 mr-2" />
+                      Open {selectedFileIds.size} Selected in Viewer
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
                     <DropdownMenuItem
                       onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
                       data-testid="memories-actions-add-to-album"
@@ -2360,9 +2374,6 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       </DropdownMenuItem>
                     )}
                     <DropdownMenuSeparator />
-                    {/* Destructive item — text-destructive matches
-                        Button variant="destructive" tier in the
-                        style guide (rose-tinted danger palette). */}
                     <DropdownMenuItem
                       onSelect={async () => {
                         const ids = Array.from(selectedFileIds);
@@ -2388,30 +2399,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             })()}
           </>
         )}
-        {files != null && files.length > 1 && (
+        {/* v2.1 round 36 (Terry 2026-06-08) — Density toggle pushed
+            to the far right. Replaces the slot the "Open X Selected"
+            button used to fill when a selection was active (that
+            action is now a DropdownMenuItem inside Actions). When
+            there's no selection the toggle sits to the left of the
+            Open-all-in-Viewer button below. ml-auto puts it to the
+            right of all the toolbar controls regardless of how many
+            preceding items render. */}
+        <div className="ml-auto">
+          <DensityToggle value={density} onChange={onDensityChange} />
+        </div>
+        {/* "Open X in Viewer" — now only shown when there is NO
+            selection. When the user has a selection, the equivalent
+            action lives inside the Actions dropdown as "Open N
+            Selected in Viewer". This stops the toolbar from
+            duplicating the affordance. */}
+        {files != null && files.length > 1 && selectedFileIds.size === 0 && (
           <button
             onClick={() => {
-              // When the user has a selection, open ONLY those files
-              // in the viewer (Terry 2026-05-19: "if any photos have
-              // been checked/selected, then it should read 'Open
-              // Selected in Viewer' — and obviously only show the
-              // selected in the viewer"). Otherwise open the full
-              // year/month/day set. When the "Captioned only" chip is
-              // on, the unselected open-all opens just the filtered
-              // subset so arrow-key navigation stays inside what the
-              // user can see (matches AlbumsView's contract).
               const base = visibleFiles ?? files;
-              const target = selectedFileIds.size > 0
-                ? base.filter(f => selectedFileIds.has(f.id))
-                : base;
-              openSearchViewer(target.map(f => f.file_path), target.map(f => f.filename));
+              openSearchViewer(base.map(f => f.file_path), base.map(f => f.filename));
             }}
-            className="ml-auto inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
+            className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md bg-primary text-primary-foreground text-xs font-semibold hover:bg-primary/90 transition-all whitespace-nowrap"
             data-testid="button-open-in-viewer"
           >
-            {selectedFileIds.size > 0
-              ? `Open ${selectedFileIds.size} Selected in Viewer`
-              : `Open ${title} in Viewer`}
+            Open {title} in Viewer
           </button>
         )}
       </div>
