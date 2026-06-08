@@ -7406,6 +7406,13 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
     let fileCount = 0;
     // Step 1 — pull the cached duration + transcript flag + file_id
     // for every selected path in one query batch.
+    // v2.1 round 33 (Terry 2026-06-08) — video_transcripts uses
+    // file_id as PRIMARY KEY (there's no `id` column on it).
+    // Previous query selected t.id → "no such column: t.id" →
+    // estimate IPC errored → modal fell through with zero
+    // duration. SELECT t.file_id instead; it's NULL when no
+    // transcript exists (LEFT JOIN behaviour) and non-NULL when
+    // one does, which is all the transcript-flag check needs.
     type Row = { file_id: number; file_path: string; duration_seconds: number | null; transcript_id: number | null };
     const rowsAll: Row[] = [];
     const BATCH = 500;
@@ -7413,7 +7420,7 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
       const slice = filePaths.slice(i, i + BATCH);
       const ph = slice.map(() => '?').join(',');
       const rows = database.prepare(
-        `SELECT f.id AS file_id, f.file_path, f.duration_seconds, t.id AS transcript_id
+        `SELECT f.id AS file_id, f.file_path, f.duration_seconds, t.file_id AS transcript_id
          FROM indexed_files f
          LEFT JOIN video_transcripts t ON t.file_id = f.id
          WHERE f.file_path IN (${ph})`
