@@ -2162,29 +2162,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </PopoverTrigger>
               </IconTooltip>
               <PopoverContent align="start" className="w-64 p-1">
-                {/* v2.1 round 26 (Terry 2026-06-08) — Radio for Type
-                    (always exactly one selected → empty grid
-                    impossible by construction), Checkbox for the
-                    Captioned refinement. Two sections separated by
-                    a divider make the hierarchy obvious. Reset row
-                    at the top, one-click default. */}
-                {(() => {
-                  const isDefault = mediaFilter === 'all' && !captionedOnly;
-                  return (
-                    <button
-                      type="button"
-                      onClick={() => { setMediaFilter('all'); setCaptionedOnly(false); }}
-                      disabled={isDefault}
-                      data-testid="memories-show-filter-reset"
-                      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isDefault ? 'text-muted-foreground/60 cursor-not-allowed' : 'text-foreground hover:bg-muted/50 cursor-pointer'}`}
-                    >
-                      <RotateCcw className="w-3.5 h-3.5 text-muted-foreground" />
-                      Show all media
-                    </button>
-                  );
-                })()}
-                <div className="h-px bg-border my-1" />
-                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
+                {/* v2.1 round 27 (Terry 2026-06-08) — "Show all media"
+                    reset removed: "All media" is already the first
+                    radio option and accomplishes the same thing in
+                    one click, so the dedicated row was redundant. */}
+                <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
                   Type
                 </p>
                 <RadioGroup
@@ -2222,19 +2204,28 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
                   Also filter
                 </p>
+                {/* v2.1 round 27 (Terry 2026-06-08) — renamed to
+                    "Captions" (was: "Captioned only" — Terry asked
+                    for the shorter label now that the section
+                    header "Also filter" supplies the
+                    "only-ifies-the-type-selection" semantic). The
+                    checkbox is no longer disabled when count=0:
+                    Terry asked for it to be toggle-able regardless,
+                    so the user can stage the filter ahead of
+                    captions being added or apply it to other
+                    buckets via persistence. */}
                 <label
                   data-testid="memories-show-filter-captioned"
-                  className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${captionedCount === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
+                  className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors cursor-pointer hover:bg-muted/50"
                 >
                   <span className="inline-flex items-center gap-2 text-foreground">
                     <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
-                    Captioned only
+                    Captions
                   </span>
                   <span className="inline-flex items-center gap-3">
                     <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
                     <Checkbox
                       checked={captionedOnly}
-                      disabled={captionedCount === 0}
                       onCheckedChange={(v) => setCaptionedOnly(!!v)}
                     />
                   </span>
