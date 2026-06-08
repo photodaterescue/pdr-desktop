@@ -136,24 +136,29 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   env.cacheDir = config.cacheDir;
   env.allowLocalModels = true;
 
-  // v2.1 round 30 (Terry 2026-06-08) — switched to distil-medium.en.
-  // Terry: "20m to transcribe 13% of this 1m 2s video seems crazily
-  // long... can we get this down to a shorter length?" Right.
-  // distil-whisper is the proper fix:
-  //   • Distilled FROM whisper-medium (matches its accuracy)
-  //   • ~6× faster inference than whisper-medium
-  //   • Smaller on-disk (~1.5 GB ONNX vs ~3 GB for whisper-medium)
-  // Combined with q8 quantization on the decoder (where most of
-  // the inference time lives), expected real-world speed is
-  // around 1.5–2× realtime — a 1-minute video transcribes in
-  // ~1-2 minutes instead of 20.
+  // v2.1 round 32 (Terry 2026-06-08) — switched to whisper-small.en.
+  // The previous attempt at Xenova/distil-medium.en 401'd from HF
+  // — that model name doesn't exist under the Xenova account
+  // (distil-whisper publishes under its own org, no ONNX port).
   //
-  // Trade-off: distil-medium.en is ENGLISH-ONLY. Terry's library
-  // is UK family videos; English-only is the right call here.
-  // If users with non-English content surface, we can wire a
-  // Settings option later to switch back to the multilingual
-  // Xenova/whisper-medium.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/distil-medium.en', {
+  // whisper-small.en is:
+  //   • Verified available on Xenova (we shipped with whisper-small
+  //     earlier this cycle — same publisher, .en variant is the
+  //     English-only sibling of the same model)
+  //   • English-only — drops the multilingual weights, so smaller
+  //     download + faster inference than the multilingual small
+  //   • ~4× realtime on CPU before quantization
+  //   • Combined with q8 quantization on the decoder, expected
+  //     real-world speed is ~2× realtime
+  //   • On-disk ~500-700 MB ONNX (vs the 927 MB for multilingual
+  //     small, ~3 GB for medium)
+  //
+  // Accuracy on English consumer audio is meaningfully better than
+  // base, comparable to small (which Terry tested earlier) — and
+  // because it's English-specialised, the language-misdetection
+  // failure mode that bit us with the multilingual base model is
+  // not possible.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small.en', {
     // dtype picks the ONNX file variant per submodule. q8 = 8-bit
     // quantized (decoder is where the bulk of inference time
     // sits, so quantizing it gives the biggest speedup; encoder

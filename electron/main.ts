@@ -7311,13 +7311,17 @@ const transcribePending = new Map<string, {
 // answer "is the download done?" + by the launch-cleanup helper to
 // purge superseded model directories from disk so users on the new
 // build don't carry hundreds of MB of dead model data forever.
-// v2.1 round 30 (Terry 2026-06-08) — switched the active model to
-// distil-whisper/distil-medium.en (English-only, ~6× faster than
-// whisper-medium with the same accuracy on English content).
-// Whisper-medium added to the legacy cleanup list — users on the
-// previous build will reclaim ~3 GB after their first launch.
-const CURRENT_WHISPER_MODEL_DIR = 'distil-medium.en';
-const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small', 'whisper-medium'];
+// v2.1 round 32 (Terry 2026-06-08) — Xenova/distil-medium.en 401'd
+// from HuggingFace (the model doesn't exist under that account).
+// Switched to whisper-small.en — verified-available, English-only
+// (smaller download than multilingual small, no language-misdetect
+// failure mode), ~2× realtime with q8 decoder quantization.
+//
+// Added the failed-download distil-medium.en folder to the legacy
+// cleanup list so the partial-download leftover from the previous
+// build gets purged.
+const CURRENT_WHISPER_MODEL_DIR = 'whisper-small.en';
+const LEGACY_WHISPER_MODEL_DIRS = ['whisper-base', 'whisper-small', 'whisper-medium', 'distil-medium.en'];
 
 function getWhisperCacheRoot(): string {
   return path.join(app.getPath('userData'), 'whisper-cache');

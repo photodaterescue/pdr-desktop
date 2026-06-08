@@ -866,6 +866,14 @@ export function initDatabase(): { success: boolean; error?: string } {
       // clip to its parent, and powers a future "Clips only" S&D
       // filter chip.
       { name: 'clip_of_file_id', type: 'INTEGER' },
+      // v2.1 round 32 (Terry 2026-06-08) — cached video duration in
+      // seconds, populated lazily by the transcribe estimate IPC
+      // (which probes ffmpeg and writes back here). Declared in
+      // the original CREATE TABLE above too, but EXISTING databases
+      // never got the column — CREATE TABLE IF NOT EXISTS doesn't
+      // add new columns to existing tables. Migration here ensures
+      // it's present everywhere.
+      { name: 'duration_seconds', type: 'REAL' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
