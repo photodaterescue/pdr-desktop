@@ -34,6 +34,7 @@ import {
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { promptConfirm } from '@/components/trees/promptConfirm';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
 import {
@@ -1274,21 +1275,37 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // on year/month/day change so a niche filter doesn't silently follow
   // the user across the timeline.
   const [captionedOnly, setCaptionedOnly] = useState(false);
-  // v2.1 (Terry 2026-06-07) — Photos/Videos filter. Three states:
-  // 'all' shows everything (default), 'photos' hides videos,
-  // 'videos' hides photos. Persisted across drilldown view changes
-  // via localStorage so a user who's working on videos doesn't have
-  // to re-toggle every time they jump days. Single-click chips
-  // (clicking the active chip returns to 'all').
-  const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>(() => {
+  // v2.1 round 24 (Terry 2026-06-08) — Show filter (independent
+  // checkboxes). Terry: "have checkboxes to the right of each of
+  // these dropdown menu rows, so they can be selected with/without
+  // the others in the menu." Photos / Videos / Captioned are now
+  // three independent booleans rather than the previous tri-state
+  // mediaFilter — they can be combined freely (e.g. Photos + Captioned
+  // = captioned photos only). Migration reads the previous localStorage
+  // key once so a user who'd set 'videos' stays on Videos only after
+  // upgrade.
+  const [showPhotos, setShowPhotos] = useState<boolean>(() => {
     try {
-      const v = localStorage.getItem('pdr-memories-media-filter');
-      return (v === 'photos' || v === 'videos') ? v : 'all';
-    } catch { return 'all'; }
+      const legacy = localStorage.getItem('pdr-memories-media-filter');
+      if (legacy === 'videos') return false;
+      const raw = localStorage.getItem('pdr-memories-show-photos');
+      return raw === null ? true : raw === '1';
+    } catch { return true; }
+  });
+  const [showVideos, setShowVideos] = useState<boolean>(() => {
+    try {
+      const legacy = localStorage.getItem('pdr-memories-media-filter');
+      if (legacy === 'photos') return false;
+      const raw = localStorage.getItem('pdr-memories-show-videos');
+      return raw === null ? true : raw === '1';
+    } catch { return true; }
   });
   useEffect(() => {
-    try { localStorage.setItem('pdr-memories-media-filter', mediaFilter); } catch {}
-  }, [mediaFilter]);
+    try { localStorage.setItem('pdr-memories-show-photos', showPhotos ? '1' : '0'); } catch {}
+  }, [showPhotos]);
+  useEffect(() => {
+    try { localStorage.setItem('pdr-memories-show-videos', showVideos ? '1' : '0'); } catch {}
+  }, [showVideos]);
   useEffect(() => { setCaptionedOnly(false); }, [year, month, day]);
 
   // Tile size — Ctrl+scroll to zoom, persisted across sessions.
@@ -1479,18 +1496,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // the underlying total and we don't re-warm thumbs every toggle.
   const visibleFiles = useMemo(() => {
     if (!files) return null;
+    // v2.1 round 24 — Photos / Videos / Captioned are independent
+    // booleans now. Treat (!showPhotos && !showVideos) as the
+    // "everything" identity rather than rendering an empty grid —
+    // both unchecked is almost certainly accidental.
     let out = files;
-    // v2.1 (Terry 2026-06-07) — Photos / Videos filter from the
-    // chips in the toolbar. Applied BEFORE captioned-only so the
-    // captioned count in the chip label reflects only what's
-    // visible after the media-type filter (otherwise "Captioned
-    // only · 12" could match captioned VIDEOS while Photos filter
-    // hides them — confusing).
-    if (mediaFilter === 'photos') out = out.filter((f) => f.file_type === 'photo');
-    else if (mediaFilter === 'videos') out = out.filter((f) => f.file_type === 'video');
+    const bothMediaOff = !showPhotos && !showVideos;
+    if (!bothMediaOff) {
+      out = out.filter((f) => (showPhotos && f.file_type === 'photo') || (showVideos && f.file_type === 'video'));
+    }
     if (captionedOnly) out = out.filter((f) => f.caption && f.caption.length > 0);
     return out;
-  }, [files, captionedOnly, mediaFilter]);
+  }, [files, captionedOnly, showPhotos, showVideos]);
 
   // v2.0.14 (Terry 2026-05-27) — grid virtualisation for the drilldown.
   // Year drilldowns can hold 6,000+ photos which means 6,000+ React
@@ -2086,32 +2103,9 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </span>
           );
         })()}
-        {/* v2.0.14 — "Captioned only" chip, mirrored from AlbumsView
-            (gold pill, same MessageSquareText icon, same hide-when-zero
-            rule). Filters the drilldown's per-day grid to just photos
-            with a non-empty caption. Only renders when at least one
-            file in the current year/month/day has a caption. */}
-        {files != null && (() => {
-          const captionedCount = files.filter((f) => f.caption && f.caption.length > 0).length;
-          if (captionedCount === 0) return null;
-          return (
-            <IconTooltip label={captionedOnly ? 'Show all photos' : 'Show only photos with captions'} side="bottom">
-              <button
-                type="button"
-                onClick={() => setCaptionedOnly((v) => !v)}
-                data-testid="memories-captioned-only-toggle"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
-                  captionedOnly
-                    ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
-                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                }`}
-              >
-                <MessageSquareText className="w-3.5 h-3.5" />
-                Captioned only · {captionedCount.toLocaleString()}
-              </button>
-            </IconTooltip>
-          );
-        })()}
+        {/* v2.1 round 24 (Terry 2026-06-08) — standalone "Captioned
+            only" chip removed; Captioned now lives as a checkbox in
+            the Show dropdown below alongside Photos / Videos. */}
         {/* v2.1 round 23 (Terry 2026-06-08) — Media dropdown. Earlier
             two-chip layout (Photos · N + Videos · M) ate too much
             horizontal space on narrow screens. Collapsed into a
@@ -2125,61 +2119,83 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         {files != null && (() => {
           const photoCount = files.filter((f) => f.file_type === 'photo').length;
           const videoCount = files.filter((f) => f.file_type === 'video').length;
-          if (photoCount === 0 || videoCount === 0) return null;
-          const label =
-            mediaFilter === 'photos' ? `Photos · ${photoCount.toLocaleString()}` :
-            mediaFilter === 'videos' ? `Videos · ${videoCount.toLocaleString()}` :
-            `All media · ${(photoCount + videoCount).toLocaleString()}`;
-          const ActiveIcon =
-            mediaFilter === 'photos' ? ImageIcon :
-            mediaFilter === 'videos' ? Film :
+          const captionedCount = files.filter((f) => f.caption && f.caption.length > 0).length;
+          // Show the chip whenever there's anything in the bucket at all
+          // (was: only when BOTH photo and video existed). With captioned
+          // now in the same dropdown, the chip's relevant even in a
+          // single-media-type bucket if there are captioned files.
+          if (files.length === 0) return null;
+          // v2.1 round 24 (Terry 2026-06-08) — chip label reflects the
+          // combined state. Default (everything checked, captioned off)
+          // reads "All media · N"; any other combo summarises what's
+          // visible. Compact phrasing so a long-form description doesn't
+          // blow the chip out.
+          const filteredCount = (visibleFiles ?? files).length;
+          let chipLabel: string;
+          const isDefault = showPhotos && showVideos && !captionedOnly;
+          if (isDefault) {
+            chipLabel = `All media · ${files.length.toLocaleString()}`;
+          } else if (showPhotos && !showVideos && !captionedOnly) {
+            chipLabel = `Photos · ${photoCount.toLocaleString()}`;
+          } else if (!showPhotos && showVideos && !captionedOnly) {
+            chipLabel = `Videos · ${videoCount.toLocaleString()}`;
+          } else if (showPhotos && showVideos && captionedOnly) {
+            chipLabel = `Captioned · ${filteredCount.toLocaleString()}`;
+          } else {
+            chipLabel = `Filtered · ${filteredCount.toLocaleString()}`;
+          }
+          const ChipIcon =
+            (!showVideos && showPhotos && !captionedOnly) ? ImageIcon :
+            (!showPhotos && showVideos && !captionedOnly) ? Film :
+            (captionedOnly && showPhotos && showVideos) ? MessageSquareText :
             Files;
-          const isFiltered = mediaFilter !== 'all';
           return (
             <Popover>
-              <IconTooltip label="Filter by photos or videos" side="bottom">
+              <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
                 <PopoverTrigger asChild>
                   <button
                     type="button"
-                    data-testid="memories-media-filter"
+                    data-testid="memories-show-filter"
                     className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
-                      isFiltered
+                      !isDefault
                         ? 'bg-primary border-primary text-primary-foreground'
                         : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
                     }`}
                   >
-                    <ActiveIcon className="w-3.5 h-3.5" />
-                    {label}
+                    <ChipIcon className="w-3.5 h-3.5" />
+                    {chipLabel}
                     <ChevronDown className="w-3 h-3 opacity-70" />
                   </button>
                 </PopoverTrigger>
               </IconTooltip>
-              <PopoverContent align="start" className="w-56 p-1">
+              <PopoverContent align="start" className="w-64 p-1">
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
                   Show
                 </p>
                 {([
-                  { key: 'all' as const, label: 'All media', count: photoCount + videoCount, Icon: Files },
-                  { key: 'photos' as const, label: 'Photos only', count: photoCount, Icon: ImageIcon },
-                  { key: 'videos' as const, label: 'Videos only', count: videoCount, Icon: Film },
-                ]).map(({ key, label, count, Icon }) => {
-                  const isActive = mediaFilter === key;
-                  return (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => setMediaFilter(key)}
-                      data-testid={`memories-media-filter-${key}`}
-                      className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left rounded-md text-sm transition-colors ${isActive ? 'bg-secondary text-foreground font-semibold' : 'text-foreground hover:bg-muted/50'}`}
-                    >
-                      <span className="inline-flex items-center gap-2">
-                        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-                        {label}
-                      </span>
+                  { key: 'photos' as const, label: 'Photos', count: photoCount, Icon: ImageIcon, checked: showPhotos, setChecked: setShowPhotos, disabled: photoCount === 0 },
+                  { key: 'videos' as const, label: 'Videos', count: videoCount, Icon: Film, checked: showVideos, setChecked: setShowVideos, disabled: videoCount === 0 },
+                  { key: 'captioned' as const, label: 'Captioned', count: captionedCount, Icon: MessageSquareText, checked: captionedOnly, setChecked: setCaptionedOnly, disabled: captionedCount === 0 },
+                ]).map(({ key, label, count, Icon, checked, setChecked, disabled }) => (
+                  <label
+                    key={key}
+                    data-testid={`memories-show-filter-${key}`}
+                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
+                  >
+                    <span className="inline-flex items-center gap-2 text-foreground">
+                      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                      {label}
+                    </span>
+                    <span className="inline-flex items-center gap-3">
                       <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
-                    </button>
-                  );
-                })}
+                      <Checkbox
+                        checked={checked}
+                        disabled={disabled}
+                        onCheckedChange={(v) => setChecked(!!v)}
+                      />
+                    </span>
+                  </label>
+                ))}
               </PopoverContent>
             </Popover>
           );
