@@ -35,6 +35,7 @@ import {
 import { toast } from 'sonner';
 import { promptConfirm } from '@/components/trees/promptConfirm';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { Button } from '@/components/ui/custom-button';
 import {
@@ -1275,37 +1276,35 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // on year/month/day change so a niche filter doesn't silently follow
   // the user across the timeline.
   const [captionedOnly, setCaptionedOnly] = useState(false);
-  // v2.1 round 24 (Terry 2026-06-08) — Show filter (independent
-  // checkboxes). Terry: "have checkboxes to the right of each of
-  // these dropdown menu rows, so they can be selected with/without
-  // the others in the menu." Photos / Videos / Captioned are now
-  // three independent booleans rather than the previous tri-state
-  // mediaFilter — they can be combined freely (e.g. Photos + Captioned
-  // = captioned photos only). Migration reads the previous localStorage
-  // key once so a user who'd set 'videos' stays on Videos only after
-  // upgrade.
-  const [showPhotos, setShowPhotos] = useState<boolean>(() => {
+  // v2.1 round 26 (Terry 2026-06-08) — Show filter switched from
+  // two independent booleans back to a radio for Type. Reason:
+  // checkbox mode let users untick both Photos AND Videos and stare
+  // at an empty grid, AND it tempted the wrong mental model on the
+  // Captioned row (Terry: "3 things selected inside the dropdown
+  // but only 1 photo being shown"). Radio guarantees exactly one
+  // Type is always selected, so the grid can never be empty by
+  // construction. Captioned is still a separate independent
+  // checkbox below — it refines whichever Type is active.
+  // Two-step migration:
+  //   1. Round-24 keys (pdr-memories-show-photos / pdr-memories-
+  //      show-videos) → derive the equivalent radio value.
+  //   2. Legacy pdr-memories-media-filter ('all'|'photos'|'videos')
+  //      from round 23 still works directly.
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>(() => {
     try {
+      const sp = localStorage.getItem('pdr-memories-show-photos');
+      const sv = localStorage.getItem('pdr-memories-show-videos');
+      if (sp === '0' && sv === '1') return 'videos';
+      if (sp === '1' && sv === '0') return 'photos';
+      if (sp === '1' && sv === '1') return 'all';
       const legacy = localStorage.getItem('pdr-memories-media-filter');
-      if (legacy === 'videos') return false;
-      const raw = localStorage.getItem('pdr-memories-show-photos');
-      return raw === null ? true : raw === '1';
-    } catch { return true; }
-  });
-  const [showVideos, setShowVideos] = useState<boolean>(() => {
-    try {
-      const legacy = localStorage.getItem('pdr-memories-media-filter');
-      if (legacy === 'photos') return false;
-      const raw = localStorage.getItem('pdr-memories-show-videos');
-      return raw === null ? true : raw === '1';
-    } catch { return true; }
+      if (legacy === 'photos' || legacy === 'videos') return legacy;
+      return 'all';
+    } catch { return 'all'; }
   });
   useEffect(() => {
-    try { localStorage.setItem('pdr-memories-show-photos', showPhotos ? '1' : '0'); } catch {}
-  }, [showPhotos]);
-  useEffect(() => {
-    try { localStorage.setItem('pdr-memories-show-videos', showVideos ? '1' : '0'); } catch {}
-  }, [showVideos]);
+    try { localStorage.setItem('pdr-memories-media-filter', mediaFilter); } catch {}
+  }, [mediaFilter]);
   useEffect(() => { setCaptionedOnly(false); }, [year, month, day]);
 
   // Tile size — Ctrl+scroll to zoom, persisted across sessions.
@@ -1496,18 +1495,16 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // the underlying total and we don't re-warm thumbs every toggle.
   const visibleFiles = useMemo(() => {
     if (!files) return null;
-    // v2.1 round 24 — Photos / Videos / Captioned are independent
-    // booleans now. Treat (!showPhotos && !showVideos) as the
-    // "everything" identity rather than rendering an empty grid —
-    // both unchecked is almost certainly accidental.
+    // v2.1 round 26 — Type is a radio (all/photos/videos), Captioned
+    // is an independent refinement checkbox. Type filter applied
+    // first so the captioned count surfaced in the dropdown reflects
+    // only what's visible after the type narrows the bucket.
     let out = files;
-    const bothMediaOff = !showPhotos && !showVideos;
-    if (!bothMediaOff) {
-      out = out.filter((f) => (showPhotos && f.file_type === 'photo') || (showVideos && f.file_type === 'video'));
-    }
+    if (mediaFilter === 'photos') out = out.filter((f) => f.file_type === 'photo');
+    else if (mediaFilter === 'videos') out = out.filter((f) => f.file_type === 'video');
     if (captionedOnly) out = out.filter((f) => f.caption && f.caption.length > 0);
     return out;
-  }, [files, captionedOnly, showPhotos, showVideos]);
+  }, [files, captionedOnly, mediaFilter]);
 
   // v2.0.14 (Terry 2026-05-27) — grid virtualisation for the drilldown.
   // Year drilldowns can hold 6,000+ photos which means 6,000+ React
@@ -2120,34 +2117,30 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           const photoCount = files.filter((f) => f.file_type === 'photo').length;
           const videoCount = files.filter((f) => f.file_type === 'video').length;
           const captionedCount = files.filter((f) => f.caption && f.caption.length > 0).length;
-          // Show the chip whenever there's anything in the bucket at all
-          // (was: only when BOTH photo and video existed). With captioned
-          // now in the same dropdown, the chip's relevant even in a
-          // single-media-type bucket if there are captioned files.
           if (files.length === 0) return null;
-          // v2.1 round 24 (Terry 2026-06-08) — chip label reflects the
-          // combined state. Default (everything checked, captioned off)
-          // reads "All media · N"; any other combo summarises what's
-          // visible. Compact phrasing so a long-form description doesn't
-          // blow the chip out.
+          // v2.1 round 26 (Terry 2026-06-08) — chip label reflects the
+          // radio-Type + checkbox-Captioned state. Empty-grid impossible
+          // by construction (radio always has one selected). Six clean
+          // states map to readable chip labels.
           const filteredCount = (visibleFiles ?? files).length;
+          const isDefault = mediaFilter === 'all' && !captionedOnly;
           let chipLabel: string;
-          const isDefault = showPhotos && showVideos && !captionedOnly;
           if (isDefault) {
             chipLabel = `All media · ${files.length.toLocaleString()}`;
-          } else if (showPhotos && !showVideos && !captionedOnly) {
+          } else if (mediaFilter === 'photos' && !captionedOnly) {
             chipLabel = `Photos · ${photoCount.toLocaleString()}`;
-          } else if (!showPhotos && showVideos && !captionedOnly) {
+          } else if (mediaFilter === 'videos' && !captionedOnly) {
             chipLabel = `Videos · ${videoCount.toLocaleString()}`;
-          } else if (showPhotos && showVideos && captionedOnly) {
+          } else if (mediaFilter === 'all' && captionedOnly) {
             chipLabel = `Captioned · ${filteredCount.toLocaleString()}`;
           } else {
-            chipLabel = `Filtered · ${filteredCount.toLocaleString()}`;
+            // Photos+Captioned or Videos+Captioned
+            chipLabel = `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned · ${filteredCount.toLocaleString()}`;
           }
           const ChipIcon =
-            (!showVideos && showPhotos && !captionedOnly) ? ImageIcon :
-            (!showPhotos && showVideos && !captionedOnly) ? Film :
-            (captionedOnly && showPhotos && showVideos) ? MessageSquareText :
+            (mediaFilter === 'photos' && !captionedOnly) ? ImageIcon :
+            (mediaFilter === 'videos' && !captionedOnly) ? Film :
+            (captionedOnly && mediaFilter === 'all') ? MessageSquareText :
             Files;
           return (
             <Popover>
@@ -2169,32 +2162,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </PopoverTrigger>
               </IconTooltip>
               <PopoverContent align="start" className="w-64 p-1">
-                {/* v2.1 round 25 (Terry 2026-06-08) — restructure to
-                    make the semantic clear: Photos/Videos are TYPE
-                    selectors, Captioned is an ADDITIONAL filter that
-                    narrows what's already chosen. The previous flat
-                    list of three checkboxes implied additive
-                    selection — ticking all three confusingly produced
-                    "Captioned · 1" because the captioned filter
-                    AND'd against the type filter. Two sections + a
-                    divider + the word "only" on Captioned make the
-                    structural difference visible. */}
-                {/* Show all reset — sets all defaults in one click. */}
-                {/* Reset row — matches the popover's row primitive
-                    (px-3 py-1.5 rounded-md text-sm hover:bg-muted/50)
-                    used by the type + filter rows below it.
-                    text-foreground for body content (per style guide:
-                    text-primary on white reads as faint body text;
-                    reserve text-primary for icons / bg-primary CTAs).
-                    Icon picks up text-muted-foreground for the same
-                    treatment as the icons on rows below. Disabled
-                    state when already-default. */}
+                {/* v2.1 round 26 (Terry 2026-06-08) — Radio for Type
+                    (always exactly one selected → empty grid
+                    impossible by construction), Checkbox for the
+                    Captioned refinement. Two sections separated by
+                    a divider make the hierarchy obvious. Reset row
+                    at the top, one-click default. */}
                 {(() => {
-                  const isDefault = showPhotos && showVideos && !captionedOnly;
+                  const isDefault = mediaFilter === 'all' && !captionedOnly;
                   return (
                     <button
                       type="button"
-                      onClick={() => { setShowPhotos(true); setShowVideos(true); setCaptionedOnly(false); }}
+                      onClick={() => { setMediaFilter('all'); setCaptionedOnly(false); }}
                       disabled={isDefault}
                       data-testid="memories-show-filter-reset"
                       className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md text-sm transition-colors ${isDefault ? 'text-muted-foreground/60 cursor-not-allowed' : 'text-foreground hover:bg-muted/50 cursor-pointer'}`}
@@ -2208,29 +2187,37 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
                   Type
                 </p>
-                {([
-                  { key: 'photos' as const, label: 'Photos', count: photoCount, Icon: ImageIcon, checked: showPhotos, setChecked: setShowPhotos, disabled: photoCount === 0 },
-                  { key: 'videos' as const, label: 'Videos', count: videoCount, Icon: Film, checked: showVideos, setChecked: setShowVideos, disabled: videoCount === 0 },
-                ]).map(({ key, label, count, Icon, checked, setChecked, disabled }) => (
-                  <label
-                    key={key}
-                    data-testid={`memories-show-filter-${key}`}
-                    className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
-                  >
-                    <span className="inline-flex items-center gap-2 text-foreground">
-                      <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-                      {label}
-                    </span>
-                    <span className="inline-flex items-center gap-3">
-                      <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
-                      <Checkbox
-                        checked={checked}
-                        disabled={disabled}
-                        onCheckedChange={(v) => setChecked(!!v)}
-                      />
-                    </span>
-                  </label>
-                ))}
+                <RadioGroup
+                  value={mediaFilter}
+                  onValueChange={(v) => setMediaFilter(v as 'all' | 'photos' | 'videos')}
+                  className="gap-0"
+                >
+                  {([
+                    { key: 'all' as const, label: 'All media', count: photoCount + videoCount, Icon: Files, disabled: false },
+                    { key: 'photos' as const, label: 'Photos', count: photoCount, Icon: ImageIcon, disabled: photoCount === 0 },
+                    { key: 'videos' as const, label: 'Videos', count: videoCount, Icon: Film, disabled: videoCount === 0 },
+                  ]).map(({ key, label, count, Icon, disabled }) => (
+                    <label
+                      key={key}
+                      data-testid={`memories-show-filter-${key}`}
+                      htmlFor={`memories-show-filter-radio-${key}`}
+                      className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}
+                    >
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                        {label}
+                      </span>
+                      <span className="inline-flex items-center gap-3">
+                        <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
+                        <RadioGroupItem
+                          id={`memories-show-filter-radio-${key}`}
+                          value={key}
+                          disabled={disabled}
+                        />
+                      </span>
+                    </label>
+                  ))}
+                </RadioGroup>
                 <div className="h-px bg-border my-1" />
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
                   Also filter
