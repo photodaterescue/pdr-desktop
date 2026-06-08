@@ -490,31 +490,32 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
     // timestamps drive the caption overlay; chunk/stride match the
     // canonical Whisper settings. condition_on_previous_text=false
     // still reduces phrase-loop hallucinations across chunks.
-    // v2.1 round 42 (Terry 2026-06-08) — request WORD-level
-    // timestamps instead of segment-level. Word-level timing is
-    // typically accurate to ±0.2-0.4s (vs ±1-3s for segment-level)
-    // — directly fixes the caption-drift problem Terry reported
-    // ("captions arrive maybe 8 seconds before anyone is talking").
-    // The pipeline returns chunks of shape { timestamp: [start,
-    // end], text: ' word' } at word granularity; we then re-group
-    // them into displayable caption segments in groupWordsToCaptions
-    // below.
+    // v2.1 round 45 (Terry 2026-06-08) — TEMPORARILY back to
+    // segment-level timestamps to isolate the OOM cause. Terry
+    // correctly flagged that word-level timestamps are an
+    // untested variable on this model, and they're the dominant
+    // memory cost (per-word cross-attention tensors retained
+    // during alignment grow ~quadratically with word count).
+    // Even with the 6 GB V8 heap bump, the worker still OOM'd at
+    // ~24 minutes in — ONNX runtime allocates outside V8's heap
+    // via WebAssembly memory + native ArrayBuffers, so the
+    // resourceLimits cap doesn't bound it.
     //
-    // Large-v3 Turbo is multilingual, so we can (and should) pass
-    // language back in. Default to English if the caller didn't
-    // specify (matches Terry's library).
+    // Baseline: prove Whisper Large-v3 Turbo + q4 + segment
+    // timestamps + default chunking works end-to-end on this
+    // CPU first. Only after that can we layer word timestamps
+    // back on (probably with VAD-based pre-segmentation to cap
+    // chunk size, so the alignment matrix never gets huge).
     const effectiveLanguage = language && language !== 'auto' ? language : 'en';
     const result: any = await pipe(audio, {
       language: effectiveLanguage,
       task: 'transcribe',
-      return_timestamps: 'word',
-      // chunk_length_s 20s + stride 10s is the tuning ChatGPT
-      // recommended for cleaner boundary stitching on long
-      // recordings. Smaller chunks = more frequent timestamp
-      // resets; bigger stride = more context overlap between
-      // chunks for the model to disambiguate.
-      chunk_length_s: 20,
-      stride_length_s: 10,
+      return_timestamps: true,
+      // Reverted to Whisper's defaults (30s / 5s) to keep the
+      // baseline as simple as possible. Tuned chunking goes back
+      // in once we know the model works.
+      chunk_length_s: 30,
+      stride_length_s: 5,
       condition_on_previous_text: false,
       no_speech_threshold: 0.6,
     } as any);
@@ -535,32 +536,17 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
 
     post({ type: 'progress', requestId, phase: 'Saving transcript…', percent: 90 });
 
-    // v2.1 round 42 (Terry 2026-06-08) — with word-level timestamps,
-    // each chunk is a single word. Step 1: normalise into a clean
-    // word array (skip empty / un-timed). Step 2: filter the
-    // hallucinated-silence words at WORD level (a "!" emitted as a
-    // single word with letters.length < 3 still gets dropped; pure
-    // single-character runs of "you you you" still get caught at
-    // the group level after assembly). Step 3: group adjacent
-    // words into displayable caption segments via
-    // groupWordsToCaptions.
-    const wordChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
-    const words: Array<{ start: number; end: number; text: string }> = [];
-    for (const c of wordChunks) {
-      const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : null;
-      const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : null;
-      const text = c.text ?? '';
-      if (start === null || end === null) continue;
-      if (!text.trim()) continue;
-      words.push({ start, end, text });
-    }
-    const provisionalSegments = groupWordsToCaptions(words);
-    // Per-segment garbage filter — same heuristics as before, just
-    // applied AFTER grouping so the rules act on the final caption
-    // form the user would actually see.
+    // v2.1 round 45 (Terry 2026-06-08) — back to segment-level
+    // post-processing. Each chunk is already a displayable caption
+    // segment (no word-grouping needed). Same hallucination
+    // filter as before. groupWordsToCaptions stays in the file
+    // for the future round where we re-enable word timestamps.
+    const segChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
     const segments: Array<{ start: number; end: number; text: string }> = [];
-    for (const seg of provisionalSegments) {
-      const text = seg.text.trim();
+    for (const c of segChunks) {
+      const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : 0;
+      const end = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : (start + 5);
+      const text = (c.text ?? '').trim();
       if (!text) continue;
       const letters = text.replace(/[^\p{L}]/gu, '');
       if (letters.length < 3) continue;
@@ -568,9 +554,9 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       const tokens = text.toLowerCase().split(/\s+/).filter(t => t.length > 0);
       if (tokens.length >= 6) {
         const unique = new Set(tokens).size;
-        if (unique === 1) continue; // pure single-token loop
+        if (unique === 1) continue;
       }
-      segments.push({ start: seg.start, end: seg.end, text });
+      segments.push({ start, end, text });
     }
     const plainText = segments.map(s => s.text).join(' ').trim();
     const detectedLanguage = (result?.language ?? language ?? 'en').toString();
