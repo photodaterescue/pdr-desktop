@@ -12651,6 +12651,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // captions themselves stay in the DB — flipping this back
   // restores them everywhere.
   const [hideCaptions, setHideCaptionsState] = useState(false);
+  // v2.1 (Terry 2026-06-08) — Hide-video-transcripts privacy toggle.
+  // Separate from hideCaptions because Whisper-generated dialogue
+  // transcripts are a distinct kind of caption (derived from audio,
+  // not user-added). Lets the user keep their personal note captions
+  // hidden but transcripts visible, or vice versa.
+  const [hideVideoTranscripts, setHideVideoTranscriptsState] = useState(false);
 
   // Load settings on mount
   useEffect(() => {
@@ -12679,6 +12685,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setBypassLargeZipPreExtract(((settings as any).bypassLargeZipPreExtract as boolean) ?? false);
       setAutoIndexAfterFix(((settings as any).autoIndexAfterFix as boolean) ?? true);
       setHideCaptionsState(((settings as any).hideCaptions as boolean) ?? false);
+      setHideVideoTranscriptsState(((settings as any).hideVideoTranscripts as boolean) ?? false);
     });
   }, []);
 
@@ -12834,6 +12841,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setSetting('hideCaptions' as any, checked);
   };
 
+  const handleHideVideoTranscriptsToggle = (checked: boolean) => {
+    setHideVideoTranscriptsState(checked);
+    setSetting('hideVideoTranscripts' as any, checked);
+  };
+
   const handleAutoSaveCatalogueToggle = (checked: boolean) => {
     setAutoSaveCatalogue(checked);
     setSetting('autoSaveCatalogue', checked);
@@ -12944,7 +12956,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'privacy' | 'backup'>(initialTab ?? 'general');
   // v2.0.15 (Terry 2026-06-04) — Settings redesign. Search input at
   // the top of the new left sidebar filters which tabs surface in the
   // list based on a hand-rolled keyword index per tab (label keywords
@@ -13084,7 +13096,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Refresh action lives) even though the word "refresh" isn't on
   // the tab label.
   const SETTINGS_TABS: Array<{
-    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'backup';
+    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'privacy' | 'backup';
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     keywords: string;
@@ -13105,6 +13117,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery library manager refresh re-running' },
     { id: 'people',    label: 'People',      icon: Users,             keywords: 'people manager faces face recognition visual suggestions startup' },
     { id: 'ai',        label: 'AI',          icon: Sparkles,          keywords: 'ai face detection object tagging auto process threshold confidence reclustering re-analyze' },
+    // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
+    // for global render-time switches that hide personal content
+    // when sharing the screen (captions, transcripts, future:
+    // face boxes / GPS strings / person names). Positioned right
+    // before Backup because both are about controlling what
+    // happens to your data — Privacy = what's visible, Backup =
+    // what's persisted.
+    { id: 'privacy',   label: 'Privacy & Security', icon: ShieldCheck, keywords: 'privacy security hide captions transcripts video photos personal share screen guest' },
     { id: 'backup',    label: 'Backup',      icon: Archive,           keywords: 'backup database db library drive sidecar recovery snapshot' },
   ];
 
@@ -13353,27 +13373,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </label>
               </div>
 
-              {/* v2.1 (Terry 2026-06-08) — Hide captions globally.
-                  Privacy lever for users who want to show off PDR
-                  (Memories tiles, Albums, PDRV) without revealing
-                  caption notes — they're personal annotations that
-                  shouldn't be on display when sharing the screen.
-                  Same Switch primitive + row shape as the Recycle
-                  Bin toggle directly above; lives in General
-                  because the lever is view-agnostic. */}
-              <div className="pt-4 border-t border-border">
-                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
-                  <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Hide captions everywhere</span>
-                    <span className="text-xs text-muted-foreground">Suppresses caption text and the gold caption badge across PDR — Memories tiles, Albums, PDR Viewer, and search results. The captions themselves stay in the database; flipping this back restores them everywhere. Useful when sharing your screen or showing PDR to family.</span>
-                  </div>
-                  <Switch
-                    checked={hideCaptions}
-                    onCheckedChange={(checked) => handleHideCaptionsToggle(!!checked)}
-                    data-testid="checkbox-hide-captions"
-                  />
-                </label>
-              </div>
+              {/* v2.1 (Terry 2026-06-08) — Hide-captions row moved
+                  to the new Privacy & Security category. */}
 
               {/* Welcome Screen */}
               <div className="pt-4 border-t border-border">
@@ -14478,6 +14479,49 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 <p className="text-[11px] text-muted-foreground/85 mt-2">
                   This only changes which button is highlighted when the Enhance Save panel opens — you can always click the other one per-save.
                 </p>
+              </div>
+            </>
+          )}
+
+          {/* ═══════════════════════════════════════════════════════════════
+              PRIVACY & SECURITY TAB
+              v2.1 (Terry 2026-06-08) — Global render-time switches
+              that hide personal content when the user is sharing
+              their screen or showing PDR to family. Captions stay
+              in the DB, transcripts + .vtt sidecars stay on disk;
+              this category is purely about what's RENDERED.
+              ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'privacy' && (
+            <>
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
+                  <ShieldCheck className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    These switches control what PDR <strong>renders</strong> — not what's stored. Captions, transcripts, and any other private notes stay safely in your library on your computer; flipping a switch back restores everything everywhere.
+                  </p>
+                </div>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Hide captions on photos and videos</span>
+                    <span className="text-xs text-muted-foreground">Suppresses caption text and the gold caption badge across PDR — Memories tiles, Albums, PDR Viewer caption bar, and search results — for both photos and videos that you've added captions to. The captions themselves stay in the database. Useful when sharing your screen or showing PDR to family.</span>
+                  </div>
+                  <Switch
+                    checked={hideCaptions}
+                    onCheckedChange={(checked) => handleHideCaptionsToggle(!!checked)}
+                    data-testid="checkbox-hide-captions"
+                  />
+                </label>
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Hide video transcripts</span>
+                    <span className="text-xs text-muted-foreground">Suppresses the CC button and the auto-generated caption overlay in PDR Viewer for all videos. Whisper transcripts and .vtt sidecars stay on disk — only the on-screen rendering is hidden. Useful when a video's dialogue is sensitive and you don't want it readable on a shared screen.</span>
+                  </div>
+                  <Switch
+                    checked={hideVideoTranscripts}
+                    onCheckedChange={(checked) => handleHideVideoTranscriptsToggle(!!checked)}
+                    data-testid="checkbox-hide-video-transcripts"
+                  />
+                </label>
               </div>
             </>
           )}

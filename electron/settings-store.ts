@@ -73,10 +73,19 @@ export interface PDRSettings {
    *  When true, every PDR surface that displays caption text or
    *  the gold caption badge hides them (Memories tile badges,
    *  Albums tile badges, PDRV caption bar, S&D result captions).
-   *  The captions themselves remain in the DB — this is purely a
-   *  render-time switch the user flips when sharing their screen
-   *  or showing PDR to family. Default OFF — captions visible. */
+   *  Applies to BOTH photos and videos that have user-added
+   *  captions. The captions themselves remain in the DB — this
+   *  is purely a render-time switch the user flips when sharing
+   *  their screen or showing PDR to family. Default OFF. */
   hideCaptions: boolean;
+  /** v2.1 (Terry 2026-06-08) — Global "Hide video transcripts"
+   *  privacy toggle. Separate from hideCaptions because Whisper-
+   *  generated dialogue transcripts are a different kind of
+   *  caption (derived from audio, not user-added). When true,
+   *  the PDR Viewer's CC button + caption overlay are suppressed
+   *  for videos regardless of per-video CC state. The transcripts
+   *  + .vtt sidecars remain on disk. Default OFF. */
+  hideVideoTranscripts: boolean;
   /** v2.0.15 (Terry 2026-06-06 round 3) — whether the PDR Viewer's
    *  slideshow should include videos. Default false because a 30-second
    *  video derails a "browse my photos" rhythm; users who want videos
@@ -229,6 +238,7 @@ export const optimisedDefaults: PDRSettings = {
   // can dismiss it forever via the don't-show-again checkbox.
   viewerEnhanceAiWarningDismissed: false,
   hideCaptions: false,
+  hideVideoTranscripts: false,
   // v2.0.15 — slideshow skips videos by default. Toggle on for users
   // who want videos in the slideshow (advances when the video ends).
   slideshowIncludeVideos: false,
@@ -306,6 +316,7 @@ export function getSettings(): PDRSettings {
     viewerEnhanceSaveDefault: store.get('viewerEnhanceSaveDefault', optimisedDefaults.viewerEnhanceSaveDefault),
     viewerEnhanceAiWarningDismissed: store.get('viewerEnhanceAiWarningDismissed', optimisedDefaults.viewerEnhanceAiWarningDismissed),
     hideCaptions: store.get('hideCaptions', optimisedDefaults.hideCaptions),
+    hideVideoTranscripts: store.get('hideVideoTranscripts', optimisedDefaults.hideVideoTranscripts),
     slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),

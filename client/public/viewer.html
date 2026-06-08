@@ -2311,9 +2311,43 @@
       let transcriptSegments = null;   // [{start, end, text}] when present
       let captionsVisible = false;
       let lastCaptionIdx = -1;
+      // v2.1 (Terry 2026-06-08) — global Hide-video-transcripts
+      // privacy toggle. Independent from hideCaptions (which gates
+      // user-added captions): this one gates Whisper-generated
+      // transcripts on videos. When true, the CC button is hidden
+      // AND the caption overlay never renders, regardless of the
+      // per-video captionsVisible state. Live-updated via the
+      // settings:changed broadcast.
+      let hideVideoTranscripts = false;
+      try {
+        if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
+          window.pdr.settings.get().then((s) => {
+            hideVideoTranscripts = !!(s && s.hideVideoTranscripts);
+            try { updateCcButtonState(); } catch (_) {}
+            try { renderCaptionForTime(video.currentTime); } catch (_) {}
+          }).catch(() => {});
+        }
+        if (window.pdr && window.pdr.settings && window.pdr.settings.onChanged) {
+          window.pdr.settings.onChanged((payload) => {
+            if (payload && payload.key === 'hideVideoTranscripts') {
+              hideVideoTranscripts = !!payload.value;
+              try { updateCcButtonState(); } catch (_) {}
+              try { renderCaptionForTime(video.currentTime); } catch (_) {}
+            }
+          });
+        }
+      } catch (_) { /* bridge missing — default visible */ }
 
       function updateCcButtonState() {
         if (!ccBtn) return;
+        // Privacy gate: hide the CC button entirely when transcripts
+        // are globally hidden so the user can't toggle into showing
+        // them by accident on a shared screen.
+        if (hideVideoTranscripts) {
+          ccBtn.style.display = 'none';
+          return;
+        }
+        ccBtn.style.display = '';
         if (transcriptSegments && transcriptSegments.length > 0) {
           ccBtn.classList.add('active');
           ccBtn.style.color = captionsVisible ? '#fbbf24' : '';
@@ -2326,7 +2360,7 @@
       }
 
       function renderCaptionForTime(t) {
-        if (!captionsVisible || !transcriptSegments || transcriptSegments.length === 0) {
+        if (hideVideoTranscripts || !captionsVisible || !transcriptSegments || transcriptSegments.length === 0) {
           captionsLayer.style.display = 'none';
           return;
         }
