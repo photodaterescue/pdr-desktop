@@ -7375,22 +7375,28 @@ function probeVideoDuration(videoPath: string): Promise<number | null> {
   return new Promise((resolve) => {
     if (!ffmpegPath) { resolve(null); return; }
     const ffmpegSrc = fromLongPath(videoPath);
-    const args = ['-hide_banner', '-i', ffmpegSrc, '-f', 'null', '-'];
+    // v2.1 round 44 (Terry 2026-06-08) — DON'T use `-f null -`. That
+    // tells ffmpeg to fully DECODE the file into the null muxer,
+    // which for a 2-minute VP9 / H.265 / HEVC clip takes 10-30s on
+    // CPU — well past our 8s timeout, which then SIGKILL'd ffmpeg
+    // before the close handler could parse stderr → probe returned
+    // null → modal showed "Total playing time: < 1s".
+    //
+    // We only need the Duration: line, which ffmpeg prints in its
+    // banner output the moment it opens the input. Running ffmpeg
+    // with `-i FILE` and NO output spec causes it to print metadata
+    // then exit with code 1 ("At least one output file must be
+    // specified") — exit takes <100 ms even for huge files.
+    const args = ['-i', ffmpegSrc];
     const proc = spawn(ffmpegPath, args, { windowsHide: true });
     let stderr = '';
     proc.stderr?.on('data', (chunk: Buffer) => {
       if (stderr.length < 32 * 1024) stderr += chunk.toString('utf8');
     });
-    const done = (val: number | null) => {
-      try { proc.kill('SIGKILL'); } catch { /* best-effort */ }
-      resolve(val);
-    };
-    const timeoutHandle = setTimeout(() => done(null), 8000);
-    proc.on('close', () => {
-      clearTimeout(timeoutHandle);
-      // Match the LAST "Duration:" in the banner — Stream-specific
-      // lines are above the global one in some containers but the
-      // global "Duration:" is the canonical track length.
+    let finished = false;
+    const parseAndResolve = () => {
+      if (finished) return;
+      finished = true;
       const m = stderr.match(/Duration:\s*(\d{2}):(\d{2}):(\d{2})\.(\d{1,3})/);
       if (m) {
         const h = parseInt(m[1], 10);
@@ -7402,8 +7408,16 @@ function probeVideoDuration(videoPath: string): Promise<number | null> {
       } else {
         resolve(null);
       }
+    };
+    const timeoutHandle = setTimeout(() => {
+      try { proc.kill('SIGKILL'); } catch { /* best-effort */ }
+      parseAndResolve();
+    }, 8000);
+    proc.on('close', () => {
+      clearTimeout(timeoutHandle);
+      parseAndResolve();
     });
-    proc.on('error', () => { clearTimeout(timeoutHandle); resolve(null); });
+    proc.on('error', () => { clearTimeout(timeoutHandle); parseAndResolve(); });
   });
 }
 
