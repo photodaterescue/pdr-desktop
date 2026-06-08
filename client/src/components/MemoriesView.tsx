@@ -1240,6 +1240,47 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const showFilename = metaFields.includes('filename');
   const showDate = metaFields.includes('date');
 
+  // v2.1 round 40 (Terry 2026-06-08) — global Ctrl/Cmd-held tracker
+  // as a defensive fallback for the click handler. Terry's report:
+  // "when I first go to Memories... Ctrl+left-click on the image,
+  // PDRV will open... if I release CTRL and try again, the next
+  // time it works perfectly." The root cause is a race: when the
+  // user navigates INTO Memories by clicking a tab, the browser
+  // dispatches that navigation click + the subsequent tile click
+  // close enough together that React's synthetic event for the
+  // SECOND click can have e.ctrlKey === false even though Ctrl is
+  // physically held. This is a known browser quirk with rapid
+  // click sequences across focus changes.
+  //
+  // Fix: maintain a ref that tracks Ctrl/Cmd via document-level
+  // keydown/keyup. In the tile click handler, OR the synthetic
+  // event's modifier flag with this ref's value — if either says
+  // "Ctrl is held", treat the click as a Ctrl+click. Doesn't
+  // break the normal flow (plain click without Ctrl ever held =
+  // both false = openSearchViewer path), only catches the case
+  // where the event mis-reports a held key.
+  const ctrlOrMetaHeldRef = useRef(false);
+  useEffect(() => {
+    const down = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlOrMetaHeldRef.current = true;
+    };
+    const up = (e: KeyboardEvent) => {
+      if (e.key === 'Control' || e.key === 'Meta') ctrlOrMetaHeldRef.current = false;
+    };
+    // Also clear on blur — if the user alt-tabs away while holding
+    // Ctrl and comes back without holding it, the keyup never
+    // fires inside the app. Window blur is the catch-all reset.
+    const blur = () => { ctrlOrMetaHeldRef.current = false; };
+    window.addEventListener('keydown', down);
+    window.addEventListener('keyup', up);
+    window.addEventListener('blur', blur);
+    return () => {
+      window.removeEventListener('keydown', down);
+      window.removeEventListener('keyup', up);
+      window.removeEventListener('blur', blur);
+    };
+  }, []);
+
   // Ctrl+scroll zoom on the grid container — same gesture Workspace
   // and PM use, so the muscle memory transfers. The wheel listener
   // attaches to the scroll area (not window) so vertical scrolling
@@ -2774,7 +2815,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       //   Ctrl/Cmd+click         → toggle selection
                       //   Shift+click            → range select from last clicked
                       onClick={(e) => {
-                        if (e.ctrlKey || e.metaKey) {
+                        // v2.1 round 40 (Terry 2026-06-08) — read Ctrl/
+                        // Cmd from BOTH the synthetic event AND the
+                        // document-level held-key tracker. The latter
+                        // catches the first-click-after-mount case
+                        // where Chromium's per-event ctrlKey flag is
+                        // sometimes stale; see the tracker's useEffect
+                        // above for the full rationale.
+                        if (e.ctrlKey || e.metaKey || ctrlOrMetaHeldRef.current) {
                           e.preventDefault();
                           toggleSelection(f);
                           lastClickedIndexRef.current = idx;
