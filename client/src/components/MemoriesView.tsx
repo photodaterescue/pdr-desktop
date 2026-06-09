@@ -787,7 +787,16 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                   </button>
                 </IconTooltip>
                 <div className="flex items-center gap-2 mb-2">
-                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-primary/20 text-[10px] font-semibold uppercase tracking-wider text-primary">
+                  {/* v2.1 round 66 (Terry 2026-06-09) — AI Suggestion
+                      badge now uses the PM purple recipe instead of
+                      the generic lavender brand. PM established
+                      bg-purple-500/15 + text-purple-600 + ring-purple-
+                      500/30 as the visual signature for "AI did
+                      something" (face clustering, named-count badges,
+                      etc.); reusing it here ties the OnThisDay strip
+                      into the same family so users learn ONE colour
+                      means "this came from PDR's AI." */}
+                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-purple-500/15 text-[10px] font-semibold uppercase tracking-wider text-purple-600 dark:text-purple-300 ring-1 ring-purple-500/30">
                     <Sparkles className="w-3 h-3" />
                     AI suggestion
                   </span>
