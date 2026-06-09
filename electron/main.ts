@@ -11203,6 +11203,27 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     releaseOn(viewerWindow);
     viewerWindow.loadFile(viewerHtml);
 
+    // v2.1 round 62 (Terry 2026-06-09) — fix "every new PDRV needs 3
+    // titlebar-drag attempts before it moves". On Windows, when a
+    // BrowserWindow opens while another window holds the foreground,
+    // the new window is visible but the OS hasn't activated it for
+    // input — the first 1-2 clicks on the custom titlebar get
+    // consumed by OS focus-grab rather than triggering the
+    // -webkit-app-region:drag behaviour. The reuse-existing-viewer
+    // branch above already calls .focus(); the CREATE-NEW branch
+    // missed it. Wait for ready-to-show so focus + moveTop fire
+    // AFTER the content has painted (focusing pre-paint can be
+    // squashed by Windows' own focus-grant ordering on slower
+    // hardware). moveTop ensures the new viewer sits ON TOP of the
+    // existing one in z-order, so the user's first click on the
+    // titlebar is unambiguously a drag, not a window-raise.
+    viewerWindow.once('ready-to-show', () => {
+      if (viewerWindow && !viewerWindow.isDestroyed()) {
+        viewerWindow.focus();
+        viewerWindow.moveTop();
+      }
+    });
+
     // Log renderer console messages to the main process so we can diagnose
     // preload / prepare failures that wouldn't otherwise be visible.
     viewerWindow.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
