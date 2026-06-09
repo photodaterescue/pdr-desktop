@@ -158,21 +158,25 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   // transformers.js Whisper repos merged into the onnx-community
   // org). isCurrentWhisperModelReady() in main.ts checks the
   // matching cache path.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
-    // v2.1 round 49 (Terry 2026-06-09) — force native onnxruntime-node
-    // backend by setting device: 'cpu'. Without this, transformers.js
-    // defaults to the wasm runtime (onnxruntime-web) even in a Node
-    // worker context, which is why we measured 4.75× realtime —
-    // wasm's matmul kernels are 2-4× slower than the native CPU
-    // kernels onnxruntime-node ships with. transformers.js v4.0.1
-    // already lists onnxruntime-node (1.24.3) as a dependency; we
-    // just have to TELL it to use it.
+  // v2.1 round 51 (Terry 2026-06-09) — reverted to Xenova/whisper-small.en
+  // to re-establish a clean fast baseline. Turbo + VAD turned out to
+  // be SLOWER than no-VAD Turbo on Terry's audio (VAD found 36 short
+  // regions; the per-region Whisper invocation overhead ate the
+  // theoretical speedup). No-VAD Turbo itself was ~9.5 min for 134s
+  // audio. small.en + q8 decoder previously measured ~2× realtime
+  // (134s audio → ~4-5 min wall clock) — much more usable.
+  // Word-level timestamps + tighter caption timing will layer on
+  // AFTER we confirm this baseline is fast on Terry's CPU.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small.en', {
+    // Force native onnxruntime-node backend (same reasoning as
+    // round 49) — modest gain on small.en but no reason to leave
+    // it on wasm.
     device: 'cpu',
-    // Sticking with q4 + q4 (q4f16 doesn't load — graph-optimisation
-    // bug in the bundled runtime, see round 48 history note).
+    // small.en doesn't have q4 variants; q8-decoder + fp32-encoder
+    // is the previously-validated config.
     dtype: {
-      encoder_model: 'q4',
-      decoder_model_merged: 'q4',
+      encoder_model: 'fp32',
+      decoder_model_merged: 'q8',
     },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
@@ -569,48 +573,19 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   const audioRms = computeAudioRms(audio);
   log(`audio RMS = ${audioRms.toFixed(4)} (healthy speech ≈ 0.05–0.3, silence < 0.001)`);
 
-  // v2.1 round 50 (Terry 2026-06-09) — Silero VAD pre-segmentation.
-  // Find the regions of audio that actually contain human speech,
-  // so Whisper only does work on those (not on music / silence /
-  // ambient / wind / crowd / kids-playing-without-talking).
-  // For a video where talking is 25% of the runtime, this is a
-  // ~4× win on the inference cost. Speech-with-music-underneath
-  // still gets kept (the human voice is what's detected).
-  //
-  // Fail-open: if VAD download or inference errors out, fall back
-  // to transcribing the full audio in one pass so the user still
-  // gets a transcript.
-  post({ type: 'progress', requestId, phase: 'Finding speech regions…', percent: 22 });
-  let speechRegions: Array<{ startSec: number; endSec: number }> = [];
-  try {
-    speechRegions = await findSpeechRegions(audio, config.cacheDir);
-    const totalSpeechSec = speechRegions.reduce((a, r) => a + (r.endSec - r.startSec), 0);
-    const pctSpeech = durationSeconds > 0 ? (totalSpeechSec / durationSeconds) * 100 : 0;
-    log(`VAD: ${speechRegions.length} speech region(s), ${totalSpeechSec.toFixed(1)}s of ${durationSeconds.toFixed(1)}s (${pctSpeech.toFixed(0)}% speech)`);
-  } catch (err) {
-    log(`VAD failed (will transcribe full audio): ${(err as Error).message}`);
-    speechRegions = [{ startSec: 0, endSec: audio.length / 16000 }];
-  }
-  // Edge case: VAD detected zero speech across the entire clip.
-  // Skip Whisper entirely and tell main "noSpeech: true" so the
-  // toast says "1 with no speech" instead of running pointless
-  // inference on pure music / silence.
-  if (speechRegions.length === 0) {
-    log('VAD found no speech — skipping Whisper entirely');
-    try { fs.unlinkSync(wavPath); } catch { /* non-fatal */ }
-    post({
-      type: 'done',
-      requestId,
-      segments: [],
-      plainText: '',
-      language: 'en',
-      durationSeconds,
-      rawChunkCount: 0,
-      rawPreview: '(no speech detected by VAD)',
-      audioRms,
-    });
-    return;
-  }
+  // v2.1 round 51 (Terry 2026-06-09) — VAD DISABLED for this
+  // round. On Terry's test (134s audio) Silero VAD split the
+  // clip into 36 short regions; per-region Whisper invocation
+  // overhead ate the theoretical speedup and the transcript
+  // had more errors. Treating the whole clip as one region
+  // restores the no-VAD behaviour while keeping the per-region
+  // loop infrastructure ready to re-enable later (e.g. with
+  // tighter region merging, or only when there's clearly a lot
+  // of silence in the audio). findSpeechRegions helper stays
+  // in the file for that future round.
+  const speechRegions: Array<{ startSec: number; endSec: number }> = [
+    { startSec: 0, endSec: audio.length / 16000 },
+  ];
 
   // v2.1 round 23 (Terry 2026-06-08) — heartbeat ticks while the
   // pipeline is running. The HuggingFace ASR pipeline doesn't
@@ -648,38 +623,34 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   }, 2000);
 
   try {
-    const effectiveLanguage = language && language !== 'auto' ? language : 'en';
-    // v2.1 round 50 (Terry 2026-06-09) — feed each VAD speech region
-    // through Whisper independently, then offset the returned
-    // timestamps back to the original timeline. Two reasons this
-    // works better than feeding the full audio:
-    //   1. Whisper does ~1/N the work for a video with 1/N speech
-    //   2. Whisper's chunker no longer has to guess where sentence
-    //      boundaries are inside long silences — VAD gives it clean
-    //      cuts at actual speech endpoints
+    // small.en is English-only and REJECTS language/task params
+    // (errors with "Cannot specify `task` or `language` for an
+    // English-only model" — see round 33). So we omit both here.
+    void language; // legacy param ignored on the English-only model
+    // Per-region loop infrastructure is preserved from the VAD work,
+    // but with VAD disabled (round 51) there's only one region
+    // covering the whole audio — so this loop runs exactly once.
     const allRawChunks: Array<{ timestamp: [number, number]; text: string }> = [];
     const sampleRate = 16000;
     for (let r = 0; r < speechRegions.length; r++) {
       const region = speechRegions[r];
       const sliceStart = Math.floor(region.startSec * sampleRate);
       const sliceEnd = Math.floor(region.endSec * sampleRate);
-      // Fresh Float32Array so transformers.js can't accidentally
-      // hold a reference to the parent audio buffer between regions.
       const sliceLen = sliceEnd - sliceStart;
-      if (sliceLen < sampleRate * 0.2) continue; // skip <200ms regions (sub-word noise)
+      if (sliceLen < sampleRate * 0.2) continue; // skip <200ms regions
       const slice = new Float32Array(sliceLen);
       slice.set(audio.subarray(sliceStart, sliceEnd));
 
-      post({
-        type: 'progress',
-        requestId,
-        phase: `Transcribing speech region ${r + 1} of ${speechRegions.length}…`,
-        percent: Math.min(89, Math.round(25 + (r / Math.max(1, speechRegions.length)) * 64)),
-      });
+      if (speechRegions.length > 1) {
+        post({
+          type: 'progress',
+          requestId,
+          phase: `Transcribing speech region ${r + 1} of ${speechRegions.length}…`,
+          percent: Math.min(89, Math.round(25 + (r / Math.max(1, speechRegions.length)) * 64)),
+        });
+      }
 
       const result: any = await pipe(slice, {
-        language: effectiveLanguage,
-        task: 'transcribe',
         return_timestamps: true,
         chunk_length_s: 30,
         stride_length_s: 5,
