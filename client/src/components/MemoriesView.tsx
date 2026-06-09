@@ -799,36 +799,34 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
           {/* Left: year jump rail */}
           {(yearGroups.length > 1 || pendingCounts.total > 0) && (
             <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
-              {/* v2.1 round 68 (Terry 2026-06-09) — "Pending" rail entry,
-                  simplified per Terry's feedback. The 68px rail is too
-                  narrow to host any numbers / sub-labels readably, so:
-                    - just the word "Pending"
-                    - the breakdown lives ONLY in the IconTooltip on
-                      hover, not in the rail itself
-                    - tier selection happens via the Pending TITLE
-                      dropdown on the destination page (not via a
-                      chevron tree here)
-                    - "something to show" is signalled with a tiny
-                      pulsing purple dot to the right of the label — a
-                      premium notification cue that doesn't depend on
-                      reading numbers. Self-hides entirely when
-                      pendingCounts.total is zero. */}
+              {/* v2.1 round 69 (Terry 2026-06-09) — "Needs dates" rail
+                  entry. Renamed from "Pending" — self-explanatory beats
+                  single-word for a sidebar nav that the user may glance
+                  at without reading the tooltip. Two-line wrap in the
+                  68px rail is intentional: it visually differentiates
+                  this row from the 4-digit year buttons below. Pulse
+                  dot still signals "something to show". Tier selection
+                  happens via the title dropdown on the destination
+                  page. Self-hides when count is zero. */}
               {pendingCounts.total > 0 && (
                 <>
                   <IconTooltip
-                    label={`${pendingCounts.total.toLocaleString()} files awaiting your decision — ${pendingCounts.tentative} Tentative · ${pendingCounts.placeholder} Placeholder · ${pendingCounts.unrecorded} Unrecorded`}
+                    label={`${pendingCounts.total.toLocaleString()} files need a date decision — ${pendingCounts.tentative} Tentative · ${pendingCounts.placeholder} Placeholder · ${pendingCounts.unrecorded} Unrecorded`}
                     side="right"
                   >
                     <button
                       onClick={() => setPendingScope({})}
-                      className="w-full px-1 py-1.5 mb-0.5 rounded text-xs font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex items-center justify-center gap-1 relative"
+                      className="w-full px-1 py-1.5 mb-0.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex flex-col items-center justify-center leading-tight"
                       data-testid="memories-rail-pending"
                     >
-                      <span>Pending</span>
-                      <span
-                        className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"
-                        aria-hidden="true"
-                      />
+                      <span>Needs</span>
+                      <span className="inline-flex items-center gap-1">
+                        <span>dates</span>
+                        <span
+                          className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"
+                          aria-hidden="true"
+                        />
+                      </span>
                     </button>
                   </IconTooltip>
                   <div className="border-t border-border/60 my-1 mx-1" />
