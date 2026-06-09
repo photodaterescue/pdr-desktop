@@ -159,17 +159,24 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   // org). isCurrentWhisperModelReady() in main.ts checks the
   // matching cache path.
   pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
-    // v2.1 round 47 (Terry 2026-06-09) — q4f16 instead of pure q4.
-    // 4-bit weights with fp16 activations. The fp16 activations
-    // let the wasm SIMD kernels in onnxruntime-web take a faster
-    // path than pure-4-bit matmul — typically 30-50% faster on
-    // CPU vs q4-everywhere. Bonus: q4f16 is also smaller on disk
-    // (encoder 353 MB + decoder 185 MB = ~540 MB total vs ~720
-    // MB for q4-everywhere). Measured 4.75× realtime on q4;
-    // expecting ~2.5-3× realtime on q4f16 for this CPU.
+    // v2.1 round 48 (Terry 2026-06-09) — REVERTED to q4 + q4 after
+    // q4f16 failed at pipeline init with an onnxruntime-web graph
+    // optimisation error:
+    //   "Attempting to get index by a name which does not exist:
+    //    InsertedPrecisionFreeCast_... for node:
+    //    SimplifiedLayerNormFusion/"
+    // The q4f16 ONNX files insert precision-conversion cast nodes
+    // that the version of onnxruntime-web bundled with
+    // @huggingface/transformers can't process. Known compatibility
+    // gap between newer quantised model formats and older runtime
+    // versions. Can't fix from our side without upgrading the
+    // bundled runtime — a much bigger change.
+    //
+    // Sticking with q4-everywhere (verified working: 4.75×
+    // realtime on Terry's CPU, 134s audio → 637s inference).
     dtype: {
-      encoder_model: 'q4f16',
-      decoder_model_merged: 'q4f16',
+      encoder_model: 'q4',
+      decoder_model_merged: 'q4',
     },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
