@@ -63,6 +63,7 @@ import {
 } from '../lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
+import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import {
   DropdownMenu,
@@ -818,8 +819,22 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                         <div className="text-[11px] text-white/90 truncate">{item.filename}</div>
                       </div>
                       {item.file_type === 'video' && (
-                        <div className="absolute top-1 left-1 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
-                          <Film className="w-2.5 h-2.5" /> Video
+                        <div className="absolute top-1 left-1 flex items-center gap-1">
+                          {/* v2.1 round 57 (Terry 2026-06-09) — "T" pill
+                              renders to the LEFT of the existing "Video"
+                              pill when a transcript exists for this file.
+                              Same black/60 chip + 9px text as the Video
+                              badge so the pair reads as a single
+                              status-indicator group rather than a
+                              competing element. Gated by the
+                              showTranscriptBadge setting (toggled in
+                              the Insights popover). */}
+                          {showTranscriptBadge && transcribedFileIds.has(item.id) && (
+                            <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-bold leading-none" title="Transcript available">T</span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
+                            <Film className="w-2.5 h-2.5" /> Video
+                          </span>
                         </div>
                       )}
                     </button>
@@ -1240,6 +1255,26 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const [showMetaDropdown, setShowMetaDropdown] = useState(false);
   const showFilename = metaFields.includes('filename');
   const showDate = metaFields.includes('date');
+  // v2.1 round 57 (Terry 2026-06-09) — on-tile "T" badge for videos
+  // with a transcript. Default ON so users discover the feature
+  // immediately on existing transcribed clips; persisted to
+  // localStorage with a shared key so the toggle in Memories'
+  // Insights popover also controls Albums and S&D tile renders
+  // (single source of truth — no per-view drift). Same Set+event
+  // pattern useTranscribedFileIds publishes for the other views.
+  const [showTranscriptBadge, setShowTranscriptBadge] = useState<boolean>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('pdr-show-transcript-badge') : null;
+      return saved === null ? true : saved === '1';
+    } catch { return true; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-show-transcript-badge', showTranscriptBadge ? '1' : '0'); } catch {}
+    // Notify the other views (Albums, S&D) listening for the same
+    // setting change so their tiles re-render without a reload.
+    try { window.dispatchEvent(new CustomEvent('pdr:showTranscriptBadgeChanged', { detail: { value: showTranscriptBadge } })); } catch {}
+  }, [showTranscriptBadge]);
+  const [transcribedFileIds] = useTranscribedFileIds();
   // v2.1 round 41 (Terry 2026-06-08) — grace-close hooks for the
   // three toolbar dropdowns. 1500 ms after the mouse leaves both
   // trigger and content, the dropdown auto-closes. Re-entry cancels.
@@ -2307,6 +2342,24 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 data-testid="button-selection-mode"
               />
               <span className="text-sm text-foreground flex-1">Show checkboxes on every tile</span>
+            </label>
+            <div className="border-t border-border my-2" />
+            {/* v2.1 round 57 (Terry 2026-06-09) — on-tile badges section.
+                Currently just the transcript ("T") badge for videos with
+                a transcript; designed to grow if we add more on-tile
+                indicators (audio waveform, GPS pin, etc.) without
+                disturbing the existing "Show below each tile" section
+                which controls FOOTER overlays not corner badges. */}
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show on tile</p>
+            <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={showTranscriptBadge}
+                onChange={() => setShowTranscriptBadge(v => !v)}
+                className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                data-testid="memories-toggle-transcript-badge"
+              />
+              <span className="text-sm text-foreground flex-1">Transcript indicator (T) on videos</span>
             </label>
             <div className="border-t border-border my-2" />
             {/* — Tile info section — */}

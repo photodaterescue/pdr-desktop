@@ -7849,6 +7849,29 @@ ipcMain.handle('viewer:getTranscript', async (_event, filePath: string) => {
   }
 });
 
+/** v2.1 round 57 (Terry 2026-06-09) — bulk list of indexed_files.id
+ *  values that already have a transcript. Powers the on-tile "T"
+ *  badge in Memories / Albums / S&D so users can see at a glance
+ *  which clips are already transcribed without right-clicking
+ *  every one. Cheap single query, one round-trip; the renderer
+ *  caches the result in a Set and refreshes on the
+ *  `pdr:transcribeCompleted` event the batch hook fires after
+ *  each new transcription completes.
+ *  Defensive: returns [] if the table doesn't exist on very old
+ *  DBs (mirrors the check in the startup cleanup pass that scrubs
+ *  pre-filter Whisper hallucinations). */
+ipcMain.handle('transcripts:listFileIds', async () => {
+  try {
+    const db = (await import('./search-database.js')).getDb();
+    const tableExists = db.prepare(`SELECT name FROM sqlite_master WHERE type='table' AND name='video_transcripts'`).get();
+    if (!tableExists) return { success: true, ids: [] as number[] };
+    const rows = db.prepare(`SELECT file_id FROM video_transcripts`).all() as Array<{ file_id: number }>;
+    return { success: true, ids: rows.map(r => r.file_id) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message, ids: [] as number[] };
+  }
+});
+
 ipcMain.handle('viewer:deleteTranscript', async (_event, filePath: string) => {
   try {
     if (!filePath) return { success: false, error: 'No file path' };

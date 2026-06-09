@@ -711,6 +711,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         model?: string;
         error?: string;
       }>,
+    /** v2.1 round 57 (Terry 2026-06-09) — bulk list of file ids
+     *  with transcripts. Renderer uses this once on mount to
+     *  build a Set<number> for the on-tile "T" badge overlay.
+     *  Refreshes when `pdr:transcribeCompleted` fires from the
+     *  batch transcribe hook. */
+    listTranscribedFileIds: () =>
+      ipcRenderer.invoke('transcripts:listFileIds') as Promise<{
+        success: boolean;
+        ids: number[];
+        error?: string;
+      }>,
     /** v2.1 — read-only fetch of an existing transcript (no
      *  inference). Returns transcript: null if none. */
     getTranscript: (filePath: string) =>

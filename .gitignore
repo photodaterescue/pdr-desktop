@@ -15,6 +15,10 @@ release/
 .claude/scheduled_tasks.lock
 .claude/projects/
 .claude/cache/
+# Personal SessionStart hook script — contains an absolute path to
+# Terry's per-project memory directory and is wired only from his
+# settings.local.json (also gitignored). Not useful for other devs.
+.claude/load-pdr-rules.ps1
 
 # Local secrets — Cloudflare R2 credentials, signing certs, etc.
 # Never commit these. See .env.example for the expected shape.

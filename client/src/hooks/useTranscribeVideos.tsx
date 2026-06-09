@@ -109,12 +109,13 @@ export function useTranscribeVideos(): {
           <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
           <Row label="Estimated time to finish" value={estimate ? `~${fmt(estimate.etaSec)}` : '—'} />
         </div>
-        {/* v2.1 round 55 (Terry 2026-06-09) — scannable bullet list
-            replaces the paragraph. Easier to skim before clicking
-            Transcribe; flags the GPU caveat + tells the user
-            where to watch progress. */}
-        <div className="mt-2 text-xs text-muted-foreground leading-snug space-y-1.5">
-          <p>Time estimate is based on a top-tier 2012 CPU (benchmark estimates made 2026).</p>
+        {/* v2.1 round 56 (Terry 2026-06-09) — left-aligned bullets +
+            tightened lead-in copy ("estimate based on", "benchmark
+            made"). Modal's default body alignment was centering the
+            text; explicit text-left here lines everything up to the
+            left margin of the summary table above. */}
+        <div className="mt-2 text-xs text-muted-foreground leading-snug space-y-1.5 text-left">
+          <p>Time estimate based on a top-tier 2012 CPU (benchmark made 2026).</p>
           <ul className="list-disc pl-5 space-y-1">
             <li>Newer CPUs are likely to finish quicker; older ones slower.</li>
             <li>GPU transcription upgrades planned for PDR v2.2.</li>
@@ -161,7 +162,7 @@ export function useTranscribeVideos(): {
               className="flex items-center gap-2 px-3 py-2 border-b border-border/40 last:border-0"
             >
               <span className="text-xs text-muted-foreground shrink-0">{items.length === 1 ? 'File:' : `${i + 1}.`}</span>
-              <span className="text-sm font-mono text-foreground truncate flex-1" title={it.filename}>{it.filename}</span>
+              <span className="text-sm font-mono text-foreground truncate flex-1 text-left" title={it.filename}>{it.filename}</span>
               <IconTooltip label="Copy filename" side="top">
                 <button
                   type="button"
@@ -247,6 +248,17 @@ export function useTranscribeVideos(): {
             if (res.existed) alreadyTranscribed++;
             else if ((res as any).noSpeech) noSpeech++;
             else freshlyTranscribed++;
+            // v2.1 round 57 (Terry 2026-06-09) — wake the on-tile "T"
+            // badge cache (useTranscribedFileIds) so freshly-completed
+            // videos light up immediately across Memories / Albums /
+            // S&D without a page reload. Fires for `existed` too so a
+            // re-run that re-asserts an old transcript still nudges
+            // any view that hasn't loaded the set yet.
+            try {
+              window.dispatchEvent(new CustomEvent('pdr:transcribeCompleted', {
+                detail: { filePath: filePaths[i] },
+              }));
+            } catch { /* event dispatch never throws in practice */ }
           } else {
             failures.push({ filePath: filePaths[i], error: res?.error ?? 'Unknown error' });
           }
