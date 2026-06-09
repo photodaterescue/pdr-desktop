@@ -874,6 +874,22 @@ export function initDatabase(): { success: boolean; error?: string } {
       // add new columns to existing tables. Migration here ensures
       // it's present everywhere.
       { name: 'duration_seconds', type: 'REAL' },
+      // v2.1 round 71 (Terry 2026-06-09) — "user_set_at" audit
+      // column for Needs-dates date edits. ISO 8601 timestamp set
+      // when the user commits a date via the Pending page's date
+      // editor. Two roles:
+      //   1. Excludes the file from the Needs-dates view (the
+      //      PENDING_BASE_WHERE in this same module ANDs on
+      //      user_set_at IS NULL).
+      //   2. Audit trail — distinguishes "PDR recovered this from
+      //      a sidecar" from "Terry typed this in" at the DB layer.
+      //      The user-facing confidence stays 'marked' (the date
+      //      is still a human best-guess); date_source is set to
+      //      'User-set' for clarity in S&D file-detail panels and
+      //      CSV/TXT report exports. No new confidence tier, no
+      //      new filename suffix — minimal-surface design agreed
+      //      with Terry 2026-06-09.
+      { name: 'user_set_at', type: 'TEXT' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -5640,7 +5656,12 @@ const PENDING_TIER_SQL = `
     ELSE 'tentative'
   END
 `;
-const PENDING_BASE_WHERE = `confidence = 'marked' AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)`;
+// v2.1 round 71 — `user_set_at IS NULL` excludes files the user has
+// already attended to via the Needs-dates date editor. Those files
+// keep confidence='marked' (date is still a human best-guess) but
+// disappear from the Needs-dates view so the user sees their backlog
+// shrink as they work.
+const PENDING_BASE_WHERE = `confidence = 'marked' AND (in_recycle_bin IS NULL OR in_recycle_bin = 0) AND user_set_at IS NULL`;
 
 export interface PendingCounts {
   total: number;
@@ -5709,6 +5730,56 @@ export function getPendingFiles(args: {
       derived_date DESC,
       id DESC
   `).all(...params) as Array<IndexedFile & { pending_tier: 'tentative' | 'placeholder' | 'unrecorded' }>;
+}
+
+/** v2.1 round 71 (Terry 2026-06-09) — Commit a user-set date for one
+ *  or more files in the Needs-dates view. Sets:
+ *    - derived_date / year / month / day to the chosen date+time
+ *    - date_source = 'User-set' (a new free-form string; no enum
+ *      change, no existing call-sites need updating)
+ *    - user_set_at = ISO 8601 timestamp of this commit
+ *    - confidence STAYS 'marked' — the date is still a human best-
+ *      guess by definition (especially with time being a 12:00 noon
+ *      placeholder when the user didn't supply one). The audit
+ *      distinction lives in user_set_at, not in the confidence tier.
+ *    - filename is NOT renamed — PDR's edit flows (caption editor,
+ *      etc.) don't rename files on every edit. The user can re-Fix
+ *      later if they want a clean filename.
+ *
+ *  Accepts an array of file_ids so the bulk action on the selection
+ *  bar can commit the same date to many files in one transaction.
+ *  Returns the count of rows affected.
+ */
+export function setUserDateForPendingFiles(args: {
+  fileIds: number[];
+  /** ISO 8601 date+time string (e.g. '2018-07-15T12:00:00'). The
+   *  caller is responsible for combining the user's date pick with
+   *  either their explicit time or the 12:00 noon default. */
+  isoDateTime: string;
+}): { rowsAffected: number } {
+  if (!args.fileIds.length) return { rowsAffected: 0 };
+  const database = getDb();
+  const dt = new Date(args.isoDateTime);
+  if (Number.isNaN(dt.getTime())) {
+    throw new Error(`Invalid isoDateTime: ${args.isoDateTime}`);
+  }
+  const year = dt.getFullYear();
+  const month = dt.getMonth() + 1;
+  const day = dt.getDate();
+  const setAt = new Date().toISOString();
+  const placeholders = args.fileIds.map(() => '?').join(',');
+  const stmt = database.prepare(`
+    UPDATE indexed_files
+    SET derived_date = ?,
+        year = ?,
+        month = ?,
+        day = ?,
+        date_source = 'User-set',
+        user_set_at = ?
+    WHERE id IN (${placeholders})
+  `);
+  const info = stmt.run(args.isoDateTime, year, month, day, setAt, ...args.fileIds);
+  return { rowsAffected: info.changes };
 }
 
 // v2.0.11 — async because purgeStaleIndexedFiles and purgeGhostRuns

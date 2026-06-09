@@ -829,17 +829,15 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                       </span>
                     </button>
                   </IconTooltip>
-                  {/* v2.1 round 70 (Terry 2026-06-09) — divider spacing
-                      now matches the natural year-to-year rhythm
-                      below it. Year buttons use `mb-0.5` (2px) between
-                      siblings; the divider needs to TOTAL the same
-                      visual gap. Setting my-0 + a 1px border, plus
-                      removing mb-0.5 from the Needs-dates button
-                      above, lands ~2px above + ~2px below the
-                      hairline — equal padding either side. Slightly
-                      higher contrast (border-border instead of /60)
-                      makes the line readable without dominating. */}
-                  <div className="border-t border-border my-0.5 mx-1" />
+                  {/* v2.1 round 71 (Terry 2026-06-09) — divider spacing
+                      tightened to match the year-to-year gap (2px
+                      from mb-0.5 on each year button). my-0 leaves
+                      just the 1px hairline between Needs-dates and
+                      2026 — closest practical match to the 2px
+                      year-to-year visual rhythm without sub-pixel
+                      margins. border-border (full opacity) keeps
+                      the line visible without dominating. */}
+                  <div className="border-t border-border my-0 mx-1" />
                 </>
               )}
               {yearGroups.map(([year]) => (

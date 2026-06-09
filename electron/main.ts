@@ -9460,6 +9460,23 @@ ipcMain.handle('memories:pendingFiles', async (_event, args: { runIds?: number[]
   }
 });
 
+// v2.1 round 71 (Terry 2026-06-09) — commit a user-set date for one
+// or more Needs-dates files. Drives both the single-tile right-side
+// panel and the bulk selection-bar action. confidence stays 'marked',
+// filename is NOT renamed, date_source becomes 'User-set', and
+// user_set_at gets the ISO timestamp. The Pending view's file list
+// excludes user_set_at IS NOT NULL, so the file vanishes from the
+// grid the moment the user commits.
+ipcMain.handle('memories:setPendingDate', async (_event, args: { fileIds: number[]; isoDateTime: string }) => {
+  try {
+    const { setUserDateForPendingFiles } = await import('./search-database.js');
+    const result = setUserDateForPendingFiles(args);
+    return { success: true, data: result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Set a user-chosen monthly thumbnail. Right-click a photo in the
 // month drilldown → "Set as monthly thumbnail" pipes through here.
 // The month-bucket query then prefers this file over the default

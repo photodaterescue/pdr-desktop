@@ -1728,6 +1728,18 @@ export async function getPendingFiles(args?: { runIds?: number[]; tier?: Pending
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** v2.1 round 71 (Terry 2026-06-09) — commit a user-set date for
+ *  one or more Needs-dates files. Renderer wrapper around the
+ *  memories:setPendingDate IPC. isoDateTime should already combine
+ *  the user's chosen date with their explicit time (or the 12:00
+ *  noon default when time is unknown). */
+export async function setPendingDate(args: { fileIds: number[]; isoDateTime: string }): Promise<{ success: boolean; data?: { rowsAffected: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.setPendingDate(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 /** Set a user-chosen monthly thumbnail for (year, month). The bucket
  *  grid will show this file instead of the default lowest-id pick. */
 export async function setMonthlyThumbnail(args: { year: number; month: number; fileId: number }): Promise<{ success: boolean; error?: string }> {

@@ -386,6 +386,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       data?: Array<any>;
       error?: string;
     }>,
+    /** v2.1 round 71 (Terry 2026-06-09) — commit a user-set date for
+     *  one or more Needs-dates files. confidence stays 'marked'; the
+     *  file just gains user_set_at + date_source='User-set' and
+     *  disappears from the Pending view's WHERE clause. */
+    setPendingDate: (args: { fileIds: number[]; isoDateTime: string }) =>
+      ipcRenderer.invoke('memories:setPendingDate', args) as Promise<{
+        success: boolean;
+        data?: { rowsAffected: number };
+        error?: string;
+      }>,
   },
 
   trees: {

@@ -34,6 +34,9 @@ import {
   MessageSquareText,
   ZoomIn,
   ZoomOut,
+  X,
+  Save,
+  Clock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
@@ -41,9 +44,11 @@ import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover
 import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import {
   getPendingFiles,
   getThumbnail,
+  setPendingDate,
   type PendingFile,
   type PendingTier,
   type PendingCounts,
@@ -51,6 +56,7 @@ import {
 import { CaptionBadge } from '@/components/CaptionBadge';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
+import { toast } from 'sonner';
 
 const TIER_LABEL: Record<PendingTier, string> = {
   tentative: 'Tentative',
@@ -105,6 +111,82 @@ export default function MemoriesPendingView({
   const [metaFields, setMetaFields] = useState<TileMetaField[]>([]);
 
   const [titleOpen, setTitleOpen] = useState(false);
+
+  // v2.1 round 71 (Terry 2026-06-09) — right-side date-editor panel
+  // for single-file edits (Idea C, half one). panelFile = the file
+  // currently being edited; null = panel closed. pickedDate is the
+  // user's chosen calendar date (ISO YYYY-MM-DD, BrandedDatePicker
+  // format). pickedTime is HH:MM or empty (empty = unknown → noon
+  // default on save). Bulk selection-bar editing is the other half
+  // of Idea C and lands in the next round.
+  const [panelFile, setPanelFile] = useState<PendingFile | null>(null);
+  const [pickedDate, setPickedDate] = useState<string>('');
+  const [pickedTime, setPickedTime] = useState<string>('');
+  const [saving, setSaving] = useState(false);
+
+  // Open the panel for a file. Prefills the date picker from the
+  // file's existing derived_date (if any — Tentative + Placeholder
+  // tiles will have one; Unrecorded won't). Time defaults to empty
+  // so the picker shows the noon placeholder.
+  const openPanel = (f: PendingFile) => {
+    setPanelFile(f);
+    if (f.derived_date) {
+      const m = f.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
+      setPickedDate(m ? m[1] : '');
+      const t = f.derived_date.match(/T(\d{2}:\d{2})/);
+      setPickedTime(t ? t[1] : '');
+    } else {
+      setPickedDate('');
+      setPickedTime('');
+    }
+  };
+
+  const closePanel = () => {
+    setPanelFile(null);
+    setPickedDate('');
+    setPickedTime('');
+  };
+
+  // Commit the user's chosen date for the current panel file.
+  // Combines the date (required) with the time (optional → noon
+  // default) into an ISO 8601 string, fires the IPC, then refreshes
+  // the file list. Auto-advances to the next file in the current
+  // grid order — same-index after refetch lands on what was the
+  // NEXT file before the saved one was removed. If no files remain,
+  // closes the panel.
+  const savePanel = async () => {
+    if (!panelFile || !pickedDate || saving) return;
+    const time = pickedTime || '12:00';
+    const iso = `${pickedDate}T${time}:00`;
+    setSaving(true);
+    try {
+      const res = await setPendingDate({ fileIds: [panelFile.id], isoDateTime: iso });
+      if (!res.success) {
+        toast.error('Couldn’t save date', { description: res.error });
+        return;
+      }
+      // Find this file's current index, refetch, then jump to same
+      // index in the refreshed list (which is now the file that was
+      // immediately AFTER the saved one).
+      const savedId = panelFile.id;
+      const idx = files?.findIndex((f) => f.id === savedId) ?? -1;
+      const refreshed = await getPendingFiles({ runIds, tier });
+      const nextList = refreshed.success && refreshed.data ? refreshed.data : [];
+      setFiles(nextList);
+      if (idx >= 0 && nextList[idx]) {
+        openPanel(nextList[idx]);
+      } else {
+        closePanel();
+      }
+      // Fire a window event so the wrapper's pendingCounts useEffect
+      // refetches the global badge count.
+      try {
+        window.dispatchEvent(new CustomEvent('pdr:pendingChanged'));
+      } catch { /* event dispatch never throws */ }
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Fetch pending files on mount + whenever scope or library changes.
   useEffect(() => {
@@ -443,7 +525,7 @@ export default function MemoriesPendingView({
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" aria-hidden="true" />
               </span>
             </div>
-            <div className="border-t border-border my-0.5 mx-1" />
+            <div className="border-t border-border my-0 mx-1" />
             {years.map((y) => (
               <IconTooltip key={y} label={`Jump to ${y}`} side="right">
                 <button
@@ -496,7 +578,14 @@ export default function MemoriesPendingView({
                       <button
                         key={f.id}
                         type="button"
-                        className={`group cursor-pointer relative aspect-square bg-secondary/30 overflow-hidden ${tileRing} hover:ring-primary/50 transition-all`}
+                        onClick={() => {
+                          // Selection-mode tile-click parity with Memories
+                          // — Dates lands in phase 2 (bulk selection bar).
+                          // For now, any tile click opens the right-side
+                          // date editor panel for that single file.
+                          openPanel(f);
+                        }}
+                        className={`group cursor-pointer relative aspect-square bg-secondary/30 overflow-hidden ${tileRing} ${panelFile?.id === f.id ? 'ring-2 ring-purple-500' : 'hover:ring-primary/50'} transition-all`}
                         title={f.filename}
                       >
                         {thumbs[f.file_path] ? (
@@ -528,6 +617,131 @@ export default function MemoriesPendingView({
           )}
         </div>
       </div>
+
+      {/* v2.1 round 71 (Terry 2026-06-09) — right-side date-editor
+          panel. Mounted as a sibling of the right column (rail +
+          content row) so it claims real estate from the right edge
+          and the grid naturally re-flows. Fixed 380px width — big
+          enough for a comfortable date picker + preview, narrow
+          enough to leave a usable grid. Slides in instantly (no
+          animation yet — premium polish for a later round once
+          the flow is verified). Closing the panel returns the
+          page to its full-width grid. */}
+      {panelFile && (
+        <aside
+          className="w-[380px] shrink-0 border-l border-border bg-background flex flex-col"
+          data-testid="memories-pending-panel"
+        >
+          {/* Header */}
+          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
+            <div className="flex flex-col min-w-0">
+              <h3 className="text-sm font-semibold text-foreground">Set date</h3>
+              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
+                {TIER_LABEL[panelFile.pending_tier]}
+              </p>
+            </div>
+            <IconTooltip label="Close panel" side="left">
+              <button
+                type="button"
+                onClick={closePanel}
+                className="p-1.5 rounded-md hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
+                aria-label="Close panel"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </IconTooltip>
+          </div>
+
+          {/* Preview */}
+          <div className="px-4 py-3 shrink-0">
+            <div className="aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
+              {thumbs[panelFile.file_path] ? (
+                <img
+                  src={thumbs[panelFile.file_path]}
+                  alt={panelFile.filename}
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                  {panelFile.file_type === 'video' ? (
+                    <Film className="w-10 h-10" />
+                  ) : (
+                    <ImageIcon className="w-10 h-10" />
+                  )}
+                </div>
+              )}
+            </div>
+            <p className="mt-2 text-xs font-medium text-foreground truncate" title={panelFile.filename}>
+              {panelFile.filename}
+            </p>
+            {panelFile.derived_date ? (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Current: <span className="text-foreground">{panelFile.derived_date.slice(0, 10)}</span>
+                {panelFile.date_source && (
+                  <span className="text-muted-foreground/80"> — {panelFile.date_source}</span>
+                )}
+              </p>
+            ) : (
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                No date on record — supply one to confirm.
+              </p>
+            )}
+          </div>
+
+          {/* Date + time inputs */}
+          <div className="px-4 py-3 space-y-3 shrink-0">
+            <div>
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1">
+                Date
+              </label>
+              <BrandedDatePicker
+                value={pickedDate}
+                onChange={setPickedDate}
+                ariaLabel="Set date"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1 inline-flex items-center gap-1.5">
+                <Clock className="w-3 h-3" />
+                Time <span className="text-muted-foreground/70 normal-case">(optional)</span>
+              </label>
+              <input
+                type="time"
+                value={pickedTime}
+                onChange={(e) => setPickedTime(e.target.value)}
+                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+              {!pickedTime && (
+                <p className="text-[10px] text-muted-foreground/70 mt-1">
+                  Leave blank and PDR will stamp 12:00 noon (a neutral midday placeholder for unknown times).
+                </p>
+              )}
+            </div>
+          </div>
+
+          {/* Footer actions */}
+          <div className="mt-auto px-4 py-3 border-t border-border flex items-center justify-between gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={closePanel}
+              className="text-sm text-muted-foreground hover:text-foreground font-medium transition-colors px-1"
+            >
+              Cancel
+            </button>
+            <Button
+              variant="primary"
+              size="sm"
+              onClick={savePanel}
+              disabled={!pickedDate || saving}
+              className="gap-1.5"
+              data-testid="memories-pending-save"
+            >
+              {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
+              {saving ? 'Saving…' : 'Save & next'}
+            </Button>
+          </div>
+        </aside>
+      )}
     </div>
   );
 }
