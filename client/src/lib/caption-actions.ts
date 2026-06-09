@@ -63,6 +63,11 @@ export async function editPhotoCaption(args: {
     multiline: true,
     maxLength: 1000,
     confirmLabel: 'Save caption',
+    // v2.1 round 60 (Terry 2026-06-09) — let users drop emojis
+    // into captions to "bring the comments to life". The picker
+    // splices at the cursor so emojis can be interleaved with
+    // text rather than only appended at the end.
+    enableEmoji: true,
   });
 
   if (value === null) return undefined; // dismissed / cancelled

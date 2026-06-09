@@ -435,6 +435,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   const [dateTo, setDateTo] = useState<string>('');
   const [sizeFromMB, setSizeFromMB] = useState<number | undefined>(undefined);
   const [sizeToMB, setSizeToMB] = useState<number | undefined>(undefined);
+  // v2.1 round 60 (Terry 2026-06-09) — File Size unit toggle.
+  // Storage stays in MB (matches the existing sizeFromMB/sizeToMB
+  // variable names + the bytes conversion in buildQuery); this
+  // setting only controls the displayed unit + the user's input
+  // multiplier. Clicking the MB/GB suffix in either size input
+  // flips this for both. Persisted to localStorage so the user's
+  // preference survives reloads.
+  const [sizeUnit, setSizeUnit] = useState<'MB' | 'GB'>(() => {
+    try {
+      const saved = typeof localStorage !== 'undefined' ? localStorage.getItem('pdr-sd-size-unit') : null;
+      return saved === 'GB' ? 'GB' : 'MB';
+    } catch { return 'MB'; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-sd-size-unit', sizeUnit); } catch {}
+  }, [sizeUnit]);
+  const sizeUnitFactor = sizeUnit === 'GB' ? 1024 : 1;
+  const toggleSizeUnit = () => setSizeUnit(u => u === 'MB' ? 'GB' : 'MB');
   // Library Drive is a Tier-1 gate — empty selection = zero results.
   // Default visual = all libraries ticked once filterOptions.destinations
   // loads (done in a useEffect below the filterOptions state, so the
@@ -2649,9 +2667,33 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="File Size" onExpand={() => setOverflowModalGroup('fileSize')} groupId="fileSize" isFavourited={isGroupFavourited('fileSize')} onToggleFavourite={toggleFavouriteGroup}>
+                      {/* v2.1 round 60 (Terry 2026-06-09) — MB ↔ GB
+                          toggle. Clicking either unit suffix flips
+                          both inputs. Storage stays in MB; display
+                          and input multiply through sizeUnitFactor
+                          so the user types in their chosen unit and
+                          we serialise as bytes downstream. Step is
+                          0.01 in GB mode so users can express things
+                          like "0.05 GB = 50 MB" without losing
+                          precision; 0.1 in MB mode matches the
+                          existing UX. */}
                       <div className="flex flex-col gap-1 flex-1 py-0.5">
-                        <UnitInput placeholder="Min" value={sizeFromMB} onChange={setSizeFromMB} unit="MB" step="0.1" />
-                        <UnitInput placeholder="Max" value={sizeToMB} onChange={setSizeToMB} unit="MB" step="0.1" />
+                        <UnitInput
+                          placeholder="Min"
+                          value={sizeFromMB == null ? undefined : sizeFromMB / sizeUnitFactor}
+                          onChange={(v) => setSizeFromMB(v == null ? undefined : v * sizeUnitFactor)}
+                          unit={sizeUnit}
+                          onUnitClick={toggleSizeUnit}
+                          step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                        />
+                        <UnitInput
+                          placeholder="Max"
+                          value={sizeToMB == null ? undefined : sizeToMB / sizeUnitFactor}
+                          onChange={(v) => setSizeToMB(v == null ? undefined : v * sizeUnitFactor)}
+                          unit={sizeUnit}
+                          onUnitClick={toggleSizeUnit}
+                          step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                        />
                       </div>
                     </RibbonGroup>
                   </>
@@ -3713,16 +3755,43 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 </div>
               )}
               {overflowModalGroup === 'fileSize' && (
-                <div className="flex items-center gap-3">
+                <div className="flex items-end gap-3">
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-foreground/60">Min (MB)</label>
-                    <input type="number" step="0.1" placeholder="e.g. 1" value={sizeFromMB ?? ''} onChange={e => setSizeFromMB(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                    <label className="text-xs font-medium text-foreground/60">Min ({sizeUnit})</label>
+                    <input
+                      type="number"
+                      step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                      placeholder={sizeUnit === 'GB' ? 'e.g. 0.001' : 'e.g. 1'}
+                      value={sizeFromMB == null ? '' : (sizeFromMB / sizeUnitFactor)}
+                      onChange={e => setSizeFromMB(e.target.value ? Number(e.target.value) * sizeUnitFactor : undefined)}
+                      className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
                   </div>
-                  <span className="text-foreground/70 mt-5">–</span>
+                  <span className="text-foreground/70 pb-2.5">–</span>
                   <div className="flex flex-col gap-1">
-                    <label className="text-xs font-medium text-foreground/60">Max (MB)</label>
-                    <input type="number" step="0.1" placeholder="e.g. 50" value={sizeToMB ?? ''} onChange={e => setSizeToMB(e.target.value ? Number(e.target.value) : undefined)} className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40" />
+                    <label className="text-xs font-medium text-foreground/60">Max ({sizeUnit})</label>
+                    <input
+                      type="number"
+                      step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                      placeholder={sizeUnit === 'GB' ? 'e.g. 0.05' : 'e.g. 50'}
+                      value={sizeToMB == null ? '' : (sizeToMB / sizeUnitFactor)}
+                      onChange={e => setSizeToMB(e.target.value ? Number(e.target.value) * sizeUnitFactor : undefined)}
+                      className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40"
+                    />
                   </div>
+                  {/* v2.1 round 60 (Terry 2026-06-09) — MB ↔ GB toggle
+                      mirrored from the ribbon. Inline button keeps
+                      both inputs in the same row; click flips the
+                      labels + multiplier without losing the typed
+                      values (storage stays in MB internally). */}
+                  <button
+                    type="button"
+                    onClick={toggleSizeUnit}
+                    className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-foreground/70 hover:bg-secondary hover:text-foreground transition-colors whitespace-nowrap"
+                    title="Switch unit between MB and GB"
+                  >
+                    Show in {sizeUnit === 'MB' ? 'GB' : 'MB'}
+                  </button>
                 </div>
               )}
               {overflowModalGroup === 'destination' && (
@@ -4149,7 +4218,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             if (apertureFrom != null || apertureTo != null) chips.push({ id: 'aperture', label: 'Aperture', value: `f/${apertureFrom ?? '…'} – f/${apertureTo ?? '…'}`, onClear: () => { setApertureFrom(undefined); setApertureTo(undefined); } });
             if (focalLengthFrom != null || focalLengthTo != null) chips.push({ id: 'focal', label: 'Focal', value: `${focalLengthFrom ?? '…'}mm – ${focalLengthTo ?? '…'}mm`, onClear: () => { setFocalLengthFrom(undefined); setFocalLengthTo(undefined); } });
             if (megapixelsFrom != null || megapixelsTo != null) chips.push({ id: 'mp', label: 'MP', value: `${megapixelsFrom ?? '…'} – ${megapixelsTo ?? '…'}`, onClear: () => { setMegapixelsFrom(undefined); setMegapixelsTo(undefined); } });
-            if (sizeFromMB != null || sizeToMB != null) chips.push({ id: 'size', label: 'Size', value: `${sizeFromMB ?? '…'}MB – ${sizeToMB ?? '…'}MB`, onClear: () => { setSizeFromMB(undefined); setSizeToMB(undefined); } });
+            if (sizeFromMB != null || sizeToMB != null) {
+              // v2.1 round 60 (Terry 2026-06-09) — display the chip in
+              // the user's chosen unit. Storage is always in MB so we
+              // divide by the unit factor to render the original value
+              // the user typed; trims trailing .00 zeros so "20 MB"
+              // doesn't display as "20.00 MB".
+              const fmt = (mb: number | undefined) => mb == null ? '…' : (() => {
+                const inUnit = mb / sizeUnitFactor;
+                return Number.isInteger(inUnit) ? String(inUnit) : inUnit.toFixed(2).replace(/\.?0+$/, '');
+              })();
+              chips.push({ id: 'size', label: 'Size', value: `${fmt(sizeFromMB)} ${sizeUnit} – ${fmt(sizeToMB)} ${sizeUnit}`, onClear: () => { setSizeFromMB(undefined); setSizeToMB(undefined); } });
+            }
             if (hasGps !== undefined) chips.push({ id: 'gps', label: 'GPS', value: hasGps ? 'Has GPS' : 'No GPS', onClear: () => setHasGps(undefined) });
             if (flashFired !== undefined) chips.push({ id: 'flash', label: 'Flash', value: flashFired ? 'Fired' : 'Not fired', onClear: () => setFlashFired(undefined) });
 
@@ -5064,12 +5144,19 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
  * the input value, regardless of how wide the unit string is (f/, mm, MP,
  * ISO, MB all just work).
  */
-function UnitInput({ placeholder, value, onChange, unit, step }: {
+function UnitInput({ placeholder, value, onChange, unit, step, onUnitClick }: {
   placeholder: string;
   value: number | undefined;
   onChange: (v: number | undefined) => void;
   unit: string;
   step?: string;
+  /** v2.1 round 60 (Terry 2026-06-09) — when present, the unit
+   *  suffix becomes a clickable button that fires this callback.
+   *  Used by the File Size filter to swap MB ↔ GB without forcing
+   *  the user into a separate dropdown. Inputs without a unit
+   *  toggle (MP / ISO / f-stop / mm) leave this undefined and
+   *  keep the original static span. */
+  onUnitClick?: () => void;
 }) {
   return (
     <div className="flex items-center rounded-md border border-border bg-background overflow-hidden focus-within:ring-1 focus-within:ring-primary/40 w-[92px]">
@@ -5081,7 +5168,19 @@ function UnitInput({ placeholder, value, onChange, unit, step }: {
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
         className="flex-1 min-w-0 bg-transparent pl-2 py-1 text-xs text-foreground focus:outline-none"
       />
-      <span className="px-1.5 text-[10px] text-muted-foreground pointer-events-none select-none whitespace-nowrap">{unit}</span>
+      {onUnitClick ? (
+        <button
+          type="button"
+          onClick={onUnitClick}
+          className="px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors select-none whitespace-nowrap"
+          aria-label={`Switch unit, currently ${unit} — tap to change`}
+          title="Click to switch unit"
+        >
+          {unit}
+        </button>
+      ) : (
+        <span className="px-1.5 text-[10px] text-muted-foreground pointer-events-none select-none whitespace-nowrap">{unit}</span>
+      )}
     </div>
   );
 }

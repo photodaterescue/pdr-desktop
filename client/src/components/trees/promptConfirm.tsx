@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, ChevronRight, X } from 'lucide-react';
+import { EmojiPickerPopover } from '@/components/EmojiPickerPopover';
 
 /**
  * promptConfirm(message) — async replacement for the native window.confirm().
@@ -612,6 +613,7 @@ export function promptInput(options: InputOptions): Promise<string | null> {
         cancelLabel={options.cancelLabel}
         multiline={options.multiline}
         maxLength={options.maxLength}
+        enableEmoji={options.enableEmoji}
         onConfirm={(v) => close(v)}
         onCancel={() => close(null)}
         onDismiss={() => close(null)}
@@ -639,10 +641,16 @@ export interface InputOptions {
   multiline?: boolean;
   /** Soft character cap shown as a counter next to the field. */
   maxLength?: number;
+  /** v2.1 round 60 (Terry 2026-06-09) — show an emoji picker
+   *  trigger next to the input. Used by the photo-caption editor
+   *  so users can drop hearts / smileys / food / travel emojis
+   *  into their comments. Default false so other prompts stay
+   *  utilitarian. */
+  enableEmoji?: boolean;
 }
 
 function InputDialog({
-  eyebrow, title, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, onConfirm, onCancel, onDismiss,
+  eyebrow, title, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, enableEmoji, onConfirm, onCancel, onDismiss,
 }: InputOptions & { onConfirm: (v: string) => void; onCancel: () => void; onDismiss: () => void }) {
   const [mounted, setMounted] = useState(false);
   const [value, setValue] = useState(initialValue ?? '');
@@ -718,6 +726,30 @@ function InputDialog({
 
   const overLimit = typeof maxLength === 'number' && value.length > maxLength;
 
+  // v2.1 round 60 (Terry 2026-06-09) — splice an emoji into the
+  // current selection range so users can interleave emojis with
+  // text. Restores the cursor to immediately after the inserted
+  // glyph so they can keep typing. Falls back to a plain append
+  // when the input has no selection range (shouldn't happen in
+  // practice but defends against ref-not-ready edge cases).
+  const insertEmoji = (emoji: string) => {
+    const el = inputRef.current;
+    if (!el) { setValue(v => v + emoji); return; }
+    const start = el.selectionStart ?? value.length;
+    const end = el.selectionEnd ?? value.length;
+    const next = value.slice(0, start) + emoji + value.slice(end);
+    setValue(next);
+    // Schedule cursor positioning for the next paint, after React
+    // commits the new value and re-renders the input.
+    requestAnimationFrame(() => {
+      const el2 = inputRef.current;
+      if (!el2) return;
+      const pos = start + emoji.length;
+      el2.setSelectionRange(pos, pos);
+      el2.focus();
+    });
+  };
+
   return (
     <div
       className={`fixed inset-0 z-[80] bg-black/50 flex items-center justify-center p-4 transition-opacity ${mounted ? 'opacity-100' : 'opacity-0'}`}
@@ -769,10 +801,22 @@ function InputDialog({
               className="w-full px-3 py-2 rounded-lg border border-border bg-background text-sm focus:outline-none focus:border-primary/60"
             />
           )}
-          {typeof maxLength === 'number' && (
-            <p className={`text-[11px] text-right mt-1 ${overLimit ? 'text-red-500' : 'text-muted-foreground'}`}>
-              {value.length} / {maxLength}
-            </p>
+          {/* v2.1 round 60 (Terry 2026-06-09) — emoji picker (when
+              enabled by caller) + char counter on the same footer
+              row beneath the field. Emoji on the left, counter on
+              the right; the row is justify-between so they sit at
+              opposite ends regardless of which is rendered. */}
+          {(enableEmoji || typeof maxLength === 'number') && (
+            <div className="flex items-center justify-between mt-1 min-h-[28px]">
+              {enableEmoji ? (
+                <EmojiPickerPopover onPick={insertEmoji} />
+              ) : <span />}
+              {typeof maxLength === 'number' && (
+                <p className={`text-[11px] ${overLimit ? 'text-red-500' : 'text-muted-foreground'}`}>
+                  {value.length} / {maxLength}
+                </p>
+              )}
+            </div>
           )}
         </div>
 
