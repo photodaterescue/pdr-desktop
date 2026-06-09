@@ -159,16 +159,17 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   // org). isCurrentWhisperModelReady() in main.ts checks the
   // matching cache path.
   pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
-    // q4 quantisation on BOTH encoder and decoder. The encoder is
-    // where audio gets converted into the acoustic feature
-    // representation; the decoder is the autoregressive text
-    // generator. q4 weights cut memory bandwidth by 4× vs fp32
-    // — that's the largest single contributor to CPU inference
-    // speed. Modest quality cost (~1-3% on benchmarks) vs the
-    // ~6-8× speed gain.
+    // v2.1 round 47 (Terry 2026-06-09) — q4f16 instead of pure q4.
+    // 4-bit weights with fp16 activations. The fp16 activations
+    // let the wasm SIMD kernels in onnxruntime-web take a faster
+    // path than pure-4-bit matmul — typically 30-50% faster on
+    // CPU vs q4-everywhere. Bonus: q4f16 is also smaller on disk
+    // (encoder 353 MB + decoder 185 MB = ~540 MB total vs ~720
+    // MB for q4-everywhere). Measured 4.75× realtime on q4;
+    // expecting ~2.5-3× realtime on q4f16 for this CPU.
     dtype: {
-      encoder_model: 'q4',
-      decoder_model_merged: 'q4',
+      encoder_model: 'q4f16',
+      decoder_model_merged: 'q4f16',
     },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
