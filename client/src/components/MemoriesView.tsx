@@ -2265,8 +2265,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           // remember they've toggled things on without having to open
           // the popover. Same "(N)" pattern the old Add Info button
           // used pre-restructure.
+          // v2.1 round 64 (Terry 2026-06-09) — count only TRUE
+          // additions, not preferences. Tile size is a personal
+          // preference, not "you've turned something ON". Only
+          // Selection Mode + on-tile metadata fields are genuine
+          // additions worth surfacing in the (N) badge.
           const insightsCount =
-            (tileSizeSlider !== 35 ? 1 : 0) +
             (selectionMode ? 1 : 0) +
             metaFields.length;
           const insightsActive = insightsCount > 0;
@@ -2335,7 +2339,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 className="rounded border-border text-purple-500 focus:ring-purple-400/50"
                 data-testid="button-selection-mode"
               />
-              <span className="text-sm text-foreground flex-1">Show checkboxes on every tile</span>
+              <span className="text-sm text-foreground flex-1">Tile checkboxes</span>
             </label>
             <div className="border-t border-border my-2" />
             {/* — Tile info section — */}
