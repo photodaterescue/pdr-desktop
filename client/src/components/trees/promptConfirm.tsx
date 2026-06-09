@@ -655,13 +655,33 @@ function InputDialog({
   // had `value` in the deps which stole focus mid-type and re-selected
   // initial text repeatedly — Terry caught it 2026-05-26 along with a
   // request that Tab from the input jump straight to the Save button).
+  //
+  // v2.1 round 59 (Terry 2026-06-09 — "I have to click the text field
+  // every time"). When this modal is opened from a Radix ContextMenu
+  // (the right-click "Edit caption" path on every tile surface),
+  // Radix queues a focus-restoration microtask that re-focuses the
+  // tile trigger AFTER our useEffect runs — so the input got focus
+  // for one tick and then Radix immediately stole it. Fixed by
+  // chaining two rAFs before calling focus: the first lets Radix's
+  // restoration land, the second pushes our focus call to the frame
+  // after that. Setting tabIndex on the modal root would also work
+  // but disrupts the existing keyboard flow.
   useEffect(() => {
     setMounted(true);
-    const el = inputRef.current;
-    if (el) {
-      el.focus();
-      if (initialValue && initialValue.length > 0) el.select();
-    }
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (el) {
+          el.focus();
+          if (initialValue && initialValue.length > 0) el.select();
+        }
+      });
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
     // Intentionally empty deps — focus + select belong on mount, not
     // on every value change.
     // eslint-disable-next-line react-hooks/exhaustive-deps

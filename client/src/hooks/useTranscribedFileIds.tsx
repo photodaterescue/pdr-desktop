@@ -24,7 +24,14 @@ export function useTranscribedFileIds(): [Set<number>, () => Promise<void>] {
 
   const refresh = useCallback(async () => {
     try {
-      const res = await (window as any).pdr?.listTranscribedFileIds?.();
+      // v2.1 round 59 (Terry 2026-06-09 — T badge regression fix).
+      // The bridge entry lives at pdr.viewer.listTranscribedFileIds
+      // (round-57 added it inside the `viewer: { … }` namespace at
+      // preload.ts:582). The earlier call to pdr.listTranscribedFileIds
+      // resolved to undefined, the catch swallowed it, and every tile
+      // saw an empty Set — so no badges rendered even on Terry's 15
+      // already-transcribed videos. Re-checked against preload.ts.
+      const res = await (window as any).pdr?.viewer?.listTranscribedFileIds?.();
       if (res?.success && Array.isArray(res.ids)) {
         setIds(new Set<number>(res.ids));
       }

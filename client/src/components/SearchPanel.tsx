@@ -1253,7 +1253,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     hasFaces: selectedAiTags.includes('__has_faces') ? true : selectedAiTags.includes('__no_faces') ? false : undefined,
     sortBy, sortDir, limit: 60, offset: 0,
     } as SearchQuery);
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
+    // v2.1 round 59 (Terry 2026-06-09 — File Size filter regression).
+    // sizeFromMB / sizeToMB MUST be in this dep list. Without them
+    // buildQuery returns a stale closure where sizeFrom/sizeTo are
+    // perpetually undefined — the auto-search effect re-fires when
+    // the user types a new size value (sizeFromMB is in THAT
+    // effect's deps), but executeSearch -> the memoised buildQuery
+    // returns the same query as before, so the result set never
+    // narrows. Adding them here pulls a fresh query through on each
+    // keystroke + restores correct filtering for the videos case
+    // Terry hit (20 MB / 200 MB / 2000 MB all ignored).
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch

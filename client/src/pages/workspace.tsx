@@ -14527,7 +14527,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     round. */}
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Hide captions</span>
+                    <span className="text-sm font-medium text-foreground">Hide captions on photos and videos</span>
                     <span className="text-xs text-muted-foreground">A caption is a comment YOU add to a photo or video. This switch suppresses the caption text and the gold caption badge everywhere they appear — Memories tiles, Albums, search results, and the PDR Viewer caption bar. The captions themselves stay in the database; flipping the switch back restores them everywhere. Useful when sharing your screen or showing PDR to family.</span>
                   </div>
                   <Switch
@@ -14538,7 +14538,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </label>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Hide transcripts</span>
+                    <span className="text-sm font-medium text-foreground">Hide video transcripts</span>
                     <span className="text-xs text-muted-foreground">A transcript is the speech in a video that PDR has converted to text. This switch suppresses the lavender "T" indicator on transcribed video tiles AND the CC button + subtitle overlay in PDR Viewer. Whisper transcripts and .vtt sidecars stay on disk; only the on-screen rendering is hidden. Useful when a video's dialogue is sensitive and you don't want it readable on a shared screen.</span>
                   </div>
                   <Switch
