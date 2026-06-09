@@ -119,7 +119,7 @@ export function useTranscribeVideos(): {
           <ul className="list-disc pl-5 space-y-1">
             <li>Newer CPUs are likely to finish quicker; older ones slower.</li>
             <li>GPU transcription upgrades planned for PDR v2.2.</li>
-            <li>Transcribing runs in the background, so you can keep using PDR while it works.</li>
+            <li>Keep using PDR while your videos transcribe.</li>
             <li>Watch the progress toast at the top-centre of your screen.</li>
           </ul>
         </div>

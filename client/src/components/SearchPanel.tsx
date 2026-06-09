@@ -84,7 +84,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
-import { useShowTranscriptBadge } from '@/hooks/useShowTranscriptBadge';
+import { TranscriptBadge } from '@/components/TranscriptBadge';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
 import {
@@ -583,12 +583,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // right-click context menu on video tiles. Wired through to
   // FileCard via the onTranscribe prop, same shape as onAddToAlbum.
   const { transcribe: transcribeVideoPaths } = useTranscribeVideos();
-  // v2.1 round 57 (Terry 2026-06-09) — on-tile "T" badge for videos
-  // with a transcript. Setting lives in MemoriesView's Insights
-  // popover (single owner). The read hook below listens for the
-  // change event so the toggle propagates here without a reload.
+  // v2.1 round 58 (Terry 2026-06-09) — file_ids with a transcript.
+  // Drives the lavender TranscriptBadge next to CaptionBadge on
+  // each FileCard. Visibility governed by Settings → Privacy &
+  // Security → "Hide transcripts" (read inside TranscriptBadge).
   const [transcribedFileIds] = useTranscribedFileIds();
-  const showTranscriptBadge = useShowTranscriptBadge();
   // Parallel store of the actual file objects for every checked item,
   // keyed by file id. Persists across searches so a user can compose a
   // "Custom selection" by ticking 3 photos in one search, switching the
@@ -4714,7 +4713,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           selectionMode={selectionMode}
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
-                          hasTranscriptBadge={showTranscriptBadge && file.file_type === 'video' && transcribedFileIds.has(file.id)}
+                          hasTranscript={file.file_type === 'video' && transcribedFileIds.has(file.id)}
                           onAddToAlbum={() => {
                             // v2.0.15 (Terry 2026-06-02) — context menu
                             // "Add to album". If the right-clicked tile
@@ -5218,7 +5217,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon, count }: { labe
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscriptBadge }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscriptBadge?: boolean }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscript }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscript?: boolean }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -5273,28 +5272,18 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             {isMultiSelected && <svg className="w-3.5 h-3.5" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="2"><path d="M2 6l3 3 5-5" /></svg>}
           </div>
         )}
-        {file.file_type === 'video' && (
-          <div className="absolute bottom-2 left-2 flex items-center gap-1">
-            {/* v2.1 round 57 (Terry 2026-06-09) — "T" pill renders to
-                the LEFT of the existing "Video" pill when this file
-                has a transcript. Same surface (bg-black/60, 10px
-                white text) so the pair reads as one status group
-                rather than competing badges. Toggled via the
-                showTranscriptBadge setting in Memories Insights. */}
-            {hasTranscriptBadge && (
-              <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-bold leading-none" title="Transcript available">T</span>
-            )}
-            <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium flex items-center gap-1">
-              <Film className="w-3 h-3" /> Video
-            </span>
-          </div>
-        )}
+        {file.file_type === 'video' && <div className="absolute bottom-2 left-2 px-1.5 py-0.5 rounded bg-black/60 text-white text-[10px] font-medium flex items-center gap-1"><Film className="w-3 h-3" /> Video</div>}
         {file.file_type === 'photo' && onDoubleClick && !isMultiSelected && (
           <div className="absolute inset-0 bg-black/0 group-hover:bg-black/20 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
             <div className="p-2 rounded-full bg-black/50 text-white/90"><Maximize2 className="w-4 h-4" /></div>
           </div>
         )}
         <CaptionBadge caption={file.caption} />
+        {/* v2.1 round 58 (Terry 2026-06-09) — lavender TranscriptBadge
+            sibling. Renders only for videos with a transcript; if the
+            file ALSO has a caption, sits immediately to the LEFT of
+            CaptionBadge (caption keeps the bottom-right corner). */}
+        <TranscriptBadge hasTranscript={hasTranscript} hasCaption={!!file.caption} />
       </div>
       {hasAnyMeta && (
         <div className="p-2 space-y-0.5">

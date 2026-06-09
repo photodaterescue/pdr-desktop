@@ -32,7 +32,7 @@ import {
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
-  Captions, Film,
+  Captions,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -71,7 +71,7 @@ import { promptConfirm } from './trees/promptConfirm';
 import { editPhotoCaption } from '@/lib/caption-actions';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
-import { useShowTranscriptBadge } from '@/hooks/useShowTranscriptBadge';
+import { TranscriptBadge } from '@/components/TranscriptBadge';
 
 // v2.1 round 35 (Terry 2026-06-08) — extension-based video detector
 // for the right-click Transcribe item. AlbumsView's photo objects
@@ -1517,13 +1517,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // right-click context menu item below. Same Whisper-batch pipeline
   // MemoriesView and SearchPanel use; one source of truth.
   const { transcribe: transcribeVideoPaths } = useTranscribeVideos();
-  // v2.1 round 57 (Terry 2026-06-09) — on-tile "T" badge for videos
-  // with a transcript, paired with a small "Video" pill so the T
-  // anchor reads correctly ("T to the left of where Video is
-  // written"). Setting lives in MemoriesView's Insights popover;
-  // read here so a toggle there propagates instantly.
+  // v2.1 round 58 (Terry 2026-06-09) — file_ids with a transcript.
+  // Drives the lavender TranscriptBadge sibling to CaptionBadge on
+  // each album-photo tile. Visibility governed by Settings →
+  // Privacy & Security → "Hide transcripts" (read inside the
+  // badge primitive itself, not here).
   const [transcribedFileIds] = useTranscribedFileIds();
-  const showTranscriptBadge = useShowTranscriptBadge();
   const lastAlbumClickedIndexRef = useRef<number | null>(null);
   useEffect(() => { setSelectedAlbumPhotoIds(new Set()); lastAlbumClickedIndexRef.current = null; }, [selection]);
   const handleAlbumPhotoClick = (
@@ -2774,27 +2773,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           <div className="w-full h-full skeleton-shimmer" />
                         )}
                         <CaptionBadge caption={p.caption} />
-                        {/* v2.1 round 57 (Terry 2026-06-09) — Video +
-                            optional "T" (transcript) status group.
-                            Positioned top-right to dodge the selection
-                            checkbox (top-left) and CaptionBadge
-                            (bottom-right). Same chip surface as the
-                            Memories / S&D Video pill (bg-black/60,
-                            white, 9–10px) so videos read consistently
-                            across the three views. AlbumsView didn't
-                            previously surface video-vs-photo on tiles —
-                            adding it now makes the T anchor coherent
-                            ("T to the left of where Video is written"). */}
-                        {isVideoPathExt(p.file_path) && (
-                          <div className="absolute top-1 right-1 flex items-center gap-1">
-                            {showTranscriptBadge && transcribedFileIds.has(p.id) && (
-                              <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-bold leading-none" title="Transcript available">T</span>
-                            )}
-                            <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
-                              <Film className="w-2.5 h-2.5" /> Video
-                            </span>
-                          </div>
-                        )}
+                        {/* v2.1 round 58 (Terry 2026-06-09) — lavender
+                            TranscriptBadge sibling. Renders bottom-right
+                            (shifts left to make room for CaptionBadge
+                            when both exist). The round-57 attempt added
+                            a top-right Video pill here as well, but
+                            Terry only asked for the "T" indicator —
+                            reverted that addition and kept Albums
+                            tiles visually as they were apart from the
+                            new transcript indicator. */}
+                        <TranscriptBadge hasTranscript={isVideoPathExt(p.file_path) && transcribedFileIds.has(p.id)} hasCaption={!!p.caption} />
                       </button>
                     </ContextMenuTrigger>
                     <ContextMenuContent>

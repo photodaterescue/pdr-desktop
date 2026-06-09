@@ -14513,10 +14513,22 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     These switches control what PDR <strong>renders</strong> — not what's stored. Captions, transcripts, and any other private notes stay safely in your library on your computer; flipping a switch back restores everything everywhere.
                   </p>
                 </div>
+                {/* v2.1 round 58 (Terry 2026-06-09) — Captions and
+                    Transcripts are CONCEPTUALLY DIFFERENT and now
+                    described separately. A "caption" is a comment the
+                    user has attached to a photo or video. A
+                    "transcript" is the speech in a video that PDR has
+                    converted to text using Whisper. Each has its own
+                    privacy switch + its own on-tile indicator (gold
+                    badge for captions, lavender "T" badge for
+                    transcripts). The previous "Hide video transcripts"
+                    description used "auto-generated caption overlay"
+                    wording which conflated the two — fixed in this
+                    round. */}
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Hide captions on photos and videos</span>
-                    <span className="text-xs text-muted-foreground">Suppresses caption text and the gold caption badge across PDR — Memories tiles, Albums, PDR Viewer caption bar, and search results — for both photos and videos that you've added captions to. The captions themselves stay in the database. Useful when sharing your screen or showing PDR to family.</span>
+                    <span className="text-sm font-medium text-foreground">Hide captions</span>
+                    <span className="text-xs text-muted-foreground">A caption is a comment YOU add to a photo or video. This switch suppresses the caption text and the gold caption badge everywhere they appear — Memories tiles, Albums, search results, and the PDR Viewer caption bar. The captions themselves stay in the database; flipping the switch back restores them everywhere. Useful when sharing your screen or showing PDR to family.</span>
                   </div>
                   <Switch
                     checked={hideCaptions}
@@ -14526,8 +14538,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </label>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
-                    <span className="text-sm font-medium text-foreground">Hide video transcripts</span>
-                    <span className="text-xs text-muted-foreground">Suppresses the CC button and the auto-generated caption overlay in PDR Viewer for all videos. Whisper transcripts and .vtt sidecars stay on disk — only the on-screen rendering is hidden. Useful when a video's dialogue is sensitive and you don't want it readable on a shared screen.</span>
+                    <span className="text-sm font-medium text-foreground">Hide transcripts</span>
+                    <span className="text-xs text-muted-foreground">A transcript is the speech in a video that PDR has converted to text. This switch suppresses the lavender "T" indicator on transcribed video tiles AND the CC button + subtitle overlay in PDR Viewer. Whisper transcripts and .vtt sidecars stay on disk; only the on-screen rendering is hidden. Useful when a video's dialogue is sensitive and you don't want it readable on a shared screen.</span>
                   </div>
                   <Switch
                     checked={hideVideoTranscripts}
