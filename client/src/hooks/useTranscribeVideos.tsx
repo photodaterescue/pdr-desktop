@@ -85,7 +85,21 @@ export function useTranscribeVideos(): {
       </div>
     );
 
-    const summary = (
+    // v2.1 round 53 (Terry 2026-06-09) — when EVERY selected video
+    // is already transcribed (remaining === 0), the rows about
+    // "Estimated time to finish" and the download notice are
+    // nonsense — no work is going to run. Show a clean "nothing
+    // to do" state instead, and hide the download notice (since
+    // no inference will run regardless of model cache state).
+    const nothingToDo = !!estimate && remaining === 0 && estimate.alreadyDoneCount > 0;
+
+    const summary = nothingToDo ? (
+      <div className="rounded-lg border border-border bg-secondary/30 p-3">
+        <Row label="Already transcribed" value={estimate!.alreadyDoneCount} />
+        <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
+        <Row label="Nothing to transcribe" value="—" />
+      </div>
+    ) : (
       <div className="rounded-lg border border-border bg-secondary/30 p-3">
         <Row label="Videos to transcribe" value={remaining} />
         {estimate && estimate.alreadyDoneCount > 0 && (
@@ -96,9 +110,22 @@ export function useTranscribeVideos(): {
       </div>
     );
 
-    const downloadNotice = !modelReady ? (
+    // Download notice only when there's actually work to do AND
+    // the model isn't cached. Hiding it in the nothing-to-do
+    // case stops the modal claiming a download is needed when
+    // no transcription would happen even with a fresh model.
+    const downloadNotice = !modelReady && !nothingToDo ? (
       <div className="mb-3 text-sm text-muted-foreground">
         First time only: PDR will download a ~750 MB language model before this transcription can start.
+      </div>
+    ) : null;
+
+    // When there's nothing to do, surface a "Re-transcribe is not
+    // wired yet" hint so the user understands WHY the only thing
+    // they can do is dismiss. Doubles as a v2.2 todo flag.
+    const nothingToDoHint = nothingToDo ? (
+      <div className="mb-3 text-sm text-muted-foreground">
+        {estimate!.alreadyDoneCount === 1 ? 'This video is' : `All ${estimate!.alreadyDoneCount} selected videos are`} already transcribed. To re-transcribe with the current model, first delete the existing transcript (Re-transcribe affordance coming in v2.2).
       </div>
     ) : null;
 
@@ -128,19 +155,29 @@ export function useTranscribeVideos(): {
       );
     })() : null;
 
+    // v2.1 round 53 (Terry 2026-06-09) — when nothing's left to
+    // transcribe, the title becomes a statement, the only button
+    // is "Close" (single primary CTA via hideCancel), and the
+    // body explains the situation. Avoids the "Transcribe 1
+    // video? — Estimated time: <1s" nonsense.
     const ok = await promptConfirm({
       eyebrow: 'TRANSCRIBE VIDEOS',
-      title: `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
+      title: nothingToDo
+        ? (filePaths.length === 1 ? 'Already transcribed' : 'All selected videos are already transcribed')
+        : `Transcribe ${filePaths.length} video${filePaths.length === 1 ? '' : 's'}?`,
       message: (
         <>
           {downloadNotice}
+          {nothingToDoHint}
           {singleFileBanner}
           {summary}
         </>
       ),
-      confirmLabel: 'Transcribe',
+      confirmLabel: nothingToDo ? 'Close' : 'Transcribe',
       cancelLabel: 'Cancel',
+      hideCancel: nothingToDo,
     });
+    if (nothingToDo) { inFlightRef.current = false; return; }
     if (!ok) { inFlightRef.current = false; return; }
 
     setIsBatchTranscribing(true);
