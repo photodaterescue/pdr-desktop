@@ -1696,6 +1696,38 @@ export async function getMemoriesDayFiles(args: { year: number; month?: number |
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry data
+ *  layer. Pending = confidence='marked' files split into three
+ *  tiers by date_source quality. See electron/search-database.ts
+ *  PENDING_TIER_SQL for the classification. */
+export type PendingTier = 'tentative' | 'placeholder' | 'unrecorded';
+export interface PendingCounts {
+  total: number;
+  tentative: number;
+  placeholder: number;
+  unrecorded: number;
+}
+export type PendingFile = IndexedFile & { pending_tier: PendingTier };
+
+/** Always-global count (no runIds) — drives the rail badge so the
+ *  user sees the true backlog regardless of active library filter. */
+export async function getPendingCounts(): Promise<{ success: boolean; data?: PendingCounts; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.pendingCounts();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+/** Library-aware file list — Pending PAGE matches the rest of
+ *  Memories' library scoping. Optional tier scopes to a single
+ *  Tentative / Placeholder / Unrecorded slice. */
+export async function getPendingFiles(args?: { runIds?: number[]; tier?: PendingTier }): Promise<{ success: boolean; data?: PendingFile[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.pendingFiles(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 /** Set a user-chosen monthly thumbnail for (year, month). The bucket
  *  grid will show this file instead of the default lowest-id pick. */
 export async function setMonthlyThumbnail(args: { year: number; month: number; fileId: number }): Promise<{ success: boolean; error?: string }> {

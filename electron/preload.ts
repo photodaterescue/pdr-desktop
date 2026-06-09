@@ -371,6 +371,21 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     dayFiles: (args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
     setMonthlyThumbnail: (args: { year: number; month: number; fileId: number }) => ipcRenderer.invoke('memories:setMonthlyThumbnail', args),
     clearMonthlyThumbnail: (args: { year: number; month: number }) => ipcRenderer.invoke('memories:clearMonthlyThumbnail', args),
+    /** v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry data
+     *  layer. pendingCounts is always global (no runIds) so the rail
+     *  badge shows the true cross-library backlog; pendingFiles
+     *  honours the active library filter so the Pending PAGE matches
+     *  the rest of Memories' library scoping. */
+    pendingCounts: () => ipcRenderer.invoke('memories:pendingCounts') as Promise<{
+      success: boolean;
+      data?: { total: number; tentative: number; placeholder: number; unrecorded: number };
+      error?: string;
+    }>,
+    pendingFiles: (args?: { runIds?: number[]; tier?: 'tentative' | 'placeholder' | 'unrecorded' }) => ipcRenderer.invoke('memories:pendingFiles', args ?? {}) as Promise<{
+      success: boolean;
+      data?: Array<any>;
+      error?: string;
+    }>,
   },
 
   trees: {

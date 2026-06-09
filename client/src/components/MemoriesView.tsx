@@ -65,6 +65,8 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
+import MemoriesPendingView from '@/components/MemoriesPendingView';
+import { getPendingCounts, type PendingCounts, type PendingTier } from '@/lib/electron-bridge';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import {
   DropdownMenu,
@@ -211,6 +213,15 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     return pref ? pref.buckets : [];
   });
   const [onThisDay, setOnThisDay] = useState<MemoriesOnThisDayItem[]>([]);
+  // v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry. State
+  // shape: null = user is on Timeline / drilldown views (default); set
+  // = user has navigated INTO Pending (with optional tier scope).
+  // Counts always fetched globally so the rail badge shows the true
+  // cross-library backlog. Refreshed on mount + whenever the wrapper
+  // triggers a data refresh (refreshTick increment).
+  const [pendingScope, setPendingScope] = useState<{ tier?: PendingTier } | null>(null);
+  const [pendingCounts, setPendingCounts] = useState<PendingCounts>({ total: 0, tentative: 0, placeholder: 0, unrecorded: 0 });
+  const [pendingRailExpanded, setPendingRailExpanded] = useState(false);
   // "On This Day" AI-suggestion card — hidden when the user has
   // dismissed it via the X. Persists across sessions in localStorage
   // so Terry doesn't have to re-dismiss every launch. Terry
@@ -402,6 +413,20 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     return () => { cancelled = true; };
   }, [selectedRunIdsKey, refreshTick]);
 
+  // v2.1 round 67 (Terry 2026-06-09) — Pending counts fetched
+  // globally (no runIds) so the rail badge shows the true cross-
+  // library backlog regardless of the current library filter. Same
+  // refreshTick trigger so a Fix completion that moves files out of
+  // 'marked' updates the rail badge live.
+  useEffect(() => {
+    let cancelled = false;
+    void getPendingCounts().then((r) => {
+      if (cancelled) return;
+      if (r.success && r.data) setPendingCounts(r.data);
+    });
+    return () => { cancelled = true; };
+  }, [refreshTick]);
+
   // v2.0.15 — when any recycle change happens (anywhere), bump the
   // refresh tick AND invalidate the Welcome-screen prefetch cache so
   // the next Welcome → Memories navigation reads fresh bucket counts
@@ -539,6 +564,24 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     }, 0);
     return () => clearTimeout(id);
   }, [selectedRange, lastDrilledYear]);
+
+  // v2.1 round 67 (Terry 2026-06-09) — Pending takes precedence over
+  // the day drilldown because both can't be active at once and the
+  // Pending entry-point is reached from the same rail. Back button
+  // inside Pending clears pendingScope, returning the user to the
+  // Timeline view.
+  if (pendingScope) {
+    return (
+      <MemoriesPendingView
+        tier={pendingScope.tier}
+        runIds={selectedRunIds}
+        density={density}
+        onDensityChange={changeDensity}
+        onBack={() => setPendingScope(null)}
+        counts={pendingCounts}
+      />
+    );
+  }
 
   if (selectedRange) {
     return (
@@ -741,8 +784,69 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
       ) : (
         <div className="flex-1 flex min-h-0">
           {/* Left: year jump rail */}
-          {yearGroups.length > 1 && (
+          {(yearGroups.length > 1 || pendingCounts.total > 0) && (
             <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
+              {/* v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry.
+                  Sticky at the top above the years. Click the label →
+                  open the Pending page (all three tiers). Click the
+                  chevron → expand the tree to reveal the three tier
+                  sub-entries (Tentative / Placeholder / Unrecorded);
+                  click any sub-entry to scope into a single tier. Self-
+                  hides entirely when pendingCounts.total is zero —
+                  Terry's "the entry just disappears when the work is
+                  done" requirement. Purple tint marks this as a
+                  different kind of thing from year-buttons, matching
+                  the PM AI / OnThisDay AI badge colour family. */}
+              {pendingCounts.total > 0 && (
+                <>
+                  <div className="mb-1">
+                    <IconTooltip
+                      label={`${pendingCounts.total.toLocaleString()} files awaiting your decision — Tentative ${pendingCounts.tentative} · Placeholder ${pendingCounts.placeholder} · Unrecorded ${pendingCounts.unrecorded}`}
+                      side="right"
+                    >
+                      <button
+                        onClick={() => setPendingScope({})}
+                        className="w-full px-1 py-1 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors flex items-center justify-center gap-0.5 leading-tight"
+                        data-testid="memories-rail-pending"
+                      >
+                        <span>Pending</span>
+                      </button>
+                    </IconTooltip>
+                    <p className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{pendingCounts.total.toLocaleString()}</p>
+                    {/* Chevron sits BELOW the count so the click target
+                        for "open all" stays the big top button — chevron
+                        is a deliberately smaller secondary affordance for
+                        users who want tier-direct entry. */}
+                    <button
+                      type="button"
+                      onClick={() => setPendingRailExpanded(v => !v)}
+                      className="w-full text-[10px] text-purple-500/70 hover:text-purple-600 dark:hover:text-purple-300 transition-colors"
+                      aria-label={pendingRailExpanded ? 'Collapse Pending tiers' : 'Expand Pending tiers'}
+                      data-testid="memories-rail-pending-expand"
+                    >
+                      {pendingRailExpanded ? '▴' : '▾'}
+                    </button>
+                  </div>
+                  {pendingRailExpanded && (
+                    <div className="space-y-0.5 mb-2 pl-1">
+                      {(['tentative', 'placeholder', 'unrecorded'] as PendingTier[]).map(t => (
+                        pendingCounts[t] > 0 && (
+                          <IconTooltip key={t} label={`${pendingCounts[t].toLocaleString()} ${t}`} side="right">
+                            <button
+                              onClick={() => setPendingScope({ tier: t })}
+                              className="w-full px-1 py-0.5 rounded text-[10px] font-medium text-purple-500/80 dark:text-purple-300/80 hover:text-purple-600 dark:hover:text-purple-200 hover:bg-purple-500/10 transition-colors leading-tight"
+                              data-testid={`memories-rail-pending-${t}`}
+                            >
+                              {t.charAt(0).toUpperCase() + t.slice(1, 4)} · {pendingCounts[t]}
+                            </button>
+                          </IconTooltip>
+                        )
+                      ))}
+                    </div>
+                  )}
+                  <div className="border-t border-border/60 my-1 mx-1" />
+                </>
+              )}
               {yearGroups.map(([year]) => (
                 <IconTooltip key={year} label={`Jump to ${year}`} side="right">
                   <button

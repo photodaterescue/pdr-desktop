@@ -5602,6 +5602,115 @@ export function getMemoriesDayFiles(year: number, month?: number | null, day?: n
   `).all(...params) as IndexedFile[];
 }
 
+// v2.1 round 67 (Terry 2026-06-09) — "Pending" tier classification
+// for the Memories — Dates rail entry. Files with confidence='marked'
+// (the only confidence tier PDR considers actionable; Confirmed +
+// Recovered are trusted and stay out of the Pending workflow) split
+// into three quality buckets:
+//
+//   Tentative   — PDR has SOME filesystem-derived date (mtime fallback,
+//                 ZIP/archive entry timestamp, self-laundering demotion).
+//                 The date might be the real one (file sat untouched
+//                 since import) or might be the date of a later copy.
+//                 Worth the user verifying.
+//
+//   Placeholder — PDR has a date that's almost certainly the wrong
+//                 EVENT. Scanner / multifunction-printer demotion: the
+//                 date is precisely the scan time, but for an archival
+//                 scanning workflow it's wrong by years for the photo
+//                 itself. (Google Takeout export-date entries also
+//                 belong here in principle but the date_source string
+//                 for those is the same as personal-backup archives —
+//                 can't tell them apart without sniffing the source
+//                 path, deferred.)
+//
+//   Unrecorded  — derived_date is NULL OR date_source is 'unknown' /
+//                 'No date found'. PDR has nothing at all. The user
+//                 must supply a date from scratch.
+//
+// The CASE expression in PENDING_TIER_SQL puts Unrecorded first so a
+// row with derived_date=NULL but a stray date_source label still
+// lands in the right tier; Placeholder next (the scanner suffix is
+// appended to the date_source, so the LIKE catches it); Tentative as
+// the catch-all for any other marked row.
+const PENDING_TIER_SQL = `
+  CASE
+    WHEN derived_date IS NULL OR date_source = 'unknown' OR date_source = 'No date found' THEN 'unrecorded'
+    WHEN date_source LIKE '%scanner%' THEN 'placeholder'
+    ELSE 'tentative'
+  END
+`;
+const PENDING_BASE_WHERE = `confidence = 'marked' AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)`;
+
+export interface PendingCounts {
+  total: number;
+  tentative: number;
+  placeholder: number;
+  unrecorded: number;
+}
+
+/** Global Pending counts (across ALL libraries — Terry's call
+ *  2026-06-09: the rail badge should always show the true backlog so
+ *  a multi-library user doesn't hide a pile of marked files just
+ *  because they're currently filtered to one library). */
+export function getPendingCounts(): PendingCounts {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT ${PENDING_TIER_SQL} AS tier, COUNT(*) AS n
+    FROM indexed_files
+    WHERE ${PENDING_BASE_WHERE}
+    GROUP BY tier
+  `).all() as Array<{ tier: 'tentative' | 'placeholder' | 'unrecorded'; n: number }>;
+  const counts: PendingCounts = { total: 0, tentative: 0, placeholder: 0, unrecorded: 0 };
+  for (const row of rows) {
+    counts[row.tier] = row.n;
+    counts.total += row.n;
+  }
+  return counts;
+}
+
+/** Fetch the Pending file list, with a `pending_tier` field tagged
+ *  per row. Respects the library filter (runIds) so the Pending PAGE
+ *  honours the same library selection as the rest of Memories
+ *  (Terry's call). Optional tier filter scopes to a single tier
+ *  (Tentative / Placeholder / Unrecorded) for the rail's expanded
+ *  sub-entries; omit to get all three mixed. Sort: tier first
+ *  (Tentative -> Placeholder -> Unrecorded, the highest-confidence
+ *  cascade Terry picked, so the page shows the most-easily-resolved
+ *  files at the top), then derived_date DESC + id DESC so within
+ *  each tier the user sees the most recent files first. */
+export function getPendingFiles(args: {
+  runIds?: number[];
+  tier?: 'tentative' | 'placeholder' | 'unrecorded';
+}): Array<IndexedFile & { pending_tier: 'tentative' | 'placeholder' | 'unrecorded' }> {
+  const database = getDb();
+  const clause = runIdsClause(args.runIds);
+  let whereSql = PENDING_BASE_WHERE + (clause.sql ? ' ' + clause.sql : '');
+  const params: any[] = [...clause.params];
+  if (args.tier) {
+    // Repeat the tier expression rather than rely on the SELECT alias —
+    // SQLite doesn't allow column aliases inside WHERE.
+    whereSql += ` AND (${PENDING_TIER_SQL}) = ?`;
+    params.push(args.tier);
+  }
+  return database.prepare(`
+    SELECT
+      *,
+      ${PENDING_TIER_SQL} AS pending_tier
+    FROM indexed_files
+    WHERE ${whereSql}
+    ORDER BY
+      CASE ${PENDING_TIER_SQL}
+        WHEN 'tentative' THEN 1
+        WHEN 'placeholder' THEN 2
+        WHEN 'unrecorded' THEN 3
+        ELSE 4
+      END ASC,
+      derived_date DESC,
+      id DESC
+  `).all(...params) as Array<IndexedFile & { pending_tier: 'tentative' | 'placeholder' | 'unrecorded' }>;
+}
+
 // v2.0.11 — async because purgeStaleIndexedFiles and purgeGhostRuns
 // now yield between batches (see those functions for rationale). The
 // SQL-only steps (purgeDuplicateRuns no-op, purgeDuplicateIndexedFiles,

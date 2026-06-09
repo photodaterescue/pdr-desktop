@@ -9434,6 +9434,32 @@ ipcMain.handle('memories:dayFiles', async (_event, args: { year: number; month?:
   }
 });
 
+// v2.1 round 67 (Terry 2026-06-09) — Pending tier counts + file list
+// for the Memories — Dates "Pending" rail entry. See PENDING_TIER_SQL
+// in search-database.ts for the tier classification logic.
+//   pendingCounts → global (no runIds), drives the rail badge so the
+//     user always sees the true backlog regardless of which library
+//     they have selected.
+//   pendingFiles  → respects runIds so the Pending PAGE honours the
+//     active library filter, same as the rest of Memories.
+ipcMain.handle('memories:pendingCounts', async () => {
+  try {
+    const { getPendingCounts } = await import('./search-database.js');
+    return { success: true, data: getPendingCounts() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('memories:pendingFiles', async (_event, args: { runIds?: number[]; tier?: 'tentative' | 'placeholder' | 'unrecorded' }) => {
+  try {
+    const { getPendingFiles } = await import('./search-database.js');
+    return { success: true, data: getPendingFiles(args ?? {}) };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Set a user-chosen monthly thumbnail. Right-click a photo in the
 // month drilldown → "Set as monthly thumbnail" pipes through here.
 // The month-bucket query then prefers this file over the default
