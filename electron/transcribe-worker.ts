@@ -159,21 +159,17 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   // org). isCurrentWhisperModelReady() in main.ts checks the
   // matching cache path.
   pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
-    // v2.1 round 48 (Terry 2026-06-09) — REVERTED to q4 + q4 after
-    // q4f16 failed at pipeline init with an onnxruntime-web graph
-    // optimisation error:
-    //   "Attempting to get index by a name which does not exist:
-    //    InsertedPrecisionFreeCast_... for node:
-    //    SimplifiedLayerNormFusion/"
-    // The q4f16 ONNX files insert precision-conversion cast nodes
-    // that the version of onnxruntime-web bundled with
-    // @huggingface/transformers can't process. Known compatibility
-    // gap between newer quantised model formats and older runtime
-    // versions. Can't fix from our side without upgrading the
-    // bundled runtime — a much bigger change.
-    //
-    // Sticking with q4-everywhere (verified working: 4.75×
-    // realtime on Terry's CPU, 134s audio → 637s inference).
+    // v2.1 round 49 (Terry 2026-06-09) — force native onnxruntime-node
+    // backend by setting device: 'cpu'. Without this, transformers.js
+    // defaults to the wasm runtime (onnxruntime-web) even in a Node
+    // worker context, which is why we measured 4.75× realtime —
+    // wasm's matmul kernels are 2-4× slower than the native CPU
+    // kernels onnxruntime-node ships with. transformers.js v4.0.1
+    // already lists onnxruntime-node (1.24.3) as a dependency; we
+    // just have to TELL it to use it.
+    device: 'cpu',
+    // Sticking with q4 + q4 (q4f16 doesn't load — graph-optimisation
+    // bug in the bundled runtime, see round 48 history note).
     dtype: {
       encoder_model: 'q4',
       decoder_model_merged: 'q4',
