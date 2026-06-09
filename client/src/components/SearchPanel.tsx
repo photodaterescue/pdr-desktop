@@ -76,8 +76,8 @@ import {
   MessageSquareText,
   HardDrive,
   FolderPlus,
-  Sparkles,
   Captions,
+  Files,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
@@ -87,6 +87,9 @@ import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
 import { Popover, PopoverTrigger, PopoverContent } from '@/components/ui/popover';
 import { Checkbox } from '@/components/ui/checkbox';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
+import { Button } from '@/components/ui/custom-button';
 import {
   ContextMenu,
   ContextMenuTrigger,
@@ -632,6 +635,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // each FileCard. Visibility governed by Settings → Privacy &
   // Security → "Hide transcripts" (read inside TranscriptBadge).
   const [transcribedFileIds] = useTranscribedFileIds();
+  // v2.1 round 63 (Terry 2026-06-09) — grace-close hooks for the
+  // new "All media" filter dropdown + Insights popover. 1.5 s
+  // after the mouse leaves both trigger and content, the popover
+  // auto-closes — same UX as the Memories Insights / Actions
+  // popovers (also via usePopoverGraceClose). Re-entry cancels.
+  const mediaFilterGrace = usePopoverGraceClose(1500);
+  const insightsGrace = usePopoverGraceClose(1500);
   // Parallel store of the actual file objects for every checked item,
   // keyed by file id. Persists across searches so a user can compose a
   // "Custom selection" by ticking 3 photos in one search, switching the
@@ -4442,45 +4452,134 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 effect refetches. Sits before the divider, so it visually
                 groups with the result-count cluster rather than with
                 the dismissable filter-status chips on the other side. */}
-            <IconTooltip label={hasCaption ? 'Show all photos' : 'Show only photos with captions'} side="bottom">
-              <button
-                type="button"
-                onClick={() => setHasCaption((v) => v ? undefined : true)}
-                data-testid="sd-captioned-only-toggle"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
-                  hasCaption
-                    ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08]'
-                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                }`}
-              >
-                <MessageSquareText className="w-3.5 h-3.5" />
-                Captioned only
-              </button>
-            </IconTooltip>
-            {/* v2.0.15 Phase 3b (Terry 2026-06-06) — "Enhanced only" toggle.
-                Mirrors the Captioned chip exactly (h-8 / px-3 / rounded-full /
-                text-xs font-medium / IconTooltip wrapper) so the pair reads
-                as one cluster of "content-attribute" filters. Purple-500
-                fill in the active state matches the _E suffix's purple
-                identity established in the Glossary and Best Practices
-                surfaces; same solid-fill behaviour as Captioned's gold so
-                both toggles signal "active" the same way. Server-side
-                filter (isEnhanced → enhancement_type IS NOT NULL). */}
-            <IconTooltip label={isEnhanced ? 'Show all photos' : 'Show only enhanced photos'} side="bottom">
-              <button
-                type="button"
-                onClick={() => setIsEnhanced((v) => v ? undefined : true)}
-                data-testid="sd-enhanced-only-toggle"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
-                  isEnhanced
-                    ? 'bg-purple-500 border-purple-500 text-white'
-                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                }`}
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                Enhanced only
-              </button>
-            </IconTooltip>
+            {/* v2.1 round 63 (Terry 2026-06-09) — "All media" filter
+                dropdown. Replaces the round-58 standalone Captioned-only
+                + Enhanced-only chips so S&D and Memories adopt the same
+                premium pattern: one chip carrying the active filter
+                label + count + chevron, with the popover combining a
+                TYPE radio (All / Photos / Videos) and ALSO-FILTER
+                checkboxes (Captions / Enhanced). The radio writes to
+                selectedFileType (same ribbon Type filter, single
+                source of truth); the checkboxes write to hasCaption
+                and isEnhanced. Active state when any constraint is
+                non-default. Terry: "users will be familiar when
+                switching between them." Same recipe used in
+                MemoriesView lines ~2137-2237. */}
+            {(() => {
+              const allTypes = selectedFileType.length === 0 || selectedFileType.length === 2;
+              const photosOnly = selectedFileType.length === 1 && selectedFileType[0] === 'photo';
+              const videosOnly = selectedFileType.length === 1 && selectedFileType[0] === 'video';
+              const typeKey: 'all' | 'photos' | 'videos' = photosOnly ? 'photos' : videosOnly ? 'videos' : 'all';
+              const captionsOn = hasCaption === true;
+              const enhancedOn = isEnhanced === true;
+              const isDefault = typeKey === 'all' && !captionsOn && !enhancedOn;
+              const total = results?.totalCount ?? 0;
+              // Chip label — describe the active combination in a way
+              // that matches what the user sees on the grid.
+              let chipLabel: string;
+              if (isDefault) {
+                chipLabel = `All media${total ? ` · ${total.toLocaleString()}` : ''}`;
+              } else {
+                const parts: string[] = [];
+                if (typeKey === 'photos') parts.push('Photos');
+                else if (typeKey === 'videos') parts.push('Videos');
+                else parts.push('All media');
+                if (captionsOn) parts.push('Captioned');
+                if (enhancedOn) parts.push('Enhanced');
+                chipLabel = `${parts.join(' + ')}${total ? ` · ${total.toLocaleString()}` : ''}`;
+              }
+              const ChipIcon =
+                (typeKey === 'photos' && !captionsOn && !enhancedOn) ? ImageIcon :
+                (typeKey === 'videos' && !captionsOn && !enhancedOn) ? Film :
+                (captionsOn && !enhancedOn && typeKey === 'all') ? MessageSquareText :
+                (enhancedOn && !captionsOn && typeKey === 'all') ? Sparkles :
+                Files;
+              return (
+                <Popover open={mediaFilterGrace.open} onOpenChange={mediaFilterGrace.setOpen}>
+                  <IconTooltip label="Filter what's shown — Photos, Videos, Captioned, Enhanced" side="bottom">
+                    <PopoverTrigger asChild>
+                      <button
+                        type="button"
+                        data-testid="sd-media-filter"
+                        {...mediaFilterGrace.triggerHoverProps}
+                        className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
+                          !isDefault
+                            ? 'bg-primary border-primary text-primary-foreground'
+                            : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                        }`}
+                      >
+                        <ChipIcon className="w-3.5 h-3.5" />
+                        {chipLabel}
+                        <ChevronDown className="w-3 h-3 opacity-70" />
+                      </button>
+                    </PopoverTrigger>
+                  </IconTooltip>
+                  <PopoverContent align="start" className="w-64 p-1" {...mediaFilterGrace.contentHoverProps}>
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                      Type
+                    </p>
+                    <RadioGroup
+                      value={typeKey}
+                      onValueChange={(v) => {
+                        if (v === 'all') setSelectedFileType(['photo', 'video']);
+                        else if (v === 'photos') setSelectedFileType(['photo']);
+                        else if (v === 'videos') setSelectedFileType(['video']);
+                      }}
+                      className="gap-0"
+                    >
+                      {([
+                        { key: 'all' as const, label: 'All media', Icon: Files },
+                        { key: 'photos' as const, label: 'Photos', Icon: ImageIcon },
+                        { key: 'videos' as const, label: 'Videos', Icon: Film },
+                      ]).map(({ key, label, Icon }) => (
+                        <label
+                          key={key}
+                          data-testid={`sd-media-filter-${key}`}
+                          htmlFor={`sd-media-filter-radio-${key}`}
+                          className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                        >
+                          <span className="inline-flex items-center gap-2 text-foreground">
+                            <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                            {label}
+                          </span>
+                          <RadioGroupItem id={`sd-media-filter-radio-${key}`} value={key} />
+                        </label>
+                      ))}
+                    </RadioGroup>
+                    <div className="h-px bg-border my-1" />
+                    <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">
+                      Also filter
+                    </p>
+                    <label
+                      data-testid="sd-media-filter-captioned"
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
+                        Captions
+                      </span>
+                      <Checkbox
+                        checked={captionsOn}
+                        onCheckedChange={(v) => setHasCaption(v ? true : undefined)}
+                      />
+                    </label>
+                    <label
+                      data-testid="sd-media-filter-enhanced"
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <Sparkles className="w-3.5 h-3.5 text-muted-foreground" />
+                        Enhanced
+                      </span>
+                      <Checkbox
+                        checked={enhancedOn}
+                        onCheckedChange={(v) => setIsEnhanced(v ? true : undefined)}
+                      />
+                    </label>
+                  </PopoverContent>
+                </Popover>
+              );
+            })()}
             {/* Active filter chips — inline between Edit Dates and view
                 controls. Divider visually separates the selection-action
                 cluster from the filter-status cluster. When more than
@@ -4613,153 +4712,185 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 kind of control (zoom stepper, segmented view-mode
                 group). */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* View-mode segmented group — Grid + List + Details
-                  belong together (Terry 2026-05-30: "the Grid button
-                  should surely be next to the other view buttons of
-                  List and Details"). Previously Grid sat separate
-                  from the List/Details group with the zoom pill
-                  splitting them. */}
-              <div className="inline-flex items-center h-8 border border-border rounded-md overflow-hidden">
-                <IconTooltip label="Grid" side="bottom">
-                  <button onClick={() => setViewMode('grid')}
-                    className={`flex items-center justify-center w-8 h-full transition-colors ${viewMode === 'grid' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                    <LayoutGrid className="w-3.5 h-3.5" />
-                  </button>
-                </IconTooltip>
-                <IconTooltip label="List" side="bottom">
-                  <button onClick={() => setViewMode('list')}
-                    className={`flex items-center justify-center w-8 h-full border-l border-border transition-colors ${viewMode === 'list' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                    <List className="w-3.5 h-3.5" />
-                  </button>
-                </IconTooltip>
-                <IconTooltip label="Details" side="bottom">
-                  <button onClick={() => setViewMode('details')}
-                    className={`flex items-center justify-center w-8 h-full border-l border-border transition-colors ${viewMode === 'details' ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                    <Table2 className="w-3.5 h-3.5" />
-                  </button>
-                </IconTooltip>
-              </div>
-              {/* Zoom pill — only relevant in Grid mode. h-8 outer to
-                  match the rest of the toolbar; inner buttons stay
-                  w-6 h-6 since they're nested. */}
-              {viewMode === 'grid' && (
-                <div className="inline-flex items-center gap-0.5 h-8 px-1 rounded-md border border-border bg-background">
-                  <IconTooltip label="Zoom out" side="bottom">
-                    <button
-                      onClick={() => setTileSizeSlider(prev => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
-                      disabled={tileSizeSlider <= TILE_SLIDER_MIN}
-                      className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      data-testid="button-sd-zoom-out"
-                      aria-label="Zoom out"
-                    >
-                      <ZoomOut className="w-3.5 h-3.5" />
-                    </button>
-                  </IconTooltip>
-                  <IconTooltip label="Reset to 50%" side="bottom">
-                    <button
-                      onClick={() => setTileSizeSlider(50)}
-                      className="px-1.5 text-[11px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
-                      data-testid="button-sd-zoom-reset"
-                      aria-label="Reset zoom"
-                    >
-                      {tileSizeSlider}%
-                    </button>
-                  </IconTooltip>
-                  <IconTooltip label="Zoom in" side="bottom">
-                    <button
-                      onClick={() => setTileSizeSlider(prev => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
-                      disabled={tileSizeSlider >= TILE_SLIDER_MAX}
-                      className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-                      data-testid="button-sd-zoom-in"
-                      aria-label="Zoom in"
-                    >
-                      <ZoomIn className="w-3.5 h-3.5" />
-                    </button>
-                  </IconTooltip>
-                </div>
-              )}
-              {/* v2.0.15 (Terry 2026-05-29) — REMOVED per-view
-                  refresh button. Refresh consolidated into the
-                  titlebar (next to the Recycle Bin icon). */}
+              {/* v2.1 round 63 (Terry 2026-06-09) — INSIGHTS popover.
+                  Consolidates four previously-standalone toolbar
+                  controls (View Style segmented, Zoom %, Add Info,
+                  Select) into one popover with sectioned content +
+                  horizontal dividers, mirroring the Memories
+                  Insights pattern from round 36. Terry: "S&D will
+                  adopt Insights from Memories... separate them out
+                  by dividers where appropriate. Try to keep them in
+                  the same sort of order as Memories Insights, I
+                  realise there's more on S&D though." S&D adds the
+                  VIEW STYLE section at the top (Grid / List /
+                  Details — Memories is grid-only so doesn't have
+                  this). Other sections mirror Memories order.
+                  Active state when any control deviates from
+                  defaults. */}
+              {(() => {
+                const insightsCount =
+                  (viewMode !== 'grid' ? 1 : 0) +
+                  (tileSizeSlider !== 50 ? 1 : 0) +
+                  (selectionMode ? 1 : 0) +
+                  tileMetaFields.length;
+                const insightsActive = insightsCount > 0;
+                return (
+                  <Popover open={insightsGrace.open} onOpenChange={insightsGrace.setOpen}>
+                    <IconTooltip label="View options — layout, tile size, selection mode, photo info" side="bottom">
+                      <PopoverTrigger asChild>
+                        <Button
+                          variant={insightsActive ? 'secondary' : 'ghost'}
+                          size="sm"
+                          data-testid="sd-insights-trigger"
+                          {...insightsGrace.triggerHoverProps}
+                        >
+                          <Info className="w-3.5 h-3.5 mr-1.5" />
+                          Insights
+                          {insightsActive && (
+                            <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                              {insightsCount}
+                            </span>
+                          )}
+                        </Button>
+                      </PopoverTrigger>
+                    </IconTooltip>
+                    <PopoverContent className="w-64 p-3" align="end" {...insightsGrace.contentHoverProps}>
+                      {/* — View style (S&D-specific section, top because
+                          it picks the fundamental layout) — */}
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">View style</p>
+                      <div className="inline-flex items-center h-8 border border-border rounded-md overflow-hidden w-full">
+                        {([
+                          { key: 'grid' as const, Icon: LayoutGrid, label: 'Grid' },
+                          { key: 'list' as const, Icon: List, label: 'List' },
+                          { key: 'details' as const, Icon: Table2, label: 'Details' },
+                        ]).map(({ key, Icon, label }, i) => (
+                          <button
+                            key={key}
+                            onClick={() => setViewMode(key)}
+                            className={`flex-1 flex items-center justify-center gap-1.5 h-full text-xs transition-colors ${i > 0 ? 'border-l border-border' : ''} ${viewMode === key ? 'bg-primary/10 text-primary font-medium' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}
+                            data-testid={`sd-insights-view-${key}`}
+                          >
+                            <Icon className="w-3.5 h-3.5" />
+                            {label}
+                          </button>
+                        ))}
+                      </div>
 
-              {/* Metadata display dropdown — customise what info appears below each tile */}
-              {viewMode === 'grid' && (
-                <Popover open={showMetaDropdown} onOpenChange={setShowMetaDropdown}>
-                  <IconTooltip label="Choose which details show below each photo" side="bottom">
-                    <PopoverTrigger asChild>
-                      <button
-                        className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${tileMetaFields.length > 0 ? 'bg-primary/10 text-primary border-primary/30' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
-                      >
-                        <Info className="w-3.5 h-3.5" />
-                        <span>Add Info{tileMetaFields.length > 0 ? ` (${tileMetaFields.length})` : ''}</span>
-                      </button>
-                    </PopoverTrigger>
-                  </IconTooltip>
-                  <PopoverContent className="w-56 p-2" align="end">
-                    <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-2 pt-1 pb-2">Show below each tile</p>
-                    {([
-                      { key: 'filename' as TileMetaField, label: 'Filename' },
-                      { key: 'date' as TileMetaField, label: 'Date' },
-                      { key: 'size' as TileMetaField, label: 'File size' },
-                      { key: 'dimensions' as TileMetaField, label: 'Dimensions' },
-                      { key: 'confidence' as TileMetaField, label: 'Date confidence' },
-                      { key: 'camera' as TileMetaField, label: 'Camera' },
-                      { key: 'lens' as TileMetaField, label: 'Lens' },
-                      { key: 'iso' as TileMetaField, label: 'ISO' },
-                      { key: 'aperture' as TileMetaField, label: 'Aperture' },
-                      { key: 'focalLength' as TileMetaField, label: 'Focal length' },
-                      { key: 'country' as TileMetaField, label: 'Country' },
-                      { key: 'city' as TileMetaField, label: 'City' },
-                    ]).map(opt => {
-                      const checked = tileMetaFields.includes(opt.key);
-                      return (
-                        <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={() => {
-                              setTileMetaFields(prev => checked ? prev.filter(f => f !== opt.key) : [...prev, opt.key]);
-                            }}
-                            className="rounded border-border text-purple-500 focus:ring-purple-400/50"
-                          />
-                          <span className="text-sm text-foreground flex-1">{opt.label}</span>
-                        </label>
-                      );
-                    })}
-                    {tileMetaFields.length > 0 && (
-                      <button
-                        onClick={() => setTileMetaFields([])}
-                        className="w-full mt-2 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-secondary text-muted-foreground transition-colors"
-                      >
-                        Clear all
-                      </button>
-                    )}
-                  </PopoverContent>
-                </Popover>
-              )}
+                      {/* — Tile size (only relevant in Grid view) — */}
+                      {viewMode === 'grid' && (
+                        <>
+                          <div className="border-t border-border my-3" />
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
+                          <div className="flex items-center gap-1">
+                            <button
+                              type="button"
+                              onClick={() => setTileSizeSlider(prev => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
+                              disabled={tileSizeSlider <= TILE_SLIDER_MIN}
+                              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              data-testid="sd-insights-zoom-out"
+                              aria-label="Zoom out"
+                            >
+                              <ZoomOut className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTileSizeSlider(50)}
+                              className="flex-1 text-xs font-medium text-foreground tabular-nums hover:bg-secondary/40 rounded py-1 transition-colors"
+                              data-testid="sd-insights-zoom-reset"
+                              aria-label="Reset zoom"
+                            >
+                              {tileSizeSlider}% <span className="text-muted-foreground/70 text-[10px]">(click to reset)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTileSizeSlider(prev => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
+                              disabled={tileSizeSlider >= TILE_SLIDER_MAX}
+                              className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                              data-testid="sd-insights-zoom-in"
+                              aria-label="Zoom in"
+                            >
+                              <ZoomIn className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        </>
+                      )}
 
-              {/* Selection mode toggle — shows checkboxes on tiles for multi-select */}
-              <IconTooltip label={selectionMode ? 'Exit selection mode' : 'Enable checkbox selection'} side="bottom">
-                <button
-                  onClick={() => {
-                    setSelectionMode(prev => {
-                      const next = !prev;
-                      // Leaving selection mode → clear BOTH stores (id Set + file Map)
-                      // and exit Custom-selection grid view if it was active.
-                      if (!next) {
-                        setSelectedFiles(new Set());
-                        setSelectedFilesMap(new Map());
-                        setShowSelectedOnly(false);
-                      }
-                      return next;
-                    });
-                  }}
-                  className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md border transition-colors text-xs font-medium ${selectionMode ? 'bg-primary text-primary-foreground border-primary shadow-sm' : 'text-muted-foreground border-border hover:text-foreground hover:bg-secondary/50 hover:border-primary/30'}`}
-                >
-                  <CheckSquare className="w-3.5 h-3.5" />
-                  <span>Select{selectedFiles.size > 0 ? ` (${selectedFiles.size})` : ''}</span>
-                </button>
-              </IconTooltip>
+                      {/* — Selection mode — */}
+                      <div className="border-t border-border my-3" />
+                      <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Selection mode</p>
+                      <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectionMode}
+                          onChange={() => {
+                            setSelectionMode(prev => {
+                              const next = !prev;
+                              if (!next) {
+                                setSelectedFiles(new Set());
+                                setSelectedFilesMap(new Map());
+                                setShowSelectedOnly(false);
+                              }
+                              return next;
+                            });
+                          }}
+                          className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                          data-testid="sd-insights-selection-mode"
+                        />
+                        <span className="text-sm text-foreground flex-1">Show checkboxes on every tile</span>
+                      </label>
+
+                      {/* — Show below each tile (only in Grid view) — */}
+                      {viewMode === 'grid' && (
+                        <>
+                          <div className="border-t border-border my-3" />
+                          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-0">
+                            {([
+                              { key: 'filename' as TileMetaField, label: 'Filename' },
+                              { key: 'date' as TileMetaField, label: 'Date' },
+                              { key: 'size' as TileMetaField, label: 'File size' },
+                              { key: 'dimensions' as TileMetaField, label: 'Dimensions' },
+                              { key: 'confidence' as TileMetaField, label: 'Confidence' },
+                              { key: 'camera' as TileMetaField, label: 'Camera' },
+                              { key: 'lens' as TileMetaField, label: 'Lens' },
+                              { key: 'iso' as TileMetaField, label: 'ISO' },
+                              { key: 'aperture' as TileMetaField, label: 'Aperture' },
+                              { key: 'focalLength' as TileMetaField, label: 'Focal length' },
+                              { key: 'country' as TileMetaField, label: 'Country' },
+                              { key: 'city' as TileMetaField, label: 'City' },
+                            ]).map(opt => {
+                              const checked = tileMetaFields.includes(opt.key);
+                              return (
+                                <label key={opt.key} className="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-secondary/50 cursor-pointer">
+                                  <input
+                                    type="checkbox"
+                                    checked={checked}
+                                    onChange={() => setTileMetaFields(prev => checked ? prev.filter(f => f !== opt.key) : [...prev, opt.key])}
+                                    className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+                                  />
+                                  <span className="text-xs text-foreground flex-1">{opt.label}</span>
+                                </label>
+                              );
+                            })}
+                          </div>
+                          {tileMetaFields.length > 0 && (
+                            <button
+                              type="button"
+                              onClick={() => setTileMetaFields([])}
+                              className="w-full mt-2 px-3 py-1.5 rounded-md text-xs font-medium border border-border hover:bg-secondary text-muted-foreground transition-colors"
+                            >
+                              Clear all info fields
+                            </button>
+                          )}
+                          <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
+                            Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
+                          </p>
+                        </>
+                      )}
+                    </PopoverContent>
+                  </Popover>
+                );
+              })()}
 
               <IconTooltip label={showPreviewPanel ? 'Hide preview' : 'Show preview'} side="bottom">
                 <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
