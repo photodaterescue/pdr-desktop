@@ -64,6 +64,7 @@ import {
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
+import { useShowTranscriptBadge } from '@/hooks/useShowTranscriptBadge';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import {
   DropdownMenu,
@@ -177,6 +178,21 @@ function groupRunsIntoLibraries(runs: IndexedRun[]): Library[] {
 // slot).
 export default function MemoriesView({ headerControlsTarget }: { headerControlsTarget?: HTMLElement | null } = {}) {
   // (Back-to-album pill moved into TitleBar — see TitleBar.tsx.)
+
+  // v2.1 round 57 (Terry 2026-06-09) — read-side hooks for the on-tile
+  // "T" badge so the OnThisDay strip's video tiles can show the
+  // transcript indicator. The WRITER (Insights popover toggle + state
+  // setter) lives in the sibling MemoriesDayDrilldown component below
+  // — these read hooks listen for the dispatched change event and
+  // refetched-ids event respectively, so toggling in DayDrilldown
+  // updates this view's tiles instantly with no reload. Originally
+  // these were added to DayDrilldown only — caused a
+  // `showTranscriptBadge is not defined` runtime error here because
+  // MemoriesView and MemoriesDayDrilldown are separate React
+  // functions with separate closures.
+  const transcribedFileIdsRead = useTranscribedFileIds();
+  const transcribedFileIds = transcribedFileIdsRead[0];
+  const showTranscriptBadge = useShowTranscriptBadge();
 
   const [runs, setRuns] = useState<IndexedRun[]>([]);
   // Multi-select library filter — matches S&D's Library Drive
@@ -2984,8 +3000,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         </div>
                       )}
                       {f.file_type === 'video' && (
-                        <div className="absolute top-1.5 right-1.5 px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
-                          <Film className="w-2.5 h-2.5" /> Video
+                        <div className="absolute top-1.5 right-1.5 flex items-center gap-1">
+                          {/* v2.1 round 57 (Terry 2026-06-09) — "T" pill
+                              renders to the LEFT of the existing "Video"
+                              pill when a transcript exists. Mirrors the
+                              OnThisDay tile a few thousand lines above
+                              + the SearchPanel + AlbumsView tiles —
+                              same surface (bg-black/60, white, 9px) so
+                              the pair reads as one status group. */}
+                          {showTranscriptBadge && transcribedFileIds.has(f.id) && (
+                            <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-bold leading-none" title="Transcript available">T</span>
+                          )}
+                          <span className="px-1.5 py-0.5 rounded bg-black/60 text-white text-[9px] font-medium flex items-center gap-1">
+                            <Film className="w-2.5 h-2.5" /> Video
+                          </span>
                         </div>
                       )}
                       {/* v2.1 (Terry 2026-06-07) — Clip badge for files
