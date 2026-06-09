@@ -109,14 +109,19 @@ export function useTranscribeVideos(): {
           <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
           <Row label="Estimated time to finish" value={estimate ? `~${fmt(estimate.etaSec)}` : '—'} />
         </div>
-        {/* v2.1 round 54 (Terry 2026-06-09) — friendly note about
-            why the estimate is an estimate. Plain language — no
-            mention of CPUs / cores / instruction sets. The point
-            is the user understands their computer's age affects
-            the number above, not what AVX2 is. */}
-        <p className="mt-2 text-xs text-muted-foreground leading-snug">
-          That estimate is based on a desktop from about ten years ago. Newer machines will usually finish quicker; older ones a bit slower. Transcribing runs in the background — you can keep using PDR while it works.
-        </p>
+        {/* v2.1 round 55 (Terry 2026-06-09) — scannable bullet list
+            replaces the paragraph. Easier to skim before clicking
+            Transcribe; flags the GPU caveat + tells the user
+            where to watch progress. */}
+        <div className="mt-2 text-xs text-muted-foreground leading-snug space-y-1.5">
+          <p>Time estimate is based on a top-tier 2012 CPU (benchmark estimates made 2026).</p>
+          <ul className="list-disc pl-5 space-y-1">
+            <li>Newer CPUs are likely to finish quicker; older ones slower.</li>
+            <li>GPU transcription upgrades planned for PDR v2.2.</li>
+            <li>Transcribing runs in the background, so you can keep using PDR while it works.</li>
+            <li>Watch the progress toast at the top-centre of your screen.</li>
+          </ul>
+        </div>
       </>
     );
 
@@ -139,31 +144,44 @@ export function useTranscribeVideos(): {
       </div>
     ) : null;
 
-    const singleFileBanner = filePaths.length === 1 ? (() => {
-      const fp = filePaths[0];
-      const filename = fp.split(/[/\\]/).pop() || fp;
+    // v2.1 round 55 (Terry 2026-06-09) — show the filename for
+    // every selected file, not just single-file selections. Each
+    // row has its own copy-to-clipboard button. When the list
+    // gets long (4+ files), the card becomes scrollable so the
+    // modal doesn't blow up to fill the screen.
+    const singleFileBanner = (() => {
+      if (filePaths.length === 0) return null;
+      const items = filePaths.map(fp => ({ fp, filename: fp.split(/[/\\]/).pop() || fp }));
+      const isScrollable = items.length >= 4;
       return (
-        <div className="mb-3 flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-secondary/30">
-          <span className="text-xs text-muted-foreground shrink-0">File:</span>
-          <span className="text-sm font-mono text-foreground truncate flex-1" title={filename}>{filename}</span>
-          <IconTooltip label="Copy filename" side="top">
-            <button
-              type="button"
-              onClick={() => {
-                try {
-                  navigator.clipboard.writeText(filename);
-                  toast.success('Filename copied', { duration: 2000 });
-                } catch { /* clipboard API restricted — non-fatal */ }
-              }}
-              className="shrink-0 p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
-              data-testid="copy-transcribe-filename"
+        <div className={`mb-3 rounded-lg border border-border bg-secondary/30 ${isScrollable ? 'max-h-48 overflow-y-auto' : ''}`}>
+          {items.map((it, i) => (
+            <div
+              key={`${it.fp}-${i}`}
+              className="flex items-center gap-2 px-3 py-2 border-b border-border/40 last:border-0"
             >
-              <Copy className="w-3.5 h-3.5" />
-            </button>
-          </IconTooltip>
+              <span className="text-xs text-muted-foreground shrink-0">{items.length === 1 ? 'File:' : `${i + 1}.`}</span>
+              <span className="text-sm font-mono text-foreground truncate flex-1" title={it.filename}>{it.filename}</span>
+              <IconTooltip label="Copy filename" side="top">
+                <button
+                  type="button"
+                  onClick={() => {
+                    try {
+                      navigator.clipboard.writeText(it.filename);
+                      toast.success('Filename copied', { duration: 2000 });
+                    } catch { /* clipboard API restricted — non-fatal */ }
+                  }}
+                  className="shrink-0 p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                  data-testid={`copy-transcribe-filename-${i}`}
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                </button>
+              </IconTooltip>
+            </div>
+          ))}
         </div>
       );
-    })() : null;
+    })();
 
     // v2.1 round 53 (Terry 2026-06-09) — when nothing's left to
     // transcribe, the title becomes a statement, the only button
