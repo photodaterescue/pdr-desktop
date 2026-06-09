@@ -7521,10 +7521,18 @@ ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) =
       }
       etaTargetDurationSec += dur;
     }
+    // v2.1 round 54 (Terry 2026-06-09) — multiplier bumped from
+    // 2.0× to 5.0× to match the measured behaviour of the final
+    // v2.1 config (Whisper Large-v3 Turbo + q4 + native
+    // onnxruntime-node, VAD off). Real measurement on Terry's
+    // i7-3770 (2012-era desktop, AVX but no AVX2): 134.1s audio
+    // → 621.3s wall clock = 4.63× realtime. Modern AVX2 CPUs are
+    // typically faster; using 5× as a slightly pessimistic round
+    // number so the ETA reads right-or-generous, not optimistic.
     // Per-video overhead: audio extraction + model load + segment
     // persistence. Only counts the videos that will actually run.
     const overheadSec = Math.max(0, (fileCount - alreadyDoneCount)) * 20;
-    const etaSec = Math.round(etaTargetDurationSec * 2.0) + overheadSec;
+    const etaSec = Math.round(etaTargetDurationSec * 5.0) + overheadSec;
     // v2.1 round 34 (Terry 2026-06-08) — diagnostic log so we can
     // see what the modal showed and why. Surfaces the probe
     // success rate (probed vs failed) and the final tally —

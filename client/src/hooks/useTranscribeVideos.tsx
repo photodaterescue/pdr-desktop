@@ -100,14 +100,24 @@ export function useTranscribeVideos(): {
         <Row label="Nothing to transcribe" value="—" />
       </div>
     ) : (
-      <div className="rounded-lg border border-border bg-secondary/30 p-3">
-        <Row label="Videos to transcribe" value={remaining} />
-        {estimate && estimate.alreadyDoneCount > 0 && (
-          <Row label="Already transcribed (skipped)" value={estimate.alreadyDoneCount} />
-        )}
-        <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
-        <Row label="Estimated time to finish" value={estimate ? `~${fmt(estimate.etaSec)}` : '—'} />
-      </div>
+      <>
+        <div className="rounded-lg border border-border bg-secondary/30 p-3">
+          <Row label="Videos to transcribe" value={remaining} />
+          {estimate && estimate.alreadyDoneCount > 0 && (
+            <Row label="Already transcribed (skipped)" value={estimate.alreadyDoneCount} />
+          )}
+          <Row label="Total playing time" value={estimate ? fmt(estimate.totalDurationSec) : '—'} />
+          <Row label="Estimated time to finish" value={estimate ? `~${fmt(estimate.etaSec)}` : '—'} />
+        </div>
+        {/* v2.1 round 54 (Terry 2026-06-09) — friendly note about
+            why the estimate is an estimate. Plain language — no
+            mention of CPUs / cores / instruction sets. The point
+            is the user understands their computer's age affects
+            the number above, not what AVX2 is. */}
+        <p className="mt-2 text-xs text-muted-foreground leading-snug">
+          That estimate is based on a desktop from about ten years ago. Newer machines will usually finish quicker; older ones a bit slower. Transcribing runs in the background — you can keep using PDR while it works.
+        </p>
+      </>
     );
 
     // Download notice only when there's actually work to do AND
