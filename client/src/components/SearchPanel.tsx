@@ -4618,7 +4618,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       </Button>
                     </PopoverTrigger>
                   </IconTooltip>
-                  <PopoverContent className="w-60 p-2.5" align="start" {...insightsGrace.contentHoverProps}>
+                  <PopoverContent
+                    className="w-60 p-2.5"
+                    align="start"
+                    {...insightsGrace.contentHoverProps}
+                    // v2.1 round 65 (Terry 2026-06-09) — Ctrl+wheel
+                    // zoom keeps working while the Insights popover is
+                    // open, so the user can WATCH the % number tick as
+                    // they roll the mouse and dial in their preferred
+                    // size live. Without this, the popover's own scroll
+                    // container swallowed the wheel event before it
+                    // reached the grid's wheel listener and the
+                    // displayed % stayed frozen. Same step (10) as the
+                    // grid's existing onWheel and the ± buttons above.
+                    // Bail when not in grid view (List / Details have
+                    // no tile size to scale).
+                    onWheel={(e) => {
+                      if (!(e.ctrlKey || e.metaKey)) return;
+                      if (viewMode !== 'grid') return;
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setTileSizeSlider(prev => {
+                        const next = prev + (e.deltaY < 0 ? TILE_SLIDER_STEP : -TILE_SLIDER_STEP);
+                        return Math.max(TILE_SLIDER_MIN, Math.min(TILE_SLIDER_MAX, next));
+                      });
+                    }}
+                  >
                     {/* — View style (S&D-specific section, top because
                         it picks the fundamental layout) — */}
                     <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-1.5">View style</p>

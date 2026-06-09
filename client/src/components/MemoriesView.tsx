@@ -2294,7 +2294,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   </Button>
                 </PopoverTrigger>
               </IconTooltip>
-          <PopoverContent className="w-64 p-3" align="start" {...insightsGrace.contentHoverProps}>
+          <PopoverContent
+            className="w-64 p-3"
+            align="start"
+            {...insightsGrace.contentHoverProps}
+            // v2.1 round 65 (Terry 2026-06-09) — Ctrl+wheel zoom keeps
+            // working while the Insights popover is open, so the user
+            // can WATCH the % number tick live and dial in their
+            // preferred size without closing the popover first.
+            // Without this, the popover's own scroll container
+            // swallowed the wheel event before it reached the grid's
+            // useEffect-attached ctrlKey listener and the displayed %
+            // stayed frozen. Step (5) matches the existing
+            // grid-container wheel handler in this file (gridScrollRef
+            // useEffect).
+            onWheel={(e) => {
+              if (!(e.ctrlKey || e.metaKey)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setTileSizeSlider(prev => Math.max(0, Math.min(100, prev + (e.deltaY < 0 ? 5 : -5))));
+            }}
+          >
             {/* — Tile size section — */}
             <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
             <div className="flex items-center gap-1 mb-3">
