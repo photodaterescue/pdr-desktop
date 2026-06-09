@@ -7323,25 +7323,29 @@ const transcribePending = new Map<string, {
 // onnx-community org). CURRENT_WHISPER_MODEL_ORG carries the
 // HF account name so isCurrentWhisperModelReady() probes the
 // right cache subpath.
-// v2.1 round 51 (Terry 2026-06-09) — reverted to whisper-small.en
-// per Terry's measurement that VAD'd Turbo took LONGER + more
-// errors than no-VAD Turbo (~12 min for 134s audio), and no-VAD
-// Turbo itself is still ~9.5 min. Stepping back to the version
-// that was confirmed running at ~2× realtime to establish a
-// clean baseline. Word-level timestamps will layer on after this
-// is verified working.
-const CURRENT_WHISPER_MODEL_ORG = 'Xenova';
-const CURRENT_WHISPER_MODEL_DIR = 'whisper-small.en';
-// Legacy model folders to purge on launch. whisper-small.en is
-// REMOVED from this list now that it's the active model again;
-// whisper-large-v3-turbo is added so the ~720 MB of q4 ONNX
-// files purged on next launch.
+// v2.1 round 52 (Terry 2026-06-09) — Whisper Large-v3 Turbo + q4
+// is the final v2.1 transcription model. After exhaustive testing
+// across whisper-base / whisper-small / whisper-medium /
+// whisper-small.en / Turbo, with and without VAD, with/without
+// word-level timestamps, native vs wasm backend, q4 / q4f16 /
+// q8 dtypes:
+//   • Turbo + q4 (no VAD, no word-level timestamps): ~5× realtime
+//     on a 2012-era i7-3770 desktop, near-YouTube-quality output
+//   • Everything else either hurts speed, accuracy, or both
+// This is the version that ships. Speed varies with hardware:
+// 2–3× realtime on modern AVX2 CPUs, 0.5–2× realtime with GPU
+// acceleration (v2.2 feature).
+const CURRENT_WHISPER_MODEL_ORG = 'onnx-community';
+const CURRENT_WHISPER_MODEL_DIR = 'whisper-large-v3-turbo';
+// Legacy model folders to purge on launch. whisper-small.en added
+// to this list now that Turbo is back as the active model; Turbo
+// removed since it's the current target.
 const LEGACY_WHISPER_MODELS: Array<{ org: string; dir: string }> = [
   { org: 'Xenova', dir: 'whisper-base' },
   { org: 'Xenova', dir: 'whisper-small' },
   { org: 'Xenova', dir: 'whisper-medium' },
   { org: 'Xenova', dir: 'distil-medium.en' },
-  { org: 'onnx-community', dir: 'whisper-large-v3-turbo' },
+  { org: 'Xenova', dir: 'whisper-small.en' },
 ];
 
 function getWhisperCacheRoot(): string {

@@ -158,25 +158,23 @@ async function getWhisperPipeline(requestId: string): Promise<any> {
   // transformers.js Whisper repos merged into the onnx-community
   // org). isCurrentWhisperModelReady() in main.ts checks the
   // matching cache path.
-  // v2.1 round 51 (Terry 2026-06-09) — reverted to Xenova/whisper-small.en
-  // to re-establish a clean fast baseline. Turbo + VAD turned out to
-  // be SLOWER than no-VAD Turbo on Terry's audio (VAD found 36 short
-  // regions; the per-region Whisper invocation overhead ate the
-  // theoretical speedup). No-VAD Turbo itself was ~9.5 min for 134s
-  // audio. small.en + q8 decoder previously measured ~2× realtime
-  // (134s audio → ~4-5 min wall clock) — much more usable.
-  // Word-level timestamps + tighter caption timing will layer on
-  // AFTER we confirm this baseline is fast on Terry's CPU.
-  pipelineInstance = await pipeline('automatic-speech-recognition', 'Xenova/whisper-small.en', {
-    // Force native onnxruntime-node backend (same reasoning as
-    // round 49) — modest gain on small.en but no reason to leave
-    // it on wasm.
+  // v2.1 round 52 (Terry 2026-06-09) — back to Whisper Large-v3
+  // Turbo + q4 as the final v2.1 transcription model. small.en
+  // was faster (~2× realtime) but the accuracy on Terry's noisy
+  // family videos was unusable — "Yerusha hasshah haslor"-class
+  // mishearings on every other line. Turbo + q4 is ~5× realtime
+  // but the output is near-YouTube quality. The speed/quality
+  // trade is the right one for premium PDR.
+  //
+  // device: 'cpu' forces native onnxruntime-node bindings.
+  // GPU acceleration (DirectML execution provider) is on the
+  // v2.2 roadmap — would lift this to roughly real-time for
+  // users with modern dedicated GPUs.
+  pipelineInstance = await pipeline('automatic-speech-recognition', 'onnx-community/whisper-large-v3-turbo', {
     device: 'cpu',
-    // small.en doesn't have q4 variants; q8-decoder + fp32-encoder
-    // is the previously-validated config.
     dtype: {
-      encoder_model: 'fp32',
-      decoder_model_merged: 'q8',
+      encoder_model: 'q4',
+      decoder_model_merged: 'q4',
     },
     progress_callback: (info: any) => {
       // info has shape { status: 'progress' | 'downloading' | ..., progress?: 0-100, file?: 'encoder_model.onnx', ... }
@@ -623,10 +621,10 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   }, 2000);
 
   try {
-    // small.en is English-only and REJECTS language/task params
-    // (errors with "Cannot specify `task` or `language` for an
-    // English-only model" — see round 33). So we omit both here.
-    void language; // legacy param ignored on the English-only model
+    // v2.1 round 52 (Terry 2026-06-09) — Turbo is multilingual,
+    // so we pass language + task explicitly. Default to English
+    // (Terry's library), allow override via the request.
+    const effectiveLanguage = language && language !== 'auto' ? language : 'en';
     // Per-region loop infrastructure is preserved from the VAD work,
     // but with VAD disabled (round 51) there's only one region
     // covering the whole audio — so this loop runs exactly once.
@@ -651,6 +649,8 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       }
 
       const result: any = await pipe(slice, {
+        language: effectiveLanguage,
+        task: 'transcribe',
         return_timestamps: true,
         chunk_length_s: 30,
         stride_length_s: 5,
