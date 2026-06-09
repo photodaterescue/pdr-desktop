@@ -38,11 +38,23 @@ export function isTreesEnabled(): boolean {
 
 /**
  * Whether Edit Dates (the date-strip click → date-editor surface) is
- * reachable. Returns true in dev builds and any non-release production
- * build. Returns false for the v2.0.0 release-gated build.
+ * reachable.
+ *
+ * v2.1 (Terry 2026-06-09): unlocked unconditionally. Date Editor is
+ * one of the v2.1 headline features — the unified Undated + Date
+ * Editor redesign — so the v2.0.x release gate is removed entirely.
+ * Mirrors the v2.0.15 pattern for `isFormatConversionEnabled`
+ * (returns `true`, kept as a function so the call-site code shape
+ * doesn't have to change everywhere when a feature unlocks).
+ *
+ * The associated EDIT_DATES_RELEASED_SHORTLY_MESSAGE constant
+ * becomes unreachable code with this flip; leaving it in place
+ * for the moment so the sidebar / ribbon disabled-state branches
+ * still compile cleanly while we audit the call sites that no
+ * longer need them.
  */
 export function isEditDatesEnabled(): boolean {
-  return RELEASE_GATE !== 'release';
+  return true;
 }
 
 /**

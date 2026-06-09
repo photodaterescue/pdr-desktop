@@ -453,6 +453,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   }, [sizeUnit]);
   const sizeUnitFactor = sizeUnit === 'GB' ? 1024 : 1;
   const toggleSizeUnit = () => setSizeUnit(u => u === 'MB' ? 'GB' : 'MB');
+  // v2.1 round 61 (Terry 2026-06-09) — File Size validators.
+  // Two invariants the UI must preserve regardless of the unit
+  // the user is typing in:
+  //   1. Min ≥ 0 (no negative sizes — meaningless)
+  //   2. Max ≥ Min (so the filter range is well-formed)
+  // Both setters compare in MB internally (the storage unit), so
+  // the cross-unit case Terry called out — Min 1 GB + Max 10 MB
+  // — auto-corrects because 1 GB normalises to 1024 MB and the
+  // max gets bumped to match. Behaviour: editing one bound to a
+  // value that would invert the range silently bumps the OTHER
+  // bound to the new value. Less disruptive than rejecting the
+  // typed value (which would silently revert their typing).
+  const commitSizeFromUserUnit = (typed: number | undefined) => {
+    if (typed == null) { setSizeFromMB(undefined); return; }
+    const clamped = Math.max(0, typed);
+    const newMin = clamped * sizeUnitFactor;
+    setSizeFromMB(newMin);
+    if (sizeToMB != null && sizeToMB < newMin) setSizeToMB(newMin);
+  };
+  const commitSizeToUserUnit = (typed: number | undefined) => {
+    if (typed == null) { setSizeToMB(undefined); return; }
+    const clamped = Math.max(0, typed);
+    const newMax = clamped * sizeUnitFactor;
+    setSizeToMB(newMax);
+    if (sizeFromMB != null && sizeFromMB > newMax) setSizeFromMB(newMax);
+  };
   // Library Drive is a Tier-1 gate — empty selection = zero results.
   // Default visual = all libraries ticked once filterOptions.destinations
   // loads (done in a useEffect below the filterOptions state, so the
@@ -2681,18 +2707,20 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         <UnitInput
                           placeholder="Min"
                           value={sizeFromMB == null ? undefined : sizeFromMB / sizeUnitFactor}
-                          onChange={(v) => setSizeFromMB(v == null ? undefined : v * sizeUnitFactor)}
+                          onChange={commitSizeFromUserUnit}
                           unit={sizeUnit}
                           onUnitClick={toggleSizeUnit}
                           step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                          min="0"
                         />
                         <UnitInput
                           placeholder="Max"
                           value={sizeToMB == null ? undefined : sizeToMB / sizeUnitFactor}
-                          onChange={(v) => setSizeToMB(v == null ? undefined : v * sizeUnitFactor)}
+                          onChange={commitSizeToUserUnit}
                           unit={sizeUnit}
                           onUnitClick={toggleSizeUnit}
                           step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                          min="0"
                         />
                       </div>
                     </RibbonGroup>
@@ -3761,9 +3789,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <input
                       type="number"
                       step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                      min="0"
                       placeholder={sizeUnit === 'GB' ? 'e.g. 0.001' : 'e.g. 1'}
                       value={sizeFromMB == null ? '' : (sizeFromMB / sizeUnitFactor)}
-                      onChange={e => setSizeFromMB(e.target.value ? Number(e.target.value) * sizeUnitFactor : undefined)}
+                      onChange={e => commitSizeFromUserUnit(e.target.value ? Number(e.target.value) : undefined)}
                       className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -3773,9 +3802,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <input
                       type="number"
                       step={sizeUnit === 'GB' ? '0.01' : '0.1'}
+                      min="0"
                       placeholder={sizeUnit === 'GB' ? 'e.g. 0.05' : 'e.g. 50'}
                       value={sizeToMB == null ? '' : (sizeToMB / sizeUnitFactor)}
-                      onChange={e => setSizeToMB(e.target.value ? Number(e.target.value) * sizeUnitFactor : undefined)}
+                      onChange={e => commitSizeToUserUnit(e.target.value ? Number(e.target.value) : undefined)}
                       className="px-3 py-2 rounded-lg border border-border bg-background text-sm text-foreground w-28 focus:outline-none focus:ring-2 focus:ring-primary/40"
                     />
                   </div>
@@ -5144,7 +5174,7 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
  * the input value, regardless of how wide the unit string is (f/, mm, MP,
  * ISO, MB all just work).
  */
-function UnitInput({ placeholder, value, onChange, unit, step, onUnitClick }: {
+function UnitInput({ placeholder, value, onChange, unit, step, onUnitClick, min }: {
   placeholder: string;
   value: number | undefined;
   onChange: (v: number | undefined) => void;
@@ -5157,12 +5187,20 @@ function UnitInput({ placeholder, value, onChange, unit, step, onUnitClick }: {
    *  toggle (MP / ISO / f-stop / mm) leave this undefined and
    *  keep the original static span. */
   onUnitClick?: () => void;
+  /** v2.1 round 61 (Terry 2026-06-09) — HTML5 `min` attribute
+   *  forwarded to the underlying <input>. The browser blocks
+   *  values below this when stepping with the spinner; the
+   *  caller is still expected to clamp in onChange for the
+   *  typed-by-hand path. File Size filter passes "0" so users
+   *  can't go negative. */
+  min?: string;
 }) {
   return (
     <div className="flex items-center rounded-md border border-border bg-background overflow-hidden focus-within:ring-1 focus-within:ring-primary/40 w-[92px]">
       <input
         type="number"
         step={step}
+        min={min}
         placeholder={placeholder}
         value={value ?? ''}
         onChange={(e) => onChange(e.target.value ? Number(e.target.value) : undefined)}
