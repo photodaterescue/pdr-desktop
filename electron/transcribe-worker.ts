@@ -330,6 +330,123 @@ function computeAudioRms(samples: Float32Array): number {
   return count > 0 ? Math.sqrt(sumSq / count) : 0;
 }
 
+// ─── Silero VAD (speech vs everything-else pre-segmentation) ────────────────
+//
+// v2.1 round 50 (Terry 2026-06-09) — Silero VAD pre-filters the audio
+// so Whisper only sees the speech regions. Background music, ambient,
+// silence, wind, kids playing, crowd noise — all skipped. For a video
+// where talking is, say, 25% of the runtime, Whisper does ~1/4 the
+// work, which is the speedup. Speech WITH music underneath still
+// counts as speech (because the human voice is detected through it),
+// so the user-relevant moments are kept.
+//
+// Model: onnx-community/silero-vad (fp32 ONNX, ~2 MB). Downloaded on
+// first use into <cache>/silero-vad/model.onnx, then loaded directly
+// via onnxruntime-node (already a transitive dep of
+// @huggingface/transformers v4). Runs in 512-sample (32 ms) windows
+// at 16 kHz; produces a per-window speech probability.
+
+let sileroVadSession: any = null;
+async function ensureSileroVadModel(cacheDir: string): Promise<string> {
+  const dir = path.join(cacheDir, 'silero-vad');
+  const modelPath = path.join(dir, 'model.onnx');
+  if (fs.existsSync(modelPath)) return modelPath;
+  await fs.promises.mkdir(dir, { recursive: true });
+  log('Downloading Silero VAD model (~2 MB)...');
+  const url = 'https://huggingface.co/onnx-community/silero-vad/resolve/main/onnx/model.onnx';
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`Silero VAD download failed: HTTP ${res.status}`);
+  const buf = Buffer.from(await res.arrayBuffer());
+  await fs.promises.writeFile(modelPath, buf);
+  log(`Silero VAD downloaded to ${modelPath} (${buf.length} bytes)`);
+  return modelPath;
+}
+
+async function findSpeechRegions(
+  audio: Float32Array,
+  cacheDir: string,
+  opts: { threshold?: number; minSpeechMs?: number; minSilenceMs?: number; padMs?: number } = {},
+): Promise<Array<{ startSec: number; endSec: number }>> {
+  // Tunables. Defaults chosen for noisy consumer audio:
+  //  • threshold 0.5 — default Silero recommendation
+  //  • minSpeechMs 250 — drop fragments shorter than this (sneezes,
+  //    door slams that the model occasionally mis-labels as speech)
+  //  • minSilenceMs 500 — merge speech regions separated by < this
+  //    much silence (so a natural pause doesn't fragment a sentence)
+  //  • padMs 200 — extend each region by this much on both sides
+  //    so Whisper doesn't get clipped at the boundaries
+  const threshold = opts.threshold ?? 0.5;
+  const minSpeechMs = opts.minSpeechMs ?? 250;
+  const minSilenceMs = opts.minSilenceMs ?? 500;
+  const padMs = opts.padMs ?? 200;
+
+  const modelPath = await ensureSileroVadModel(cacheDir);
+  const ort = await import('onnxruntime-node');
+  if (!sileroVadSession) {
+    sileroVadSession = await ort.InferenceSession.create(modelPath);
+    log(`Silero VAD ready (inputs: ${sileroVadSession.inputNames.join(', ')})`);
+  }
+
+  // The onnx-community silero-vad model uses input names `input`,
+  // `state`, `sr`. State shape is [2, 1, 128] float32.
+  const windowSize = 512;
+  const sampleRate = 16000;
+  const sampleRateTensor = new ort.Tensor('int64', BigInt64Array.from([16000n]), []);
+  let state = new ort.Tensor('float32', new Float32Array(2 * 1 * 128), [2, 1, 128]);
+
+  const probs: number[] = [];
+  for (let i = 0; i + windowSize <= audio.length; i += windowSize) {
+    // Fresh Float32Array per chunk — subarray-into-Tensor leaks
+    // references in onnxruntime-node's older versions.
+    const chunkData = new Float32Array(windowSize);
+    chunkData.set(audio.subarray(i, i + windowSize));
+    const input = new ort.Tensor('float32', chunkData, [1, windowSize]);
+    const out = await sileroVadSession.run({ input, state, sr: sampleRateTensor });
+    probs.push(Number((out.output.data as Float32Array)[0]));
+    state = out.stateN ?? out.state ?? state;
+  }
+
+  // Convert window-level probabilities into speech regions.
+  // State machine: open a region on first speech, close after
+  // minSilenceWindows consecutive non-speech windows.
+  const windowMs = (windowSize / sampleRate) * 1000; // 32 ms per window
+  const minSpeechWindows = Math.max(1, Math.ceil(minSpeechMs / windowMs));
+  const minSilenceWindows = Math.max(1, Math.ceil(minSilenceMs / windowMs));
+  const padWindows = Math.max(0, Math.ceil(padMs / windowMs));
+
+  const regions: Array<{ startWindow: number; endWindow: number }> = [];
+  let regionStart = -1;
+  let silenceCount = 0;
+  for (let i = 0; i < probs.length; i++) {
+    const isSpeech = probs[i] >= threshold;
+    if (isSpeech) {
+      if (regionStart < 0) regionStart = i;
+      silenceCount = 0;
+    } else if (regionStart >= 0) {
+      silenceCount++;
+      if (silenceCount >= minSilenceWindows) {
+        const endWindow = i - silenceCount + 1;
+        if (endWindow - regionStart >= minSpeechWindows) {
+          regions.push({ startWindow: regionStart, endWindow });
+        }
+        regionStart = -1;
+        silenceCount = 0;
+      }
+    }
+  }
+  if (regionStart >= 0) {
+    const endWindow = probs.length - silenceCount;
+    if (endWindow - regionStart >= minSpeechWindows) {
+      regions.push({ startWindow: regionStart, endWindow });
+    }
+  }
+
+  return regions.map(r => ({
+    startSec: Math.max(0, (r.startWindow - padWindows) * windowSize / sampleRate),
+    endSec: Math.min(audio.length / sampleRate, (r.endWindow + padWindows) * windowSize / sampleRate),
+  }));
+}
+
 // ─── Caption grouping (word-level chunks → displayable segments) ────────────
 
 /**
@@ -452,6 +569,49 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   const audioRms = computeAudioRms(audio);
   log(`audio RMS = ${audioRms.toFixed(4)} (healthy speech ≈ 0.05–0.3, silence < 0.001)`);
 
+  // v2.1 round 50 (Terry 2026-06-09) — Silero VAD pre-segmentation.
+  // Find the regions of audio that actually contain human speech,
+  // so Whisper only does work on those (not on music / silence /
+  // ambient / wind / crowd / kids-playing-without-talking).
+  // For a video where talking is 25% of the runtime, this is a
+  // ~4× win on the inference cost. Speech-with-music-underneath
+  // still gets kept (the human voice is what's detected).
+  //
+  // Fail-open: if VAD download or inference errors out, fall back
+  // to transcribing the full audio in one pass so the user still
+  // gets a transcript.
+  post({ type: 'progress', requestId, phase: 'Finding speech regions…', percent: 22 });
+  let speechRegions: Array<{ startSec: number; endSec: number }> = [];
+  try {
+    speechRegions = await findSpeechRegions(audio, config.cacheDir);
+    const totalSpeechSec = speechRegions.reduce((a, r) => a + (r.endSec - r.startSec), 0);
+    const pctSpeech = durationSeconds > 0 ? (totalSpeechSec / durationSeconds) * 100 : 0;
+    log(`VAD: ${speechRegions.length} speech region(s), ${totalSpeechSec.toFixed(1)}s of ${durationSeconds.toFixed(1)}s (${pctSpeech.toFixed(0)}% speech)`);
+  } catch (err) {
+    log(`VAD failed (will transcribe full audio): ${(err as Error).message}`);
+    speechRegions = [{ startSec: 0, endSec: audio.length / 16000 }];
+  }
+  // Edge case: VAD detected zero speech across the entire clip.
+  // Skip Whisper entirely and tell main "noSpeech: true" so the
+  // toast says "1 with no speech" instead of running pointless
+  // inference on pure music / silence.
+  if (speechRegions.length === 0) {
+    log('VAD found no speech — skipping Whisper entirely');
+    try { fs.unlinkSync(wavPath); } catch { /* non-fatal */ }
+    post({
+      type: 'done',
+      requestId,
+      segments: [],
+      plainText: '',
+      language: 'en',
+      durationSeconds,
+      rawChunkCount: 0,
+      rawPreview: '(no speech detected by VAD)',
+      audioRms,
+    });
+    return;
+  }
+
   // v2.1 round 23 (Terry 2026-06-08) — heartbeat ticks while the
   // pipeline is running. The HuggingFace ASR pipeline doesn't
   // expose per-chunk progress callbacks, so without this the
@@ -470,11 +630,13 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   // tracks much closer to actual progress, and the message
   // switches to "wrapping up" once we hit the ceiling so the user
   // knows the bar parking at 89% isn't a hang.
+  // v2.1 round 50 (Terry 2026-06-09) — estimated time is now based
+  // on TOTAL SPEECH duration (post-VAD), not raw audio duration.
+  // A 2-minute video with 30s of speech now ramps over ~3min
+  // (30s × ~6× realtime) rather than ~12min.
+  const totalSpeechSec = speechRegions.reduce((a, r) => a + (r.endSec - r.startSec), 0);
   const inferenceStartTs = Date.now();
-  // v2.1 round 30 — distil-medium.en + q8 decoder runs at roughly
-  // 1.5-2× realtime on CPU. Set the ramp denominator to 2× so the
-  // bar tracks closely without finishing early.
-  const estimatedSec = Math.max(5, durationSeconds * 2.0);
+  const estimatedSec = Math.max(5, totalSpeechSec * 4.5);
   const heartbeat = setInterval(() => {
     const elapsedSec = (Date.now() - inferenceStartTs) / 1000;
     const ramp = Math.min(0.99, elapsedSec / estimatedSec);
@@ -486,66 +648,67 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
   }, 2000);
 
   try {
-    // return_timestamps: true → pipeline returns { text, chunks: [{timestamp: [start, end], text}] }
-    // chunk_length_s: 30 → standard Whisper window (one inference per 30s chunk)
-    // v2.1 round 30 — distil-medium.en is English-only by design,
-    // so we don't need (and the model doesn't accept) a language
-    // parameter. Same `return_timestamps: true` so the segment
-    // timestamps drive the caption overlay; chunk/stride match the
-    // canonical Whisper settings. condition_on_previous_text=false
-    // still reduces phrase-loop hallucinations across chunks.
-    // v2.1 round 45 (Terry 2026-06-08) — TEMPORARILY back to
-    // segment-level timestamps to isolate the OOM cause. Terry
-    // correctly flagged that word-level timestamps are an
-    // untested variable on this model, and they're the dominant
-    // memory cost (per-word cross-attention tensors retained
-    // during alignment grow ~quadratically with word count).
-    // Even with the 6 GB V8 heap bump, the worker still OOM'd at
-    // ~24 minutes in — ONNX runtime allocates outside V8's heap
-    // via WebAssembly memory + native ArrayBuffers, so the
-    // resourceLimits cap doesn't bound it.
-    //
-    // Baseline: prove Whisper Large-v3 Turbo + q4 + segment
-    // timestamps + default chunking works end-to-end on this
-    // CPU first. Only after that can we layer word timestamps
-    // back on (probably with VAD-based pre-segmentation to cap
-    // chunk size, so the alignment matrix never gets huge).
     const effectiveLanguage = language && language !== 'auto' ? language : 'en';
-    const result: any = await pipe(audio, {
-      language: effectiveLanguage,
-      task: 'transcribe',
-      return_timestamps: true,
-      // Reverted to Whisper's defaults (30s / 5s) to keep the
-      // baseline as simple as possible. Tuned chunking goes back
-      // in once we know the model works.
-      chunk_length_s: 30,
-      stride_length_s: 5,
-      condition_on_previous_text: false,
-      no_speech_threshold: 0.6,
-    } as any);
+    // v2.1 round 50 (Terry 2026-06-09) — feed each VAD speech region
+    // through Whisper independently, then offset the returned
+    // timestamps back to the original timeline. Two reasons this
+    // works better than feeding the full audio:
+    //   1. Whisper does ~1/N the work for a video with 1/N speech
+    //   2. Whisper's chunker no longer has to guess where sentence
+    //      boundaries are inside long silences — VAD gives it clean
+    //      cuts at actual speech endpoints
+    const allRawChunks: Array<{ timestamp: [number, number]; text: string }> = [];
+    const sampleRate = 16000;
+    for (let r = 0; r < speechRegions.length; r++) {
+      const region = speechRegions[r];
+      const sliceStart = Math.floor(region.startSec * sampleRate);
+      const sliceEnd = Math.floor(region.endSec * sampleRate);
+      // Fresh Float32Array so transformers.js can't accidentally
+      // hold a reference to the parent audio buffer between regions.
+      const sliceLen = sliceEnd - sliceStart;
+      if (sliceLen < sampleRate * 0.2) continue; // skip <200ms regions (sub-word noise)
+      const slice = new Float32Array(sliceLen);
+      slice.set(audio.subarray(sliceStart, sliceEnd));
+
+      post({
+        type: 'progress',
+        requestId,
+        phase: `Transcribing speech region ${r + 1} of ${speechRegions.length}…`,
+        percent: Math.min(89, Math.round(25 + (r / Math.max(1, speechRegions.length)) * 64)),
+      });
+
+      const result: any = await pipe(slice, {
+        language: effectiveLanguage,
+        task: 'transcribe',
+        return_timestamps: true,
+        chunk_length_s: 30,
+        stride_length_s: 5,
+        condition_on_previous_text: false,
+        no_speech_threshold: 0.6,
+      } as any);
+
+      const chunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
+      for (const c of chunks) {
+        const localStart = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : 0;
+        const localEnd = typeof c.timestamp?.[1] === 'number' ? c.timestamp![1]! : (localStart + 5);
+        allRawChunks.push({
+          timestamp: [localStart + region.startSec, localEnd + region.startSec],
+          text: c.text ?? '',
+        });
+      }
+    }
     clearInterval(heartbeat);
 
-    // v2.1 round 23 — dump raw Whisper output to the log BEFORE
-    // filtering so we can see exactly what the model returned when
-    // a "no speech" result is unexpected (Terry's case: a video
-    // with clear dialogue came back empty). With this we can tell
-    // whether the model itself returned nothing, whether it
-    // returned garbage that got filtered, or whether the pipeline
-    // call errored silently.
-    log(`raw pipeline result: text=${JSON.stringify((result?.text ?? '').slice(0, 200))} chunks.length=${(result?.chunks ?? []).length}`);
-    const rawChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
-    if (rawChunks.length > 0 && rawChunks.length <= 10) {
-      log(`raw chunks: ${JSON.stringify(rawChunks.map(c => ({ ts: c.timestamp, text: (c.text ?? '').slice(0, 80) })))}`);
+    log(`VAD + Whisper: ${allRawChunks.length} raw chunks across ${speechRegions.length} region(s)`);
+    if (allRawChunks.length > 0 && allRawChunks.length <= 10) {
+      log(`raw chunks: ${JSON.stringify(allRawChunks.map(c => ({ ts: c.timestamp, text: (c.text ?? '').slice(0, 80) })))}`);
     }
 
     post({ type: 'progress', requestId, phase: 'Saving transcript…', percent: 90 });
 
-    // v2.1 round 45 (Terry 2026-06-08) — back to segment-level
-    // post-processing. Each chunk is already a displayable caption
-    // segment (no word-grouping needed). Same hallucination
-    // filter as before. groupWordsToCaptions stays in the file
-    // for the future round where we re-enable word timestamps.
-    const segChunks = (result?.chunks ?? []) as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
+    // v2.1 round 45 + 50 — segment-level post-processing of the
+    // (now timeline-corrected) chunks from all regions.
+    const segChunks = allRawChunks as Array<{ timestamp?: [number | null, number | null]; text?: string }>;
     const segments: Array<{ start: number; end: number; text: string }> = [];
     for (const c of segChunks) {
       const start = typeof c.timestamp?.[0] === 'number' ? c.timestamp![0]! : 0;
@@ -563,9 +726,13 @@ async function transcribe(msg: TranscribeMessage): Promise<void> {
       segments.push({ start, end, text });
     }
     const plainText = segments.map(s => s.text).join(' ').trim();
-    const detectedLanguage = (result?.language ?? language ?? 'en').toString();
-    const rawPreview = (result?.text ?? '').toString().slice(0, 200);
-    const rawChunkCount = rawChunks.length;
+    // v2.1 round 50 (Terry 2026-06-09) — the per-region loop above
+    // doesn't have a single `result` to read language/preview off,
+    // so derive them from the aggregated state. Language defaults
+    // to the requested one since each region was called with it.
+    const detectedLanguage = (language && language !== 'auto' ? language : 'en');
+    const rawPreview = allRawChunks.map(c => c.text).join('').slice(0, 200);
+    const rawChunkCount = allRawChunks.length;
 
     // Clean up the temp wav.
     try { fs.unlinkSync(wavPath); } catch { /* non-fatal */ }
