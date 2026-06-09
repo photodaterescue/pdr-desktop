@@ -434,7 +434,7 @@ export default function MemoriesPendingView({
             {/* Active "Needs dates" entry — same purple highlight as the
                 rail entry on the timeline (round 68 pulse dot). */}
             <div
-              className="w-full px-1 py-1.5 mb-0.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 bg-purple-500/15 inline-flex flex-col items-center justify-center leading-tight"
+              className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 bg-purple-500/15 inline-flex flex-col items-center justify-center leading-tight"
               data-testid="memories-rail-pending-active"
             >
               <span>Needs</span>
@@ -443,7 +443,7 @@ export default function MemoriesPendingView({
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" aria-hidden="true" />
               </span>
             </div>
-            <div className="border-t border-border/60 my-1 mx-1" />
+            <div className="border-t border-border my-0.5 mx-1" />
             {years.map((y) => (
               <IconTooltip key={y} label={`Jump to ${y}`} side="right">
                 <button
@@ -484,7 +484,7 @@ export default function MemoriesPendingView({
                     <span className="text-xs text-muted-foreground tabular-nums">
                       {sectionFiles.length.toLocaleString()} {sectionFiles.length === 1 ? 'file' : 'files'}
                     </span>
-                    <span className="text-[10px] text-muted-foreground/80 italic flex-1 truncate">
+                    <span className="text-xs text-muted-foreground flex-1 truncate">
                       {TIER_BLURB[sectionTier]}
                     </span>
                   </div>

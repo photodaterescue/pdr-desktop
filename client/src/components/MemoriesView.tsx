@@ -816,7 +816,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                   >
                     <button
                       onClick={() => setPendingScope({})}
-                      className="w-full px-1 py-1.5 mb-0.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex flex-col items-center justify-center leading-tight"
+                      className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex flex-col items-center justify-center leading-tight"
                       data-testid="memories-rail-pending"
                     >
                       <span>Needs</span>
@@ -829,7 +829,17 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                       </span>
                     </button>
                   </IconTooltip>
-                  <div className="border-t border-border/60 my-1 mx-1" />
+                  {/* v2.1 round 70 (Terry 2026-06-09) — divider spacing
+                      now matches the natural year-to-year rhythm
+                      below it. Year buttons use `mb-0.5` (2px) between
+                      siblings; the divider needs to TOTAL the same
+                      visual gap. Setting my-0 + a 1px border, plus
+                      removing mb-0.5 from the Needs-dates button
+                      above, lands ~2px above + ~2px below the
+                      hairline — equal padding either side. Slightly
+                      higher contrast (border-border instead of /60)
+                      makes the line readable without dominating. */}
+                  <div className="border-t border-border my-0.5 mx-1" />
                 </>
               )}
               {yearGroups.map(([year]) => (
