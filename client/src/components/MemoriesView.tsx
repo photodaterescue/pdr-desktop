@@ -579,6 +579,19 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
         onDensityChange={changeDensity}
         onBack={() => setPendingScope(null)}
         counts={pendingCounts}
+        years={yearGroups.map(([y]) => y)}
+        onJumpToYear={(year) => {
+          // Leaving Pending to jump to a specific year on the
+          // timeline. setSelectedRange would drill into that year's
+          // month grid; clearing pendingScope + bumping scrollToYear
+          // would scroll the timeline. For consistency with rail
+          // jumps on the yearly view (which scroll, not drill), we
+          // just clear pendingScope and let jumpToYear handle the
+          // scroll on the next render.
+          setPendingScope(null);
+          setTimeout(() => jumpToYear(year), 0);
+        }}
+        onChangeTier={(tier) => setPendingScope({ tier })}
       />
     );
   }
@@ -786,64 +799,38 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
           {/* Left: year jump rail */}
           {(yearGroups.length > 1 || pendingCounts.total > 0) && (
             <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
-              {/* v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry.
-                  Sticky at the top above the years. Click the label →
-                  open the Pending page (all three tiers). Click the
-                  chevron → expand the tree to reveal the three tier
-                  sub-entries (Tentative / Placeholder / Unrecorded);
-                  click any sub-entry to scope into a single tier. Self-
-                  hides entirely when pendingCounts.total is zero —
-                  Terry's "the entry just disappears when the work is
-                  done" requirement. Purple tint marks this as a
-                  different kind of thing from year-buttons, matching
-                  the PM AI / OnThisDay AI badge colour family. */}
+              {/* v2.1 round 68 (Terry 2026-06-09) — "Pending" rail entry,
+                  simplified per Terry's feedback. The 68px rail is too
+                  narrow to host any numbers / sub-labels readably, so:
+                    - just the word "Pending"
+                    - the breakdown lives ONLY in the IconTooltip on
+                      hover, not in the rail itself
+                    - tier selection happens via the Pending TITLE
+                      dropdown on the destination page (not via a
+                      chevron tree here)
+                    - "something to show" is signalled with a tiny
+                      pulsing purple dot to the right of the label — a
+                      premium notification cue that doesn't depend on
+                      reading numbers. Self-hides entirely when
+                      pendingCounts.total is zero. */}
               {pendingCounts.total > 0 && (
                 <>
-                  <div className="mb-1">
-                    <IconTooltip
-                      label={`${pendingCounts.total.toLocaleString()} files awaiting your decision — Tentative ${pendingCounts.tentative} · Placeholder ${pendingCounts.placeholder} · Unrecorded ${pendingCounts.unrecorded}`}
-                      side="right"
-                    >
-                      <button
-                        onClick={() => setPendingScope({})}
-                        className="w-full px-1 py-1 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors flex items-center justify-center gap-0.5 leading-tight"
-                        data-testid="memories-rail-pending"
-                      >
-                        <span>Pending</span>
-                      </button>
-                    </IconTooltip>
-                    <p className="text-[10px] text-muted-foreground/70 font-mono tabular-nums">{pendingCounts.total.toLocaleString()}</p>
-                    {/* Chevron sits BELOW the count so the click target
-                        for "open all" stays the big top button — chevron
-                        is a deliberately smaller secondary affordance for
-                        users who want tier-direct entry. */}
+                  <IconTooltip
+                    label={`${pendingCounts.total.toLocaleString()} files awaiting your decision — ${pendingCounts.tentative} Tentative · ${pendingCounts.placeholder} Placeholder · ${pendingCounts.unrecorded} Unrecorded`}
+                    side="right"
+                  >
                     <button
-                      type="button"
-                      onClick={() => setPendingRailExpanded(v => !v)}
-                      className="w-full text-[10px] text-purple-500/70 hover:text-purple-600 dark:hover:text-purple-300 transition-colors"
-                      aria-label={pendingRailExpanded ? 'Collapse Pending tiers' : 'Expand Pending tiers'}
-                      data-testid="memories-rail-pending-expand"
+                      onClick={() => setPendingScope({})}
+                      className="w-full px-1 py-1.5 mb-0.5 rounded text-xs font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex items-center justify-center gap-1 relative"
+                      data-testid="memories-rail-pending"
                     >
-                      {pendingRailExpanded ? '▴' : '▾'}
+                      <span>Pending</span>
+                      <span
+                        className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"
+                        aria-hidden="true"
+                      />
                     </button>
-                  </div>
-                  {pendingRailExpanded && (
-                    <div className="space-y-0.5 mb-2 pl-1">
-                      {(['tentative', 'placeholder', 'unrecorded'] as PendingTier[]).map(t => (
-                        pendingCounts[t] > 0 && (
-                          <IconTooltip key={t} label={`${pendingCounts[t].toLocaleString()} ${t}`} side="right">
-                            <button
-                              onClick={() => setPendingScope({ tier: t })}
-                              className="w-full px-1 py-0.5 rounded text-[10px] font-medium text-purple-500/80 dark:text-purple-300/80 hover:text-purple-600 dark:hover:text-purple-200 hover:bg-purple-500/10 transition-colors leading-tight"
-                              data-testid={`memories-rail-pending-${t}`}
-                            >
-                              {t.charAt(0).toUpperCase() + t.slice(1, 4)} · {pendingCounts[t]}
-                            </button>
-                          </IconTooltip>
-                        )
-                      ))}
-                    </div>
-                  )}
+                  </IconTooltip>
                   <div className="border-t border-border/60 my-1 mx-1" />
                 </>
               )}
