@@ -1137,28 +1137,28 @@ export default function MemoriesPendingView({
                           </div>
                         )}
                         {/* v2.1 round 79 phase A (Terry 2026-06-09) —
-                            Duplicate cluster badge. Shows ×N for any
-                            file in a same-hash group within Pending,
-                            with a small green check appended when at
-                            least one Confirmed/Recovered twin exists
-                            elsewhere in the library (= "safe to bin
-                            from Needs dates"). Bottom-LEFT corner to
-                            stay clear of the top-right Video badge
-                            and the bottom-right CaptionBadge /
-                            TranscriptBadge cluster. */}
+                            Duplicate cluster badge.
+                            v2.1 round 80 — tooltip swapped from the
+                            native `title` attribute to IconTooltip
+                            (style-guide compliant) + copy rewritten
+                            in plain English so the meaning is clear
+                            at a glance without jargon. */}
                         {dupeInfoByFileId.has(f.id) && (() => {
                           const info = dupeInfoByFileId.get(f.id)!;
+                          const tooltipLabel = info.hasTwin
+                            ? `${info.count} copies of this file are in Needs dates, AND a properly-dated copy is already in your library — this one is safe to send to Recycle Bin.`
+                            : `${info.count} copies of this file are in Needs dates. Keep one, send the rest to Recycle Bin.`;
                           return (
-                            <div
-                              className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-purple-600/85 text-white text-[9px] font-semibold flex items-center gap-1 ring-1 ring-purple-700/50"
-                              title={info.hasTwin
-                                ? `×${info.count} copies in Needs dates — a Confirmed/Recovered match also exists in your library`
-                                : `×${info.count} copies in Needs dates`}
-                            >
-                              <Copy className="w-2.5 h-2.5" />
-                              ×{info.count}
-                              {info.hasTwin && <Check className="w-2.5 h-2.5 text-green-300" />}
-                            </div>
+                            <IconTooltip label={tooltipLabel} side="top">
+                              <div
+                                className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-purple-600/85 text-white text-[9px] font-semibold flex items-center gap-1 ring-1 ring-purple-700/50"
+                                data-testid={`pending-tile-dupe-badge-${f.id}`}
+                              >
+                                <Copy className="w-2.5 h-2.5" />
+                                ×{info.count}
+                                {info.hasTwin && <Check className="w-2.5 h-2.5 text-green-300" />}
+                              </div>
+                            </IconTooltip>
                           );
                         })()}
                         <CaptionBadge caption={f.caption} />
