@@ -396,6 +396,23 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         data?: { rowsAffected: number };
         error?: string;
       }>,
+    /** v2.1 round 90 (Terry 2026-06-10) — restore pre-save date /
+     *  source / confidence for a batch of files. Powers the
+     *  Needs Dates undo affordance — caller supplies snapshots
+     *  captured immediately before the setPendingDate call. */
+    restorePendingDates: (args: {
+      entries: Array<{
+        fileId: number;
+        prevDate: string | null;
+        prevSource: string | null;
+        prevConfidence: string;
+      }>;
+    }) =>
+      ipcRenderer.invoke('memories:restorePendingDates', args) as Promise<{
+        success: boolean;
+        data?: { rowsAffected: number };
+        error?: string;
+      }>,
     /** v2.1 round 79 phase A (Terry 2026-06-09) — lazy-hash JUST the
      *  Pending files that don't yet have a hash on record. Cheap
      *  (a few seconds for typical Pending lists). Fired on demand

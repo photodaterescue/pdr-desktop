@@ -1740,6 +1740,23 @@ export async function setPendingDate(args: { fileIds: number[]; isoDateTime: str
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** v2.1 round 90 (Terry 2026-06-10) — restore the pre-save date /
+ *  source / confidence values for a batch of Needs-dates files.
+ *  Powers the undo affordance — caller supplies snapshots captured
+ *  immediately before the corresponding setPendingDate call. */
+export interface RestoreEntry {
+  fileId: number;
+  prevDate: string | null;
+  prevSource: string | null;
+  prevConfidence: string;
+}
+export async function restorePendingDates(args: { entries: RestoreEntry[] }): Promise<{ success: boolean; data?: { rowsAffected: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.restorePendingDates(args);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 /** v2.1 round 79 phase A (Terry 2026-06-09) — lazy-hash JUST the
  *  Needs-dates files that don't yet have a hash on record. */
 export async function hashPendingFiles(): Promise<{ success: boolean; data?: { hashed: number; failed: number; totalCandidates: number }; error?: string }> {

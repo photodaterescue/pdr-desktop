@@ -9477,6 +9477,28 @@ ipcMain.handle('memories:setPendingDate', async (_event, args: { fileIds: number
   }
 });
 
+// v2.1 round 90 (Terry 2026-06-10) — undo for recent date assignments
+// (improvement #3 from the round-87 essay). Caller passes pre-save
+// snapshots captured by MemoriesPendingView immediately before its
+// setPendingDate call; the DB function writes them back atomically.
+// Files re-enter Needs Dates the moment user_set_at is NULLed.
+ipcMain.handle('memories:restorePendingDates', async (_event, args: {
+  entries: Array<{
+    fileId: number;
+    prevDate: string | null;
+    prevSource: string | null;
+    prevConfidence: string;
+  }>;
+}) => {
+  try {
+    const { restorePreviousPendingDates } = await import('./search-database.js');
+    const result = restorePreviousPendingDates(args);
+    return { success: true, data: result };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // v2.1 round 79 phase A (Terry 2026-06-09) — lazy SHA-256 hashing
 // for the Needs-dates "Duplicates only" filter. Hashes ONLY the
 // Pending-tier files that don't yet have a hash on record — for a

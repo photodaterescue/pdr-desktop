@@ -5878,6 +5878,63 @@ export function getPendingDuplicateClusters(): PendingDuplicateCluster[] {
  *  bar can commit the same date to many files in one transaction.
  *  Returns the count of rows affected.
  */
+// v2.1 round 90 (Terry 2026-06-10) — restore the previous date /
+// source / confidence values for a batch of files. Powers
+// Needs Dates' "Undo last save" affordance (essay improvement #3).
+// Caller passes pre-save snapshots captured immediately before the
+// setUserDateForPendingFiles call; this writes them back atomically
+// and clears user_set_at so the rows re-enter the Needs Dates view
+// (PENDING_BASE_WHERE excludes `user_set_at IS NOT NULL`).
+export function restorePreviousPendingDates(args: {
+  entries: Array<{
+    fileId: number;
+    /** Previous derived_date (ISO) or null if the file had none. */
+    prevDate: string | null;
+    /** Previous date_source label, e.g. 'EXIF', 'File modification
+     *  time', 'Filename', etc. May be null for files PDR had no
+     *  source on. */
+    prevSource: string | null;
+    /** Previous confidence value — typically 'marked' for files
+     *  that came from Needs Dates, but we read whatever was there
+     *  so this also undoes upgrades from other code paths. */
+    prevConfidence: string;
+  }>;
+}): { rowsAffected: number } {
+  if (!args.entries.length) return { rowsAffected: 0 };
+  const database = getDb();
+  const stmt = database.prepare(`
+    UPDATE indexed_files
+    SET derived_date = ?,
+        year = ?,
+        month = ?,
+        day = ?,
+        date_source = ?,
+        confidence = ?,
+        user_set_at = NULL
+    WHERE id = ?
+  `);
+  let total = 0;
+  const txn = database.transaction((entries: typeof args.entries) => {
+    for (const e of entries) {
+      let year: number | null = null;
+      let month: number | null = null;
+      let day: number | null = null;
+      if (e.prevDate) {
+        const dt = new Date(e.prevDate);
+        if (!Number.isNaN(dt.getTime())) {
+          year = dt.getFullYear();
+          month = dt.getMonth() + 1;
+          day = dt.getDate();
+        }
+      }
+      const info = stmt.run(e.prevDate, year, month, day, e.prevSource, e.prevConfidence, e.fileId);
+      total += info.changes;
+    }
+  });
+  txn(args.entries);
+  return { rowsAffected: total };
+}
+
 export function setUserDateForPendingFiles(args: {
   fileIds: number[];
   /** ISO 8601 date+time string (e.g. '2018-07-15T12:00:00'). The

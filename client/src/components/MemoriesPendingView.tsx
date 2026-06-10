@@ -44,6 +44,7 @@ import {
   FolderPlus,
   Captions,
   Copy,
+  Undo2,
   Trash2,
   CalendarClock,
   Eye,
@@ -71,6 +72,7 @@ import {
   getPendingFiles,
   getThumbnail,
   setPendingDate,
+  restorePendingDates,
   moveToRecycleBin,
   openSearchViewer,
   type PendingFile,
@@ -181,6 +183,56 @@ export default function MemoriesPendingView({
     try { localStorage.setItem('pdr-time-picker-mode', clockMode); } catch { /* localStorage may be blocked — non-fatal */ }
   }, [clockMode]);
   const [saving, setSaving] = useState(false);
+
+  // v2.1 round 90 (Terry 2026-06-10) — undo for recent date
+  // assignments (essay improvement #3). On every successful save we
+  // snapshot the pre-save derived_date / date_source / confidence
+  // for each affected file and stash the batch as `lastSave`. The
+  // floating undo pill at the bottom-right of the page reads from
+  // this state; clicking Undo fires the restorePendingDates IPC
+  // with the snapshots, NULLing user_set_at so the files re-enter
+  // the Needs Dates view. Persisted to localStorage so a reload
+  // inside the auto-dismiss window doesn't lose the affordance.
+  // Auto-dismisses 30 s after the save.
+  type LastSaveEntry = {
+    fileId: number;
+    filename: string;
+    prevDate: string | null;
+    prevSource: string | null;
+    prevConfidence: string;
+  };
+  type LastSave = { ts: number; newIso: string; entries: LastSaveEntry[] };
+  const LAST_SAVE_KEY = 'pdr-needs-dates-last-save';
+  const LAST_SAVE_TTL_MS = 5 * 60 * 1000; // 5 min hard expiry
+  const LAST_SAVE_AUTO_DISMISS_MS = 30 * 1000; // 30 s soft dismiss
+  const [lastSave, setLastSave] = useState<LastSave | null>(() => {
+    if (typeof localStorage === 'undefined') return null;
+    try {
+      const raw = localStorage.getItem(LAST_SAVE_KEY);
+      if (!raw) return null;
+      const parsed = JSON.parse(raw) as LastSave;
+      if (!parsed?.ts || Date.now() - parsed.ts > LAST_SAVE_TTL_MS) return null;
+      return parsed;
+    } catch { return null; }
+  });
+  const [undoing, setUndoing] = useState(false);
+  useEffect(() => {
+    try {
+      if (lastSave) localStorage.setItem(LAST_SAVE_KEY, JSON.stringify(lastSave));
+      else localStorage.removeItem(LAST_SAVE_KEY);
+    } catch { /* localStorage may be blocked — non-fatal */ }
+  }, [lastSave]);
+  // Auto-dismiss the undo pill 30 s after the save. The hard 5-min
+  // TTL above is just for cross-reload safety; this is the in-
+  // session "you've moved on" dismissal.
+  useEffect(() => {
+    if (!lastSave) return;
+    const remaining = (lastSave.ts + LAST_SAVE_AUTO_DISMISS_MS) - Date.now();
+    if (remaining <= 0) { setLastSave(null); return; }
+    const t = window.setTimeout(() => setLastSave(null), remaining);
+    return () => clearTimeout(t);
+  }, [lastSave]);
+
   // v2.1 round 83 (Terry 2026-06-09) — tile id currently flashing
   // its "look at me" pulse. Set when the panel activates a tile so
   // the user can spot it in the reflowed grid (Terry: "the last
@@ -409,6 +461,18 @@ export default function MemoriesPendingView({
       if (!ok) return;
     }
 
+    // v2.1 round 90 (Terry 2026-06-10) — capture pre-save state for
+    // undo. Snapshot derived_date / date_source / confidence per
+    // file BEFORE firing the IPC so we can write them back if the
+    // user hits Undo. Filename retained for the pill subtitle.
+    const undoSnapshot: LastSaveEntry[] = targetFiles.map((f) => ({
+      fileId: f.id,
+      filename: f.filename,
+      prevDate: f.derived_date,
+      prevSource: (f as any).date_source ?? null,
+      prevConfidence: (f as any).confidence ?? 'marked',
+    }));
+
     setSaving(true);
     try {
       const res = await setPendingDate({ fileIds, isoDateTime: iso });
@@ -416,6 +480,10 @@ export default function MemoriesPendingView({
         toast.error('Couldn’t save date', { description: res.error });
         return;
       }
+      // Stash this batch for one-click undo. Replaces any prior
+      // batch — round 90 ships single-batch undo; multi-batch
+      // history is queued for a follow-up.
+      setLastSave({ ts: Date.now(), newIso: iso, entries: undoSnapshot });
       if (isBulk) {
         toast.success(
           `Date set for ${fileIds.length} file${fileIds.length === 1 ? '' : 's'}`,
@@ -443,6 +511,40 @@ export default function MemoriesPendingView({
       } catch { /* event dispatch never throws */ }
     } finally {
       setSaving(false);
+    }
+  };
+
+  // v2.1 round 90 (Terry 2026-06-10) — undo the lastSave batch.
+  // Fires the restorePendingDates IPC with the snapshots captured
+  // pre-save, then refreshes the list (NULLing user_set_at re-
+  // surfaces the files in the Needs Dates view). Dispatches
+  // pdr:pendingChanged so any rail counts pinned to the badge
+  // refresh too.
+  const undoLastSave = async () => {
+    if (!lastSave || undoing) return;
+    setUndoing(true);
+    try {
+      const res = await restorePendingDates({
+        entries: lastSave.entries.map((e) => ({
+          fileId: e.fileId,
+          prevDate: e.prevDate,
+          prevSource: e.prevSource,
+          prevConfidence: e.prevConfidence,
+        })),
+      });
+      if (res.success) {
+        toast.success(`Undid ${lastSave.entries.length} file${lastSave.entries.length === 1 ? '' : 's'}`);
+        setLastSave(null);
+        const refreshed = await getPendingFiles({ runIds, tier });
+        setFiles(refreshed.success && refreshed.data ? refreshed.data : []);
+        try {
+          window.dispatchEvent(new CustomEvent('pdr:pendingChanged'));
+        } catch { /* event dispatch never throws */ }
+      } else {
+        toast.error("Couldn't undo", { description: res.error });
+      }
+    } finally {
+      setUndoing(false);
     }
   };
 
@@ -684,7 +786,7 @@ export default function MemoriesPendingView({
     // toggle remains right-aligned within the now-narrower toolbar
     // band, requiring no layout move (Sub-A from the design chat).
     <div className="h-full flex bg-background">
-      <div className="flex-1 flex flex-col min-w-0">
+      <div className="flex-1 flex flex-col min-w-0 relative">
       {/* Top bar — spans the LEFT column's full width (which is the
           whole page when the panel is closed; narrower when open).
           Mirrors the Memories — Dates drilldown header exactly so
@@ -1439,6 +1541,56 @@ export default function MemoriesPendingView({
           )}
         </div>
       </div>{/* close rail+content row */}
+
+      {/* v2.1 round 90 (Terry 2026-06-10) — Undo last save pill
+          (essay improvement #3). Sticks to the bottom-right of the
+          LEFT column wrapper, so it sits above the grid scroll but
+          shifts left of the date-editor panel when that's open.
+          Auto-dismisses 30 s after the save via the lastSave
+          useEffect timer; clicking Undo restores the pre-save
+          values via the restorePendingDates IPC.
+          Recipe: matches the existing scroll-position date pill
+          (background/95 + backdrop-blur + border + shadow), plus
+          a gold-tinted Undo button that pulls the eye without
+          being a flash. */}
+      {lastSave && (
+        <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md">
+          <div className="flex flex-col leading-tight">
+            <span className="text-[11px] font-medium text-foreground">
+              Saved {lastSave.entries.length} file{lastSave.entries.length === 1 ? '' : 's'}
+            </span>
+            <span className="text-[10px] text-muted-foreground">
+              {lastSave.newIso.slice(0, 10)} {lastSave.newIso.slice(11, 16)}
+            </span>
+          </div>
+          <IconTooltip label="Undo last save" side="top">
+            <button
+              type="button"
+              onClick={undoLastSave}
+              disabled={undoing}
+              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors disabled:opacity-60 disabled:cursor-wait"
+              data-testid="memories-pending-undo"
+            >
+              {undoing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+              ) : (
+                <Undo2 className="w-3.5 h-3.5" />
+              )}
+              Undo
+            </button>
+          </IconTooltip>
+          <IconTooltip label="Dismiss" side="top">
+            <button
+              type="button"
+              onClick={() => setLastSave(null)}
+              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              aria-label="Dismiss undo pill"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+        </div>
+      )}
       </div>{/* close LEFT column wrapper — round 73 */}
 
       {/* v2.1 round 73 (Terry 2026-06-09) — right-side date-editor
