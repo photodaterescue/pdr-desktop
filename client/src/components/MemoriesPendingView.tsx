@@ -202,11 +202,20 @@ export default function MemoriesPendingView({
     };
   }, [tier, runIds]);
 
-  // Bulk thumbnail prewarm (concurrency 4, capped at 200).
+  // v2.1 round 74 (Terry 2026-06-09 — thumbnail-cap bug) — removed
+  // the round-67 `slice(0, 200)` cap. Terry's library has 265 Pending
+  // files; everything past index 200 silently never queued a thumbnail
+  // fetch, so scrolling down the grid showed nothing but the image
+  // placeholder. Concurrency stays at 4 so the queue drains gradually
+  // without saturating disk/CPU. Memories — Dates drilldown uses
+  // virtualisation + IntersectionObserver for the truly enormous
+  // cases (single buckets with thousands of files); the Pending
+  // workflow caps out at a few hundred per library so a flat queue
+  // is good enough for now.
   useEffect(() => {
     if (!files) return;
     let cancelled = false;
-    const toLoad = files.filter((f) => !thumbs[f.file_path]).slice(0, 200);
+    const toLoad = files.filter((f) => !thumbs[f.file_path]);
     let active = 0;
     let i = 0;
     const next = () => {
@@ -572,7 +581,17 @@ export default function MemoriesPendingView({
             <div className="space-y-8">
               {sections.map(([sectionTier, sectionFiles]) => (
                 <section key={sectionTier}>
-                  <div className="flex items-baseline gap-3 mb-3 sticky top-0 bg-background/95 backdrop-blur py-2 z-10">
+                  {/* v2.1 round 74 (Terry 2026-06-09) — tier header
+                      now uses a SOLID bg-background so the tiles
+                      below don't bleed through when the sticky header
+                      crosses them. Previously bg-background/95 +
+                      backdrop-blur read as "floating" instead of
+                      "flush below the toolbar band" per Terry's
+                      request. Sits at top-0 of the scroll container
+                      so it stops right at the bottom of the page
+                      toolbar above. Subtle border-b adds the same
+                      hairline separation the toolbar uses. */}
+                  <div className="flex items-baseline gap-3 sticky top-0 bg-background py-3 -mx-6 px-6 border-b border-border/60 z-10">
                     <h2 className="text-sm font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">
                       {TIER_LABEL[sectionTier]}
                     </h2>
