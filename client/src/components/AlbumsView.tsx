@@ -32,7 +32,7 @@ import {
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
-  Captions,
+  Captions, Info,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -445,6 +445,44 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const albumPhotoTilePx = Math.round(100 + (tileSizeSlider / 100) * 200);
   // Album cards in the All-albums / per-group grids: 160–300px.
   const albumCardTilePx = Math.round(160 + (tileSizeSlider / 100) * 140);
+
+  // v2.1 round 86 (Terry 2026-06-10) — Insights popover state. Lifted
+  // from MemoriesView so the two surfaces (Memories — Dates +
+  // Memories — Albums) carry the same view-options vocabulary:
+  //   • Selection mode = "Tile checkboxes" toggle. When ON, photo
+  //     tile checkboxes are always visible (vs the default hover-
+  //     revealed behaviour). Mirrors MemoriesView's selectionMode.
+  //   • metaFields = which strings render below each photo tile.
+  //     'filename' and/or 'date'. Off by default — Albums tiles
+  //     historically rendered as bare thumbnails.
+  // Both persisted to localStorage with `pdr-albums-*` keys so the
+  // settings stay scoped to Albums and don't collide with the
+  // identically-named MemoriesView preferences.
+  type AlbumTileMetaField = 'filename' | 'date';
+  const ALBUMS_SELECTION_MODE_KEY = 'pdr-albums-selection-mode';
+  const ALBUMS_TILE_META_KEY = 'pdr-albums-tile-meta';
+  const [selectionMode, setSelectionMode] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return false;
+    return localStorage.getItem(ALBUMS_SELECTION_MODE_KEY) === 'true';
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_SELECTION_MODE_KEY, selectionMode ? 'true' : 'false'); } catch { /* localStorage may be unavailable */ }
+  }, [selectionMode]);
+  const [metaFields, setMetaFields] = useState<AlbumTileMetaField[]>(() => {
+    if (typeof localStorage === 'undefined') return [];
+    try {
+      const raw = localStorage.getItem(ALBUMS_TILE_META_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return [];
+      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date');
+    } catch { return []; }
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_TILE_META_KEY, JSON.stringify(metaFields)); } catch { /* localStorage may be unavailable */ }
+  }, [metaFields]);
+  const showFilename = metaFields.includes('filename');
+  const showDate = metaFields.includes('date');
 
   // Ctrl+wheel zoom — same interaction the S&D grid and Memories
   // By Date use. Previously attached to `gridScrollRef` (the per-
@@ -2178,49 +2216,124 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     );
   };
 
-  // Shared zoom-pill — same triplet pattern S&D and the Workspace
-  // use. Defined here so all three headers (All-albums, per-group,
-  // album-detail) render an identical control. Clicking the percent
-  // resets to 50; Ctrl-wheel on the grid below is also wired (see
-  // the photo-grid useEffect + the card-grid wheel handler).
-  const zoomPill = (
-    <div className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded-lg border border-border bg-background shrink-0">
-      <IconTooltip label="Zoom out" side="bottom">
-        <button
-          type="button"
-          onClick={() => setTileSizeSlider((prev) => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
-          disabled={tileSizeSlider <= TILE_SLIDER_MIN}
-          className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          data-testid="button-albums-zoom-out"
-          aria-label="Zoom out"
-        >
-          <ZoomOut className="w-3.5 h-3.5" />
-        </button>
+  // v2.1 round 86 (Terry 2026-06-10) — Insights popover, lifted
+  // verbatim from MemoriesView so the two surfaces (Memories — Dates
+  // + Memories — Albums) carry the same view-options vocabulary.
+  // The inline zoom pill that used to live here is now wrapped INSIDE
+  // the popover's first section, alongside Selection Mode and
+  // Show-below-each-tile checkboxes. Insights trigger replaces zoomPill
+  // in all three header rows (All-albums, per-group, album-detail).
+  // Active-state badge counts changes from defaults — selectionMode on
+  // counts 1; each metaField counts 1. Tile size is a personal
+  // preference, not surfaced in the badge (matches MemoriesView round
+  // 64 rule).
+  const insightsCount = (selectionMode ? 1 : 0) + metaFields.length;
+  const insightsActive = insightsCount > 0;
+  const insightsButton = (
+    <Popover>
+      <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
+        <PopoverTrigger asChild>
+          <Button
+            variant={insightsActive ? 'secondary' : 'ghost'}
+            size="sm"
+            data-testid="albums-insights-trigger"
+          >
+            <Info className="w-3.5 h-3.5 mr-1.5" />
+            Insights
+            {insightsActive && (
+              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                {insightsCount}
+              </span>
+            )}
+          </Button>
+        </PopoverTrigger>
       </IconTooltip>
-      <IconTooltip label="Reset to 50%" side="bottom">
-        <button
-          type="button"
-          onClick={() => setTileSizeSlider(50)}
-          className="px-1.5 text-[10px] font-medium text-muted-foreground hover:text-foreground tabular-nums transition-colors"
-          data-testid="button-albums-zoom-reset"
-          aria-label="Reset zoom"
-        >
-          {tileSizeSlider}%
-        </button>
-      </IconTooltip>
-      <IconTooltip label="Zoom in" side="bottom">
-        <button
-          type="button"
-          onClick={() => setTileSizeSlider((prev) => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
-          disabled={tileSizeSlider >= TILE_SLIDER_MAX}
-          className="flex items-center justify-center w-6 h-6 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
-          data-testid="button-albums-zoom-in"
-          aria-label="Zoom in"
-        >
-          <ZoomIn className="w-3.5 h-3.5" />
-        </button>
-      </IconTooltip>
-    </div>
+      <PopoverContent
+        className="w-64 p-3"
+        align="start"
+        // Ctrl+wheel zoom keeps working while the popover is open so
+        // the user can watch the % number tick live without closing
+        // it first (lifted from MemoriesView round 65).
+        onWheel={(e) => {
+          if (!(e.ctrlKey || e.metaKey)) return;
+          e.preventDefault();
+          e.stopPropagation();
+          setTileSizeSlider((prev) => Math.max(TILE_SLIDER_MIN, Math.min(TILE_SLIDER_MAX, prev + (e.deltaY < 0 ? TILE_SLIDER_STEP / 2 : -TILE_SLIDER_STEP / 2))));
+        }}
+      >
+        {/* — Tile size section — */}
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
+        <div className="flex items-center gap-1 mb-3">
+          <button
+            type="button"
+            onClick={() => setTileSizeSlider((prev) => Math.max(TILE_SLIDER_MIN, prev - TILE_SLIDER_STEP))}
+            disabled={tileSizeSlider <= TILE_SLIDER_MIN}
+            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            data-testid="button-albums-zoom-out"
+            aria-label="Zoom out"
+          >
+            <ZoomOut className="w-3.5 h-3.5" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setTileSizeSlider(50)}
+            className="flex-1 text-xs font-medium text-foreground tabular-nums hover:bg-secondary/40 rounded py-1 transition-colors"
+            data-testid="button-albums-zoom-reset"
+            aria-label="Reset zoom"
+          >
+            {tileSizeSlider}% <span className="text-muted-foreground/70 text-[10px]">(click to reset)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setTileSizeSlider((prev) => Math.min(TILE_SLIDER_MAX, prev + TILE_SLIDER_STEP))}
+            disabled={tileSizeSlider >= TILE_SLIDER_MAX}
+            className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            data-testid="button-albums-zoom-in"
+            aria-label="Zoom in"
+          >
+            <ZoomIn className="w-3.5 h-3.5" />
+          </button>
+        </div>
+        <div className="border-t border-border my-2" />
+        {/* — Selection mode section — */}
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Selection mode</p>
+        <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={selectionMode}
+            onChange={() => setSelectionMode((v) => !v)}
+            className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+            data-testid="button-albums-selection-mode"
+          />
+          <span className="text-sm text-foreground flex-1">Tile checkboxes</span>
+        </label>
+        <div className="border-t border-border my-2" />
+        {/* — Tile info section — */}
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
+        {([
+          { key: 'filename' as AlbumTileMetaField, label: 'Filename' },
+          { key: 'date' as AlbumTileMetaField, label: 'Date' },
+        ]).map((opt) => {
+          const checked = metaFields.includes(opt.key);
+          return (
+            <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={checked}
+                onChange={() => {
+                  setMetaFields((prev) => checked ? prev.filter((f) => f !== opt.key) : [...prev, opt.key]);
+                }}
+                className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+              />
+              <span className="text-sm text-foreground flex-1">{opt.label}</span>
+            </label>
+          );
+        })}
+        <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
+          Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
+        </p>
+      </PopoverContent>
+    </Popover>
   );
 
   // v2.0.15 (Terry 2026-05-29) — refresh consolidated into the
@@ -2258,7 +2371,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 control. Both share state across the All-albums /
                 per-group / detail surfaces. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {zoomPill}
+              {insightsButton}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-all-density-toggle" />
             </div>
@@ -2358,7 +2471,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 State is shared, so resizing here also resizes
                 everywhere else. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {zoomPill}
+              {insightsButton}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-group-density-toggle" />
             </div>
@@ -2578,7 +2691,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </PopoverContent>
                     </Popover>
                   )}
-                  {zoomPill}
+                  {insightsButton}
                   {refreshButton}
                   <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />
                   <IconTooltip
@@ -2702,6 +2815,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   // inside is still ContextMenuTrigger's asChild target,
                   // so right-click is unaffected.
                   <CaptionTooltip key={p.id} caption={p.caption} side="top">
+                    {/* v2.1 round 86 (Terry 2026-06-10) — wrapper
+                        carries the aspect-square tile AND the optional
+                        filename / date strip rendered below, so the
+                        grid cell grows to include the metadata when
+                        Insights toggles are on. Single-child contract
+                        of CaptionTooltip is preserved by this wrapper. */}
+                    <div className="flex flex-col">
                     <div className="aspect-square">
                   <ContextMenu>
                     <ContextMenuTrigger asChild>
@@ -2761,7 +2881,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
                             isSelected
                               ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
-                              : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
+                              : selectionMode
+                                ? 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-100'
+                                : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
                           }`}
                           data-testid={`album-tile-checkbox-${p.id}`}
                         >
@@ -2926,6 +3048,21 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
+                    </div>
+                    {(showFilename || showDate) && (
+                      <div className="px-1 pt-1 pb-0.5 min-w-0">
+                        {showFilename && (
+                          <p className="text-[11px] font-medium text-foreground truncate" title={p.filename}>
+                            {p.filename}
+                          </p>
+                        )}
+                        {showDate && (
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {p.derived_date ? p.derived_date.slice(0, 10) : '—'}
+                          </p>
+                        )}
+                      </div>
+                    )}
                     </div>
                   </CaptionTooltip>
                     );
