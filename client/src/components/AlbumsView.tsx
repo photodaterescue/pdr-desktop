@@ -539,12 +539,33 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => el.removeEventListener('wheel', handler);
   }, []);
 
+  // ── Spacious / Tight density (v2.0.8 step 6 polish) ──────────────
+  // Same segmented control Memories By Date uses, so the visual
+  // language stays consistent across both Memories surfaces. Persists
+  // to its own localStorage key — independent from the By Date
+  // density so changing one doesn't unexpectedly retune the other.
+  // Drives the photo-grid gap in the album detail view and the
+  // album-card-grid gap in the All Albums / per-group views.
+  const ALBUMS_DENSITY_KEY = 'pdr-albums-density';
+  const [density, setDensity] = useState<Density>(() => {
+    if (typeof localStorage === 'undefined') return 'spacious';
+    return localStorage.getItem(ALBUMS_DENSITY_KEY) === 'tight' ? 'tight' : 'spacious';
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_DENSITY_KEY, density); } catch { /* localStorage may be unavailable */ }
+  }, [density]);
+
   // v2.1 round 88 (Terry 2026-06-10) — Scroll-position date pill
   // listener. Computes the photo at the visible top using grid maths
   // (uniform tile dimensions after the round-88 gap fix), reads its
   // derived_date, formats it as "Weekday, D Month YYYY" and surfaces
   // it via the scrollIndicatorVisible auto-hide pattern lifted from
   // MemoriesView (1.2 s after last scroll).
+  // NOTE: This block MUST stay below `density` because the dep array
+  // reads it — placing the block above `density` triggers a TDZ
+  // ReferenceError on first render (which masks the whole tree and
+  // leaves the body's --primary lavender filling the window — round
+  // 88's first attempt did this).
   useEffect(() => {
     if (selection?.type !== 'album') return;
     const scrollEl = gridScrollRef.current;
@@ -565,10 +586,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       const gridRect = gridEl.getBoundingClientRect();
       const scrollRect = scrollEl.getBoundingClientRect();
       const visibleYWithinGrid = scrollRect.top - gridRect.top;
-      // Tile width follows the same minmax as the grid template; cols
-      // = floor(grid width / column width). Round-88 dropped the
-      // flex-flex-col wrapper so every tile is now uniformly
-      // aspect-square = column width tall.
       const colCount = Math.max(1, Math.floor(gridRect.width / albumPhotoTilePx));
       const rowHeight = (gridRect.width / colCount) + (density === 'tight' ? 0 : 12);
       const rowIdx = Math.max(0, Math.floor(visibleYWithinGrid / rowHeight));
@@ -587,31 +604,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       }, 1200);
     };
     scrollEl.addEventListener('scroll', onScroll, { passive: true });
-    // Initial compute — pill stays hidden until the user scrolls but
-    // the label gets seeded so the first scroll shows the right
-    // text immediately.
     compute();
     return () => {
       scrollEl.removeEventListener('scroll', onScroll);
       if (scrollIndicatorTimeoutRef.current) clearTimeout(scrollIndicatorTimeoutRef.current);
     };
   }, [selection, albumPhotos, albumPhotoTilePx, density]);
-
-  // ── Spacious / Tight density (v2.0.8 step 6 polish) ──────────────
-  // Same segmented control Memories By Date uses, so the visual
-  // language stays consistent across both Memories surfaces. Persists
-  // to its own localStorage key — independent from the By Date
-  // density so changing one doesn't unexpectedly retune the other.
-  // Drives the photo-grid gap in the album detail view and the
-  // album-card-grid gap in the All Albums / per-group views.
-  const ALBUMS_DENSITY_KEY = 'pdr-albums-density';
-  const [density, setDensity] = useState<Density>(() => {
-    if (typeof localStorage === 'undefined') return 'spacious';
-    return localStorage.getItem(ALBUMS_DENSITY_KEY) === 'tight' ? 'tight' : 'spacious';
-  });
-  useEffect(() => {
-    try { localStorage.setItem(ALBUMS_DENSITY_KEY, density); } catch { /* localStorage may be unavailable */ }
-  }, [density]);
 
   // Forward-only navigation history. Terry 2026-05-19: "the Go Back
   // button is confusing. I think what I actually wanted was a chevron
