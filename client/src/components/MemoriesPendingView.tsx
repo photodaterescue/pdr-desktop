@@ -791,30 +791,39 @@ export default function MemoriesPendingView({
     // band, requiring no layout move (Sub-A from the design chat).
     <div className="h-full flex bg-background">
       <div className="flex-1 flex flex-col min-w-0 relative">
-      {/* Top bar — spans the LEFT column's full width (which is the
-          whole page when the panel is closed; narrower when open).
-          Mirrors the Memories — Dates drilldown header exactly so
-          the user sees the same shape they're used to. */}
+      {/* v2.1 round 94 (Terry 2026-06-11) — Needs Dates toolbar
+          redesigned per Terry's analysis pass. Top row carries
+          NAVIGATION (back + divider) and three IDENTICALLY-SHAPED
+          view-control pills (Show, Media, Display) — same h-8,
+          same rounded-md, same border-border / bg-background
+          recipe, same lavender ring-on-active. No more mismatched
+          purple, lavender, ghost mix. Stats moved to a subhead
+          line below. Density toggle stays far right.
+          The selection cluster (Set date CTA + More overflow + N
+          selected chip) lives on its own SECOND ROW so it never
+          squeezes between the view pills mid-row. Buttons there
+          use the thin S&D-filter recipe with gold borders. */}
       <div className="shrink-0 px-6 py-3 border-b border-border/60 flex items-center gap-2">
         <button
           onClick={onBack}
           className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors"
           style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+          data-testid="memories-pending-back"
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back to timeline
         </button>
+        <span className="h-6 w-px bg-border mx-1" aria-hidden="true" />
 
-        {/* Title dropdown — All / Tentative / Placeholder / Unrecorded.
-            Purple-tinted pill mirrors the month-picker dropdown's
-            position + chevron treatment. */}
+        {/* View pill 1 — Show: tier */}
         <Popover open={titleOpen} onOpenChange={setTitleOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className="inline-flex items-center gap-1.5 px-3 h-8 rounded-full bg-purple-500/10 hover:bg-purple-500/15 text-sm font-semibold text-purple-700 dark:text-purple-200 transition-colors"
+              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${tier ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
               data-testid="memories-pending-title-dropdown"
             >
-              <span>Needs dates{tier ? ` · ${TIER_LABEL[tier]}` : ''}</span>
+              <span className="text-muted-foreground/85">Show:</span>
+              <span>{tier ? TIER_LABEL[tier] : 'All'}</span>
               <ChevronDown className="w-3.5 h-3.5 opacity-70" />
             </button>
           </PopoverTrigger>
@@ -848,38 +857,200 @@ export default function MemoriesPendingView({
           </PopoverContent>
         </Popover>
 
-        {breakdownText && (
-          <span className="text-xs text-muted-foreground">{breakdownText}</span>
-        )}
+        {/* View pill 2 — Media filter (was the "All media · N" chip;
+            count moved to stats subhead, label trimmed). */}
+        <Popover>
+          <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${!mediaDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+                data-testid="memories-pending-media-filter"
+              >
+                <ChipIcon className="w-3.5 h-3.5" />
+                <span className="text-muted-foreground/85">Media:</span>
+                <span>{
+                  mediaDefault
+                    ? 'All'
+                    : mediaFilter === 'photos' && !captionedOnly
+                      ? 'Photos'
+                      : mediaFilter === 'videos' && !captionedOnly
+                        ? 'Videos'
+                        : mediaFilter === 'all' && captionedOnly
+                          ? 'Captioned'
+                          : `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned`
+                }</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+            </PopoverTrigger>
+          </IconTooltip>
+          <PopoverContent align="start" className="w-64 p-1">
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">Type</p>
+            <RadioGroup value={mediaFilter} onValueChange={(v) => setMediaFilter(v as 'all' | 'photos' | 'videos')} className="gap-0">
+              {([
+                { key: 'all' as const, label: 'All media', Icon: Files, count: totalAvailable },
+                { key: 'photos' as const, label: 'Photos', Icon: ImageIcon, count: photoCount },
+                { key: 'videos' as const, label: 'Videos', Icon: Film, count: videoCount },
+              ]).map(({ key, label, Icon, count }) => (
+                <label key={key} htmlFor={`pending-media-${key}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
+                  <span className="inline-flex items-center gap-2 text-foreground">
+                    <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                    {label}
+                  </span>
+                  <span className="inline-flex items-center gap-3">
+                    <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
+                    <RadioGroupItem id={`pending-media-${key}`} value={key} />
+                  </span>
+                </label>
+              ))}
+            </RadioGroup>
+            <div className="h-px bg-border my-1" />
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">Also filter</p>
+            <label className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${captionedCount === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}>
+              <span className="inline-flex items-center gap-2 text-foreground">
+                <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
+                Captions
+              </span>
+              <span className="inline-flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
+                <Checkbox checked={captionedOnly} disabled={captionedCount === 0} onCheckedChange={(v) => setCaptionedOnly(!!v)} />
+              </span>
+            </label>
+          </PopoverContent>
+        </Popover>
 
-        {/* v2.1 round 76 phase 2 (Terry 2026-06-09) — Memories — Dates
-            selection bar parity. When at least one tile is selected,
-            we show:
-              1. A gold "Actions" dropdown carrying every Memories
-                 selection action (Open Viewer / Send to S&D / Add to
-                 S&D pile / Add to album / Transcribe / Copy filenames
-                 / Move to Recycle Bin) PLUS a new "Set date for N
-                 selected…" entry that opens the right-side panel in
-                 BULK mode.
-              2. A gold "N selected · X" chip with one-click clear.
-              3. An off-screen AddToAlbumPopover anchor that the
-                 dropdown's Add-to-album item bumps via openTrigger.
-            Same vocabulary, palette, and behaviour as the day-
-            drilldown so users moving between the two surfaces see no
-            difference. */}
-        {selectedFileIds.size > 0 && (
+        {/* View pill 3 — Display (was the "Insights" ghost button). */}
+        <Popover>
+          <IconTooltip label="Display options — tile size, selection mode, info under tiles" side="bottom">
+            <PopoverTrigger asChild>
+              <button
+                type="button"
+                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+                data-testid="memories-pending-display"
+              >
+                <Eye className="w-3.5 h-3.5" />
+                Display
+                {insightsActive && (
+                  <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                    {insightsCount}
+                  </span>
+                )}
+                <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+              </button>
+            </PopoverTrigger>
+          </IconTooltip>
+          <PopoverContent
+            className="w-64 p-3"
+            align="start"
+            onWheel={(e) => {
+              if (!(e.ctrlKey || e.metaKey)) return;
+              e.preventDefault();
+              e.stopPropagation();
+              setTileSizeSlider((prev) => Math.max(0, Math.min(100, prev + (e.deltaY < 0 ? 5 : -5))));
+            }}
+          >
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
+            <div className="flex items-center gap-1 mb-3">
+              <button type="button" onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))} disabled={tileSizeSlider <= 0} className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Zoom out">
+                <ZoomOut className="w-3.5 h-3.5" />
+              </button>
+              <button type="button" onClick={() => setTileSizeSlider(35)} className="flex-1 text-xs font-medium text-foreground tabular-nums hover:bg-secondary/40 rounded py-1 transition-colors" aria-label="Reset zoom">
+                {tileSizeSlider}% <span className="text-muted-foreground/70 text-[10px]">(click to reset)</span>
+              </button>
+              <button type="button" onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))} disabled={tileSizeSlider >= 100} className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Zoom in">
+                <ZoomIn className="w-3.5 h-3.5" />
+              </button>
+            </div>
+            <div className="border-t border-border my-2" />
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Selection mode</p>
+            <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={selectionMode}
+                onChange={() => setSelectionMode((v) => !v)}
+                className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+              />
+              <span className="text-sm text-foreground flex-1">Tile checkboxes</span>
+            </label>
+            <div className="border-t border-border my-2" />
+            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
+            {([
+              { key: 'filename' as TileMetaField, label: 'Filename' },
+              { key: 'date' as TileMetaField, label: 'Date' },
+            ]).map((opt) => {
+              const checked = metaFields.includes(opt.key);
+              return (
+                <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+                  <input type="checkbox" checked={checked} onChange={() => setMetaFields((prev) => checked ? prev.filter((f) => f !== opt.key) : [...prev, opt.key])} className="rounded border-border text-purple-500 focus:ring-purple-400/50" />
+                  <span className="text-sm text-foreground flex-1">{opt.label}</span>
+                </label>
+              );
+            })}
+            <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
+              Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
+            </p>
+          </PopoverContent>
+        </Popover>
+
+        <div className="flex-1" />
+
+        <DensityToggle value={density} onChange={onDensityChange} />
+      </div>
+
+      {/* v2.1 round 94 — stats subhead (was inline plain-text in the
+          toolbar; killed per Terry's redesign feedback). One line of
+          muted text under the toolbar — same information without
+          competing with the controls for vertical space. */}
+      {breakdownText && (
+        <div className="shrink-0 px-6 py-1.5 text-[11px] text-muted-foreground border-b border-border/60 truncate">
+          {breakdownText}
+        </div>
+      )}
+
+      {/* v2.1 round 94 — selection row. Only renders when a selection
+          is active; thin S&D-filter-style chips with gold borders. */}
+      {selectedFileIds.size > 0 && (
+        <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/8">
+          {/* N selected — pulsing chip, clears on click */}
+          <IconTooltip label="Clear selection" side="bottom">
+            <button
+              onClick={clearSelection}
+              className="pdr-pending-chip-pulse inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+              data-testid="pending-selection-chip"
+            >
+              <span>{selectedFileIds.size} selected</span>
+              <X className="w-3 h-3 opacity-70" />
+            </button>
+          </IconTooltip>
+
+          {/* Direct gold CTA — Set date for N (lifted out of the
+              dropdown so the headline bulk action is one click away). */}
+          <button
+            type="button"
+            onClick={() => openBulkPanel(selectedFiles)}
+            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors"
+            data-testid="pending-set-date-cta"
+          >
+            <CalendarClock className="w-3.5 h-3.5" />
+            Set date for {selectedFileIds.size}
+          </button>
+
+          {/* More overflow — every other bulk action (Open in Viewer,
+              Send to S&D, Add to album, Transcribe, Copy filenames,
+              Recycle Bin). Same items as the round-88 Actions menu
+              minus "Set date" which is now the direct CTA above. */}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button
-                size="sm"
-                className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
-                data-testid="pending-selection-actions"
+              <button
+                type="button"
+                className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+                data-testid="pending-selection-more"
               >
-                Actions
-                <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
-              </Button>
+                More
+                <ChevronDown className="w-3 h-3 opacity-80" />
+              </button>
             </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="min-w-[260px]">
+            <DropdownMenuContent align="start" className="min-w-[260px]">
               <DropdownMenuItem
                 onSelect={() => {
                   if (selectedFiles.length === 0) return;
@@ -904,18 +1075,11 @@ export default function MemoriesPendingView({
                 </DropdownMenuItem>
               )}
               <DropdownMenuSeparator />
-              {/* The headline NEW action — bulk-edit the date for
-                  every selected file in one shot. Opens the right-
-                  side panel in bulk mode; Save commits to all
-                  selected files at once. */}
-              <DropdownMenuItem
-                onSelect={() => openBulkPanel(selectedFiles)}
-                data-testid="pending-actions-bulk-set-date"
-              >
-                <CalendarClock className="w-3.5 h-3.5 mr-2" />
-                Set date for {selectedFileIds.size} selected…
-              </DropdownMenuItem>
-              <DropdownMenuSeparator />
+              {/* "Set date for N" was here in round 88 as the
+                  headline dropdown item; round 94 lifted it out
+                  into the direct gold CTA on the selection row, so
+                  it's gone from the More menu — having it in both
+                  places was a duplicated affordance. */}
               <DropdownMenuItem
                 onSelect={() => {
                   const fileIds = Array.from(selectedFileIds);
@@ -1002,169 +1166,18 @@ export default function MemoriesPendingView({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
-        )}
-        {selectedFileIds.size > 0 && (
-          <>
-            {/* v2.1 round 84 (Terry 2026-06-10) — gold outline pulse
-                matched to the workspace burger's 2.4 s cadence so the
-                chip beats together with the rest of the app's
-                "attention here" rhythm. pdr-pending-chip-pulse is a
-                sibling of the active-tile pulse (same gold, same
-                spread) — see index.css. */}
-            <IconTooltip label="Clear selection" side="bottom">
-              <button
-                onClick={clearSelection}
-                className="pdr-pending-chip-pulse inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
-                data-testid="pending-selection-chip"
-              >
-                {selectedFileIds.size} selected
-                <X className="w-3 h-3 opacity-70" />
-              </button>
-            </IconTooltip>
-            {/* Off-screen anchor for AddToAlbumPopover — opened by
-                the dropdown item via openTrigger bump. */}
-            <div className="absolute -left-[9999px] top-0">
-              <AddToAlbumPopover
-                fileIds={Array.from(selectedFileIds)}
-                onAdded={clearSelection}
-                openTrigger={addToAlbumOpenTick}
-              />
-            </div>
-          </>
-        )}
 
-        {/* All-media chip — clustered LEFT next to the counts, not
-            right of a spacer. */}
-        <Popover>
-          <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
-                  !mediaDefault
-                    ? 'bg-primary border-primary text-primary-foreground'
-                    : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
-                }`}
-                data-testid="memories-pending-media-filter"
-              >
-                <ChipIcon className="w-3.5 h-3.5" />
-                {mediaChipLabel}
-                <ChevronDown className="w-3 h-3 opacity-70" />
-              </button>
-            </PopoverTrigger>
-          </IconTooltip>
-          <PopoverContent align="start" className="w-64 p-1">
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">Type</p>
-            <RadioGroup value={mediaFilter} onValueChange={(v) => setMediaFilter(v as 'all' | 'photos' | 'videos')} className="gap-0">
-              {([
-                { key: 'all' as const, label: 'All media', Icon: Files, count: totalAvailable },
-                { key: 'photos' as const, label: 'Photos', Icon: ImageIcon, count: photoCount },
-                { key: 'videos' as const, label: 'Videos', Icon: Film, count: videoCount },
-              ]).map(({ key, label, Icon, count }) => (
-                <label key={key} htmlFor={`pending-media-${key}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
-                  <span className="inline-flex items-center gap-2 text-foreground">
-                    <Icon className="w-3.5 h-3.5 text-muted-foreground" />
-                    {label}
-                  </span>
-                  <span className="inline-flex items-center gap-3">
-                    <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
-                    <RadioGroupItem id={`pending-media-${key}`} value={key} />
-                  </span>
-                </label>
-              ))}
-            </RadioGroup>
-            <div className="h-px bg-border my-1" />
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">Also filter</p>
-            <label className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${captionedCount === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}>
-              <span className="inline-flex items-center gap-2 text-foreground">
-                <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
-                Captions
-              </span>
-              <span className="inline-flex items-center gap-3">
-                <span className="text-xs text-muted-foreground">{captionedCount.toLocaleString()}</span>
-                <Checkbox checked={captionedOnly} disabled={captionedCount === 0} onCheckedChange={(v) => setCaptionedOnly(!!v)} />
-              </span>
-            </label>
-            {/* v2.1 round 82 — Duplicates checkbox removed. The
-                startup hash-consolidator chain handles duplicate
-                cleanup silently so the user never sees them surface
-                in Needs Dates. */}
-          </PopoverContent>
-        </Popover>
-
-        {/* Insights — clustered LEFT immediately after All-media,
-            mirroring the Memories — Dates header order. */}
-        <Popover>
-          <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
-            <PopoverTrigger asChild>
-              <Button variant={insightsActive ? 'secondary' : 'ghost'} size="sm" data-testid="memories-pending-insights">
-                <Info className="w-3.5 h-3.5 mr-1.5" />
-                Insights
-                {insightsActive && (
-                  <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
-                    {insightsCount}
-                  </span>
-                )}
-              </Button>
-            </PopoverTrigger>
-          </IconTooltip>
-          <PopoverContent
-            className="w-64 p-3"
-            align="start"
-            onWheel={(e) => {
-              if (!(e.ctrlKey || e.metaKey)) return;
-              e.preventDefault();
-              e.stopPropagation();
-              setTileSizeSlider((prev) => Math.max(0, Math.min(100, prev + (e.deltaY < 0 ? 5 : -5))));
-            }}
-          >
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Tile size</p>
-            <div className="flex items-center gap-1 mb-3">
-              <button type="button" onClick={() => setTileSizeSlider((prev) => Math.max(0, prev - 10))} disabled={tileSizeSlider <= 0} className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Zoom out">
-                <ZoomOut className="w-3.5 h-3.5" />
-              </button>
-              <button type="button" onClick={() => setTileSizeSlider(35)} className="flex-1 text-xs font-medium text-foreground tabular-nums hover:bg-secondary/40 rounded py-1 transition-colors" aria-label="Reset zoom">
-                {tileSizeSlider}% <span className="text-muted-foreground/70 text-[10px]">(click to reset)</span>
-              </button>
-              <button type="button" onClick={() => setTileSizeSlider((prev) => Math.min(100, prev + 10))} disabled={tileSizeSlider >= 100} className="flex items-center justify-center w-7 h-7 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/60 disabled:opacity-30 disabled:cursor-not-allowed transition-colors" aria-label="Zoom in">
-                <ZoomIn className="w-3.5 h-3.5" />
-              </button>
-            </div>
-            <div className="border-t border-border my-2" />
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Selection mode</p>
-            <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={selectionMode}
-                onChange={() => setSelectionMode((v) => !v)}
-                className="rounded border-border text-purple-500 focus:ring-purple-400/50"
-              />
-              <span className="text-sm text-foreground flex-1">Tile checkboxes</span>
-            </label>
-            <div className="border-t border-border my-2" />
-            <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
-            {([
-              { key: 'filename' as TileMetaField, label: 'Filename' },
-              { key: 'date' as TileMetaField, label: 'Date' },
-            ]).map((opt) => {
-              const checked = metaFields.includes(opt.key);
-              return (
-                <label key={opt.key} className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
-                  <input type="checkbox" checked={checked} onChange={() => setMetaFields((prev) => checked ? prev.filter((f) => f !== opt.key) : [...prev, opt.key])} className="rounded border-border text-purple-500 focus:ring-purple-400/50" />
-                  <span className="text-sm text-foreground flex-1">{opt.label}</span>
-                </label>
-              );
-            })}
-            <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
-              Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
-            </p>
-          </PopoverContent>
-        </Popover>
-
-        <div className="flex-1" />
-
-        <DensityToggle value={density} onChange={onDensityChange} />
-      </div>
+          {/* Off-screen anchor for AddToAlbumPopover — opened by the
+              More dropdown's Add-to-album item via openTrigger bump. */}
+          <div className="absolute -left-[9999px] top-0">
+            <AddToAlbumPopover
+              fileIds={Array.from(selectedFileIds)}
+              onAdded={clearSelection}
+              openTrigger={addToAlbumOpenTick}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Rail + content row */}
       <div className="flex-1 flex min-h-0">
