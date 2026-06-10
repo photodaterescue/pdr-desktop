@@ -1142,6 +1142,16 @@ export default function MemoriesPendingView({
                             lastClickedIndexRef.current = idx;
                             return;
                           }
+                          // v2.1 round 87 (Terry 2026-06-10) — plain
+                          // click on a tile while a multi-selection is
+                          // active drops the previous selection (Terry:
+                          // "If there are selected photos, and then a
+                          // photo is clicked on without the CTRL or
+                          // Shift, then it should deselect the images
+                          // already selected"). Matches the
+                          // single-select-replaces-multi-select model
+                          // most desktop file managers use.
+                          if (selectedFileIds.size > 0) clearSelection();
                           lastClickedIndexRef.current = idx;
                           openPanel(f);
                         }}

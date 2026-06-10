@@ -2890,7 +2890,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           {isSelected && <Check className="w-3 h-3" />}
                         </div>
                         {thumbs[p.file_path] ? (
-                          <img src={thumbs[p.file_path]} alt={p.filename} className="w-full h-full object-cover" loading="lazy" />
+                          <img
+                            src={thumbs[p.file_path]}
+                            alt={p.filename}
+                            className="w-full h-full object-cover"
+                            // v2.1 round 87 (Terry 2026-06-10) — anchor
+                            // the crop to the TOP of each photo so
+                            // portrait images keep heads visible
+                            // instead of centre-cropping them off
+                            // (Terry SS1: Bowel Cancer fundraiser album
+                            // top row showed only the lower half of
+                            // each portrait). Landscape photos lose
+                            // some bottom (usually floor / foreground)
+                            // — a net win on the typical photo album.
+                            style={{ objectPosition: 'top' }}
+                            loading="lazy"
+                          />
                         ) : (
                           <div className="w-full h-full skeleton-shimmer" />
                         )}
