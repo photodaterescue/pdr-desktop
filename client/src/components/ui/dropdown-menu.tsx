@@ -167,7 +167,11 @@ const DropdownMenuSeparator = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <DropdownMenuPrimitive.Separator
     ref={ref}
-    className={cn("-mx-1 my-1 h-px bg-muted", className)}
+    // v2.1 round 78 (Terry 2026-06-09) — bg-border to match the
+    // ContextMenuSeparator style. The previous `bg-muted` read as
+    // too faint in dropdown menus; aligning the two primitives so
+    // every separator across the app feels of-a-piece.
+    className={cn("-mx-1 my-1 h-px bg-border", className)}
     {...props}
   />
 ))

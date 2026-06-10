@@ -854,15 +854,15 @@ export default function MemoriesPendingView({
           <aside className="w-[68px] shrink-0 border-r border-border/60 overflow-y-auto py-4 px-1 text-center">
             {/* Active "Needs dates" entry — same purple highlight as the
                 rail entry on the timeline (round 68 pulse dot). */}
+            {/* v2.1 round 78 — pulsing dot removed; "Needs" + "dates"
+                each block-centered for proper alignment. Mirrors the
+                inactive rail entry on the timeline. */}
             <div
-              className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 bg-purple-500/15 inline-flex flex-col items-center justify-center leading-tight"
+              className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 bg-purple-500/15 flex flex-col items-center justify-center leading-tight"
               data-testid="memories-rail-pending-active"
             >
               <span>Needs</span>
-              <span className="inline-flex items-center gap-1">
-                <span>dates</span>
-                <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" aria-hidden="true" />
-              </span>
+              <span>dates</span>
             </div>
             {/* v2.1 round 75 (Terry 2026-06-09) — symmetric breathing
                 room around the divider so it reads as a section

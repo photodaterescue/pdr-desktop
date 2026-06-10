@@ -814,19 +814,21 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                     label={`${pendingCounts.total.toLocaleString()} files need a date decision — ${pendingCounts.tentative} Tentative · ${pendingCounts.placeholder} Placeholder · ${pendingCounts.unrecorded} Unrecorded`}
                     side="right"
                   >
+                    {/* v2.1 round 78 (Terry 2026-06-09) — pulsing dot
+                        removed (Terry: "I've failed to see what the
+                        fuck the dot is"); the entry's existence is
+                        signal enough that there's work to do, since
+                        the whole row self-hides at count zero. With
+                        the dot gone, "Needs" and "dates" are each
+                        block-centered on their own line, so the
+                        two-line label aligns properly down the rail. */}
                     <button
                       onClick={() => setPendingScope({})}
-                      className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors inline-flex flex-col items-center justify-center leading-tight"
+                      className="w-full px-1 py-1.5 rounded text-[11px] font-semibold text-purple-600 dark:text-purple-300 hover:bg-purple-500/10 transition-colors flex flex-col items-center justify-center leading-tight"
                       data-testid="memories-rail-pending"
                     >
                       <span>Needs</span>
-                      <span className="inline-flex items-center gap-1">
-                        <span>dates</span>
-                        <span
-                          className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse"
-                          aria-hidden="true"
-                        />
-                      </span>
+                      <span>dates</span>
                     </button>
                   </IconTooltip>
                   {/* v2.1 round 75 (Terry 2026-06-09) — divider needs
