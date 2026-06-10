@@ -309,68 +309,6 @@ export default function MemoriesPendingView({
     setPickedTime('');
   };
 
-  // v2.1 round 83 (Terry 2026-06-09) — prev/next navigation within
-  // the panel. Cycles through the active multi-selection (when one
-  // exists) so the user can step through their selected files
-  // without losing the selection state. When NO multi-selection is
-  // active, prev/next are disabled — Terry's spec: "Previous photo
-  // — only of the selection, and if it's just one that's been
-  // clicked on, then there are none to rotate through."
-  // Bulk mode (Set date for N selected) automatically has a
-  // selection since the action requires checkboxes; nav works the
-  // same way.
-  // The nav SET is the current selection ordered as it appears in
-  // visibleFiles (so the order matches what the user sees in the
-  // grid), with the panel-active file as the cursor.
-  const navSet = useMemo<PendingFile[]>(() => {
-    if (selectedFileIds.size === 0) return [];
-    return (visibleFiles ?? []).filter((f) => selectedFileIds.has(f.id));
-  }, [visibleFiles, selectedFileIds]);
-  const navIndex = useMemo(() => {
-    if (!panelFile || navSet.length === 0) return -1;
-    return navSet.findIndex((f) => f.id === panelFile.id);
-  }, [navSet, panelFile]);
-  const canNavPrev = navIndex > 0;
-  const canNavNext = navIndex >= 0 && navIndex < navSet.length - 1;
-
-  // Switch the panel-active file to a sibling in the nav set.
-  // Reuses openPanel's seed-from-derived_date + flash+scroll logic
-  // so the experience is identical to a fresh tile click.
-  const navTo = (target: PendingFile) => {
-    setPanelFile(target);
-    if (target.derived_date) {
-      const m = target.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
-      setPickedDate(m ? m[1] : '');
-      const t = target.derived_date.match(/T(\d{2}:\d{2})/);
-      setPickedTime(t ? t[1] : '');
-    } else {
-      setPickedDate('');
-      setPickedTime('');
-    }
-    flashAndScrollTo(target.id);
-  };
-  const navPrev = () => { if (canNavPrev) navTo(navSet[navIndex - 1]); };
-  const navNext = () => { if (canNavNext) navTo(navSet[navIndex + 1]); };
-
-  // Open the currently-active panel file (single mode) or the
-  // whole bulk selection in PDRV. Same selection-aware contract as
-  // the existing toolbar Open-in-Viewer affordance — if there's a
-  // multi-selection, open all of them; otherwise just the active
-  // panel file.
-  const openInPdrv = () => {
-    const files = navSet.length > 0 ? navSet : panelFile ? [panelFile] : [];
-    if (files.length === 0) return;
-    void openSearchViewer(
-      files.map((f) => f.file_path),
-      files.map((f) => f.filename),
-      navIndex >= 0 ? navIndex : 0,
-    );
-  };
-  const revealActiveInFolder = () => {
-    if (!panelFile) return;
-    (window as any).pdr?.revealInFolder?.(panelFile.file_path);
-  };
-
   // Commit the user's chosen date for either the single panel file
   // OR the bulk selection — same IPC, same setPendingDate({fileIds,
   // isoDateTime}) signature. Single mode auto-advances to the next
@@ -486,6 +424,73 @@ export default function MemoriesPendingView({
     if (captionedOnly) out = out.filter((f) => !!f.caption && f.caption.length > 0);
     return out;
   }, [files, mediaFilter, captionedOnly]);
+
+  // v2.1 round 83 (Terry 2026-06-09) — prev/next navigation within
+  // the panel. Cycles through the active multi-selection (when one
+  // exists) so the user can step through their selected files
+  // without losing the selection state. When NO multi-selection is
+  // active, prev/next are disabled — Terry's spec: "Previous photo
+  // — only of the selection, and if it's just one that's been
+  // clicked on, then there are none to rotate through."
+  // Bulk mode (Set date for N selected) automatically has a
+  // selection since the action requires checkboxes; nav works the
+  // same way.
+  // The nav SET is the current selection ordered as it appears in
+  // visibleFiles (so the order matches what the user sees in the
+  // grid), with the panel-active file as the cursor.
+  // NOTE: This block MUST stay below `visibleFiles` because navSet's
+  // useMemo dependency array reads it — placing the block above
+  // visibleFiles triggers a TDZ ReferenceError on first render
+  // (which masks the whole tree and leaves the body's --primary
+  // lavender filling the window — round 83's first attempt did this).
+  const navSet = useMemo<PendingFile[]>(() => {
+    if (selectedFileIds.size === 0) return [];
+    return (visibleFiles ?? []).filter((f) => selectedFileIds.has(f.id));
+  }, [visibleFiles, selectedFileIds]);
+  const navIndex = useMemo(() => {
+    if (!panelFile || navSet.length === 0) return -1;
+    return navSet.findIndex((f) => f.id === panelFile.id);
+  }, [navSet, panelFile]);
+  const canNavPrev = navIndex > 0;
+  const canNavNext = navIndex >= 0 && navIndex < navSet.length - 1;
+
+  // Switch the panel-active file to a sibling in the nav set.
+  // Reuses openPanel's seed-from-derived_date + flash+scroll logic
+  // so the experience is identical to a fresh tile click.
+  const navTo = (target: PendingFile) => {
+    setPanelFile(target);
+    if (target.derived_date) {
+      const m = target.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
+      setPickedDate(m ? m[1] : '');
+      const t = target.derived_date.match(/T(\d{2}:\d{2})/);
+      setPickedTime(t ? t[1] : '');
+    } else {
+      setPickedDate('');
+      setPickedTime('');
+    }
+    flashAndScrollTo(target.id);
+  };
+  const navPrev = () => { if (canNavPrev) navTo(navSet[navIndex - 1]); };
+  const navNext = () => { if (canNavNext) navTo(navSet[navIndex + 1]); };
+
+  // Open the currently-active panel file (single mode) or the
+  // whole bulk selection in PDRV. Same selection-aware contract as
+  // the existing toolbar Open-in-Viewer affordance — if there's a
+  // multi-selection, open all of them; otherwise just the active
+  // panel file.
+  const openInPdrv = () => {
+    const files = navSet.length > 0 ? navSet : panelFile ? [panelFile] : [];
+    if (files.length === 0) return;
+    void openSearchViewer(
+      files.map((f) => f.file_path),
+      files.map((f) => f.filename),
+      navIndex >= 0 ? navIndex : 0,
+    );
+  };
+  const revealActiveInFolder = () => {
+    if (!panelFile) return;
+    (window as any).pdr?.revealInFolder?.(panelFile.file_path);
+  };
 
   const sections = useMemo(() => {
     if (!visibleFiles) return [] as Array<[PendingTier, PendingFile[]]>;
