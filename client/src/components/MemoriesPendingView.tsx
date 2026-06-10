@@ -547,7 +547,11 @@ export default function MemoriesPendingView({
                 <span className="w-1.5 h-1.5 rounded-full bg-purple-500 animate-pulse" aria-hidden="true" />
               </span>
             </div>
-            <div className="border-t border-border my-0 mx-1" />
+            {/* v2.1 round 75 (Terry 2026-06-09) — symmetric breathing
+                room around the divider so it reads as a section
+                separator rather than the bottom edge of the
+                Needs-dates pill. Mirrors the timeline rail. */}
+            <div className="border-t border-border my-2 mx-1" />
             {years.map((y) => (
               <IconTooltip key={y} label={`Jump to ${y}`} side="right">
                 <button
@@ -561,7 +565,16 @@ export default function MemoriesPendingView({
           </aside>
         )}
 
-        <div className="flex-1 overflow-y-auto p-6">
+        {/* v2.1 round 75 (Terry 2026-06-09) — scroll container drops
+            its TOP padding so the sticky tier header below sits
+            flush against the page toolbar when scrolled. p-6
+            previously pushed the sticky stop-point 24px below the
+            toolbar, which made the header read as "floating" with
+            tiles bleeding through the gap. Horizontal + bottom
+            padding stay on the parent; the first tier header's
+            own py-3 gives the visual top breathing room when not
+            scrolled. */}
+        <div className="flex-1 overflow-y-auto px-6 pb-6">
           {loading && !files ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
