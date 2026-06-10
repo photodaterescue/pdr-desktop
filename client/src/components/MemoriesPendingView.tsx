@@ -814,16 +814,26 @@ export default function MemoriesPendingView({
         </button>
         <span className="h-6 w-px bg-border mx-1" aria-hidden="true" />
 
-        {/* View pill 1 — Show: tier */}
+        {/* v2.1 round 95 (Terry 2026-06-11) — view pills now share a
+            fixed min-width so the three sit equal-width regardless
+            of which option each is showing. min-w-[150px] sized
+            against the widest realistic label ("Media: Photos +
+            Captioned"); shorter labels carry empty space to keep
+            the visual symmetry Terry asked for. justify-between
+            pushes the chevron to the right edge so the trigger
+            still reads as a dropdown.
+            Round 95 also renamed "Show:" → "Type:" per Terry. */}
         <Popover open={titleOpen} onOpenChange={setTitleOpen}>
           <PopoverTrigger asChild>
             <button
               type="button"
-              className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${tier ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+              className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${tier ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
               data-testid="memories-pending-title-dropdown"
             >
-              <span className="text-muted-foreground/85">Show:</span>
-              <span>{tier ? TIER_LABEL[tier] : 'All'}</span>
+              <span className="inline-flex items-center gap-1.5">
+                <span className="text-muted-foreground/85">Type:</span>
+                <span>{tier ? TIER_LABEL[tier] : 'All'}</span>
+              </span>
               <ChevronDown className="w-3.5 h-3.5 opacity-70" />
             </button>
           </PopoverTrigger>
@@ -864,22 +874,24 @@ export default function MemoriesPendingView({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${!mediaDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+                className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${!mediaDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
                 data-testid="memories-pending-media-filter"
               >
-                <ChipIcon className="w-3.5 h-3.5" />
-                <span className="text-muted-foreground/85">Media:</span>
-                <span>{
-                  mediaDefault
-                    ? 'All'
-                    : mediaFilter === 'photos' && !captionedOnly
-                      ? 'Photos'
-                      : mediaFilter === 'videos' && !captionedOnly
-                        ? 'Videos'
-                        : mediaFilter === 'all' && captionedOnly
-                          ? 'Captioned'
-                          : `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned`
-                }</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <ChipIcon className="w-3.5 h-3.5" />
+                  <span className="text-muted-foreground/85">Media:</span>
+                  <span>{
+                    mediaDefault
+                      ? 'All'
+                      : mediaFilter === 'photos' && !captionedOnly
+                        ? 'Photos'
+                        : mediaFilter === 'videos' && !captionedOnly
+                          ? 'Videos'
+                          : mediaFilter === 'all' && captionedOnly
+                            ? 'Captioned'
+                            : `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned`
+                  }</span>
+                </span>
                 <ChevronDown className="w-3.5 h-3.5 opacity-70" />
               </button>
             </PopoverTrigger>
@@ -925,16 +937,18 @@ export default function MemoriesPendingView({
             <PopoverTrigger asChild>
               <button
                 type="button"
-                className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+                className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
                 data-testid="memories-pending-display"
               >
-                <Eye className="w-3.5 h-3.5" />
-                Display
-                {insightsActive && (
-                  <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
-                    {insightsCount}
-                  </span>
-                )}
+                <span className="inline-flex items-center gap-1.5">
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>Display</span>
+                  {insightsActive && (
+                    <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                      {insightsCount}
+                    </span>
+                  )}
+                </span>
                 <ChevronDown className="w-3.5 h-3.5 opacity-70" />
               </button>
             </PopoverTrigger>
@@ -994,23 +1008,31 @@ export default function MemoriesPendingView({
 
         <div className="flex-1" />
 
+        {/* v2.1 round 95 (Terry 2026-06-11) — stats live inline on
+            the toolbar right-side (when there's no selection) or in
+            the gold banner (when there is one). Terry: "you seem to
+            be insisting they appear at the top since you disobeyed
+            me, I would suggest they go on either the upper toolbar,
+            or the the yellow banner." The standalone bordered
+            subhead is gone — its own band was the eye-snag he
+            didn't want. */}
+        {breakdownText && selectedFileIds.size === 0 && (
+          <span className="text-[11px] text-muted-foreground tabular-nums truncate max-w-[40%]">
+            {breakdownText}
+          </span>
+        )}
+
         <DensityToggle value={density} onChange={onDensityChange} />
       </div>
 
-      {/* v2.1 round 94 — stats subhead (was inline plain-text in the
-          toolbar; killed per Terry's redesign feedback). One line of
-          muted text under the toolbar — same information without
-          competing with the controls for vertical space. */}
-      {breakdownText && (
-        <div className="shrink-0 px-6 py-1.5 text-[11px] text-muted-foreground border-b border-border/60 truncate">
-          {breakdownText}
-        </div>
-      )}
-
       {/* v2.1 round 94 — selection row. Only renders when a selection
-          is active; thin S&D-filter-style chips with gold borders. */}
+          is active; thin S&D-filter-style chips with gold borders.
+          Round 95 — stats moved INTO this banner so they appear here
+          when selection is active and on the toolbar otherwise. Wash
+          bumped from /8 to /15 so the banner reads as a distinct
+          band. */}
       {selectedFileIds.size > 0 && (
-        <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/8">
+        <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/15">
           {/* N selected — pulsing chip, clears on click */}
           <IconTooltip label="Clear selection" side="bottom">
             <button
@@ -1166,6 +1188,17 @@ export default function MemoriesPendingView({
               </DropdownMenuItem>
             </DropdownMenuContent>
           </DropdownMenu>
+
+          <div className="flex-1" />
+
+          {/* Stats live here when selection is active — right side
+              of the gold banner, muted so the gold CTA pulls the
+              eye first. */}
+          {breakdownText && (
+            <span className="text-[11px] text-muted-foreground tabular-nums truncate max-w-[40%]">
+              {breakdownText}
+            </span>
+          )}
 
           {/* Off-screen anchor for AddToAlbumPopover — opened by the
               More dropdown's Add-to-album item via openTrigger bump. */}
