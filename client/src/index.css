@@ -759,6 +759,22 @@ body > .window-resize-hint-tr {
     transform-box: fill-box;
     transform-origin: center center;
   }
+
+  /* v2.1 round 83 (Terry 2026-06-09) — Needs Dates panel-active
+     tile pulse. Fires ONCE for 3 cycles (~1.8 s total) when the
+     right-side date-editor panel activates a new tile, so the
+     user can see exactly which tile the panel is editing without
+     hunting through the reflowed grid. Box-shadow ring rather
+     than transform/opacity so it doesn't disturb layout. Uses
+     the established Needs Dates purple (--primary equivalent in
+     the Tailwind purple-500 family). */
+  @keyframes pdr-pending-tile-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.55); }
+    50%      { box-shadow: 0 0 0 10px rgba(168, 85, 247, 0); }
+  }
+  .pdr-pending-tile-pulse {
+    animation: pdr-pending-tile-pulse 0.6s ease-out 3;
+  }
 }
 
 /* Anchor the document chain to the viewport so workspace.tsx h-full propagates

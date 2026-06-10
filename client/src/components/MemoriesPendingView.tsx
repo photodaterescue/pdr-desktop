@@ -46,6 +46,10 @@ import {
   Copy,
   Trash2,
   CalendarClock,
+  Eye,
+  FolderOpen,
+  ArrowLeft,
+  ArrowRight,
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
@@ -159,6 +163,39 @@ export default function MemoriesPendingView({
   const [pickedDate, setPickedDate] = useState<string>('');
   const [pickedTime, setPickedTime] = useState<string>('');
   const [saving, setSaving] = useState(false);
+  // v2.1 round 83 (Terry 2026-06-09) — tile id currently flashing
+  // its "look at me" pulse. Set when the panel activates a tile so
+  // the user can spot it in the reflowed grid (Terry: "the last
+  // image clicked on... should be the one that's definitely in
+  // view, and I would even say it pulsates slowly 3 times so that
+  // the UX is premium"). Cleared by a 1.8 s timeout (3 cycles of
+  // the .pdr-pending-tile-pulse keyframes defined in index.css).
+  const [pulseFileId, setPulseFileId] = useState<number | null>(null);
+
+  /** Bring the panel-activated tile into view + run the 3-pulse
+   *  highlight on it. Called whenever a tile becomes the panel's
+   *  active subject — single-click open, bulk-action open, or
+   *  prev/next nav within the panel. Uses the data-testid as the
+   *  DOM hook (the alternative — a ref Map keyed by file id — adds
+   *  a lot of ref-management surface for a one-shot effect that
+   *  doesn't need React-controlled access). */
+  const flashAndScrollTo = (fileId: number) => {
+    setPulseFileId(fileId);
+    // Wait one frame so React commits the new tile className before
+    // we hand it over to scrollIntoView — otherwise the smooth
+    // scroll can race the reflow that the panel-open triggered.
+    requestAnimationFrame(() => {
+      const el = document.querySelector(`[data-pending-tile-id="${fileId}"]`) as HTMLElement | null;
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+    });
+    // Clear the pulse class after the animation finishes so it
+    // doesn't re-run on the next render that touches this tile.
+    setTimeout(() => {
+      setPulseFileId((current) => (current === fileId ? null : current));
+    }, 1800);
+  };
 
   // v2.1 round 76 phase 2 (Terry 2026-06-09) — Memories — Dates
   // selection-model parity. Mirrors MemoriesDayDrilldown:
@@ -233,6 +270,7 @@ export default function MemoriesPendingView({
       setPickedDate('');
       setPickedTime('');
     }
+    flashAndScrollTo(f.id);
   };
 
   // (closePanel — bulk-aware version below; the single-only one
@@ -258,6 +296,10 @@ export default function MemoriesPendingView({
       setPickedDate('');
       setPickedTime('');
     }
+    // Flash + scroll to the FIRST file of the bulk selection so
+    // the user can confirm "this is where my selection starts" at
+    // a glance, even on a reflowed grid.
+    flashAndScrollTo(filesToEdit[0].id);
   };
 
   const closePanel = () => {
@@ -265,6 +307,68 @@ export default function MemoriesPendingView({
     setPanelBulkFiles(null);
     setPickedDate('');
     setPickedTime('');
+  };
+
+  // v2.1 round 83 (Terry 2026-06-09) — prev/next navigation within
+  // the panel. Cycles through the active multi-selection (when one
+  // exists) so the user can step through their selected files
+  // without losing the selection state. When NO multi-selection is
+  // active, prev/next are disabled — Terry's spec: "Previous photo
+  // — only of the selection, and if it's just one that's been
+  // clicked on, then there are none to rotate through."
+  // Bulk mode (Set date for N selected) automatically has a
+  // selection since the action requires checkboxes; nav works the
+  // same way.
+  // The nav SET is the current selection ordered as it appears in
+  // visibleFiles (so the order matches what the user sees in the
+  // grid), with the panel-active file as the cursor.
+  const navSet = useMemo<PendingFile[]>(() => {
+    if (selectedFileIds.size === 0) return [];
+    return (visibleFiles ?? []).filter((f) => selectedFileIds.has(f.id));
+  }, [visibleFiles, selectedFileIds]);
+  const navIndex = useMemo(() => {
+    if (!panelFile || navSet.length === 0) return -1;
+    return navSet.findIndex((f) => f.id === panelFile.id);
+  }, [navSet, panelFile]);
+  const canNavPrev = navIndex > 0;
+  const canNavNext = navIndex >= 0 && navIndex < navSet.length - 1;
+
+  // Switch the panel-active file to a sibling in the nav set.
+  // Reuses openPanel's seed-from-derived_date + flash+scroll logic
+  // so the experience is identical to a fresh tile click.
+  const navTo = (target: PendingFile) => {
+    setPanelFile(target);
+    if (target.derived_date) {
+      const m = target.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
+      setPickedDate(m ? m[1] : '');
+      const t = target.derived_date.match(/T(\d{2}:\d{2})/);
+      setPickedTime(t ? t[1] : '');
+    } else {
+      setPickedDate('');
+      setPickedTime('');
+    }
+    flashAndScrollTo(target.id);
+  };
+  const navPrev = () => { if (canNavPrev) navTo(navSet[navIndex - 1]); };
+  const navNext = () => { if (canNavNext) navTo(navSet[navIndex + 1]); };
+
+  // Open the currently-active panel file (single mode) or the
+  // whole bulk selection in PDRV. Same selection-aware contract as
+  // the existing toolbar Open-in-Viewer affordance — if there's a
+  // multi-selection, open all of them; otherwise just the active
+  // panel file.
+  const openInPdrv = () => {
+    const files = navSet.length > 0 ? navSet : panelFile ? [panelFile] : [];
+    if (files.length === 0) return;
+    void openSearchViewer(
+      files.map((f) => f.file_path),
+      files.map((f) => f.filename),
+      navIndex >= 0 ? navIndex : 0,
+    );
+  };
+  const revealActiveInFolder = () => {
+    if (!panelFile) return;
+    (window as any).pdr?.revealInFolder?.(panelFile.file_path);
   };
 
   // Commit the user's chosen date for either the single panel file
@@ -1005,7 +1109,8 @@ export default function MemoriesPendingView({
                             : isPanelActive
                               ? `${tileRing} ring-2 ring-purple-500`
                               : `${tileRing} hover:ring-primary/50`
-                        }`}
+                        } ${pulseFileId === f.id ? 'pdr-pending-tile-pulse' : ''}`}
+                        data-pending-tile-id={f.id}
                         title={f.filename}
                       >
                         {/* v2.1 round 76 phase 2 — selection checkbox.
@@ -1237,27 +1342,85 @@ export default function MemoriesPendingView({
           className="w-[380px] shrink-0 border-l border-border bg-background flex flex-col"
           data-testid="memories-pending-panel"
         >
-          {/* Header — single mode shows the tier label; bulk mode
-              shows the file count so the user can confirm scope. */}
-          <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
-            <div className="flex flex-col min-w-0">
-              <h3 className="text-sm font-semibold text-foreground">
-                {panelBulkFiles ? `Set date for ${panelBulkFiles.length} files` : 'Set date'}
-              </h3>
-              <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
-                {panelBulkFiles ? 'Bulk edit' : panelFile && TIER_LABEL[panelFile.pending_tier]}
-              </p>
+          {/* v2.1 round 83 (Terry 2026-06-09) — header mirrors S&D's
+              Details panel chrome exactly so the two surfaces feel
+              of-a-piece: title + tier pill + "N of M" pill on the
+              left, icon cluster (Open in Viewer / Show in Folder /
+              Previous / Next / Close) on the right. Each icon
+              wrapped in IconTooltip per the style guide. Prev/Next
+              are disabled when the panel is showing a single file
+              with no multi-selection — Terry's spec: "if it's just
+              one that's been clicked on, then there are none to
+              rotate through." */}
+          <div className="flex items-center justify-between px-4 py-2 border-b border-border shrink-0 gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <h3 className="text-sm font-semibold text-foreground mr-0.5 shrink-0">Set date</h3>
+              {panelFile && (
+                <span className="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-purple-500/15 text-purple-600 dark:text-purple-300 shrink-0">
+                  {TIER_LABEL[panelFile.pending_tier]}
+                </span>
+              )}
+              {navSet.length > 1 && navIndex >= 0 && (
+                <span className="text-[10px] font-medium px-1.5 py-0.5 rounded-full text-primary bg-primary/10 shrink-0">
+                  {navIndex + 1} of {navSet.length}
+                </span>
+              )}
             </div>
-            <IconTooltip label="Close panel" side="left">
-              <button
-                type="button"
-                onClick={closePanel}
-                className="p-1.5 rounded-md hover:bg-secondary/60 text-muted-foreground hover:text-foreground transition-colors"
-                aria-label="Close panel"
-              >
-                <X className="w-4 h-4" />
-              </button>
-            </IconTooltip>
+            <div className="flex items-center gap-0.5 shrink-0">
+              {/* Open in Viewer — primary tint to mirror S&D Details */}
+              <IconTooltip label={navSet.length > 1 ? `Open ${navSet.length} in Viewer` : 'Open in Viewer'} side="bottom">
+                <button
+                  type="button"
+                  onClick={openInPdrv}
+                  className="p-1.5 rounded-lg hover:bg-primary/15 text-primary transition-colors"
+                  aria-label="Open in Viewer"
+                >
+                  <Eye className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="Show in Folder" side="bottom">
+                <button
+                  type="button"
+                  onClick={revealActiveInFolder}
+                  className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Show in Folder"
+                >
+                  <FolderOpen className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="Previous (selection only)" side="bottom">
+                <button
+                  type="button"
+                  onClick={navPrev}
+                  disabled={!canNavPrev}
+                  className={`p-1.5 rounded-lg transition-colors ${canNavPrev ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                  aria-label="Previous"
+                >
+                  <ArrowLeft className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="Next (selection only)" side="bottom">
+                <button
+                  type="button"
+                  onClick={navNext}
+                  disabled={!canNavNext}
+                  className={`p-1.5 rounded-lg transition-colors ${canNavNext ? 'hover:bg-secondary/50 text-muted-foreground hover:text-foreground cursor-pointer' : 'text-muted-foreground/30 cursor-default'}`}
+                  aria-label="Next"
+                >
+                  <ArrowRight className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <IconTooltip label="Close panel" side="bottom">
+                <button
+                  type="button"
+                  onClick={closePanel}
+                  className="p-1.5 rounded-lg hover:bg-secondary/50 text-muted-foreground hover:text-foreground transition-colors"
+                  aria-label="Close panel"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+            </div>
           </div>
 
           {/* Preview — single mode renders the file's thumbnail at
@@ -1293,23 +1456,49 @@ export default function MemoriesPendingView({
               </>
             ) : panelFile ? (
               <>
-                <div className="aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
-                  {thumbs[panelFile.file_path] ? (
-                    <img
-                      src={thumbs[panelFile.file_path]}
-                      alt={panelFile.filename}
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
-                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
-                      {panelFile.file_type === 'video' ? (
-                        <Film className="w-10 h-10" />
-                      ) : (
-                        <ImageIcon className="w-10 h-10" />
-                      )}
+                {/* v2.1 round 83 (Terry 2026-06-09) — clicking the
+                    preview opens PDRV with the current selection
+                    (or just this file if no multi-select active),
+                    mirroring the S&D Details panel behaviour. The
+                    button wrapper preserves keyboard accessibility
+                    and tooltip semantics; cursor + hover overlay
+                    signal "click me to expand". */}
+                <IconTooltip
+                  label={navSet.length > 1 ? `Open ${navSet.length} in Viewer` : 'Open in Viewer'}
+                  side="top"
+                >
+                  <button
+                    type="button"
+                    onClick={openInPdrv}
+                    className="aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border block relative group cursor-zoom-in"
+                    aria-label="Open in Viewer"
+                  >
+                    {thumbs[panelFile.file_path] ? (
+                      <img
+                        src={thumbs[panelFile.file_path]}
+                        alt={panelFile.filename}
+                        className="w-full h-full object-cover"
+                      />
+                    ) : (
+                      <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                        {panelFile.file_type === 'video' ? (
+                          <Film className="w-10 h-10" />
+                        ) : (
+                          <ImageIcon className="w-10 h-10" />
+                        )}
+                      </div>
+                    )}
+                    {/* Hover overlay — subtle dimmer + centered Eye
+                        icon. Same Apple/Google-Photos pattern Terry
+                        knows from the rest of PDR (Maximize2 overlay
+                        on MemoriesView tiles). */}
+                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/25 transition-colors flex items-center justify-center opacity-0 group-hover:opacity-100">
+                      <div className="p-2 rounded-full bg-black/55 text-white/95">
+                        <Eye className="w-5 h-5" />
+                      </div>
                     </div>
-                  )}
-                </div>
+                  </button>
+                </IconTooltip>
                 <p className="mt-2 text-xs font-medium text-foreground truncate" title={panelFile.filename}>
                   {panelFile.filename}
                 </p>
