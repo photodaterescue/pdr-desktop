@@ -616,17 +616,14 @@ export default function MemoriesPendingView({
             </div>
           )}
         </div>
-      </div>
 
-      {/* v2.1 round 71 (Terry 2026-06-09) — right-side date-editor
-          panel. Mounted as a sibling of the right column (rail +
-          content row) so it claims real estate from the right edge
-          and the grid naturally re-flows. Fixed 380px width — big
-          enough for a comfortable date picker + preview, narrow
-          enough to leave a usable grid. Slides in instantly (no
-          animation yet — premium polish for a later round once
-          the flow is verified). Closing the panel returns the
-          page to its full-width grid. */}
+      {/* v2.1 round 72 (Terry 2026-06-09) — right-side date-editor
+          panel. CORRECTLY placed INSIDE the rail+content flex ROW
+          (round 71 had it as a sibling of the row, which made it
+          stack VERTICALLY below the grid instead of slotting in
+          side-by-side). Fixed 380px column on the right edge; the
+          grid (flex-1 above) re-flows narrower. Closing the panel
+          returns the page to its full-width grid. */}
       {panelFile && (
         <aside
           className="w-[380px] shrink-0 border-l border-border bg-background flex flex-col"
@@ -742,6 +739,7 @@ export default function MemoriesPendingView({
           </div>
         </aside>
       )}
+      </div>
     </div>
   );
 }
