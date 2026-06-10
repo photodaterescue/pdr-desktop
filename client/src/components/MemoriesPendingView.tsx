@@ -67,12 +67,9 @@ import {
   setPendingDate,
   moveToRecycleBin,
   openSearchViewer,
-  hashPendingFiles,
-  getPendingDuplicates,
   type PendingFile,
   type PendingTier,
   type PendingCounts,
-  type PendingDuplicateCluster,
 } from '@/lib/electron-bridge';
 import { CaptionBadge } from '@/components/CaptionBadge';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
@@ -136,68 +133,14 @@ export default function MemoriesPendingView({
 
   const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>('all');
   const [captionedOnly, setCaptionedOnly] = useState(false);
-  // v2.1 round 79 phase A (Terry 2026-06-09) — "Duplicates only"
-  // filter. Lazy-fires SHA-256 hashing on the Pending list THEN
-  // queries for duplicate clusters. Cached for the rest of the
-  // session unless files change (re-fetch is invalidated when the
-  // raw `files` array changes). The clusters Map drives both the
-  // visible-files filter AND the per-tile "×N · in library" badge.
-  const [duplicatesOnly, setDuplicatesOnly] = useState(false);
-  const [duplicateClusters, setDuplicateClusters] = useState<PendingDuplicateCluster[] | null>(null);
-  const [duplicatesLoading, setDuplicatesLoading] = useState(false);
-
-  // Invalidate the cached cluster set whenever the underlying file
-  // list changes (different scope / library / a Save just removed a
-  // file). The next time the user opens the filter we'll re-hash
-  // any new files + recompute clusters.
-  useEffect(() => { setDuplicateClusters(null); }, [files]);
-
-  const toggleDuplicatesOnly = async (next: boolean) => {
-    if (!next) {
-      setDuplicatesOnly(false);
-      return;
-    }
-    // Turning ON — if we haven't built the cluster index yet, hash
-    // first (fast for the Pending subset; whole-library hashing is
-    // the phase-B background worker), then load clusters.
-    if (!duplicateClusters) {
-      setDuplicatesLoading(true);
-      try {
-        const hashRes = await hashPendingFiles();
-        if (!hashRes.success) {
-          toast.error('Couldn’t hash files', { description: hashRes.error });
-          setDuplicatesLoading(false);
-          return;
-        }
-        const dupRes = await getPendingDuplicates();
-        if (!dupRes.success) {
-          toast.error('Couldn’t look up duplicates', { description: dupRes.error });
-          setDuplicatesLoading(false);
-          return;
-        }
-        setDuplicateClusters(dupRes.data ?? []);
-      } finally {
-        setDuplicatesLoading(false);
-      }
-    }
-    setDuplicatesOnly(true);
-  };
-
-  // Per-file lookup: count of duplicates in this file's cluster +
-  // whether a confirmed/recovered twin exists in the library.
-  // Map<file_id → { count, hasTwin }>. Empty when not loaded.
-  const dupeInfoByFileId = useMemo(() => {
-    const m = new Map<number, { count: number; hasTwin: boolean }>();
-    if (duplicateClusters) {
-      for (const c of duplicateClusters) {
-        for (const id of c.pendingFileIds) {
-          m.set(id, { count: c.pendingFileIds.length, hasTwin: c.hasConfirmedTwin });
-        }
-      }
-    }
-    return m;
-  }, [duplicateClusters]);
-  const duplicateFileIds = useMemo(() => new Set(dupeInfoByFileId.keys()), [dupeInfoByFileId]);
+  // v2.1 round 82 phase B (Terry 2026-06-09) — Phase A's
+  // "Duplicates only" filter + cluster cache + per-tile badge has
+  // been removed. Duplicates are now handled silently by the
+  // startup hash-consolidator chain (consolidateIndexedFilesByHash
+  // with album-aware winner selection + consolidateMarkedAgainstLibrary
+  // for Marked-against-library cleanup) so the user never sees
+  // duplicate files in Needs Dates in the first place. The lazy
+  // on-demand hashing UI was a transitional stop-gap.
 
   const [tileSizeSlider, setTileSizeSlider] = useState<number>(35);
   const [selectionMode, setSelectionMode] = useState(false);
@@ -437,9 +380,8 @@ export default function MemoriesPendingView({
     if (mediaFilter === 'photos') out = out.filter((f) => f.file_type === 'photo');
     else if (mediaFilter === 'videos') out = out.filter((f) => f.file_type === 'video');
     if (captionedOnly) out = out.filter((f) => !!f.caption && f.caption.length > 0);
-    if (duplicatesOnly) out = out.filter((f) => duplicateFileIds.has(f.id));
     return out;
-  }, [files, mediaFilter, captionedOnly, duplicatesOnly, duplicateFileIds]);
+  }, [files, mediaFilter, captionedOnly]);
 
   const sections = useMemo(() => {
     if (!visibleFiles) return [] as Array<[PendingTier, PendingFile[]]>;
@@ -837,32 +779,10 @@ export default function MemoriesPendingView({
                 <Checkbox checked={captionedOnly} disabled={captionedCount === 0} onCheckedChange={(v) => setCaptionedOnly(!!v)} />
               </span>
             </label>
-            {/* v2.1 round 79 phase A (Terry 2026-06-09) — Duplicates
-                only. First click triggers a SHA-256 hash pass on
-                any Pending files that don't yet have a hash on
-                record (cheap — seconds for the Pending subset),
-                then loads the cluster index. Subsequent toggles are
-                instant from the cache. Loading spinner replaces the
-                checkbox while the hash + cluster pass runs. */}
-            <label className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
-              <span className="inline-flex items-center gap-2 text-foreground">
-                <Copy className="w-3.5 h-3.5 text-muted-foreground" />
-                <span>
-                  Duplicates
-                  <span className="ml-1.5 text-[10px] text-muted-foreground/80">(by content hash)</span>
-                </span>
-              </span>
-              <span className="inline-flex items-center gap-3">
-                {duplicateClusters && (
-                  <span className="text-xs text-muted-foreground">{duplicateFileIds.size.toLocaleString()}</span>
-                )}
-                {duplicatesLoading ? (
-                  <Loader2 className="w-4 h-4 animate-spin text-muted-foreground" />
-                ) : (
-                  <Checkbox checked={duplicatesOnly} onCheckedChange={(v) => void toggleDuplicatesOnly(!!v)} />
-                )}
-              </span>
-            </label>
+            {/* v2.1 round 82 — Duplicates checkbox removed. The
+                startup hash-consolidator chain handles duplicate
+                cleanup silently so the user never sees them surface
+                in Needs Dates. */}
           </PopoverContent>
         </Popover>
 
@@ -1136,31 +1056,11 @@ export default function MemoriesPendingView({
                             <Film className="w-2.5 h-2.5" /> Video
                           </div>
                         )}
-                        {/* v2.1 round 79 phase A (Terry 2026-06-09) —
-                            Duplicate cluster badge.
-                            v2.1 round 80 — tooltip swapped from the
-                            native `title` attribute to IconTooltip
-                            (style-guide compliant) + copy rewritten
-                            in plain English so the meaning is clear
-                            at a glance without jargon. */}
-                        {dupeInfoByFileId.has(f.id) && (() => {
-                          const info = dupeInfoByFileId.get(f.id)!;
-                          const tooltipLabel = info.hasTwin
-                            ? `${info.count} copies of this file are in Needs dates, AND a properly-dated copy is already in your library — this one is safe to send to Recycle Bin.`
-                            : `${info.count} copies of this file are in Needs dates. Keep one, send the rest to Recycle Bin.`;
-                          return (
-                            <IconTooltip label={tooltipLabel} side="top">
-                              <div
-                                className="absolute bottom-1.5 left-1.5 px-1.5 py-0.5 rounded bg-purple-600/85 text-white text-[9px] font-semibold flex items-center gap-1 ring-1 ring-purple-700/50"
-                                data-testid={`pending-tile-dupe-badge-${f.id}`}
-                              >
-                                <Copy className="w-2.5 h-2.5" />
-                                ×{info.count}
-                                {info.hasTwin && <Check className="w-2.5 h-2.5 text-green-300" />}
-                              </div>
-                            </IconTooltip>
-                          );
-                        })()}
+                        {/* v2.1 round 82 — per-tile duplicate badge
+                            removed alongside the Duplicates filter.
+                            Dupes are now consolidated automatically by
+                            the startup hash-consolidator chain so the
+                            user never sees them in Needs Dates. */}
                         <CaptionBadge caption={f.caption} />
                         <TranscriptBadge hasTranscript={f.file_type === 'video' && transcribedFileIds.has(f.id)} hasCaption={!!f.caption} />
                         {(showFilename || showDate) && (

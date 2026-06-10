@@ -2167,32 +2167,92 @@ function mergeIndexedFilesIntoWinner(database: Database.Database, winnerId: numb
  * Only runs when `hash` is a non-empty string. Rows with null/empty
  * hash are left alone (we can't prove they're duplicates).
  */
-export function consolidateIndexedFilesByHash(): { groupsMerged: number; rowsRemoved: number } {
+export function consolidateIndexedFilesByHash(): { groupsMerged: number; rowsRemoved: number; filesRemoved: number; bytesRecovered: number } {
   const database = getDb();
-  const groups = database.prepare(`
-    SELECT hash, MAX(id) AS winner_id
+  // v2.1 round 82 phase B (Terry 2026-06-09) — album-aware +
+  // canonical-priority winner selection AND hard-delete loser files
+  // on disk. The previous MAX(id) winner picked arbitrarily; Terry's
+  // vision: when a Marked (Needs-dates) file shares content with a
+  // Confirmed/Recovered file, the Confirmed/Recovered one ALWAYS
+  // wins regardless of album memberships (because it has a
+  // trustworthy date). Within the same confidence tier (e.g. two
+  // Marked files), the one with MORE album memberships wins so the
+  // user doesn't lose their curation. id DESC stays as the final
+  // tiebreaker. Loser DB rows are merged into the winner (album_files,
+  // face_detections, ai_tags, etc. transfer over), then the loser
+  // files on disk are hard-deleted to actually recover disk space —
+  // Terry: "if we've already verified the file exists in the same
+  // library with a correct date and part of albums, then where more
+  // is there to do?". Catastrophic mistakes are guarded by the hash
+  // verification — SHA-256 collision is cryptographically impossible
+  // at any realistic scale, so identical hash = identical bytes =
+  // safe to delete one copy.
+  const groupHashes = database.prepare(`
+    SELECT hash
     FROM indexed_files
     WHERE hash IS NOT NULL AND hash != ''
     GROUP BY hash
     HAVING COUNT(*) > 1
-  `).all() as { hash: string; winner_id: number }[];
+  `).all() as { hash: string }[];
 
-  if (groups.length === 0) return { groupsMerged: 0, rowsRemoved: 0 };
+  if (groupHashes.length === 0) return { groupsMerged: 0, rowsRemoved: 0, filesRemoved: 0, bytesRecovered: 0 };
+
+  // For each group, pick winner by (is_canonical DESC, album_count
+  // DESC, id DESC). Collect loser file paths so we can hard-delete
+  // them OUTSIDE the SQL transaction (fs.unlink isn't transactional).
+  const candidatesStmt = database.prepare(`
+    SELECT
+      f.id,
+      f.file_path,
+      f.size_bytes,
+      CASE WHEN f.confidence IN ('confirmed', 'recovered') THEN 1 ELSE 0 END AS is_canonical,
+      COUNT(af.album_id) AS album_count
+    FROM indexed_files f
+    LEFT JOIN album_files af ON af.file_id = f.id
+    WHERE f.hash = ?
+    GROUP BY f.id, f.file_path, f.size_bytes, f.confidence
+    ORDER BY is_canonical DESC, album_count DESC, f.id DESC
+  `);
 
   let rowsRemoved = 0;
+  const loserPaths: Array<{ path: string; sizeBytes: number }> = [];
   const tx = database.transaction(() => {
-    const loserStmt = database.prepare(
-      `SELECT id FROM indexed_files WHERE hash = ? AND id != ?`
-    );
-    for (const group of groups) {
-      const losers = (loserStmt.all(group.hash, group.winner_id) as { id: number }[]).map(r => r.id);
-      rowsRemoved += mergeIndexedFilesIntoWinner(database, group.winner_id, losers);
+    for (const g of groupHashes) {
+      const candidates = candidatesStmt.all(g.hash) as Array<{ id: number; file_path: string; size_bytes: number; is_canonical: number; album_count: number }>;
+      if (candidates.length < 2) continue;
+      const winner = candidates[0];
+      const losers = candidates.slice(1);
+      const loserIds = losers.map(l => l.id);
+      rowsRemoved += mergeIndexedFilesIntoWinner(database, winner.id, loserIds);
+      for (const l of losers) {
+        loserPaths.push({ path: l.file_path, sizeBytes: l.size_bytes ?? 0 });
+      }
     }
   });
   tx();
 
-  console.warn(`[DB] Consolidated ${groups.length} same-content duplicate group(s); merged downstream data, dropped ${rowsRemoved} redundant row(s)`);
-  return { groupsMerged: groups.length, rowsRemoved };
+  // Hard-delete loser files on disk (after the DB transaction has
+  // committed — fs ops can't be rolled back). Errors are non-fatal:
+  // a missing file just means it was already cleaned up by some
+  // other process; an unreadable path means the orphan stays on
+  // disk but the DB is already consistent. Either way the next
+  // startup will skip over the file (no DB row → no scan target).
+  const fsMod = require('fs');
+  let filesRemoved = 0;
+  let bytesRecovered = 0;
+  for (const l of loserPaths) {
+    try {
+      fsMod.unlinkSync(l.path);
+      filesRemoved++;
+      bytesRecovered += l.sizeBytes;
+    } catch (err) {
+      console.warn(`[consolidateByHash] Couldn't delete loser file ${l.path}: ${(err as Error).message}`);
+    }
+  }
+
+  const mb = (bytesRecovered / (1024 * 1024)).toFixed(1);
+  console.warn(`[DB] Consolidated ${groupHashes.length} same-content duplicate group(s); merged ${rowsRemoved} redundant row(s) into winners (canonical + album-aware ranking); hard-deleted ${filesRemoved} loser file(s) from disk (~${mb} MB recovered)`);
+  return { groupsMerged: groupHashes.length, rowsRemoved, filesRemoved, bytesRecovered };
 }
 
 /**
