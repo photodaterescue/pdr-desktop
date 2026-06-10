@@ -724,7 +724,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
         // (b) three feature mini-cards (timeline / On This Day /
         //     slideshow), so the user knows what to expect,
         // (c) gold-tinted storage tip referencing Drive Advisor — gold
-        //     is the Memories brand accent (#f8c15c), used here for
+        //     is the Memories brand accent (--color-gold), used here for
         //     the tip card so the surface still feels "Memories-y"
         //     even before a single photo lands,
         // (d) a primary CTA dispatching `pdr:goWorkspace` — workspace
@@ -767,7 +767,7 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
               className="rounded-xl p-4 mb-6"
               style={{
                 backgroundColor: '#fef7e6',
-                borderColor: '#f8c15c',
+                borderColor: 'var(--color-gold)',
                 borderWidth: '1px',
                 borderStyle: 'solid',
               }}

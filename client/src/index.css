@@ -14,7 +14,7 @@
   --color-lavender-accent: hsl(248 100% 74%); /* #8C7BFF */
   --color-lavender-deep: hsl(246 100% 63%); /* #6b5aff */
   --color-lavender-soft: hsl(250 100% 96%); /* #efecff */
-  --color-gold: hsl(39 92% 67%); /* #f8c15c */
+  --color-gold: hsl(41 99% 63%); /* #FEC242 — sampled from the brightest pixel cluster of the gold petal in pdr-logo_transparent.png (Terry 2026-06-10). Replaces the previous hsl(39 92% 67%) #f8c15c which read as dull / washed-out on white compared to the logo. */
   --color-workspace-purple: hsl(246 100% 63%); /* Matched to Change Destination button text color (Lavender Deep) */
   
   --color-background: hsl(var(--background));
@@ -777,10 +777,11 @@ body > .window-resize-hint-tr {
      3 cycles (~6 s total) then stops — long enough to draw the
      eye to a tile that just reflowed out of view, short enough
      not to nag.
-     --color-gold = hsl(39 92% 67%) = rgb(248, 193, 92). */
+     --color-gold = hsl(41 99% 63%) = rgb(254, 194, 66) = #FEC242
+     (round 93 — refreshed from logo). */
   @keyframes pdr-pending-tile-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.55); }
-    50%      { box-shadow: 0 0 0 5px rgba(248, 193, 92, 0.35); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(254, 194, 66, 0.55); }
+    50%      { box-shadow: 0 0 0 5px rgba(254, 194, 66, 0.35); }
   }
   .pdr-pending-tile-pulse {
     animation: pdr-pending-tile-pulse 2s ease-in-out 3;
@@ -818,8 +819,8 @@ body > .window-resize-hint-tr {
      (0.75/0.5 vs 0.55/0.35) so the ring reads through the
      rounded-xl + border that Spacious tiles already wear. */
   @keyframes pdr-pending-tile-pulse-spacious {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.75); }
-    50%      { box-shadow: 0 0 0 10px rgba(248, 193, 92, 0.5); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(254, 194, 66, 0.75); }
+    50%      { box-shadow: 0 0 0 10px rgba(254, 194, 66, 0.5); }
   }
   .pdr-pending-tile-pulse-slow-spacious {
     animation: pdr-pending-tile-pulse-spacious 2.4s ease-in-out infinite;
@@ -832,8 +833,8 @@ body > .window-resize-hint-tr {
      the dense-grid tile gaps. Sits between the original 5 px and
      the spacious 10 px. */
   @keyframes pdr-pending-tile-pulse-tight {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.65); }
-    50%      { box-shadow: 0 0 0 8px rgba(248, 193, 92, 0.4); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(254, 194, 66, 0.65); }
+    50%      { box-shadow: 0 0 0 8px rgba(254, 194, 66, 0.4); }
   }
   .pdr-pending-tile-pulse-slow-tight {
     animation: pdr-pending-tile-pulse-tight 2.4s ease-in-out infinite;

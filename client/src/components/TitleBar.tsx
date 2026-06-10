@@ -250,7 +250,7 @@ export function TitleBar() {
               chip pattern used elsewhere in PDR. */}
           <div
             className="inline-flex items-center rounded-full shadow-sm overflow-hidden"
-            style={{ backgroundColor: '#f8c15c' }}
+            style={{ backgroundColor: 'var(--color-gold)' }}
           >
             <IconTooltip label="Return to the album you came from" side="bottom">
               <button
@@ -287,7 +287,7 @@ export function TitleBar() {
       {/* v2.0.15 (Terry 2026-06-02) — back-to-Memories pill. Mirror
           of the album-return chip above, fired when the user lands
           in S&D via Memories' Send-to-S&D. Same chip chrome AND
-          same gold (#f8c15c) as the album pill — that's Memories'
+          same gold (--color-gold) as the album pill — that's Memories'
           actual sidebar accent colour (SIDEBAR_ACCENT.amber in
           workspace.tsx), and Albums live under Memories so they
           rightly share the brand colour. The two pills can both
@@ -302,7 +302,7 @@ export function TitleBar() {
           <span className="h-5 w-px bg-foreground/20" aria-hidden="true" />
           <div
             className="inline-flex items-center rounded-full shadow-sm overflow-hidden"
-            style={{ backgroundColor: '#f8c15c' }}
+            style={{ backgroundColor: 'var(--color-gold)' }}
           >
             <IconTooltip label="Return to where you came from in Memories" side="bottom">
               <button

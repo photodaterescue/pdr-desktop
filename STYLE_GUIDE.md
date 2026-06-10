@@ -3,6 +3,31 @@
 The whole app uses one button taxonomy and one typography tier system.
 No per-call border or text-opacity overrides — pick a tier, full stop.
 
+## Brand colours
+
+Defined in [`client/src/index.css`](client/src/index.css) under
+`@layer base { :root { ... } }`. Refer to these by CSS variable, never
+by hex literal — keeps the brand single-sourced so a tweak propagates
+everywhere.
+
+| Token | Value | Source | Use for |
+| --- | --- | --- | --- |
+| `--primary` | `hsl(249 100% 81%)` = `#ad9eff` | Brand lavender | Headline CTAs (Save, Run Fix), hover backgrounds (`bg-primary/10`), icon accents (`text-primary`). On white the colour reads as faint body text — never use `text-primary` for body content. `text-primary-foreground` (white) goes on `bg-primary` CTAs. |
+| `--color-gold` | `hsl(41 99% 63%)` = `#FEC242` | Sampled directly from the brightest pixel cluster of the gold petal in `client/public/assets/pdr-logo_transparent.png` (Terry 2026-06-10, round 93). Replaces the previous dull `#f8c15c`. | Memories' brand accent: album-return pills in TitleBar, the Add-to-Album back-to-source CTA, Memories empty-state border, gold dots in S&D walkthrough copy. Always paired with `text-[#1f1a08]` (near-black) for legible foreground on the bright ground. |
+| `--color-gold-dark` | (planned, not yet a token) `#F0B226` | 7 % darker variant of `--color-gold`, used as `hoverBorder` in the home/dashboard amber accent palette. Lift to a token if a third surface starts using it. | Hover state border on amber-themed surfaces. |
+
+**Always reference via `var(--color-gold)`** — Tailwind arbitrary values
+(`bg-[var(--color-gold)]`, `border-[var(--color-gold)]`) work in JSX,
+and inline styles take `'var(--color-gold)'` as the value. Don't paste
+hex literals into component code; they'll drift the next time the
+brand colour is refreshed.
+
+The `SIDEBAR_ACCENT.amber` / `APP_ACCENT.amber` palette entries in
+`workspace.tsx` / `home.tsx` are named "amber" by convention but
+intentionally use the gold value — Memories' sidebar crescent has to
+match the album-return pill, otherwise the user sees two different
+"Memories" colours.
+
 ## Buttons — 8 tiers
 
 Defined in [`client/src/components/ui/button.tsx`](client/src/components/ui/button.tsx).

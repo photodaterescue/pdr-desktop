@@ -315,7 +315,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
                 onClick={() => handleAddToSourceAlbum(true)}
                 disabled={busy}
                 className="inline-flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold text-white shadow-sm hover:brightness-105 disabled:opacity-60 disabled:cursor-not-allowed transition-all"
-                style={{ backgroundColor: '#f8c15c' }}
+                style={{ backgroundColor: 'var(--color-gold)' }}
                 data-testid="add-to-source-and-back"
               >
                 <ArrowLeft className="w-3.5 h-3.5" />

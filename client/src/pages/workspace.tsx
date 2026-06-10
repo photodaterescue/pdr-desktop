@@ -4788,7 +4788,7 @@ function SectionHeader({ label, collapsed, onToggle }: { label: string; collapse
 const SIDEBAR_ACCENT: Record<string, string> = {
   lavender: '#a99cff',
   blue: '#3b82f6',
-  amber: '#f8c15c',
+  amber: '#FEC242',
   emerald: '#10b981',
   // v2.0.15 (Terry 2026-05-29) — People Manager's pink and Recycle
   // Bin's rose were visually identical at the 4-px sidebar crescent

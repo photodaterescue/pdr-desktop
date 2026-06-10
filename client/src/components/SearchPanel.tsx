@@ -3988,7 +3988,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     </div>
                   </div>
                   <div className="px-3 py-2 flex items-start gap-2">
-                    <CalendarRange className="w-3.5 h-3.5 mt-0.5" style={{ color: '#f8c15c' }} />
+                    <CalendarRange className="w-3.5 h-3.5 mt-0.5" style={{ color: 'var(--color-gold)' }} />
                     <div className="text-xs text-foreground leading-relaxed">
                       <span className="font-medium">"Summer 2014 to summer 2016"</span>
                       <span className="text-muted-foreground"> — combine a date range with any other filter</span>
@@ -4018,7 +4018,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <span><span className="font-medium">Keep GPS on in your camera</span> — without location metadata, country/city searches return nothing for those photos.</span>
                     </li>
                     <li className="flex items-start gap-2">
-                      <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: '#f8c15c' }} />
+                      <span className="mt-1 w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: 'var(--color-gold)' }} />
                       <span><span className="font-medium">Run AI analysis</span> — the AI tags ("dogs", "beach", "sunset") are produced offline by PDR's local model. Once it's done, every word becomes a filter.</span>
                     </li>
                   </ul>

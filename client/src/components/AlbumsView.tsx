@@ -2118,9 +2118,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     // Reads as "this is where the dropped thing will land" without
     // requiring a card chrome to outline. The dashed line is the
     // standard OS drop-zone convention.
-    const dotColorClass = isSources ? 'bg-primary' : 'bg-[#f8c15c]';
+    const dotColorClass = isSources ? 'bg-primary' : 'bg-[var(--color-gold)]';
     const labelColorClass = isSources ? 'text-primary' : 'text-[#a16207]';
-    const dropRingColorClass = isSources ? 'border-primary' : 'border-[#f8c15c]';
+    const dropRingColorClass = isSources ? 'border-primary' : 'border-[var(--color-gold)]';
     const headerLabel = isSources ? 'Album Sources' : 'Folders';
     const emptyMessage = isSources
       ? 'No sources yet. Run Fix on a Google Photos Takeout, or create an album here, to populate this zone.'
