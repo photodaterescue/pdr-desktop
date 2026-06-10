@@ -796,6 +796,19 @@ body > .window-resize-hint-tr {
   .pdr-pending-chip-pulse {
     animation: pdr-pending-tile-pulse 2.4s ease-in-out infinite;
   }
+
+  /* v2.1 round 88 (Terry 2026-06-10) — slow infinite gold pulse
+     for the panel-active tile inside Needs Dates. Same 2.4 s
+     burger cadence as the selection chip — Terry: "the outline
+     of the last image that's checked to pulsate at the speed of
+     the burger menu on the sidebar, but be the gold colour that
+     outlines the image". Distinguishes the EDITING-IN-PANEL tile
+     from other tiles that may also be checkbox-selected. Sits on
+     the same .pdr-pending-tile-pulse keyframes (gold rgba box-
+     shadow) just with infinite + 2.4 s timing. */
+  .pdr-pending-tile-pulse-slow {
+    animation: pdr-pending-tile-pulse 2.4s ease-in-out infinite;
+  }
 }
 
 /* Anchor the document chain to the viewport so workspace.tsx h-full propagates

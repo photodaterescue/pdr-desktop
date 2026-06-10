@@ -505,6 +505,21 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // various place still reference it via ref={gridScrollRef}). It's
   // no longer used for the wheel listener but harmless to retain.
   const gridScrollRef = useRef<HTMLDivElement | null>(null);
+
+  // v2.1 round 88 (Terry 2026-06-10) — floating "scroll position
+  // date" pill for the album-detail view (Terry SS2 — the
+  // "Saturday, 23 May 2026" chip that appears top-right while
+  // scrolling Memories — Dates). Photos in an album come back from
+  // the DB unsorted with respect to derived_date, but the pill
+  // still shows whichever photo sits at the top of the visible
+  // viewport — useful even when the order isn't strict date desc
+  // because Albums get loaded as the user added them. State auto-
+  // hides 1.2 s after the last scroll, matching MemoriesView's
+  // scrollIndicatorTimeoutRef timing.
+  const [scrollDateLabel, setScrollDateLabel] = useState<string | null>(null);
+  const [scrollIndicatorVisible, setScrollIndicatorVisible] = useState(false);
+  const scrollIndicatorTimeoutRef = useRef<number | null>(null);
+
   useEffect(() => {
     const el = albumsRootRef.current;
     if (!el) return;
@@ -523,6 +538,64 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
   }, []);
+
+  // v2.1 round 88 (Terry 2026-06-10) — Scroll-position date pill
+  // listener. Computes the photo at the visible top using grid maths
+  // (uniform tile dimensions after the round-88 gap fix), reads its
+  // derived_date, formats it as "Weekday, D Month YYYY" and surfaces
+  // it via the scrollIndicatorVisible auto-hide pattern lifted from
+  // MemoriesView (1.2 s after last scroll).
+  useEffect(() => {
+    if (selection?.type !== 'album') return;
+    const scrollEl = gridScrollRef.current;
+    if (!scrollEl) return;
+    const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+    const formatLong = (iso: string): string | null => {
+      const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+      if (!m) return null;
+      const d = new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)));
+      if (isNaN(d.getTime())) return null;
+      return `${DAYS[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+    };
+    const compute = () => {
+      if (albumPhotos.length === 0) return;
+      const gridEl = scrollEl.querySelector<HTMLElement>('[data-album-photo-grid]');
+      if (!gridEl) return;
+      const gridRect = gridEl.getBoundingClientRect();
+      const scrollRect = scrollEl.getBoundingClientRect();
+      const visibleYWithinGrid = scrollRect.top - gridRect.top;
+      // Tile width follows the same minmax as the grid template; cols
+      // = floor(grid width / column width). Round-88 dropped the
+      // flex-flex-col wrapper so every tile is now uniformly
+      // aspect-square = column width tall.
+      const colCount = Math.max(1, Math.floor(gridRect.width / albumPhotoTilePx));
+      const rowHeight = (gridRect.width / colCount) + (density === 'tight' ? 0 : 12);
+      const rowIdx = Math.max(0, Math.floor(visibleYWithinGrid / rowHeight));
+      const photoIdx = Math.min(albumPhotos.length - 1, rowIdx * colCount);
+      const photo = albumPhotos[photoIdx];
+      if (!photo?.derived_date) return;
+      const label = formatLong(photo.derived_date);
+      if (label) setScrollDateLabel(label);
+    };
+    const onScroll = () => {
+      compute();
+      setScrollIndicatorVisible(true);
+      if (scrollIndicatorTimeoutRef.current) clearTimeout(scrollIndicatorTimeoutRef.current);
+      scrollIndicatorTimeoutRef.current = window.setTimeout(() => {
+        setScrollIndicatorVisible(false);
+      }, 1200);
+    };
+    scrollEl.addEventListener('scroll', onScroll, { passive: true });
+    // Initial compute — pill stays hidden until the user scrolls but
+    // the label gets seeded so the first scroll shows the right
+    // text immediately.
+    compute();
+    return () => {
+      scrollEl.removeEventListener('scroll', onScroll);
+      if (scrollIndicatorTimeoutRef.current) clearTimeout(scrollIndicatorTimeoutRef.current);
+    };
+  }, [selection, albumPhotos, albumPhotoTilePx, density]);
 
   // ── Spacious / Tight density (v2.0.8 step 6 polish) ──────────────
   // Same segmented control Memories By Date uses, so the visual
@@ -2733,6 +2806,26 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           <ContextMenu>
             <ContextMenuTrigger asChild>
           <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
+            {/* v2.1 round 88 (Terry SS2 2026-06-10) — floating
+                "current photo date" pill, sticky top-right inside
+                the album-detail scroll container. Same chrome as
+                MemoriesView's pill (background/95 + backdrop-blur
+                + border + shadow + text-foreground) so the two
+                surfaces feel of-a-piece. pointer-events-none so
+                it never eats photo clicks. Auto-hides 1.2 s after
+                last scroll via scrollIndicatorVisible. */}
+            {scrollDateLabel && (
+              <div
+                className={`pointer-events-none sticky top-0 z-30 flex justify-end transition-opacity duration-200 ${
+                  scrollIndicatorVisible ? 'opacity-100' : 'opacity-0'
+                }`}
+                aria-hidden={!scrollIndicatorVisible}
+              >
+                <div className="px-3 py-1.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-xs font-medium text-foreground">
+                  {scrollDateLabel}
+                </div>
+              </div>
+            )}
             {albumPhotosLoading ? (
               <p className="text-sm text-muted-foreground">Loading photos…</p>
             ) : albumPhotos.length === 0 ? (
@@ -2792,6 +2885,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     gaps, no rounding) — matches the By-Date
                     drilldown's tight mode visually. */}
               <div
+                data-album-photo-grid
                 className={`grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumPhotoTilePx}px, 1fr))` }}
               >
@@ -2820,8 +2914,20 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         filename / date strip rendered below, so the
                         grid cell grows to include the metadata when
                         Insights toggles are on. Single-child contract
-                        of CaptionTooltip is preserved by this wrapper. */}
-                    <div className="flex flex-col">
+                        of CaptionTooltip is preserved by this wrapper.
+                        v2.1 round 88 (Terry 2026-06-10) — was `flex
+                        flex-col`; that turned each wrapper into a flex
+                        container whose children inherited
+                        `flex-basis: auto` (= intrinsic content size).
+                        The `<img>`'s natural pixel dimensions then
+                        leaked through and overrode `aspect-square`
+                        for portrait images, making those specific
+                        tiles taller than the rest of the row →
+                        SS1's "big gaps" under the square neighbours.
+                        Plain block wrapper inherits column width and
+                        lets aspect-square compute height = width
+                        consistently for every tile. */}
+                    <div className="block">
                     <div className="aspect-square">
                   <ContextMenu>
                     <ContextMenuTrigger asChild>

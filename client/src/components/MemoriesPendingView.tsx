@@ -59,6 +59,7 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { BrandedTimePicker } from '@/components/ui/branded-time-picker';
+import { promptConfirm } from './trees/promptConfirm';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -355,6 +356,40 @@ export default function MemoriesPendingView({
         ? [panelFile.id]
         : [];
     if (fileIds.length === 0) return;
+
+    // v2.1 round 88 (Terry 2026-06-10) — bulk-save guardrail
+    // (improvement #2 from the round-87 essay). Replacing dates on
+    // many files at once is the single most "I just lost work"-
+    // feeling action in Needs Dates; a soft confirm with the
+    // existing range being overwritten gives the user a chance to
+    // back out of a misclick without nagging the single-file flow.
+    if (panelBulkFiles && panelBulkFiles.length > 1) {
+      const withDate = panelBulkFiles.filter((f) => !!f.derived_date);
+      const withoutDateCount = panelBulkFiles.length - withDate.length;
+      let rangeNote = '';
+      if (withDate.length > 0) {
+        const sorted = [...withDate].sort((a, b) =>
+          (a.derived_date ?? '').localeCompare(b.derived_date ?? ''),
+        );
+        const oldest = sorted[0].derived_date!.slice(0, 10);
+        const newest = sorted[sorted.length - 1].derived_date!.slice(0, 10);
+        rangeNote = oldest === newest
+          ? `\nCurrent date on all ${withDate.length}: ${oldest}.`
+          : `\nCurrent range across ${withDate.length} file${withDate.length === 1 ? '' : 's'}: ${oldest} → ${newest}.`;
+      }
+      const noneNote = withoutDateCount > 0
+        ? `\n${withoutDateCount} file${withoutDateCount === 1 ? ' has' : 's have'} no current date.`
+        : '';
+      const ok = await promptConfirm({
+        eyebrow: 'BULK DATE CHANGE',
+        title: `Set ${panelBulkFiles.length} file${panelBulkFiles.length === 1 ? '' : 's'} to ${pickedDate} ${time}?`,
+        message: `This replaces any existing dates on the selection.${rangeNote}${noneNote}`,
+        confirmLabel: `Replace ${panelBulkFiles.length}`,
+        cancelLabel: 'Cancel',
+      });
+      if (!ok) return;
+    }
+
     setSaving(true);
     try {
       const res = await setPendingDate({ fileIds, isoDateTime: iso });
@@ -1142,16 +1177,20 @@ export default function MemoriesPendingView({
                             lastClickedIndexRef.current = idx;
                             return;
                           }
-                          // v2.1 round 87 (Terry 2026-06-10) — plain
-                          // click on a tile while a multi-selection is
-                          // active drops the previous selection (Terry:
-                          // "If there are selected photos, and then a
-                          // photo is clicked on without the CTRL or
-                          // Shift, then it should deselect the images
-                          // already selected"). Matches the
-                          // single-select-replaces-multi-select model
-                          // most desktop file managers use.
-                          if (selectedFileIds.size > 0) clearSelection();
+                          // v2.1 round 88 (Terry 2026-06-10) — plain
+                          // click on a tile = drop the existing
+                          // selection, CHECK the clicked tile (so the
+                          // gold ring + checkbox match its panel-
+                          // active state — no more "selected but not
+                          // checked" confusion), and open the panel.
+                          // Terry: "It's too confusing to have
+                          // something selected but not checked." The
+                          // slow gold pulse on the panel-active tile
+                          // (see className below) is what tells the
+                          // user WHICH tile is the editing target
+                          // when there are multiple checked.
+                          clearSelection();
+                          toggleSelection(f, 'add');
                           lastClickedIndexRef.current = idx;
                           openPanel(f);
                         }}
@@ -1161,7 +1200,7 @@ export default function MemoriesPendingView({
                             : isPanelActive
                               ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
                               : `${tileRing} hover:ring-primary/50`
-                        } ${pulseFileId === f.id ? 'pdr-pending-tile-pulse' : ''}`}
+                        } ${isPanelActive ? 'pdr-pending-tile-pulse-slow' : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
                         data-pending-tile-id={f.id}
                         title={f.filename}
                       >
