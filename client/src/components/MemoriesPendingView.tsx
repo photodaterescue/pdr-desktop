@@ -204,7 +204,11 @@ export default function MemoriesPendingView({
   type LastSave = { ts: number; newIso: string; entries: LastSaveEntry[] };
   const LAST_SAVE_KEY = 'pdr-needs-dates-last-save';
   const LAST_SAVE_TTL_MS = 5 * 60 * 1000; // 5 min hard expiry
-  const LAST_SAVE_AUTO_DISMISS_MS = 30 * 1000; // 30 s soft dismiss
+  // v2.1 round 91 (Terry 2026-06-10) — extended to 60 s. Terry
+  // didn't notice the round-90 pill at 30 s; bumping the dwell
+  // gives the eye time to land on it after the bulk-save modal
+  // closes and the side panel snaps shut.
+  const LAST_SAVE_AUTO_DISMISS_MS = 60 * 1000;
   const [lastSave, setLastSave] = useState<LastSave | null>(() => {
     if (typeof localStorage === 'undefined') return null;
     try {
@@ -1321,7 +1325,7 @@ export default function MemoriesPendingView({
                             : isPanelActive
                               ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
                               : `${tileRing} hover:ring-primary/50`
-                        } ${isPanelActive ? (density === 'spacious' ? 'pdr-pending-tile-pulse-slow-spacious' : 'pdr-pending-tile-pulse-slow') : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
+                        } ${isPanelActive ? (density === 'spacious' ? 'pdr-pending-tile-pulse-slow-spacious' : 'pdr-pending-tile-pulse-slow-tight') : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
                         data-pending-tile-id={f.id}
                         title={f.filename}
                       >
@@ -1542,25 +1546,29 @@ export default function MemoriesPendingView({
         </div>
       </div>{/* close rail+content row */}
 
-      {/* v2.1 round 90 (Terry 2026-06-10) — Undo last save pill
-          (essay improvement #3). Sticks to the bottom-right of the
-          LEFT column wrapper, so it sits above the grid scroll but
-          shifts left of the date-editor panel when that's open.
-          Auto-dismisses 30 s after the save via the lastSave
-          useEffect timer; clicking Undo restores the pre-save
-          values via the restorePendingDates IPC.
-          Recipe: matches the existing scroll-position date pill
-          (background/95 + backdrop-blur + border + shadow), plus
-          a gold-tinted Undo button that pulls the eye without
-          being a flash. */}
+      {/* v2.1 round 91 (Terry 2026-06-10) — Undo last save pill.
+          Round 90 anchored bottom-right; Terry didn't notice it
+          after the bulk-save modal closed and the side panel
+          snapped shut. Round 91 moves it to bottom-CENTRE,
+          enlarges the size, adds a slide-in-from-bottom Tailwind
+          animation, and gold-tints the whole pill background so
+          it reads as a transient action banner instead of fading
+          into the page chrome. Auto-dismiss extended to 60 s.
+          Recipe still uses bg-card-ish backdrop + border + shadow
+          for the carrier shape, with the gold border + lavender-
+          adjacent inner CTA matching the established premium
+          banner palette across PDR. */}
       {lastSave && (
-        <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2 px-3 py-2 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md">
-          <div className="flex flex-col leading-tight">
-            <span className="text-[11px] font-medium text-foreground">
+        <div
+          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-card border-2 border-[var(--color-gold)] shadow-xl shadow-black/10 animate-in fade-in-0 slide-in-from-bottom-4 duration-300"
+          data-testid="memories-pending-undo-pill"
+        >
+          <div className="flex flex-col leading-tight pr-1">
+            <span className="text-xs font-semibold text-foreground">
               Saved {lastSave.entries.length} file{lastSave.entries.length === 1 ? '' : 's'}
             </span>
-            <span className="text-[10px] text-muted-foreground">
-              {lastSave.newIso.slice(0, 10)} {lastSave.newIso.slice(11, 16)}
+            <span className="text-[10px] text-muted-foreground tabular-nums">
+              {lastSave.newIso.slice(0, 10)} · {lastSave.newIso.slice(11, 16)}
             </span>
           </div>
           <IconTooltip label="Undo last save" side="top">
@@ -1568,13 +1576,13 @@ export default function MemoriesPendingView({
               type="button"
               onClick={undoLastSave}
               disabled={undoing}
-              className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors disabled:opacity-60 disabled:cursor-wait"
+              className="inline-flex items-center gap-1.5 h-9 px-4 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-sm font-semibold text-[#1f1a08] transition-colors disabled:opacity-60 disabled:cursor-wait"
               data-testid="memories-pending-undo"
             >
               {undoing ? (
-                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <Undo2 className="w-3.5 h-3.5" />
+                <Undo2 className="w-4 h-4" />
               )}
               Undo
             </button>
@@ -1583,10 +1591,10 @@ export default function MemoriesPendingView({
             <button
               type="button"
               onClick={() => setLastSave(null)}
-              className="p-1 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
+              className="p-1.5 rounded-md text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors"
               aria-label="Dismiss undo pill"
             >
-              <X className="w-3.5 h-3.5" />
+              <X className="w-4 h-4" />
             </button>
           </IconTooltip>
         </div>

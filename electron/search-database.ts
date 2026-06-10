@@ -5953,6 +5953,16 @@ export function setUserDateForPendingFiles(args: {
   const day = dt.getDate();
   const setAt = new Date().toISOString();
   const placeholders = args.fileIds.map(() => '?').join(',');
+  // v2.1 round 91 (Terry 2026-06-10) — confidence now bumps to
+  // 'recovered' when the user supplies a date. Previously left
+  // at 'marked', which kept the file's confidence-tier label as
+  // "best-guess" even after the user explicitly committed a date —
+  // confusing in downstream surfaces that read the confidence tier.
+  // 'recovered' = "we have a date we're reasonably sure of from a
+  // trusted secondary source"; user input fits there cleanly.
+  // date_source='User-set' + user_set_at keep the audit trail so
+  // downstream code can still distinguish user-set from
+  // sidecar-derived / filename-derived dates.
   const stmt = database.prepare(`
     UPDATE indexed_files
     SET derived_date = ?,
@@ -5960,6 +5970,7 @@ export function setUserDateForPendingFiles(args: {
         month = ?,
         day = ?,
         date_source = 'User-set',
+        confidence = 'recovered',
         user_set_at = ?
     WHERE id IN (${placeholders})
   `);

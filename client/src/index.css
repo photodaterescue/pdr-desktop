@@ -816,15 +816,27 @@ body > .window-resize-hint-tr {
      only when Spacious is selected?" Doubles the box-shadow
      spread (10 px vs 5 px) AND bumps the static-frame alpha
      (0.75/0.5 vs 0.55/0.35) so the ring reads through the
-     rounded-xl + border that Spacious tiles already wear. Tight
-     mode keeps the original thinner pulse — tiles there have no
-     border to compete with so the subtler ring still pops. */
+     rounded-xl + border that Spacious tiles already wear. */
   @keyframes pdr-pending-tile-pulse-spacious {
     0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.75); }
     50%      { box-shadow: 0 0 0 10px rgba(248, 193, 92, 0.5); }
   }
   .pdr-pending-tile-pulse-slow-spacious {
     animation: pdr-pending-tile-pulse-spacious 2.4s ease-in-out infinite;
+  }
+
+  /* v2.1 round 91 (Terry 2026-06-10) — tight-mode variant. Terry:
+     "On Tight it should be 1.5x thicker." 8 px spread (vs the
+     original 5 px = 1.6x ≈ 1.5x rounded up to an integer pixel),
+     alpha bumped proportionally so the ring still reads through
+     the dense-grid tile gaps. Sits between the original 5 px and
+     the spacious 10 px. */
+  @keyframes pdr-pending-tile-pulse-tight {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.65); }
+    50%      { box-shadow: 0 0 0 8px rgba(248, 193, 92, 0.4); }
+  }
+  .pdr-pending-tile-pulse-slow-tight {
+    animation: pdr-pending-tile-pulse-tight 2.4s ease-in-out infinite;
   }
 }
 
