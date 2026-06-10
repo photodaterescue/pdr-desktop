@@ -319,8 +319,21 @@ export default function MemoriesPendingView({
   ];
 
   return (
-    <div className="h-full flex flex-col bg-background">
-      {/* Top bar — full width, spans OVER the rail column.
+    // v2.1 round 73 (Terry 2026-06-09) — outer flips to horizontal
+    // flex so the date-editor panel can extend the FULL page height
+    // as a right sibling, instead of starting below the toolbar
+    // band. Option 2 from the design chat: panel top edge aligns
+    // with the page toolbar (one band up from round 72), but stays
+    // BELOW the Memories / Dates+Albums router band so the
+    // workspace's global chrome is never covered. The left column
+    // (top bar + rail+content row) shrinks naturally when the panel
+    // claims its 380px on the right; the toolbar's Spacious/Tight
+    // toggle remains right-aligned within the now-narrower toolbar
+    // band, requiring no layout move (Sub-A from the design chat).
+    <div className="h-full flex bg-background">
+      <div className="flex-1 flex flex-col min-w-0">
+      {/* Top bar — spans the LEFT column's full width (which is the
+          whole page when the panel is closed; narrower when open).
           Mirrors the Memories — Dates drilldown header exactly so
           the user sees the same shape they're used to. */}
       <div className="shrink-0 px-6 py-3 border-b border-border/60 flex items-center gap-2">
@@ -616,14 +629,15 @@ export default function MemoriesPendingView({
             </div>
           )}
         </div>
+      </div>{/* close rail+content row */}
+      </div>{/* close LEFT column wrapper — round 73 */}
 
-      {/* v2.1 round 72 (Terry 2026-06-09) — right-side date-editor
-          panel. CORRECTLY placed INSIDE the rail+content flex ROW
-          (round 71 had it as a sibling of the row, which made it
-          stack VERTICALLY below the grid instead of slotting in
-          side-by-side). Fixed 380px column on the right edge; the
-          grid (flex-1 above) re-flows narrower. Closing the panel
-          returns the page to its full-width grid. */}
+      {/* v2.1 round 73 (Terry 2026-06-09) — right-side date-editor
+          panel. Now a sibling of the LEFT column wrapper (not inside
+          the rail+content row), so it spans the full page height
+          from the top toolbar band all the way to the bottom edge.
+          Fixed 380px width; the left column flex-shrinks to make
+          room. Closing the panel returns the page to its full width. */}
       {panelFile && (
         <aside
           className="w-[380px] shrink-0 border-l border-border bg-background flex flex-col"
@@ -739,7 +753,6 @@ export default function MemoriesPendingView({
           </div>
         </aside>
       )}
-      </div>
     </div>
   );
 }
