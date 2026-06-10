@@ -130,7 +130,7 @@ import { SearchRibbon } from "@/components/SearchPanel";
 import MemoriesPanel from "@/components/MemoriesPanel";
 import RecycleBinView from "@/components/RecycleBinView";
 import { TreesView } from "@/components/trees/TreesView";
-import { isTreesEnabled, isEditDatesEnabled, isFormatConversionEnabled, isAiPhotoEnhancementEnabled, TREES_RELEASED_SHORTLY_MESSAGE, EDIT_DATES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
+import { isTreesEnabled, isFormatConversionEnabled, isAiPhotoEnhancementEnabled, TREES_RELEASED_SHORTLY_MESSAGE, FORMAT_CONVERSION_RELEASED_SHORTLY_MESSAGE } from "@/lib/feature-flags";
 import { ReportProblemModal } from "@/components/ReportProblemModal";
 import { TempSpacePromptModal } from "@/components/TempSpacePromptModal";
 import { LibraryDriveOfflineModal } from "@/components/LibraryDriveOfflineModal";
@@ -4265,24 +4265,15 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           false,
           'pink',
         )}
-        {iconBtn(
-          isEditDatesEnabled() ? 'Date Editor' : `Date Editor — ${EDIT_DATES_RELEASED_SHORTLY_MESSAGE}`,
-          <Calendar className="w-4 h-4" />,
-          isEditDatesEnabled()
-            ? async () => {
-                const { openDateEditor } = await import('@/lib/electron-bridge');
-                await openDateEditor();
-              }
-            : () => toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE),
-          !isEditDatesEnabled(),
-          false,
-          'blue',
-        )}
+        {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor entry
+            removed. The standalone Date Editor window is replaced by
+            the inline date-editing panel inside Memories — Needs
+            Dates; the separate window serves no purpose any more. */}
         {/* v2.0.15 (Terry 2026-05-28) — Recycle Bin as a top-level
             system view, following Google Photos / Apple Photos
             convention. Lives in the TOOLS cluster because it manages
-            content (alongside People Manager + Date Editor) rather
-            than being a viewing preference like By Date / Albums. */}
+            content (alongside People Manager) rather than being a
+            viewing preference like Dates / Albums. */}
         {iconBtn(
           'Recycle Bin',
           recycleBinIcon('w-4 h-4'),
@@ -4698,29 +4689,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 selectable={false}
                 locked={!isLicensed}
               />
-              {/* Date Editor. v2.0.0 release-gates this via
-                  isEditDatesEnabled() — disabled visual + a toast on
-                  click instead of opening the standalone Date Editor
-                  window. Same pattern as the Trees gate above. No
-                  licence wrapper for now: the licence path is
-                  unreachable while the feature flag is off, and
-                  TeaserFeature doesn't have a 'date-editor' member,
-                  so wiring it would touch the FeatureTeaserModal
-                  copy table for v2.1. */}
-              <IconTooltip label={!isEditDatesEnabled() ? `Date Editor — ${EDIT_DATES_RELEASED_SHORTLY_MESSAGE}` : ''} side="right">
-                <SidebarItem
-                  icon={<Calendar className="w-4 h-4 opacity-70" />}
-                  label="Date Editor"
-                  accent="blue"
-                  onClick={async () => {
-                    if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
-                    const { openDateEditor } = await import('@/lib/electron-bridge');
-                    await openDateEditor();
-                  }}
-                  selectable={false}
-                  disabled={!isEditDatesEnabled()}
-                />
-              </IconTooltip>
+              {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor
+                  sidebar entry removed. Inline date editing now
+                  lives in Memories — Needs Dates; the standalone
+                  Date Editor window serves no purpose. */}
               {/* v2.0.15 — Recycle Bin (sidebar, expanded). Mirrors
                   the collapsed-rail entry above; rose accent flags
                   the destructive-content surface without screaming
@@ -10491,7 +10463,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </div>
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-400/50 shrink-0 mt-0.5">_MK</span>
-                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Marked</span> — PDR couldn't determine a confident date; file is flagged for your review in Date Editor.</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Marked</span> — PDR couldn't determine a confident date; file is flagged for your review in Memories — Needs Dates.</span>
                     </div>
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-300/50 shrink-0 mt-0.5">_E</span>
@@ -10928,49 +10900,52 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionContent>
                   </AccordionItem>
 
-                  {/* Date Editor */}
-                  <AccordionItem value="date-editor" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                  {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor
+                      Glossary entry replaced with Needs Dates. The
+                      Date Editor window itself was removed; its
+                      function moved inline into Memories — Needs
+                      Dates with a right-side panel + bulk action. */}
+                  <AccordionItem value="needs-dates" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
-                      Date Editor
+                      Needs Dates
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
                         <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
-                          <p>The Date Editor is the safety valve for the small percentage of photos PDR couldn't auto-date confidently. You bring the human knowledge ("that's Christmas 2007 — I remember the kitchen"), PDR applies it.</p>
+                          <p>Needs Dates is where Marked-confidence photos live — the small percentage PDR couldn't auto-date confidently. You bring the human knowledge ("that's Christmas 2007 — I remember the kitchen"), PDR applies it. Open it from Memories — Dates, the rail entry sits above the years.</p>
                         </div>
 
                         <div>
-                          <p className="font-medium text-foreground mb-2">Single-photo edit</p>
+                          <p className="font-medium text-foreground mb-2">Three quality tiers inside Needs Dates</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Open a photo in the viewer (from S&amp;D / Memories / Albums)</li>
-                            <li>Click the date pill, set the new date, save</li>
-                            <li>The filename suffix updates accordingly (so a <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">_marked</span> becomes <span className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">_confirmed</span> if you've supplied the truth)</li>
+                            <li><strong className="text-foreground">Tentative</strong> — PDR has a date from a filesystem timestamp (mtime / archive entry). Might be the real date, might be the date of a later copy.</li>
+                            <li><strong className="text-foreground">Placeholder</strong> — PDR has a date that almost certainly refers to the wrong event (scan time, not photo date).</li>
+                            <li><strong className="text-foreground">Unrecorded</strong> — PDR found no date anywhere. You'll need to supply one.</li>
+                          </ul>
+                        </div>
+
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Single-file edit</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Click any tile to open the right-side panel</li>
+                            <li>Set date (required) + time (optional — PDR stamps 12:00 noon if blank)</li>
+                            <li>Save &amp; next auto-advances through the grid so you can grind through a batch</li>
                           </ul>
                         </div>
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Bulk edit</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Select multiple photos in S&amp;D (a folder of holiday shots, a Marked-confidence batch)</li>
-                            <li>Set one date — applied to all selected photos</li>
-                            <li>Every edit is recorded in Reports History — fully undoable later</li>
-                          </ul>
-                        </div>
-
-                        <div>
-                          <p className="font-medium text-foreground mb-2">When to use it</p>
-                          <ul className="list-disc ml-5 space-y-1">
-                            <li>Marked-confidence photos you know the real date for</li>
-                            <li>Hand-cam transfers / scanner outputs with no EXIF</li>
-                            <li>Photos PDR dated wrong because the EXIF was misleading (e.g. camera clock was wrong)</li>
+                            <li>Tick the checkbox on multiple tiles (or turn on Selection Mode from Insights)</li>
+                            <li>Right-click → "Set date for N selected…" — same panel, applies to the whole selection</li>
                           </ul>
                         </div>
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Tips</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Pair with Memories By Date — if a year looks wrong, click into the days and Date-Editor the outliers</li>
-                            <li>Originals are never overwritten — the edit creates a new file in the Library Drive with the right date</li>
+                            <li>Originals aren't renamed when you supply a date — PDR just updates its records</li>
+                            <li>Duplicates handle themselves silently in the background — Needs Dates only shows you files that genuinely need attention</li>
                           </ul>
                         </div>
                       </div>
@@ -11112,7 +11087,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div className="p-4 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-700 rounded-lg">
                           <p className="font-medium text-amber-700 dark:text-amber-300 mb-2">Marked</p>
                           <p className="mb-2">No trustworthy clue found. PDR has used a conservative fallback (folder dates, file creation dates, last-resort best-guess) and labelled the file so you can find it later.</p>
-                          <p>Marked files are the ones to feed back through the <span className="font-medium text-foreground">Date Editor</span> if you know the real date.</p>
+                          <p>Marked files surface in <span className="font-medium text-foreground">Memories — Needs Dates</span> for you to date when you know the real one.</p>
                         </div>
 
                         <div>
@@ -11124,7 +11099,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <p className="font-medium text-foreground mb-2">Tips</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>A high Marked count on a source = that source had little usable metadata. Often worth running smaller grouped Fixes to isolate which folder is the problem.</li>
-                            <li>S&amp;D's Confidence filter lets you pull every Marked file in seconds — perfect for a Date Editor session.</li>
+                            <li>Memories — Needs Dates is the dedicated home for Marked files — open it from the rail entry above the years.</li>
                             <li>Confirmed + Recovered are the dates PDR stands behind. Marked is PDR saying "I did my best, but you'd know better than me."</li>
                           </ul>
                         </div>
@@ -13851,7 +13826,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                     <div className="flex flex-col pr-3">
                       <span className="text-sm font-medium text-foreground">Make Fixed photos searchable</span>
-                      <span className="text-xs text-muted-foreground">Fixed photos appear in Search &amp; Discovery, Memories, and Date Editor. Turn off only if you'd rather manage indexing yourself.</span>
+                      <span className="text-xs text-muted-foreground">Fixed photos appear in Search &amp; Discovery and Memories (including the Needs Dates rail for Marked-confidence files). Turn off only if you'd rather manage indexing yourself.</span>
                     </div>
                     <Switch
                       checked={autoIndexAfterFix}

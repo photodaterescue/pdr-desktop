@@ -5,7 +5,6 @@ import { promptConfirm } from '@/components/trees/promptConfirm';
 // comment below). The dep stays in package.json for future use.
 import { motion, AnimatePresence } from 'framer-motion';
 import { toast } from 'sonner';
-import { isEditDatesEnabled, EDIT_DATES_RELEASED_SHORTLY_MESSAGE } from '@/lib/feature-flags';
 import {
   Search,
   X,
@@ -164,8 +163,6 @@ import {
   reclusterFaces,
   getPersonClusters,
   openPeopleWindow,
-  openDateEditor,
-  onDateEditorDataChanged,
   onPeopleDataChanged,
   onLibraryFilesAdded,
   listAlbums,
@@ -1787,18 +1784,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [aiSearchMatchMode, aiSearchMatchThreshold]);
 
-  // Date Editor data-changed listener — refresh the grid after
-  // corrections land. Same ref-based latest-closure pattern as the
-  // people listener so we don't run a stale search.
-  useEffect(() => {
-    const unsubscribe = onDateEditorDataChanged(async () => {
-      await loadFilterOptions();
-      await loadStats();
-      if (searchActive) executeSearchRef.current(undefined, { silent: true });
-    });
-    return unsubscribe;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchActive]);
+  // v2.1 round 81 (Terry 2026-06-09) — Date Editor data-changed
+  // listener removed alongside the Date Editor window itself. If
+  // Needs Dates ever needs to nudge S&D after a date edit, the
+  // existing `pdr:pendingChanged` event is the channel — listen
+  // for it here when that becomes a real need.
 
   const loadThumbnailsBatch = async (files: IndexedFile[]) => {
     // Both photos and videos now get real thumbnails (videos via ffmpeg frame extraction in main).
@@ -4283,25 +4273,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
           <div className="px-4 py-1 border-b border-border flex items-center gap-3 shrink-0 bg-secondary/20">
             <span className="text-sm font-semibold text-foreground flex items-center gap-2 shrink-0">
               {results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}
-              {/* Date Editor button — inherits the current S&D query so the
-                  dedicated window operates on exactly these photos. Enabled
-                  only while there's something to edit. */}
-              {/* Edit Dates button. When release-gated
-                  (isEditDatesEnabled() === false in v2.0.0 builds),
-                  the click fires a toast instead of opening the
-                  Date Editor window — which itself depends on the
-                  unfinished UX. Tooltip and visual disabled-state
-                  reflect the gate so users see why the button looks
-                  greyed. */}
-              {/* Overflow menu — Edit Dates + Create Parallel Library
-                  moved here so the visible action row stays calm and
-                  filter-focused (Terry 2026-05-19: "really fucking
-                  busy in this bit between the ribbon and the
-                  pictures"). Both actions were full-set verbs that
-                  ate horizontal space disproportionate to how often
-                  they're used. Edit Dates is also currently release-
-                  gated; the menu acknowledges the gesture without
-                  parking a greyed-out pill front-and-centre. */}
+              {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor /
+                  Edit Dates comments removed; the dedicated window
+                  was retired in favour of inline editing inside
+                  Memories — Needs Dates. Overflow menu now hosts
+                  only Create Parallel Library. */}
               <Popover>
                 <IconTooltip label="More actions" side="bottom">
                   <PopoverTrigger asChild>
@@ -4319,26 +4295,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
                     Act on {selectedFiles.size > 0 ? `${selectedFiles.size} selected` : `${results.total.toLocaleString()} results`}
                   </p>
-                  {/* Edit Dates — release-gated; clicking when locked
-                      fires a toast instead of opening the editor. */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (!isEditDatesEnabled()) { toast.info(EDIT_DATES_RELEASED_SHORTLY_MESSAGE); return; }
-                      openDateEditor(query);
-                    }}
-                    disabled={results.total === 0}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-foreground transition-colors"
-                    data-testid="menu-edit-dates"
-                  >
-                    <Calendar className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="flex-1">
-                      <span className="font-medium">Edit dates</span>
-                      {!isEditDatesEnabled() && (
-                        <span className="block text-[10px] text-muted-foreground">Coming in v2.1</span>
-                      )}
-                    </span>
-                  </button>
+                  {/* v2.1 round 81 (Terry 2026-06-09) — Edit Dates
+                      entry removed. Standalone Date Editor window
+                      replaced by inline editing in Memories — Needs
+                      Dates; this overflow item served no purpose. */}
                   {/* Create Parallel Library — full-set or selection-
                       driven. Disabled when no results or a Fix is in
                       flight (PL shares the copy engine). */}
