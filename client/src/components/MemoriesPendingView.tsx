@@ -21,7 +21,7 @@
 //     self-explanatory beats single-word, and the 2-row wrap in
 //     the narrow rail differentiates it from year buttons.
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronDown,
@@ -37,6 +37,15 @@ import {
   X,
   Save,
   Clock,
+  Check,
+  PlayCircle,
+  HardDrive,
+  Search,
+  FolderPlus,
+  Captions,
+  Copy,
+  Trash2,
+  CalendarClock,
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
@@ -46,9 +55,18 @@ import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import {
   getPendingFiles,
   getThumbnail,
   setPendingDate,
+  moveToRecycleBin,
+  openSearchViewer,
   type PendingFile,
   type PendingTier,
   type PendingCounts,
@@ -56,6 +74,8 @@ import {
 import { CaptionBadge } from '@/components/CaptionBadge';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
+import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
+import AddToAlbumPopover from '@/components/AddToAlbumPopover';
 import { toast } from 'sonner';
 
 const TIER_LABEL: Record<PendingTier, string> = {
@@ -124,6 +144,43 @@ export default function MemoriesPendingView({
   const [pickedTime, setPickedTime] = useState<string>('');
   const [saving, setSaving] = useState(false);
 
+  // v2.1 round 76 phase 2 (Terry 2026-06-09) — Memories — Dates
+  // selection-model parity. Mirrors MemoriesDayDrilldown:
+  //   * selectedFileIds  — the Set<number> of currently checked tiles
+  //   * lastClickedIndexRef — anchor for shift-range select
+  //   * pressModifierRef    — Ctrl/Cmd captured at mousedown so the
+  //     subsequent onClick reads the modifier reliably even when
+  //     focus shifts steal the synthetic event's modifier flag
+  //   * addToAlbumOpenTick  — bump to open the AddToAlbumPopover
+  //   * panelBulkFiles      — when non-null, the right-side panel
+  //     enters BULK MODE and Save commits to every file in this array
+  //     in one IPC call. Mutually exclusive with panelFile (single).
+  const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
+  const lastClickedIndexRef = useRef<number | null>(null);
+  const pressModifierRef = useRef<{ id: number | null; ctrl: boolean }>({ id: null, ctrl: false });
+  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  const [panelBulkFiles, setPanelBulkFiles] = useState<PendingFile[] | null>(null);
+  const { transcribe: transcribeSelectedVideos } = useTranscribeVideos();
+
+  const toggleSelection = (file: PendingFile, mode?: 'add' | 'remove') => {
+    setSelectedFileIds(prev => {
+      const next = new Set(prev);
+      if (mode === 'add') next.add(file.id);
+      else if (mode === 'remove') next.delete(file.id);
+      else if (next.has(file.id)) next.delete(file.id);
+      else next.add(file.id);
+      return next;
+    });
+  };
+  const clearSelection = () => {
+    setSelectedFileIds(new Set());
+    lastClickedIndexRef.current = null;
+  };
+
+  // Clear selection on tier scope change — IDs from a different
+  // tier set aren't referenceable in the new file list.
+  useEffect(() => { clearSelection(); }, [tier]);
+
   // Open the panel for a file. Prefills the date picker from the
   // file's existing derived_date (if any — Tentative + Placeholder
   // tiles will have one; Unrecorded won't). Time defaults to empty
@@ -141,45 +198,82 @@ export default function MemoriesPendingView({
     }
   };
 
+  // (closePanel — bulk-aware version below; the single-only one
+  // that used to live here was deleted when openBulkPanel landed.)
+
+  // v2.1 round 76 phase 2 — opens the panel in BULK mode for the
+  // current selection. Pre-fills the picker from the most recent
+  // derived_date across the batch (a sensible "start here" rather
+  // than blank). Closes any existing single-mode panel.
+  const openBulkPanel = (filesToEdit: PendingFile[]) => {
+    if (filesToEdit.length === 0) return;
+    setPanelFile(null);
+    setPanelBulkFiles(filesToEdit);
+    // Prefill from the first file's derived_date if any, otherwise
+    // leave blank so the picker shows its placeholder.
+    const seed = filesToEdit.find((f) => !!f.derived_date)?.derived_date;
+    if (seed) {
+      const m = seed.match(/^(\d{4}-\d{2}-\d{2})/);
+      setPickedDate(m ? m[1] : '');
+      const t = seed.match(/T(\d{2}:\d{2})/);
+      setPickedTime(t ? t[1] : '');
+    } else {
+      setPickedDate('');
+      setPickedTime('');
+    }
+  };
+
   const closePanel = () => {
     setPanelFile(null);
+    setPanelBulkFiles(null);
     setPickedDate('');
     setPickedTime('');
   };
 
-  // Commit the user's chosen date for the current panel file.
-  // Combines the date (required) with the time (optional → noon
-  // default) into an ISO 8601 string, fires the IPC, then refreshes
-  // the file list. Auto-advances to the next file in the current
-  // grid order — same-index after refetch lands on what was the
-  // NEXT file before the saved one was removed. If no files remain,
-  // closes the panel.
+  // Commit the user's chosen date for either the single panel file
+  // OR the bulk selection — same IPC, same setPendingDate({fileIds,
+  // isoDateTime}) signature. Single mode auto-advances to the next
+  // file at the same grid index; bulk mode just refreshes the list
+  // and closes the panel (the whole batch is done).
   const savePanel = async () => {
-    if (!panelFile || !pickedDate || saving) return;
+    if (!pickedDate || saving) return;
     const time = pickedTime || '12:00';
     const iso = `${pickedDate}T${time}:00`;
+    const fileIds = panelBulkFiles
+      ? panelBulkFiles.map((f) => f.id)
+      : panelFile
+        ? [panelFile.id]
+        : [];
+    if (fileIds.length === 0) return;
     setSaving(true);
     try {
-      const res = await setPendingDate({ fileIds: [panelFile.id], isoDateTime: iso });
+      const res = await setPendingDate({ fileIds, isoDateTime: iso });
       if (!res.success) {
         toast.error('Couldn’t save date', { description: res.error });
         return;
       }
-      // Find this file's current index, refetch, then jump to same
-      // index in the refreshed list (which is now the file that was
-      // immediately AFTER the saved one).
-      const savedId = panelFile.id;
-      const idx = files?.findIndex((f) => f.id === savedId) ?? -1;
-      const refreshed = await getPendingFiles({ runIds, tier });
-      const nextList = refreshed.success && refreshed.data ? refreshed.data : [];
-      setFiles(nextList);
-      if (idx >= 0 && nextList[idx]) {
-        openPanel(nextList[idx]);
-      } else {
+      if (panelBulkFiles) {
+        toast.success(
+          `Date set for ${fileIds.length} file${fileIds.length === 1 ? '' : 's'}`,
+        );
+        clearSelection();
+        const refreshed = await getPendingFiles({ runIds, tier });
+        setFiles(refreshed.success && refreshed.data ? refreshed.data : []);
         closePanel();
+      } else if (panelFile) {
+        // Single-file mode — auto-advance to the next file at the
+        // same grid index after refetch.
+        const savedId = panelFile.id;
+        const idx = files?.findIndex((f) => f.id === savedId) ?? -1;
+        const refreshed = await getPendingFiles({ runIds, tier });
+        const nextList = refreshed.success && refreshed.data ? refreshed.data : [];
+        setFiles(nextList);
+        if (idx >= 0 && nextList[idx]) {
+          openPanel(nextList[idx]);
+        } else {
+          closePanel();
+        }
       }
-      // Fire a window event so the wrapper's pendingCounts useEffect
-      // refetches the global badge count.
       try {
         window.dispatchEvent(new CustomEvent('pdr:pendingChanged'));
       } catch { /* event dispatch never throws */ }
@@ -327,6 +421,25 @@ export default function MemoriesPendingView({
     { key: 'unrecorded', label: 'Unrecorded', count: counts.unrecorded },
   ];
 
+  // v2.1 round 76 phase 2 — flat (file_id → grid index) map so
+  // shift-range select can resolve a range across tier sections in
+  // O(1) per tile rather than scanning visibleFiles on every click.
+  const flatIndexById = useMemo(() => {
+    const m = new Map<number, number>();
+    visibleFiles?.forEach((f, i) => { m.set(f.id, i); });
+    return m;
+  }, [visibleFiles]);
+
+  // Selection helpers for the toolbar / actions dropdown.
+  const selectedFiles = useMemo(() => {
+    if (!visibleFiles) return [] as PendingFile[];
+    return visibleFiles.filter((f) => selectedFileIds.has(f.id));
+  }, [visibleFiles, selectedFileIds]);
+  const selectedVideos = useMemo(
+    () => selectedFiles.filter((f) => f.file_type === 'video'),
+    [selectedFiles],
+  );
+
   return (
     // v2.1 round 73 (Terry 2026-06-09) — outer flips to horizontal
     // flex so the date-editor panel can extend the FULL page height
@@ -400,6 +513,181 @@ export default function MemoriesPendingView({
 
         {breakdownText && (
           <span className="text-xs text-muted-foreground">{breakdownText}</span>
+        )}
+
+        {/* v2.1 round 76 phase 2 (Terry 2026-06-09) — Memories — Dates
+            selection bar parity. When at least one tile is selected,
+            we show:
+              1. A gold "Actions" dropdown carrying every Memories
+                 selection action (Open Viewer / Send to S&D / Add to
+                 S&D pile / Add to album / Transcribe / Copy filenames
+                 / Move to Recycle Bin) PLUS a new "Set date for N
+                 selected…" entry that opens the right-side panel in
+                 BULK mode.
+              2. A gold "N selected · X" chip with one-click clear.
+              3. An off-screen AddToAlbumPopover anchor that the
+                 dropdown's Add-to-album item bumps via openTrigger.
+            Same vocabulary, palette, and behaviour as the day-
+            drilldown so users moving between the two surfaces see no
+            difference. */}
+        {selectedFileIds.size > 0 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                size="sm"
+                className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
+                data-testid="pending-selection-actions"
+              >
+                Actions
+                <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="min-w-[260px]">
+              <DropdownMenuItem
+                onSelect={() => {
+                  if (selectedFiles.length === 0) return;
+                  void openSearchViewer(
+                    selectedFiles.map((f) => f.file_path),
+                    selectedFiles.map((f) => f.filename),
+                  );
+                }}
+              >
+                <PlayCircle className="w-3.5 h-3.5 mr-2" />
+                Open {selectedFileIds.size} Selected in Viewer
+              </DropdownMenuItem>
+              {selectedFileIds.size === 1 && (
+                <DropdownMenuItem
+                  onSelect={() => {
+                    const target = selectedFiles[0];
+                    if (target) (window as any).pdr?.revealInFolder?.(target.file_path);
+                  }}
+                >
+                  <HardDrive className="w-3.5 h-3.5 mr-2" />
+                  Show in File Explorer
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuSeparator />
+              {/* The headline NEW action — bulk-edit the date for
+                  every selected file in one shot. Opens the right-
+                  side panel in bulk mode; Save commits to all
+                  selected files at once. */}
+              <DropdownMenuItem
+                onSelect={() => openBulkPanel(selectedFiles)}
+                data-testid="pending-actions-bulk-set-date"
+              >
+                <CalendarClock className="w-3.5 h-3.5 mr-2" />
+                Set date for {selectedFileIds.size} selected…
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={() => {
+                  const fileIds = Array.from(selectedFileIds);
+                  if (fileIds.length === 0) return;
+                  void import('@/lib/memories-return-source').then((m) =>
+                    m.setMemoriesReturnSource({ tab: 'byDate', label: 'Memories — Needs dates' }),
+                  );
+                  window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                    detail: { fileIds, source: 'memories', mode: 'replace' },
+                  }));
+                }}
+              >
+                <Search className="w-3.5 h-3.5 mr-2" />
+                Send {selectedFileIds.size} to S&amp;D
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onSelect={() => {
+                  const fileIds = Array.from(selectedFileIds);
+                  if (fileIds.length === 0) return;
+                  void import('@/lib/memories-return-source').then((m) =>
+                    m.setMemoriesReturnSource({ tab: 'byDate', label: 'Memories — Needs dates' }),
+                  );
+                  window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                    detail: { fileIds, source: 'memories', mode: 'accumulate' },
+                  }));
+                }}
+              >
+                <Search className="w-3.5 h-3.5 mr-2" />
+                Add {selectedFileIds.size} to S&amp;D pile
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onSelect={() => setAddToAlbumOpenTick((t) => t + 1)}>
+                <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                Add to album…
+              </DropdownMenuItem>
+              {selectedVideos.length > 0 && (
+                <DropdownMenuItem
+                  onSelect={() => transcribeSelectedVideos(selectedVideos.map((v) => v.file_path))}
+                >
+                  <Captions className="w-3.5 h-3.5 mr-2" />
+                  Transcribe {selectedVideos.length} video{selectedVideos.length === 1 ? '' : 's'}…
+                </DropdownMenuItem>
+              )}
+              <DropdownMenuItem
+                onSelect={async () => {
+                  if (selectedFiles.length === 0) return;
+                  const names = selectedFiles.map((f) => f.filename).join('\n');
+                  try {
+                    await navigator.clipboard.writeText(names);
+                    toast.success(
+                      selectedFiles.length === 1 ? 'Filename copied' : `Copied ${selectedFiles.length} filenames`,
+                      selectedFiles.length === 1 ? { description: selectedFiles[0].filename } : undefined,
+                    );
+                  } catch {
+                    toast.error("Couldn't copy filename" + (selectedFiles.length === 1 ? '' : 's'));
+                  }
+                }}
+              >
+                <Copy className="w-3.5 h-3.5 mr-2" />
+                {selectedFileIds.size === 1 ? 'Copy filename' : `Copy ${selectedFileIds.size} filenames`}
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onSelect={async () => {
+                  const ids = Array.from(selectedFileIds);
+                  if (ids.length === 0) return;
+                  const r = await moveToRecycleBin(ids);
+                  if (r.success) {
+                    toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                    clearSelection();
+                    const refreshed = await getPendingFiles({ runIds, tier });
+                    setFiles(refreshed.success && refreshed.data ? refreshed.data : []);
+                    try {
+                      window.dispatchEvent(new CustomEvent('pdr:pendingChanged'));
+                    } catch { /* event dispatch never throws */ }
+                  } else {
+                    toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                  }
+                }}
+                className="text-destructive focus:text-destructive"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-2" />
+                Move {selectedFileIds.size} to Recycle Bin
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
+        {selectedFileIds.size > 0 && (
+          <>
+            <IconTooltip label="Clear selection" side="bottom">
+              <button
+                onClick={clearSelection}
+                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
+                data-testid="pending-selection-chip"
+              >
+                {selectedFileIds.size} selected
+                <X className="w-3 h-3 opacity-70" />
+              </button>
+            </IconTooltip>
+            {/* Off-screen anchor for AddToAlbumPopover — opened by
+                the dropdown item via openTrigger bump. */}
+            <div className="absolute -left-[9999px] top-0">
+              <AddToAlbumPopover
+                fileIds={Array.from(selectedFileIds)}
+                onAdded={clearSelection}
+                openTrigger={addToAlbumOpenTick}
+              />
+            </div>
+          </>
         )}
 
         {/* All-media chip — clustered LEFT next to the counts, not
@@ -619,20 +907,98 @@ export default function MemoriesPendingView({
                     className={`grid ${tileGap}`}
                     style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tilePx}px, 1fr))` }}
                   >
-                    {sectionFiles.map((f) => (
+                    {sectionFiles.map((f) => {
+                      const idx = flatIndexById.get(f.id) ?? 0;
+                      const isMultiSelected = selectedFileIds.has(f.id);
+                      const isPanelActive = panelFile?.id === f.id || (panelBulkFiles?.some((bf) => bf.id === f.id) ?? false);
+                      return (
                       <button
                         key={f.id}
                         type="button"
-                        onClick={() => {
-                          // Selection-mode tile-click parity with Memories
-                          // — Dates lands in phase 2 (bulk selection bar).
-                          // For now, any tile click opens the right-side
-                          // date editor panel for that single file.
+                        // v2.1 round 76 phase 2 (Terry 2026-06-09) — port
+                        // the Memories — Dates modifier-aware click
+                        // contract. Mirrors the day-drilldown handler:
+                        //   plain click            → open panel for this file
+                        //   Selection Mode + click → toggle selection
+                        //   Ctrl/Cmd+click         → toggle selection
+                        //   Shift+click            → range select from anchor
+                        // Ctrl is sampled at mousedown to dodge stale
+                        // synthetic-event modifier flags after focus
+                        // shifts (same race the round-40 fix solved).
+                        onMouseDown={(e) => {
+                          pressModifierRef.current = { id: f.id, ctrl: e.ctrlKey || e.metaKey };
+                        }}
+                        onClick={(e) => {
+                          const pressedCtrl = pressModifierRef.current.id === f.id && pressModifierRef.current.ctrl;
+                          if (e.ctrlKey || e.metaKey || pressedCtrl) {
+                            e.preventDefault();
+                            toggleSelection(f);
+                            lastClickedIndexRef.current = idx;
+                            return;
+                          }
+                          if (e.shiftKey && lastClickedIndexRef.current !== null && visibleFiles) {
+                            const start = Math.min(lastClickedIndexRef.current, idx);
+                            const end = Math.max(lastClickedIndexRef.current, idx);
+                            for (let i = start; i <= end; i++) {
+                              const file = visibleFiles[i];
+                              if (file) toggleSelection(file, 'add');
+                            }
+                            lastClickedIndexRef.current = idx;
+                            return;
+                          }
+                          if (selectionMode) {
+                            toggleSelection(f);
+                            lastClickedIndexRef.current = idx;
+                            return;
+                          }
+                          lastClickedIndexRef.current = idx;
                           openPanel(f);
                         }}
-                        className={`group cursor-pointer relative aspect-square bg-secondary/30 overflow-hidden ${tileRing} ${panelFile?.id === f.id ? 'ring-2 ring-purple-500' : 'hover:ring-primary/50'} transition-all`}
+                        className={`group cursor-pointer relative aspect-square bg-secondary/30 overflow-hidden transition-all ${
+                          isMultiSelected
+                            ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
+                            : isPanelActive
+                              ? `${tileRing} ring-2 ring-purple-500`
+                              : `${tileRing} hover:ring-primary/50`
+                        }`}
                         title={f.filename}
                       >
+                        {/* v2.1 round 76 phase 2 — selection checkbox.
+                            Same recipe as MemoriesDayDrilldown: hidden
+                            by default, visible on tile hover; pinned
+                            visible when Selection Mode is on or the
+                            tile is checked. Shift+click extends a
+                            range from the last clicked tile. Gold
+                            fill when selected matches the tile ring
+                            + selection chip in the toolbar. */}
+                        <div
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            e.preventDefault();
+                            if (e.shiftKey && selectedFileIds.size > 0 && lastClickedIndexRef.current !== null && visibleFiles) {
+                              const start = Math.min(lastClickedIndexRef.current, idx);
+                              const end = Math.max(lastClickedIndexRef.current, idx);
+                              for (let i = start; i <= end; i++) {
+                                const file = visibleFiles[i];
+                                if (file && !selectedFileIds.has(file.id)) toggleSelection(file, 'add');
+                              }
+                              lastClickedIndexRef.current = idx;
+                              return;
+                            }
+                            toggleSelection(f);
+                            lastClickedIndexRef.current = idx;
+                          }}
+                          className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
+                            isMultiSelected
+                              ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
+                              : selectionMode
+                                ? 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-100'
+                                : 'border-white/80 bg-black/40 text-transparent hover:border-white hover:bg-black/60 opacity-0 group-hover:opacity-100'
+                          }`}
+                          data-testid={`pending-tile-checkbox-${f.id}`}
+                        >
+                          {isMultiSelected && <Check className="w-3 h-3" />}
+                        </div>
                         {thumbs[f.file_path] ? (
                           <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" loading="lazy" />
                         ) : (
@@ -654,7 +1020,8 @@ export default function MemoriesPendingView({
                           </div>
                         )}
                       </button>
-                    ))}
+                      );
+                    })}
                   </div>
                 </section>
               ))}
@@ -670,17 +1037,20 @@ export default function MemoriesPendingView({
           from the top toolbar band all the way to the bottom edge.
           Fixed 380px width; the left column flex-shrinks to make
           room. Closing the panel returns the page to its full width. */}
-      {panelFile && (
+      {(panelFile || panelBulkFiles) && (
         <aside
           className="w-[380px] shrink-0 border-l border-border bg-background flex flex-col"
           data-testid="memories-pending-panel"
         >
-          {/* Header */}
+          {/* Header — single mode shows the tier label; bulk mode
+              shows the file count so the user can confirm scope. */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-border shrink-0">
             <div className="flex flex-col min-w-0">
-              <h3 className="text-sm font-semibold text-foreground">Set date</h3>
+              <h3 className="text-sm font-semibold text-foreground">
+                {panelBulkFiles ? `Set date for ${panelBulkFiles.length} files` : 'Set date'}
+              </h3>
               <p className="text-[11px] text-muted-foreground uppercase tracking-wider">
-                {TIER_LABEL[panelFile.pending_tier]}
+                {panelBulkFiles ? 'Bulk edit' : panelFile && TIER_LABEL[panelFile.pending_tier]}
               </p>
             </div>
             <IconTooltip label="Close panel" side="left">
@@ -695,40 +1065,73 @@ export default function MemoriesPendingView({
             </IconTooltip>
           </div>
 
-          {/* Preview */}
+          {/* Preview — single mode renders the file's thumbnail at
+              full panel width; bulk mode shows up to 4 thumbnails as
+              a 2×2 grid with a "+N more" overlay when the batch is
+              larger, so the user gets a glance at what's about to
+              be committed without scrolling. */}
           <div className="px-4 py-3 shrink-0">
-            <div className="aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
-              {thumbs[panelFile.file_path] ? (
-                <img
-                  src={thumbs[panelFile.file_path]}
-                  alt={panelFile.filename}
-                  className="w-full h-full object-cover"
-                />
-              ) : (
-                <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
-                  {panelFile.file_type === 'video' ? (
-                    <Film className="w-10 h-10" />
+            {panelBulkFiles ? (
+              <>
+                <div className="grid grid-cols-2 gap-1 aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
+                  {panelBulkFiles.slice(0, 4).map((f, i) => (
+                    <div key={f.id} className="relative bg-secondary/40">
+                      {thumbs[f.file_path] ? (
+                        <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
+                      ) : (
+                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                          {f.file_type === 'video' ? <Film className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
+                        </div>
+                      )}
+                      {i === 3 && panelBulkFiles.length > 4 && (
+                        <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-sm font-semibold">
+                          +{panelBulkFiles.length - 4}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Sets the same date + time on every selected file. Confidence stays Marked
+                  (still a best-guess); these files leave Needs dates on save.
+                </p>
+              </>
+            ) : panelFile ? (
+              <>
+                <div className="aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
+                  {thumbs[panelFile.file_path] ? (
+                    <img
+                      src={thumbs[panelFile.file_path]}
+                      alt={panelFile.filename}
+                      className="w-full h-full object-cover"
+                    />
                   ) : (
-                    <ImageIcon className="w-10 h-10" />
+                    <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
+                      {panelFile.file_type === 'video' ? (
+                        <Film className="w-10 h-10" />
+                      ) : (
+                        <ImageIcon className="w-10 h-10" />
+                      )}
+                    </div>
                   )}
                 </div>
-              )}
-            </div>
-            <p className="mt-2 text-xs font-medium text-foreground truncate" title={panelFile.filename}>
-              {panelFile.filename}
-            </p>
-            {panelFile.derived_date ? (
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                Current: <span className="text-foreground">{panelFile.derived_date.slice(0, 10)}</span>
-                {panelFile.date_source && (
-                  <span className="text-muted-foreground/80"> — {panelFile.date_source}</span>
+                <p className="mt-2 text-xs font-medium text-foreground truncate" title={panelFile.filename}>
+                  {panelFile.filename}
+                </p>
+                {panelFile.derived_date ? (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    Current: <span className="text-foreground">{panelFile.derived_date.slice(0, 10)}</span>
+                    {panelFile.date_source && (
+                      <span className="text-muted-foreground/80"> — {panelFile.date_source}</span>
+                    )}
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-muted-foreground mt-0.5">
+                    No date on record — supply one to confirm.
+                  </p>
                 )}
-              </p>
-            ) : (
-              <p className="text-[11px] text-muted-foreground mt-0.5">
-                No date on record — supply one to confirm.
-              </p>
-            )}
+              </>
+            ) : null}
           </div>
 
           {/* Date + time inputs */}
@@ -780,7 +1183,11 @@ export default function MemoriesPendingView({
               data-testid="memories-pending-save"
             >
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {saving ? 'Saving…' : 'Save & next'}
+              {saving
+                ? 'Saving…'
+                : panelBulkFiles
+                  ? `Save ${panelBulkFiles.length}`
+                  : 'Save & next'}
             </Button>
           </div>
         </aside>
