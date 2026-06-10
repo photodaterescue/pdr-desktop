@@ -58,6 +58,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
+import { BrandedTimePicker } from '@/components/ui/branded-time-picker';
 import {
   DropdownMenu,
   DropdownMenuTrigger,
@@ -282,11 +283,25 @@ export default function MemoriesPendingView({
   // than blank). Closes any existing single-mode panel.
   const openBulkPanel = (filesToEdit: PendingFile[]) => {
     if (filesToEdit.length === 0) return;
-    setPanelFile(null);
+    // v2.1 round 84 (Terry 2026-06-10) — show the LAST-clicked tile
+    // as the panel preview, not the round-83 2×2 collage. The
+    // prev/next arrows in the panel header already rotate through
+    // the whole selection, so a collage of 4 thumbnails just
+    // duplicates information the user can see in the grid. Single-
+    // photo preview matches what they see when clicking one tile.
+    // Falls back to the array's tail if lastClickedIndexRef is
+    // missing (e.g. selection was assembled via Actions menu rather
+    // than a direct click).
+    const lastIdx = lastClickedIndexRef.current;
+    const lastClicked =
+      (lastIdx !== null && visibleFiles?.[lastIdx] && filesToEdit.find((f) => f.id === visibleFiles[lastIdx]!.id)) ||
+      filesToEdit[filesToEdit.length - 1];
+    setPanelFile(lastClicked);
     setPanelBulkFiles(filesToEdit);
-    // Prefill from the first file's derived_date if any, otherwise
-    // leave blank so the picker shows its placeholder.
-    const seed = filesToEdit.find((f) => !!f.derived_date)?.derived_date;
+    // Prefill from the panel-active file's derived_date if any,
+    // otherwise from the first file in the bulk set that has one;
+    // otherwise leave blank so the picker shows its placeholder.
+    const seed = lastClicked.derived_date || filesToEdit.find((f) => !!f.derived_date)?.derived_date;
     if (seed) {
       const m = seed.match(/^(\d{4}-\d{2}-\d{2})/);
       setPickedDate(m ? m[1] : '');
@@ -296,10 +311,7 @@ export default function MemoriesPendingView({
       setPickedDate('');
       setPickedTime('');
     }
-    // Flash + scroll to the FIRST file of the bulk selection so
-    // the user can confirm "this is where my selection starts" at
-    // a glance, even on a reflowed grid.
-    flashAndScrollTo(filesToEdit[0].id);
+    flashAndScrollTo(lastClicked.id);
   };
 
   const closePanel = () => {
@@ -814,10 +826,16 @@ export default function MemoriesPendingView({
         )}
         {selectedFileIds.size > 0 && (
           <>
+            {/* v2.1 round 84 (Terry 2026-06-10) — gold outline pulse
+                matched to the workspace burger's 2.4 s cadence so the
+                chip beats together with the rest of the app's
+                "attention here" rhythm. pdr-pending-chip-pulse is a
+                sibling of the active-tile pulse (same gold, same
+                spread) — see index.css. */}
             <IconTooltip label="Clear selection" side="bottom">
               <button
                 onClick={clearSelection}
-                className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
+                className="pdr-pending-chip-pulse inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
                 data-testid="pending-selection-chip"
               >
                 {selectedFileIds.size} selected
@@ -1428,46 +1446,26 @@ export default function MemoriesPendingView({
             </div>
           </div>
 
-          {/* Preview — single mode renders the file's thumbnail at
-              full panel width; bulk mode shows up to 4 thumbnails as
-              a 2×2 grid with a "+N more" overlay when the batch is
-              larger, so the user gets a glance at what's about to
-              be committed without scrolling. */}
+          {/* v2.1 round 84 (Terry 2026-06-10) — single-photo preview
+              for BOTH single and bulk modes. Round 83 showed bulk as
+              a 2×2 collage with "+N more" — Terry asked to drop that
+              and just show the last-clicked file, since the prev/next
+              arrows in the header already rotate through the
+              selection. Copy-filename icon next to the filename
+              mirrors the Transcribe-videos modal pattern (lucide
+              `Copy` + IconTooltip + primary-tint hover + toast).
+              The "applies to N" hint moves below the date row when
+              in bulk mode so the user still gets the safety read
+              before pressing Save N. */}
           <div className="px-4 py-3 shrink-0">
-            {panelBulkFiles ? (
+            {panelFile ? (
               <>
-                <div className="grid grid-cols-2 gap-1 aspect-square w-full rounded-lg overflow-hidden bg-secondary/30 ring-1 ring-border">
-                  {panelBulkFiles.slice(0, 4).map((f, i) => (
-                    <div key={f.id} className="relative bg-secondary/40">
-                      {thumbs[f.file_path] ? (
-                        <img src={thumbs[f.file_path]} alt={f.filename} className="w-full h-full object-cover" />
-                      ) : (
-                        <div className="w-full h-full flex items-center justify-center text-muted-foreground/70">
-                          {f.file_type === 'video' ? <Film className="w-5 h-5" /> : <ImageIcon className="w-5 h-5" />}
-                        </div>
-                      )}
-                      {i === 3 && panelBulkFiles.length > 4 && (
-                        <div className="absolute inset-0 bg-black/55 flex items-center justify-center text-white text-sm font-semibold">
-                          +{panelBulkFiles.length - 4}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-                <p className="mt-2 text-xs text-muted-foreground">
-                  Sets the same date + time on every selected file. Confidence stays Marked
-                  (still a best-guess); these files leave Needs dates on save.
-                </p>
-              </>
-            ) : panelFile ? (
-              <>
-                {/* v2.1 round 83 (Terry 2026-06-09) — clicking the
-                    preview opens PDRV with the current selection
-                    (or just this file if no multi-select active),
-                    mirroring the S&D Details panel behaviour. The
-                    button wrapper preserves keyboard accessibility
-                    and tooltip semantics; cursor + hover overlay
-                    signal "click me to expand". */}
+                {/* Clicking the preview opens PDRV with the current
+                    selection (or just this file if no multi-select
+                    active), mirroring the S&D Details panel
+                    behaviour. The button wrapper preserves keyboard
+                    accessibility + tooltip semantics; cursor + hover
+                    overlay signal "click me to expand". */}
                 <IconTooltip
                   label={navSet.length > 1 ? `Open ${navSet.length} in Viewer` : 'Open in Viewer'}
                   side="top"
@@ -1504,9 +1502,32 @@ export default function MemoriesPendingView({
                     </div>
                   </button>
                 </IconTooltip>
-                <p className="mt-2 text-xs font-medium text-foreground truncate" title={panelFile.filename}>
-                  {panelFile.filename}
-                </p>
+                <div className="mt-2 flex items-center gap-1.5">
+                  <p
+                    className="text-xs font-medium text-foreground truncate flex-1 min-w-0"
+                    title={panelFile.filename}
+                  >
+                    {panelFile.filename}
+                  </p>
+                  <IconTooltip label="Copy filename" side="top">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        try {
+                          navigator.clipboard.writeText(panelFile.filename);
+                          toast.success('Filename copied', { duration: 2000 });
+                        } catch {
+                          toast.error("Couldn't copy filename");
+                        }
+                      }}
+                      className="shrink-0 p-1 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-primary transition-colors"
+                      data-testid="memories-pending-copy-filename"
+                      aria-label="Copy filename"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                    </button>
+                  </IconTooltip>
+                </div>
                 {panelFile.derived_date ? (
                   <p className="text-[11px] text-muted-foreground mt-0.5">
                     Current: <span className="text-foreground">{panelFile.derived_date.slice(0, 10)}</span>
@@ -1517,6 +1538,13 @@ export default function MemoriesPendingView({
                 ) : (
                   <p className="text-[11px] text-muted-foreground mt-0.5">
                     No date on record — supply one to confirm.
+                  </p>
+                )}
+                {panelBulkFiles && panelBulkFiles.length > 1 && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Sets the same date + time on every {panelBulkFiles.length}
+                    {' '}selected file{panelBulkFiles.length === 1 ? '' : 's'}.
+                    Use the arrows above to step through; confidence stays Marked.
                   </p>
                 )}
               </>
@@ -1540,11 +1568,18 @@ export default function MemoriesPendingView({
                 <Clock className="w-3 h-3" />
                 Time <span className="text-muted-foreground/70 normal-case">(optional)</span>
               </label>
-              <input
-                type="time"
+              {/* v2.1 round 84 (Terry 2026-06-10) — branded scroll-
+                  wheel picker. Clamps at 00:00 / 23:59 (Windows'
+                  native picker wraps), exposes H + M column headers,
+                  and ships with a 12h / 24h toggle (preference
+                  persisted to localStorage). Drop-in replacement
+                  for the native <input type="time"> — same "HH:MM"
+                  24-hour value contract, so the save path doesn't
+                  change. */}
+              <BrandedTimePicker
                 value={pickedTime}
-                onChange={(e) => setPickedTime(e.target.value)}
-                className="w-full px-3 py-2 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40"
+                onChange={setPickedTime}
+                ariaLabel="Set time"
               />
               {!pickedTime && (
                 <p className="text-[10px] text-muted-foreground/70 mt-1">

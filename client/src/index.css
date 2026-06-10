@@ -760,20 +760,34 @@ body > .window-resize-hint-tr {
     transform-origin: center center;
   }
 
-  /* v2.1 round 83 (Terry 2026-06-09) — Needs Dates panel-active
-     tile pulse. Fires ONCE for 3 cycles (~1.8 s total) when the
-     right-side date-editor panel activates a new tile, so the
-     user can see exactly which tile the panel is editing without
-     hunting through the reflowed grid. Box-shadow ring rather
-     than transform/opacity so it doesn't disturb layout. Uses
-     the established Needs Dates purple (--primary equivalent in
-     the Tailwind purple-500 family). */
+  /* v2.1 round 84 (Terry 2026-06-10) — Needs Dates panel-active
+     tile pulse. Mirrors the workspace's Add-Source / burger pulse
+     CADENCE (outline-pulse 2 s) and the Memories — Dates GOLD
+     selection ring, so the "this is the active tile" attention
+     glance matches the colour Terry already associates with
+     selection across the app. Round 83's purple 0.6 s × 3 read as
+     a flash AND clashed with the gold ring it overlaid. Fires for
+     3 cycles (~6 s total) then stops — long enough to draw the
+     eye to a tile that just reflowed out of view, short enough
+     not to nag.
+     --color-gold = hsl(39 92% 67%) = rgb(248, 193, 92). */
   @keyframes pdr-pending-tile-pulse {
-    0%, 100% { box-shadow: 0 0 0 0 rgba(168, 85, 247, 0.55); }
-    50%      { box-shadow: 0 0 0 10px rgba(168, 85, 247, 0); }
+    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.55); }
+    50%      { box-shadow: 0 0 0 5px rgba(248, 193, 92, 0.35); }
   }
   .pdr-pending-tile-pulse {
-    animation: pdr-pending-tile-pulse 0.6s ease-out 3;
+    animation: pdr-pending-tile-pulse 2s ease-in-out 3;
+  }
+
+  /* v2.1 round 84 (Terry 2026-06-10) — "N selected" chip pulse.
+     Same gold keyframes as the active-tile pulse, infinite at the
+     burger menu's 2.4 s cadence so the two surfaces visually
+     beat together. They won't be frame-locked (CSS animations
+     start their own timeline on mount), but the matched duration
+     gives the eye the "they belong to the same rhythm" feel
+     Terry asked for. */
+  .pdr-pending-chip-pulse {
+    animation: pdr-pending-tile-pulse 2.4s ease-in-out infinite;
   }
 }
 
