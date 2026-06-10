@@ -1546,21 +1546,18 @@ export default function MemoriesPendingView({
         </div>
       </div>{/* close rail+content row */}
 
-      {/* v2.1 round 91 (Terry 2026-06-10) — Undo last save pill.
-          Round 90 anchored bottom-right; Terry didn't notice it
-          after the bulk-save modal closed and the side panel
-          snapped shut. Round 91 moves it to bottom-CENTRE,
-          enlarges the size, adds a slide-in-from-bottom Tailwind
-          animation, and gold-tints the whole pill background so
-          it reads as a transient action banner instead of fading
-          into the page chrome. Auto-dismiss extended to 60 s.
-          Recipe still uses bg-card-ish backdrop + border + shadow
-          for the carrier shape, with the gold border + lavender-
-          adjacent inner CTA matching the established premium
-          banner palette across PDR. */}
+      {/* v2.1 round 92 (Terry 2026-06-10) — Undo last save pill.
+          Now anchored TOP-CENTRE (was bottom-centre in round 91).
+          Terry: "That undo toast/modal is so easy to miss with
+          all the photos, why don't you just have it in the top
+          middle?" — bottom of the page is crowded with thumbnails,
+          eye lands at the top where the toolbar already lives.
+          slide-in-from-top instead of bottom; everything else
+          (gold-bordered bg-card carrier, 60 s dismiss, gold inner
+          CTA, X dismiss) carries over from round 91. */}
       {lastSave && (
         <div
-          className="absolute bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-card border-2 border-[var(--color-gold)] shadow-xl shadow-black/10 animate-in fade-in-0 slide-in-from-bottom-4 duration-300"
+          className="absolute top-4 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-4 py-2.5 rounded-2xl bg-card border-2 border-[var(--color-gold)] shadow-xl shadow-black/10 animate-in fade-in-0 slide-in-from-top-4 duration-300"
           data-testid="memories-pending-undo-pill"
         >
           <div className="flex flex-col leading-tight pr-1">
