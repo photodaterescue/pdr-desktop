@@ -350,22 +350,41 @@ export default function MemoriesPendingView({
     if (!pickedDate || saving) return;
     const time = pickedTime || '12:00';
     const iso = `${pickedDate}T${time}:00`;
-    const fileIds = panelBulkFiles
-      ? panelBulkFiles.map((f) => f.id)
-      : panelFile
-        ? [panelFile.id]
-        : [];
-    if (fileIds.length === 0) return;
 
-    // v2.1 round 88 (Terry 2026-06-10) — bulk-save guardrail
-    // (improvement #2 from the round-87 essay). Replacing dates on
-    // many files at once is the single most "I just lost work"-
-    // feeling action in Needs Dates; a soft confirm with the
-    // existing range being overwritten gives the user a chance to
-    // back out of a misclick without nagging the single-file flow.
-    if (panelBulkFiles && panelBulkFiles.length > 1) {
-      const withDate = panelBulkFiles.filter((f) => !!f.derived_date);
-      const withoutDateCount = panelBulkFiles.length - withDate.length;
+    // v2.1 round 89 (Terry 2026-06-10) — Save target derivation.
+    // Round-88's bug: with 4 tiles checkbox-selected and the panel
+    // open in single mode (e.g. the user opened the panel before
+    // adding more tiles to the selection), Save only updated
+    // panelFile and the guardrail never fired. Terry expected all
+    // 4 to update.
+    //
+    // New contract: if the user has 2+ files in selectedFileIds,
+    // Save acts on the WHOLE SELECTION — regardless of whether the
+    // panel was opened via Actions → "Set date for N selected..."
+    // (which sets panelBulkFiles) or via plain tile click (which
+    // sets panelFile). Falls back to panelBulkFiles, then
+    // panelFile, then nothing.
+    const targetFiles: PendingFile[] = selectedFileIds.size > 1 && visibleFiles
+      ? visibleFiles.filter((f) => selectedFileIds.has(f.id))
+      : panelBulkFiles
+        ? panelBulkFiles
+        : panelFile
+          ? [panelFile]
+          : [];
+    const fileIds = targetFiles.map((f) => f.id);
+    if (fileIds.length === 0) return;
+    const isBulk = targetFiles.length > 1;
+
+    // Bulk-save guardrail (improvement #2 from the round-87 essay).
+    // Replacing dates on many files at once is the single most "I
+    // just lost work"-feeling action in Needs Dates; a soft confirm
+    // with the existing range being overwritten gives the user a
+    // chance to back out of a misclick without nagging the single-
+    // file flow. NOW fires for ANY length > 1 path — including the
+    // round-88 bug Terry hit (selection + panelFile, no bulk panel).
+    if (isBulk) {
+      const withDate = targetFiles.filter((f) => !!f.derived_date);
+      const withoutDateCount = targetFiles.length - withDate.length;
       let rangeNote = '';
       if (withDate.length > 0) {
         const sorted = [...withDate].sort((a, b) =>
@@ -382,9 +401,9 @@ export default function MemoriesPendingView({
         : '';
       const ok = await promptConfirm({
         eyebrow: 'BULK DATE CHANGE',
-        title: `Set ${panelBulkFiles.length} file${panelBulkFiles.length === 1 ? '' : 's'} to ${pickedDate} ${time}?`,
+        title: `Set ${targetFiles.length} file${targetFiles.length === 1 ? '' : 's'} to ${pickedDate} ${time}?`,
         message: `This replaces any existing dates on the selection.${rangeNote}${noneNote}`,
-        confirmLabel: `Replace ${panelBulkFiles.length}`,
+        confirmLabel: `Replace ${targetFiles.length}`,
         cancelLabel: 'Cancel',
       });
       if (!ok) return;
@@ -397,7 +416,7 @@ export default function MemoriesPendingView({
         toast.error('Couldn’t save date', { description: res.error });
         return;
       }
-      if (panelBulkFiles) {
+      if (isBulk) {
         toast.success(
           `Date set for ${fileIds.length} file${fileIds.length === 1 ? '' : 's'}`,
         );
@@ -1200,7 +1219,7 @@ export default function MemoriesPendingView({
                             : isPanelActive
                               ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
                               : `${tileRing} hover:ring-primary/50`
-                        } ${isPanelActive ? 'pdr-pending-tile-pulse-slow' : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
+                        } ${isPanelActive ? (density === 'spacious' ? 'pdr-pending-tile-pulse-slow-spacious' : 'pdr-pending-tile-pulse-slow') : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
                         data-pending-tile-id={f.id}
                         title={f.filename}
                       >
@@ -1742,11 +1761,17 @@ export default function MemoriesPendingView({
               data-testid="memories-pending-save"
             >
               {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-              {saving
-                ? 'Saving…'
-                : panelBulkFiles
-                  ? `Save ${panelBulkFiles.length}`
-                  : 'Save & next'}
+              {(() => {
+                if (saving) return 'Saving…';
+                // v2.1 round 89 — label reflects the actual count that
+                // savePanel will act on. Selection > 1 OR explicit bulk
+                // mode both surface as "Save N"; single = "Save & next".
+                const selCount = selectedFileIds.size;
+                const bulkCount = panelBulkFiles?.length ?? 0;
+                const n = Math.max(selCount, bulkCount);
+                if (n > 1) return `Save ${n}`;
+                return 'Save & next';
+              })()}
             </Button>
           </div>
         </aside>

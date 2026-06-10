@@ -1352,7 +1352,25 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       setAlbumPhotosLoading(true);
       const r = await listAlbumPhotos(selection.id);
       if (cancelled) return;
-      setAlbumPhotos(r.success && r.data ? r.data : []);
+      // v2.1 round 89 (Terry 2026-06-10) — sort album photos by
+      // derived_date DESC (most recent first) so the chronological
+      // order matches Memories — Dates. Terry: "Albums has them
+      // ordered from furthest away at the top to most recent at
+      // the bottom... they should match, and consideration has gone
+      // into Dates, so I would have albums match Dates." Falls back
+      // to file id desc as a tiebreaker for rows with no derived_date
+      // so groups of dateless files stay together near the bottom
+      // instead of scattering across the grid.
+      const raw = r.success && r.data ? r.data : [];
+      const sorted = [...raw].sort((a, b) => {
+        const aDate = a.derived_date ?? '';
+        const bDate = b.derived_date ?? '';
+        if (aDate && !bDate) return -1;
+        if (!aDate && bDate) return 1;
+        if (aDate !== bDate) return bDate.localeCompare(aDate);
+        return b.id - a.id;
+      });
+      setAlbumPhotos(sorted);
       setAlbumPhotosLoading(false);
     })();
     return () => { cancelled = true; };

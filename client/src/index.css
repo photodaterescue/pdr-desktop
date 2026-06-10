@@ -809,6 +809,23 @@ body > .window-resize-hint-tr {
   .pdr-pending-tile-pulse-slow {
     animation: pdr-pending-tile-pulse 2.4s ease-in-out infinite;
   }
+
+  /* v2.1 round 89 (Terry 2026-06-10) — spacious-mode variant of
+     the slow pulse. Terry: "I can barely even notice this while
+     spacious tiles is set... can you make it double the thickness
+     only when Spacious is selected?" Doubles the box-shadow
+     spread (10 px vs 5 px) AND bumps the static-frame alpha
+     (0.75/0.5 vs 0.55/0.35) so the ring reads through the
+     rounded-xl + border that Spacious tiles already wear. Tight
+     mode keeps the original thinner pulse — tiles there have no
+     border to compete with so the subtler ring still pops. */
+  @keyframes pdr-pending-tile-pulse-spacious {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(248, 193, 92, 0.75); }
+    50%      { box-shadow: 0 0 0 10px rgba(248, 193, 92, 0.5); }
+  }
+  .pdr-pending-tile-pulse-slow-spacious {
+    animation: pdr-pending-tile-pulse-spacious 2.4s ease-in-out infinite;
+  }
 }
 
 /* Anchor the document chain to the viewport so workspace.tsx h-full propagates
