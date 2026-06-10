@@ -76,6 +76,14 @@ import { TranscriptBadge } from '@/components/TranscriptBadge';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import AddToAlbumPopover from '@/components/AddToAlbumPopover';
+import {
+  ContextMenu,
+  ContextMenuTrigger,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+} from '@/components/ui/context-menu';
+import { editPhotoCaption } from '@/lib/caption-actions';
 import { toast } from 'sonner';
 
 const TIER_LABEL: Record<PendingTier, string> = {
@@ -158,6 +166,27 @@ export default function MemoriesPendingView({
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
   const lastClickedIndexRef = useRef<number | null>(null);
   const pressModifierRef = useRef<{ id: number | null; ctrl: boolean }>({ id: null, ctrl: false });
+  // v2.1 round 77 (Terry 2026-06-09) — Ctrl+wheel zoom on the grid
+  // scroll area, matching MemoriesDayDrilldown. Wheel listener
+  // attaches to the scroll element (not window) so plain vertical
+  // scrolling outside the grid keeps working. preventDefault +
+  // stopImmediatePropagation block the window-level workspace zoom
+  // listener from also firing (same lesson as MemoriesView's
+  // gridScrollRef effect).
+  const gridScrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = gridScrollRef.current;
+    if (!el) return;
+    const handler = (e: WheelEvent) => {
+      if (!(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      e.stopPropagation();
+      e.stopImmediatePropagation();
+      setTileSizeSlider((prev) => Math.max(0, Math.min(100, prev + (e.deltaY < 0 ? 5 : -5))));
+    };
+    el.addEventListener('wheel', handler, { passive: false });
+    return () => el.removeEventListener('wheel', handler);
+  }, []);
   const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
   const [panelBulkFiles, setPanelBulkFiles] = useState<PendingFile[] | null>(null);
   const { transcribe: transcribeSelectedVideos } = useTranscribeVideos();
@@ -861,8 +890,10 @@ export default function MemoriesPendingView({
             tiles bleeding through the gap. Horizontal + bottom
             padding stay on the parent; the first tier header's
             own py-3 gives the visual top breathing room when not
-            scrolled. */}
-        <div className="flex-1 overflow-y-auto px-6 pb-6">
+            scrolled.
+            v2.1 round 77 — gridScrollRef wired up for Ctrl+wheel
+            zoom (mirrors MemoriesDayDrilldown). */}
+        <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pb-6">
           {loading && !files ? (
             <div className="flex items-center justify-center h-64 text-muted-foreground gap-2">
               <Loader2 className="w-4 h-4 animate-spin" />
@@ -911,9 +942,11 @@ export default function MemoriesPendingView({
                       const idx = flatIndexById.get(f.id) ?? 0;
                       const isMultiSelected = selectedFileIds.has(f.id);
                       const isPanelActive = panelFile?.id === f.id || (panelBulkFiles?.some((bf) => bf.id === f.id) ?? false);
+                      const inMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
                       return (
+                      <ContextMenu key={f.id}>
+                        <ContextMenuTrigger asChild>
                       <button
-                        key={f.id}
                         type="button"
                         // v2.1 round 76 phase 2 (Terry 2026-06-09) — port
                         // the Memories — Dates modifier-aware click
@@ -1020,6 +1053,151 @@ export default function MemoriesPendingView({
                           </div>
                         )}
                       </button>
+                        </ContextMenuTrigger>
+                        <ContextMenuContent>
+                          {/* v2.1 round 77 (Terry 2026-06-09) — right-
+                              click context menu, mirrors the Memories
+                              — Dates day-drilldown menu so the two
+                              surfaces feel identical when right-
+                              clicking a tile. The two NEW Needs-dates-
+                              specific items at the top: "Set date for
+                              this file…" opens the panel in single
+                              mode; "Set date for N selected…" appears
+                              when the right-clicked tile is part of an
+                              active multi-select and opens the panel
+                              in bulk mode. Send to S&D / Add to S&D
+                              pile / Add to album / Copy filename /
+                              Edit caption / Transcribe / Recycle Bin
+                              are all 1:1 with the day-drilldown's
+                              equivalent items. */}
+                          <ContextMenuItem
+                            onSelect={() => {
+                              if (inMulti) openBulkPanel(visibleFiles?.filter((vf) => selectedFileIds.has(vf.id)) ?? []);
+                              else openPanel(f);
+                            }}
+                            data-testid={`pending-tile-set-date-${f.id}`}
+                          >
+                            <CalendarClock className="w-3.5 h-3.5 mr-2" />
+                            {inMulti
+                              ? `Set date for ${selectedFileIds.size} selected…`
+                              : 'Set date for this file…'}
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onSelect={() => { (window as any).pdr?.revealInFolder?.(f.file_path); }}
+                          >
+                            <HardDrive className="w-3.5 h-3.5 mr-2" />
+                            Show in File Explorer
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              const fileIds = inMulti ? Array.from(selectedFileIds) : [f.id];
+                              void import('@/lib/memories-return-source').then((m) =>
+                                m.setMemoriesReturnSource({
+                                  tab: 'byDate',
+                                  label: 'Memories — Needs dates',
+                                  scrollToFileId: f.id,
+                                }),
+                              );
+                              window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                                detail: { fileIds, source: 'memories', mode: 'replace' },
+                              }));
+                            }}
+                          >
+                            <Search className="w-3.5 h-3.5 mr-2" />
+                            Send to S&amp;D{inMulti ? ` (${selectedFileIds.size})` : ''}
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              const fileIds = inMulti ? Array.from(selectedFileIds) : [f.id];
+                              void import('@/lib/memories-return-source').then((m) =>
+                                m.setMemoriesReturnSource({
+                                  tab: 'byDate',
+                                  label: 'Memories — Needs dates',
+                                  scrollToFileId: f.id,
+                                }),
+                              );
+                              window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                                detail: { fileIds, source: 'memories', mode: 'accumulate' },
+                              }));
+                            }}
+                          >
+                            <Search className="w-3.5 h-3.5 mr-2" />
+                            Add to S&amp;D pile
+                          </ContextMenuItem>
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onSelect={async () => {
+                              try {
+                                await navigator.clipboard.writeText(f.filename);
+                                toast.success('Filename copied', { description: f.filename });
+                              } catch {
+                                toast.error("Couldn't copy filename");
+                              }
+                            }}
+                          >
+                            <Copy className="w-3.5 h-3.5 mr-2" />
+                            Copy filename
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={() => {
+                              const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                              if (!alreadyInMulti) {
+                                setSelectedFileIds(new Set([f.id]));
+                              }
+                              lastClickedIndexRef.current = idx;
+                              setAddToAlbumOpenTick((t) => t + 1);
+                            }}
+                          >
+                            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                            Add to album…
+                          </ContextMenuItem>
+                          <ContextMenuItem
+                            onSelect={() => { void editPhotoCaption({ fileId: f.id, filename: f.filename }); }}
+                          >
+                            <MessageSquareText className="w-3.5 h-3.5 mr-2" />
+                            {f.caption ? 'Edit caption…' : 'Add caption…'}
+                          </ContextMenuItem>
+                          {f.file_type === 'video' && (
+                            <ContextMenuItem
+                              onSelect={() => {
+                                const targets = inMulti
+                                  ? (visibleFiles ?? []).filter((file) => selectedFileIds.has(file.id) && file.file_type === 'video').map((file) => file.file_path)
+                                  : [f.file_path];
+                                if (targets.length === 0) return;
+                                void transcribeSelectedVideos(targets);
+                              }}
+                            >
+                              <Captions className="w-3.5 h-3.5 mr-2" />
+                              Transcribe{inMulti
+                                ? ` (${(visibleFiles ?? []).filter((file) => selectedFileIds.has(file.id) && file.file_type === 'video').length})`
+                                : ''}…
+                            </ContextMenuItem>
+                          )}
+                          <ContextMenuSeparator />
+                          <ContextMenuItem
+                            onSelect={async () => {
+                              const ids = inMulti ? Array.from(selectedFileIds) : [f.id];
+                              const r = await moveToRecycleBin(ids);
+                              if (r.success) {
+                                toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                                if (inMulti) clearSelection();
+                                const refreshed = await getPendingFiles({ runIds, tier });
+                                setFiles(refreshed.success && refreshed.data ? refreshed.data : []);
+                                try {
+                                  window.dispatchEvent(new CustomEvent('pdr:pendingChanged'));
+                                } catch { /* event dispatch never throws */ }
+                              } else {
+                                toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                              }
+                            }}
+                            className="text-destructive focus:text-destructive"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            Move {inMulti ? `${selectedFileIds.size} ` : ''}to Recycle Bin
+                          </ContextMenuItem>
+                        </ContextMenuContent>
+                      </ContextMenu>
                       );
                     })}
                   </div>
