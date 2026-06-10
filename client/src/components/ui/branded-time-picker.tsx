@@ -1,25 +1,25 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef } from 'react';
 import { Clock as ClockIcon, X } from 'lucide-react';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 
 /**
  * Branded time picker — replaces the native <input type="time"> in
- * places where the OS-rendered scroll wheel was wrong on two counts:
- *
- *   1. Windows' native picker WRAPS — scrolling minute 59 jumps to
- *      00, scrolling hour 23 jumps to 00. Terry asked for clamped
- *      boundaries (00:00 → 23:59, no wrap).
- *   2. The 24-hour clock is the only option. Not everyone reads 24h
- *      fluently, so a 12h / 24h toggle sits at the top of the popover
- *      with the user's preference persisted to localStorage.
+ * places where the OS-rendered scroll wheel wrapped past 23/59 back
+ * to 00. Two columns only: H and M. Format toggle (12 / 24) and the
+ * AM/PM picker live OUTSIDE this component, in the consumer's panel
+ * chrome — Terry asked for them not to be jammed inside the scroll
+ * popover.
  *
  * Built on the same Popover + lucide + palette-token foundation as
- * BrandedDatePicker — no freehand visuals. Value stays canonical
- * "HH:MM" (24h, zero-padded) so the upstream consumer doesn't change.
+ * BrandedDatePicker — no freehand visuals. Value contract is
+ * canonical "HH:MM" 24-hour so the upstream save path doesn't change.
  *
  * Props:
  *   value     — "HH:MM" 24h string ('' for no selection)
  *   onChange  — called with the new "HH:MM" string
+ *   mode      — '12' | '24' (controlled by the consumer; affects the
+ *               hour column values 1..12 vs 0..23 and the trigger
+ *               label format)
  *   placeholder — text shown in the trigger when value is empty
  *   ariaLabel — for screen readers
  *   className — extra classes for the trigger button
@@ -27,12 +27,11 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 export interface BrandedTimePickerProps {
   value: string;
   onChange: (next: string) => void;
+  mode: '12' | '24';
   placeholder?: string;
   ariaLabel?: string;
   className?: string;
 }
-
-const STORAGE_KEY = 'pdr-time-picker-mode'; // '12' | '24'
 
 function pad2(n: number): string { return n.toString().padStart(2, '0'); }
 
@@ -46,23 +45,29 @@ function parseTime(value: string): { h: number; m: number } | null {
   return { h, m: min };
 }
 
-function format12(h24: number, m: number): { label: string; period: 'AM' | 'PM' } {
-  const period: 'AM' | 'PM' = h24 < 12 ? 'AM' : 'PM';
-  const h12 = h24 % 12 === 0 ? 12 : h24 % 12;
-  return { label: `${h12}:${pad2(m)} ${period}`, period };
-}
-
 const HOURS_24 = Array.from({ length: 24 }, (_, i) => i); // 0..23
 const HOURS_12 = Array.from({ length: 12 }, (_, i) => i + 1); // 1..12
 const MINUTES = Array.from({ length: 60 }, (_, i) => i); // 0..59
 
 // Vertical list with a centred highlighted "selected" row. Item height
-// stays fixed at 32 px so scroll-into-view maths can be done without
-// measuring the DOM. Five rows visible (= 160 px viewport) lets the
-// user see two values above + two below the current pick, which is
-// the same density as Apple's wheel pickers.
+// stays fixed at 32 px so the scroll-to-centre maths can be done
+// without measuring the DOM. 5 visible rows = 160 px viewport — same
+// density as Apple's wheel pickers.
+//
+// Round 85 fixes vs round 84:
+//   * scroll-snap-mandatory DROPPED — it caused the "locked, move
+//     the mouse more before it scrolls again" friction Terry hit.
+//     The list now scrolls freely; clicking a row commits + smoothly
+//     scrolls that row to centre. Programmatic snap on scroll-end
+//     would be the next step if free scroll feels too loose, but
+//     click-to-pick is the primary interaction anyway.
+//   * Padding-derived whitespace at the extremes is now masked with
+//     a top + bottom linear-gradient fade so the "2 white rows
+//     above 0" / "2 white rows below 59" Terry called out looks
+//     intentional (Apple-style fade) instead of a layout bug.
 const ITEM_H = 32;
 const VISIBLE = 5;
+const FADE_MASK = 'linear-gradient(to bottom, transparent 0%, black 25%, black 75%, transparent 100%)';
 
 interface WheelColumnProps {
   values: number[];
@@ -77,25 +82,26 @@ function WheelColumn({ values, selected, onSelect, format, testId, ariaLabel }: 
   const ref = useRef<HTMLDivElement>(null);
 
   // On every selection change, scroll the selected row to centre.
-  // overflow-y-auto naturally clamps at top + bottom (no wrap), which
-  // is exactly the behaviour Terry asked for vs Windows' native picker.
+  // overflow-y-auto naturally clamps at top + bottom (no wrap),
+  // which is exactly the behaviour Terry asked for vs Windows'
+  // native picker.
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
     const idx = values.indexOf(selected);
     if (idx < 0) return;
-    const target = idx * ITEM_H - ((VISIBLE - 1) / 2) * ITEM_H;
+    const target = idx * ITEM_H;
     el.scrollTo({ top: Math.max(0, target), behavior: 'smooth' });
   }, [selected, values]);
 
   return (
-    <div className="relative w-12 shrink-0">
-      {/* Centred highlight band — purely visual; the row underneath
-          is what's actually selected. Lavender 10% to match the
-          BrandedDatePicker hover tint. */}
+    <div className="relative w-14 shrink-0">
+      {/* Centred highlight band — purely visual; the row clicked is
+          what commits. Lavender 10% tint + ring to match
+          BrandedDatePicker's selected-day style. */}
       <div
         aria-hidden="true"
-        className="pointer-events-none absolute left-0 right-0 rounded-md bg-primary/10 ring-1 ring-primary/30"
+        className="pointer-events-none absolute left-0 right-0 rounded-md bg-primary/10 ring-1 ring-primary/30 z-10"
         style={{ top: ((VISIBLE - 1) / 2) * ITEM_H, height: ITEM_H }}
       />
       <div
@@ -103,12 +109,13 @@ function WheelColumn({ values, selected, onSelect, format, testId, ariaLabel }: 
         role="listbox"
         aria-label={ariaLabel}
         data-testid={testId}
-        className="overflow-y-auto scrollbar-thin scroll-smooth"
+        className="overflow-y-auto scroll-smooth pdr-wheel-scroll"
         style={{
           height: VISIBLE * ITEM_H,
-          scrollSnapType: 'y mandatory',
           paddingTop: ((VISIBLE - 1) / 2) * ITEM_H,
           paddingBottom: ((VISIBLE - 1) / 2) * ITEM_H,
+          maskImage: FADE_MASK,
+          WebkitMaskImage: FADE_MASK,
         }}
       >
         {values.map((v) => {
@@ -126,7 +133,7 @@ function WheelColumn({ values, selected, onSelect, format, testId, ariaLabel }: 
                   ? 'text-primary font-semibold'
                   : 'text-muted-foreground hover:text-foreground')
               }
-              style={{ height: ITEM_H, scrollSnapAlign: 'center' }}
+              style={{ height: ITEM_H }}
             >
               {format(v)}
             </button>
@@ -140,84 +147,46 @@ function WheelColumn({ values, selected, onSelect, format, testId, ariaLabel }: 
 export function BrandedTimePicker({
   value,
   onChange,
-  placeholder = '--:--',
+  mode,
+  placeholder = '12:00',
   ariaLabel,
   className,
 }: BrandedTimePickerProps) {
   const parsed = useMemo(() => parseTime(value), [value]);
-  const [open, setOpen] = useState(false);
 
-  // 12h vs 24h preference. Persisted across sessions so the user's
-  // last choice sticks; defaults to 24h (the format already in the
-  // stored value).
-  const [mode, setMode] = useState<'12' | '24'>(() => {
-    if (typeof localStorage === 'undefined') return '24';
-    const saved = localStorage.getItem(STORAGE_KEY);
-    return saved === '12' || saved === '24' ? saved : '24';
-  });
-  useEffect(() => {
-    try { localStorage.setItem(STORAGE_KEY, mode); } catch { /* localStorage may be blocked — non-fatal */ }
-  }, [mode]);
+  // Period is derived from value's hour — when the consumer's
+  // AM/PM toggle flips, it'll have already adjusted value by ±12,
+  // so we just read it here without round-tripping through props.
+  const period: 'AM' | 'PM' = (parsed?.h ?? 12) < 12 ? 'AM' : 'PM';
+  const hour12 = parsed
+    ? (parsed.h % 12 === 0 ? 12 : parsed.h % 12)
+    : 12; // default to 12 (== noon when period=PM)
+  const hour24 = parsed?.h ?? 12;
+  const minute = parsed?.m ?? 0;
 
-  // Working draft — local state so the user can scroll columns
-  // without firing onChange on every tick. Committed onChange only
-  // when the user clicks a row (or via popover close — see below).
-  // Initialised from parsed value on every open so re-opening with
-  // a different value lands on the right row.
-  const initialH = parsed?.h ?? 12;
-  const initialM = parsed?.m ?? 0;
-  const [draftH, setDraftH] = useState<number>(initialH);
-  const [draftM, setDraftM] = useState<number>(initialM);
-  useEffect(() => {
-    if (open) {
-      setDraftH(parsed?.h ?? 12);
-      setDraftM(parsed?.m ?? 0);
-    }
-  }, [open, parsed?.h, parsed?.m]);
-
-  // Commit helper — converts draft into "HH:MM" 24h and fires
-  // onChange. Called from every row click so the consumer sees the
-  // update immediately.
   const commit = (h24: number, m: number) => {
     onChange(`${pad2(h24)}:${pad2(m)}`);
   };
-
-  // ---- 12h ↔ 24h interop --------------------------------------------------
-  // In 12h mode the hour column shows 1..12 and a third AM/PM column
-  // appears. Internally draftH stays 0..23, so toggling the period
-  // just adds / subtracts 12.
-  const period: 'AM' | 'PM' = draftH < 12 ? 'AM' : 'PM';
-  const hour12 = draftH % 12 === 0 ? 12 : draftH % 12;
 
   const setHour12 = (h12: number) => {
     const h24 = period === 'AM'
       ? (h12 === 12 ? 0 : h12)
       : (h12 === 12 ? 12 : h12 + 12);
-    setDraftH(h24);
-    commit(h24, draftM);
+    commit(h24, minute);
   };
   const setHour24 = (h24: number) => {
-    setDraftH(h24);
-    commit(h24, draftM);
+    commit(h24, minute);
   };
   const setMin = (m: number) => {
-    setDraftM(m);
-    commit(draftH, m);
-  };
-  const setPeriod = (p: 'AM' | 'PM') => {
-    const next = p === 'AM'
-      ? (draftH >= 12 ? draftH - 12 : draftH)
-      : (draftH < 12 ? draftH + 12 : draftH);
-    setDraftH(next);
-    commit(next, draftM);
+    commit(hour24, m);
   };
 
   const triggerLabel = parsed
-    ? (mode === '12' ? format12(parsed.h, parsed.m).label : `${pad2(parsed.h)}:${pad2(parsed.m)}`)
+    ? (mode === '12' ? `${pad2(hour12)}:${pad2(minute)}` : `${pad2(hour24)}:${pad2(minute)}`)
     : placeholder;
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
+    <Popover>
       <PopoverTrigger asChild>
         <button
           type="button"
@@ -252,57 +221,16 @@ export function BrandedTimePicker({
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-auto p-3 space-y-2">
-        {/* Mode toggle — 12h / 24h. Mirrors the Spacious/Tight
-            segmented toggle used elsewhere in PDR (DensityToggle).
-            Subtle, not the primary focus. */}
-        <div className="flex items-center justify-between gap-2">
-          <span className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-            Time
-          </span>
-          <div
-            role="radiogroup"
-            aria-label="Clock format"
-            className="inline-flex rounded-full bg-secondary/60 p-0.5 text-[10px] font-semibold"
-          >
-            {(['12', '24'] as const).map((opt) => (
-              <button
-                key={opt}
-                type="button"
-                role="radio"
-                aria-checked={mode === opt}
-                onClick={() => setMode(opt)}
-                className={
-                  'px-2 py-0.5 rounded-full transition-colors ' +
-                  (mode === opt
-                    ? 'bg-background text-foreground shadow-sm'
-                    : 'text-muted-foreground hover:text-foreground')
-                }
-                data-testid={`branded-time-picker-mode-${opt}`}
-              >
-                {opt}h
-              </button>
-            ))}
-          </div>
-        </div>
-
-        {/* Column headers — H / M (and AM/PM when in 12h mode).
-            Same uppercase-tracking-wider typography as the date
-            picker's weekday row so the two surfaces feel related. */}
+        {/* Column headers — H / M only. 12/24 toggle + AM/PM live
+            outside the popover (in the consumer's panel) per Terry's
+            round-84 feedback. */}
         <div className="flex items-end gap-2">
-          <div className="w-12 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <div className="w-14 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             H
           </div>
-          <div className="w-12 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
+          <div className="w-14 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
             M
           </div>
-          {mode === '12' && (
-            <div className="w-12 text-center text-[10px] uppercase tracking-wider font-semibold text-muted-foreground">
-              {/* No header text for AM/PM — the column values are
-                  self-describing. Empty placeholder keeps the column
-                  vertically aligned with H + M. */}
-              &nbsp;
-            </div>
-          )}
         </div>
 
         <div className="flex items-start gap-2">
@@ -311,7 +239,7 @@ export function BrandedTimePicker({
               ariaLabel="Hour"
               testId="branded-time-picker-hour-24"
               values={HOURS_24}
-              selected={draftH}
+              selected={hour24}
               onSelect={setHour24}
               format={(v) => pad2(v)}
             />
@@ -322,89 +250,17 @@ export function BrandedTimePicker({
               values={HOURS_12}
               selected={hour12}
               onSelect={setHour12}
-              format={(v) => v.toString()}
+              format={(v) => pad2(v)}
             />
           )}
           <WheelColumn
             ariaLabel="Minute"
             testId="branded-time-picker-minute"
             values={MINUTES}
-            selected={draftM}
+            selected={minute}
             onSelect={setMin}
             format={(v) => pad2(v)}
           />
-          {mode === '12' && (
-            <div className="relative w-12 shrink-0">
-              <div
-                aria-hidden="true"
-                className="pointer-events-none absolute left-0 right-0 rounded-md bg-primary/10 ring-1 ring-primary/30"
-                style={{ top: ((VISIBLE - 1) / 2) * ITEM_H, height: ITEM_H }}
-              />
-              <div
-                role="listbox"
-                aria-label="AM or PM"
-                className="overflow-y-auto"
-                style={{
-                  height: VISIBLE * ITEM_H,
-                  paddingTop: ((VISIBLE - 1) / 2) * ITEM_H,
-                  paddingBottom: ((VISIBLE - 1) / 2) * ITEM_H,
-                }}
-              >
-                {(['AM', 'PM'] as const).map((p) => {
-                  const isSel = p === period;
-                  return (
-                    <button
-                      key={p}
-                      type="button"
-                      role="option"
-                      aria-selected={isSel}
-                      onClick={() => setPeriod(p)}
-                      className={
-                        'w-full flex items-center justify-center text-sm transition-colors ' +
-                        (isSel
-                          ? 'text-primary font-semibold'
-                          : 'text-muted-foreground hover:text-foreground')
-                      }
-                      style={{ height: ITEM_H }}
-                      data-testid={`branded-time-picker-period-${p}`}
-                    >
-                      {p}
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* Footer — Now shortcut + Clear, same vocabulary as the
-            date picker's Today + Clear pair. */}
-        <div className="flex items-center justify-between pt-1 border-t border-border">
-          <button
-            type="button"
-            onClick={() => {
-              const now = new Date();
-              const h = now.getHours();
-              const m = now.getMinutes();
-              setDraftH(h);
-              setDraftM(m);
-              commit(h, m);
-              setOpen(false);
-            }}
-            className="text-[11px] font-medium text-primary hover:text-primary/80 px-1.5 py-1 rounded"
-          >
-            Now
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              onChange('');
-              setOpen(false);
-            }}
-            className="text-[11px] font-medium text-muted-foreground hover:text-foreground px-1.5 py-1 rounded"
-          >
-            Clear
-          </button>
         </div>
       </PopoverContent>
     </Popover>

@@ -675,6 +675,13 @@ body > .window-resize-hint-tr {
     background: hsl(var(--muted-foreground) / 0.5);
   }
 
+  /* v2.1 round 85 (Terry 2026-06-10) — hide scrollbar on time-picker
+     wheel columns. Same pattern Apple uses for their wheel pickers:
+     scroll is functional, scrollbar chrome would clash visually with
+     the fade-mask gradient on the column edges. */
+  .pdr-wheel-scroll::-webkit-scrollbar { display: none; }
+  .pdr-wheel-scroll { scrollbar-width: none; -ms-overflow-style: none; }
+
   /* ── Face action modal — fixed at top center of People page ────────── */
   .fixed-action-modal {
     position: fixed !important;

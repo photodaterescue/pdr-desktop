@@ -162,7 +162,23 @@ export default function MemoriesPendingView({
   // of Idea C and lands in the next round.
   const [panelFile, setPanelFile] = useState<PendingFile | null>(null);
   const [pickedDate, setPickedDate] = useState<string>('');
-  const [pickedTime, setPickedTime] = useState<string>('');
+  // v2.1 round 85 (Terry 2026-06-10) — default to 12:00 noon (instead
+  // of '') so the user sees what's going to be saved without having
+  // to read the helper text. The save path's `pickedTime || '12:00'`
+  // fallback still covers any edge where this gets cleared.
+  const [pickedTime, setPickedTime] = useState<string>('12:00');
+  // v2.1 round 85 (Terry 2026-06-10) — 12 / 24 clock preference, lives
+  // in the panel chrome (not the time-picker popover) per Terry's
+  // round-84 feedback. Persisted to localStorage so the choice sticks
+  // across panel opens + sessions.
+  const [clockMode, setClockMode] = useState<'12' | '24'>(() => {
+    if (typeof localStorage === 'undefined') return '24';
+    const saved = localStorage.getItem('pdr-time-picker-mode');
+    return saved === '12' || saved === '24' ? saved : '24';
+  });
+  useEffect(() => {
+    try { localStorage.setItem('pdr-time-picker-mode', clockMode); } catch { /* localStorage may be blocked — non-fatal */ }
+  }, [clockMode]);
   const [saving, setSaving] = useState(false);
   // v2.1 round 83 (Terry 2026-06-09) — tile id currently flashing
   // its "look at me" pulse. Set when the panel activates a tile so
@@ -266,10 +282,13 @@ export default function MemoriesPendingView({
       const m = f.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
       setPickedDate(m ? m[1] : '');
       const t = f.derived_date.match(/T(\d{2}:\d{2})/);
-      setPickedTime(t ? t[1] : '');
+      // Round 85 — fall back to noon (12:00) if the file's derived
+      // date has no time component, so the user sees what's going to
+      // be saved instead of an empty placeholder.
+      setPickedTime(t ? t[1] : '12:00');
     } else {
       setPickedDate('');
-      setPickedTime('');
+      setPickedTime('12:00');
     }
     flashAndScrollTo(f.id);
   };
@@ -306,10 +325,10 @@ export default function MemoriesPendingView({
       const m = seed.match(/^(\d{4}-\d{2}-\d{2})/);
       setPickedDate(m ? m[1] : '');
       const t = seed.match(/T(\d{2}:\d{2})/);
-      setPickedTime(t ? t[1] : '');
+      setPickedTime(t ? t[1] : '12:00');
     } else {
       setPickedDate('');
-      setPickedTime('');
+      setPickedTime('12:00');
     }
     flashAndScrollTo(lastClicked.id);
   };
@@ -475,10 +494,10 @@ export default function MemoriesPendingView({
       const m = target.derived_date.match(/^(\d{4}-\d{2}-\d{2})/);
       setPickedDate(m ? m[1] : '');
       const t = target.derived_date.match(/T(\d{2}:\d{2})/);
-      setPickedTime(t ? t[1] : '');
+      setPickedTime(t ? t[1] : '12:00');
     } else {
       setPickedDate('');
-      setPickedTime('');
+      setPickedTime('12:00');
     }
     flashAndScrollTo(target.id);
   };
@@ -1130,7 +1149,7 @@ export default function MemoriesPendingView({
                           isMultiSelected
                             ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
                             : isPanelActive
-                              ? `${tileRing} ring-2 ring-purple-500`
+                              ? 'rounded-lg ring-2 ring-[var(--color-gold)]'
                               : `${tileRing} hover:ring-primary/50`
                         } ${pulseFileId === f.id ? 'pdr-pending-tile-pulse' : ''}`}
                         data-pending-tile-id={f.id}
@@ -1564,28 +1583,95 @@ export default function MemoriesPendingView({
               />
             </div>
             <div>
-              <label className="block text-[11px] font-medium uppercase tracking-wider text-muted-foreground mb-1 inline-flex items-center gap-1.5">
-                <Clock className="w-3 h-3" />
-                Time <span className="text-muted-foreground/70 normal-case">(optional)</span>
-              </label>
-              {/* v2.1 round 84 (Terry 2026-06-10) — branded scroll-
-                  wheel picker. Clamps at 00:00 / 23:59 (Windows'
-                  native picker wraps), exposes H + M column headers,
-                  and ships with a 12h / 24h toggle (preference
-                  persisted to localStorage). Drop-in replacement
-                  for the native <input type="time"> — same "HH:MM"
-                  24-hour value contract, so the save path doesn't
-                  change. */}
-              <BrandedTimePicker
-                value={pickedTime}
-                onChange={setPickedTime}
-                ariaLabel="Set time"
-              />
-              {!pickedTime && (
-                <p className="text-[10px] text-muted-foreground/70 mt-1">
-                  Leave blank and PDR will stamp 12:00 noon (a neutral midday placeholder for unknown times).
-                </p>
-              )}
+              {/* v2.1 round 85 (Terry 2026-06-10) — time row chrome.
+                  The label carries the Clock icon + "Time" + a
+                  segmented 12 / 24 toggle on the right. Below it
+                  sits the BrandedTimePicker trigger; an AM/PM
+                  segmented toggle slides in beside it when 12h mode
+                  is active. Both toggles live OUTSIDE the picker
+                  popover (Terry round 84: "I wanted to see AM/PM &
+                  24/12 H in the side viewer, not in the scroll"). */}
+              <div className="flex items-center justify-between mb-1 gap-2">
+                <label className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground inline-flex items-center gap-1.5">
+                  <Clock className="w-3 h-3" />
+                  Time <span className="text-muted-foreground/70 normal-case">(default 12:00 noon)</span>
+                </label>
+                <div
+                  role="radiogroup"
+                  aria-label="Clock format"
+                  className="inline-flex rounded-full bg-secondary/60 p-0.5 text-[10px] font-semibold shrink-0"
+                >
+                  {(['12', '24'] as const).map((opt) => (
+                    <button
+                      key={opt}
+                      type="button"
+                      role="radio"
+                      aria-checked={clockMode === opt}
+                      onClick={() => setClockMode(opt)}
+                      className={
+                        'px-2 py-0.5 rounded-full transition-colors ' +
+                        (clockMode === opt
+                          ? 'bg-background text-foreground shadow-sm'
+                          : 'text-muted-foreground hover:text-foreground')
+                      }
+                      data-testid={`memories-pending-clock-mode-${opt}`}
+                    >
+                      {opt}h
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="flex-1 min-w-0">
+                  <BrandedTimePicker
+                    value={pickedTime}
+                    onChange={setPickedTime}
+                    mode={clockMode}
+                    ariaLabel="Set time"
+                  />
+                </div>
+                {clockMode === '12' && (
+                  <div
+                    role="radiogroup"
+                    aria-label="AM or PM"
+                    className="inline-flex rounded-md border border-border bg-background text-[11px] font-semibold shrink-0 overflow-hidden"
+                  >
+                    {(['AM', 'PM'] as const).map((p) => {
+                      const h = (() => {
+                        const m = pickedTime.match(/^(\d{1,2}):(\d{2})/);
+                        return m ? parseInt(m[1], 10) : 12;
+                      })();
+                      const isActive = (p === 'AM' ? h < 12 : h >= 12);
+                      return (
+                        <button
+                          key={p}
+                          type="button"
+                          role="radio"
+                          aria-checked={isActive}
+                          onClick={() => {
+                            const m = pickedTime.match(/^(\d{1,2}):(\d{2})/);
+                            const hr = m ? parseInt(m[1], 10) : 12;
+                            const min = m ? m[2] : '00';
+                            const next = p === 'AM'
+                              ? (hr >= 12 ? hr - 12 : hr)
+                              : (hr < 12 ? hr + 12 : hr);
+                            setPickedTime(`${next.toString().padStart(2, '0')}:${min}`);
+                          }}
+                          className={
+                            'px-2.5 py-1.5 transition-colors ' +
+                            (isActive
+                              ? 'bg-primary/10 text-primary'
+                              : 'text-muted-foreground hover:bg-secondary/50 hover:text-foreground')
+                          }
+                          data-testid={`memories-pending-period-${p}`}
+                        >
+                          {p}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
