@@ -1740,6 +1740,27 @@ export async function setPendingDate(args: { fileIds: number[]; isoDateTime: str
   return { success: false, error: 'Not running in Electron' };
 }
 
+/** v2.1 round 79 phase A (Terry 2026-06-09) — lazy-hash JUST the
+ *  Needs-dates files that don't yet have a hash on record. */
+export async function hashPendingFiles(): Promise<{ success: boolean; data?: { hashed: number; failed: number; totalCandidates: number }; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.hashPendingFiles();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+export interface PendingDuplicateCluster {
+  hash: string;
+  pendingFileIds: number[];
+  hasConfirmedTwin: boolean;
+}
+export async function getPendingDuplicates(): Promise<{ success: boolean; data?: PendingDuplicateCluster[]; error?: string }> {
+  if (isElectron() && (window as any).pdr?.memories) {
+    return (window as any).pdr.memories.getPendingDuplicates();
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 /** Set a user-chosen monthly thumbnail for (year, month). The bucket
  *  grid will show this file instead of the default lowest-id pick. */
 export async function setMonthlyThumbnail(args: { year: number; month: number; fileId: number }): Promise<{ success: boolean; error?: string }> {

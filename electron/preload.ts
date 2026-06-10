@@ -396,6 +396,25 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         data?: { rowsAffected: number };
         error?: string;
       }>,
+    /** v2.1 round 79 phase A (Terry 2026-06-09) — lazy-hash JUST the
+     *  Pending files that don't yet have a hash on record. Cheap
+     *  (a few seconds for typical Pending lists). Fired on demand
+     *  when the user clicks the "Duplicates only" filter. */
+    hashPendingFiles: () =>
+      ipcRenderer.invoke('memories:hashPendingFiles') as Promise<{
+        success: boolean;
+        data?: { hashed: number; failed: number; totalCandidates: number };
+        error?: string;
+      }>,
+    /** v2.1 round 79 phase A — get duplicate clusters within Needs
+     *  dates, with a flag per cluster for whether a Confirmed /
+     *  Recovered twin exists elsewhere in the library. */
+    getPendingDuplicates: () =>
+      ipcRenderer.invoke('memories:getPendingDuplicates') as Promise<{
+        success: boolean;
+        data?: Array<{ hash: string; pendingFileIds: number[]; hasConfirmedTwin: boolean }>;
+        error?: string;
+      }>,
   },
 
   trees: {

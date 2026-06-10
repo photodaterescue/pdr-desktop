@@ -9477,6 +9477,59 @@ ipcMain.handle('memories:setPendingDate', async (_event, args: { fileIds: number
   }
 });
 
+// v2.1 round 79 phase A (Terry 2026-06-09) — lazy SHA-256 hashing
+// for the Needs-dates "Duplicates only" filter. Hashes ONLY the
+// Pending-tier files that don't yet have a hash on record — for a
+// typical Pending list (a few hundred files, ~1.3 GB) this takes
+// seconds, not minutes. The whole-library background hash worker
+// is phase B; this IPC is the on-demand path triggered when the
+// user clicks the Duplicates filter.
+ipcMain.handle('memories:hashPendingFiles', async () => {
+  try {
+    const { getPendingFilesNeedingHash, setFileHash } = await import('./search-database.js');
+    const crypto = await import('crypto');
+    const fsp = await import('fs/promises');
+    const targets = getPendingFilesNeedingHash();
+    let hashed = 0;
+    let failed = 0;
+    // Concurrency 4 — same shape PDR uses for other I/O-bound
+    // batch ops (thumbnail prewarm, copy queue) so we don't
+    // saturate disk or block the event loop.
+    const concurrency = 4;
+    let cursor = 0;
+    const next = async (): Promise<void> => {
+      while (true) {
+        const idx = cursor++;
+        if (idx >= targets.length) return;
+        const f = targets[idx];
+        try {
+          const buf = await fsp.readFile(f.file_path);
+          const h = crypto.createHash('sha256').update(buf).digest('hex');
+          setFileHash({ fileId: f.id, hash: h });
+          hashed++;
+        } catch {
+          // Missing / unreadable files just skip — the duplicate
+          // check excludes hash IS NULL rows naturally.
+          failed++;
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: concurrency }, () => next()));
+    return { success: true, data: { hashed, failed, totalCandidates: targets.length } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('memories:getPendingDuplicates', async () => {
+  try {
+    const { getPendingDuplicateClusters } = await import('./search-database.js');
+    return { success: true, data: getPendingDuplicateClusters() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Set a user-chosen monthly thumbnail. Right-click a photo in the
 // month drilldown → "Set as monthly thumbnail" pipes through here.
 // The month-bucket query then prefers this file over the default

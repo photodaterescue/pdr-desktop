@@ -5732,6 +5732,74 @@ export function getPendingFiles(args: {
   `).all(...params) as Array<IndexedFile & { pending_tier: 'tentative' | 'placeholder' | 'unrecorded' }>;
 }
 
+/** v2.1 round 79 phase A (Terry 2026-06-09) — return the subset of
+ *  Needs-dates files that don't yet have a content hash on record.
+ *  Used by memories:hashPendingFiles to lazy-hash JUST the Pending
+ *  list when the user clicks the "Duplicates only" filter — avoids
+ *  any whole-library scan; the full background hash worker is
+ *  phase B. */
+export function getPendingFilesNeedingHash(): Array<{ id: number; file_path: string }> {
+  const db = getDb();
+  return db.prepare(`
+    SELECT id, file_path
+    FROM indexed_files
+    WHERE confidence = 'marked'
+      AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)
+      AND user_set_at IS NULL
+      AND (hash IS NULL OR hash = '')
+  `).all() as Array<{ id: number; file_path: string }>;
+}
+
+/** v2.1 round 79 — persist a computed hash for a single file. */
+export function setFileHash(args: { fileId: number; hash: string }): void {
+  const db = getDb();
+  db.prepare(`UPDATE indexed_files SET hash = ? WHERE id = ?`).run(args.hash, args.fileId);
+}
+
+/** v2.1 round 79 phase A — duplicate clusters within Needs dates,
+ *  with a flag indicating whether each cluster has a Confirmed /
+ *  Recovered twin elsewhere in the library. Only considers files
+ *  that have a hash on record; files with hash IS NULL are
+ *  excluded (they need to be hashed via getPendingFilesNeedingHash
+ *  first).
+ *
+ *  A cluster is returned when EITHER:
+ *    - Multiple Marked (Needs-dates) files share the same hash, OR
+ *    - At least one Marked file shares a hash with at least one
+ *      Confirmed/Recovered file already in the library
+ *  Both cases mean "this Marked file is a duplicate of something
+ *  we can act on" — either internal redundancy or a canonical
+ *  twin the user has already dated correctly elsewhere.
+ *
+ *  hasConfirmedTwin = true when the cluster has at least one
+ *  confirmed-or-recovered companion. The renderer surfaces this
+ *  as the "✓ Already in library" badge on the affected tiles. */
+export interface PendingDuplicateCluster {
+  hash: string;
+  pendingFileIds: number[];
+  hasConfirmedTwin: boolean;
+}
+export function getPendingDuplicateClusters(): PendingDuplicateCluster[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT
+      hash,
+      GROUP_CONCAT(CASE WHEN confidence = 'marked' AND user_set_at IS NULL THEN id ELSE NULL END) AS pending_ids,
+      SUM(CASE WHEN confidence = 'marked' AND user_set_at IS NULL THEN 1 ELSE 0 END) AS pending_count,
+      SUM(CASE WHEN confidence IN ('confirmed', 'recovered') THEN 1 ELSE 0 END) AS confirmed_count
+    FROM indexed_files
+    WHERE hash IS NOT NULL AND hash != ''
+      AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)
+    GROUP BY hash
+    HAVING pending_count >= 1 AND (pending_count > 1 OR confirmed_count > 0)
+  `).all() as Array<{ hash: string; pending_ids: string | null; pending_count: number; confirmed_count: number }>;
+  return rows.map(r => ({
+    hash: r.hash,
+    pendingFileIds: r.pending_ids ? r.pending_ids.split(',').map(s => parseInt(s, 10)).filter(n => !Number.isNaN(n)) : [],
+    hasConfirmedTwin: r.confirmed_count > 0,
+  })).filter(c => c.pendingFileIds.length > 0);
+}
+
 /** v2.1 round 71 (Terry 2026-06-09) — Commit a user-set date for one
  *  or more files in the Needs-dates view. Sets:
  *    - derived_date / year / month / day to the chosen date+time
