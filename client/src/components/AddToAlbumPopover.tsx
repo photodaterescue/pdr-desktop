@@ -47,9 +47,18 @@ interface AddToAlbumPopoverProps {
    *  the header. Each new value opens once; closing is handled by
    *  the popover's own onOpenChange. */
   openTrigger?: number;
+  /** v2.1 round 116 (Terry 2026-06-11) — like `openTrigger` but
+   *  opens the popover DIRECTLY in "create new album" mode instead
+   *  of the album list. Powers the S&D banner More-menu item
+   *  "Create new PDR album", which is the one-click path for the
+   *  common case of stamping a fresh album from the current pile.
+   *  Bumping this is equivalent to bumping `openTrigger` then
+   *  clicking the inline "Create new" footer button. Each bump
+   *  opens once; close behaviour identical to `openTrigger`. */
+  openCreateTrigger?: number;
 }
 
-export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger }: AddToAlbumPopoverProps) {
+export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger, openCreateTrigger }: AddToAlbumPopoverProps) {
   const [open, setOpen] = useState(false);
   // v2.0.15 (Terry 2026-06-01) — bridge for openTrigger. Watching
   // the value (skip null/undefined) lets the parent reopen the
@@ -80,6 +89,26 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
     const tId = setTimeout(() => { if (!cancelled) setOpen(true); }, 250);
     return () => { cancelled = true; clearTimeout(tId); };
   }, [openTrigger]);
+  // v2.1 round 116 (Terry 2026-06-11) — sibling effect for
+  // openCreateTrigger. Same mount-stale-value guard via a separate
+  // ref (the popover may receive non-zero values for both triggers
+  // at mount and we never want a stale value to auto-open the
+  // popover). Same 250 ms debounce so it survives any trailing
+  // pointer events from the dismissing menu. On open we also set
+  // `creating` true so the popover lands directly on the
+  // "Create new album" inline form instead of the album list.
+  // The close cleanup (effect on `open` below) already resets
+  // creating to false, so subsequent normal-openTrigger opens
+  // come back up in the list view.
+  const lastSeenCreateTriggerRef = useRef<number | undefined>(openCreateTrigger);
+  useEffect(() => {
+    if (typeof openCreateTrigger !== 'number' || openCreateTrigger <= 0) return;
+    if (openCreateTrigger === lastSeenCreateTriggerRef.current) return;
+    lastSeenCreateTriggerRef.current = openCreateTrigger;
+    let cancelled = false;
+    const tId = setTimeout(() => { if (!cancelled) { setCreating(true); setOpen(true); } }, 250);
+    return () => { cancelled = true; clearTimeout(tId); };
+  }, [openCreateTrigger]);
   const [albums, setAlbums] = useState<AlbumSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');

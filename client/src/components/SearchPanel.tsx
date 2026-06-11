@@ -327,6 +327,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // popover opens directly instead of forcing the user to find the
   // pill in the selection bar. Same pattern as MemoriesView.
   const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  // v2.1 round 116 (Terry 2026-06-11) — sibling tick that opens the
+  // AddToAlbumPopover DIRECTLY in create-new mode. Bumped by the
+  // gold selection banner's "Create new PDR album" More-menu item;
+  // the popover's `openCreateTrigger` effect sets `creating = true`
+  // before opening so the user lands on the inline create form
+  // instead of the album list.
+  const [addToAlbumCreateOpenTick, setAddToAlbumCreateOpenTick] = useState(0);
   const [isLoading, setIsLoading] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [stats, setStats] = useState<IndexStats | null>(null);
@@ -5036,6 +5043,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <Copy className="w-3.5 h-3.5 mr-2" />
                     Add {selectedFiles.size.toLocaleString()} to Parallel Library
                   </DropdownMenuItem>
+                  {/* v2.1 round 116 (Terry 2026-06-11) — "Create new
+                      PDR album" sits ABOVE "Add to album…" because
+                      logically you decide create-vs-pick first.
+                      Bumps addToAlbumCreateOpenTick which fires the
+                      popover's openCreateTrigger effect → opens
+                      directly on the inline create-new form instead
+                      of the album list (one click instead of two).
+                      "Add to album…" stays the path for picking
+                      an existing one. */}
+                  <DropdownMenuItem
+                    disabled={fixActive}
+                    onSelect={() => setAddToAlbumCreateOpenTick(t => t + 1)}
+                  >
+                    <Plus className="w-3.5 h-3.5 mr-2" />
+                    Create new PDR album from {selectedFiles.size.toLocaleString()} selected
+                  </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={fixActive}
                     onSelect={() => setAddToAlbumOpenTick(t => t + 1)}
@@ -5141,6 +5164,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   disabled={fixActive}
                   disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
                   openTrigger={addToAlbumOpenTick}
+                  openCreateTrigger={addToAlbumCreateOpenTick}
                 />
               </div>
             </div>
