@@ -45,6 +45,7 @@ import {
   Captions,
   Copy,
   Undo2,
+  Filter,
   Trash2,
   CalendarClock,
   Eye,
@@ -804,10 +805,16 @@ export default function MemoriesPendingView({
           squeezes between the view pills mid-row. Buttons there
           use the thin S&D-filter recipe with gold borders. */}
       <div className="shrink-0 px-6 py-3 border-b border-border/60 flex items-center gap-2">
+        {/* v2.1 round 96 (Terry 2026-06-11) — Back button now wears
+            the same h-8 + rounded-md + border shape as the three
+            view pills so the toolbar reads as one family. Blue
+            identity preserved with a subtle blue-50 fill + blue-300
+            border + blue-700 chevron/text — keeps the "navigation"
+            meaning while losing the "solid blue chrome" foreignness
+            Terry called out. */}
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors"
-          style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-blue-300 bg-blue-50/60 hover:bg-blue-50 text-blue-800 transition-colors"
           data-testid="memories-pending-back"
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back to timeline
@@ -831,6 +838,7 @@ export default function MemoriesPendingView({
               data-testid="memories-pending-title-dropdown"
             >
               <span className="inline-flex items-center gap-1.5">
+                <Filter className="w-3.5 h-3.5" />
                 <span className="text-muted-foreground/85">Type:</span>
                 <span>{tier ? TIER_LABEL[tier] : 'All'}</span>
               </span>
@@ -1830,6 +1838,76 @@ export default function MemoriesPendingView({
                     No date on record — supply one to confirm.
                   </p>
                 )}
+
+                {/* v2.1 round 96 (Terry 2026-06-11) — file metadata
+                    strip. Quiet muted text so it yields to the date
+                    picker below; Terry: "I think B might be of more
+                    use than A". Camera line only renders when EXIF
+                    captured a model — most Marked files won't have
+                    one, and an empty "Camera: —" line is just noise.
+                    Folder row uses IconTooltip + pdr.revealInFolder
+                    for click-to-reveal — same primitive as the panel
+                    header's Show in Folder button. */}
+                {(() => {
+                  const f = panelFile as unknown as {
+                    size_bytes?: number;
+                    width?: number | null;
+                    height?: number | null;
+                    extension?: string;
+                    camera_make?: string | null;
+                    camera_model?: string | null;
+                    file_path: string;
+                  };
+                  const sizeMb = f.size_bytes ? (f.size_bytes / (1024 * 1024)) : 0;
+                  const sizeLabel = sizeMb >= 1
+                    ? `${sizeMb.toFixed(sizeMb >= 10 ? 0 : 1)} MB`
+                    : f.size_bytes
+                      ? `${Math.max(1, Math.round(f.size_bytes / 1024))} KB`
+                      : null;
+                  const dims = f.width && f.height ? `${f.width} × ${f.height}` : null;
+                  const extLabel = f.extension ? f.extension.replace(/^\./, '').toUpperCase() : null;
+                  const fileSummary = [sizeLabel, dims, extLabel].filter(Boolean).join(' · ');
+                  const cameraLabel = [f.camera_make, f.camera_model].filter(Boolean).join(' ').trim();
+                  // Show last two path components — full paths are
+                  // unreadable in a 380 px panel and the leaf is what
+                  // the user recognises.
+                  const folderPath = f.file_path.replace(/[\\/][^\\/]+$/, '');
+                  const folderShort = (() => {
+                    const parts = folderPath.split(/[\\/]/);
+                    if (parts.length <= 2) return folderPath;
+                    return `…/${parts.slice(-2).join('/')}`;
+                  })();
+                  return (
+                    <div className="mt-2 space-y-0.5 text-[11px] text-muted-foreground">
+                      {fileSummary && (
+                        <p>File: <span className="text-foreground/85">{fileSummary}</span></p>
+                      )}
+                      {cameraLabel && (
+                        <p>Camera: <span className="text-foreground/85">{cameraLabel}</span></p>
+                      )}
+                      <p className="flex items-center gap-1 min-w-0">
+                        <span className="shrink-0">Folder:</span>
+                        <span
+                          className="text-foreground/85 truncate flex-1"
+                          title={folderPath}
+                        >
+                          {folderShort}
+                        </span>
+                        <IconTooltip label="Show in File Explorer" side="top">
+                          <button
+                            type="button"
+                            onClick={() => (window as any).pdr?.revealInFolder?.(panelFile.file_path)}
+                            className="p-0.5 rounded text-muted-foreground hover:text-foreground hover:bg-secondary/50 transition-colors shrink-0"
+                            aria-label="Show in File Explorer"
+                          >
+                            <FolderOpen className="w-3 h-3" />
+                          </button>
+                        </IconTooltip>
+                      </p>
+                    </div>
+                  );
+                })()}
+
                 {panelBulkFiles && panelBulkFiles.length > 1 && (
                   <p className="mt-2 text-[11px] text-muted-foreground">
                     Sets the same date + time on every {panelBulkFiles.length}
