@@ -3575,21 +3575,30 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         {/* v2.1 round 108 (Terry 2026-06-11) —
                             Parallel Library hoisted out of the More-
                             actions ellipsis into the Actions ribbon
-                            as a first-class export action. Selection-
-                            aware tooltip: when files are checked it
-                            exports the selection, otherwise the full
-                            result set. Same ribbon-button recipe as
-                            Clear / Save / Library. Disabled while a
-                            Fix is in flight — PL uses the same copy
-                            engine. */}
-                        {results && results.total > 0 && (
+                            as a first-class export action. Same
+                            ribbon-button recipe as Clear / Save /
+                            Library. Disabled while a Fix is in
+                            flight — PL uses the same copy engine.
+
+                            v2.1 round 111 (Terry 2026-06-11) — now
+                            ALSO gated on `selectedFiles.size === 0`.
+                            When the user has a pile, the gold
+                            selection banner below the toolbar
+                            carries an "Add N to Parallel Library"
+                            CTA that hits the same handler. Showing
+                            both at once would duplicate the
+                            affordance and confuse the verb
+                            ("Parallel" ribbon button vs "Add N to
+                            PL" banner button — same action, two
+                            buttons). So: no-selection → ribbon
+                            button = "Export ALL"; selection →
+                            banner CTA = "Add N to PL". */}
+                        {results && results.total > 0 && selectedFiles.size === 0 && (
                           <IconTooltip
                             label={
                               fixActive
                                 ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
-                                : selectedFiles.size > 0
-                                  ? `Export ${selectedFiles.size.toLocaleString()} selected as Parallel Library`
-                                  : `Export all ${results.total.toLocaleString()} as Parallel Library`
+                                : `Export all ${results.total.toLocaleString()} as Parallel Library`
                             }
                             side="bottom"
                           >
@@ -4336,90 +4345,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   ellipsis with one item buried inside it was the
                   exact "junk drawer" affordance Terry called out
                   as misplaced. */}
-              {selectedFiles.size > 0 && (
-                <>
-                  {/* v2.0.15 (Terry 2026-05-28) — gold selection chip,
-                      matched across PDR (MemoriesView grid, here, and
-                      the per-tile checkmark circles). Deliberate
-                      override of the "gold = captions only" rule:
-                      users scrolling 100s of results need to see
-                      selection state at a glance. Captioned-only chip
-                      stays gold too; they don't collide visually
-                      because they appear in different header slots
-                      and the caption chip carries the chat-bubble
-                      icon to disambiguate. */}
-                  <IconTooltip label="Clear selection" side="top">
-                    <button
-                      type="button"
-                      onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                      className="group inline-flex items-center gap-1 text-xs font-medium text-[#1f1a08] bg-[var(--color-gold)] hover:opacity-90 pl-2.5 pr-1 py-0.5 rounded-full transition-colors"
-                      data-testid="button-clear-selection"
-                      aria-label={`${selectedFiles.size} selected — clear selection`}
-                    >
-                      <span>{selectedFiles.size} selected</span>
-                      <span className="rounded-full bg-foreground/10 group-hover:bg-foreground/20 p-0.5 transition-colors">
-                        <X className="w-3 h-3" />
-                      </span>
-                    </button>
-                  </IconTooltip>
-                  <button
-                    onClick={() => {
-                      // Use the cross-search selection Map so checked files
-                      // from previous searches still open even when the
-                      // current results don't include them.
-                      const selectedViewable = Array.from(selectedFilesMap.values())
-                        .filter(f => f.file_type === 'photo' || f.file_type === 'video');
-                      if (selectedViewable.length > 0) {
-                        safeOpenViewer(
-                          selectedViewable.map(f => f.file_path),
-                          selectedViewable.map(f => f.filename),
-                        );
-                      }
-                    }}
-                    className="text-xs font-medium text-white bg-primary hover:bg-primary/90 px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
-                  >
-                    <Eye className="w-3 h-3" />
-                    Open {Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video').length} in Viewer
-                  </button>
-                  {/* v2.0.15 (Terry 2026-05-29) — REMOVED the
-                      "Show N selected" toggle. It was surplus to
-                      requirements: users already see their selection
-                      count in the gold chip + can act on the
-                      selection via Add to Album / Open in Viewer /
-                      Delete without needing the grid to filter down
-                      to it. The showSelectedOnly state + plumbing
-                      stay in place behind it (cheap, and removing
-                      the state would touch ~10 callsites) — just
-                      no UI surface exposes the toggle anymore. If
-                      it's ever wanted back, restore the IconTooltip
-                      + button block from git history. */}
-                  {/* v2.0.8 step 4 — Add to Album popover. Sits next to
-                      the PL button in the selection bar so the two
-                      "do something with this selection" actions are
-                      side-by-side. Self-contained: trigger pill +
-                      content live inside the component. */}
-                  <AddToAlbumPopover
-                    fileIds={Array.from(selectedFiles)}
-                    disabled={fixActive}
-                    disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
-                    openTrigger={addToAlbumOpenTick}
-                  />
-                  {/* Create Parallel Library moved into the kebab
-                      "More actions" menu next to the results count
-                      (Terry 2026-05-19: "Sure we can put it in a
-                      kebab menu, and that will save some space").
-                      Selection-bar peers stay focused on the per-
-                      selection actions (Open in Viewer, Show
-                      selected, Add to Album); PL is the heavier
-                      "do something with the whole set" verb and
-                      now lives one click away. */}
-                  {/* (Standalone "Clear" link removed — the count chip
-                      at the start of this bar now carries an inline X
-                      dismiss, which reads as a single iOS/macOS-style
-                      removable chip. Single dismissal affordance, no
-                      duplicate.) */}
-                </>
-              )}
+              {/* v2.1 round 111 (Terry 2026-06-11) — the inline gold
+                  chip, "Open N in Viewer" lavender button, and
+                  AddToAlbumPopover that used to live in this chip
+                  strip are now in a FULL-WIDTH gold selection
+                  banner rendered just below the toolbar (mirrors
+                  the Needs Dates pattern). The banner also adds
+                  the new "Add N to Parallel Library" gold CTA that
+                  Terry asked for. */}
               {isLoading && <Loader2 className="w-3.5 h-3.5 animate-spin inline ml-2 text-primary" />}
             </span>
             {/* v2.0.14 — "Captioned only" toggle, mirrored from
@@ -4940,6 +4873,90 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             );
           })()}
 
+          {/* v2.1 round 111 (Terry 2026-06-11) — GOLD SELECTION BANNER.
+              Mirrors MemoriesPendingView ("Needs Dates") so the
+              two surfaces feel like one family. Appears the moment
+              anything is in the pile, full-width below the toolbar.
+
+              Primary CTA: "Add N to Parallel Library" — Terry's
+              explicit ask. Hits the same setShowStructureModal
+              handler that the Actions ribbon's Parallel Library
+              button uses; that ribbon button is gated to hide when
+              there's a selection so the two affordances don't
+              double up (no-selection → ribbon button = "Export
+              ALL"; selection → banner CTA = "Add N to PL").
+
+              Secondary buttons (Open in Viewer, Add to album) are
+              the same ones that used to live inline in the chip
+              strip; just moved here so the user sees them
+              together with the new CTA, gold-tinted to match the
+              band.
+
+              Recipe verbatim from MemoriesPendingView lines
+              1042-1220: h-7 + rounded-md + border-[var(--color-gold)]
+              + bg-[var(--color-gold)]/15 for secondaries, solid
+              bg-[var(--color-gold)] + text-[#1f1a08] for the
+              primary CTA. */}
+          {selectedFiles.size > 0 && (
+            <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/15">
+              <IconTooltip label="Clear selection" side="bottom">
+                <button
+                  type="button"
+                  onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
+                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+                  data-testid="sd-selection-chip"
+                  aria-label={`${selectedFiles.size} selected — clear selection`}
+                >
+                  <span>{selectedFiles.size.toLocaleString()} selected</span>
+                  <X className="w-3 h-3 opacity-70" />
+                </button>
+              </IconTooltip>
+              <IconTooltip
+                label={
+                  fixActive
+                    ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
+                    : `Export the ${selectedFiles.size.toLocaleString()} selected file${selectedFiles.size === 1 ? '' : 's'} as a Parallel Library`
+                }
+                side="bottom"
+              >
+                <button
+                  type="button"
+                  disabled={fixActive}
+                  onClick={() => setShowStructureModal(true)}
+                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="sd-selection-add-to-pl"
+                >
+                  <Copy className="w-3.5 h-3.5" />
+                  Add {selectedFiles.size.toLocaleString()} to Parallel Library
+                </button>
+              </IconTooltip>
+              {(() => {
+                const viewable = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video');
+                if (viewable.length === 0) return null;
+                return (
+                  <IconTooltip label="Open the selected photos and videos in the Viewer" side="bottom">
+                    <button
+                      type="button"
+                      onClick={() => safeOpenViewer(viewable.map(f => f.file_path), viewable.map(f => f.filename))}
+                      className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+                      data-testid="sd-selection-open-viewer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      Open {viewable.length.toLocaleString()} in Viewer
+                    </button>
+                  </IconTooltip>
+                );
+              })()}
+              <AddToAlbumPopover
+                fileIds={Array.from(selectedFiles)}
+                disabled={fixActive}
+                disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
+                openTrigger={addToAlbumOpenTick}
+              />
+              <div className="flex-1" />
+            </div>
+          )}
+
           {/* Grid/List/Details + Preview — rendered whenever EITHER the
               current search produced results OR Custom-selection mode is
               active with at least one selected file. The grid below
@@ -5058,6 +5075,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               }
                               return;
                             }
+                            if (selectionMode) {
+                              toggleFileSelection(file);
+                              lastClickedIndexRef.current = idx;
+                              return;
+                            }
+                            // v2.1 round 111 (Terry 2026-06-11) — plain click
+                            // now mirrors MemoriesPendingView ("Needs Dates"):
+                            // clear the pile, add this one file, set as the
+                            // previewed file. Previously we only called
+                            // setSelectedFile(file), leaving the multi-select
+                            // Set/Map untouched, which meant the gold
+                            // selection banner never lit up unless the user
+                            // remembered to ctrl-click. Now every click lands
+                            // a file in the pile (and the banner appears),
+                            // matching Needs Dates exactly. Ctrl/Shift above
+                            // still expand the pile; Selection-Mode above
+                            // still toggles without replacing the preview.
+                            setSelectedFiles(new Set([file.id]));
+                            setSelectedFilesMap(new Map([[file.id, file]]));
                             setSelectedFile(file);
                             lastClickedIndexRef.current = idx;
                           }}
