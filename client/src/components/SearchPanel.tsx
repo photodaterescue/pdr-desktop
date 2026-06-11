@@ -4904,10 +4904,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 const videoCount = loaded.filter((f) => f.file_type === 'video').length;
                 const partial = results.total > loaded.length;
                 return (
-                  <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                  <span className="text-sm font-semibold text-foreground tabular-nums shrink-0">
                     {photoCount.toLocaleString()} photo{photoCount === 1 ? '' : 's'} · {videoCount.toLocaleString()} video{videoCount === 1 ? '' : 's'}
                     {partial && (
-                      <span className="ml-1 text-muted-foreground/70">
+                      <span className="ml-1 text-xs font-normal text-muted-foreground">
                         of {results.total.toLocaleString()}
                       </span>
                     )}
