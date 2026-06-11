@@ -3526,8 +3526,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </div>
                 </RibbonGroup>
 
-                {/* ── Actions (only shown when there are active filters or library manager is enabled) ── */}
-                {(hasActiveFilters || showLibraryManager) && (
+                {/* v2.1 round 108 (Terry 2026-06-11) — outer Actions
+                    gate also surfaces the group whenever there's a
+                    result set to act on, because "Export as Parallel
+                    Library" lives here now and doesn't require active
+                    filters to be useful (e.g., user selects a few
+                    photos out of a default-all query and exports
+                    those as a PL). */}
+                {(hasActiveFilters || showLibraryManager || (results && results.total > 0)) && (
                   <>
                     <RibbonSeparator />
                     <RibbonGroup label="Actions">
@@ -3563,6 +3569,38 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             <button onClick={() => setShowIndexManager(true)} className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground transition-all text-[11px] font-medium min-w-[42px]">
                               <Database className="w-[18px] h-[18px]" />
                               <span>Library</span>
+                            </button>
+                          </IconTooltip>
+                        )}
+                        {/* v2.1 round 108 (Terry 2026-06-11) —
+                            Parallel Library hoisted out of the More-
+                            actions ellipsis into the Actions ribbon
+                            as a first-class export action. Selection-
+                            aware tooltip: when files are checked it
+                            exports the selection, otherwise the full
+                            result set. Same ribbon-button recipe as
+                            Clear / Save / Library. Disabled while a
+                            Fix is in flight — PL uses the same copy
+                            engine. */}
+                        {results && results.total > 0 && (
+                          <IconTooltip
+                            label={
+                              fixActive
+                                ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
+                                : selectedFiles.size > 0
+                                  ? `Export ${selectedFiles.size.toLocaleString()} selected as Parallel Library`
+                                  : `Export all ${results.total.toLocaleString()} as Parallel Library`
+                            }
+                            side="bottom"
+                          >
+                            <button
+                              onClick={() => { if (!fixActive) setShowStructureModal(true); }}
+                              disabled={fixActive}
+                              className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[11px] font-medium min-w-[42px]"
+                              data-testid="sd-export-pl"
+                            >
+                              <Copy className="w-[18px] h-[18px]" />
+                              <span>Parallel</span>
                             </button>
                           </IconTooltip>
                         )}
@@ -4290,46 +4328,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   inline filter chips so the row reads "actions on the
                   left, view options + stats on the right" — matches the
                   rest of the toolbar family. */}
-              <Popover>
-                <IconTooltip label="More actions" side="bottom">
-                  <PopoverTrigger asChild>
-                    <button
-                      type="button"
-                      className="ml-1 inline-flex items-center justify-center w-7 h-7 rounded-full border border-border bg-background text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors"
-                      data-testid="button-sd-more-actions"
-                      aria-label="More actions"
-                    >
-                      <MoreHorizontal className="w-3.5 h-3.5" />
-                    </button>
-                  </PopoverTrigger>
-                </IconTooltip>
-                <PopoverContent align="start" className="w-64 p-1">
-                  <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
-                    Act on {selectedFiles.size > 0 ? `${selectedFiles.size} selected` : `${results.total.toLocaleString()} results`}
-                  </p>
-                  {/* v2.1 round 81 (Terry 2026-06-09) — Edit Dates
-                      entry removed. Standalone Date Editor window
-                      replaced by inline editing in Memories — Needs
-                      Dates; this overflow item served no purpose. */}
-                  {/* Create Parallel Library — full-set or selection-
-                      driven. Disabled when no results or a Fix is in
-                      flight (PL shares the copy engine). */}
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (fixActive) return;
-                      setShowStructureModal(true);
-                    }}
-                    disabled={fixActive || results.total === 0}
-                    title={fixActive ? FIX_BLOCKED_TOOLTIP + ' — Parallel Libraries use the same copy engine as the Fix.' : undefined}
-                    className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed text-sm text-foreground transition-colors"
-                    data-testid="menu-create-pl"
-                  >
-                    <Copy className="w-4 h-4 text-muted-foreground shrink-0" />
-                    <span className="font-medium">Create Parallel Library</span>
-                  </button>
-                </PopoverContent>
-              </Popover>
+              {/* v2.1 round 108 (Terry 2026-06-11) — More-actions
+                  ellipsis Popover removed. Its only item (Create
+                  Parallel Library) is now a first-class action in
+                  the Actions ribbon group at the top of S&D, where
+                  it sits alongside Clear / Save / Library. An
+                  ellipsis with one item buried inside it was the
+                  exact "junk drawer" affordance Terry called out
+                  as misplaced. */}
               {selectedFiles.size > 0 && (
                 <>
                   {/* v2.0.15 (Terry 2026-05-28) — gold selection chip,
