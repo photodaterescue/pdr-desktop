@@ -5115,32 +5115,40 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {/* v2.1 round 115 (Terry 2026-06-11) — SHOW PREVIEW pill.
-                  Sits on the banner row right of the More dropdown
-                  (Terry's red-box callout in SS1).
+              <div className="flex-1" />
+              {/* v2.1 round 115 → 117 → 118 (Terry 2026-06-11) —
+                  SHOW PREVIEW placeholder. Round 115 added the
+                  affordance as a fourth pill right of More;
+                  round 117 fixed the gate so it actually appeared
+                  in the ctrl-click case; round 118 moves it to
+                  the RIGHT of the banner row and re-skins it as
+                  a placeholder, not a pill.
 
-                  v2.1 round 117 (Terry 2026-06-11) — GATE FIX.
-                  Round 115 gated this on `!showPreviewPanel`. But
-                  the FileDetailPanel renders only when BOTH
-                  `selectedFile` AND `showPreviewPanel` are truthy
-                  (see line ~5463). The ctrl-click case Terry
-                  called out has showPreviewPanel=true (default)
-                  AND selectedFile=null — the panel is "open" but
-                  there's nothing for it to render, so it doesn't
-                  appear. My old gate `!showPreviewPanel` saw
-                  showPreviewPanel=true and HID the button, so the
-                  user got neither a preview nor the recovery
-                  button. The new gate `!showPreviewPanel ||
-                  !selectedFile` covers both:
-                    - panel hidden (X clicked in header)
-                    - selectedFile null (ctrl-click into pile from
-                      a fresh open)
-                  The button reliably appears in both scenarios.
-                  Click handler unchanged: flip showPreviewPanel
-                  true AND seed selectedFile from the first pile
-                  entry if null. The reverse direction (closing
-                  the preview) is the X in the FileDetailPanel's
-                  own header — single source of truth. */}
+                  Terry: "I had said I wanted to see the show
+                  preview button occupying the red box area I've
+                  placed on the SS1. This is above where the
+                  preview will actually show and therefore
+                  differentiates itself to the other buttons."
+
+                  Position: pushed to the right edge by the
+                  flex-1 spacer above. Width w-[35%] mirrors the
+                  preview ResizablePanel's defaultSize (right
+                  panel is 35 % of the workspace once selectedFile
+                  + showPreviewPanel are both true — see line
+                  ~4264). When the user clicks the placeholder,
+                  the left panel shrinks to 65 % and the right
+                  panel materialises in the same 35 % footprint
+                  the placeholder was occupying — the button
+                  visually BECOMES the preview area.
+
+                  Look: dashed gold border + lighter
+                  bg-[var(--color-gold)]/10 wash + centered
+                  content, reading as an inviting empty slot
+                  rather than an action pill. Same h-8 height
+                  so it still aligns with the action pills'
+                  baseline, but the dashed border + centred
+                  layout means it doesn't read as a fourth peer
+                  of [chip][CTA][More]. */}
               {(!showPreviewPanel || !selectedFile) && (
                 <IconTooltip label="Show the preview panel for the first file in your selection" side="bottom">
                   <button
@@ -5151,17 +5159,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         setSelectedFile(Array.from(selectedFilesMap.values())[0]);
                       }
                     }}
-                    className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
+                    className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-dashed border-[var(--color-gold)] bg-[var(--color-gold)]/10 hover:bg-[var(--color-gold)]/20 text-foreground transition-colors w-[35%] min-w-[200px] shrink-0"
                     data-testid="sd-show-preview"
                   >
-                    <span className="inline-flex items-center gap-1.5">
-                      <PanelRightOpen className="w-3.5 h-3.5" />
-                      <span>Show Preview</span>
-                    </span>
+                    <PanelRightOpen className="w-3.5 h-3.5" />
+                    <span>Show Preview</span>
                   </button>
                 </IconTooltip>
               )}
-              <div className="flex-1" />
               {/* Off-screen anchor for AddToAlbumPopover — opened by
                   the More dropdown's Add-to-album item via openTrigger
                   bump. Same pattern MemoriesPendingView uses
