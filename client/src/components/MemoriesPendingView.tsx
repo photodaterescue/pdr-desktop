@@ -1381,7 +1381,6 @@ export default function MemoriesPendingView({
                               : `${tileRing} hover:ring-primary/50`
                         } ${isPanelActive ? (density === 'spacious' ? 'pdr-pending-tile-pulse-slow-spacious' : 'pdr-pending-tile-pulse-slow-tight') : (pulseFileId === f.id ? 'pdr-pending-tile-pulse' : '')}`}
                         data-pending-tile-id={f.id}
-                        title={f.filename}
                       >
                         {/* v2.1 round 76 phase 2 — selection checkbox.
                             Same recipe as MemoriesDayDrilldown: hidden

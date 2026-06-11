@@ -2955,22 +2955,43 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           </div>
         ) : (
           <>
-            {/* v2.0.13 — floating "current day" pill that fades in
-                while the user is scrolling. Anchored top-right inside
-                the scroll area; pointer-events-none so it never
-                blocks photo clicks. */}
-            {currentDayLabel && (
-              <div
-                className={`pointer-events-none sticky top-2 z-30 flex justify-end transition-opacity duration-200 ${
-                  scrollIndicatorVisible ? 'opacity-100' : 'opacity-0'
-                }`}
-                aria-hidden={!scrollIndicatorVisible}
-              >
-                <div className="px-3 py-1.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-xs font-medium text-foreground">
+            {/* v2.1 round 98 (Terry 2026-06-11) — sticky day-header
+                banner. Was a top-right pill that faded in during
+                scroll and out after 1.2 s (round v2.0.13); Terry
+                hit "incredibly easy to lose track of what date
+                you're looking at" and asked for the day header to
+                stay in view always — same behaviour as the Needs
+                Dates TENTATIVE / UNRECORDED section headers.
+                Now a full-width band that matches the in-section
+                day header recipe exactly (-mx-6 px-6 py-2 +
+                bg-background/95 backdrop-blur-sm + border-b +
+                text-sm font-semibold + count span). Sits sticky at
+                top-0 of the scroll container so when a day-group
+                row scrolls past, its header is replaced by the
+                sticky banner showing that day's label + count.
+                pointer-events-none so clicks pass through to the
+                photo grid below. Slight visual overlap with the
+                in-section inline header at the very top of a day
+                section is acceptable — both show the same text,
+                same chrome, so the redundancy is invisible. */}
+            {currentDayLabel && (() => {
+              const currentDayGroup = filesByDay.find((g) => g.dayKey === currentDayKey);
+              const count = currentDayGroup?.files.length ?? 0;
+              return (
+                <div
+                  className="pointer-events-none sticky top-0 z-30 -mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                  data-testid="memories-drilldown-sticky-day"
+                  aria-live="polite"
+                >
                   {currentDayLabel}
+                  {count > 0 && (
+                    <span className="ml-2 text-xs font-normal text-muted-foreground">
+                      {count.toLocaleString()} {count === 1 ? 'photo' : 'photos'}
+                    </span>
+                  )}
                 </div>
-              </div>
-            )}
+              );
+            })()}
             {/* v2.0.14 — virtualised day-group container. Each virtual
                 row holds one day's section (header + photo grid). Only
                 the ~3-6 rows currently in viewport are mounted at a
