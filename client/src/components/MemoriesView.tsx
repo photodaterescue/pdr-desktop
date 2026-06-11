@@ -2979,7 +2979,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               const count = currentDayGroup?.files.length ?? 0;
               return (
                 <div
-                  className="pointer-events-none sticky top-0 z-30 -mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                  // v2.1 round 99 (Terry 2026-06-11) — dropped
+                  // bg-background/95 + backdrop-blur (made the band
+                  // float over the photos with translucency,
+                  // reading as "floating" instead of "stuck flush
+                  // to the toolbar"). Solid bg-background matches
+                  // the Needs Dates tier-section header's exact
+                  // recipe so the band sits hard-flush against
+                  // the toolbar above as the user scrolls.
+                  className="pointer-events-none sticky top-0 z-30 -mx-6 px-6 py-2 bg-background border-b border-border/60 text-sm font-semibold text-foreground"
                   data-testid="memories-drilldown-sticky-day"
                   aria-live="polite"
                 >
