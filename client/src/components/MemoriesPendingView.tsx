@@ -52,6 +52,8 @@ import {
   FolderOpen,
   ArrowLeft,
   ArrowRight,
+  CheckSquare,
+  MoreHorizontal,
 } from 'lucide-react';
 import { Button } from '@/components/ui/custom-button';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
@@ -1048,14 +1050,21 @@ export default function MemoriesPendingView({
               all be the same size. It looks much better on the
               toolbar, so we should apply the same thing to the
               banner." Recipe shared verbatim with the S&D banner. */}
-          {/* N selected — pulsing chip, clears on click */}
+          {/* N selected — pulsing chip, clears on click.
+              v2.1 round 113 (Terry 2026-06-11) — CheckSquare on
+              left to match the toolbar view-pill rhythm
+              ([icon] label [right-affordance]) shared with the
+              Media + Display pills above. */}
           <IconTooltip label="Clear selection" side="bottom">
             <button
               onClick={clearSelection}
               className="pdr-pending-chip-pulse inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
               data-testid="pending-selection-chip"
             >
-              <span>{selectedFileIds.size} selected</span>
+              <span className="inline-flex items-center gap-1.5">
+                <CheckSquare className="w-3.5 h-3.5" />
+                <span>{selectedFileIds.size} selected</span>
+              </span>
               <X className="w-3.5 h-3.5 opacity-70" />
             </button>
           </IconTooltip>
@@ -1085,7 +1094,10 @@ export default function MemoriesPendingView({
                 className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
                 data-testid="pending-selection-more"
               >
-                <span>More</span>
+                <span className="inline-flex items-center gap-1.5">
+                  <MoreHorizontal className="w-3.5 h-3.5" />
+                  <span>More</span>
+                </span>
                 <ChevronDown className="w-3.5 h-3.5 opacity-80" />
               </button>
             </DropdownMenuTrigger>

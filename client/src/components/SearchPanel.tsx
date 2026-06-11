@@ -4936,8 +4936,19 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               ribbon button opens the modal and stops the pulse;
               clearing the selection or closing the modal also
               stops it. */}
-          {selectedFiles.size > 0 && (
+          {(() => {
+            if (selectedFiles.size === 0) return null;
+            const viewable = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video');
+            return (
             <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/15">
+              {/* v2.1 round 113 (Terry 2026-06-11) — each banner pill
+                  now carries a left icon to match the toolbar
+                  view-pills (Media, Display) above. Terry: "I also
+                  am wondering if these buttons/dropdowns should
+                  have icons on the left like you championed for
+                  the toolbar." CheckSquare for the selection chip,
+                  Eye for the Open-in-Viewer CTA, MoreHorizontal
+                  for the More dropdown. */}
               <IconTooltip label="Clear selection" side="bottom">
                 <button
                   type="button"
@@ -4946,10 +4957,40 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   data-testid="sd-selection-chip"
                   aria-label={`${selectedFiles.size} selected — clear selection`}
                 >
-                  <span>{selectedFiles.size.toLocaleString()} selected</span>
+                  <span className="inline-flex items-center gap-1.5">
+                    <CheckSquare className="w-3.5 h-3.5" />
+                    <span>{selectedFiles.size.toLocaleString()} selected</span>
+                  </span>
                   <X className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </IconTooltip>
+              {/* v2.1 round 113 (Terry 2026-06-11) — primary CTA
+                  brought back to the band, but the verb is now
+                  Open-in-Viewer rather than Add-to-PL. Terry: "the
+                  main reason why people go to S&D will be to find
+                  pictures they haven't seen for a long time ... so
+                  the first thing they're gonna wanna do is look at
+                  them. So the CTA gold button should be Open X in
+                  Viewer." Solid-gold + text-[#1f1a08] matches the
+                  "Set date for N" CTA recipe in ND. Hidden when
+                  the selection contains no photos/videos to view
+                  (e.g. only raw sidecar files), so it doesn't
+                  surface a button that would no-op. */}
+              {viewable.length > 0 && (
+                <IconTooltip label="Open the selected photos and videos in the Viewer" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => safeOpenViewer(viewable.map(f => f.file_path), viewable.map(f => f.filename))}
+                    className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors min-w-[150px] shrink-0"
+                    data-testid="sd-selection-open-viewer-cta"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5" />
+                      Open {viewable.length.toLocaleString()} in Viewer
+                    </span>
+                  </button>
+                </IconTooltip>
+              )}
               <DropdownMenu>
                 <IconTooltip label="More bulk actions for the selection" side="bottom">
                   <DropdownMenuTrigger asChild>
@@ -4958,25 +4999,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
                       data-testid="sd-selection-more"
                     >
-                      <span>More</span>
+                      <span className="inline-flex items-center gap-1.5">
+                        <MoreHorizontal className="w-3.5 h-3.5" />
+                        <span>More</span>
+                      </span>
                       <ChevronDown className="w-3.5 h-3.5 opacity-80" />
                     </button>
                   </DropdownMenuTrigger>
                 </IconTooltip>
                 <DropdownMenuContent align="start" className="min-w-[260px]">
-                  {(() => {
-                    const viewable = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video');
-                    if (viewable.length === 0) return null;
-                    return (
-                      <DropdownMenuItem
-                        onSelect={() => safeOpenViewer(viewable.map(f => f.file_path), viewable.map(f => f.filename))}
-                      >
-                        <Eye className="w-3.5 h-3.5 mr-2" />
-                        Open {viewable.length.toLocaleString()} Selected in Viewer
-                      </DropdownMenuItem>
-                    );
-                  })()}
-                  <DropdownMenuSeparator />
+                  {/* "Open N in Viewer" lives as the primary CTA on
+                      the band (round 113), so it's intentionally NOT
+                      duplicated here in the More menu. */}
                   <DropdownMenuItem
                     disabled={fixActive}
                     onSelect={() => setPlRibbonPulse(true)}
@@ -5054,7 +5088,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 />
               </div>
             </div>
-          )}
+            );
+          })()}
 
           {/* Grid/List/Details + Preview — rendered whenever EITHER the
               current search produced results OR Custom-selection mode is
