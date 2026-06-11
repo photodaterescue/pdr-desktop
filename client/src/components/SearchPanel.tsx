@@ -4272,12 +4272,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             return (
           <div className="px-4 py-1 border-b border-border flex items-center gap-3 shrink-0 bg-secondary/20">
             <span className="text-sm font-semibold text-foreground flex items-center gap-2 shrink-0">
-              {results.total.toLocaleString()} {results.total === 1 ? 'result' : 'results'}
-              {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor /
-                  Edit Dates comments removed; the dedicated window
-                  was retired in favour of inline editing inside
-                  Memories — Needs Dates. Overflow menu now hosts
-                  only Create Parallel Library. */}
+              {/* v2.1 round 106 (Terry 2026-06-11) — results-count moved
+                  to the right cluster (alongside view controls) in the
+                  photo+video breakdown format that Memories Dates uses.
+                  The left side keeps only the More-actions ellipsis +
+                  inline filter chips so the row reads "actions on the
+                  left, view options + stats on the right" — matches the
+                  rest of the toolbar family. */}
               <Popover>
                 <IconTooltip label="More actions" side="bottom">
                   <PopoverTrigger asChild>
@@ -4889,23 +4890,34 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                 kind of control (zoom stepper, segmented view-mode
                 group). */}
             <div className="flex items-center gap-2 shrink-0">
-              {/* v2.1 round 64 (Terry 2026-06-09) — Insights popover
-                  moved up next to the All-media dropdown (sibling to
-                  the result-count cluster), matching the Memories
-                  pattern. Only the Preview toggle stays in the
-                  right-cluster `<div>` below — it's an inspector
-                  panel, not a view setting, so it doesn't belong in
-                  Insights. */}
-              <IconTooltip label={showPreviewPanel ? 'Hide preview' : 'Show preview'} side="bottom">
-                <button onClick={() => setShowPreviewPanel(!showPreviewPanel)}
-                  className={`p-1 rounded-lg transition-colors ${showPreviewPanel ? 'text-primary bg-primary/10' : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'}`}>
-                  {showPreviewPanel ? <PanelRightClose className="w-3.5 h-3.5" /> : <PanelRightOpen className="w-3.5 h-3.5" />}
-                </button>
-              </IconTooltip>
-              {/* Back-to-Dashboard button removed (Terry 2026-05-19):
-                  the sidebar already has a Dashboard nav item, so
-                  this button was redundant. It dated back to when
-                  S&D was the only non-Dashboard surface. */}
+              {/* v2.1 round 106 (Terry 2026-06-11) — results-count
+                  breakdown, photos · videos format matching Memories
+                  Dates. Computed from results.files (loaded subset)
+                  because the SearchResult IPC doesn't carry a server-
+                  side photo/video split yet. When total > files
+                  loaded, the breakdown rounds up the rest into
+                  "+ N more loading" so the user knows the count is
+                  growing as scroll triggers more pages. */}
+              {(() => {
+                const loaded = results.files;
+                const photoCount = loaded.filter((f) => f.file_type === 'photo').length;
+                const videoCount = loaded.filter((f) => f.file_type === 'video').length;
+                const partial = results.total > loaded.length;
+                return (
+                  <span className="text-[11px] text-muted-foreground tabular-nums shrink-0">
+                    {photoCount.toLocaleString()} photo{photoCount === 1 ? '' : 's'} · {videoCount.toLocaleString()} video{videoCount === 1 ? '' : 's'}
+                    {partial && (
+                      <span className="ml-1 text-muted-foreground/70">
+                        of {results.total.toLocaleString()}
+                      </span>
+                    )}
+                  </span>
+                );
+              })()}
+              {/* v2.1 round 106 (Terry 2026-06-11) — Hide Preview
+                  button removed; the FileDetailPanel already carries
+                  its own close X in the header, so the toolbar button
+                  was a redundant second entry point. */}
             </div>
           </div>
             );
