@@ -623,15 +623,31 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       // whose offsetTop is at or above scrollTop; its day is the
       // current one.
       if (groupByDay) {
-        const scrollTop = scrollEl.scrollTop;
+        // v2.1 round 104 (Terry 2026-06-11) — coordinate-system fix.
+        // Round 103 used el.offsetTop which is measured from the
+        // nearest positioned ancestor (`offsetParent`). The album-
+        // detail scroll container has `position: static` by default
+        // so offsetParent walks UP past it to a positioned ancestor
+        // (ResizablePanel / outer chrome), and the reported offsetTop
+        // gets inflated by every pixel of header / chrome above the
+        // scroll area. The `top <= scrollTop + 5` threshold then
+        // fired LATE — Terry's screenshots showed the banner not
+        // updating until the next day's first row of photos was
+        // already visible.
+        // Fix: use getBoundingClientRect on both the divider and
+        // the scroll container, subtract to get the divider's true
+        // position relative to the scroll container's top edge. No
+        // offsetParent involved.
+        const scrollRect = scrollEl.getBoundingClientRect();
         let bestKey: string | null = null;
-        let bestTop = -1;
+        let bestRelTop = Number.NEGATIVE_INFINITY;
         for (const [key, el] of Object.entries(albumDayHeaderRefs.current)) {
           if (!el) continue;
-          const top = el.offsetTop;
-          if (top <= scrollTop + 5 && top > bestTop) {
+          const rect = el.getBoundingClientRect();
+          const relTop = rect.top - scrollRect.top;
+          if (relTop <= 5 && relTop > bestRelTop) {
             bestKey = key;
-            bestTop = top;
+            bestRelTop = relTop;
           }
         }
         if (bestKey) {
