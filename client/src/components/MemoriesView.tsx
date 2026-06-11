@@ -3015,15 +3015,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     doesn't apply inside an absolute container); the
                     floating "current day" pill above the scroll area
                     is the cue now. */}
-                <h3
+                {/* v2.1 round 97 part 5 (Terry 2026-06-11) — day-group
+                    header now mirrors the Needs Dates tier-section
+                    recipe (uppercase bold tracking-wider purple
+                    label + small muted tabular-nums count, baseline-
+                    aligned flex row). Same -mx-6 px-6 py-2
+                    bg-background/95 backdrop-blur-sm border band
+                    chrome — sticky positioning is governed by the
+                    virtualiser above, so we don't add sticky top-0
+                    here the way the Needs Dates non-virtualised pile
+                    does. */}
+                <div
                   ref={(el) => { dayHeaderElsRef.current[group.dayKey] = el; }}
-                  className="-mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                  className="flex items-baseline gap-3 -mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60"
                 >
-                  {formatDayHeader(group.date, group.dayKey)}
-                  <span className="ml-2 text-xs font-normal text-muted-foreground">
+                  <h3 className="text-sm font-bold uppercase tracking-wider text-purple-600 dark:text-purple-300">
+                    {formatDayHeader(group.date, group.dayKey)}
+                  </h3>
+                  <span className="text-xs text-muted-foreground tabular-nums">
                     {group.files.length.toLocaleString()} {group.files.length === 1 ? 'photo' : 'photos'}
                   </span>
-                </h3>
+                </div>
                 <div
                   className={`mt-3 grid ${density === 'tight' ? 'gap-0' : 'gap-3'}`}
                   style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${drilldownSliderToPx(tileSizeSlider)}px, 1fr))` }}
