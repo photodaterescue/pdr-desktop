@@ -2069,6 +2069,152 @@ export async function indexTrimmedClip(
   return idRow?.id ?? null;
 }
 
+// ─── Single-file upsert (Screen capture) ─────────────────────────────────────
+
+/**
+ * v2.1 (Terry 2026-06-11) — find-or-create the synthetic "PDR
+ * Captures" run that screenshots / screen recordings attach to.
+ *
+ * Unlike the Enhance / Trim upserts above, a capture has NO source
+ * row to inherit a run_id from — it's a brand-new file born inside
+ * PDR. Every indexed_files row needs a run (NOT NULL + REFERENCES),
+ * and creating one run PER capture would balloon indexed_runs for no
+ * benefit (the same reasoning indexEnhancedSibling documents). So
+ * each library gets exactly ONE captures run, created lazily on the
+ * first capture and reused forever after.
+ *
+ * report_id is the lookup key (it's UNIQUE on indexed_runs). The
+ * `pdr-captures::<root>` form keeps runs distinct per library for
+ * users with more than one library in the same local DB. No report
+ * file exists behind this report_id — verified safe: nothing in the
+ * codebase resolves a run's report_id to a file on disk, and
+ * purgeDuplicateRuns (the thing that USED to delete same-destination
+ * runs) has been a no-op since v2.0.11.
+ */
+export function getOrCreateCaptureRun(libraryRoot: string): number {
+  const database = getDb();
+  // Mirror insertRun's path normalisation so the report_id key is
+  // stable however the caller spells the root.
+  const normalisedRoot = libraryRoot.replace(/\\\\/g, '\\').replace(/\\$/, '');
+  const reportId = `pdr-captures::${normalisedRoot}`;
+
+  const existing = database
+    .prepare(`SELECT id FROM indexed_runs WHERE report_id = ? LIMIT 1`)
+    .get(reportId) as { id: number } | undefined;
+  if (existing?.id != null) return existing.id;
+
+  // destination_path points at the captures folder (not the library
+  // root) so the run reads truthfully in any run-level diagnostics.
+  return insertRun(reportId, `${normalisedRoot}\\PDR Captures`, 'PDR Captures');
+}
+
+/**
+ * v2.1 (Terry 2026-06-11) — single-file upsert for screen captures
+ * (screenshots now; screen recordings when that ships). Third sibling
+ * of indexEnhancedSibling / indexTrimmedClip, but with no source row:
+ * every field is built from first principles.
+ *
+ * The capture timestamp is AUTHORITATIVE — PDR created the file at a
+ * known moment — so confidence is 'confirmed' and date_source is
+ * 'PDR-Capture'. This is the entire reason captures skip the Fix
+ * worker: there is nothing to recover or guess. The filename PDR
+ * writes (YYYY-MM-DD_HH-MM-SS_…) is also the indexer's own
+ * filename-date pattern, so even a from-scratch library rebuild
+ * re-derives the same date from the name alone.
+ *
+ * Returns the indexed_files.id of the upserted row.
+ */
+export async function indexCapturedFile(
+  newPath: string,
+  libraryRoot: string,
+  capturedAt: Date,
+  width: number | null,
+  height: number | null,
+  fileType: 'photo' | 'video' = 'photo',
+): Promise<number | null> {
+  const database = getDb();
+  const runId = getOrCreateCaptureRun(libraryRoot);
+
+  const stat = await fs.promises.stat(newPath);
+  const sizeBytes = stat.size;
+  const newHash = await new Promise<string>((resolve, reject) => {
+    // Same streaming sha256 as the Enhance / Trim paths (and the
+    // enrichment engine) so duplicate-detection treats captures
+    // consistently with the rest of the library.
+    const h = crypto.createHash('sha256');
+    const stream = fs.createReadStream(newPath, { highWaterMark: 64 * 1024 });
+    stream.on('data', (chunk: string | Buffer) => h.update(chunk));
+    stream.on('end', () => resolve(h.digest('hex')));
+    stream.on('error', reject);
+  });
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const y = capturedAt.getFullYear();
+  const mo = capturedAt.getMonth() + 1;
+  const d = capturedAt.getDate();
+  // Same `YYYY-MM-DD HH:MM:SS` shape buildFileRecord derives from
+  // PDR filenames — keeps capture rows sort-compatible everywhere.
+  const derivedDate = `${y}-${pad(mo)}-${pad(d)} ${pad(capturedAt.getHours())}:${pad(capturedAt.getMinutes())}:${pad(capturedAt.getSeconds())}`;
+
+  const newFilename = path.basename(newPath);
+  const newExt = path.extname(newPath).toLowerCase().replace(/^\./, '');
+  const megapixels = width && height ? parseFloat(((width * height) / 1_000_000).toFixed(1)) : null;
+
+  const payload: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'> = {
+    file_path: newPath,
+    filename: newFilename,
+    extension: newExt,
+    file_type: fileType,
+    size_bytes: sizeBytes,
+    hash: newHash,
+    confidence: 'confirmed',
+    date_source: 'PDR-Capture',
+    // The capture was born with this name — it IS the original.
+    original_filename: newFilename,
+    derived_date: derivedDate,
+    year: y,
+    month: mo,
+    day: d,
+    camera_make: null,
+    camera_model: null,
+    lens_model: null,
+    width,
+    height,
+    megapixels,
+    iso: null,
+    shutter_speed: null,
+    aperture: null,
+    focal_length: null,
+    flash_fired: null,
+    scene_capture_type: null,
+    exposure_program: null,
+    white_balance: null,
+    orientation: null,
+    camera_position: null,
+    gps_lat: null,
+    gps_lon: null,
+    gps_alt: null,
+    geo_country: null,
+    geo_country_code: null,
+    geo_city: null,
+    exif_read_ok: 1,
+  };
+
+  insertFiles(runId, [payload]);
+
+  // Keep the captures run's file_count honest — it feeds run-level
+  // stats surfaces (LDM per-run counts etc.).
+  const countRow = database
+    .prepare(`SELECT COUNT(*) AS n FROM indexed_files WHERE run_id = ?`)
+    .get(runId) as { n: number } | undefined;
+  if (countRow) updateRunFileCount(runId, countRow.n);
+
+  const idRow = database
+    .prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`)
+    .get(newPath) as { id: number } | undefined;
+  return idRow?.id ?? null;
+}
+
 /**
  * Merge one group of duplicate indexed_files rows onto a single winner.
  * Transfers face_detections (including verified faces), ai_tags (with

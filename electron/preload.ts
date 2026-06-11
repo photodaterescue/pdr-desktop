@@ -300,6 +300,43 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
+  // v2.1 (Terry 2026-06-11) — Screen capture (screenshot → library).
+  // screenshot() may return needsDisplayPick + a display list on
+  // multi-monitor setups; the caller shows the picker and re-invokes
+  // with displayId. Success/pending toasts are driven by the
+  // capture:completed broadcast (covers hotkey captures too).
+  capture: {
+    screenshot: (opts?: { displayId?: string }) =>
+      ipcRenderer.invoke('capture:screenshot', opts ?? {}) as Promise<{
+        success: boolean;
+        filePath?: string;
+        filename?: string;
+        fileId?: number | null;
+        pending?: boolean;
+        needsDisplayPick?: boolean;
+        displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
+        error?: string;
+      }>,
+    listDisplays: () => ipcRenderer.invoke('capture:listDisplays'),
+    setHotkey: (accelerator: string) =>
+      ipcRenderer.invoke('capture:setHotkey', accelerator) as Promise<{
+        success: boolean;
+        registered?: boolean;
+        accelerator?: string;
+        error?: string;
+      }>,
+    onCompleted: (callback: (info: { filePath: string; filename: string; fileId: number | null; pending: boolean; width: number | null; height: number | null }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:completed', handler);
+      return () => ipcRenderer.removeListener('capture:completed', handler);
+    },
+    onPendingFlushed: (callback: (info: { count: number }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:pendingFlushed', handler);
+      return () => ipcRenderer.removeListener('capture:pendingFlushed', handler);
+    },
+  },
+
 
   // Free Trial file counter — read / increment the Cloudflare
   // KV-backed tally. Renderer reads it for the workspace banner and

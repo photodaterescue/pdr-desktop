@@ -36,6 +36,7 @@ import {
   Tag,
   Shield,
   ShieldCheck,
+  Camera,
   Wrench,
   Sun,
   Moon,
@@ -106,6 +107,7 @@ import {
   cancelAiModelInstall,
   uninstallAiModel,
   onAiModelStateChanged,
+  captureSetHotkey,
   type AiModelKey,
   type AiModelStatus,
 } from "@/lib/electron-bridge";
@@ -12626,6 +12628,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // button is highlighted on panel open; the user can still pick the
   // other one per-save.
   const [viewerEnhanceSaveDefault, setViewerEnhanceSaveDefaultState] = useState<'new' | 'replace'>('new');
+  // v2.1 (Terry 2026-06-11) — Settings → Capture. Current screenshot
+  // hotkey + recorder state + the registration verdict from the last
+  // remap (Windows refuses combos another app already owns).
+  const [captureHotkey, setCaptureHotkeyState] = useState<string>('Ctrl+Shift+S');
+  const [captureHotkeyRecording, setCaptureHotkeyRecording] = useState(false);
+  const [captureHotkeyRegistered, setCaptureHotkeyRegistered] = useState<boolean | null>(null);
   // v2.0.15 Phase 4 (Terry 2026-06-06) — live state of the two optional
   // AI Photo Enhancement models (CodeFormer / Real-ESRGAN). Populated
   // on Settings open via listAiModels() and kept fresh via the
@@ -12690,6 +12698,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setHideCaptionsState(((settings as any).hideCaptions as boolean) ?? false);
       setHideVideoTranscriptsState(((settings as any).hideVideoTranscripts as boolean) ?? false);
       setVideoCaptionSizeState(((settings as any).videoCaptionSize as 'small' | 'medium' | 'large') ?? 'medium');
+      setCaptureHotkeyState(((settings as any).captureHotkey as string) ?? 'Ctrl+Shift+S');
     });
   }, []);
 
@@ -12741,6 +12750,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleViewerEnhanceSaveDefaultChange = (mode: 'new' | 'replace') => {
     setViewerEnhanceSaveDefaultState(mode);
     setSetting('viewerEnhanceSaveDefault' as any, mode);
+  };
+
+  // v2.1 (Terry 2026-06-11) — apply a new screenshot hotkey. Goes
+  // through the dedicated capture:setHotkey IPC (not plain
+  // settings:set) because main re-registers the global shortcut in
+  // the same round-trip and reports whether Windows accepted it —
+  // combos owned by another app fail registration and the user needs
+  // to know NOW, not on next launch. The pdr:settingsChanged window
+  // event keeps the TitleBar tooltip's hotkey label live.
+  const applyCaptureHotkey = async (accelerator: string) => {
+    setCaptureHotkeyState(accelerator);
+    const res = await captureSetHotkey(accelerator);
+    setCaptureHotkeyRegistered(res.success ? (res.registered ?? false) : false);
+    window.dispatchEvent(new CustomEvent('pdr:settingsChanged', { detail: { key: 'captureHotkey', value: accelerator } }));
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -12965,7 +12988,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     setAutoAddToSD('ask');
   };
 
-  const [settingsTab, setSettingsTab] = useState<'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'privacy' | 'backup'>(initialTab ?? 'general');
+  const [settingsTab, setSettingsTab] = useState<'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'capture' | 'privacy' | 'backup'>(initialTab ?? 'general');
   // v2.0.15 (Terry 2026-06-04) — Settings redesign. Search input at
   // the top of the new left sidebar filters which tabs surface in the
   // list based on a hand-rolled keyword index per tab (label keywords
@@ -13105,7 +13128,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Refresh action lives) even though the word "refresh" isn't on
   // the tab label.
   const SETTINGS_TABS: Array<{
-    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'privacy' | 'backup';
+    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'capture' | 'privacy' | 'backup';
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     keywords: string;
@@ -13126,6 +13149,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     { id: 'sd',        label: 'S&D',         icon: Database,          keywords: 'search discovery library manager refresh re-running' },
     { id: 'people',    label: 'People',      icon: Users,             keywords: 'people manager faces face recognition visual suggestions startup' },
     { id: 'ai',        label: 'AI',          icon: Sparkles,          keywords: 'ai face detection object tagging auto process threshold confidence reclustering re-analyze' },
+    // v2.1 (Terry 2026-06-11) — Capture category. Home for the
+    // screenshot-to-library surface: the global hotkey remap now,
+    // screen-recording options when that ships later in v2.1.
+    // Positioned after AI and before Privacy — it's a "PDR does
+    // something for you" feature, not a data-control one.
+    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording snip grab print screen monitor display' },
     // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
     // for global render-time switches that hide personal content
     // when sharing the screen (captions, transcripts, future:
@@ -14500,6 +14529,76 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               in the DB, transcripts + .vtt sidecars stay on disk;
               this category is purely about what's RENDERED.
               ═══════════════════════════════════════════════════════════════ */}
+          {settingsTab === 'capture' && (
+            <>
+              {/* v2.1 (Terry 2026-06-11) — Capture section. First
+                  resident: the screenshot global-hotkey remapper.
+                  Screen-recording options join this tab when that
+                  ships later in v2.1. */}
+              <div className="space-y-4">
+                <div className="flex items-start gap-3 p-3 rounded-xl bg-violet-50/30 dark:bg-violet-950/10 border border-violet-100 dark:border-violet-800/30">
+                  <Camera className="w-4 h-4 text-violet-500 mt-0.5 shrink-0" />
+                  <p className="text-xs text-violet-700 dark:text-violet-300">
+                    Screenshots taken with PDR land <strong>straight in your library</strong> — saved to the PDR Captures folder on your Library Drive, dated to the moment of capture, and immediately searchable in Search &amp; Discovery and Memories. No Fix needed: PDR created the file, so the date is already right.
+                  </p>
+                </div>
+                <div className="p-3 rounded-lg border border-border">
+                  <span className="text-sm font-medium text-foreground">Screenshot hotkey</span>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    Works from anywhere in Windows — PDR doesn't need to be the app you're looking at. Press it while reading a recipe, a chat, a map; the screenshot is in your library before you've switched windows. Click the shortcut below, then press the new key combination you want (it needs at least one of Ctrl / Alt / Shift).
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCaptureHotkeyRecording(true)}
+                      onBlur={() => setCaptureHotkeyRecording(false)}
+                      onKeyDown={(e) => {
+                        if (!captureHotkeyRecording) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.key === 'Escape') { setCaptureHotkeyRecording(false); return; }
+                        if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+                        const mods: string[] = [];
+                        if (e.ctrlKey) mods.push('Ctrl');
+                        if (e.altKey) mods.push('Alt');
+                        if (e.shiftKey) mods.push('Shift');
+                        if (mods.length === 0) return;
+                        let key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+                        if (key === ' ') key = 'Space';
+                        if (key.startsWith('Arrow')) key = key.replace('Arrow', '');
+                        setCaptureHotkeyRecording(false);
+                        void applyCaptureHotkey([...mods, key].join('+'));
+                      }}
+                      className={`h-9 min-w-[180px] px-3 rounded-md border text-sm font-medium transition-colors ${
+                        captureHotkeyRecording
+                          ? 'border-primary bg-primary/5 text-foreground animate-pulse'
+                          : 'border-border text-foreground hover:border-primary/50 hover:bg-secondary/50'
+                      }`}
+                      data-testid="capture-hotkey-recorder"
+                    >
+                      {captureHotkeyRecording ? 'Press a key combination… (Esc to cancel)' : captureHotkey}
+                    </button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => { void applyCaptureHotkey('Ctrl+Shift+S'); }}
+                      disabled={captureHotkey === 'Ctrl+Shift+S'}
+                    >
+                      Reset to default
+                    </Button>
+                  </div>
+                  {captureHotkeyRegistered === false && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300 mt-2">
+                      Windows wouldn't register this shortcut — another app is probably using it already. The camera button in the title bar still works; try a different combination.
+                    </p>
+                  )}
+                  <p className="text-xs text-muted-foreground mt-3">
+                    The camera button in the title bar does the same thing as the hotkey. On a multi-screen setup the hotkey captures the screen your mouse is on; the button asks once per session which screen you want.
+                  </p>
+                </div>
+              </div>
+            </>
+          )}
           {settingsTab === 'privacy' && (
             <>
               <div className="space-y-4">

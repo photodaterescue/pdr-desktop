@@ -313,6 +313,14 @@ import * as unzipper from 'unzipper';
 import crypto from 'crypto';
 import { saveReport, loadReport, loadLatestReport, listReports, deleteReport, exportReportToCSV, exportReportToTXT, getExportFilename, writeCatalogue, FixReport } from './report-storage.js';
 import { toLongPath, fromLongPath } from './long-path.js';
+// v2.1 (Terry 2026-06-11) — screenshot-to-library capture surface.
+import {
+  captureScreenshot,
+  listCaptureDisplays,
+  flushPendingCaptures,
+  registerCaptureHotkey,
+  unregisterCaptureHotkey,
+} from './capture-manager.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
@@ -2698,6 +2706,22 @@ app.whenReady().then(() => {
   } catch (e) {
     log.warn(`[Startup] LDM-state sync failed (non-fatal): ${(e as Error).message}`);
   }
+
+  // v2.1 (Terry 2026-06-11) — screenshot-to-library. Register the
+  // global capture hotkey (Ctrl+Shift+S default, remappable in
+  // Settings → Capture) and, a few seconds after startup so DB init
+  // isn't contended, flush any captures that were taken while the
+  // Library Drive was disconnected.
+  try {
+    registerCaptureHotkey();
+  } catch (e) {
+    log.warn(`[Startup] capture hotkey registration failed (non-fatal): ${(e as Error).message}`);
+  }
+  setTimeout(() => {
+    flushPendingCaptures().catch((e) =>
+      log.warn(`[Startup] pending-captures flush failed (non-fatal): ${(e as Error).message}`),
+    );
+  }, 5000);
 
   // Handle pdr-file:// protocol — serves local files to the viewer window
   protocol.handle('pdr-file', async (request) => {
@@ -13118,6 +13142,49 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
   }
 });
 
+// ─── v2.1 (Terry 2026-06-11) — Screen capture IPC ────────────────────────────
+// Thin handlers over capture-manager. The success toast is driven by
+// the capture:completed broadcast (so hotkey captures toast too, not
+// just button ones); these return values cover the picker round-trip
+// and error surfacing.
+
+ipcMain.handle('capture:screenshot', async (_event, opts?: { displayId?: string }) => {
+  try {
+    return await captureScreenshot({ displayId: opts?.displayId, trigger: 'button' });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('capture:listDisplays', async () => {
+  try {
+    return { success: true, displays: await listCaptureDisplays() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Saves the new accelerator AND re-registers in one round-trip so the
+// Settings → Capture recorder can tell the user immediately when
+// Windows refused the combo (another app owns it). Mirrors
+// settings:set's settings:changed broadcast for any surface showing
+// the current hotkey (title-bar tooltip).
+ipcMain.handle('capture:setHotkey', async (_event, accelerator: string) => {
+  try {
+    const accel = String(accelerator || '').trim();
+    if (!accel) return { success: false, error: 'Empty shortcut.' };
+    setSetting('captureHotkey', accel);
+    const reg = registerCaptureHotkey();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (win.isDestroyed()) continue;
+      try { win.webContents.send('settings:changed', { key: 'captureHotkey', value: accel }); } catch { /* non-fatal */ }
+    }
+    return { success: true, registered: reg.registered, accelerator: reg.accelerator };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
   try {
     const sharp = (await import('sharp')).default;
@@ -13375,4 +13442,6 @@ app.on('before-quit', () => {
   // added in v2.0.14 so its cleanup goes here.
   try { prewarmedAnalysisWorker?.kill(); } catch { /* best-effort */ }
   prewarmedAnalysisWorker = null;
+  // v2.1 — release the screenshot hotkey back to the OS.
+  try { unregisterCaptureHotkey(); } catch { /* best-effort */ }
 });

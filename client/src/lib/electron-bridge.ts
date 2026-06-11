@@ -2830,6 +2830,67 @@ export function onLibraryFilesAdded(callback: (info: LibraryFilesAddedInfo) => v
   catch { return () => {}; }
 }
 
+// ─── Screen capture (v2.1, Terry 2026-06-11) ────────────────────────────────
+// Screenshot-to-library surface. captureScreenshot() may come back
+// with needsDisplayPick + a display list on multi-monitor machines —
+// the caller (TitleBar) shows the picker and re-invokes with the
+// chosen displayId. Success/pending toasts ride the onCaptureCompleted
+// broadcast so hotkey-triggered captures toast exactly like button
+// ones.
+
+export interface CaptureDisplayInfo {
+  id: string;
+  label: string;
+  width: number;
+  height: number;
+  isPrimary: boolean;
+  thumbnailDataUrl: string;
+}
+
+export interface CaptureScreenshotResult {
+  success: boolean;
+  filePath?: string;
+  filename?: string;
+  fileId?: number | null;
+  pending?: boolean;
+  needsDisplayPick?: boolean;
+  displays?: CaptureDisplayInfo[];
+  error?: string;
+}
+
+export async function captureScreenshot(opts?: { displayId?: string }): Promise<CaptureScreenshotResult> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.capture?.screenshot?.(opts); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function captureSetHotkey(accelerator: string): Promise<{ success: boolean; registered?: boolean; accelerator?: string; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.capture?.setHotkey?.(accelerator); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export interface CaptureCompletedInfo {
+  filePath: string;
+  filename: string;
+  fileId: number | null;
+  pending: boolean;
+  width: number | null;
+  height: number | null;
+}
+
+export function onCaptureCompleted(callback: (info: CaptureCompletedInfo) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.capture?.onCompleted?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
+export function onCapturePendingFlushed(callback: (info: { count: number }) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.capture?.onPendingFlushed?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
 // v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model
 // installer bridge. The Settings cards call these to surface the
 // install/uninstall state of the optional ONNX models (CodeFormer +

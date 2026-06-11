@@ -1,11 +1,13 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw, Camera } from 'lucide-react';
+import { toast } from 'sonner';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, type AiProgress } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
 import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 import { useMemoriesReturnSource, setMemoriesReturnSource } from '@/lib/memories-return-source';
@@ -135,6 +137,71 @@ export function TitleBar() {
     window.addEventListener('pdr:settingsChanged', handler as EventListener);
     return () => { cancelled = true; window.removeEventListener('pdr:settingsChanged', handler as EventListener); };
   }, []);
+
+  // v2.1 (Terry 2026-06-11) — screenshot-to-library. The camera
+  // button captures the full screen and lands the PNG in
+  // <LibraryRoot>\PDR Captures\, already indexed. On multi-monitor
+  // machines the first button capture opens a display picker
+  // (remembered for the session); the global hotkey never shows UI —
+  // it shoots the display under the cursor. Toasts are driven by the
+  // capture:completed broadcast so hotkey captures (PDR minimised,
+  // user in another app) toast exactly like button ones.
+  const [captureDisplays, setCaptureDisplays] = useState<CaptureDisplayInfo[] | null>(null);
+  const [captureHotkeyLabel, setCaptureHotkeyLabel] = useState<string>('Ctrl+Shift+S');
+  useEffect(() => {
+    let cancelled = false;
+    getSettings().then((s) => {
+      if (!cancelled && (s as any)?.captureHotkey) setCaptureHotkeyLabel(String((s as any).captureHotkey));
+    }).catch(() => { /* best-effort */ });
+    // Live label refresh when the user remaps in Settings → Capture —
+    // same pdr:settingsChanged window-event convention as the Recycle
+    // Bin badge toggle above.
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<{ key: string; value: unknown }>).detail;
+      if (detail?.key === 'captureHotkey' && detail.value) setCaptureHotkeyLabel(String(detail.value));
+    };
+    window.addEventListener('pdr:settingsChanged', handler as EventListener);
+    return () => { cancelled = true; window.removeEventListener('pdr:settingsChanged', handler as EventListener); };
+  }, []);
+  useEffect(() => {
+    const offCompleted = onCaptureCompleted((info) => {
+      if (info.pending) {
+        toast.success('Screenshot saved', {
+          description: 'Your Library Drive is disconnected — PDR will add this capture to your library automatically when it reconnects.',
+        });
+      } else {
+        toast.success('Screenshot added to your library', {
+          description: info.filename,
+          action: { label: 'Open in Viewer', onClick: () => { void openSearchViewer(info.filePath, info.filename); } },
+        });
+      }
+    });
+    const offFlushed = onCapturePendingFlushed((info) => {
+      if (info.count > 0) {
+        toast.success(`${info.count} earlier capture${info.count === 1 ? '' : 's'} added to your library`, {
+          description: 'Saved while your Library Drive was disconnected — now in your library and searchable.',
+        });
+      }
+    });
+    return () => { offCompleted(); offFlushed(); };
+  }, []);
+  const handleCaptureClick = async () => {
+    const res = await captureScreenshot();
+    if (res?.needsDisplayPick && res.displays?.length) {
+      setCaptureDisplays(res.displays);
+      return;
+    }
+    if (res && !res.success && res.error) {
+      toast.error('Screenshot failed', { description: res.error });
+    }
+  };
+  const handleCapturePick = async (displayId: string) => {
+    setCaptureDisplays(null);
+    const res = await captureScreenshot({ displayId });
+    if (res && !res.success && res.error) {
+      toast.error('Screenshot failed', { description: res.error });
+    }
+  };
 
   const aiProcessing = aiProgress != null
     && aiProgress.phase !== 'complete'
@@ -444,6 +511,24 @@ export function TitleBar() {
             Switching to `relative` on the button only when the badge
             is showing keeps the icon perfectly centred when the
             badge is hidden. */}
+        {/* v2.1 (Terry 2026-06-11) — Capture button. Takes a
+            full-screen screenshot straight into the library (no Fix,
+            no source-add — captures are born with an authoritative
+            timestamp). Sits first in the titlebar button family
+            because it's a global verb like the Recycle Bin next to
+            it; styling copies the same w-7 h-7 rounded-full recipe.
+            The tooltip carries the current global hotkey so the
+            faster path stays discoverable. */}
+        <IconTooltip label={`Take screenshot — straight into your library (${captureHotkeyLabel})`} side="bottom">
+          <button
+            onClick={() => { void handleCaptureClick(); }}
+            className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
+            data-testid="titlebar-capture"
+            aria-label="Take screenshot"
+          >
+            <Camera className="w-3.5 h-3.5" />
+          </button>
+        </IconTooltip>
         <IconTooltip label={recycleCount > 0 ? `Recycle Bin · ${recycleCount} item${recycleCount === 1 ? '' : 's'}` : 'Recycle Bin'} side="bottom">
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('pdr:openRecycleBin'))}
@@ -512,6 +597,41 @@ export function TitleBar() {
 
       {/* Spacer for native window controls overlay area */}
       <div className="w-[140px] shrink-0" />
+
+      {/* v2.1 (Terry 2026-06-11) — multi-monitor display picker for
+          the Capture button. Only ever opens on machines with 2+
+          displays and no session choice yet; the chosen display is
+          remembered until the app closes. Hotkey captures never see
+          this — they take the display under the cursor. */}
+      <Dialog open={!!captureDisplays} onOpenChange={(open) => { if (!open) setCaptureDisplays(null); }}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Which screen?</DialogTitle>
+            <DialogDescription>
+              You have more than one display — pick the one to capture. PDR remembers your choice until you close the app.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            {captureDisplays?.map((d) => (
+              <button
+                key={d.id}
+                onClick={() => { void handleCapturePick(d.id); }}
+                className="flex flex-col items-stretch gap-2 p-3 rounded-lg border border-border hover:border-primary/60 hover:bg-secondary/50 transition-colors text-left"
+                data-testid={`capture-display-${d.id}`}
+              >
+                {d.thumbnailDataUrl ? (
+                  <img
+                    src={d.thumbnailDataUrl}
+                    alt={d.label}
+                    className="w-full rounded-md border border-border object-contain bg-black/20"
+                  />
+                ) : null}
+                <span className="text-sm font-medium text-foreground">{d.label}</span>
+              </button>
+            ))}
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

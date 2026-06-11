@@ -110,6 +110,17 @@ export interface PDRSettings {
    *  most users. Power users who want at-a-glance "anything to
    *  empty?" visibility can flip this on in Settings → General. */
   recycleBinShowCountBadge: boolean;
+  /** v2.1 (Terry 2026-06-11) — global hotkey for "take a screenshot
+   *  straight into the library". Electron accelerator string,
+   *  registered system-wide via globalShortcut so it works even when
+   *  PDR is minimised or behind other windows (that's the point — the
+   *  user is looking at the thing they want to capture, not at PDR).
+   *  Default Ctrl+Shift+S (Terry's pick — sits next to the OS's
+   *  Win+Shift+S snip muscle-memory). Remappable in Settings →
+   *  Capture. When registration fails (another app owns the combo)
+   *  we log + surface it in Settings; the title-bar camera button
+   *  keeps working regardless. */
+  captureHotkey: string;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -254,6 +265,8 @@ export const optimisedDefaults: PDRSettings = {
   // who want videos in the slideshow (advances when the video ends).
   slideshowIncludeVideos: false,
   recycleBinShowCountBadge: false,
+  // v2.1 — screenshot-to-library global hotkey (Settings → Capture).
+  captureHotkey: 'Ctrl+Shift+S',
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -331,6 +344,7 @@ export function getSettings(): PDRSettings {
     videoCaptionSize: store.get('videoCaptionSize', optimisedDefaults.videoCaptionSize),
     slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
+    captureHotkey: store.get('captureHotkey', optimisedDefaults.captureHotkey),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
