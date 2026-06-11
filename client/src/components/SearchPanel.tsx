@@ -5011,34 +5011,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {/* "Open N in Viewer" lives as the primary CTA on
                       the band (round 113), so it's intentionally NOT
                       duplicated here in the More menu. */}
-                  {/* v2.1 round 114 (Terry 2026-06-11) — Show/Hide
-                      Preview toggle. The FileDetailPanel can be
-                      dismissed via the X in its own header (round
-                      106 removed the redundant toolbar button), so
-                      until now there was no way to bring it back
-                      after closing. Living it at the TOP of the
-                      More menu (above the bulk-action verbs)
-                      groups it with the other "look at this
-                      selection" affordance — the Open-in-Viewer
-                      CTA already promoted to the banner. Same
-                      PanelRightOpen / PanelRightClose icons the
-                      old toolbar button used. */}
-                  <DropdownMenuItem
-                    onSelect={() => setShowPreviewPanel(prev => !prev)}
-                  >
-                    {showPreviewPanel ? (
-                      <>
-                        <PanelRightClose className="w-3.5 h-3.5 mr-2" />
-                        Hide Preview
-                      </>
-                    ) : (
-                      <>
-                        <PanelRightOpen className="w-3.5 h-3.5 mr-2" />
-                        Show Preview
-                      </>
-                    )}
-                  </DropdownMenuItem>
-                  <DropdownMenuSeparator />
+                  {/* v2.1 round 115 (Terry 2026-06-11) — REMOVED
+                      the round-114 Show/Hide Preview toggle from
+                      this menu. Two problems with it:
+                      (1) clicking "Show Preview" flipped
+                      showPreviewPanel → true but left selectedFile
+                      null when the user got into multi-select via
+                      ctrl-click (ctrl-click only toggles selection;
+                      it doesn't set selectedFile), so the panel
+                      rendered nothing.
+                      (2) Terry: "I didn't say add Show/Hide Preview
+                      toggle. I said to add Show Preview." The
+                      single-purpose affordance is now a pill on
+                      the banner row itself (see right of the More
+                      dropdown), gated on `!showPreviewPanel`, and
+                      it falls back to picking the first selected
+                      file when selectedFile is null. The reverse
+                      direction (closing the preview) is the X in
+                      the FileDetailPanel's own header. */}
                   <DropdownMenuItem
                     disabled={fixActive}
                     onSelect={() => setPlRibbonPulse(true)}
@@ -5102,6 +5092,44 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
+              {/* v2.1 round 115 (Terry 2026-06-11) — SHOW PREVIEW pill.
+                  Sits on the banner row right of the More dropdown
+                  (Terry's red-box callout in SS1), gated on
+                  `!showPreviewPanel` so it disappears the moment
+                  the panel is back. The use case Terry called out:
+                  "If the user holds down CTRL and starts selecting
+                  images, then the preview doesn't get shown." That
+                  path runs through the ctrl-only branch of the
+                  tile onClick handler, which intentionally skips
+                  `setSelectedFile` so the multi-select doesn't
+                  jump the preview around. The user then has a
+                  pile but no preview. Click this pill: it flips
+                  showPreviewPanel → true AND seeds selectedFile
+                  from the first file in the selection if it's
+                  null, so the panel always renders SOMETHING
+                  when reopened. The reverse direction (closing
+                  the preview) is the X in the FileDetailPanel's
+                  own header — single source of truth. */}
+              {!showPreviewPanel && (
+                <IconTooltip label="Show the preview panel for the most recently selected file" side="bottom">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowPreviewPanel(true);
+                      if (!selectedFile && selectedFilesMap.size > 0) {
+                        setSelectedFile(Array.from(selectedFilesMap.values())[0]);
+                      }
+                    }}
+                    className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
+                    data-testid="sd-show-preview"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <PanelRightOpen className="w-3.5 h-3.5" />
+                      <span>Show Preview</span>
+                    </span>
+                  </button>
+                </IconTooltip>
+              )}
               <div className="flex-1" />
               {/* Off-screen anchor for AddToAlbumPopover — opened by
                   the More dropdown's Add-to-album item via openTrigger
