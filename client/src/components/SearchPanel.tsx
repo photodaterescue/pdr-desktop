@@ -4160,7 +4160,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
 
       {/* ═══ RESULTS AREA (below ribbon, above workspace) ═══ */}
       {searchActive && results && (
-        <div className="flex-1 flex flex-col overflow-hidden">
+        <ResizablePanelGroup direction="horizontal" className="flex-1 overflow-hidden">
+          {/* v2.1 round 107 (Terry 2026-06-11) — outer left panel now
+              hosts BOTH the toolbar row AND the grid/empty-state below
+              it. Previously the toolbar was a sibling of the
+              ResizablePanelGroup, so the right preview panel only
+              started below the toolbar band. Hoisting the toolbar
+              into the left panel lets the right preview panel extend
+              UP to the top of the results area, using the empty space
+              that sat to the right of the old toolbar. Width sizing
+              mirrors the previous behaviour: 65 % when a file is
+              selected and the preview is open, 100 % otherwise. */}
+          <ResizablePanel defaultSize={selectedFile && showPreviewPanel ? 65 : 100} minSize={40} className="flex flex-col">
           {/* Results count bar with inline filter chips (Terry 2026-05-19).
               The chips live BETWEEN the left-hand "results count + Edit
               Dates + selection actions" span and the right-hand view-
@@ -4930,12 +4941,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               results and the cross-search selection union depending on
               `showSelectedOnly`. */}
           {displayFiles.length > 0 ? (
-            <ResizablePanelGroup direction="horizontal" className="flex-1">
-              <ResizablePanel defaultSize={selectedFile && showPreviewPanel ? 65 : 100} minSize={40}>
-                <div
-                  ref={gridContainerRef}
-                  data-tour="sd-results-grid"
-                  className="h-full overflow-y-auto p-4 select-none sd-scroll-container"
+            <div
+              ref={gridContainerRef}
+              data-tour="sd-results-grid"
+              className="flex-1 overflow-y-auto p-4 select-none sd-scroll-container"
                   onWheel={(e) => {
                     if (!(e.ctrlKey || e.metaKey)) return;
                     // Only scale tiles when in grid view. List and Details ignore Ctrl+scroll.
@@ -5173,9 +5182,29 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       Showing all {results.total.toLocaleString()} result{results.total === 1 ? '' : 's'}
                     </div>
                   )}
-                </div>
-              </ResizablePanel>
-              {selectedFile && showPreviewPanel && (() => {
+            </div>
+          ) : (
+            /* Empty-state mirror of `data-tour="sd-results-grid"` so the
+               S&D tour's "Results" step has a spotlight target even
+               before the user has run a search. The active grid above
+               carries the same data-tour, so the tour highlights
+               whichever variant is currently rendered. */
+            <div className="flex-1 flex items-center justify-center p-8" data-tour="sd-results-grid">
+              <div className="text-center max-w-sm">
+                <Search className="w-8 h-8 text-muted-foreground/70 mx-auto mb-3" />
+                <h3 className="text-base font-semibold text-foreground mb-1">No matches</h3>
+                <p className="text-sm text-muted-foreground">Try adjusting your search or filters.</p>
+                <button onClick={clearFilters} className="mt-3 text-sm text-primary hover:text-primary/80 transition-colors">Clear all filters</button>
+              </div>
+            </div>
+          )}
+          </ResizablePanel>
+          {/* v2.1 round 107 — right preview panel hoisted out from
+              inside the displayFiles>0 branch to become a sibling of
+              the outer-left ResizablePanel, so it can extend up to
+              the top of the results area. Still gated on
+              displayFiles>0 && a selected file && preview enabled. */}
+          {displayFiles.length > 0 && selectedFile && showPreviewPanel && (() => {
                 const navFiles = getNavigableFiles();
                 const navIdx = navFiles.findIndex(f => f.id === selectedFile.id);
                 const hasPrev = navIdx > 0;
@@ -5232,23 +5261,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   </>
                 );
               })()}
-            </ResizablePanelGroup>
-          ) : (
-            // Empty-state mirror of `data-tour="sd-results-grid"` so
-            // the S&D tour's "Results" step has a spotlight target
-            // even before the user has run a search. The active grid
-            // above (line ~3506) carries the same data-tour, so the
-            // tour highlights whichever variant is currently rendered.
-            <div className="flex-1 flex items-center justify-center p-8" data-tour="sd-results-grid">
-              <div className="text-center max-w-sm">
-                <Search className="w-8 h-8 text-muted-foreground/70 mx-auto mb-3" />
-                <h3 className="text-base font-semibold text-foreground mb-1">No matches</h3>
-                <p className="text-sm text-muted-foreground">Try adjusting your search or filters.</p>
-                <button onClick={clearFilters} className="mt-3 text-sm text-primary hover:text-primary/80 transition-colors">Clear all filters</button>
-              </div>
-            </div>
-          )}
-        </div>
+        </ResizablePanelGroup>
       )}
 
       {/* Index Manager Modal */}
