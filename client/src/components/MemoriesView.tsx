@@ -2198,19 +2198,31 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           if (monthsForYear.length <= 1) {
             return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
           }
+          // v2.1 round 97 part 4 (Terry 2026-06-11) — month picker
+          // now wears the same pill recipe as Year + Media + Display.
+          // Trigger: h-8 + rounded-md + border-border + bg-background
+          // + min-w-[150px] + justify-between, CalendarRange icon,
+          // "Month:" prefix mirroring Year's "Year:" prefix.
+          // IconTooltip wraps the trigger like the year picker.
           return (
             <Popover open={monthPickerOpen} onOpenChange={setMonthPickerOpen}>
-              <PopoverTrigger asChild>
-                <button
-                  type="button"
-                  className="inline-flex items-center gap-1.5 px-2 py-1 -mx-2 -my-1 rounded-md text-base font-semibold text-foreground leading-none hover:bg-secondary/60 transition-colors"
-                  data-testid="memories-drilldown-month-picker"
-                >
-                  {title}
-                  <ChevronDown className="w-4 h-4 text-muted-foreground" />
-                </button>
-              </PopoverTrigger>
-              <PopoverContent align="start" className="w-56 p-1">
+              <IconTooltip label={`Jump to a different month in ${year}`} side="bottom">
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors min-w-[150px]"
+                    data-testid="memories-drilldown-month-picker"
+                  >
+                    <span className="inline-flex items-center gap-1.5">
+                      <CalendarRange className="w-3.5 h-3.5" />
+                      <span className="text-muted-foreground/85">Month:</span>
+                      <span>{MONTH_NAMES[month - 1]}</span>
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                  </button>
+                </PopoverTrigger>
+              </IconTooltip>
+              <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto">
                 <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
                   Jump to month in {year}
                 </p>
