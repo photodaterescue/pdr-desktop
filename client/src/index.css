@@ -236,6 +236,20 @@
   50% { box-shadow: 0 0 0 5px rgba(245, 158, 11, 0.35); }
 }
 
+/* v2.1 round 112 (Terry 2026-06-11) — Gold sibling of outline-pulse.
+   Used by the S&D Actions-ribbon Parallel Library button after the
+   user picks "Add to Parallel Library" from the gold selection
+   banner's More dropdown. The selection has been staged for a PL;
+   the ribbon button pulses gold to point the user at where the
+   actual create-PL modal lives. Same 2.4s ease-in-out rate as the
+   burger menu's lavender outline-pulse — Terry: "pulsate with gold
+   at the same rate as the burger menu in the sidebar." The
+   #FEC242 rgba (254, 194, 66) matches --color-gold verbatim. */
+@keyframes outline-pulse-gold {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(254, 194, 66, 0.55); }
+  50% { box-shadow: 0 0 0 5px rgba(254, 194, 66, 0.35); }
+}
+
 /* ─── Chip-tier colour fallback ────────────────────────────────────────
    Last-resort attribute-selector rules with !important so the chip
    tints land regardless of Tailwind class processing, twMerge, parent

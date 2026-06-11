@@ -96,6 +96,13 @@ import {
   ContextMenuItem,
   ContextMenuSeparator,
 } from '@/components/ui/context-menu';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
 import { editPhotoCaption } from '@/lib/caption-actions';
 import { CaptionBadge } from '@/components/CaptionBadge';
 import { CaptionTooltip } from '@/components/ui/caption-tooltip';
@@ -182,6 +189,7 @@ import {
   type AiTagRecord,
   refineFromVerified,
   redetectFile,
+  moveToRecycleBin,
   type FaceRecord,
   type PersonRecord,
   type PersonCluster,
@@ -670,6 +678,27 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     });
   }, [selectedFiles]);
   const [showStructureModal, setShowStructureModal] = useState(false);
+  // v2.1 round 112 (Terry 2026-06-11) — gold pulse on the Actions-
+  // ribbon Parallel Library button. Flipped true by the gold
+  // selection banner's "Add to Parallel Library" menu item; flipped
+  // false the moment the user clicks the ribbon button (modal opens
+  // and the cue's job is done) OR the selection clears (staged
+  // intent has nothing to act on) OR the structure modal closes
+  // (PL flow finished one way or another). Terry: "after this is
+  // clicked, the Parallel Library icon on the ribbon should
+  // pulsate with gold at the same rate as the burger menu in the
+  // sidebar." Same 2.4s outline-pulse rate; gold rgba lives in the
+  // outline-pulse-gold keyframe added to index.css this round.
+  const [plRibbonPulse, setPlRibbonPulse] = useState(false);
+  useEffect(() => {
+    // Selection emptied → nothing staged → stop pulsing.
+    if (selectedFiles.size === 0 && plRibbonPulse) setPlRibbonPulse(false);
+  }, [selectedFiles, plRibbonPulse]);
+  useEffect(() => {
+    // Modal closed (either after creating a PL or cancelling) →
+    // pulse cue's job is done.
+    if (!showStructureModal && plRibbonPulse) setPlRibbonPulse(false);
+  }, [showStructureModal, plRibbonPulse]);
   // True whenever any window has a Fix in flight. Parallel Structures
   // shares the copy engine + writes to indexed_files, so concurrent
   // runs would deadlock + corrupt run records. Gate accordingly.
@@ -3580,31 +3609,38 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             Library. Disabled while a Fix is in
                             flight — PL uses the same copy engine.
 
-                            v2.1 round 111 (Terry 2026-06-11) — now
-                            ALSO gated on `selectedFiles.size === 0`.
-                            When the user has a pile, the gold
-                            selection banner below the toolbar
-                            carries an "Add N to Parallel Library"
-                            CTA that hits the same handler. Showing
-                            both at once would duplicate the
-                            affordance and confuse the verb
-                            ("Parallel" ribbon button vs "Add N to
-                            PL" banner button — same action, two
-                            buttons). So: no-selection → ribbon
-                            button = "Export ALL"; selection →
-                            banner CTA = "Add N to PL". */}
-                        {results && results.total > 0 && selectedFiles.size === 0 && (
+                            v2.1 round 112 (Terry 2026-06-11) —
+                            REVERTED the round-111 selection-gate.
+                            The button stays visible whether the
+                            user has a pile or not so it can
+                            pulsate gold after the banner's "Add to
+                            Parallel Library" menu item is picked
+                            (cue the user where the modal lives).
+                            The duplicate-affordance worry from
+                            round 111 doesn't apply any more —
+                            round 112's banner doesn't carry its
+                            own PL CTA; PL is one item in the
+                            More dropdown, and the dropdown closes
+                            on pick, so only ONE PL surface (this
+                            ribbon button) is ever visible at the
+                            moment the user goes to configure. */}
+                        {results && results.total > 0 && (
                           <IconTooltip
                             label={
                               fixActive
                                 ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
-                                : `Export all ${results.total.toLocaleString()} as Parallel Library`
+                                : plRibbonPulse
+                                  ? `Configure Parallel Library for the ${selectedFiles.size.toLocaleString()} staged file${selectedFiles.size === 1 ? '' : 's'}`
+                                  : selectedFiles.size > 0
+                                    ? `Export ${selectedFiles.size.toLocaleString()} selected as Parallel Library`
+                                    : `Export all ${results.total.toLocaleString()} as Parallel Library`
                             }
                             side="bottom"
                           >
                             <button
-                              onClick={() => { if (!fixActive) setShowStructureModal(true); }}
+                              onClick={() => { if (!fixActive) { setShowStructureModal(true); setPlRibbonPulse(false); } }}
                               disabled={fixActive}
+                              style={plRibbonPulse ? { animation: 'outline-pulse-gold 2.4s ease-in-out infinite' } : undefined}
                               className="flex flex-col items-center gap-0.5 px-2.5 py-1 rounded-md border border-transparent text-foreground/70 hover:bg-secondary hover:text-foreground disabled:opacity-50 disabled:cursor-not-allowed transition-all text-[11px] font-medium min-w-[42px]"
                               data-testid="sd-export-pl"
                             >
@@ -4873,87 +4909,150 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
             );
           })()}
 
-          {/* v2.1 round 111 (Terry 2026-06-11) — GOLD SELECTION BANNER.
-              Mirrors MemoriesPendingView ("Needs Dates") so the
-              two surfaces feel like one family. Appears the moment
-              anything is in the pile, full-width below the toolbar.
+          {/* v2.1 round 112 (Terry 2026-06-11) — GOLD SELECTION BANNER,
+              second cut. Round 111 lined up four pills in the band
+              (chip + Add-to-PL gold CTA + Open in Viewer + Add to
+              album). Terry: "I don't think Parallel Libraries is
+              going to be the primary reason users highlight files
+              here. PLs is a pretty rare thing to do." So the PL
+              CTA loses its primary spot and joins the rest of the
+              bulk actions in a More dropdown — mirroring exactly
+              what MemoriesPendingView ("Needs Dates") does.
 
-              Primary CTA: "Add N to Parallel Library" — Terry's
-              explicit ask. Hits the same setShowStructureModal
-              handler that the Actions ribbon's Parallel Library
-              button uses; that ribbon button is gated to hide when
-              there's a selection so the two affordances don't
-              double up (no-selection → ribbon button = "Export
-              ALL"; selection → banner CTA = "Add N to PL").
+              Now: just [chip] + [More], both using the toolbar
+              pill recipe (h-8 + min-w-[150px] + rounded-md +
+              border + justify-between) so the band reads as one
+              uniform family with the Media + Display pills on
+              the row above it. Terry: "these buttons/dropdowns
+              should all be the same size. It looks much better
+              on the toolbar, so we should apply the same thing
+              to the banner."
 
-              Secondary buttons (Open in Viewer, Add to album) are
-              the same ones that used to live inline in the chip
-              strip; just moved here so the user sees them
-              together with the new CTA, gold-tinted to match the
-              band.
-
-              Recipe verbatim from MemoriesPendingView lines
-              1042-1220: h-7 + rounded-md + border-[var(--color-gold)]
-              + bg-[var(--color-gold)]/15 for secondaries, solid
-              bg-[var(--color-gold)] + text-[#1f1a08] for the
-              primary CTA. */}
+              "Add to Parallel Library" inside More flips
+              plRibbonPulse → true (see useState block higher
+              up). The Actions-ribbon PL button then pulses gold
+              at the burger-menu rate to cue the user where
+              the PL configuration modal lives. Clicking the
+              ribbon button opens the modal and stops the pulse;
+              clearing the selection or closing the modal also
+              stops it. */}
           {selectedFiles.size > 0 && (
             <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/15">
               <IconTooltip label="Clear selection" side="bottom">
                 <button
                   type="button"
                   onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+                  className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
                   data-testid="sd-selection-chip"
                   aria-label={`${selectedFiles.size} selected — clear selection`}
                 >
                   <span>{selectedFiles.size.toLocaleString()} selected</span>
-                  <X className="w-3 h-3 opacity-70" />
+                  <X className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </IconTooltip>
-              <IconTooltip
-                label={
-                  fixActive
-                    ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
-                    : `Export the ${selectedFiles.size.toLocaleString()} selected file${selectedFiles.size === 1 ? '' : 's'} as a Parallel Library`
-                }
-                side="bottom"
-              >
-                <button
-                  type="button"
-                  disabled={fixActive}
-                  onClick={() => setShowStructureModal(true)}
-                  className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                  data-testid="sd-selection-add-to-pl"
-                >
-                  <Copy className="w-3.5 h-3.5" />
-                  Add {selectedFiles.size.toLocaleString()} to Parallel Library
-                </button>
-              </IconTooltip>
-              {(() => {
-                const viewable = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video');
-                if (viewable.length === 0) return null;
-                return (
-                  <IconTooltip label="Open the selected photos and videos in the Viewer" side="bottom">
+              <DropdownMenu>
+                <IconTooltip label="More bulk actions for the selection" side="bottom">
+                  <DropdownMenuTrigger asChild>
                     <button
                       type="button"
-                      onClick={() => safeOpenViewer(viewable.map(f => f.file_path), viewable.map(f => f.filename))}
-                      className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
-                      data-testid="sd-selection-open-viewer"
+                      className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
+                      data-testid="sd-selection-more"
                     >
-                      <Eye className="w-3.5 h-3.5" />
-                      Open {viewable.length.toLocaleString()} in Viewer
+                      <span>More</span>
+                      <ChevronDown className="w-3.5 h-3.5 opacity-80" />
                     </button>
-                  </IconTooltip>
-                );
-              })()}
-              <AddToAlbumPopover
-                fileIds={Array.from(selectedFiles)}
-                disabled={fixActive}
-                disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
-                openTrigger={addToAlbumOpenTick}
-              />
+                  </DropdownMenuTrigger>
+                </IconTooltip>
+                <DropdownMenuContent align="start" className="min-w-[260px]">
+                  {(() => {
+                    const viewable = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'photo' || f.file_type === 'video');
+                    if (viewable.length === 0) return null;
+                    return (
+                      <DropdownMenuItem
+                        onSelect={() => safeOpenViewer(viewable.map(f => f.file_path), viewable.map(f => f.filename))}
+                      >
+                        <Eye className="w-3.5 h-3.5 mr-2" />
+                        Open {viewable.length.toLocaleString()} Selected in Viewer
+                      </DropdownMenuItem>
+                    );
+                  })()}
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    disabled={fixActive}
+                    onSelect={() => setPlRibbonPulse(true)}
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-2" />
+                    Add {selectedFiles.size.toLocaleString()} to Parallel Library
+                  </DropdownMenuItem>
+                  <DropdownMenuItem
+                    disabled={fixActive}
+                    onSelect={() => setAddToAlbumOpenTick(t => t + 1)}
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                    Add to album…
+                  </DropdownMenuItem>
+                  {(() => {
+                    const videos = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'video');
+                    if (videos.length === 0) return null;
+                    return (
+                      <DropdownMenuItem
+                        onSelect={() => { void transcribeVideoPaths(videos.map(v => v.file_path)); }}
+                      >
+                        <Captions className="w-3.5 h-3.5 mr-2" />
+                        Transcribe {videos.length.toLocaleString()} video{videos.length === 1 ? '' : 's'}…
+                      </DropdownMenuItem>
+                    );
+                  })()}
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      const names = Array.from(selectedFilesMap.values()).map(f => f.filename).join('\n');
+                      if (!names) return;
+                      try {
+                        await navigator.clipboard.writeText(names);
+                        const count = selectedFiles.size;
+                        toast.success(count === 1 ? 'Filename copied' : `Copied ${count.toLocaleString()} filenames`);
+                      } catch {
+                        toast.error(`Couldn't copy filename${selectedFiles.size === 1 ? '' : 's'}`);
+                      }
+                    }}
+                  >
+                    <Copy className="w-3.5 h-3.5 mr-2" />
+                    {selectedFiles.size === 1 ? 'Copy filename' : `Copy ${selectedFiles.size.toLocaleString()} filenames`}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem
+                    onSelect={async () => {
+                      const ids = Array.from(selectedFiles);
+                      if (ids.length === 0) return;
+                      const r = await moveToRecycleBin(ids);
+                      if (r.success) {
+                        toast.success(`Moved ${(r.count ?? ids.length).toLocaleString()} to Recycle Bin`);
+                        setSelectedFiles(new Set());
+                        setSelectedFilesMap(new Map());
+                      } else {
+                        toast.error("Couldn't move to Recycle Bin", { description: r.error });
+                      }
+                    }}
+                    className="text-destructive focus:text-destructive"
+                  >
+                    <Trash2 className="w-3.5 h-3.5 mr-2" />
+                    Move {selectedFiles.size.toLocaleString()} to Recycle Bin
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
               <div className="flex-1" />
+              {/* Off-screen anchor for AddToAlbumPopover — opened by
+                  the More dropdown's Add-to-album item via openTrigger
+                  bump. Same pattern MemoriesPendingView uses
+                  (lines ~1212-1219). */}
+              <div className="absolute -left-[9999px] top-0">
+                <AddToAlbumPopover
+                  fileIds={Array.from(selectedFiles)}
+                  disabled={fixActive}
+                  disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
+                  openTrigger={addToAlbumOpenTick}
+                />
+              </div>
             </div>
           )}
 

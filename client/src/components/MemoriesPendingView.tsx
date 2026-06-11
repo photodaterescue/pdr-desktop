@@ -1041,15 +1041,22 @@ export default function MemoriesPendingView({
           band. */}
       {selectedFileIds.size > 0 && (
         <div className="shrink-0 px-6 py-2 border-b border-border/60 flex items-center gap-2 bg-[var(--color-gold)]/15">
+          {/* v2.1 round 112 (Terry 2026-06-11) — banner buttons
+              upsized from h-7 to h-8 + min-w-[150px] +
+              justify-between, matching the Media + Display toolbar
+              pills above. Terry: "these buttons/dropdowns should
+              all be the same size. It looks much better on the
+              toolbar, so we should apply the same thing to the
+              banner." Recipe shared verbatim with the S&D banner. */}
           {/* N selected — pulsing chip, clears on click */}
           <IconTooltip label="Clear selection" side="bottom">
             <button
               onClick={clearSelection}
-              className="pdr-pending-chip-pulse inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+              className="pdr-pending-chip-pulse inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
               data-testid="pending-selection-chip"
             >
               <span>{selectedFileIds.size} selected</span>
-              <X className="w-3 h-3 opacity-70" />
+              <X className="w-3.5 h-3.5 opacity-70" />
             </button>
           </IconTooltip>
 
@@ -1058,11 +1065,13 @@ export default function MemoriesPendingView({
           <button
             type="button"
             onClick={() => openBulkPanel(selectedFiles)}
-            className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-semibold text-[#1f1a08] transition-colors"
+            className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors min-w-[150px] shrink-0"
             data-testid="pending-set-date-cta"
           >
-            <CalendarClock className="w-3.5 h-3.5" />
-            Set date for {selectedFileIds.size}
+            <span className="inline-flex items-center gap-1.5">
+              <CalendarClock className="w-3.5 h-3.5" />
+              Set date for {selectedFileIds.size}
+            </span>
           </button>
 
           {/* More overflow — every other bulk action (Open in Viewer,
@@ -1073,11 +1082,11 @@ export default function MemoriesPendingView({
             <DropdownMenuTrigger asChild>
               <button
                 type="button"
-                className="inline-flex items-center gap-1.5 h-7 px-3 rounded-md border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-xs font-semibold text-foreground transition-colors"
+                className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
                 data-testid="pending-selection-more"
               >
-                More
-                <ChevronDown className="w-3 h-3 opacity-80" />
+                <span>More</span>
+                <ChevronDown className="w-3.5 h-3.5 opacity-80" />
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-[260px]">
