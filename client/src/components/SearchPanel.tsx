@@ -5159,7 +5159,23 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         setSelectedFile(Array.from(selectedFilesMap.values())[0]);
                       }
                     }}
-                    className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-dashed border-[var(--color-gold)] bg-[var(--color-gold)]/10 hover:bg-[var(--color-gold)]/20 text-foreground transition-colors w-[35%] min-w-[200px] shrink-0"
+                    /* v2.1 round 119 (Terry 2026-06-11) — Terry:
+                       "I personally think the Show Preview should
+                       also be the same colour as the Open X in
+                       Viewer as these are both likely CTAs." Right —
+                       both verbs are "look at this stuff" at
+                       different scopes (inline metadata panel vs
+                       full-window Viewer). Solid gold + text-
+                       [#1f1a08] now matches the Open-in-Viewer
+                       CTA recipe verbatim. Dashed border dropped;
+                       the differentiation from the action pills
+                       (chip / Open / More) now comes from POSITION
+                       (right-anchored, separated from the left
+                       cluster) and WIDTH (~35 % matching the
+                       future preview footprint) instead of from
+                       style. Same h-8 baseline, same gold token,
+                       same justify-center inner layout. */
+                    className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors w-[35%] min-w-[200px] shrink-0"
                     data-testid="sd-show-preview"
                   >
                     <PanelRightOpen className="w-3.5 h-3.5" />
