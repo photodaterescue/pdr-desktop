@@ -655,15 +655,27 @@ export async function rebuildIndexFromLibraries(
           // file doesn't match the pattern (foreign filename, user
           // manually dropped it in), fall back to 'marked' so we
           // never falsely report it as confirmed.
-          const suffixMatch = filename.match(/_(CF|RC|MK)(?:_\d+)?\.[^.]+$/i);
+          // v2.1 round 124 (Terry 2026-06-11) — SS (screenshot) and SR
+          // (screen recording, future) joined the suffix family. PDR
+          // captures are born with an authoritative timestamp, so a
+          // rebuild must re-derive confirmed + PDR-Capture for them —
+          // without this they'd fall to the 'marked' fallback and a
+          // DB-wipe recovery would silently downgrade every capture.
+          // Same bug class as the _MK laundering fix above, caught
+          // pre-emptively this time. Note captures use -2 collision
+          // suffixes (not _NNN), so the optional counter group covers
+          // both conventions.
+          const suffixMatch = filename.match(/_(CF|RC|MK|SS|SR)(?:_\d+|-\d+)?\.[^.]+$/i);
           const suffix = suffixMatch ? suffixMatch[1].toUpperCase() : null;
           const derivedConfidence: 'confirmed' | 'recovered' | 'marked' =
             suffix === 'CF' ? 'confirmed'
             : suffix === 'RC' ? 'recovered'
+            : (suffix === 'SS' || suffix === 'SR') ? 'confirmed'
             : 'marked';
           const derivedDateSource =
             suffix === 'CF' ? 'embedded'
             : suffix === 'RC' ? 'Filename pattern'
+            : (suffix === 'SS' || suffix === 'SR') ? 'PDR-Capture'
             : 'unknown';
           const syntheticChange: FileChange = {
             newFilename: filename,

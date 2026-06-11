@@ -94,7 +94,7 @@
   <div id="veil"></div>
   <div id="selection"></div>
   <div id="sizeBadge"></div>
-  <div id="hint">Drag to select an area &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
+  <div id="hint">Click a window or drag to select an area &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
 <script>
 (function () {
   var pdr = window.pdr;
@@ -104,9 +104,16 @@
   var sizeBadge = document.getElementById('sizeBadge');
   var hint = document.getElementById('hint');
 
+  // Snap-to-window (round 124): main sends the z-ordered rectangles
+  // of every real window on the frozen frame. Hovering highlights the
+  // topmost window under the cursor; a plain CLICK captures it. A
+  // drag of 8px+ switches to free-rectangle selection.
+  var windowRects = [];
+
   if (pdr && pdr.capture && pdr.capture.onOverlayInit) {
     pdr.capture.onOverlayInit(function (info) {
       if (info && info.imageDataUrl) shot.src = info.imageDataUrl;
+      if (info && info.windows && info.windows.length) windowRects = info.windows;
     });
   }
 
@@ -117,9 +124,20 @@
     if (pdr && pdr.capture && pdr.capture.overlaySelect) pdr.capture.overlaySelect(rect);
   }
 
-  var dragging = false;
+  function windowUnder(x, y) {
+    // windowRects arrive topmost-first — first hit wins.
+    for (var i = 0; i < windowRects.length; i++) {
+      var r = windowRects[i];
+      if (x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height) return r;
+    }
+    return null;
+  }
+
+  var armed = false;      // left button is down
+  var dragging = false;   // moved 8px+ since mousedown → free-rect mode
   var startX = 0;
   var startY = 0;
+  var snapRect = null;    // window rect currently highlighted
 
   function currentRect(ev) {
     var x = Math.min(startX, ev.clientX);
@@ -135,6 +153,7 @@
     selection.style.top = r.y + 'px';
     selection.style.width = r.width + 'px';
     selection.style.height = r.height + 'px';
+    veil.style.display = 'none';
     sizeBadge.style.display = 'block';
     sizeBadge.textContent = r.width + ' × ' + r.height;
     // Badge under the bottom-right corner; flip above when cramped.
@@ -146,35 +165,64 @@
     sizeBadge.style.top = by + 'px';
   }
 
+  function restingState() {
+    selection.style.display = 'none';
+    sizeBadge.style.display = 'none';
+    veil.style.display = 'block';
+    snapRect = null;
+  }
+
   document.addEventListener('mousedown', function (ev) {
     if (ev.button !== 0) return;
-    dragging = true;
+    armed = true;
+    dragging = false;
     startX = ev.clientX;
     startY = ev.clientY;
-    veil.style.display = 'none';
     hint.style.opacity = '0';
-    paintRect({ x: startX, y: startY, width: 0, height: 0 });
   });
 
   document.addEventListener('mousemove', function (ev) {
-    if (!dragging) return;
-    paintRect(currentRect(ev));
+    if (armed) {
+      if (!dragging && (Math.abs(ev.clientX - startX) >= 8 || Math.abs(ev.clientY - startY) >= 8)) {
+        dragging = true;
+        snapRect = null;
+      }
+      if (dragging) paintRect(currentRect(ev));
+      return;
+    }
+    // Hover (no button) — highlight the window under the cursor.
+    var w = windowUnder(ev.clientX, ev.clientY);
+    if (w) {
+      snapRect = w;
+      paintRect(w);
+    } else {
+      restingState();
+    }
   });
 
   document.addEventListener('mouseup', function (ev) {
-    if (!dragging || ev.button !== 0) return;
-    dragging = false;
-    var r = currentRect(ev);
-    if (r.width < 8 || r.height < 8) {
-      // Stray click / micro-drag — back to the resting state rather
-      // than capturing a sliver by accident.
-      selection.style.display = 'none';
-      sizeBadge.style.display = 'none';
-      veil.style.display = 'block';
-      hint.style.opacity = '1';
+    if (!armed || ev.button !== 0) return;
+    armed = false;
+    if (dragging) {
+      dragging = false;
+      var r = currentRect(ev);
+      if (r.width < 8 || r.height < 8) {
+        // Micro-drag — back to resting rather than a sliver capture.
+        restingState();
+        hint.style.opacity = '0.35';
+        return;
+      }
+      select(r);
       return;
     }
-    select(r);
+    // Plain click: capture the highlighted window, if any.
+    var w = snapRect || windowUnder(ev.clientX, ev.clientY);
+    if (w) {
+      select(w);
+    } else {
+      restingState();
+      hint.style.opacity = '0.35';
+    }
   });
 
   document.addEventListener('keydown', function (ev) {

@@ -31,6 +31,8 @@ import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeIma
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
+import { createRequire } from 'module';
+import { execSync } from 'child_process';
 import log from 'electron-log/main.js';
 import { toLongPath } from './long-path.js';
 import { getLibraryStatus } from './library-sidecar.js';
@@ -39,6 +41,7 @@ import { indexCapturedFile } from './search-database.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const esmRequire = createRequire(import.meta.url);
 
 export interface CaptureDisplayInfo {
   id: string;
@@ -220,20 +223,41 @@ function resolveTargetDisplay(opts: { displayId?: string; trigger: 'button' | 'h
 }
 
 /**
- * Hide PDR's windows, grab the target display at native resolution,
- * restore the windows. The restore happens in finally — windows come
- * back IMMEDIATELY after the grab, before any disk/exiftool/index
- * work, and before the region overlay opens (the overlay is a
- * topmost fullscreen window, so PDR restoring underneath it is
- * invisible and Esc lands the user straight back where they were).
+ * Hide PDR's windows and grab the target display at native
+ * resolution. The caller gets back a `restore()` it MUST invoke
+ * (idempotent) — the full-screen verb restores immediately after the
+ * grab; the region verb defers restore until the overlay window is
+ * actually SHOWING, so PDR pops back exactly once behind the overlay
+ * instead of flashing in and out before it (Terry's "few quick
+ * flashes of windows changing" report, round 124).
+ *
+ * When `includeWindows` is set, the on-screen window rectangles are
+ * enumerated IN THE SAME FROZEN MOMENT (PDR still hidden) so the
+ * overlay's click-a-window snapping matches the frozen pixels
+ * exactly. On a failed grab the windows are restored here before
+ * returning null.
  */
-async function grabDisplayPng(target: Electron.Display): Promise<{ buffer: Buffer; width: number; height: number } | null> {
+async function grabDisplayPng(
+  target: Electron.Display,
+  opts?: { includeWindows?: boolean },
+): Promise<{ buffer: Buffer; width: number; height: number; windows: SelectionRect[]; restore: () => void } | null> {
   const toRestore: Array<{ win: BrowserWindow; focused: boolean }> = [];
   for (const win of BrowserWindow.getAllWindows()) {
     if (!win.isDestroyed() && win.isVisible() && !win.isMinimized()) {
       toRestore.push({ win, focused: win.isFocused() });
     }
   }
+  let restored = false;
+  const restore = () => {
+    if (restored) return;
+    restored = true;
+    for (const { win, focused } of toRestore) {
+      if (win.isDestroyed()) continue;
+      // showInactive for windows that weren't focused — restoring
+      // a background PDR must not steal focus from the user's app.
+      try { focused ? win.show() : win.showInactive(); } catch { /* non-fatal */ }
+    }
+  };
   try {
     for (const { win } of toRestore) {
       try { win.hide(); } catch { /* non-fatal */ }
@@ -256,17 +280,127 @@ async function grabDisplayPng(target: Electron.Display): Promise<{ buffer: Buffe
     const source =
       sources.find((s) => s.display_id === String(target.id)) ??
       (sources.length === 1 ? sources[0] : undefined);
-    if (!source || source.thumbnail.isEmpty()) return null;
-    const size = source.thumbnail.getSize();
-    return { buffer: source.thumbnail.toPNG(), width: size.width, height: size.height };
-  } finally {
-    for (const { win, focused } of toRestore) {
-      if (win.isDestroyed()) continue;
-      // showInactive for windows that weren't focused — restoring
-      // a background PDR must not steal focus from the user's app.
-      try { focused ? win.show() : win.showInactive(); } catch { /* non-fatal */ }
+    if (!source || source.thumbnail.isEmpty()) {
+      restore();
+      return null;
     }
+    const size = source.thumbnail.getSize();
+    const windows = opts?.includeWindows ? enumerateWindowRectsForDisplay(target) : [];
+    return { buffer: source.thumbnail.toPNG(), width: size.width, height: size.height, windows, restore };
+  } catch (err) {
+    restore();
+    throw err;
   }
+}
+
+// ─── Snap-to-window enumeration (Win32 via koffi) ────────────────────────────
+
+// Lazily-initialised Win32 bindings. koffi struct/proto names are
+// process-global, so these MUST be defined exactly once. Any failure
+// (koffi prebuilt missing, exotic Windows build) just disables
+// snap-to-window — free-drag selection is unaffected.
+interface WinApi {
+  koffi: any;
+  enumProto: any;
+  EnumWindows: any;
+  IsWindowVisible: any;
+  IsIconic: any;
+  GetWindowRect: any;
+  DwmRect: any;
+  DwmU32: any;
+}
+let winApi: WinApi | null = null;
+let winApiFailed = false;
+
+function initWinApi(): WinApi | null {
+  if (winApi || winApiFailed) return winApi;
+  try {
+    const koffi = esmRequire('koffi');
+    const user32 = koffi.load('user32.dll');
+    const dwmapi = koffi.load('dwmapi.dll');
+    koffi.struct('PdrRect', { left: 'long', top: 'long', right: 'long', bottom: 'long' });
+    const enumProto = koffi.proto('bool PdrEnumWindowsProc(void *hwnd, intptr_t lParam)');
+    winApi = {
+      koffi,
+      enumProto,
+      EnumWindows: user32.func('bool __stdcall EnumWindows(PdrEnumWindowsProc *cb, intptr_t lParam)'),
+      IsWindowVisible: user32.func('bool __stdcall IsWindowVisible(void *hwnd)'),
+      IsIconic: user32.func('bool __stdcall IsIconic(void *hwnd)'),
+      GetWindowRect: user32.func('bool __stdcall GetWindowRect(void *hwnd, _Out_ PdrRect *rect)'),
+      // Same symbol declared twice with different out-param shapes —
+      // DwmGetWindowAttribute is attribute-polymorphic (RECT for
+      // EXTENDED_FRAME_BOUNDS(9), uint32 for CLOAKED(14)).
+      DwmRect: dwmapi.func('long __stdcall DwmGetWindowAttribute(void *hwnd, uint32_t attr, _Out_ PdrRect *pv, uint32_t cb)'),
+      DwmU32: dwmapi.func('long __stdcall DwmGetWindowAttribute(void *hwnd, uint32_t attr, _Out_ uint32_t *pv, uint32_t cb)'),
+    };
+  } catch (err) {
+    winApiFailed = true;
+    log.warn(`[capture] Win32 bindings unavailable — snap-to-window disabled (non-fatal): ${(err as Error).message}`);
+  }
+  return winApi;
+}
+
+/**
+ * Top-down z-ordered rectangles of every real on-screen window
+ * intersecting the target display, in the display's CSS pixels.
+ * Called while PDR's own windows are hidden, so they self-exclude
+ * via IsWindowVisible. Cloaked UWP ghosts are skipped; rects use
+ * DWM extended frame bounds (no drop-shadow padding) with a
+ * GetWindowRect fallback.
+ */
+function enumerateWindowRectsForDisplay(display: Electron.Display): SelectionRect[] {
+  const api = initWinApi();
+  if (!api) return [];
+  const out: SelectionRect[] = [];
+  const sf = display.scaleFactor || 1;
+  const disp = {
+    x: Math.round(display.bounds.x * sf),
+    y: Math.round(display.bounds.y * sf),
+    w: Math.round(display.bounds.width * sf),
+    h: Math.round(display.bounds.height * sf),
+  };
+  try {
+    const cb = api.koffi.register((hwnd: unknown) => {
+      try {
+        if (out.length >= 64) return false; // plenty — stop walking
+        if (!api.IsWindowVisible(hwnd) || api.IsIconic(hwnd)) return true;
+        const cloaked = [0];
+        try {
+          if (api.DwmU32(hwnd, 14, cloaked, 4) === 0 && cloaked[0] !== 0) return true;
+        } catch { /* treat as not cloaked */ }
+        const rect = { left: 0, top: 0, right: 0, bottom: 0 };
+        let got = false;
+        try { got = api.DwmRect(hwnd, 9, rect, 16) === 0; } catch { got = false; }
+        if (!got || rect.right <= rect.left) {
+          try { got = !!api.GetWindowRect(hwnd, rect); } catch { got = false; }
+        }
+        if (!got) return true;
+        if (rect.right - rect.left < 48 || rect.bottom - rect.top < 48) return true;
+        // Visible intersection with the target display only.
+        const ix = Math.max(rect.left, disp.x);
+        const iy = Math.max(rect.top, disp.y);
+        const ix2 = Math.min(rect.right, disp.x + disp.w);
+        const iy2 = Math.min(rect.bottom, disp.y + disp.h);
+        if (ix2 - ix < 24 || iy2 - iy < 24) return true;
+        out.push({
+          x: Math.max(0, Math.round((ix - disp.x) / sf)),
+          y: Math.max(0, Math.round((iy - disp.y) / sf)),
+          width: Math.round((ix2 - ix) / sf),
+          height: Math.round((iy2 - iy) / sf),
+        });
+      } catch { /* skip this window */ }
+      return true;
+    }, api.koffi.pointer(api.enumProto));
+    try {
+      api.EnumWindows(cb, 0);
+    } finally {
+      try { api.koffi.unregister(cb); } catch { /* non-fatal */ }
+    }
+  } catch (err) {
+    log.warn(`[capture] window enumeration failed — snap-to-window disabled this capture: ${(err as Error).message}`);
+    return [];
+  }
+  return out;
 }
 
 /**
@@ -288,8 +422,33 @@ async function persistCapture(
     ? path.join(libRoot, 'PDR Captures', month)
     : pendingDir();
   fs.mkdirSync(toLongPath(destDir), { recursive: true });
-  const outPath = uniqueCapturePath(destDir, `${date}_${time}_Screenshot`, '.png');
-  fs.writeFileSync(toLongPath(outPath), pngBuffer);
+
+  // v2.1 round 124 (Terry 2026-06-11) — Settings → Capture format
+  // choice. PNG (default) writes the grab verbatim; JPG re-encodes at
+  // quality 92 for ~5-10× smaller files. A failed conversion falls
+  // back to PNG rather than losing the capture.
+  const format = (() => {
+    try { return getSettings().captureFormat || 'png'; } catch { return 'png'; }
+  })();
+  let outBuffer = pngBuffer;
+  let outExt = '.png';
+  if (format === 'jpg') {
+    try {
+      const sharp = (await import('sharp')).default;
+      outBuffer = await sharp(pngBuffer).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+      outExt = '.jpg';
+    } catch (convErr) {
+      log.warn(`[capture] JPG conversion failed — saving PNG instead (non-fatal): ${(convErr as Error).message}`);
+      outBuffer = pngBuffer;
+      outExt = '.png';
+    }
+  }
+
+  // _SS suffix per Terry round 124 — two letters, matching the
+  // _CF/_RC/_MK/_E family (recordings will be _SR). The rebuild
+  // indexer's suffix reader knows _SS → confirmed + PDR-Capture.
+  const outPath = uniqueCapturePath(destDir, `${date}_${time}_SS`, outExt);
+  fs.writeFileSync(toLongPath(outPath), outBuffer);
   const filename = path.basename(outPath);
 
   // Self-describing metadata inside the PNG (best-effort).
@@ -350,6 +509,9 @@ export async function captureScreenshot(opts: {
     const capturedAt = new Date();
     const grab = await grabDisplayPng(resolved.display);
     if (!grab) return { success: false, error: 'Could not capture the screen.' };
+    // Full-screen verb: windows come back immediately — the slower
+    // disk/exiftool/index work happens behind a visible app.
+    grab.restore();
 
     return await persistCapture(grab.buffer, capturedAt, grab.width, grab.height, 'screenshot');
   } catch (err) {
@@ -397,7 +559,12 @@ ipcMain.on('capture:overlay-cancel', (event) => {
  * the frozen frame with the drag-to-select veil. Resolves with the
  * selection rect in the display's CSS pixels, or null on cancel.
  */
-function openRegionOverlay(display: Electron.Display, frozenDataUrl: string): Promise<SelectionRect | null> {
+function openRegionOverlay(
+  display: Electron.Display,
+  frozenDataUrl: string,
+  windows: SelectionRect[],
+  onShown?: () => void,
+): Promise<SelectionRect | null> {
   return new Promise<SelectionRect | null>((resolve) => {
     overlayResolve = resolve;
     const win = new BrowserWindow({
@@ -439,9 +606,13 @@ function openRegionOverlay(display: Electron.Display, frozenDataUrl: string): Pr
 
     win.webContents.once('did-finish-load', () => {
       if (win.isDestroyed()) return;
-      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl });
+      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl, windows });
       win.show();
       win.focus();
+      // PDR's hidden windows restore NOW, underneath the overlay —
+      // one clean transition instead of the flash-in-flash-out Terry
+      // reported (round 124).
+      try { onShown?.(); } catch { /* non-fatal */ }
       // Blur = the user clicked away / alt-tabbed — treat as cancel so
       // a topmost overlay can never get stranded behind their work.
       // Attached AFTER show+focus settles so the show itself can't
@@ -481,13 +652,23 @@ export async function captureRegion(opts: {
     const display = resolved.display;
 
     // Freeze the screen NOW — the screenshot is this moment, however
-    // long the user then spends framing the rectangle.
+    // long the user then spends framing the rectangle. Window rects
+    // are enumerated in the same frozen moment for snap-to-window.
     const capturedAt = new Date();
-    const grab = await grabDisplayPng(display);
+    const grab = await grabDisplayPng(display, { includeWindows: true });
     if (!grab) return { success: false, error: 'Could not capture the screen.' };
 
     const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-    const rect = await openRegionOverlay(display, dataUrl);
+    let rect: SelectionRect | null = null;
+    try {
+      // PDR's windows restore once the overlay is SHOWING (onShown) —
+      // invisible behind it, ready when the overlay closes.
+      rect = await openRegionOverlay(display, dataUrl, grab.windows, grab.restore);
+    } finally {
+      // Belt-and-braces: if the overlay never reached 'shown' (load
+      // failure, instant cancel), the windows still come back.
+      grab.restore();
+    }
     if (!rect) {
       log.info('[capture] region selection cancelled');
       return { success: false, cancelled: true };
@@ -632,5 +813,37 @@ export function unregisterCaptureHotkey(): void {
   if (currentAccelerator) {
     try { globalShortcut.unregister(currentAccelerator); } catch { /* non-fatal */ }
     currentAccelerator = null;
+  }
+}
+
+// ─── Conflicting capture-tool detection ──────────────────────────────────────
+
+// v2.1 round 124 (Terry 2026-06-11) — Terry's Ctrl+Shift+S presses
+// never reached PDR despite successful RegisterHotKey: Lightshot was
+// running and its keyboard HOOK consumed the combo before Windows
+// generated WM_HOTKEY (hooks always outrank hotkey registrations).
+// Windows can't tell us who ate a keystroke, but we CAN name the
+// known capture tools currently running so Settings → Capture turns
+// "the hotkey does nothing" from a mystery into a guided fix.
+const KNOWN_CAPTURE_TOOLS: Array<{ match: RegExp; label: string }> = [
+  { match: /lightshot/i, label: 'Lightshot' },
+  { match: /sharex/i, label: 'ShareX' },
+  { match: /greenshot/i, label: 'Greenshot' },
+  { match: /snagit|snagpriv/i, label: 'Snagit' },
+  { match: /picpick/i, label: 'PicPick' },
+  { match: /screenpresso/i, label: 'Screenpresso' },
+  { match: /flameshot/i, label: 'Flameshot' },
+];
+
+export function checkConflictingCaptureTools(): string[] {
+  try {
+    const out = execSync('tasklist /fo csv /nh', { encoding: 'utf8', windowsHide: true, timeout: 5000 });
+    const found: string[] = [];
+    for (const tool of KNOWN_CAPTURE_TOOLS) {
+      if (tool.match.test(out)) found.push(tool.label);
+    }
+    return found;
+  } catch {
+    return [];
   }
 }

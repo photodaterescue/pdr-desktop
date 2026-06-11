@@ -425,6 +425,11 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // until there's actual AI data to split on (it would be vacuous in
   // v2.0.15 where every enhanced file is 'manual').
   const [isEnhanced, setIsEnhanced] = useState<boolean | undefined>(undefined);
+  // v2.1 round 124 (Terry 2026-06-11) — Captures filter: PDR-born
+  // screenshots (and screen recordings later). date_source =
+  // 'PDR-Capture' predicate; lives in the Media dropdown's
+  // "Also filter" section beside Captions / Enhanced.
+  const [isCapture, setIsCapture] = useState<boolean | undefined>(undefined);
   const [selectedCountry, setSelectedCountry] = useState<string[]>([]);
   const [selectedCity, setSelectedCity] = useState<string[]>([]);
   const [isoFrom, setIsoFrom] = useState<number | undefined>(undefined);
@@ -1318,7 +1323,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     cameraModel: selectedCameraModel.length > 0 ? selectedCameraModel : undefined,
     lensModel: selectedLensModel.length > 0 ? selectedLensModel : undefined,
     dateFrom: dateFrom || undefined, dateTo: dateTo || undefined,
-    yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced,
+    yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, isCapture,
     country: selectedCountry.length > 0 ? selectedCountry : undefined,
     city: selectedCity.length > 0 ? selectedCity : undefined,
     isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo,
@@ -1350,7 +1355,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     // narrows. Adding them here pulls a fresh query through on each
     // keystroke + restores correct filtering for the videos case
     // Terry hit (20 MB / 200 MB / 2000 MB all ignored).
-  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
+  }, [searchText, parseSearchOperators, peopleList, aiSearchMatchMode, aiSearchMatchThreshold, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, isCapture, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, memoriesPile, sortBy, sortDir]);
 
   const executeSearch = useCallback(async (customQuery?: SearchQuery, opts?: { silent?: boolean }) => {
     // `silent` keeps the existing results visible during the fetch
@@ -1697,7 +1702,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setResults(null);
       setSearchActive(false);
     }
-  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
+  }, [paused, selectedConfidence, selectedFileType, selectedDateSource, selectedExtension, selectedCameraMake, selectedCameraModel, selectedLensModel, dateFrom, dateTo, yearFrom, yearTo, monthFrom, monthTo, hasGps, hasCaption, isEnhanced, isCapture, selectedCountry, selectedCity, isoFrom, isoTo, apertureFrom, apertureTo, focalLengthFrom, focalLengthTo, flashFired, megapixelsFrom, megapixelsTo, sizeFromMB, sizeToMB, selectedScene, selectedExposureProgram, selectedWhiteBalance, selectedCameraPosition, selectedOrientation, selectedDestination, selectedAlbums, selectedAiTags, sortBy, sortDir, showAllOverride]);
 
   // Contextual counts refresh — debounced so rapid clicks (e.g. the
   // ribbon's Select-all) don't trigger N requests. Calls
@@ -1856,7 +1861,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setSelectedExtension([]); setSelectedCameraMake([]); setSelectedCameraModel([]); setSelectedLensModel([]);
     setDateFrom(''); setDateTo('');
     setYearFrom(undefined); setYearTo(undefined); setMonthFrom(undefined); setMonthTo(undefined);
-    setHasGps(undefined); setHasCaption(undefined); setIsEnhanced(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
+    setHasGps(undefined); setHasCaption(undefined); setIsEnhanced(undefined); setIsCapture(undefined); setSelectedCountry([]); setSelectedCity([]); setIsoFrom(undefined); setIsoTo(undefined);
     setApertureFrom(undefined); setApertureTo(undefined);
     setFocalLengthFrom(undefined); setFocalLengthTo(undefined);
     setFlashFired(undefined); setMegapixelsFrom(undefined); setMegapixelsTo(undefined);
@@ -1869,7 +1874,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     setShowAllOverride(false);
   };
 
-  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || hasCaption != null || isEnhanced != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
+  const hasActiveFilters = selectedConfidence.length > 0 || selectedFileType.length > 0 || selectedDateSource.length > 0 || selectedExtension.length > 0 || selectedCameraMake.length > 0 || selectedCameraModel.length > 0 || selectedLensModel.length > 0 || !!dateFrom || !!dateTo || yearFrom != null || yearTo != null || monthFrom != null || monthTo != null || hasGps != null || hasCaption != null || isEnhanced != null || isCapture != null || selectedCountry.length > 0 || selectedCity.length > 0 || isoFrom != null || isoTo != null || apertureFrom != null || apertureTo != null || focalLengthFrom != null || focalLengthTo != null || flashFired != null || megapixelsFrom != null || megapixelsTo != null || selectedScene.length > 0 || selectedExposureProgram.length > 0 || selectedWhiteBalance.length > 0 || selectedCameraPosition.length > 0 || selectedOrientation.length > 0 || sizeFromMB != null || sizeToMB != null || selectedDestination.length > 0 || selectedAiTags.length > 0;
   // Note: selectedAlbums is intentionally NOT in hasActiveFilters.
   // Terry 2026-05-19 confirmed: "Selecting an album alone is not
   // enough to show the results for it, as it needs the confidence
@@ -1928,7 +1933,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
       setSelectedCameraMake(q.cameraMake || []);
       setSelectedCameraModel(q.cameraModel || []);
       setYearFrom(q.yearFrom); setYearTo(q.yearTo);
-      setHasGps(q.hasGps); setHasCaption(q.hasCaption); setIsEnhanced(q.isEnhanced);
+      setHasGps(q.hasGps); setHasCaption(q.hasCaption); setIsEnhanced(q.isEnhanced); setIsCapture(q.isCapture);
       setSelectedDestination(q.destinationPath || []);
       setSelectedAlbums(q.albumIds || []);
       setSortBy(q.sortBy || 'derived_date'); setSortDir(q.sortDir || 'desc');
@@ -4426,7 +4431,8 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               const typeKey: 'all' | 'photos' | 'videos' = photosOnly ? 'photos' : videosOnly ? 'videos' : 'all';
               const captionsOn = hasCaption === true;
               const enhancedOn = isEnhanced === true;
-              const isDefault = typeKey === 'all' && !captionsOn && !enhancedOn;
+              const capturesOn = isCapture === true;
+              const isDefault = typeKey === 'all' && !captionsOn && !enhancedOn && !capturesOn;
               const total = results?.totalCount ?? 0;
               // v2.1 round 105 (Terry 2026-06-11) — chip label trimmed
               // to just the type (count moves to the existing
@@ -4441,6 +4447,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     else parts.push('All');
                     if (captionsOn) parts.push('Captioned');
                     if (enhancedOn) parts.push('Enhanced');
+                    if (capturesOn) parts.push('Captures');
                     return parts.join(' + ');
                   })();
               // Silence the unused-variable warning while keeping
@@ -4448,14 +4455,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               // breadcrumb wants it.
               void total;
               const ChipIcon =
-                (typeKey === 'photos' && !captionsOn && !enhancedOn) ? ImageIcon :
-                (typeKey === 'videos' && !captionsOn && !enhancedOn) ? Film :
-                (captionsOn && !enhancedOn && typeKey === 'all') ? MessageSquareText :
-                (enhancedOn && !captionsOn && typeKey === 'all') ? Sparkles :
+                (typeKey === 'photos' && !captionsOn && !enhancedOn && !capturesOn) ? ImageIcon :
+                (typeKey === 'videos' && !captionsOn && !enhancedOn && !capturesOn) ? Film :
+                (captionsOn && !enhancedOn && !capturesOn && typeKey === 'all') ? MessageSquareText :
+                (enhancedOn && !captionsOn && !capturesOn && typeKey === 'all') ? Sparkles :
+                (capturesOn && !captionsOn && !enhancedOn && typeKey === 'all') ? Camera :
                 Files;
               return (
                 <Popover open={mediaFilterGrace.open} onOpenChange={mediaFilterGrace.setOpen}>
-                  <IconTooltip label="Filter what's shown — Photos, Videos, Captioned, Enhanced" side="bottom">
+                  <IconTooltip label="Filter what's shown — Photos, Videos, Captioned, Enhanced, Captures" side="bottom">
                     <PopoverTrigger asChild>
                       <button
                         type="button"
@@ -4536,6 +4544,24 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       <Checkbox
                         checked={enhancedOn}
                         onCheckedChange={(v) => setIsEnhanced(v ? true : undefined)}
+                      />
+                    </label>
+                    {/* v2.1 round 124 (Terry 2026-06-11) — Captures:
+                        PDR-born screenshots (and screen recordings
+                        when those ship). Composes with the Type radio
+                        above — Captures + Photos = screenshots,
+                        Captures + Videos = recordings. */}
+                    <label
+                      data-testid="sd-media-filter-captures"
+                      className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors"
+                    >
+                      <span className="inline-flex items-center gap-2 text-foreground">
+                        <Camera className="w-3.5 h-3.5 text-muted-foreground" />
+                        Captures
+                      </span>
+                      <Checkbox
+                        checked={capturesOn}
+                        onCheckedChange={(v) => setIsCapture(v ? true : undefined)}
                       />
                     </label>
                   </PopoverContent>

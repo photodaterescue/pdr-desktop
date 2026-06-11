@@ -351,11 +351,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:pendingFlushed', handler);
       return () => ipcRenderer.removeListener('capture:pendingFlushed', handler);
     },
+    // v2.1 round 124 — names any known capture tools currently
+    // running (Lightshot, Snagit, ShareX, …) so Settings → Capture
+    // can explain WHY a hotkey press might never reach PDR (their
+    // keyboard hooks consume the combo before WM_HOTKEY fires).
+    checkConflicts: () =>
+      ipcRenderer.invoke('capture:checkConflicts') as Promise<{ success: boolean; tools?: string[]; error?: string }>,
     // ── Region-overlay page channels (capture-overlay.html only) ──
     // The overlay window loads this same preload; these three are its
-    // entire API surface: receive the frozen frame, report the chosen
-    // rect (display CSS pixels), or report a cancel.
-    onOverlayInit: (callback: (info: { imageDataUrl: string }) => void) => {
+    // entire API surface: receive the frozen frame (+ snap-to-window
+    // rects), report the chosen rect (display CSS pixels), or report
+    // a cancel.
+    onOverlayInit: (callback: (info: { imageDataUrl: string; windows?: Array<{ x: number; y: number; width: number; height: number }> }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:overlay-init', handler);
       return () => ipcRenderer.removeListener('capture:overlay-init', handler);

@@ -321,6 +321,7 @@ import {
   flushPendingCaptures,
   registerCaptureHotkey,
   unregisterCaptureHotkey,
+  checkConflictingCaptureTools,
 } from './capture-manager.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
@@ -13171,6 +13172,18 @@ ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string }) =
 ipcMain.handle('capture:listDisplays', async () => {
   try {
     return { success: true, displays: await listCaptureDisplays() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 round 124 — known capture tools currently running, for the
+// Settings → Capture hotkey-conflict note (Lightshot ate Terry's
+// Ctrl+Shift+S via keyboard hook; PDR can't outrank a hook, but it
+// can name the suspect).
+ipcMain.handle('capture:checkConflicts', async () => {
+  try {
+    return { success: true, tools: checkConflictingCaptureTools() };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

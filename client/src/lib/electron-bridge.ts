@@ -1062,6 +1062,13 @@ export interface SearchQuery {
   cameraModel?: string[];
   lensModel?: string[];
   hasGps?: boolean;
+  /** Gold "Captioned" filter — files with a user-added caption. */
+  hasCaption?: boolean;
+  /** "Enhanced" filter — files saved through the Viewer Enhance panel. */
+  isEnhanced?: boolean;
+  /** v2.1 round 124 — "Captures" filter: PDR-born screenshots /
+   *  screen recordings (date_source = 'PDR-Capture'). */
+  isCapture?: boolean;
   country?: string[];
   city?: string[];
   runId?: number;
@@ -2879,6 +2886,17 @@ export async function captureSetHotkey(accelerator: string): Promise<{ success: 
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
   try { return await (window as any).pdr?.capture?.setHotkey?.(accelerator); }
   catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+// v2.1 round 124 — names of known capture tools currently running
+// (Lightshot, Snagit, …) whose keyboard hooks can eat the PDR hotkey
+// before Windows delivers it. Settings → Capture shows them.
+export async function captureCheckConflicts(): Promise<string[]> {
+  if (!isElectron()) return [];
+  try {
+    const res = await (window as any).pdr?.capture?.checkConflicts?.();
+    return res?.success && Array.isArray(res.tools) ? res.tools : [];
+  } catch { return []; }
 }
 
 export interface CaptureCompletedInfo {

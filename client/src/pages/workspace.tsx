@@ -108,6 +108,7 @@ import {
   uninstallAiModel,
   onAiModelStateChanged,
   captureSetHotkey,
+  captureCheckConflicts,
   type AiModelKey,
   type AiModelStatus,
 } from "@/lib/electron-bridge";
@@ -12638,6 +12639,14 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // or the drag-to-select region overlay. Read at fire time in main,
   // so no re-registration needed when this flips.
   const [captureHotkeyAction, setCaptureHotkeyActionState] = useState<'fullscreen' | 'region'>('fullscreen');
+  // v2.1 round 124 — screenshot file format (PNG lossless default /
+  // JPG smaller) + the names of any running capture tools whose
+  // keyboard hooks can eat the PDR hotkey (Lightshot ate Terry's).
+  const [captureFormat, setCaptureFormatState] = useState<'png' | 'jpg'>('png');
+  const [captureConflicts, setCaptureConflicts] = useState<string[]>([]);
+  useEffect(() => {
+    captureCheckConflicts().then(setCaptureConflicts).catch(() => { /* best-effort */ });
+  }, []);
   // v2.0.15 Phase 4 (Terry 2026-06-06) — live state of the two optional
   // AI Photo Enhancement models (CodeFormer / Real-ESRGAN). Populated
   // on Settings open via listAiModels() and kept fresh via the
@@ -12704,6 +12713,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setVideoCaptionSizeState(((settings as any).videoCaptionSize as 'small' | 'medium' | 'large') ?? 'medium');
       setCaptureHotkeyState(((settings as any).captureHotkey as string) ?? 'Ctrl+Shift+S');
       setCaptureHotkeyActionState(((settings as any).captureHotkeyAction as 'fullscreen' | 'region') ?? 'fullscreen');
+      setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
     });
   }, []);
 
@@ -12774,6 +12784,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleCaptureHotkeyActionChange = (action: 'fullscreen' | 'region') => {
     setCaptureHotkeyActionState(action);
     setSetting('captureHotkeyAction' as any, action);
+  };
+
+  const handleCaptureFormatChange = (format: 'png' | 'jpg') => {
+    setCaptureFormatState(format);
+    setSetting('captureFormat' as any, format);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -14552,6 +14567,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     Screenshots taken with PDR land <strong>straight in your library</strong> — saved to the PDR Captures folder on your Library Drive, dated to the moment of capture, and immediately searchable in Search &amp; Discovery and Memories. No Fix needed: PDR created the file, so the date is already right.
                   </p>
                 </div>
+                {/* v2.1 round 124 — hotkey-conflict note. Terry's
+                    Ctrl+Shift+S was being eaten by Lightshot's
+                    keyboard hook before Windows could deliver it to
+                    PDR; hooks always win over hotkey registrations,
+                    so the honest fix is naming the suspect. Only
+                    renders when a known capture tool is actually
+                    running. */}
+                {captureConflicts.length > 0 && (
+                  <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/15 border border-amber-200/60 dark:border-amber-800/30">
+                    <Camera className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      <strong>{captureConflicts.join(' and ')} is running on this computer.</strong> Capture tools like this grab keyboard shortcuts before Windows can pass them to PDR — if pressing the hotkey below shows another tool's capture screen (or does nothing), that's why. Close {captureConflicts.length === 1 ? 'it' : 'them'} or pick a hotkey {captureConflicts.length === 1 ? "it doesn't" : "they don't"} use. The title-bar camera button is unaffected.
+                    </p>
+                  </div>
+                )}
                 <div className="p-3 rounded-lg border border-border">
                   <span className="text-sm font-medium text-foreground">Screenshot hotkey</span>
                   <p className="text-xs text-muted-foreground mt-1 mb-3">
@@ -14614,7 +14644,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <div className="grid grid-cols-2 gap-2">
                     {([
                       { value: 'fullscreen', label: 'Full screen', desc: 'Instant — grabs the whole screen the moment you press it.' },
-                      { value: 'region', label: 'Select region', desc: 'Freezes the screen so you can drag a box around just the part you want.' },
+                      { value: 'region', label: 'Select region', desc: 'Freezes the screen so you can click a window or drag a box around just the part you want.' },
                     ] as const).map((opt) => (
                       <label
                         key={opt.value}
@@ -14629,6 +14659,40 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                           value={opt.value}
                           checked={captureHotkeyAction === opt.value}
                           onChange={() => handleCaptureHotkeyActionChange(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                {/* v2.1 round 124 — screenshot format chooser. Same
+                    radio-card recipe as the hotkey-action setting
+                    above. */}
+                <div className="p-3 rounded-lg border border-border">
+                  <span className="text-sm font-medium text-foreground">Screenshot format</span>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    How screenshots are saved into your library. Applies to both the camera button and the hotkey, full screen and region alike.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'png', label: 'PNG', desc: 'Pixel-perfect — text and fine detail stay razor-sharp. Larger files.' },
+                      { value: 'jpg', label: 'JPG', desc: 'Much smaller files — great for photo-heavy screens. Fine text can soften slightly.' },
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          captureFormat === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-capture-format-${opt.value}`}
+                      >
+                        <input
+                          type="radio"
+                          name="captureFormat"
+                          value={opt.value}
+                          checked={captureFormat === opt.value}
+                          onChange={() => handleCaptureFormatChange(opt.value)}
                           className="sr-only"
                         />
                         <span className="text-sm font-medium text-foreground">{opt.label}</span>

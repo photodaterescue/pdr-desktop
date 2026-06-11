@@ -162,6 +162,14 @@ export interface SearchQuery {
    *  filter reads the indexed_files column so reliability isn't
    *  coupled to whether the user has renamed the file later. */
   isEnhanced?: boolean;
+  /** v2.1 round 124 (Terry 2026-06-11) — restrict to PDR-born
+   *  captures (screenshots now, screen recordings later). Reads
+   *  `date_source = 'PDR-Capture'` — the value the capture path
+   *  stamps at index time and the rebuild re-derives from the
+   *  _SS/_SR filename suffix. Powers the Captures entry in the S&D
+   *  Media filter dropdown; composes with the photo/video type
+   *  radio to split screenshots from recordings. */
+  isCapture?: boolean;
   aiProcessed?: 'all' | 'unprocessed' | 'faces_only' | 'tags_only' | 'both';
   faceCountMin?: number;
   faceCountMax?: number;
@@ -2824,6 +2832,12 @@ export function searchFiles(query: SearchQuery): SearchResult {
   // predicate, same pattern as Captioned.
   if (query.isEnhanced === true) {
     conditions.push(`f.enhancement_type IS NOT NULL`);
+  }
+
+  // v2.1 round 124 — Captures only. Plain column predicate, same
+  // pattern as Captioned / Enhanced above.
+  if (query.isCapture === true) {
+    conditions.push(`f.date_source = 'PDR-Capture'`);
   }
 
   // AI: Processed filter (analyzed status)

@@ -171,9 +171,14 @@ export function TitleBar() {
           description: 'Your Library Drive is disconnected — PDR will add this capture to your library automatically when it reconnects.',
         });
       } else {
+        // v2.1 round 124 (Terry) — `cancel:` not `action:` for the
+        // button. Sonner's action renders as a solid dark button;
+        // the house toast style (see useTranscribeVideos' Dismiss)
+        // uses the muted cancel variant. cancel's onClick still
+        // fires the handler and dismisses the toast.
         toast.success('Screenshot added to your library', {
           description: info.filename,
-          action: { label: 'Open in Viewer', onClick: () => { void openSearchViewer(info.filePath, info.filename); } },
+          cancel: { label: 'Open in Viewer', onClick: () => { void openSearchViewer(info.filePath, info.filename); } },
         });
       }
     });

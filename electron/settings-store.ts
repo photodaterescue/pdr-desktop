@@ -130,6 +130,13 @@ export interface PDRSettings {
    *  of it. The title-bar camera menu always offers both verbs
    *  regardless of this setting. */
   captureHotkeyAction: 'fullscreen' | 'region';
+  /** v2.1 round 124 (Terry 2026-06-11) — file format screenshots are
+   *  saved in. 'png' (default) is lossless — text and UI stay
+   *  razor-sharp, files are larger. 'jpg' is ~5-10× smaller at
+   *  quality 92 — right for photo-heavy screens, slight softening
+   *  on fine text. Applies to both full-screen and region captures;
+   *  recordings (later step) have their own format story (MP4). */
+  captureFormat: 'png' | 'jpg';
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -279,6 +286,8 @@ export const optimisedDefaults: PDRSettings = {
   // v2.1 step 2 — hotkey takes the full screen by default; 'region'
   // opens the drag-to-select overlay instead. Button menu has both.
   captureHotkeyAction: 'fullscreen',
+  // v2.1 round 124 — PNG default: lossless, sharp text.
+  captureFormat: 'png',
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -358,6 +367,7 @@ export function getSettings(): PDRSettings {
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     captureHotkey: store.get('captureHotkey', optimisedDefaults.captureHotkey),
     captureHotkeyAction: store.get('captureHotkeyAction', optimisedDefaults.captureHotkeyAction),
+    captureFormat: store.get('captureFormat', optimisedDefaults.captureFormat),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
