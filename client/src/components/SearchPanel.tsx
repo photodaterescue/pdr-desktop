@@ -5942,7 +5942,19 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
       : { text: 'Marked', color: 'text-red-500 bg-red-50 dark:text-red-400 dark:bg-red-900/30', icon: <HelpCircle className="w-3.5 h-3.5" /> };
 
   return (
-    <div className="h-full overflow-y-auto bg-background">
+    /* v2.1 round 109 (Terry 2026-06-11) — `scrollbar-gutter: stable`
+       reserves vertical scrollbar space whether the bar is shown or
+       not. Without it, browsers swap the scrollbar in/out as content
+       crosses the overflow threshold; the panel's content width
+       shrinks by ~17 px when the bar appears, the inner photo block's
+       `aspectRatio: width/height` then re-derives a smaller height,
+       and the image "jigs" mid-scroll. Terry: "the image in the
+       preview moves slightly... happens on every preview and it
+       winds me up." */
+    <div
+      className="h-full overflow-y-auto bg-background"
+      style={{ scrollbarGutter: 'stable' }}
+    >
       <div className="px-4 pb-4" style={{ paddingTop: 0, marginTop: 0 }}>
         {/* Header bar — sticky at the very top with a higher z-index
             than the photo block below. Background opaque so metadata
@@ -6004,8 +6016,22 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             renders crops via getFaceCrop's server-side coord math) showed them
             correctly sized. */}
         <div
+          /* v2.1 round 109 (Terry 2026-06-11) — translate3d(0,0,0)
+             promotes the sticky photo block onto its own compositor
+             layer so the browser positions it at integer pixel
+             boundaries instead of repainting at fractional subpixel
+             offsets on every scroll frame. will-change: transform
+             tells the compositor up front so it doesn't have to
+             re-promote on the first scroll. Together they kill the
+             sub-pixel jitter that survives the scrollbar-gutter fix
+             above on high-DPI displays. */
           className="sticky z-20 mb-3 bg-background flex items-center justify-center border-b border-border pb-2"
-          style={{ minHeight: 0, top: '32px' }}
+          style={{
+            minHeight: 0,
+            top: '32px',
+            transform: 'translate3d(0, 0, 0)',
+            willChange: 'transform',
+          }}
         >
         <div
           className="rounded-xl overflow-hidden bg-secondary/30 relative group"
