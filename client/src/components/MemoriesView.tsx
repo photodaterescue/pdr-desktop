@@ -14,6 +14,7 @@ import {
   Layers,
   X,
   Info,
+  Eye,
   HardDrive,
   PlayCircle,
   ArrowRight,
@@ -2086,13 +2087,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           different KIND of control" — the height + spacing carry the
           family resemblance. */}
       <div className="shrink-0 px-6 py-3 border-b border-border/60 flex items-center gap-2">
+        {/* v2.1 round 97 (Terry 2026-06-11) — Back button now wears
+            the view-pill shape (lifted from MemoriesPendingView round
+            96) — blue tokens preserve nav identity, h-8 + rounded-md
+            + border match the rest of the toolbar family. */}
         <button
           onClick={onBack}
-          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium transition-colors"
-          style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
+          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-blue-300 bg-blue-50/60 hover:bg-blue-50 text-blue-800 transition-colors"
+          data-testid="memories-drilldown-back"
         >
           <ChevronLeft className="w-3.5 h-3.5" /> Back to timeline
         </button>
+        <span className="h-6 w-px bg-border mx-1" aria-hidden="true" />
         {/* v2.0.15 (Terry 2026-06-02) — month picker dropdown. The
             title doubles as a Popover trigger; opening it lists all
             months in the current year that have photos, so the user
@@ -2243,6 +2249,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             (captionedOnly && mediaFilter === 'all') ? MessageSquareText :
             Files;
           const filterGrace = mediaFilterGrace;
+          // v2.1 round 97 — Media pill matches MemoriesPendingView's
+          // uniform shape: h-8 + rounded-md + border + min-w-[150px]
+          // + justify-between so the chevron sits flush right. Type
+          // label kept short (no count — count moves to the right-
+          // side stats inline so the pill width stays uniform with
+          // its Display sibling).
+          const mediaShortLabel = isDefault
+            ? 'All'
+            : mediaFilter === 'photos' && !captionedOnly
+              ? 'Photos'
+              : mediaFilter === 'videos' && !captionedOnly
+                ? 'Videos'
+                : mediaFilter === 'all' && captionedOnly
+                  ? 'Captioned'
+                  : `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned`;
           return (
             <Popover open={filterGrace.open} onOpenChange={filterGrace.setOpen}>
               <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
@@ -2251,15 +2272,18 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     type="button"
                     data-testid="memories-show-filter"
                     {...filterGrace.triggerHoverProps}
-                    className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border ${
+                    className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${
                       !isDefault
-                        ? 'bg-primary border-primary text-primary-foreground'
-                        : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                        ? 'border-primary bg-primary/10 text-primary'
+                        : 'border-border bg-background hover:bg-accent text-foreground'
                     }`}
                   >
-                    <ChipIcon className="w-3.5 h-3.5" />
-                    {chipLabel}
-                    <ChevronDown className="w-3 h-3 opacity-70" />
+                    <span className="inline-flex items-center gap-1.5">
+                      <ChipIcon className="w-3.5 h-3.5" />
+                      <span className="text-muted-foreground/85">Media:</span>
+                      <span>{mediaShortLabel}</span>
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 opacity-70" />
                   </button>
                 </PopoverTrigger>
               </IconTooltip>
@@ -2386,22 +2410,32 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
           const insightsActive = insightsCount > 0;
           return (
             <Popover open={insightsGrace.open} onOpenChange={insightsGrace.setOpen}>
-              <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
+              <IconTooltip label="Display options — tile size, selection mode, info under tiles" side="bottom">
                 <PopoverTrigger asChild>
-                  <Button
-                    variant={insightsActive ? 'secondary' : 'ghost'}
-                    size="sm"
+                  {/* v2.1 round 97 — renamed Insights → Display and
+                      retooled into the uniform view-pill shape that
+                      MemoriesPendingView's round 96 established.
+                      Same min-w-[150px] + justify-between recipe as
+                      Media (above) so the two pills sit equal-width
+                      regardless of label length. Eye icon family
+                      replaces the round-36 Info bubble. */}
+                  <button
+                    type="button"
                     data-testid="memories-insights-trigger"
                     {...insightsGrace.triggerHoverProps}
+                    className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
                   >
-                    <Info className="w-3.5 h-3.5 mr-1.5" />
-                    Insights
-                    {insightsActive && (
-                      <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
-                        {insightsCount}
-                      </span>
-                    )}
-                  </Button>
+                    <span className="inline-flex items-center gap-1.5">
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Display</span>
+                      {insightsActive && (
+                        <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                          {insightsCount}
+                        </span>
+                      )}
+                    </span>
+                    <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                  </button>
                 </PopoverTrigger>
               </IconTooltip>
           <PopoverContent
