@@ -316,6 +316,7 @@ import { toLongPath, fromLongPath } from './long-path.js';
 // v2.1 (Terry 2026-06-11) — screenshot-to-library capture surface.
 import {
   captureScreenshot,
+  captureRegion,
   listCaptureDisplays,
   flushPendingCaptures,
   registerCaptureHotkey,
@@ -13151,6 +13152,17 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
 ipcMain.handle('capture:screenshot', async (_event, opts?: { displayId?: string }) => {
   try {
     return await captureScreenshot({ displayId: opts?.displayId, trigger: 'button' });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 step 2 — region capture. Resolves after the user finishes (or
+// cancels) the drag-to-select overlay; same needsDisplayPick contract
+// as capture:screenshot on multi-monitor machines.
+ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string }) => {
+  try {
+    return await captureRegion({ displayId: opts?.displayId, trigger: 'button' });
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

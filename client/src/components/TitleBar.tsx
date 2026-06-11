@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw, Camera } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw, Camera, Monitor, Crop } from 'lucide-react';
 import { toast } from 'sonner';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
 import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 import { useMemoriesReturnSource, setMemoriesReturnSource } from '@/lib/memories-return-source';
@@ -185,22 +186,34 @@ export function TitleBar() {
     });
     return () => { offCompleted(); offFlushed(); };
   }, []);
-  const handleCaptureClick = async () => {
-    const res = await captureScreenshot();
+  // v2.1 step 2 — the camera button is a two-verb menu (full screen /
+  // region). The display picker is shared between the verbs, so it
+  // remembers WHICH verb opened it and re-invokes the right one after
+  // the user picks a screen. A cancelled region selection resolves
+  // with cancelled: true and stays silent — Esc IS the feedback.
+  const [capturePickerMode, setCapturePickerMode] = useState<'full' | 'region'>('full');
+  const handleCaptureResult = (res: Awaited<ReturnType<typeof captureScreenshot>> | undefined, mode: 'full' | 'region') => {
     if (res?.needsDisplayPick && res.displays?.length) {
+      setCapturePickerMode(mode);
       setCaptureDisplays(res.displays);
       return;
     }
-    if (res && !res.success && res.error) {
+    if (res && !res.success && !res.cancelled && res.error) {
       toast.error('Screenshot failed', { description: res.error });
     }
   };
+  const handleCaptureFull = async () => {
+    handleCaptureResult(await captureScreenshot(), 'full');
+  };
+  const handleCaptureRegion = async () => {
+    handleCaptureResult(await captureRegion(), 'region');
+  };
   const handleCapturePick = async (displayId: string) => {
     setCaptureDisplays(null);
-    const res = await captureScreenshot({ displayId });
-    if (res && !res.success && res.error) {
-      toast.error('Screenshot failed', { description: res.error });
-    }
+    const res = capturePickerMode === 'region'
+      ? await captureRegion({ displayId })
+      : await captureScreenshot({ displayId });
+    handleCaptureResult(res, capturePickerMode);
   };
 
   const aiProcessing = aiProgress != null
@@ -519,16 +532,29 @@ export function TitleBar() {
             it; styling copies the same w-7 h-7 rounded-full recipe.
             The tooltip carries the current global hotkey so the
             faster path stays discoverable. */}
-        <IconTooltip label={`Take screenshot — straight into your library (${captureHotkeyLabel})`} side="bottom">
-          <button
-            onClick={() => { void handleCaptureClick(); }}
-            className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
-            data-testid="titlebar-capture"
-            aria-label="Take screenshot"
-          >
-            <Camera className="w-3.5 h-3.5" />
-          </button>
-        </IconTooltip>
+        <DropdownMenu>
+          <IconTooltip label={`Take screenshot — straight into your library (${captureHotkeyLabel})`} side="bottom">
+            <DropdownMenuTrigger asChild>
+              <button
+                className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 text-white/80 hover:text-white transition-all"
+                data-testid="titlebar-capture"
+                aria-label="Take screenshot"
+              >
+                <Camera className="w-3.5 h-3.5" />
+              </button>
+            </DropdownMenuTrigger>
+          </IconTooltip>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onSelect={() => { void handleCaptureFull(); }} data-testid="capture-menu-fullscreen">
+              <Monitor className="w-4 h-4 mr-2" />
+              Capture full screen
+            </DropdownMenuItem>
+            <DropdownMenuItem onSelect={() => { void handleCaptureRegion(); }} data-testid="capture-menu-region">
+              <Crop className="w-4 h-4 mr-2" />
+              Capture region…
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
         <IconTooltip label={recycleCount > 0 ? `Recycle Bin · ${recycleCount} item${recycleCount === 1 ? '' : 's'}` : 'Recycle Bin'} side="bottom">
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('pdr:openRecycleBin'))}

@@ -2853,6 +2853,9 @@ export interface CaptureScreenshotResult {
   filename?: string;
   fileId?: number | null;
   pending?: boolean;
+  /** Region flow only — user dismissed the overlay. Not an error;
+   *  callers stay silent. */
+  cancelled?: boolean;
   needsDisplayPick?: boolean;
   displays?: CaptureDisplayInfo[];
   error?: string;
@@ -2861,6 +2864,14 @@ export interface CaptureScreenshotResult {
 export async function captureScreenshot(opts?: { displayId?: string }): Promise<CaptureScreenshotResult> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
   try { return await (window as any).pdr?.capture?.screenshot?.(opts); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+// v2.1 step 2 — drag-to-select region capture. The promise resolves
+// after the user finishes (or cancels) the overlay.
+export async function captureRegion(opts?: { displayId?: string }): Promise<CaptureScreenshotResult> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.capture?.region?.(opts); }
   catch (e) { return { success: false, error: (e as Error).message }; }
 }
 

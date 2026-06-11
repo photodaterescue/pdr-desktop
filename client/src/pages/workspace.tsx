@@ -12634,6 +12634,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [captureHotkey, setCaptureHotkeyState] = useState<string>('Ctrl+Shift+S');
   const [captureHotkeyRecording, setCaptureHotkeyRecording] = useState(false);
   const [captureHotkeyRegistered, setCaptureHotkeyRegistered] = useState<boolean | null>(null);
+  // v2.1 step 2 — what the hotkey does: instant full screen (default)
+  // or the drag-to-select region overlay. Read at fire time in main,
+  // so no re-registration needed when this flips.
+  const [captureHotkeyAction, setCaptureHotkeyActionState] = useState<'fullscreen' | 'region'>('fullscreen');
   // v2.0.15 Phase 4 (Terry 2026-06-06) — live state of the two optional
   // AI Photo Enhancement models (CodeFormer / Real-ESRGAN). Populated
   // on Settings open via listAiModels() and kept fresh via the
@@ -12699,6 +12703,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setHideVideoTranscriptsState(((settings as any).hideVideoTranscripts as boolean) ?? false);
       setVideoCaptionSizeState(((settings as any).videoCaptionSize as 'small' | 'medium' | 'large') ?? 'medium');
       setCaptureHotkeyState(((settings as any).captureHotkey as string) ?? 'Ctrl+Shift+S');
+      setCaptureHotkeyActionState(((settings as any).captureHotkeyAction as 'fullscreen' | 'region') ?? 'fullscreen');
     });
   }, []);
 
@@ -12764,6 +12769,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     const res = await captureSetHotkey(accelerator);
     setCaptureHotkeyRegistered(res.success ? (res.registered ?? false) : false);
     window.dispatchEvent(new CustomEvent('pdr:settingsChanged', { detail: { key: 'captureHotkey', value: accelerator } }));
+  };
+
+  const handleCaptureHotkeyActionChange = (action: 'fullscreen' | 'region') => {
+    setCaptureHotkeyActionState(action);
+    setSetting('captureHotkeyAction' as any, action);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -13154,7 +13164,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     // screen-recording options when that ships later in v2.1.
     // Positioned after AI and before Privacy — it's a "PDR does
     // something for you" feature, not a data-control one.
-    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording snip grab print screen monitor display' },
+    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording snip grab print screen monitor display region area select crop' },
     // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
     // for global render-time switches that hide personal content
     // when sharing the screen (captions, transcripts, future:
@@ -14592,9 +14602,40 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                       Windows wouldn't register this shortcut — another app is probably using it already. The camera button in the title bar still works; try a different combination.
                     </p>
                   )}
-                  <p className="text-xs text-muted-foreground mt-3">
-                    The camera button in the title bar does the same thing as the hotkey. On a multi-screen setup the hotkey captures the screen your mouse is on; the button asks once per session which screen you want.
+                </div>
+                {/* v2.1 step 2 — hotkey action chooser. Radio-card
+                    recipe matches the Video caption size setting
+                    (lavender border + bg-primary/5 on active). */}
+                <div className="p-3 rounded-lg border border-border">
+                  <span className="text-sm font-medium text-foreground">What the hotkey captures</span>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    The camera button in the title bar always offers both. On a multi-screen setup the hotkey works on the screen your mouse is on; the button asks once per session which screen you want.
                   </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'fullscreen', label: 'Full screen', desc: 'Instant — grabs the whole screen the moment you press it.' },
+                      { value: 'region', label: 'Select region', desc: 'Freezes the screen so you can drag a box around just the part you want.' },
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          captureHotkeyAction === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-capture-hotkey-action-${opt.value}`}
+                      >
+                        <input
+                          type="radio"
+                          name="captureHotkeyAction"
+                          value={opt.value}
+                          checked={captureHotkeyAction === opt.value}
+                          onChange={() => handleCaptureHotkeyActionChange(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
                 </div>
               </div>
             </>

@@ -121,6 +121,15 @@ export interface PDRSettings {
    *  we log + surface it in Settings; the title-bar camera button
    *  keeps working regardless. */
   captureHotkey: string;
+  /** v2.1 step 2 (Terry 2026-06-11) — what the global capture hotkey
+   *  DOES. 'fullscreen' grabs the whole display under the cursor
+   *  instantly (the step-1 behaviour, kept as default so the shipped
+   *  muscle-memory doesn't change); 'region' freezes the screen and
+   *  opens the drag-to-select overlay first — the Win+Shift+S-style
+   *  flow for users who mostly want a piece of the screen, not all
+   *  of it. The title-bar camera menu always offers both verbs
+   *  regardless of this setting. */
+  captureHotkeyAction: 'fullscreen' | 'region';
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -267,6 +276,9 @@ export const optimisedDefaults: PDRSettings = {
   recycleBinShowCountBadge: false,
   // v2.1 — screenshot-to-library global hotkey (Settings → Capture).
   captureHotkey: 'Ctrl+Shift+S',
+  // v2.1 step 2 — hotkey takes the full screen by default; 'region'
+  // opens the drag-to-select overlay instead. Button menu has both.
+  captureHotkeyAction: 'fullscreen',
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -345,6 +357,7 @@ export function getSettings(): PDRSettings {
     slideshowIncludeVideos: store.get('slideshowIncludeVideos', optimisedDefaults.slideshowIncludeVideos),
     recycleBinShowCountBadge: store.get('recycleBinShowCountBadge', optimisedDefaults.recycleBinShowCountBadge),
     captureHotkey: store.get('captureHotkey', optimisedDefaults.captureHotkey),
+    captureHotkeyAction: store.get('captureHotkeyAction', optimisedDefaults.captureHotkeyAction),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

@@ -317,6 +317,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
         error?: string;
       }>,
+    // v2.1 step 2 — region capture. The invoke resolves AFTER the
+    // user finishes (or cancels) the drag-to-select overlay; a
+    // cancelled selection resolves { success: false, cancelled: true }
+    // and callers stay silent about it.
+    region: (opts?: { displayId?: string }) =>
+      ipcRenderer.invoke('capture:region', opts ?? {}) as Promise<{
+        success: boolean;
+        filePath?: string;
+        filename?: string;
+        fileId?: number | null;
+        pending?: boolean;
+        cancelled?: boolean;
+        needsDisplayPick?: boolean;
+        displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
+        error?: string;
+      }>,
     listDisplays: () => ipcRenderer.invoke('capture:listDisplays'),
     setHotkey: (accelerator: string) =>
       ipcRenderer.invoke('capture:setHotkey', accelerator) as Promise<{
@@ -335,6 +351,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:pendingFlushed', handler);
       return () => ipcRenderer.removeListener('capture:pendingFlushed', handler);
     },
+    // ── Region-overlay page channels (capture-overlay.html only) ──
+    // The overlay window loads this same preload; these three are its
+    // entire API surface: receive the frozen frame, report the chosen
+    // rect (display CSS pixels), or report a cancel.
+    onOverlayInit: (callback: (info: { imageDataUrl: string }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:overlay-init', handler);
+      return () => ipcRenderer.removeListener('capture:overlay-init', handler);
+    },
+    overlaySelect: (rect: { x: number; y: number; width: number; height: number }) =>
+      ipcRenderer.send('capture:overlay-select', rect),
+    overlayCancel: () => ipcRenderer.send('capture:overlay-cancel'),
   },
 
 
