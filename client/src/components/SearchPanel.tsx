@@ -5117,24 +5117,32 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               </DropdownMenu>
               {/* v2.1 round 115 (Terry 2026-06-11) — SHOW PREVIEW pill.
                   Sits on the banner row right of the More dropdown
-                  (Terry's red-box callout in SS1), gated on
-                  `!showPreviewPanel` so it disappears the moment
-                  the panel is back. The use case Terry called out:
-                  "If the user holds down CTRL and starts selecting
-                  images, then the preview doesn't get shown." That
-                  path runs through the ctrl-only branch of the
-                  tile onClick handler, which intentionally skips
-                  `setSelectedFile` so the multi-select doesn't
-                  jump the preview around. The user then has a
-                  pile but no preview. Click this pill: it flips
-                  showPreviewPanel → true AND seeds selectedFile
-                  from the first file in the selection if it's
-                  null, so the panel always renders SOMETHING
-                  when reopened. The reverse direction (closing
+                  (Terry's red-box callout in SS1).
+
+                  v2.1 round 117 (Terry 2026-06-11) — GATE FIX.
+                  Round 115 gated this on `!showPreviewPanel`. But
+                  the FileDetailPanel renders only when BOTH
+                  `selectedFile` AND `showPreviewPanel` are truthy
+                  (see line ~5463). The ctrl-click case Terry
+                  called out has showPreviewPanel=true (default)
+                  AND selectedFile=null — the panel is "open" but
+                  there's nothing for it to render, so it doesn't
+                  appear. My old gate `!showPreviewPanel` saw
+                  showPreviewPanel=true and HID the button, so the
+                  user got neither a preview nor the recovery
+                  button. The new gate `!showPreviewPanel ||
+                  !selectedFile` covers both:
+                    - panel hidden (X clicked in header)
+                    - selectedFile null (ctrl-click into pile from
+                      a fresh open)
+                  The button reliably appears in both scenarios.
+                  Click handler unchanged: flip showPreviewPanel
+                  true AND seed selectedFile from the first pile
+                  entry if null. The reverse direction (closing
                   the preview) is the X in the FileDetailPanel's
                   own header — single source of truth. */}
-              {!showPreviewPanel && (
-                <IconTooltip label="Show the preview panel for the most recently selected file" side="bottom">
+              {(!showPreviewPanel || !selectedFile) && (
+                <IconTooltip label="Show the preview panel for the first file in your selection" side="bottom">
                   <button
                     type="button"
                     onClick={() => {
