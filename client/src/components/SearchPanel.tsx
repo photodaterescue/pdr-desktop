@@ -4434,20 +4434,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               const enhancedOn = isEnhanced === true;
               const isDefault = typeKey === 'all' && !captionsOn && !enhancedOn;
               const total = results?.totalCount ?? 0;
-              // Chip label — describe the active combination in a way
-              // that matches what the user sees on the grid.
-              let chipLabel: string;
-              if (isDefault) {
-                chipLabel = `All media${total ? ` · ${total.toLocaleString()}` : ''}`;
-              } else {
-                const parts: string[] = [];
-                if (typeKey === 'photos') parts.push('Photos');
-                else if (typeKey === 'videos') parts.push('Videos');
-                else parts.push('All media');
-                if (captionsOn) parts.push('Captioned');
-                if (enhancedOn) parts.push('Enhanced');
-                chipLabel = `${parts.join(' + ')}${total ? ` · ${total.toLocaleString()}` : ''}`;
-              }
+              // v2.1 round 105 (Terry 2026-06-11) — chip label trimmed
+              // to just the type (count moves to the existing
+              // results-count line on the right). Same Media pill
+              // recipe as MemoriesView / Needs Dates / Albums.
+              const shortLabel = isDefault
+                ? 'All'
+                : (() => {
+                    const parts: string[] = [];
+                    if (typeKey === 'photos') parts.push('Photos');
+                    else if (typeKey === 'videos') parts.push('Videos');
+                    else parts.push('All');
+                    if (captionsOn) parts.push('Captioned');
+                    if (enhancedOn) parts.push('Enhanced');
+                    return parts.join(' + ');
+                  })();
+              // Silence the unused-variable warning while keeping
+              // the count computation around in case a future
+              // breadcrumb wants it.
+              void total;
               const ChipIcon =
                 (typeKey === 'photos' && !captionsOn && !enhancedOn) ? ImageIcon :
                 (typeKey === 'videos' && !captionsOn && !enhancedOn) ? Film :
@@ -4462,15 +4467,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                         type="button"
                         data-testid="sd-media-filter"
                         {...mediaFilterGrace.triggerHoverProps}
-                        className={`inline-flex items-center gap-1.5 h-8 px-3 rounded-full text-xs font-medium transition-colors border shrink-0 ${
+                        className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] shrink-0 ${
                           !isDefault
-                            ? 'bg-primary border-primary text-primary-foreground'
-                            : 'bg-background border-border text-muted-foreground hover:text-foreground hover:bg-accent'
+                            ? 'border-primary bg-primary/10 text-primary'
+                            : 'border-border bg-background hover:bg-accent text-foreground'
                         }`}
                       >
-                        <ChipIcon className="w-3.5 h-3.5" />
-                        {chipLabel}
-                        <ChevronDown className="w-3 h-3 opacity-70" />
+                        <span className="inline-flex items-center gap-1.5">
+                          <ChipIcon className="w-3.5 h-3.5" />
+                          <span className="text-muted-foreground/85">Media:</span>
+                          <span>{shortLabel}</span>
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5 opacity-70" />
                       </button>
                     </PopoverTrigger>
                   </IconTooltip>
@@ -4560,22 +4568,31 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               const insightsActive = insightsCount > 0;
               return (
                 <Popover open={insightsGrace.open} onOpenChange={insightsGrace.setOpen}>
-                  <IconTooltip label="View options — layout, tile size, selection mode, photo info" side="bottom">
+                  <IconTooltip label="Display options — layout, tile size, selection mode, info under tiles" side="bottom">
                     <PopoverTrigger asChild>
-                      <Button
-                        variant={insightsActive ? 'secondary' : 'ghost'}
-                        size="sm"
-                        data-testid="sd-insights-trigger"
+                      {/* v2.1 round 105 (Terry 2026-06-11) — Insights
+                          renamed to Display + reshaped into the
+                          uniform view-pill recipe (h-8 + rounded-md +
+                          border + min-w-[150px] + justify-between)
+                          shared with MemoriesView / Needs Dates /
+                          Albums. Eye icon family replaces Info. */}
+                      <button
+                        type="button"
+                        data-testid="sd-display-trigger"
                         {...insightsGrace.triggerHoverProps}
+                        className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] shrink-0 ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
                       >
-                        <Info className="w-3.5 h-3.5 mr-1.5" />
-                        Insights
-                        {insightsActive && (
-                          <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
-                            {insightsCount}
-                          </span>
-                        )}
-                      </Button>
+                        <span className="inline-flex items-center gap-1.5">
+                          <Eye className="w-3.5 h-3.5" />
+                          <span>Display</span>
+                          {insightsActive && (
+                            <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                              {insightsCount}
+                            </span>
+                          )}
+                        </span>
+                        <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                      </button>
                     </PopoverTrigger>
                   </IconTooltip>
                   <PopoverContent
