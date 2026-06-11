@@ -2237,37 +2237,10 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             </Popover>
           );
         })()}
-        {files != null && (() => {
-          // Break out photos vs videos the same way the month tile
-          // on the timeline does — Terry 2026-05-20: "There's NOTHING
-          // that says the number of photos or videos while you're in
-          // the month... are we meant to memorise the data from the
-          // previous level that we can no longer see?". The previous
-          // "X files" string lumped them together which made it
-          // impossible to know what you'd actually find inside the
-          // month at a glance. Mirrors MonthTile's photo / video
-          // line so the two surfaces speak the same language.
-          const photoCount = files.filter(f => f.file_type === 'photo').length;
-          const videoCount = files.filter(f => f.file_type === 'video').length;
-          // v2.1 round 38 (Terry 2026-06-08) — leftmost count label
-          // hides when a filter narrows the view. With "Photos" or
-          // "Videos" or "Captioned" active, the filter chip already
-          // carries the count ("Photos · 1,910") so repeating the
-          // breakdown here is just noise. Only the All-media default
-          // state keeps the photo/video split visible — that's the
-          // case where the breakdown actually adds information
-          // beyond what the chip already says ("All media · 2,075").
-          const filterNarrows = mediaFilter !== 'all' || captionedOnly;
-          if (filterNarrows) return null;
-          const parts: string[] = [];
-          if (photoCount > 0) parts.push(`${photoCount.toLocaleString()} ${photoCount === 1 ? 'photo' : 'photos'}`);
-          if (videoCount > 0) parts.push(`${videoCount.toLocaleString()} ${videoCount === 1 ? 'video' : 'videos'}`);
-          return (
-            <span className="text-xs text-muted-foreground">
-              {parts.join(' · ')}
-            </span>
-          );
-        })()}
+        {/* v2.1 round 97 part 3 (Terry 2026-06-11) — photo/video count
+            moved to the right-side cluster (before Open in Viewer)
+            so it stops breaking the rhythm of the three view pills.
+            Same recipe Needs Dates uses for its inline stats. */}
         {/* v2.1 round 24 (Terry 2026-06-08) — standalone "Captioned
             only" chip removed; Captioned now lives as a checkbox in
             the Show dropdown below alongside Photos / Videos. */}
@@ -2867,6 +2840,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             (conditional) comes first, DensityToggle is always
             last. */}
         <div className="ml-auto flex items-center gap-2">
+          {/* v2.1 round 97 part 3 (Terry 2026-06-11) — photo/video
+              stats relocated here from between Year + Media (where
+              they broke the dropdown rhythm). Same recipe Needs
+              Dates uses: text-[11px] muted, tabular-nums, hidden
+              when a media-type filter narrows the view (the active
+              Media chip would otherwise repeat the count). */}
+          {files != null && (() => {
+            const filterNarrows = mediaFilter !== 'all' || captionedOnly;
+            if (filterNarrows) return null;
+            const photoCount = files.filter(f => f.file_type === 'photo').length;
+            const videoCount = files.filter(f => f.file_type === 'video').length;
+            const parts: string[] = [];
+            if (photoCount > 0) parts.push(`${photoCount.toLocaleString()} ${photoCount === 1 ? 'photo' : 'photos'}`);
+            if (videoCount > 0) parts.push(`${videoCount.toLocaleString()} ${videoCount === 1 ? 'video' : 'videos'}`);
+            if (parts.length === 0) return null;
+            return (
+              <span className="text-[11px] text-muted-foreground tabular-nums">
+                {parts.join(' · ')}
+              </span>
+            );
+          })()}
           {files != null && files.length > 1 && selectedFileIds.size === 0 && (
             <Button
               variant="primary"
