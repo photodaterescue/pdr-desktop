@@ -543,6 +543,17 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [scrollDateLabel, setScrollDateLabel] = useState<string | null>(null);
   const [scrollIndicatorVisible, setScrollIndicatorVisible] = useState(false);
   const scrollIndicatorTimeoutRef = useRef<number | null>(null);
+  // v2.1 round 103 (Terry 2026-06-11) — dayKey ("YYYY-MM-DD") of the
+  // day currently shown in the sticky banner. Drives the
+  // invisible-when-current trick on inline day dividers (see round
+  // 101 for Memories Dates' equivalent). Set alongside
+  // scrollDateLabel in the scroll listener.
+  const [albumScrollDayKey, setAlbumScrollDayKey] = useState<string | null>(null);
+  // Refs to each inline day-divider element rendered inside the
+  // album-detail grid, keyed by dayKey. The scroll listener walks
+  // these to find the last divider whose top is at or above
+  // scrollTop, which is the current day at the viewport top.
+  const albumDayHeaderRefs = useRef<Record<string, HTMLDivElement | null>>({});
 
   useEffect(() => {
     const el = albumsRootRef.current;
@@ -605,6 +616,42 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     };
     const compute = () => {
       if (albumPhotos.length === 0) return;
+      // v2.1 round 103 (Terry 2026-06-11) — when groupByDay is on,
+      // inline day-dividers occupy variable grid rows so the round-88
+      // grid-maths approach (rowHeight × cols → photoIdx) breaks.
+      // Walk the rendered day-divider refs and find the last one
+      // whose offsetTop is at or above scrollTop; its day is the
+      // current one.
+      if (groupByDay) {
+        const scrollTop = scrollEl.scrollTop;
+        let bestKey: string | null = null;
+        let bestTop = -1;
+        for (const [key, el] of Object.entries(albumDayHeaderRefs.current)) {
+          if (!el) continue;
+          const top = el.offsetTop;
+          if (top <= scrollTop + 5 && top > bestTop) {
+            bestKey = key;
+            bestTop = top;
+          }
+        }
+        if (bestKey) {
+          // Find any photo whose dayKey matches so we have a real
+          // derived_date to format; we walk albumPhotos rather than
+          // visiblePhotos because this useEffect can't see the
+          // current filter chain (it'd add too many deps and
+          // re-run the listener every filter flip).
+          const matchPhoto = albumPhotos.find((p) => (p.derived_date?.slice(0, 10) ?? 'no-date') === bestKey);
+          if (matchPhoto?.derived_date) {
+            const label = formatLong(matchPhoto.derived_date);
+            if (label) {
+              setScrollDateLabel(label);
+              setAlbumScrollDayKey(bestKey);
+            }
+          }
+        }
+        return;
+      }
+      // Flat-grid path (groupByDay off): original round-88 math.
       const gridEl = scrollEl.querySelector<HTMLElement>('[data-album-photo-grid]');
       if (!gridEl) return;
       const gridRect = gridEl.getBoundingClientRect();
@@ -617,7 +664,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       const photo = albumPhotos[photoIdx];
       if (!photo?.derived_date) return;
       const label = formatLong(photo.derived_date);
-      if (label) setScrollDateLabel(label);
+      if (label) {
+        setScrollDateLabel(label);
+        setAlbumScrollDayKey(photo.derived_date.slice(0, 10));
+      }
     };
     const onScroll = () => {
       compute();
@@ -633,7 +683,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       scrollEl.removeEventListener('scroll', onScroll);
       if (scrollIndicatorTimeoutRef.current) clearTimeout(scrollIndicatorTimeoutRef.current);
     };
-  }, [selection, albumPhotos, albumPhotoTilePx, density]);
+  }, [selection, albumPhotos, albumPhotoTilePx, density, groupByDay]);
 
   // Forward-only navigation history. Terry 2026-05-19: "the Go Back
   // button is confusing. I think what I actually wanted was a chevron
@@ -2471,7 +2521,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             className="rounded border-border text-purple-500 focus:ring-purple-400/50"
             data-testid="button-albums-group-by-day"
           />
-          <span className="text-sm text-foreground flex-1">Day · sticky header</span>
+          <span className="text-sm text-foreground flex-1">Show Day and Date</span>
         </label>
         <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
           Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
@@ -3066,19 +3116,68 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   if (mediaFilter === 'photos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'photo');
                   else if (mediaFilter === 'videos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'video');
                   if (captionedOnly) visiblePhotos = visiblePhotos.filter((p) => p.caption && p.caption.length > 0);
+                  // v2.1 round 103 (Terry 2026-06-11) — format day labels
+                  // the same way the scroll listener does so the inline
+                  // divider text matches the sticky banner verbatim.
+                  const DAYS_R = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                  const MONTHS_R = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+                  const formatDay = (iso: string): string => {
+                    const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+                    if (!m) return '';
+                    const d = new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)));
+                    if (isNaN(d.getTime())) return '';
+                    return `${DAYS_R[d.getUTCDay()]}, ${d.getUTCDate()} ${MONTHS_R[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+                  };
+                  // Track previously seen dayKey so we only render a
+                  // divider when the day changes.
+                  let prevDayKey: string | null = null;
                   return visiblePhotos.map((p, i) => {
                     const isSelected = selectedAlbumPhotoIds.has(p.id);
+                    const myDayKey = p.derived_date?.slice(0, 10) ?? 'no-date';
+                    const dayChanged = groupByDay && myDayKey !== prevDayKey;
+                    prevDayKey = myDayKey;
                     return (
-                  // v2.0.13 — per-photo ContextMenu. The OUTER ContextMenu
-                  // wrapping the whole grid handles right-clicks on the
-                  // empty grid area (Add photos from S&D / By Date). This
-                  // inner ContextMenu takes precedence on a specific
-                  // photo. CaptionTooltip wraps the whole tile (via the
-                  // intermediate <div>) so hovering anywhere on the
-                  // photo reveals the gold caption preview; the button
-                  // inside is still ContextMenuTrigger's asChild target,
-                  // so right-click is unaffected.
-                  <CaptionTooltip key={p.id} caption={p.caption} side="top">
+                  <Fragment key={p.id}>
+                  {dayChanged && (
+                    /* v2.1 round 103 (Terry 2026-06-11) — inline day
+                       divider, spans the full grid width via
+                       gridColumn: 1 / -1. Goes `invisible` (CSS
+                       visibility:hidden — keeps layout space so the
+                       photos below don't jump) when its day matches
+                       the day currently in the sticky banner. Same
+                       trick as Memories Dates round 101. Typography
+                       mirrors the sticky banner so the two surfaces
+                       feel of-a-piece. The first divider is always
+                       shown so the top of the album reads as a
+                       proper day section.
+                       Recipe matches the Memories Dates day-header:
+                       bg-background, border-b, text-sm font-semibold
+                       text-foreground, py-2. */
+                    <div
+                      ref={(el) => { albumDayHeaderRefs.current[myDayKey] = el; }}
+                      style={{ gridColumn: '1 / -1' }}
+                      className={`py-2 mt-2 first:mt-0 border-b border-border/60 bg-background text-sm font-semibold text-foreground ${myDayKey === albumScrollDayKey ? 'invisible' : ''}`}
+                      data-album-day-key={myDayKey}
+                    >
+                      {p.derived_date ? formatDay(p.derived_date) : 'Undated'}
+                      <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums">
+                        {(() => {
+                          const sameDay = visiblePhotos.filter((q) => (q.derived_date?.slice(0, 10) ?? 'no-date') === myDayKey).length;
+                          return `${sameDay.toLocaleString()} ${sameDay === 1 ? 'photo' : 'photos'}`;
+                        })()}
+                      </span>
+                    </div>
+                  )}
+                  {/* v2.0.13 — per-photo ContextMenu. The OUTER ContextMenu
+                      wrapping the whole grid handles right-clicks on the
+                      empty grid area (Add photos from S&D / By Date). This
+                      inner ContextMenu takes precedence on a specific
+                      photo. CaptionTooltip wraps the whole tile (via the
+                      intermediate div) so hovering anywhere on the
+                      photo reveals the gold caption preview; the button
+                      inside is still ContextMenuTrigger's asChild target,
+                      so right-click is unaffected. */}
+                  <CaptionTooltip caption={p.caption} side="top">
                     {/* v2.1 round 86 (Terry 2026-06-10) — wrapper
                         carries the aspect-square tile AND the optional
                         filename / date strip rendered below, so the
@@ -3356,6 +3455,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     )}
                     </div>
                   </CaptionTooltip>
+                  </Fragment>
                     );
                   });
                 })()}
