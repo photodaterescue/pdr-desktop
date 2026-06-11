@@ -2946,7 +2946,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             })}
           </aside>
         ) : null}
-      <div ref={gridScrollRef} className="relative flex-1 overflow-y-auto p-6 outline-none">
+      <div ref={gridScrollRef} className="relative flex-1 overflow-y-auto px-6 pb-6 outline-none">
         {files == null ? (
           <div className="flex items-center justify-center h-full text-sm text-muted-foreground">Loading…</div>
         ) : files.length === 0 ? (
