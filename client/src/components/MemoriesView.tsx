@@ -1252,6 +1252,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // immediately. Without this Radix kept the popover open until the
   // user clicked outside.
   const [monthPickerOpen, setMonthPickerOpen] = useState(false);
+  // v2.1 round 97 (Terry 2026-06-11) — year-picker dropdown on the
+  // year-view title. Mirrors the month picker primitive (Popover +
+  // PopoverTrigger + PopoverContent) so the two surfaces feel of-a-
+  // piece. Open state lives at the component root because the title
+  // render is inside an IIFE that can't carry its own React state.
+  const [yearPickerOpen, setYearPickerOpen] = useState(false);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
   // Selection mode toggle — when on, checkboxes are visible by
   // default (not only on hover). Mirrors the S&D "Select" button
@@ -2109,8 +2115,77 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             scope (no month-level navigation makes sense at that
             depth) or when the parent failed to supply allYearBuckets. */}
         {(() => {
-          if (month == null || !allYearBuckets || allYearBuckets.length === 0) {
+          // v2.1 round 97 (Terry 2026-06-11) — year-view title is now
+          // a year-picker pill matching the Media + Display recipe.
+          // Dropdown lists ALL years from the earliest dated photo in
+          // the library to the latest, including years with zero
+          // photos (Terry: "If there's 0, then just state it in the
+          // dropdown menu and grey it out"). Static h2 fallback kept
+          // for the edge case where allYearBuckets hasn't loaded yet.
+          if (!allYearBuckets || allYearBuckets.length === 0) {
             return <h2 className="text-base font-semibold text-foreground leading-none">{title}</h2>;
+          }
+          if (month == null) {
+            // Year view — render the year-picker pill.
+            const yearTotals = new Map<number, number>();
+            let minYear = Number.POSITIVE_INFINITY;
+            let maxYear = Number.NEGATIVE_INFINITY;
+            for (const b of allYearBuckets) {
+              yearTotals.set(b.year, (yearTotals.get(b.year) ?? 0) + b.photoCount + b.videoCount);
+              if (b.year < minYear) minYear = b.year;
+              if (b.year > maxYear) maxYear = b.year;
+            }
+            const yearsRange: Array<{ year: number; total: number }> = [];
+            for (let y = maxYear; y >= minYear; y--) {
+              yearsRange.push({ year: y, total: yearTotals.get(y) ?? 0 });
+            }
+            return (
+              <Popover open={yearPickerOpen} onOpenChange={setYearPickerOpen}>
+                <IconTooltip label="Jump to another year" side="bottom">
+                  <PopoverTrigger asChild>
+                    <button
+                      type="button"
+                      className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-border bg-background hover:bg-accent text-foreground transition-colors min-w-[150px]"
+                      data-testid="memories-drilldown-year-picker"
+                    >
+                      <span className="inline-flex items-center gap-1.5">
+                        <CalendarRange className="w-3.5 h-3.5" />
+                        <span className="text-muted-foreground/85">Year:</span>
+                        <span>{year}</span>
+                      </span>
+                      <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+                    </button>
+                  </PopoverTrigger>
+                </IconTooltip>
+                <PopoverContent align="start" className="w-56 p-1 max-h-[60vh] overflow-y-auto">
+                  <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+                    Jump to year
+                  </p>
+                  {yearsRange.map((y) => {
+                    const isCurrent = y.year === year;
+                    const isEmpty = y.total === 0;
+                    return (
+                      <button
+                        key={y.year}
+                        type="button"
+                        disabled={isEmpty}
+                        onClick={() => {
+                          setYearPickerOpen(false);
+                          if (!isEmpty) onNavigateToRange(y.year);
+                        }}
+                        className={`w-full flex items-center justify-between gap-2 px-3 py-1.5 text-left rounded-md text-sm transition-colors ${isCurrent ? 'bg-secondary text-foreground font-semibold' : isEmpty ? 'text-muted-foreground/50 cursor-not-allowed' : 'text-foreground hover:bg-muted/50'}`}
+                        data-testid={`memories-drilldown-year-${y.year}`}
+                      >
+                        <span>{y.year}</span>
+                        <span className="text-xs text-muted-foreground tabular-nums">
+                          {isEmpty ? '0' : y.total.toLocaleString()}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </PopoverContent>
+              </Popover>
+            );
           }
           // v2.0.15 (Terry 2026-06-06) — newest-first to match the
           // Year timeline (top = most recent year) and the Day rail
