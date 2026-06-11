@@ -3044,9 +3044,21 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     doesn't apply inside an absolute container); the
                     floating "current day" pill above the scroll area
                     is the cue now. */}
+                {/* v2.1 round 101 (Terry 2026-06-11) — inline day
+                    header goes `invisible` (CSS visibility:hidden)
+                    when its group IS the one the sticky banner is
+                    currently showing. Visibility-hidden preserves
+                    the layout height so the photo grid below
+                    stays in the same position; the sticky banner
+                    sits in that reserved space and the user sees a
+                    single header. As soon as scroll moves the next
+                    day to the top (currentDayKey flips), this
+                    group's inline header becomes visible again —
+                    it's off-screen by then so the user doesn't
+                    notice the visibility flip. */}
                 <h3
                   ref={(el) => { dayHeaderElsRef.current[group.dayKey] = el; }}
-                  className="-mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground"
+                  className={`-mx-6 px-6 py-2 bg-background/95 backdrop-blur-sm border-b border-border/60 text-sm font-semibold text-foreground ${group.dayKey === currentDayKey ? 'invisible' : ''}`}
                 >
                   {formatDayHeader(group.date, group.dayKey)}
                   <span className="ml-2 text-xs font-normal text-muted-foreground">
