@@ -32,7 +32,7 @@ import {
   Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
-  Captions, Info,
+  Captions, Info, Eye, Filter, Film, Files,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -255,6 +255,28 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // filter doesn't silently follow them around the library.
   const [captionedOnly, setCaptionedOnly] = useState(false);
   useEffect(() => { setCaptionedOnly(false); }, [selection]);
+
+  // v2.1 round 102 (Terry 2026-06-11) — media type filter inside an
+  // album (All / Photos / Videos). Same primitive MemoriesView and
+  // Needs Dates use for the Media pill. Resets on selection change
+  // so a leftover filter from one album doesn't bleed into the next.
+  const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>('all');
+  useEffect(() => { setMediaFilter('all'); }, [selection]);
+
+  // v2.1 round 102 (Terry 2026-06-11) — group an album's photos by
+  // day with sticky-banner day headers (same UX as Memories Dates).
+  // ON by default per Terry's spec; toggle lives in the new Display
+  // popover, persisted to localStorage so the preference survives
+  // navigation + reloads.
+  const ALBUMS_GROUP_BY_DAY_KEY = 'pdr-albums-group-by-day';
+  const [groupByDay, setGroupByDay] = useState<boolean>(() => {
+    if (typeof localStorage === 'undefined') return true;
+    const saved = localStorage.getItem(ALBUMS_GROUP_BY_DAY_KEY);
+    return saved == null ? true : saved === 'true';
+  });
+  useEffect(() => {
+    try { localStorage.setItem(ALBUMS_GROUP_BY_DAY_KEY, groupByDay ? 'true' : 'false'); } catch { /* localStorage may be unavailable */ }
+  }, [groupByDay]);
 
   // ── "Export as Parallel Library" entry point (v2.0.8 step 6) ─────
   // The PL wizard is re-used as a verb invoked from this album view —
@@ -2316,25 +2338,36 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // counts 1; each metaField counts 1. Tile size is a personal
   // preference, not surfaced in the badge (matches MemoriesView round
   // 64 rule).
-  const insightsCount = (selectionMode ? 1 : 0) + metaFields.length;
+  // v2.1 round 102 (Terry 2026-06-11) — Display button count includes
+  // group-by-day OFF (its non-default state) so the user can see "I've
+  // changed something here" without opening the popover.
+  const insightsCount = (selectionMode ? 1 : 0) + metaFields.length + (groupByDay ? 0 : 1);
   const insightsActive = insightsCount > 0;
-  const insightsButton = (
+  // Display button — renamed from Insights to match MemoriesView /
+  // Needs Dates view-pill family (round 97). Uniform pill recipe:
+  // h-8 + rounded-md + border + min-w-[150px] + justify-between +
+  // Eye icon. Active-state badge counts non-default Display toggles
+  // (selectionMode + metaFields + groupByDay-OFF).
+  const displayButton = (
     <Popover>
-      <IconTooltip label="View options — tile size, selection mode, photo info" side="bottom">
+      <IconTooltip label="Display options — tile size, selection mode, info under tiles, group by day" side="bottom">
         <PopoverTrigger asChild>
-          <Button
-            variant={insightsActive ? 'secondary' : 'ghost'}
-            size="sm"
-            data-testid="albums-insights-trigger"
+          <button
+            type="button"
+            data-testid="albums-display-trigger"
+            className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
           >
-            <Info className="w-3.5 h-3.5 mr-1.5" />
-            Insights
-            {insightsActive && (
-              <span className="ml-1.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
-                {insightsCount}
-              </span>
-            )}
-          </Button>
+            <span className="inline-flex items-center gap-1.5">
+              <Eye className="w-3.5 h-3.5" />
+              <span>Display</span>
+              {insightsActive && (
+                <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
+                  {insightsCount}
+                </span>
+              )}
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+          </button>
         </PopoverTrigger>
       </IconTooltip>
       <PopoverContent
@@ -2418,9 +2451,116 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             </label>
           );
         })}
+        <div className="border-t border-border my-2" />
+        {/* — Group-by-day section (album-detail only) — */}
+        {/* v2.1 round 102 (Terry 2026-06-11) — group an album's
+            photos by day with the same sticky-banner pattern as
+            Memories Dates. Only meaningful in the album-detail
+            view; we still show the toggle on All-albums + Group
+            views because hiding/showing it depending on selection
+            would cause the Display popover to reflow (annoying
+            UX). Default ON. */}
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Group photos by</p>
+        <label className="flex items-center gap-2 px-2 py-1.5 rounded-md hover:bg-secondary/50 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={groupByDay}
+            onChange={() => setGroupByDay((v) => !v)}
+            className="rounded border-border text-purple-500 focus:ring-purple-400/50"
+            data-testid="button-albums-group-by-day"
+          />
+          <span className="text-sm text-foreground flex-1">Day · sticky header</span>
+        </label>
         <p className="text-[10px] text-muted-foreground/85 px-2 pt-2 leading-snug">
           Tip: Hold <kbd className="px-1 py-0.5 rounded bg-secondary text-[9px] font-mono">Ctrl</kbd> + scroll over the grid to zoom.
         </p>
+      </PopoverContent>
+    </Popover>
+  );
+
+  // v2.1 round 102 (Terry 2026-06-11) — Media pill (album-detail
+  // only). Mirrors MemoriesView / Needs Dates' Media pill recipe
+  // verbatim: same h-8 + rounded-md + border + min-w-[150px] +
+  // justify-between + ChipIcon + "Media:" prefix + ChevronDown.
+  // Absorbs the existing captionedOnly toggle plus a new
+  // photos/videos filter so Albums catches up with the other
+  // surfaces' filter capability.
+  const mediaPhotoCount = albumPhotos.filter((p) => p.file_type === 'photo').length;
+  const mediaVideoCount = albumPhotos.filter((p) => p.file_type === 'video').length;
+  const mediaCaptionedCount = albumPhotos.filter((p) => {
+    if (!p.caption || p.caption.length === 0) return false;
+    if (mediaFilter === 'photos') return p.file_type === 'photo';
+    if (mediaFilter === 'videos') return p.file_type === 'video';
+    return true;
+  }).length;
+  const mediaIsDefault = mediaFilter === 'all' && !captionedOnly;
+  const mediaShortLabel = mediaIsDefault
+    ? 'All'
+    : mediaFilter === 'photos' && !captionedOnly
+      ? 'Photos'
+      : mediaFilter === 'videos' && !captionedOnly
+        ? 'Videos'
+        : mediaFilter === 'all' && captionedOnly
+          ? 'Captioned'
+          : `${mediaFilter === 'photos' ? 'Photos' : 'Videos'} + Captioned`;
+  const MediaChipIcon =
+    mediaFilter === 'photos' && !captionedOnly
+      ? ImageIcon
+      : mediaFilter === 'videos' && !captionedOnly
+        ? Film
+        : captionedOnly && mediaFilter === 'all'
+          ? MessageSquareText
+          : Files;
+  const mediaButton = (
+    <Popover>
+      <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
+        <PopoverTrigger asChild>
+          <button
+            type="button"
+            data-testid="albums-media-filter"
+            className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${!mediaIsDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+          >
+            <span className="inline-flex items-center gap-1.5">
+              <MediaChipIcon className="w-3.5 h-3.5" />
+              <span className="text-muted-foreground/85">Media:</span>
+              <span>{mediaShortLabel}</span>
+            </span>
+            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+          </button>
+        </PopoverTrigger>
+      </IconTooltip>
+      <PopoverContent align="start" className="w-64 p-1">
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">Type</p>
+        <RadioGroup value={mediaFilter} onValueChange={(v) => setMediaFilter(v as 'all' | 'photos' | 'videos')} className="gap-0">
+          {([
+            { key: 'all' as const, label: 'All media', Icon: Files, count: albumPhotos.length },
+            { key: 'photos' as const, label: 'Photos', Icon: ImageIcon, count: mediaPhotoCount },
+            { key: 'videos' as const, label: 'Videos', Icon: Film, count: mediaVideoCount },
+          ]).map(({ key, label, Icon, count }) => (
+            <label key={key} htmlFor={`albums-media-${key}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
+              <span className="inline-flex items-center gap-2 text-foreground">
+                <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+                {label}
+              </span>
+              <span className="inline-flex items-center gap-3">
+                <span className="text-xs text-muted-foreground">{count.toLocaleString()}</span>
+                <RadioGroupItem id={`albums-media-${key}`} value={key} />
+              </span>
+            </label>
+          ))}
+        </RadioGroup>
+        <div className="h-px bg-border my-1" />
+        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-1 pb-1">Also filter</p>
+        <label className={`flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm transition-colors ${mediaCaptionedCount === 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer hover:bg-muted/50'}`}>
+          <span className="inline-flex items-center gap-2 text-foreground">
+            <MessageSquareText className="w-3.5 h-3.5 text-muted-foreground" />
+            Captions
+          </span>
+          <span className="inline-flex items-center gap-3">
+            <span className="text-xs text-muted-foreground">{mediaCaptionedCount.toLocaleString()}</span>
+            <Checkbox checked={captionedOnly} disabled={mediaCaptionedCount === 0} onCheckedChange={(v) => setCaptionedOnly(!!v)} />
+          </span>
+        </label>
       </PopoverContent>
     </Popover>
   );
@@ -2460,7 +2600,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 control. Both share state across the All-albums /
                 per-group / detail surfaces. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {insightsButton}
+              {displayButton}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-all-density-toggle" />
             </div>
@@ -2560,7 +2700,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 State is shared, so resizing here also resizes
                 everywhere else. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {insightsButton}
+              {displayButton}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-group-density-toggle" />
             </div>
@@ -2780,7 +2920,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </PopoverContent>
                     </Popover>
                   )}
-                  {insightsButton}
+                  {mediaButton}
+                  {displayButton}
                   {refreshButton}
                   <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />
                   <IconTooltip
@@ -2821,25 +2962,29 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               albums; Takeout-imported albums are content-locked. */}
           <ContextMenu>
             <ContextMenuTrigger asChild>
-          <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
-            {/* v2.1 round 88 (Terry SS2 2026-06-10) — floating
-                "current photo date" pill, sticky top-right inside
-                the album-detail scroll container. Same chrome as
-                MemoriesView's pill (background/95 + backdrop-blur
-                + border + shadow + text-foreground) so the two
-                surfaces feel of-a-piece. pointer-events-none so
-                it never eats photo clicks. Auto-hides 1.2 s after
-                last scroll via scrollIndicatorVisible. */}
-            {scrollDateLabel && (
+          <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pb-4">
+            {/* v2.1 round 102 (Terry 2026-06-11) — sticky day-banner,
+                gated on the new groupByDay toggle in the Display
+                popover. Was a floating top-right pill (round 88)
+                that faded after 1.2 s; now a full-width band that
+                lands hard-flush against the toolbar above as the
+                user scrolls. Verbatim copy of the Memories Dates
+                sticky-banner recipe (round 100): solid
+                bg-background (no backdrop-blur), -mx-6 px-6 py-2,
+                border-b border-border/60, text-sm font-semibold
+                text-foreground, pointer-events-none. Scroll
+                container's `pt-3` dropped so sticky top-0 actually
+                lands at the toolbar's bottom border (same lesson
+                from MemoriesView round 100 — sticky pins to the
+                padding edge). aria-live polite so screen readers
+                announce the day change as the user scrolls. */}
+            {scrollDateLabel && groupByDay && (
               <div
-                className={`pointer-events-none sticky top-0 z-30 flex justify-end transition-opacity duration-200 ${
-                  scrollIndicatorVisible ? 'opacity-100' : 'opacity-0'
-                }`}
-                aria-hidden={!scrollIndicatorVisible}
+                className="pointer-events-none sticky top-0 z-30 -mx-6 px-6 py-2 bg-background border-b border-border/60 text-sm font-semibold text-foreground"
+                data-testid="albums-sticky-day"
+                aria-live="polite"
               >
-                <div className="px-3 py-1.5 rounded-full bg-background/95 backdrop-blur-sm border border-border shadow-md text-xs font-medium text-foreground">
-                  {scrollDateLabel}
-                </div>
+                {scrollDateLabel}
               </div>
             )}
             {albumPhotosLoading ? (
@@ -2911,7 +3056,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   // shift+click range select against the SAME indexing
                   // as the rendered grid (captionedOnly filtering
                   // changes the index space).
-                  const visiblePhotos = captionedOnly ? albumPhotos.filter((p) => p.caption && p.caption.length > 0) : albumPhotos;
+                  // v2.1 round 102 (Terry 2026-06-11) — apply the new
+                  // mediaFilter on top of the existing captionedOnly
+                  // filter so the Media pill's Photos / Videos radio
+                  // actually narrows the visible grid.
+                  let visiblePhotos = albumPhotos;
+                  if (mediaFilter === 'photos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'photo');
+                  else if (mediaFilter === 'videos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'video');
+                  if (captionedOnly) visiblePhotos = visiblePhotos.filter((p) => p.caption && p.caption.length > 0);
                   return visiblePhotos.map((p, i) => {
                     const isSelected = selectedAlbumPhotoIds.has(p.id);
                     return (
