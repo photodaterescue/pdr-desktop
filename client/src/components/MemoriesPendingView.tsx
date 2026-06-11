@@ -1018,15 +1018,18 @@ export default function MemoriesPendingView({
 
         <div className="flex-1" />
 
-        {/* v2.1 round 95 (Terry 2026-06-11) — stats live inline on
-            the toolbar right-side (when there's no selection) or in
-            the gold banner (when there is one). Terry: "you seem to
-            be insisting they appear at the top since you disobeyed
-            me, I would suggest they go on either the upper toolbar,
-            or the the yellow banner." The standalone bordered
-            subhead is gone — its own band was the eye-snag he
-            didn't want. */}
-        {breakdownText && selectedFileIds.size === 0 && (
+        {/* v2.1 round 95 (Terry 2026-06-11) — stats inline on the
+            toolbar, left of the DensityToggle. Round 95 originally
+            split the rendering: stats here when no selection, in
+            the gold banner when a selection was active.
+            v2.1 round 120 (Terry 2026-06-11) — banner copy
+            withdrawn. Terry: "the stats '49 tentative · 162
+            unrecorded' should actually be positioned to the left
+            of the Spacious/Tight toggle — this should have never
+            moved to the gold banner in the first place." Always-on
+            now, independent of selection state, so the toolbar
+            reads the same in both states. */}
+        {breakdownText && (
           <span className="text-[11px] text-muted-foreground tabular-nums truncate max-w-[40%]">
             {breakdownText}
           </span>
@@ -1069,19 +1072,36 @@ export default function MemoriesPendingView({
             </button>
           </IconTooltip>
 
-          {/* Direct gold CTA — Set date for N (lifted out of the
-              dropdown so the headline bulk action is one click away). */}
-          <button
-            type="button"
-            onClick={() => openBulkPanel(selectedFiles)}
-            className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors min-w-[150px] shrink-0"
-            data-testid="pending-set-date-cta"
-          >
-            <span className="inline-flex items-center gap-1.5">
-              <CalendarClock className="w-3.5 h-3.5" />
-              Set date for {selectedFileIds.size}
-            </span>
-          </button>
+          {/* v2.1 round 120 (Terry 2026-06-11) — primary CTA spot in
+              the left cluster now holds "Open N in Viewer", peer-
+              CTA with the wide "Set date for N" placeholder on
+              the right side of the band (see further down). Same
+              two-CTA layout as the S&D banner ([chip] + [Open in
+              Viewer] + [More] + spacer + [wide placeholder]). The
+              Set-date verb lives on the placeholder because its
+              click summons the right-side date-editor aside —
+              the placeholder occupies exactly the future aside's
+              footprint so the click visually summons the editor
+              into its own space. */}
+          <IconTooltip label="Open the selected photos and videos in the Viewer" side="bottom">
+            <button
+              type="button"
+              onClick={() => {
+                if (selectedFiles.length === 0) return;
+                void openSearchViewer(
+                  selectedFiles.map((f) => f.file_path),
+                  selectedFiles.map((f) => f.filename),
+                );
+              }}
+              className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors min-w-[150px] shrink-0"
+              data-testid="pending-open-viewer-cta"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <Eye className="w-3.5 h-3.5" />
+                Open {selectedFileIds.size} in Viewer
+              </span>
+            </button>
+          </IconTooltip>
 
           {/* More overflow — every other bulk action (Open in Viewer,
               Send to S&D, Add to album, Transcribe, Copy filenames,
@@ -1102,18 +1122,12 @@ export default function MemoriesPendingView({
               </button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="start" className="min-w-[260px]">
-              <DropdownMenuItem
-                onSelect={() => {
-                  if (selectedFiles.length === 0) return;
-                  void openSearchViewer(
-                    selectedFiles.map((f) => f.file_path),
-                    selectedFiles.map((f) => f.filename),
-                  );
-                }}
-              >
-                <PlayCircle className="w-3.5 h-3.5 mr-2" />
-                Open {selectedFileIds.size} Selected in Viewer
-              </DropdownMenuItem>
+              {/* v2.1 round 120 (Terry 2026-06-11) — "Open N
+                  Selected in Viewer" is now the primary CTA on
+                  the band itself (see above), so it's
+                  intentionally NOT duplicated here in the More
+                  menu. Same pattern S&D's banner uses since
+                  round 113. */}
               {selectedFileIds.size === 1 && (
                 <DropdownMenuItem
                   onSelect={() => {
@@ -1220,13 +1234,33 @@ export default function MemoriesPendingView({
 
           <div className="flex-1" />
 
-          {/* Stats live here when selection is active — right side
-              of the gold banner, muted so the gold CTA pulls the
-              eye first. */}
-          {breakdownText && (
-            <span className="text-[11px] text-muted-foreground tabular-nums truncate max-w-[40%]">
-              {breakdownText}
-            </span>
+          {/* v2.1 round 120 (Terry 2026-06-11) — WIDE "Set date for
+              N" placeholder, right-anchored, w-[380px] matching
+              the Side Viewer aside that materialises on click
+              (see line ~1681 — `<aside className="w-[380px]">`).
+              The button visually BECOMES the editor: when the
+              user clicks, the right-side aside pops in at the
+              same x-coordinate the placeholder was occupying,
+              the left content shrinks by 380 px to make room,
+              and the placeholder is hidden by the gate below.
+              Same recipe as the S&D banner's Show-Preview
+              placeholder (round 119): solid gold + text-
+              [#1f1a08] + justify-center, w-[380px] instead of
+              w-[35%] because the Side Viewer is a fixed pixel
+              width rather than a percentage. Terry: "this
+              design mirrors that of S&D which we've just done." */}
+          {!panelFile && !panelBulkFiles && (
+            <IconTooltip label={`Set the date on every selected file (${selectedFileIds.size})`} side="bottom">
+              <button
+                type="button"
+                onClick={() => openBulkPanel(selectedFiles)}
+                className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] transition-colors w-[380px] shrink-0"
+                data-testid="pending-set-date-cta"
+              >
+                <CalendarClock className="w-3.5 h-3.5" />
+                <span>Set date for {selectedFileIds.size}</span>
+              </button>
+            </IconTooltip>
           )}
 
           {/* Off-screen anchor for AddToAlbumPopover — opened by the
