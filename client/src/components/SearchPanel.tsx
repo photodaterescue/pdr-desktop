@@ -5011,6 +5011,34 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   {/* "Open N in Viewer" lives as the primary CTA on
                       the band (round 113), so it's intentionally NOT
                       duplicated here in the More menu. */}
+                  {/* v2.1 round 114 (Terry 2026-06-11) — Show/Hide
+                      Preview toggle. The FileDetailPanel can be
+                      dismissed via the X in its own header (round
+                      106 removed the redundant toolbar button), so
+                      until now there was no way to bring it back
+                      after closing. Living it at the TOP of the
+                      More menu (above the bulk-action verbs)
+                      groups it with the other "look at this
+                      selection" affordance — the Open-in-Viewer
+                      CTA already promoted to the banner. Same
+                      PanelRightOpen / PanelRightClose icons the
+                      old toolbar button used. */}
+                  <DropdownMenuItem
+                    onSelect={() => setShowPreviewPanel(prev => !prev)}
+                  >
+                    {showPreviewPanel ? (
+                      <>
+                        <PanelRightClose className="w-3.5 h-3.5 mr-2" />
+                        Hide Preview
+                      </>
+                    ) : (
+                      <>
+                        <PanelRightOpen className="w-3.5 h-3.5 mr-2" />
+                        Show Preview
+                      </>
+                    )}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
                   <DropdownMenuItem
                     disabled={fixActive}
                     onSelect={() => setPlRibbonPulse(true)}
