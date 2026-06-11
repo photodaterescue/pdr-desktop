@@ -5956,14 +5956,29 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
       style={{ scrollbarGutter: 'stable' }}
     >
       <div className="px-4 pb-4" style={{ paddingTop: 0, marginTop: 0 }}>
-        {/* Header bar — sticky at the very top with a higher z-index
-            than the photo block below. Background opaque so metadata
-            sliding up under it doesn't bleed through. The photo
-            block is wrapped in the SAME sticky group below this so
-            both pieces stay pinned together (no gap appears between
-            them as the user scrolls). */}
+        {/* v2.1 round 110 (Terry 2026-06-11) — COMBINED sticky group:
+            the "Details N of M" header + the photo block are now
+            CHILDREN of a single sticky <div> pinned at top: 0.
+            Previously they were two SEPARATE stickies — header at
+            top-0 z-30, photo at top-32 z-20 — with a hard-coded 32px
+            offset between them. The header's actual rendered height
+            isn't exactly 32px (it's about 28px depending on font
+            metrics), so the photo's natural offset from the scroll
+            container top didn't match its sticky top value, and the
+            moment the user started to scroll the photo JUMPED a few
+            px to its pinned position. Terry: "I can see the preview
+            photo move a few pixels up and hidden behind the Details
+            bar." With both pieces inside ONE sticky, they pin at
+            their natural offsets — no transition jump possible. */}
         <div
-          className="flex items-center justify-between py-1 mb-0 border-b border-border/30 bg-background sticky top-0 z-30"
+          className="sticky top-0 z-30 bg-background mb-3"
+          style={{ marginTop: 0 }}
+        >
+        {/* Header bar — natural-flow child of the combined sticky.
+            Background opaque so metadata sliding up under it doesn't
+            bleed through. */}
+        <div
+          className="flex items-center justify-between py-1 mb-0 border-b border-border/30"
           style={{ marginTop: 0 }}
         >
           <div className="flex items-center gap-1.5 min-w-0">
@@ -6005,33 +6020,20 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
             </IconTooltip>
           </div>
         </div>
-        {/* Sticky wrapper — full-width and OPAQUE so metadata scrolling behind it
-            doesn't show through the side gaps when the inner photo container is
-            narrower than the panel (portrait photos). The actual photo box sits
-            inside, centred, with its aspect ratio pinned to the file's
-            width/height so the rendered <img> fills it exactly with no
-            letterboxing. The face-bounding overlays then map % coords directly
-            onto the image with no maths-vs-letterbox mismatch — which is what
-            was making boxes appear oversized and offset in S&D while PM (which
-            renders crops via getFaceCrop's server-side coord math) showed them
-            correctly sized. */}
+        {/* Photo block — natural-flow child of the combined sticky group
+            above. No own sticky offset (round 110 — see comment on the
+            parent), no transform/will-change (round 109's GPU promotion
+            interferes with sticky positioning in Chromium when applied
+            to the sticky element itself). The combined sticky parent
+            supplies the bg-background so this block doesn't need its
+            own — metadata scrolling under the parent is what we paint
+            over. Inside, the photo box sits centred with its aspect
+            ratio pinned to file.width/file.height so the rendered <img>
+            fills it exactly with no letterboxing; face overlays map %
+            coords onto the image with no maths-vs-letterbox mismatch. */}
         <div
-          /* v2.1 round 109 (Terry 2026-06-11) — translate3d(0,0,0)
-             promotes the sticky photo block onto its own compositor
-             layer so the browser positions it at integer pixel
-             boundaries instead of repainting at fractional subpixel
-             offsets on every scroll frame. will-change: transform
-             tells the compositor up front so it doesn't have to
-             re-promote on the first scroll. Together they kill the
-             sub-pixel jitter that survives the scrollbar-gutter fix
-             above on high-DPI displays. */
-          className="sticky z-20 mb-3 bg-background flex items-center justify-center border-b border-border pb-2"
-          style={{
-            minHeight: 0,
-            top: '32px',
-            transform: 'translate3d(0, 0, 0)',
-            willChange: 'transform',
-          }}
+          className="flex items-center justify-center border-b border-border pb-2"
+          style={{ minHeight: 0 }}
         >
         <div
           className="rounded-xl overflow-hidden bg-secondary/30 relative group"
@@ -6223,6 +6225,7 @@ function FileDetailPanel({ file, thumbnail, onClose, onPrev, onNext, onOpenInExp
           )}
         </div>
         </div>
+        </div>{/* /combined sticky group (round 110) — header + photo */}
         {/* v2.0.15 (Terry 2026-05-30) — REMOVED wide "Open in Viewer"
             + "Show in Folder" CTAs that used to sit here. Both are
             now icon-only in the header strip (sticky top of the
