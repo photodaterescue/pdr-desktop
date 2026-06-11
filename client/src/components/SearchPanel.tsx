@@ -4956,11 +4956,18 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   the toolbar." CheckSquare for the selection chip,
                   Eye for the Open-in-Viewer CTA, MoreHorizontal
                   for the More dropdown. */}
+              {/* v2.1 round 121 (Terry 2026-06-11) — `pdr-pending-chip-pulse`
+                  class mirrored from the ND banner so the chip
+                  carries the same slow gold breathing pulse here.
+                  Same keyframe (defined once in index.css), no
+                  per-surface variation. Terry: "the X Selected on
+                  S&D [should] have the same pulsing as the same
+                  button on Needs Dates." */}
               <IconTooltip label="Clear selection" side="bottom">
                 <button
                   type="button"
                   onClick={() => { setSelectedFiles(new Set()); setSelectedFilesMap(new Map()); setShowSelectedOnly(false); }}
-                  className="inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
+                  className="pdr-pending-chip-pulse inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border border-[var(--color-gold)] bg-[var(--color-gold)]/15 hover:bg-[var(--color-gold)]/25 text-foreground transition-colors min-w-[150px] shrink-0"
                   data-testid="sd-selection-chip"
                   aria-label={`${selectedFiles.size} selected — clear selection`}
                 >
