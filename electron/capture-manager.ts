@@ -908,6 +908,16 @@ const RECORD_QUALITY = {
 interface BlurSegment { x: number; y: number; width: number; height: number; startMs: number; endMs: number | null }
 let recordBlurSegments: BlurSegment[] = [];
 
+// Round 128 — camera bubble (tutorial picture-in-picture). A real
+// transparent always-on-top window on the recorded display that is
+// deliberately NOT content-protected: it's on screen, so the
+// recording captures it — no compositing. camVisible tracks the
+// faded state; the window survives hidden so toggling back is
+// instant (the camera stream stays warm).
+let camWindow: BrowserWindow | null = null;
+let camVisible = false;
+let camHotkeyAccelerator: string | null = null;
+
 function blurSidecarPath(webmPath: string): string {
   return webmPath.replace(/\.webm$/i, '.blur.json');
 }
@@ -944,6 +954,8 @@ function ffmpegPath(): string | null {
 }
 
 function teardownRecording(opts: { discardTemp: boolean }): void {
+  closeCamBubble();
+  unregisterCamHotkey();
   if (recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.close(); } catch { /* non-fatal */ }
   }
@@ -1020,12 +1032,12 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     })();
 
     const widget = new BrowserWindow({
-      // Round 127 — wide enough for Blur + Quality + Snap + Mute +
-      // Pause/Resume (fixed-width) + Stop + the ghost close icon
-      // without ever clipping when labels swap.
-      width: 580,
+      // Round 128 — wide enough for Cam + Blur + the quality dropdown
+      // + Snap + Mute + Pause/Resume (fixed-width) + Stop + the ghost
+      // close icon without ever clipping when labels swap.
+      width: 660,
       height: 64,
-      x: display.bounds.x + display.bounds.width - 600,
+      x: display.bounds.x + display.bounds.width - 680,
       y: display.bounds.y + display.bounds.height - 120,
       frame: false,
       show: false,
@@ -1078,7 +1090,14 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
 
     recordingState = 'recording';
     broadcastRecordingState();
-    log.info(`[capture] recording started on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'})`);
+    // Round 128 — camera bubble: auto-start when enabled in Settings;
+    // the per-recording cam hotkey toggles it either way.
+    const camEnabled = (() => {
+      try { return getSettings().captureCamEnabled === true; } catch { return false; }
+    })();
+    if (camEnabled) createCamBubble(display);
+    registerCamHotkey();
+    log.info(`[capture] recording started on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'})`);
     return { success: true };
   } catch (err) {
     log.warn(`[capture] startRecording failed: ${(err as Error).message}`);
@@ -1254,6 +1273,8 @@ async function finalizeRecording(): Promise<void> {
   const meta = recordMeta;
   const blurSegments = recordBlurSegments;
   recordBlurSegments = [];
+  closeCamBubble();
+  unregisterCamHotkey();
   // Close the widget + stream, keep the temp file.
   if (recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.close(); } catch { /* non-fatal */ }
@@ -1426,6 +1447,140 @@ ipcMain.on('capture:record-blur-request', (event) => {
       captureInFlight = false;
     }
   })();
+});
+
+// ─── Round 128: camera bubble ────────────────────────────────────────────────
+
+function notifyWidgetCamState(): void {
+  if (recordWidget && !recordWidget.isDestroyed()) {
+    try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisible }); } catch { /* non-fatal */ }
+  }
+}
+
+function createCamBubble(display: Electron.Display): void {
+  if (camWindow && !camWindow.isDestroyed()) return;
+  const shape = (() => {
+    try { return (getSettings().captureCamShape as 'circle' | 'rectangle') || 'circle'; } catch { return 'circle'; }
+  })();
+  const deviceId = (() => {
+    try { return getSettings().captureCamDevice || ''; } catch { return ''; }
+  })();
+  // Content size + 12px for the inset margin the page reserves.
+  const width = shape === 'circle' ? 232 : 302;
+  const height = shape === 'circle' ? 232 : 192;
+  const win = new BrowserWindow({
+    width,
+    height,
+    // Bottom-LEFT corner — the recording bar owns bottom-right.
+    x: display.bounds.x + 24,
+    y: display.bounds.y + display.bounds.height - height - 56,
+    frame: false,
+    show: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: true,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  camWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  // NO setContentProtection here — the bubble must appear in the
+  // footage; that's its entire purpose.
+  win.setMenu(null);
+  win.on('closed', () => {
+    if (camWindow === win) {
+      camWindow = null;
+      camVisible = false;
+      notifyWidgetCamState();
+    }
+  });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('capture:cam-init', { deviceId, shape });
+    win.showInactive();
+    camVisible = true;
+    notifyWidgetCamState();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
+}
+
+/** Show/hide the bubble with the page-side fade. Creates it on first
+ *  toggle if the recording started without one. */
+function toggleCamBubble(): void {
+  if (recordingState !== 'recording' || !recordDisplay) return;
+  if (!camWindow || camWindow.isDestroyed()) {
+    createCamBubble(recordDisplay);
+    return;
+  }
+  if (camVisible) {
+    try { camWindow.webContents.send('capture:cam-do', { action: 'hide' }); } catch { /* non-fatal */ }
+    camVisible = false;
+    notifyWidgetCamState();
+    // The window itself hides when the page reports the fade done
+    // (capture:cam-fadedout) so the footage records the fade.
+  } else {
+    try { camWindow.showInactive(); } catch { /* non-fatal */ }
+    try { camWindow.webContents.send('capture:cam-do', { action: 'show' }); } catch { /* non-fatal */ }
+    camVisible = true;
+    notifyWidgetCamState();
+  }
+}
+
+function closeCamBubble(): void {
+  if (camWindow && !camWindow.isDestroyed()) {
+    try { camWindow.close(); } catch { /* non-fatal */ }
+  }
+  camWindow = null;
+  camVisible = false;
+}
+
+function registerCamHotkey(): void {
+  const accelerator = (() => {
+    try { return getSettings().captureCamHotkey || 'Ctrl+Shift+C'; } catch { return 'Ctrl+Shift+C'; }
+  })();
+  try {
+    const ok = globalShortcut.register(accelerator, () => toggleCamBubble());
+    camHotkeyAccelerator = ok ? accelerator : null;
+    log.info(`[capture] cam hotkey ${accelerator} ${ok ? 'registered for this recording' : 'NOT registered (in use elsewhere)'}`);
+  } catch (err) {
+    camHotkeyAccelerator = null;
+    log.warn(`[capture] cam hotkey registration threw: ${(err as Error).message}`);
+  }
+}
+
+function unregisterCamHotkey(): void {
+  if (camHotkeyAccelerator) {
+    try { globalShortcut.unregister(camHotkeyAccelerator); } catch { /* non-fatal */ }
+    camHotkeyAccelerator = null;
+  }
+}
+
+ipcMain.on('capture:record-cam-toggle', (event) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    toggleCamBubble();
+  }
+});
+ipcMain.on('capture:cam-fadedout', (event) => {
+  if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents && !camVisible) {
+    try { camWindow.hide(); } catch { /* non-fatal */ }
+  }
+});
+ipcMain.on('capture:cam-error', (event, info: { message?: string }) => {
+  if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents) {
+    log.warn(`[capture] camera bubble failed: ${info?.message ?? 'unknown'}`);
+    broadcast('capture:recordError', { message: 'The camera couldn\'t start — check Windows camera privacy settings. The recording itself is unaffected.' });
+    closeCamBubble();
+    notifyWidgetCamState();
+  }
 });
 
 ipcMain.on('capture:record-blur', (event, info: { type?: 'open' | 'close'; rect?: { x: number; y: number; width: number; height: number }; startMs?: number; endMs?: number }) => {

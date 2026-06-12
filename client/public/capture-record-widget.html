@@ -112,7 +112,29 @@
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
-  #quality { width: 70px; padding: 0; }
+  #cam.active {
+    color: #a8d8ff;
+    border-color: rgba(110, 168, 254, 0.6);
+  }
+  /* Round 128 — quality is a real dropdown (Terry: cycling isn't
+     discoverable). Styled to sit in the button family; the open list
+     itself is OS-rendered. */
+  #quality {
+    -webkit-app-region: no-drag;
+    width: 92px;
+    height: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    border-radius: 8px;
+    font: 500 11.5px/1 system-ui, 'Segoe UI', sans-serif;
+    padding: 0 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+  #quality:hover { background: rgba(255, 255, 255, 0.14); }
+  #quality:disabled { opacity: 0.45; }
+  #quality option { background: #16161a; color: #fff; }
   #stop {
     background: #e5484d;
     border-color: #e5484d;
@@ -143,8 +165,13 @@
     <div id="dot"></div>
     <span id="time">0:00</span>
     <span id="size">0 KB</span>
+    <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
-    <button id="quality" type="button" title="Recording quality — click to change">Standard</button>
+    <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
+      <option value="compact">Compact</option>
+      <option value="standard" selected>Standard</option>
+      <option value="high">High</option>
+    </select>
     <button id="snap" type="button" title="Take a screenshot of what's being recorded — it goes into your library too">Snap</button>
     <button id="mute" type="button" title="Mute system audio for part of the recording">Mute</button>
     <button id="pause" type="button" title="Pause recording">Pause</button>
@@ -159,14 +186,15 @@
   var dot = document.getElementById('dot');
   var timeEl = document.getElementById('time');
   var sizeEl = document.getElementById('size');
+  var camBtn = document.getElementById('cam');
   var blurBtn = document.getElementById('blur');
-  var qualityBtn = document.getElementById('quality');
+  var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
   var muteBtn = document.getElementById('mute');
   var pauseBtn = document.getElementById('pause');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [blurBtn, qualityBtn, snapBtn, muteBtn, pauseBtn, stopBtn, cancelBtn];
+  var allButtons = [camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -179,7 +207,6 @@
   var capturedBytes = 0;
   var muted = false;
   var quality = 'standard';
-  var QUALITY_ORDER = ['compact', 'standard', 'high'];
   var QUALITY_LABEL = { compact: 'Compact', standard: 'Standard', high: 'High' };
   var blurActive = false;       // a blur segment is currently open
   var blurSelecting = false;    // the selection overlay is up
@@ -237,7 +264,7 @@
     try {
       if (init && init.quality && QUALITY_LABEL[init.quality]) {
         quality = init.quality;
-        qualityBtn.textContent = QUALITY_LABEL[quality];
+        qualitySel.value = quality;
       }
       var videoConstraints = {
         mandatory: {
@@ -340,15 +367,24 @@
     }
   }
 
-  // ── Round 127: quality cycle (Compact → Standard → High) ──
-  // Mid-recording, the change applies to the SAVE quality (and is
-  // remembered for future recordings); the live capture bitrate was
-  // fixed when this recording started.
-  qualityBtn.addEventListener('click', function () {
+  // ── Round 128: quality dropdown (was a cycle button — Terry:
+  // a dropdown is what people expect). Mid-recording, the change
+  // applies to the SAVE quality (and is remembered for future
+  // recordings); the live capture bitrate was fixed at start.
+  qualitySel.addEventListener('change', function () {
     if (finished) return;
-    quality = QUALITY_ORDER[(QUALITY_ORDER.indexOf(quality) + 1) % QUALITY_ORDER.length];
-    qualityBtn.textContent = QUALITY_LABEL[quality];
+    var v = qualitySel.value;
+    if (!QUALITY_LABEL[v]) return;
+    quality = v;
     try { if (pdr && pdr.capture && pdr.capture.recordQuality) pdr.capture.recordQuality({ quality: quality }); } catch (e) {}
+  });
+
+  // ── Round 128: camera bubble toggle. Main owns the bubble window;
+  // the active state comes back via record-do {action:'cam-state'}
+  // so the hotkey path lights the button too.
+  camBtn.addEventListener('click', function () {
+    if (finished) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(); } catch (e) {}
   });
 
   // ── Round 127: Blur ──
@@ -393,6 +429,10 @@
         if (!cmd) return;
         if (cmd.action === 'stop') finish(false);
         else if (cmd.action === 'cancel') finish(true);
+        else if (cmd.action === 'cam-state') {
+          camBtn.classList.toggle('active', !!cmd.visible);
+          camBtn.title = cmd.visible ? 'Camera is in the recording — click to hide it' : 'Show or hide your camera bubble in the recording';
+        }
         else if (cmd.action === 'blur-opened') {
           // Main resolved the area selector. rect is in VIDEO pixels
           // (null = user cancelled the selection).

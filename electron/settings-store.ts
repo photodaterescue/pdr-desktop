@@ -151,6 +151,27 @@ export interface PDRSettings {
    *  detail, fastest save). Applies to recordings started AFTER the
    *  change. */
   captureRecordQuality: 'high' | 'standard' | 'compact';
+  /** v2.1 round 128 (Terry 2026-06-12) — camera bubble for screen
+   *  recordings (tutorial picture-in-picture). The bubble is a real
+   *  always-on-top window on the recorded display, deliberately NOT
+   *  content-protected — it appears in the footage because it's on
+   *  the screen, no compositing needed. When ON, it fades in when a
+   *  recording starts; the widget's Cam button and the cam hotkey
+   *  toggle it mid-recording (with fade in/out). Default OFF — no
+   *  surprise camera. */
+  captureCamEnabled: boolean;
+  /** Bubble shape: 'circle' (the tutorial classic — Terry's pick) or
+   *  'rectangle' (the usual camera frame). Read when the bubble is
+   *  created (recording start / first toggle-on). */
+  captureCamShape: 'circle' | 'rectangle';
+  /** Camera deviceId ('' = system default camera). Populated from
+   *  the device dropdown in Settings → Capture. */
+  captureCamDevice: string;
+  /** Global hotkey that shows/hides the camera bubble — registered
+   *  ONLY while a recording is running, so it never squats on the
+   *  combo outside recordings. Same remap UI as the screenshot
+   *  hotkey. */
+  captureCamHotkey: string;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -308,6 +329,12 @@ export const optimisedDefaults: PDRSettings = {
   captureRecordAudio: true,
   // v2.1 round 126 — balanced quality/size/save-speed default.
   captureRecordQuality: 'standard',
+  // v2.1 round 128 — camera bubble defaults: off until asked for,
+  // circle (the tutorial classic), system-default camera.
+  captureCamEnabled: false,
+  captureCamShape: 'circle',
+  captureCamDevice: '',
+  captureCamHotkey: 'Ctrl+Shift+C',
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -390,6 +417,10 @@ export function getSettings(): PDRSettings {
     captureFormat: store.get('captureFormat', optimisedDefaults.captureFormat),
     captureRecordAudio: store.get('captureRecordAudio', optimisedDefaults.captureRecordAudio),
     captureRecordQuality: store.get('captureRecordQuality', optimisedDefaults.captureRecordQuality),
+    captureCamEnabled: store.get('captureCamEnabled', optimisedDefaults.captureCamEnabled),
+    captureCamShape: store.get('captureCamShape', optimisedDefaults.captureCamShape),
+    captureCamDevice: store.get('captureCamDevice', optimisedDefaults.captureCamDevice),
+    captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

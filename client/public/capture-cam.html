@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Camera</title>
+<!--
+  v2.1 round 128 (Terry 2026-06-12) — PDR camera bubble.
+
+  A small frameless TRANSPARENT always-on-top window showing the
+  webcam, placed on the recorded display. Deliberately NOT
+  content-protected — unlike the recording bar, this window exists to
+  BE captured: it's on the screen, so it's in the footage. That's the
+  whole trick — no canvas compositing, no per-frame work.
+
+  Shape comes from Settings → Capture: circle (the tutorial classic)
+  or rectangle. Show/hide commands fade the content in/out (300ms);
+  after a fade-out the page reports back and main hides the window so
+  a transparent ghost never blocks clicks.
+
+  Draggable anywhere (the whole bubble is a drag region). Camera
+  failure shows a quiet message and reports to main, which closes the
+  bubble and surfaces a toast.
+
+  Self-contained vanilla HTML/JS — OS chrome, not app UI.
+-->
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  #shell {
+    position: absolute;
+    inset: 6px;
+    -webkit-app-region: drag;
+    overflow: hidden;
+    background: #16161a;
+    border: 2px solid rgba(255, 255, 255, 0.22);
+    box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
+    opacity: 0;
+    transition: opacity 0.3s ease;
+  }
+  #shell.circle { border-radius: 50%; }
+  #shell.rectangle { border-radius: 14px; }
+  #shell.visible { opacity: 1; }
+  video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* Mirror like every selfie view — what users expect to see. */
+    transform: scaleX(-1);
+    display: block;
+    pointer-events: none;
+  }
+  #err {
+    position: absolute;
+    inset: 0;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 12px;
+    color: #c8c8cf;
+    font: 500 11px/1.5 system-ui, 'Segoe UI', sans-serif;
+  }
+</style>
+</head>
+<body>
+  <div id="shell">
+    <video id="cam" autoplay muted playsinline></video>
+    <div id="err">Camera unavailable</div>
+  </div>
+<script>
+(function () {
+  var pdr = window.pdr;
+  var shell = document.getElementById('shell');
+  var video = document.getElementById('cam');
+  var errEl = document.getElementById('err');
+  var stream = null;
+
+  function fadeIn() {
+    shell.classList.add('visible');
+  }
+  function fadeOut() {
+    shell.classList.remove('visible');
+    setTimeout(function () {
+      try { if (pdr && pdr.capture && pdr.capture.camFadedOut) pdr.capture.camFadedOut(); } catch (e) {}
+    }, 320);
+  }
+
+  async function start(init) {
+    shell.classList.add(init && init.shape === 'rectangle' ? 'rectangle' : 'circle');
+    try {
+      var constraints = { audio: false, video: true };
+      if (init && init.deviceId) {
+        constraints.video = { deviceId: { exact: init.deviceId } };
+      }
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+      } catch (firstErr) {
+        // A remembered camera may have been unplugged — fall back to
+        // whatever camera the system offers before giving up.
+        if (init && init.deviceId) {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: true });
+        } else {
+          throw firstErr;
+        }
+      }
+      video.srcObject = stream;
+      fadeIn();
+    } catch (err) {
+      errEl.style.display = 'flex';
+      fadeIn();
+      try { if (pdr && pdr.capture && pdr.capture.camError) pdr.capture.camError({ message: (err && err.message) || 'Camera unavailable' }); } catch (e) {}
+    }
+  }
+
+  if (pdr && pdr.capture) {
+    if (pdr.capture.onCamInit) {
+      pdr.capture.onCamInit(function (init) { void start(init || {}); });
+    }
+    if (pdr.capture.onCamDo) {
+      pdr.capture.onCamDo(function (cmd) {
+        if (!cmd) return;
+        if (cmd.action === 'show') fadeIn();
+        else if (cmd.action === 'hide') fadeOut();
+      });
+    }
+  }
+
+  window.addEventListener('beforeunload', function () {
+    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+  });
+})();
+</script>
+</body>
+</html>

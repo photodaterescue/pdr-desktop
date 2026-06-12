@@ -12649,6 +12649,27 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // v2.1 round 126 — recording quality preset (bitrate + save-time
   // H.264 quality). Applies to recordings started after the change.
   const [captureRecordQuality, setCaptureRecordQualityState] = useState<'high' | 'standard' | 'compact'>('standard');
+  // v2.1 round 128 — camera bubble (tutorial picture-in-picture):
+  // master switch, shape, device pick, and the per-recording toggle
+  // hotkey (registered only while a recording runs, so plain
+  // setSetting persistence is enough — no live re-register).
+  const [captureCamEnabled, setCaptureCamEnabledState] = useState<boolean>(false);
+  const [captureCamShape, setCaptureCamShapeState] = useState<'circle' | 'rectangle'>('circle');
+  const [captureCamDevice, setCaptureCamDeviceState] = useState<string>('');
+  const [captureCamHotkey, setCaptureCamHotkeyState] = useState<string>('Ctrl+Shift+C');
+  const [captureCamHotkeyRecording, setCaptureCamHotkeyRecording] = useState(false);
+  const [captureCamDevices, setCaptureCamDevices] = useState<Array<{ deviceId: string; label: string }>>([]);
+  useEffect(() => {
+    try {
+      navigator.mediaDevices?.enumerateDevices?.().then((list) => {
+        setCaptureCamDevices(
+          list
+            .filter((d) => d.kind === 'videoinput')
+            .map((d, i) => ({ deviceId: d.deviceId, label: d.label || `Camera ${i + 1}` })),
+        );
+      }).catch(() => { /* best-effort */ });
+    } catch { /* best-effort */ }
+  }, []);
   const [captureConflicts, setCaptureConflicts] = useState<string[]>([]);
   useEffect(() => {
     captureCheckConflicts().then(setCaptureConflicts).catch(() => { /* best-effort */ });
@@ -12736,6 +12757,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
       setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
+      setCaptureCamEnabledState(((settings as any).captureCamEnabled as boolean) ?? false);
+      setCaptureCamShapeState(((settings as any).captureCamShape as 'circle' | 'rectangle') ?? 'circle');
+      setCaptureCamDeviceState(((settings as any).captureCamDevice as string) ?? '');
+      setCaptureCamHotkeyState(((settings as any).captureCamHotkey as string) ?? 'Ctrl+Shift+C');
     });
   }, []);
 
@@ -12821,6 +12846,23 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleCaptureRecordQualityChange = (quality: 'high' | 'standard' | 'compact') => {
     setCaptureRecordQualityState(quality);
     setSetting('captureRecordQuality' as any, quality);
+  };
+
+  const handleCaptureCamEnabledToggle = (checked: boolean) => {
+    setCaptureCamEnabledState(checked);
+    setSetting('captureCamEnabled' as any, checked);
+  };
+  const handleCaptureCamShapeChange = (shape: 'circle' | 'rectangle') => {
+    setCaptureCamShapeState(shape);
+    setSetting('captureCamShape' as any, shape);
+  };
+  const handleCaptureCamDeviceChange = (deviceId: string) => {
+    setCaptureCamDeviceState(deviceId);
+    setSetting('captureCamDevice' as any, deviceId);
+  };
+  const applyCaptureCamHotkey = (accelerator: string) => {
+    setCaptureCamHotkeyState(accelerator);
+    setSetting('captureCamHotkey' as any, accelerator);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -13211,7 +13253,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     // screen-recording options when that ships later in v2.1.
     // Positioned after AI and before Privacy — it's a "PDR does
     // something for you" feature, not a data-control one.
-    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording video snip grab print screen monitor display region area select crop audio sound mp4 png jpg format' },
+    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording video snip grab print screen monitor display region area select crop audio sound mp4 png jpg format quality blur camera webcam bubble circle tutorial face cam' },
     // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
     // for global render-time switches that hide personal content
     // when sharing the screen (captions, transcripts, future:
@@ -14781,6 +14823,98 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                         <span className="text-xs text-muted-foreground">{opt.desc}</span>
                       </label>
                     ))}
+                  </div>
+                </div>
+                {/* v2.1 round 128 — camera bubble for tutorial-style
+                    recordings. The bubble is a floating window on the
+                    recorded screen, so it appears in the footage;
+                    the recording bar's Cam button and the hotkey
+                    below toggle it mid-recording with a fade. */}
+                <div className="p-3 rounded-lg border border-border space-y-3">
+                  <label className="flex items-center justify-between cursor-pointer">
+                    <div className="flex flex-col pr-3">
+                      <span className="text-sm font-medium text-foreground">Show your camera in recordings</span>
+                      <span className="text-xs text-muted-foreground">A small camera bubble appears on the recorded screen when a recording starts — the tutorial picture-in-picture look. Move it by dragging; hide and show it mid-recording with the recording bar's Cam button or the shortcut below (it fades in and out rather than popping).</span>
+                    </div>
+                    <Switch
+                      checked={captureCamEnabled}
+                      onCheckedChange={(checked) => handleCaptureCamEnabledToggle(!!checked)}
+                      data-testid="checkbox-capture-cam-enabled"
+                    />
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {([
+                      { value: 'circle', label: 'Circle', desc: 'The classic tutorial bubble.' },
+                      { value: 'rectangle', label: 'Rectangle', desc: 'The usual camera frame.' },
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          captureCamShape === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-capture-cam-shape-${opt.value}`}
+                      >
+                        <input
+                          type="radio"
+                          name="captureCamShape"
+                          value={opt.value}
+                          checked={captureCamShape === opt.value}
+                          onChange={() => handleCaptureCamShapeChange(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                  {captureCamDevices.length > 1 && (
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-medium text-foreground shrink-0">Camera</span>
+                      <select
+                        value={captureCamDevice}
+                        onChange={(e) => handleCaptureCamDeviceChange(e.target.value)}
+                        className="h-9 flex-1 min-w-0 px-2 rounded-md border border-border bg-background text-sm text-foreground"
+                        data-testid="select-capture-cam-device"
+                      >
+                        <option value="">System default</option>
+                        {captureCamDevices.map((d) => (
+                          <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCaptureCamHotkeyRecording(true)}
+                      onBlur={() => setCaptureCamHotkeyRecording(false)}
+                      onKeyDown={(e) => {
+                        if (!captureCamHotkeyRecording) return;
+                        e.preventDefault();
+                        e.stopPropagation();
+                        if (e.key === 'Escape') { setCaptureCamHotkeyRecording(false); return; }
+                        if (['Control', 'Alt', 'Shift', 'Meta'].includes(e.key)) return;
+                        const mods: string[] = [];
+                        if (e.ctrlKey) mods.push('Ctrl');
+                        if (e.altKey) mods.push('Alt');
+                        if (e.shiftKey) mods.push('Shift');
+                        if (mods.length === 0) return;
+                        let key = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+                        if (key === ' ') key = 'Space';
+                        if (key.startsWith('Arrow')) key = key.replace('Arrow', '');
+                        setCaptureCamHotkeyRecording(false);
+                        applyCaptureCamHotkey([...mods, key].join('+'));
+                      }}
+                      className={`h-9 min-w-[180px] px-3 rounded-md border text-sm font-medium transition-colors ${
+                        captureCamHotkeyRecording
+                          ? 'border-primary bg-primary/5 text-foreground animate-pulse'
+                          : 'border-border text-foreground hover:border-primary/50 hover:bg-secondary/50'
+                      }`}
+                      data-testid="capture-cam-hotkey-recorder"
+                    >
+                      {captureCamHotkeyRecording ? 'Press a key combination… (Esc to cancel)' : captureCamHotkey}
+                    </button>
+                    <span className="text-xs text-muted-foreground">Show / hide the camera while recording. Only active during a recording — it never blocks this shortcut for other apps the rest of the time.</span>
                   </div>
                 </div>
               </div>

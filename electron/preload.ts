@@ -400,6 +400,22 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recordBlurRequest: () => ipcRenderer.send('capture:record-blur-request'),
     recordBlur: (info: { type: 'open' | 'close'; rect?: { x: number; y: number; width: number; height: number }; startMs?: number; endMs?: number }) =>
       ipcRenderer.send('capture:record-blur', info),
+    // Round 128 — camera bubble. Widget toggles it; the bubble page
+    // (capture-cam.html) receives init/show/hide and reports fades
+    // and camera failures.
+    recordCamToggle: () => ipcRenderer.send('capture:record-cam-toggle'),
+    onCamInit: (callback: (info: { deviceId: string; shape: 'circle' | 'rectangle' }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:cam-init', handler);
+      return () => ipcRenderer.removeListener('capture:cam-init', handler);
+    },
+    onCamDo: (callback: (cmd: { action: 'show' | 'hide' }) => void) => {
+      const handler = (_event: any, cmd: any) => callback(cmd);
+      ipcRenderer.on('capture:cam-do', handler);
+      return () => ipcRenderer.removeListener('capture:cam-do', handler);
+    },
+    camFadedOut: () => ipcRenderer.send('capture:cam-fadedout'),
+    camError: (info: { message: string }) => ipcRenderer.send('capture:cam-error', info),
     onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
       const handler = (_event: any, cmd: any) => callback(cmd);
       ipcRenderer.on('capture:record-do', handler);

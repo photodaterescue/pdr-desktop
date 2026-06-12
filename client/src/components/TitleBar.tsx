@@ -164,14 +164,34 @@ export function TitleBar() {
     window.addEventListener('pdr:settingsChanged', handler as EventListener);
     return () => { cancelled = true; window.removeEventListener('pdr:settingsChanged', handler as EventListener); };
   }, []);
+  // v2.1 round 128 (Terry) — NO toasts while a recording runs. If
+  // PDR is on the recorded screen (he records PDR tutorials), a toast
+  // sliding in would appear in the footage. Screenshot/snap toasts
+  // are counted silently instead and folded into the recording's own
+  // completion toast, which only ever fires after capture has ended.
+  // Ref (not the state var, which is declared further down — reading
+  // it here would TDZ-crash the renderer) — synced inside the
+  // onCaptureRecordingState subscription below.
+  const recordingStateRef = React.useRef<CaptureRecordingState>('idle');
+  const suppressedSnapsRef = React.useRef(0);
   useEffect(() => {
     const offCompleted = onCaptureCompleted((info) => {
       // v2.1 round 125 — one channel carries screenshots AND
       // recordings; the copy follows the kind.
       const noun = info.kind === 'recording' ? 'Screen recording' : 'Screenshot';
+      // Suppress during 'processing' too: a snap's save pipeline can
+      // outlive the recording by seconds (cold exiftool), and its
+      // toast belongs in the completion summary either way.
+      if (info.kind !== 'recording' && recordingStateRef.current !== 'idle') {
+        suppressedSnapsRef.current += 1;
+        return;
+      }
+      const snaps = info.kind === 'recording' ? suppressedSnapsRef.current : 0;
+      if (info.kind === 'recording') suppressedSnapsRef.current = 0;
+      const snapsSuffix = snaps > 0 ? ` · plus ${snaps} snap${snaps === 1 ? '' : 's'} taken along the way` : '';
       if (info.pending) {
         toast.success(`${noun} saved`, {
-          description: 'Your Library Drive is disconnected — PDR will add this capture to your library automatically when it reconnects.',
+          description: `Your Library Drive is disconnected — PDR will add this capture to your library automatically when it reconnects.${snapsSuffix}`,
         });
       } else {
         // v2.1 round 124 (Terry) — `cancel:` not `action:` for the
@@ -180,7 +200,7 @@ export function TitleBar() {
         // uses the muted cancel variant. cancel's onClick still
         // fires the handler and dismisses the toast.
         toast.success(`${noun} added to your library`, {
-          description: info.filename,
+          description: `${info.filename}${snapsSuffix}`,
           cancel: { label: 'Open in Viewer', onClick: () => { void openSearchViewer(info.filePath, info.filename); } },
         });
       }
@@ -204,7 +224,10 @@ export function TitleBar() {
   // faces (idle camera / pulsing red stop / processing spinner).
   const [recordingState, setRecordingState] = useState<CaptureRecordingState>('idle');
   useEffect(() => {
-    const offState = onCaptureRecordingState((info) => setRecordingState(info.state));
+    const offState = onCaptureRecordingState((info) => {
+      recordingStateRef.current = info.state;
+      setRecordingState(info.state);
+    });
     const offError = onCaptureRecordError((info) => {
       toast.error('Recording failed', { description: info.message });
     });
