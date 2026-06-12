@@ -1818,19 +1818,24 @@
       cursor: nwse-resize;
     }
     .ch-rotate {
-      width: 16px; height: 16px;
-      left: 50%; top: -30px;
-      margin-left: -8px;
+      width: 24px; height: 24px;
+      left: 50%; top: -36px;
+      margin-left: -12px;
       background: #fff;
       border: 2px solid #a78bfa;
       border-radius: 50%;
       cursor: grab;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     }
+    .ch-rotate svg { width: 14px; height: 14px; stroke: #7c5cd6; pointer-events: none; }
     .ch-rotate::before {
       content: '';
       position: absolute;
-      left: 50%; top: 14px;
-      width: 2px; height: 16px;
+      left: 50%; top: 22px;
+      width: 2px; height: 14px;
       margin-left: -1px;
       background: #a78bfa;
     }
@@ -1860,6 +1865,85 @@
       pointer-events: none;
       z-index: 2;
     }
+
+    /* ===========================================================
+       v2.1 round 140 (Terry 2026-06-12) — collage now lives INSIDE
+       PDRV's chrome: the Enhance side panel stays and edits the
+       SELECTED tile; collage-wide controls (shape/background/tidy/
+       save) live in a Collage section at the top of that panel.
+       =========================================================== */
+    /* In collage mode the canvas area + filmstrip pool sit LEFT of the
+       pinned panel so nothing hides under it. */
+    body.collage-mode.enhance-panel-open #collage-stage { padding-right: 342px; }
+    body.collage-mode.enhance-panel-open #filmstrip-wrap { padding-right: 326px; }
+    /* Toolbar controls that don't apply to a collage canvas. */
+    body.collage-mode #counter,
+    body.collage-mode #btn-fit,
+    body.collage-mode #btn-100,
+    body.collage-mode #btn-zoomIn,
+    body.collage-mode #btn-zoomOut,
+    body.collage-mode #btn-rotateLeft,
+    body.collage-mode #btn-rotateRight,
+    body.collage-mode #btn-drag-file,
+    body.collage-mode #btn-copy-filename { display: none !important; }
+    /* Collage section in the Enhance panel — only in collage mode. */
+    .enhance-collage-section { display: none; }
+    body.collage-mode .enhance-collage-section { display: block; }
+    .enhance-collage-section .ec-row { display: flex; gap: 6px; margin: 6px 0 12px; flex-wrap: wrap; }
+    .ec-shape-btn {
+      flex: 1; min-width: 64px;
+      background: transparent;
+      border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff;
+      font-size: 11px; padding: 6px 4px; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-shape-btn:hover { background: rgba(169,156,255,0.10); }
+    .ec-shape-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    .ec-tidy-btn {
+      display: flex; align-items: center; justify-content: center; gap: 7px;
+      width: 100%; padding: 8px 12px; border-radius: 8px;
+      background: rgba(169,156,255,0.10); color: #cfc8ff;
+      border: 1px solid rgba(169,156,255,0.30); font-size: 12px; font-weight: 500; cursor: pointer;
+      transition: background 120ms;
+    }
+    .ec-tidy-btn:hover { background: rgba(169,156,255,0.18); }
+    .ec-tidy-btn svg { width: 14px; height: 14px; }
+    /* The per-tile hint that shows when nothing is selected. */
+    .enhance-tile-hint {
+      display: none;
+      font-size: 11px; color: #9a93c8; line-height: 1.45;
+      background: rgba(169,156,255,0.08);
+      border: 1px solid rgba(169,156,255,0.18);
+      border-radius: 8px; padding: 9px 11px; margin-bottom: 4px;
+    }
+    body.collage-mode.collage-no-tile .enhance-tile-hint { display: block; }
+    /* When no tile is selected, dim the per-photo editing sections. */
+    body.collage-mode.collage-no-tile .enhance-presets-label,
+    body.collage-mode.collage-no-tile .strip-wrap,
+    body.collage-mode.collage-no-tile .frame-palette,
+    body.collage-mode.collage-no-tile .frame-weight,
+    body.collage-mode.collage-no-tile .enhance-control,
+    body.collage-mode.collage-no-tile .enhance-label-row { opacity: 0.4; pointer-events: none; }
+    /* Hide the Faces + AI sections in collage mode (per-tile face
+       marking doesn't apply to a composite). */
+    body.collage-mode .enhance-mark-face-section,
+    body.collage-mode .enhance-ai-section { display: none; }
+    /* Footer: swap the single-photo save actions for Save collage. */
+    body.collage-mode .enhance-save-actions,
+    body.collage-mode .enhance-save-preview { display: none !important; }
+    #collage-save-wrap { display: none; }
+    body.collage-mode #collage-save-wrap { display: block; }
+    .collage-save-btn {
+      width: 100%; padding: 10px 12px; border-radius: 8px;
+      background: linear-gradient(135deg, #8b5cf6, #6d49d6);
+      border: none; color: #fff; font-size: 13px; font-weight: 600; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; gap: 8px;
+      transition: filter 120ms;
+    }
+    .collage-save-btn:hover { filter: brightness(1.08); }
+    .collage-save-btn:disabled { opacity: 0.55; cursor: default; filter: none; }
+    .collage-save-btn svg { width: 15px; height: 15px; }
   </style>
 
   <div class="toolbar" id="toolbar">
@@ -1925,33 +2009,13 @@
       <span>No image loaded</span>
     </div>
   </div>
-  <!-- v2.1 round 139 (Terry 2026-06-12) — Freeform collage editor.
-       Replaces the body image area when the viewer is opened with the
-       collage flag set. The bottom filmstrip stays visible as the
-       keep/sideline pool. Built/populated by initCollage(). -->
+  <!-- v2.1 round 140 (Terry 2026-06-12) — Freeform collage editor. Now
+       lives INSIDE PDRV's chrome: the toolbar + Enhance side panel stay,
+       and the collage-wide controls (shape / background / tidy / save)
+       moved into a Collage section at the top of the Enhance panel. The
+       stage is just the canvas; the bottom filmstrip is the keep/
+       sideline pool. Built/populated by initCollage(). -->
   <div id="collage-root">
-    <div class="collage-bar">
-      <span class="cb-title">Collage</span>
-      <span class="cb-hint">Drag to move · corner to resize · top handle to rotate · click a filmstrip photo to drop or re-add it</span>
-      <div class="collage-group">
-        <span class="cb-label">Shape</span>
-        <button class="cb-aspect active" data-aspect="landscape" type="button">Landscape</button>
-        <button class="cb-aspect" data-aspect="square" type="button">Square</button>
-        <button class="cb-aspect" data-aspect="portrait" type="button">Portrait</button>
-      </div>
-      <div class="collage-group" id="collage-bg-swatches">
-        <span class="cb-label">Background</span>
-        <!-- swatches injected by initCollage() -->
-      </div>
-      <button class="cb-btn" id="collage-shuffle" type="button" data-pdr-tooltip="Re-arrange into a tidy grid">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
-        Tidy up
-      </button>
-      <button class="cb-btn cb-primary" id="collage-save" type="button">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
-        Save collage
-      </button>
-    </div>
     <div id="collage-stage">
       <div id="collage-canvas"></div>
     </div>
@@ -1991,6 +2055,33 @@
       <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
+      <!-- v2.1 round 140 (Terry 2026-06-12) — Collage controls. Shown
+           only in collage mode (body.collage-mode). Shape + Background
+           (same palette as the Frame colours) + Tidy up. The Looks /
+           Frame / slider sections BELOW edit the currently-selected
+           collage tile; the hint covers the "nothing selected" state. -->
+      <div class="enhance-collage-section">
+        <div class="enhance-presets-label">Collage shape</div>
+        <div class="ec-row">
+          <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
+          <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
+          <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
+        </div>
+        <div class="enhance-presets-label">Background</div>
+        <div class="frame-palette" id="collage-bg-palette">
+          <button class="frame-add" id="collage-bg-add" title="Pick a custom background colour">
+            <span class="frame-add-plus">+</span>
+          </button>
+          <input type="color" id="collage-bg-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+          <!-- background swatches injected by initCollage() (mirror the Frame palette) -->
+        </div>
+        <button class="ec-tidy-btn" id="collage-tidy" type="button" style="margin-top:10px" data-pdr-tooltip="Re-arrange the photos into a tidy grid">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+          Tidy up
+        </button>
+        <div style="margin:14px 0 10px;border-top:1px solid rgba(169,156,255,0.15)"></div>
+        <div class="enhance-tile-hint">Click a photo on the canvas to edit just that one — give it its own Look, frame, brightness, colour and so on. Each photo keeps its own settings.</div>
+      </div>
       <!-- v2.1 round 134 (Terry 2026-06-12) — Looks as a sliding strip
            of LIVE previews (was a button grid). Each thumb shows the
            current photo with that look applied; scroll left↔right to
@@ -2135,6 +2226,15 @@
       <div class="enhance-save-actions">
         <button class="enhance-save-btn enhance-save-primary" id="enhance-save-new" disabled data-pdr-tooltip="Save as a new file alongside the original (recommended)">Save as new file</button>
         <button class="enhance-save-btn enhance-save-secondary" id="enhance-save-replace" disabled data-pdr-tooltip="Overwrite the original file — destructive, can't be undone from here">Replace original</button>
+      </div>
+      <!-- v2.1 round 140 — Save collage (collage mode only). Composites
+           the full-res originals with each tile's own enhancements baked
+           in, then reopens the finished collage as a normal photo. -->
+      <div id="collage-save-wrap">
+        <button class="collage-save-btn" id="collage-save" type="button">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+          Save collage
+        </button>
       </div>
       <!-- v2.0.15 — inline transient success message; fades after 4s. -->
       <div class="enhance-save-success" id="enhance-save-success" style="display:none"></div>
@@ -2406,7 +2506,10 @@
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
     const COLLAGE_ASPECTS = { landscape: 3 / 2, square: 1, portrait: 2 / 3 };
-    const COLLAGE_BG_SWATCHES = ['#ffffff', '#000000', '#f5f1e8', '#1f1f2b', '#e8b4b8', '#a7c4bc'];
+    // v2.1 round 140 (Terry) — background palette mirrors the Frame
+    // colour palette exactly (White/Black/Cream/Gold/Navy/Blush) so the
+    // two surfaces share one visual vocabulary; "+" adds a custom one.
+    const COLLAGE_BG_SWATCHES = ['#ffffff', '#111111', '#f5efe0', '#c8a24b', '#1f2a44', '#e8c4c0'];
 
     // v2.0.14 — file list is now fetched via IPC from main process
     // state, not parsed from the URL. The previous URL-query approach
@@ -4447,6 +4550,9 @@
       if (collageSelected && collageSelected.el) collageSelected.el.classList.remove('selected');
       collageSelected = it || null;
       if (it && it.el) it.el.classList.add('selected');
+      // v2.1 round 140 — point the Enhance panel at this tile (or clear
+      // it). The panel then edits this photo's own Look/frame/sliders.
+      try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -4541,8 +4647,18 @@
     }
     function setItemOn(it, on) {
       it.on = on;
-      if (on) { it.z = ++collageZTop; placeCenter(it); selectCollageItem(it); }
-      else if (collageSelected === it) selectCollageItem(null);
+      if (on) {
+        // v2.1 round 140 (Terry) — restore the tile to its PRIOR size,
+        // position and rotation when re-added (don't recenter). Its
+        // geometry + per-photo enhance survive the remove/re-add round
+        // trip because we never cleared them. Only place at centre if it
+        // somehow has no geometry yet (defensive).
+        it.z = ++collageZTop;
+        if (!Number.isFinite(it.xFrac) || !Number.isFinite(it.yFrac)) placeCenter(it);
+        selectCollageItem(it);
+      } else if (collageSelected === it) {
+        selectCollageItem(null);
+      }
       renderCollageItem(it);
       updateCollageFilmstrip();
     }
@@ -4601,7 +4717,10 @@
       collageItems.length = 0;
       files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
-        const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null };
+        // enh = this tile's own Enhance state (edited via the side panel
+        // when the tile is selected; baked per-tile on save).
+        const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin' } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -4615,7 +4734,10 @@
         };
         img.src = getFileSrc(fp);
         el.appendChild(img);
-        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap)';
+        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap to 15°)';
+        // v2.1 round 140 (Terry) — proper rotate-arrow icon (was a plain
+        // dot). Curved arrow, the universal "rotate" affordance.
+        hRot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
         const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.title = 'Resize';
         const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.title = 'Remove from collage';
         el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
@@ -4632,39 +4754,49 @@
       });
     }
 
+    // v2.1 round 140 — background swatches live in the Enhance panel's
+    // Collage section now, and reuse the Frame palette's swatch styling
+    // (same look) so background + frame colours read as one system.
     function buildBgSwatches() {
-      const host = document.getElementById('collage-bg-swatches');
+      const host = document.getElementById('collage-bg-palette');
       if (!host) return;
-      host.querySelectorAll('.cb-swatch').forEach((s) => s.remove());
+      host.querySelectorAll('.frame-swatch').forEach((s) => s.remove());
       COLLAGE_BG_SWATCHES.forEach((hex) => {
         const b = document.createElement('button');
-        b.className = 'cb-swatch' + (hex === collageBg ? ' active' : '');
+        b.className = 'frame-swatch' + (hex.toLowerCase() === (collageBg || '').toLowerCase() ? ' active' : '');
         b.type = 'button';
         b.style.background = hex;
-        b.dataset.hex = hex;
+        b.setAttribute('data-color', hex);
         b.title = hex;
         b.addEventListener('click', () => setCollageBg(hex));
         host.appendChild(b);
       });
     }
     function setCollageBg(hex) {
+      if (!hex) return;
       collageBg = hex;
-      collageCanvasEl.style.background = hex;
-      document.querySelectorAll('#collage-bg-swatches .cb-swatch').forEach((s) => {
-        s.classList.toggle('active', s.dataset.hex === hex);
+      if (collageCanvasEl) collageCanvasEl.style.background = hex;
+      document.querySelectorAll('#collage-bg-palette .frame-swatch').forEach((s) => {
+        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === hex.toLowerCase());
       });
     }
     function setCollageAspect(key) {
       if (!COLLAGE_ASPECTS[key]) return;
       collageAspectKey = key;
-      document.querySelectorAll('.cb-aspect').forEach((b) => b.classList.toggle('active', b.dataset.aspect === key));
+      document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === key));
       layoutCanvasSize();
       gridArrange();
     }
     function layoutCanvasSize() {
       if (!collageStageEl) return;
-      const availW = collageStageEl.clientWidth - 44;  // 22px stage padding × 2
-      const availH = collageStageEl.clientHeight - 44;
+      // Subtract the stage's actual padding — in collage mode the right
+      // padding is large (it reserves room for the pinned Enhance panel),
+      // so a fixed ±44 would let the canvas slide under the panel.
+      const cs = getComputedStyle(collageStageEl);
+      const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+      const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+      const availW = collageStageEl.clientWidth - padL - padR;
+      const availH = collageStageEl.clientHeight - padT - padB;
       const a = getCanvasAspect();
       let w = availW, h = w / a;
       if (h > availH) { h = availH; w = h * a; }
@@ -4691,6 +4823,9 @@
         const ordered = on.slice().sort((p, q) => p.z - q.z);
         const items = ordered.map((it) => ({
           path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
+          // v2.1 round 140 — each tile's own Enhance settings, baked
+          // per-photo by the backend.
+          enh: it.enh,
         }));
         const layout = { canvas: { w: W, h: H, bg: collageBg }, items };
         const res = await window.pdr.collage.saveLayout(layout);
@@ -4709,17 +4844,27 @@
       }
     }
 
-    let collageBarWired = false;
-    function wireCollageBar() {
-      if (collageBarWired) return;
-      collageBarWired = true;
-      document.querySelectorAll('.cb-aspect').forEach((b) => {
+    // v2.1 round 140 — collage controls now live in the Enhance panel's
+    // Collage section (shape / background / tidy). Save is wired by the
+    // panel bridge (it calls saveCollage). Wired once.
+    let collageControlsWired = false;
+    function wireCollageControls() {
+      if (collageControlsWired) return;
+      collageControlsWired = true;
+      document.querySelectorAll('.ec-shape-btn').forEach((b) => {
         b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
       });
-      const shuffleBtn = document.getElementById('collage-shuffle');
-      if (shuffleBtn) shuffleBtn.addEventListener('click', () => gridArrange());
-      const saveBtn = document.getElementById('collage-save');
-      if (saveBtn) saveBtn.addEventListener('click', saveCollage);
+      const tidyBtn = document.getElementById('collage-tidy');
+      if (tidyBtn) tidyBtn.addEventListener('click', () => gridArrange());
+      // Custom background colour ("+" → native picker; live-preview on
+      // input, same pattern as the Frame palette's custom picker).
+      const bgAdd = document.getElementById('collage-bg-add');
+      const bgCustom = document.getElementById('collage-bg-custom');
+      if (bgAdd && bgCustom) {
+        bgAdd.addEventListener('click', () => { try { bgCustom.click(); } catch (_) {} });
+        bgCustom.addEventListener('input', () => setCollageBg(bgCustom.value));
+      }
+      // Click empty canvas → deselect (panel shows the "pick a photo" hint).
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.target === collageStageEl || e.target === collageCanvasEl) selectCollageItem(null);
       });
@@ -4728,21 +4873,25 @@
 
     function enterCollageMode() {
       collageMode = true;
-      const toolbar = document.getElementById('toolbar');
-      if (toolbar) toolbar.style.display = 'none';
+      // v2.1 round 140 (Terry) — collage is a MODE within PDRV, not a
+      // separate chrome: keep the toolbar, hide only the single-image
+      // area, and hand the Enhance panel the collage role (per-tile
+      // editing + Save collage). The panel is forced open + pinned.
       if (container) container.style.display = 'none';
       if (collageRootEl) collageRootEl.classList.add('active');
       document.title = 'Collage (' + files.length + ') — PDR Viewer';
-      buildBgSwatches();
+      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
       buildCollageItems();
-      wireCollageBar();
-      // Lay out + tidy once now, and again after the strip/layout settle
-      // (the canvas can measure 0×0 before first paint — same throttle
-      // that bit the Looks strip in round 135).
+      buildBgSwatches();
+      wireCollageControls();
+      try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.enterCollage(saveCollage); } catch (_) {}
+      // Lay out + tidy once now, and again after the panel slide + layout
+      // settle (the canvas can measure 0×0 before first paint — same
+      // throttle that bit the Looks strip in round 135).
       layoutCanvasSize();
       gridArrange();
-      setTimeout(() => { layoutCanvasSize(); gridArrange(); }, 80);
-      setTimeout(() => { layoutCanvasSize(); }, 300);
+      setTimeout(() => { layoutCanvasSize(); gridArrange(); }, 120);
+      setTimeout(() => { layoutCanvasSize(); }, 360);
     }
 
     // v2.0.14 (Terry 2026-05-28) — filmstrip refresh on rotate. The
@@ -5303,6 +5452,17 @@ function zoomTo(newZoom, centreX, centreY) {
         borderWeight: 'thin', // 'thin' | 'mat'
       };
 
+      // v2.1 round 140 (Terry) — collage mode. When active, this same
+      // panel edits the SELECTED collage tile instead of the single
+      // viewer image: `state` mirrors the selected tile's own enhance
+      // settings, applyEnhanceFilter targets that tile's <img>, and the
+      // footer shows "Save collage". collageSaveFn is registered by the
+      // collage code (initCollage) so the save button can call back into
+      // it without this IIFE knowing the collage internals.
+      let collageActive = false;
+      let collageTile = null;
+      let collageSaveFn = null;
+
       // v2.1 round 134 — accepts an optional state so the Looks strip
       // can compose each preset's filter for its thumbnail; defaults
       // to the live state for the main preview.
@@ -5337,11 +5497,53 @@ function zoomTo(newZoom, centreX, centreY) {
         return parts.length ? parts.join(' ') : 'none';
       }
 
+      // Apply a filter string + (inset border) frame preview to one
+      // element from a given state. Factored out so both the single-
+      // image path and the per-tile collage path share it.
+      function applyFilterToEl(el, s, filterStr) {
+        el.style.filter = filterStr;
+        // v2.1 round 137 (Terry) — frame preview via an inset BORDER,
+        // not box-shadow (box-shadow clipped top/bottom on full-height
+        // portraits). box-sizing:border-box draws inside the box, all 4
+        // sides always visible. The saved file is an even outset frame
+        // (sharp .extend) — this is just a faithful all-sides preview.
+        if (s.borderColor) {
+          const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
+          const frac = s.borderWeight === 'mat' ? 0.08 : 0.035;
+          const w = Math.max(4, Math.round(shortPx * frac));
+          el.style.boxSizing = 'border-box';
+          el.style.border = w + 'px solid ' + s.borderColor;
+          el.style.boxShadow = 'none';
+        } else {
+          el.style.border = '';
+          el.style.boxShadow = 'none';
+        }
+      }
+
       function applyEnhanceFilter() {
         const filterStr = composeFilterString();
-        // Apply to all <img> and <video> elements inside the viewer
-        // container. (Typically one at a time, but a defensive
-        // querySelectorAll handles transitions cleanly.)
+        // v2.1 round 140 — collage mode: the panel edits ONE tile.
+        // Apply to that tile's <img> and persist the live state into the
+        // tile's own enhance object so it survives tile-switching, save,
+        // and remove/re-add.
+        if (collageActive) {
+          if (collageTile && collageTile.imgEl) {
+            applyFilterToEl(collageTile.imgEl, state, filterStr);
+            collageTile.enh = {
+              brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
+              temperature: state.temperature, bw: state.bw, tone: state.tone,
+              borderColor: state.borderColor, borderWeight: state.borderWeight,
+            };
+          }
+          // Keep the Looks strip in sync with the selected tile's photo.
+          try {
+            if (looksStrip && panel.classList.contains('open') && currentImageSrc() && currentImageSrc() !== looksStripSrc) {
+              buildLooksStrip();
+            }
+          } catch (_) {}
+          return;
+        }
+        // Single-image path — apply to all <img>/<video> in the container.
         const containerEl = document.getElementById('container');
         if (!containerEl) return;
         // v2.1 round 134 — keep the Looks strip in sync with the photo
@@ -5354,34 +5556,7 @@ function zoomTo(newZoom, centreX, centreY) {
           }
         } catch (_) {}
         const targets = containerEl.querySelectorAll('img, video');
-        targets.forEach(function (el) {
-          el.style.filter = filterStr;
-          // v2.1 round 133 — frame preview via box-shadow spread (a
-          // solid outset ring). Layout-safe: box-shadow never
-          // relayouts or fights the viewer's zoom/pan. Thickness
-          // tracks the displayed image so it reads like the baked
-          // frame. The exact frame is composited by sharp on save.
-          // v2.1 round 137 (Terry) — frame preview via an inset BORDER,
-          // not box-shadow. box-shadow spreads OUTSIDE the image, so
-          // when a portrait photo fills the viewport height the top &
-          // bottom of the ring were clipped by the container — the
-          // frame looked like it was only on the left/right. A border
-          // with box-sizing:border-box draws inside the element's box
-          // (all 4 sides always visible, no layout shift, no clip).
-          // The saved file is still an even outset frame (sharp
-          // .extend) — this is just a faithful all-sides preview.
-          if (state.borderColor) {
-            const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
-            const frac = state.borderWeight === 'mat' ? 0.08 : 0.035;
-            const w = Math.max(4, Math.round(shortPx * frac));
-            el.style.boxSizing = 'border-box';
-            el.style.border = w + 'px solid ' + state.borderColor;
-            el.style.boxShadow = 'none';
-          } else {
-            el.style.border = '';
-            el.style.boxShadow = 'none';
-          }
-        });
+        targets.forEach(function (el) { applyFilterToEl(el, state, filterStr); });
       }
 
       function updateUI() {
@@ -5432,6 +5607,11 @@ function zoomTo(newZoom, centreX, centreY) {
       // background of each Look thumbnail. Videos don't get strip
       // previews (the look still applies live to the main element).
       function currentImageSrc() {
+        // v2.1 round 140 — in collage mode the "current photo" is the
+        // selected tile, so the Looks strip previews that tile's image.
+        if (collageActive) {
+          return (collageTile && collageTile.imgEl && collageTile.imgEl.src) ? collageTile.imgEl.src : '';
+        }
         const c = document.getElementById('container');
         const img = c ? c.querySelector('img') : null;
         return img && img.src ? img.src : '';
@@ -5738,6 +5918,9 @@ function zoomTo(newZoom, centreX, centreY) {
         setTimeout(function () { try { buildLooksStrip(); } catch (e) {} }, 200);
       }
       function closePanel() {
+        // v2.1 round 140 — in collage mode the panel IS the editor; it
+        // stays pinned open (every close path routes through here).
+        if (collageActive) return;
         panel.classList.remove('open');
         panel.setAttribute('aria-hidden', 'true');
         document.body.classList.remove('enhance-panel-open');
@@ -7351,6 +7534,66 @@ function zoomTo(newZoom, centreX, centreY) {
 
       if (saveNewBtn) saveNewBtn.addEventListener('click', function () { performSave('new'); });
       if (saveReplaceBtn) saveReplaceBtn.addEventListener('click', function () { performSave('replace'); });
+
+      // ─── v2.1 round 140 (Terry) — collage bridge ──────────────────
+      // The collage code (initCollage) drives this same panel per-tile
+      // through window.pdrEnhanceBridge, so the collage geometry/stage
+      // code stays decoupled from the enhance internals (state,
+      // applyEnhanceFilter, buildLooksStrip, the Looks/Frame/slider UI).
+      function markActiveWeight(w) {
+        if (!frameWeightRow) return;
+        const want = w === 'mat' ? 'mat' : 'thin';
+        frameWeightRow.querySelectorAll('button').forEach(function (b) {
+          b.classList.toggle('active', (b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin') === want);
+        });
+      }
+      function loadStateFromTile(tile) {
+        const e = (tile && tile.enh) || {};
+        state.brightness = e.brightness != null ? e.brightness : 100;
+        state.contrast = e.contrast != null ? e.contrast : 100;
+        state.saturation = e.saturation != null ? e.saturation : 100;
+        state.temperature = e.temperature != null ? e.temperature : 0;
+        state.bw = !!e.bw;
+        state.tone = e.tone || 'none';
+        state.borderColor = e.borderColor || '';
+        state.borderWeight = e.borderWeight || 'thin';
+        updateUI();
+        markActiveSwatchByColor(state.borderColor);
+        markActiveWeight(state.borderWeight);
+        try { clearActivePreset(); } catch (_) {}
+      }
+      const collageSaveBtn = document.getElementById('collage-save');
+      if (collageSaveBtn) collageSaveBtn.addEventListener('click', function () { if (collageSaveFn) collageSaveFn(); });
+
+      window.pdrEnhanceBridge = {
+        enterCollage: function (saveFn) {
+          collageActive = true;
+          collageTile = null;
+          collageSaveFn = typeof saveFn === 'function' ? saveFn : null;
+          document.body.classList.add('collage-mode');
+          document.body.classList.add('collage-no-tile');
+          openPanel();
+        },
+        exitCollage: function () {
+          collageActive = false; collageTile = null; collageSaveFn = null;
+          document.body.classList.remove('collage-mode');
+          document.body.classList.remove('collage-no-tile');
+        },
+        // Point the panel at a tile (or null to show the "pick a photo"
+        // hint). Loads the tile's own enhance settings into the panel.
+        setTile: function (tile) {
+          collageTile = tile || null;
+          if (collageTile) {
+            document.body.classList.remove('collage-no-tile');
+            loadStateFromTile(collageTile);
+            try { buildLooksStrip(); } catch (_) {}
+            applyEnhanceFilter();
+          } else {
+            document.body.classList.add('collage-no-tile');
+          }
+        },
+        isCollage: function () { return collageActive; },
+      };
 
       // Initial state.
       updateSaveAvailability();

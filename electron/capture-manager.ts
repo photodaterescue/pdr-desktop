@@ -839,9 +839,16 @@ export async function flushPendingCaptures(): Promise<number> {
 // the export in the renderer). Lands as a born-in-PDR _CO file and
 // indexes it like a capture, so the user can then enhance it with
 // the normal Looks / Frames / sliders.
+// v2.1 round 140 (Terry) — per-tile enhancement. Each collage photo can
+// carry its own Enhance state (the same set PDRV's side panel exposes),
+// so one tile can be high-contrast + red-framed while another is B&W.
+interface CollageEnhance {
+  brightness?: number; contrast?: number; saturation?: number; temperature?: number;
+  bw?: boolean; tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
+}
 interface CollageLayout {
   canvas: { w: number; h: number; bg: string };
-  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number }>;
+  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -851,6 +858,40 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
+
+// Build a sharp pipeline for ONE collage tile: source → EXIF-rotate →
+// resize to the tile box → the photo's own Enhance bake (mirrors
+// viewer:saveEnhanced exactly) → optional frame. Returned un-toBuffer'd
+// so the caller can read the result dims. The placement rotation is
+// applied by the caller afterwards.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance) {
+  let p = sharp(srcLong, { failOnError: false }).rotate().resize(iw, ih, { fit: 'cover', position: 'attention' });
+  if (enh) {
+    const b = (enh.brightness ?? 100) / 100;
+    const c = (enh.contrast ?? 100) / 100;
+    const s = (enh.saturation ?? 100) / 100;
+    const t = enh.temperature ?? 0;
+    const bw = !!enh.bw;
+    const tone = enh.tone ?? 'none';
+    if (b !== 1 || (s !== 1 && !bw)) p = p.modulate({ brightness: b, ...(bw ? {} : { saturation: s }) });
+    if (c !== 1) { const slope = c; p = p.linear(slope, 128 * (1 - slope)); }
+    if (t !== 0 && tone === 'none') {
+      const tt = t / 50;
+      p = p.recomb([[1 + 0.30 * tt, 0, 0], [0, 1, 0], [0, 0, 1 - 0.30 * tt]]);
+    }
+    if (tone === 'sepia') p = p.recomb([[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]]);
+    else if (tone === 'vintage') p = p.recomb([[0.696, 0.385, 0.095], [0.175, 0.843, 0.084], [0.136, 0.267, 0.566]]);
+    if (bw) p = p.greyscale();
+    const bc = (enh.borderColor || '').trim();
+    if (bc && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(bc)) {
+      const frac = enh.borderWeight === 'mat' ? 0.06 : 0.03;
+      const px = Math.max(3, Math.round(Math.min(iw, ih) * frac));
+      p = p.extend({ top: px, bottom: px, left: px, right: px, background: bc });
+    }
+  }
+  return p;
+}
 
 ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
   try {
@@ -879,11 +920,14 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         const yFrac = clamp01(item.yFrac);
         const iw = Math.max(2, Math.round(wFrac * W));
         const ih = Math.max(2, Math.round(iw / aspect));
-        let tile = await sharp(toLongPath(item.path), { failOnError: false })
-          .rotate() // honour EXIF orientation first
-          .resize(iw, ih, { fit: 'cover', position: 'attention' })
-          .toBuffer();
-        let rotW = iw, rotH = ih;
+        // Bake the tile (resize + its own Enhance state + frame). The
+        // result may be larger than iw×ih if a frame was added, so read
+        // its real dims back.
+        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh)
+          .png()
+          .toBuffer({ resolveWithObject: true });
+        let tile = baked.data;
+        let rotW = baked.info.width, rotH = baked.info.height;
         const rot = ((item.rot || 0) % 360 + 360) % 360;
         if (rot > 0.1 && rot < 359.9) {
           const rotated = await sharp(tile)
@@ -894,6 +938,8 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
           rotW = rotated.info.width;
           rotH = rotated.info.height;
         }
+        // Centre on the unframed box centre — a frame grows the tile
+        // symmetrically, so the centre is unchanged.
         const cx = xFrac * W + iw / 2;
         const cy = yFrac * H + ih / 2;
         let left = Math.round(cx - rotW / 2) + PAD;
