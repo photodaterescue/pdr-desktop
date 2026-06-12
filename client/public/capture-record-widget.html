@@ -4,20 +4,27 @@
 <meta charset="UTF-8" />
 <title>Recording</title>
 <!--
-  v2.1 round 125 (Terry 2026-06-11) — PDR screen-recording widget.
+  v2.1 round 125-127 (Terry 2026-06-11/12) — PDR screen-recording widget.
 
   A small frameless always-on-top window (content-protected, so it
   never appears in the recording) that BOTH shows the recording
   controls AND hosts the recording engine: getUserMedia with the
   desktop source main hands over, MediaRecorder producing WebM
   chunks every second, each chunk streamed to main over IPC where it
-  appends to a temp file. Putting the engine here (not in the main
-  PDR window) means recording survives the user minimising or
-  closing nothing-in-particular — this window is alive and visible
-  by definition while a recording runs.
+  appends to a temp file.
 
-  Controls: pause/resume, Stop (finalises → FFmpeg → library),
-  Cancel (discards). Draggable anywhere via the body drag region.
+  Round 126 added: Mute (live audio-track toggle), Snap
+  (mid-recording screenshot), live size readout, quality presets.
+  Round 127 added: quality cycle button ON the bar, the Blur flow
+  (pause → select an area on a frozen frame → resume → the saved MP4
+  blurs that area for that stretch of the recording — segments are
+  metadata only here; FFmpeg applies them at save time), fixed-width
+  Pause/Mute buttons so the bar never shifts or clips, and a proper
+  ghost-icon close button in PDR's titlebar style.
+
+  Layout state: the bar communicates through the dot (pulsing red =
+  recording, grey = paused) and button labels — no separate status
+  text. While saving/discarding, the size readout becomes the status.
 
   Self-contained vanilla HTML/JS, same as capture-overlay.html —
   this is OS chrome, not app UI.
@@ -38,9 +45,9 @@
   #bar {
     display: flex;
     align-items: center;
-    gap: 10px;
+    gap: 8px;
     height: 100%;
-    padding: 0 12px;
+    padding: 0 10px 0 12px;
     box-sizing: border-box;
     -webkit-app-region: drag;
     border: 1px solid rgba(255, 255, 255, 0.12);
@@ -64,27 +71,19 @@
   }
   #time {
     font-variant-numeric: tabular-nums;
-    min-width: 44px;
+    min-width: 40px;
     font-size: 14px;
   }
-  /* Round 126 — live size of the captured footage so far. Indicative
-     (the saved MP4 lands in the same ballpark after conversion). */
+  /* Live size of the captured footage; doubles as the Saving /
+     Discarding status once the recording finishes. */
   #size {
     font-variant-numeric: tabular-nums;
     color: #9a9aa3;
     font-size: 11px;
-    min-width: 56px;
-  }
-  #state {
-    color: #9a9aa3;
-    font-size: 11px;
-    flex: 1 1 auto;
+    flex: 1 1 0;
+    min-width: 0;
     white-space: nowrap;
     overflow: hidden;
-  }
-  #mute.muted {
-    color: #f2b8ba;
-    border-color: rgba(229, 72, 77, 0.55);
   }
   button {
     -webkit-app-region: no-drag;
@@ -93,24 +92,50 @@
     color: #fff;
     border-radius: 8px;
     height: 32px;
-    padding: 0 10px;
-    font: 500 12px/1 system-ui, 'Segoe UI', sans-serif;
+    padding: 0 9px;
+    font: 500 11.5px/1 system-ui, 'Segoe UI', sans-serif;
     cursor: pointer;
+    flex-shrink: 0;
   }
   button:hover { background: rgba(255, 255, 255, 0.14); }
+  button:disabled { opacity: 0.45; cursor: default; }
+  /* Fixed widths for the two label-swapping buttons so the bar never
+     reflows (round 127 — the swap to "Resume" used to push the close
+     button out of the window). */
+  #pause { width: 62px; padding: 0; }
+  #mute { width: 60px; padding: 0; display: none; }
+  #mute.muted {
+    color: #f2b8ba;
+    border-color: rgba(229, 72, 77, 0.55);
+  }
+  #blur.active {
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
+  }
+  #quality { width: 70px; padding: 0; }
   #stop {
     background: #e5484d;
     border-color: #e5484d;
     font-weight: 600;
-    padding: 0 14px;
+    padding: 0 12px;
   }
   #stop:hover { background: #f2555a; }
+  /* Ghost icon close — PDR titlebar button family (borderless,
+     round, hover wash), not a bordered text glyph (round 127). */
   #cancel {
-    width: 32px;
+    width: 28px;
+    height: 28px;
     padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: transparent;
     color: #9a9aa3;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
   }
-  #cancel:hover { color: #fff; }
+  #cancel:hover { background: rgba(255, 255, 255, 0.14); color: #fff; }
+  #cancel svg { width: 13px; height: 13px; display: block; }
 </style>
 </head>
 <body>
@@ -118,12 +143,15 @@
     <div id="dot"></div>
     <span id="time">0:00</span>
     <span id="size">0 KB</span>
-    <span id="state">Recording</span>
+    <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
+    <button id="quality" type="button" title="Recording quality — click to change">Standard</button>
     <button id="snap" type="button" title="Take a screenshot of what's being recorded — it goes into your library too">Snap</button>
-    <button id="mute" type="button" title="Mute system audio for part of the recording" style="display:none">Mute</button>
+    <button id="mute" type="button" title="Mute system audio for part of the recording">Mute</button>
     <button id="pause" type="button" title="Pause recording">Pause</button>
     <button id="stop" type="button" title="Stop and save to your library">Stop</button>
-    <button id="cancel" type="button" title="Discard this recording">✕</button>
+    <button id="cancel" type="button" title="Discard this recording" aria-label="Discard this recording">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
+    </button>
   </div>
 <script>
 (function () {
@@ -131,12 +159,14 @@
   var dot = document.getElementById('dot');
   var timeEl = document.getElementById('time');
   var sizeEl = document.getElementById('size');
-  var stateEl = document.getElementById('state');
+  var blurBtn = document.getElementById('blur');
+  var qualityBtn = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
   var muteBtn = document.getElementById('mute');
   var pauseBtn = document.getElementById('pause');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
+  var allButtons = [blurBtn, qualityBtn, snapBtn, muteBtn, pauseBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -148,6 +178,11 @@
   var paused = false;
   var capturedBytes = 0;
   var muted = false;
+  var quality = 'standard';
+  var QUALITY_ORDER = ['compact', 'standard', 'high'];
+  var QUALITY_LABEL = { compact: 'Compact', standard: 'Standard', high: 'High' };
+  var blurActive = false;       // a blur segment is currently open
+  var blurSelecting = false;    // the selection overlay is up
 
   function fmt(ms) {
     var s = Math.max(0, Math.floor(ms / 1000));
@@ -159,23 +194,51 @@
     if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
     return (n / (1024 * 1024)).toFixed(1) + ' MB';
   }
-  setInterval(function () {
-    if (!startedAtMs) return;
+  /** Position on the OUTPUT video's timeline — wall time minus every
+   *  paused stretch. Frozen while paused, which is exactly why blur
+   *  open/close stamps taken while paused line up with the footage. */
+  function clockMs() {
+    if (!startedAtMs) return 0;
     var now = Date.now();
-    var effectivePaused = pausedTotalMs + (paused ? (now - pausedAtMs) : 0);
-    timeEl.textContent = fmt(now - startedAtMs - effectivePaused);
+    return Math.max(0, now - startedAtMs - pausedTotalMs - (paused ? (now - pausedAtMs) : 0));
+  }
+  setInterval(function () {
+    if (!startedAtMs || finished) return;
+    timeEl.textContent = fmt(clockMs());
   }, 400);
 
   function reportError(message) {
     try { if (pdr && pdr.capture && pdr.capture.recordError) pdr.capture.recordError({ message: message }); } catch (e) {}
   }
-
   function stopTracks() {
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
   }
 
+  function doPause() {
+    if (!recorder || paused || recorder.state !== 'recording') return;
+    recorder.pause();
+    paused = true;
+    pausedAtMs = Date.now();
+    pauseBtn.textContent = 'Resume';
+    pauseBtn.title = 'Resume recording';
+    dot.classList.add('paused');
+  }
+  function doResume() {
+    if (!recorder || !paused || recorder.state !== 'paused') return;
+    recorder.resume();
+    paused = false;
+    pausedTotalMs += Date.now() - pausedAtMs;
+    pauseBtn.textContent = 'Pause';
+    pauseBtn.title = 'Pause recording';
+    dot.classList.remove('paused');
+  }
+
   async function start(init) {
     try {
+      if (init && init.quality && QUALITY_LABEL[init.quality]) {
+        quality = init.quality;
+        qualityBtn.textContent = QUALITY_LABEL[quality];
+      }
       var videoConstraints = {
         mandatory: {
           chromeMediaSource: 'desktop',
@@ -188,8 +251,6 @@
       try {
         if (init.audio) {
           // Windows desktop loopback — system audio, no driver needed.
-          // Requested together with desktop video per the Electron
-          // recipe; some systems refuse, so fall back to video-only.
           stream = await navigator.mediaDevices.getUserMedia({
             audio: { mandatory: { chromeMediaSource: 'desktop' } },
             video: videoConstraints,
@@ -208,9 +269,6 @@
       if (pdr && pdr.capture && pdr.capture.recordStarted) {
         pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAudio });
       }
-      // Round 126 — live mute toggle. Only meaningful when an audio
-      // track exists (audio can't be ADDED to a running recorder, so
-      // recordings started with audio off have no button at all).
       if (hasAudio) {
         muteBtn.style.display = '';
         muteBtn.addEventListener('click', function () {
@@ -229,15 +287,13 @@
       }
       recorder = new MediaRecorder(stream, {
         mimeType: mime || undefined,
-        // Round 126 — bitrate comes from the Settings → Capture
-        // quality preset (High 12 / Standard 8 / Compact 4 Mbps).
         videoBitsPerSecond: init.videoBitsPerSecond || 8_000_000,
         audioBitsPerSecond: 128_000,
       });
       recorder.ondataavailable = function (ev) {
         if (!ev.data || ev.data.size === 0) return;
         capturedBytes += ev.data.size;
-        sizeEl.textContent = fmtBytes(capturedBytes);
+        if (!finished) sizeEl.textContent = fmtBytes(capturedBytes);
         ev.data.arrayBuffer().then(function (buf) {
           try { if (pdr && pdr.capture && pdr.capture.recordChunk) pdr.capture.recordChunk(buf); } catch (e) {}
         });
@@ -267,12 +323,14 @@
     if (finished) return;
     finished = true;
     cancelled = !!asCancel;
-    stateEl.textContent = asCancel ? 'Discarding' : 'Saving';
-    pauseBtn.disabled = true;
-    stopBtn.disabled = true;
-    cancelBtn.disabled = true;
-    snapBtn.disabled = true;
-    muteBtn.disabled = true;
+    // Close any open blur segment at the current position so "blur
+    // until the end" works without an explicit Unblur.
+    if (blurActive) {
+      blurActive = false;
+      try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
+    }
+    sizeEl.textContent = asCancel ? 'Discarding…' : 'Saving…';
+    allButtons.forEach(function (b) { b.disabled = true; });
     try {
       if (recorder && recorder.state !== 'inactive') recorder.stop();
       else if (cancelled) { if (pdr && pdr.capture && pdr.capture.recordCancelled) pdr.capture.recordCancelled(); }
@@ -282,32 +340,46 @@
     }
   }
 
-  // Round 126 — mid-recording screenshot. Main grabs the recorded
-  // display exactly as it stands (no window hiding — a hide would
-  // blip inside the footage) and the still rides the normal
-  // screenshot pipeline into the library.
+  // ── Round 127: quality cycle (Compact → Standard → High) ──
+  // Mid-recording, the change applies to the SAVE quality (and is
+  // remembered for future recordings); the live capture bitrate was
+  // fixed when this recording started.
+  qualityBtn.addEventListener('click', function () {
+    if (finished) return;
+    quality = QUALITY_ORDER[(QUALITY_ORDER.indexOf(quality) + 1) % QUALITY_ORDER.length];
+    qualityBtn.textContent = QUALITY_LABEL[quality];
+    try { if (pdr && pdr.capture && pdr.capture.recordQuality) pdr.capture.recordQuality({ quality: quality }); } catch (e) {}
+  });
+
+  // ── Round 127: Blur ──
+  // Click while no blur is active: auto-pause (so the selection
+  // overlay never appears in the footage), ask main to open the
+  // area selector on the recorded screen. Main replies with
+  // blur-opened + the area; we stamp the START time from the frozen
+  // recording clock. Click again (Unblur): stamp the END. The saved
+  // MP4 gets the blur applied between those two times.
+  blurBtn.addEventListener('click', function () {
+    if (finished || blurSelecting || !recorder) return;
+    if (blurActive) {
+      blurActive = false;
+      blurBtn.textContent = 'Blur';
+      blurBtn.classList.remove('active');
+      blurBtn.title = 'Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again';
+      try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
+      return;
+    }
+    blurSelecting = true;
+    doPause();
+    try { if (pdr && pdr.capture && pdr.capture.recordBlurRequest) pdr.capture.recordBlurRequest(); } catch (e) { blurSelecting = false; }
+  });
+
   snapBtn.addEventListener('click', function () {
     if (finished) return;
     try { if (pdr && pdr.capture && pdr.capture.recordSnap) pdr.capture.recordSnap(); } catch (e) {}
   });
-
   pauseBtn.addEventListener('click', function () {
     if (!recorder || finished) return;
-    if (!paused && recorder.state === 'recording') {
-      recorder.pause();
-      paused = true;
-      pausedAtMs = Date.now();
-      pauseBtn.textContent = 'Resume';
-      stateEl.textContent = 'Paused';
-      dot.classList.add('paused');
-    } else if (paused && recorder.state === 'paused') {
-      recorder.resume();
-      paused = false;
-      pausedTotalMs += Date.now() - pausedAtMs;
-      pauseBtn.textContent = 'Pause';
-      stateEl.textContent = 'Recording';
-      dot.classList.remove('paused');
-    }
+    if (paused) doResume(); else doPause();
   });
   stopBtn.addEventListener('click', function () { finish(false); });
   cancelBtn.addEventListener('click', function () { finish(true); });
@@ -317,11 +389,24 @@
       pdr.capture.onRecordInit(function (init) { void start(init || {}); });
     }
     if (pdr.capture.onRecordDo) {
-      // Main-driven commands (title-bar Stop while recording).
       pdr.capture.onRecordDo(function (cmd) {
         if (!cmd) return;
         if (cmd.action === 'stop') finish(false);
         else if (cmd.action === 'cancel') finish(true);
+        else if (cmd.action === 'blur-opened') {
+          // Main resolved the area selector. rect is in VIDEO pixels
+          // (null = user cancelled the selection).
+          blurSelecting = false;
+          if (cmd.rect && !finished) {
+            blurActive = true;
+            blurBtn.textContent = 'Unblur';
+            blurBtn.classList.add('active');
+            blurBtn.title = 'Blurring that area — click to stop blurring from this point on';
+            try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'open', rect: cmd.rect, startMs: clockMs() }); } catch (e) {}
+          }
+          // Stay paused either way — the user resumes when ready,
+          // exactly the pause → blur → resume flow Terry described.
+        }
       });
     }
   }

@@ -36,7 +36,7 @@ import { execSync } from 'child_process';
 import log from 'electron-log/main.js';
 import { toLongPath } from './long-path.js';
 import { getLibraryStatus } from './library-sidecar.js';
-import { getSettings } from './settings-store.js';
+import { getSettings, setSetting } from './settings-store.js';
 import { indexCapturedFile } from './search-database.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -597,6 +597,11 @@ function openRegionOverlay(
     overlayWindow = win;
     // screen-saver level floats above fullscreen apps and the taskbar.
     try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+    // Round 127 — excluded from capture. Matters for the mid-recording
+    // Blur selector (the overlay must never leak into the footage if
+    // the recorder is still draining); harmless for the screenshot
+    // flow, whose grab happens before this window exists.
+    try { win.setContentProtection(true); } catch { /* non-fatal */ }
     win.setMenu(null);
 
     win.on('closed', () => {
@@ -892,6 +897,30 @@ const RECORD_QUALITY = {
   compact: { bitsPerSecond: 4_000_000, crf: '26' },
 } as const;
 
+// Round 127 — blur segments for the active recording. Rects are in
+// VIDEO pixels; start/end are recording-clock milliseconds stamped by
+// the widget (its clock excludes paused time, so stamps taken while
+// paused line up exactly with the output timeline). endMs null =
+// still blurring (closed automatically at stop). Mirrored to a
+// sidecar JSON next to the temp WebM after every change so a crash
+// mid-recording can NEVER save sensitive content unblurred — the
+// startup orphan recovery reads it back.
+interface BlurSegment { x: number; y: number; width: number; height: number; startMs: number; endMs: number | null }
+let recordBlurSegments: BlurSegment[] = [];
+
+function blurSidecarPath(webmPath: string): string {
+  return webmPath.replace(/\.webm$/i, '.blur.json');
+}
+
+function persistBlurSidecar(): void {
+  if (!recordTempPath) return;
+  try {
+    fs.writeFileSync(toLongPath(blurSidecarPath(recordTempPath)), JSON.stringify(recordBlurSegments));
+  } catch (err) {
+    log.warn(`[capture] blur sidecar write failed (non-fatal): ${(err as Error).message}`);
+  }
+}
+
 function recordTempDir(): string {
   return path.join(app.getPath('userData'), 'Captures-temp');
 }
@@ -926,8 +955,12 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   if (opts.discardTemp && recordTempPath) {
     const p = recordTempPath;
     // Give the stream a beat to flush before unlinking.
-    setTimeout(() => { try { fs.unlinkSync(toLongPath(p)); } catch { /* non-fatal */ } }, 500);
+    setTimeout(() => {
+      try { fs.unlinkSync(toLongPath(p)); } catch { /* non-fatal */ }
+      try { fs.unlinkSync(toLongPath(blurSidecarPath(p))); } catch { /* non-fatal */ }
+    }, 500);
   }
+  recordBlurSegments = [];
   recordTempPath = null;
   recordStartedAt = null;
   recordDisplay = null;
@@ -987,9 +1020,12 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     })();
 
     const widget = new BrowserWindow({
-      width: 430,
+      // Round 127 — wide enough for Blur + Quality + Snap + Mute +
+      // Pause/Resume (fixed-width) + Stop + the ghost close icon
+      // without ever clipping when labels swap.
+      width: 580,
       height: 64,
-      x: display.bounds.x + display.bounds.width - 450,
+      x: display.bounds.x + display.bounds.width - 600,
       y: display.bounds.y + display.bounds.height - 120,
       frame: false,
       show: false,
@@ -1032,6 +1068,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
+        quality: recordQuality,
       });
       // showInactive — starting a recording must not steal focus from
       // whatever the user is about to record.
@@ -1078,7 +1115,31 @@ export function cancelRecording(): { success: boolean } {
  * is still viewable in PDRV; losing the user's recording is the only
  * unacceptable outcome).
  */
-async function transcodeWebmToMp4(webmPath: string, crf: string = '21'): Promise<string | null> {
+/**
+ * Round 127 — turn the recorded blur segments into an FFmpeg
+ * filter_complex chain. Per segment: split the frame, crop the
+ * region, box-blur it hard, overlay it back at the same spot — but
+ * only between the segment's start and end on the output timeline
+ * (`enable='between(t,a,b)'`). Chained so any number of sequential
+ * segments compose. Pure save-time work: recording itself never
+ * touches a pixel.
+ */
+function buildBlurFilter(segments: BlurSegment[]): string {
+  const parts: string[] = [];
+  let cur = '0:v';
+  segments.forEach((s, i) => {
+    const start = (s.startMs / 1000).toFixed(3);
+    // Open segment (never unblurred) runs to end-of-clip.
+    const end = s.endMs === null ? '999999' : (s.endMs / 1000).toFixed(3);
+    parts.push(`[${cur}]split=2[a${i}][b${i}]`);
+    parts.push(`[b${i}]crop=${s.width}:${s.height}:${s.x}:${s.y},boxblur=10[bb${i}]`);
+    parts.push(`[a${i}][bb${i}]overlay=${s.x}:${s.y}:enable='between(t,${start},${end})'[v${i}]`);
+    cur = `v${i}`;
+  });
+  return parts.join(';');
+}
+
+async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = []): Promise<string | null> {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) {
     log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
@@ -1094,9 +1155,17 @@ async function transcodeWebmToMp4(webmPath: string, crf: string = '21'): Promise
   // would feel broken. ultrafast roughly halves it; for screen
   // content (flat regions, text) the quality difference is
   // negligible. crf comes from the quality preset (round 126).
+  const segments = blurSegments.filter((s) => s.width >= 2 && s.height >= 2);
+  const videoArgs = segments.length > 0
+    ? ['-filter_complex', buildBlurFilter(segments), '-map', `[v${segments.length - 1}]`, '-map', '0:a?']
+    : [];
+  if (segments.length > 0) {
+    log.info(`[capture] applying ${segments.length} blur segment(s) at save time`);
+  }
   const args = [
     '-hide_banner', '-loglevel', 'error',
     '-i', src,
+    ...videoArgs,
     '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crf, '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '160k',
     '-movflags', '+faststart',
@@ -1183,6 +1252,8 @@ async function finalizeRecording(): Promise<void> {
   const webmPath = recordTempPath;
   const startedAt = recordStartedAt ?? new Date();
   const meta = recordMeta;
+  const blurSegments = recordBlurSegments;
+  recordBlurSegments = [];
   // Close the widget + stream, keep the temp file.
   if (recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.close(); } catch { /* non-fatal */ }
@@ -1206,13 +1277,21 @@ async function finalizeRecording(): Promise<void> {
       log.warn('[capture] recording produced no data — nothing to save');
       return;
     }
-    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf);
+    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments);
     if (mp4Path) {
       try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
+      try { fs.unlinkSync(toLongPath(blurSidecarPath(webmPath))); } catch { /* non-fatal */ }
       await persistRecording(mp4Path, startedAt, meta.width, meta.height);
     } else {
       // FFmpeg unavailable/failed — persist the WebM itself rather
-      // than lose the recording.
+      // than lose the recording. NOTE: blur segments can only be
+      // applied by the transcode; if any exist, warn loudly rather
+      // than ship sensitive content silently unblurred.
+      if (blurSegments.length > 0) {
+        log.warn(`[capture] transcode failed with ${blurSegments.length} blur segment(s) pending — the saved WebM is NOT blurred`);
+        broadcast('capture:recordError', { message: 'The recording was saved, but the blur could not be applied to it.' });
+      }
+      try { fs.unlinkSync(toLongPath(blurSidecarPath(webmPath))); } catch { /* non-fatal */ }
       await persistRecording(webmPath, startedAt, meta.width, meta.height);
     }
   } catch (err) {
@@ -1281,6 +1360,93 @@ ipcMain.on('capture:record-snap', (event) => {
   })();
 });
 
+// Round 127 — quality changed from the recording bar. Applies to the
+// SAVE step of the in-flight recording (the capture bitrate was fixed
+// at start) and persists as the setting for future ones; the
+// settings:changed broadcast keeps the Settings → Capture radio live.
+ipcMain.on('capture:record-quality', (event, info: { quality?: 'high' | 'standard' | 'compact' }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const q = info?.quality;
+  if (q !== 'high' && q !== 'standard' && q !== 'compact') return;
+  recordQuality = q;
+  try { setSetting('captureRecordQuality', q); } catch { /* non-fatal */ }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key: 'captureRecordQuality', value: q }); } catch { /* non-fatal */ }
+  }
+  log.info(`[capture] recording quality → ${q} (save-time; persisted for future recordings)`);
+});
+
+// Round 127 — Blur. The widget auto-pauses, then asks for the area
+// selector. We freeze the recorded display exactly as it stands (no
+// window hiding — the footage must match) and reuse the region
+// overlay, snap-to-window included. The chosen rect goes back to the
+// widget in VIDEO pixels; the widget stamps the recording-clock
+// start/end on its open/close reports below.
+ipcMain.on('capture:record-blur-request', (event) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const display = recordDisplay;
+  const widget = recordWidget;
+  const replyRect = (rect: { x: number; y: number; width: number; height: number } | null) => {
+    if (widget && !widget.isDestroyed()) {
+      try { widget.webContents.send('capture:record-do', { action: 'blur-opened', rect }); } catch { /* non-fatal */ }
+    }
+  };
+  if (!display || recordingState !== 'recording' || captureInFlight) {
+    replyRect(null);
+    return;
+  }
+  captureInFlight = true; // blocks hotkey screenshots while selecting
+  void (async () => {
+    try {
+      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
+      if (!grab) { replyRect(null); return; }
+      grab.restore(); // no-op — nothing hidden
+      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
+      const rect = await openRegionOverlay(display, dataUrl, grab.windows);
+      if (!rect) { replyRect(null); return; }
+      // Display CSS px → video px, rounded to even values (chroma-
+      // subsampled H.264 prefers even crop geometry) and clamped.
+      const vw = recordMeta.width ?? Math.round(display.bounds.width * display.scaleFactor);
+      const vh = recordMeta.height ?? Math.round(display.bounds.height * display.scaleFactor);
+      const scaleX = vw / display.bounds.width;
+      const scaleY = vh / display.bounds.height;
+      const even = (n: number) => Math.max(0, 2 * Math.floor(n / 2));
+      let x = even(rect.x * scaleX);
+      let y = even(rect.y * scaleY);
+      let width = even(rect.width * scaleX);
+      let height = even(rect.height * scaleY);
+      width = Math.max(2, Math.min(width, even(vw) - x));
+      height = Math.max(2, Math.min(height, even(vh) - y));
+      replyRect({ x, y, width, height });
+    } catch (err) {
+      log.warn(`[capture] blur selection failed: ${(err as Error).message}`);
+      replyRect(null);
+    } finally {
+      captureInFlight = false;
+    }
+  })();
+});
+
+ipcMain.on('capture:record-blur', (event, info: { type?: 'open' | 'close'; rect?: { x: number; y: number; width: number; height: number }; startMs?: number; endMs?: number }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  if (info?.type === 'open' && info.rect && typeof info.startMs === 'number') {
+    recordBlurSegments.push({
+      x: info.rect.x, y: info.rect.y, width: info.rect.width, height: info.rect.height,
+      startMs: Math.max(0, info.startMs), endMs: null,
+    });
+    persistBlurSidecar();
+    log.info(`[capture] blur ON at ${(info.startMs / 1000).toFixed(1)}s (${info.rect.width}×${info.rect.height} @ ${info.rect.x},${info.rect.y})`);
+  } else if (info?.type === 'close' && typeof info.endMs === 'number') {
+    const open = [...recordBlurSegments].reverse().find((s) => s.endMs === null);
+    if (open) {
+      open.endMs = Math.max(open.startMs, info.endMs);
+      persistBlurSidecar();
+      log.info(`[capture] blur OFF at ${(info.endMs / 1000).toFixed(1)}s`);
+    }
+  }
+});
+
 /** App-quit safety: flush the temp WebM so the startup orphan
  *  recovery can transcode + index it on next launch. */
 export function flushRecordingOnQuit(): void {
@@ -1318,11 +1484,27 @@ export async function recoverOrphanRecordings(): Promise<number> {
       const startedAt = m
         ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])
         : fs.statSync(toLongPath(full)).mtime;
-      const mp4Path = await transcodeWebmToMp4(full);
+      // Round 127 — re-apply any blur the user had set before the
+      // crash/quit; the sidecar JSON travels with the temp WebM
+      // precisely so sensitive content never resurfaces unblurred.
+      let blurSegments: BlurSegment[] = [];
+      try {
+        const sidecar = blurSidecarPath(full);
+        if (fs.existsSync(toLongPath(sidecar))) {
+          const parsed = JSON.parse(fs.readFileSync(toLongPath(sidecar), 'utf8'));
+          if (Array.isArray(parsed)) blurSegments = parsed;
+        }
+      } catch { /* recover without blur metadata */ }
+      const mp4Path = await transcodeWebmToMp4(full, '21', blurSegments);
       if (mp4Path) {
         try { fs.unlinkSync(toLongPath(full)); } catch { /* non-fatal */ }
+        try { fs.unlinkSync(toLongPath(blurSidecarPath(full))); } catch { /* non-fatal */ }
         await persistRecording(mp4Path, startedAt, null, null);
       } else {
+        if (blurSegments.length > 0) {
+          log.warn(`[capture] orphan recovery: transcode failed with ${blurSegments.length} blur segment(s) — recovered WebM is NOT blurred`);
+        }
+        try { fs.unlinkSync(toLongPath(blurSidecarPath(full))); } catch { /* non-fatal */ }
         await persistRecording(full, startedAt, null, null);
       }
       recovered++;

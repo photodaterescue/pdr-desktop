@@ -94,7 +94,7 @@
   <div id="veil"></div>
   <div id="selection"></div>
   <div id="sizeBadge"></div>
-  <div id="hint">Click a window or drag to select an area &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
+  <div id="hint">Click a window or drag to select an area &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap to edges &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
 <script>
 (function () {
   var pdr = window.pdr;
@@ -109,13 +109,41 @@
   // topmost window under the cursor; a plain CLICK captures it. A
   // drag of 8px+ switches to free-rectangle selection.
   var windowRects = [];
+  // Round 127 (Terry) — magnetic edges. While dragging with Ctrl
+  // held, the selection's edges snap to nearby window edges (and the
+  // screen borders) so you don't have to be pixel-precise with the
+  // mouse. Candidates are derived from the same frozen-moment window
+  // list that powers click-a-window.
+  var vEdges = [];
+  var hEdges = [];
+  function rebuildEdges() {
+    vEdges = [0, window.innerWidth];
+    hEdges = [0, window.innerHeight];
+    for (var i = 0; i < windowRects.length; i++) {
+      var r = windowRects[i];
+      vEdges.push(r.x, r.x + r.width);
+      hEdges.push(r.y, r.y + r.height);
+    }
+  }
+  var SNAP_PX = 14;
+  function snapTo(value, edges) {
+    var best = value;
+    var bestDist = SNAP_PX + 1;
+    for (var i = 0; i < edges.length; i++) {
+      var d = Math.abs(edges[i] - value);
+      if (d < bestDist) { bestDist = d; best = edges[i]; }
+    }
+    return best;
+  }
 
   if (pdr && pdr.capture && pdr.capture.onOverlayInit) {
     pdr.capture.onOverlayInit(function (info) {
       if (info && info.imageDataUrl) shot.src = info.imageDataUrl;
       if (info && info.windows && info.windows.length) windowRects = info.windows;
+      rebuildEdges();
     });
   }
+  rebuildEdges();
 
   function cancel() {
     if (pdr && pdr.capture && pdr.capture.overlayCancel) pdr.capture.overlayCancel();
@@ -140,11 +168,21 @@
   var snapRect = null;    // window rect currently highlighted
 
   function currentRect(ev) {
-    var x = Math.min(startX, ev.clientX);
-    var y = Math.min(startY, ev.clientY);
-    var w = Math.abs(ev.clientX - startX);
-    var h = Math.abs(ev.clientY - startY);
-    return { x: x, y: y, width: w, height: h };
+    var x1 = Math.min(startX, ev.clientX);
+    var x2 = Math.max(startX, ev.clientX);
+    var y1 = Math.min(startY, ev.clientY);
+    var y2 = Math.max(startY, ev.clientY);
+    if (ev.ctrlKey) {
+      // Magnetic edges — each side snaps independently to the
+      // nearest window/screen edge within reach.
+      var sx1 = snapTo(x1, vEdges);
+      var sx2 = snapTo(x2, vEdges);
+      var sy1 = snapTo(y1, hEdges);
+      var sy2 = snapTo(y2, hEdges);
+      if (sx2 > sx1) { x1 = sx1; x2 = sx2; }
+      if (sy2 > sy1) { y1 = sy1; y2 = sy2; }
+    }
+    return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
   }
 
   function paintRect(r) {

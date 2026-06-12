@@ -382,13 +382,24 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // The widget hosts the actual recorder engine; these carry the
     // init handshake, main-driven stop/cancel commands, the WebM
     // chunk stream, and the lifecycle reports back to main.
-    onRecordInit: (callback: (info: { sourceId: string; audio: boolean; maxWidth: number; maxHeight: number; videoBitsPerSecond?: number }) => void) => {
+    onRecordInit: (callback: (info: { sourceId: string; audio: boolean; maxWidth: number; maxHeight: number; videoBitsPerSecond?: number; quality?: 'high' | 'standard' | 'compact' }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:record-init', handler);
       return () => ipcRenderer.removeListener('capture:record-init', handler);
     },
     // Round 126 — mid-recording screenshot of the recorded display.
     recordSnap: () => ipcRenderer.send('capture:record-snap'),
+    // Round 127 — quality changed from the recording bar (applies to
+    // the save step now + persists for future recordings).
+    recordQuality: (info: { quality: 'high' | 'standard' | 'compact' }) =>
+      ipcRenderer.send('capture:record-quality', info),
+    // Round 127 — Blur flow. The widget asks main to open the area
+    // selector on the recorded display; the chosen area comes back on
+    // record-do {action:'blur-opened'}; the widget then reports the
+    // open/close segment stamps (recording-clock ms) here.
+    recordBlurRequest: () => ipcRenderer.send('capture:record-blur-request'),
+    recordBlur: (info: { type: 'open' | 'close'; rect?: { x: number; y: number; width: number; height: number }; startMs?: number; endMs?: number }) =>
+      ipcRenderer.send('capture:record-blur', info),
     onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
       const handler = (_event: any, cmd: any) => callback(cmd);
       ipcRenderer.on('capture:record-do', handler);

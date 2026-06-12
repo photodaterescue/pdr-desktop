@@ -12653,6 +12653,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   useEffect(() => {
     captureCheckConflicts().then(setCaptureConflicts).catch(() => { /* best-effort */ });
   }, []);
+  // Round 127 — the recording bar can change quality mid-session
+  // (main persists it + broadcasts settings:changed); keep this radio
+  // in step. Same pdr.settings.onChanged pattern as useHideCaptions.
+  useEffect(() => {
+    try {
+      const pdrApi = (window as unknown as { pdr?: { settings?: { onChanged?: (cb: (p: { key: string; value: unknown }) => void) => () => void } } }).pdr;
+      const off = pdrApi?.settings?.onChanged?.((payload) => {
+        if (payload?.key === 'captureRecordQuality' && payload.value) {
+          setCaptureRecordQualityState(payload.value as 'high' | 'standard' | 'compact');
+        }
+      });
+      return off ?? undefined;
+    } catch { return undefined; }
+  }, []);
   // v2.0.15 Phase 4 (Terry 2026-06-06) — live state of the two optional
   // AI Photo Enhancement models (CodeFormer / Real-ESRGAN). Populated
   // on Settings open via listAiModels() and kept fresh via the
@@ -14741,10 +14755,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     Balances picture quality against file size and how long the save step takes. Applies to recordings you start after changing it — the live size is shown on the recording bar.
                   </p>
                   <div className="grid grid-cols-3 gap-2">
+                    {/* Round 127 (Terry) — low → high, left to right,
+                        matching how every scale reads. */}
                     {([
-                      { value: 'high', label: 'High', desc: 'Crispest picture. Larger files, slower save.' },
-                      { value: 'standard', label: 'Standard', desc: 'The right balance for almost everything.' },
                       { value: 'compact', label: 'Compact', desc: 'Smallest files, fastest save. Fine detail softens.' },
+                      { value: 'standard', label: 'Standard', desc: 'The right balance for almost everything.' },
+                      { value: 'high', label: 'High', desc: 'Crispest picture. Larger files, slower save.' },
                     ] as const).map((opt) => (
                       <label
                         key={opt.value}
