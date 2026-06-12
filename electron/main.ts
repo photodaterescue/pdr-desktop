@@ -12776,11 +12776,16 @@ interface SaveEnhancedRequest {
     // preset slider combinations and arrive as the values above with
     // tone='none'. Optional for backward compatibility.
     tone?: 'none' | 'sepia' | 'vintage';
-    // v2.1 round 133 (Terry 2026-06-12) — frame/border baked at save
-    // via sharp .extend(): adds an even margin around the photo in
-    // the chosen colour (white/black), thickness proportional to the
-    // image. 'whiteThick' is a wider gallery mat. Optional.
-    border?: 'none' | 'white' | 'black' | 'whiteThick';
+    // v2.1 round 134 (Terry 2026-06-12) — frame baked at save via
+    // sharp .extend(): an even margin around the photo in ANY colour
+    // (borderColor hex; '' / absent = no frame), thickness from
+    // borderWeight ('thin' ≈ 3.5% of the short side, 'mat' ≈ 8% for
+    // a wide gallery mat). Replaces the round-133 white/black/whiteThick
+    // enum so the user can pick from a palette. Decorative PNG frames
+    // (mirror/ornate) will ride a future `frameAsset` field once the
+    // artwork exists.
+    borderColor?: string;
+    borderWeight?: 'thin' | 'mat';
   };
   // v2.0.15 Phase 5+ — When set, the sharp pipeline reads from this
   // path instead of req.filePath. Used by the AI Enhance flows
@@ -13100,15 +13105,16 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     // with the image's short side so it looks the same on any
     // resolution. Read the (rotation-corrected) dimensions first so
     // the margin is proportional, then extend with the frame colour.
-    const border = fs2State.border ?? 'none';
-    if (border !== 'none') {
+    const borderColor = (fs2State.borderColor || '').trim();
+    const borderWeight = fs2State.borderWeight === 'mat' ? 'mat' : 'thin';
+    // Accept #rgb / #rrggbb only — guards the value handed to sharp.
+    if (borderColor && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(borderColor)) {
       try {
         const dims = await sharp(pipelineSource, { failOnError: false }).rotate().metadata();
         const shortSide = Math.min(dims.width || 1000, dims.height || 1000);
-        const frac = border === 'whiteThick' ? 0.08 : 0.035;
+        const frac = borderWeight === 'mat' ? 0.08 : 0.035;
         const px = Math.max(8, Math.round(shortSide * frac));
-        const bg = border === 'black' ? '#111111' : '#ffffff';
-        pipeline = pipeline.extend({ top: px, bottom: px, left: px, right: px, background: bg });
+        pipeline = pipeline.extend({ top: px, bottom: px, left: px, right: px, background: borderColor });
       } catch (extErr) {
         log.warn(`[viewer:saveEnhanced] border extend skipped (non-fatal): ${(extErr as Error).message}`);
       }

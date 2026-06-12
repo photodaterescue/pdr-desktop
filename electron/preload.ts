@@ -827,7 +827,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     saveEnhanced: (req: {
       filePath: string;
       mode: 'new' | 'replace';
-      filterState: { brightness: number; contrast: number; saturation: number; temperature: number; bw: boolean; tone?: 'none' | 'sepia' | 'vintage'; border?: 'none' | 'white' | 'black' | 'whiteThick' };
+      filterState: { brightness: number; contrast: number; saturation: number; temperature: number; bw: boolean; tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat' };
       // v2.0.15 Phase 5+ — AI Enhance flows pass the temp AI-output
       // file here so save bakes sliders on top of the AI output.
       sourceOverride?: string;

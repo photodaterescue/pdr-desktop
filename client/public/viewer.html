@@ -1195,28 +1195,101 @@
       color: #8a8a93;
       margin-bottom: -6px;
     }
-    .enhance-presets {
-      display: grid;
-      grid-template-columns: repeat(4, 1fr);
-      gap: 6px;
+    /* v2.1 round 134 (Terry) — Looks/Frames as a horizontal sliding
+       strip of LIVE previews instead of a wall of buttons. Each thumb
+       shows the current photo with that look applied so the user can
+       compare side by side, scroll left↔right. */
+    .enhance-strip {
+      display: flex;
+      gap: 8px;
+      overflow-x: auto;
+      overflow-y: hidden;
+      padding: 2px 0 6px 0;
+      scroll-snap-type: x proximity;
+      scrollbar-width: thin;
     }
-    .enhance-preset-chip {
+    .enhance-strip::-webkit-scrollbar { height: 6px; }
+    .enhance-strip::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    .look-thumb {
+      flex: 0 0 auto;
+      width: 62px;
+      border: none;
+      background: none;
+      padding: 0;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 3px;
+      scroll-snap-align: start;
+    }
+    .look-thumb-img {
+      width: 58px;
+      height: 58px;
+      border-radius: 8px;
+      background-color: #2a2a30;
+      background-size: cover;
+      background-position: center;
+      border: 2px solid transparent;
+      box-sizing: border-box;
+      transition: border-color 120ms;
+    }
+    .look-thumb:hover .look-thumb-img { border-color: rgba(255,255,255,0.4); }
+    .look-thumb.active .look-thumb-img { border-color: var(--accent, #a99cff); }
+    .look-thumb-cap { font-size: 10px; color: #b8b8c0; white-space: nowrap; }
+    .look-thumb.active .look-thumb-cap { color: #fff; }
+    /* Frame palette */
+    .frame-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      overflow-x: auto;
+      padding: 2px 0 6px 0;
+      scrollbar-width: thin;
+    }
+    .frame-row::-webkit-scrollbar { height: 6px; }
+    .frame-swatch {
+      flex: 0 0 auto;
+      width: 26px;
+      height: 26px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.25);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 100ms, border-color 120ms;
+    }
+    .frame-swatch:hover { transform: scale(1.1); }
+    .frame-swatch.active { border-color: var(--accent, #a99cff); box-shadow: 0 0 0 2px rgba(169,156,255,0.4); }
+    .frame-swatch.frame-none {
+      background: transparent;
+      color: #b8b8c0;
+      font-size: 14px;
+      line-height: 22px;
+      text-align: center;
+    }
+    .frame-custom {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      padding: 0;
+      border: 2px solid rgba(255,255,255,0.25);
+      border-radius: 50%;
+      background: none;
+      cursor: pointer;
+    }
+    .frame-weight { display: flex; gap: 6px; margin-top: 6px; }
+    .frame-weight button {
+      flex: 1;
       appearance: none;
       border: 1px solid rgba(255,255,255,0.16);
       background: rgba(255,255,255,0.05);
       color: #e8e8ec;
       border-radius: 8px;
-      padding: 7px 4px;
+      padding: 6px 4px;
       font: 500 11px/1.2 system-ui, 'Segoe UI', sans-serif;
       cursor: pointer;
-      transition: background 120ms, border-color 120ms;
     }
-    .enhance-preset-chip:hover { background: rgba(255,255,255,0.12); }
-    .enhance-preset-chip.active {
-      border-color: var(--accent, #a99cff);
-      background: rgba(169,156,255,0.18);
-      color: #fff;
-    }
+    .frame-weight button.active { border-color: var(--accent, #a99cff); background: rgba(169,156,255,0.18); color: #fff; }
     .enhance-label-row {
       display: flex;
       align-items: center;
@@ -1646,29 +1719,32 @@
       <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
-      <!-- v2.1 round 132 (Terry 2026-06-12) — one-tap Looks. Mainstream
-           treatments for serious photos; each previews live and saves
-           as a new variant via the existing save flow. -->
+      <!-- v2.1 round 134 (Terry 2026-06-12) — Looks as a sliding strip
+           of LIVE previews (was a button grid). Each thumb shows the
+           current photo with that look applied; scroll left↔right to
+           compare. Populated by buildLooksStrip(). -->
       <div class="enhance-presets-label">Looks</div>
-      <div class="enhance-presets" id="enhance-presets">
-        <button class="enhance-preset-chip" data-preset="original">Original</button>
-        <button class="enhance-preset-chip" data-preset="bw">B&amp;W</button>
-        <button class="enhance-preset-chip" data-preset="sepia">Sepia</button>
-        <button class="enhance-preset-chip" data-preset="vintage">Vintage</button>
-        <button class="enhance-preset-chip" data-preset="vivid">Vivid</button>
-        <button class="enhance-preset-chip" data-preset="warm">Warm</button>
-        <button class="enhance-preset-chip" data-preset="cool">Cool</button>
-        <button class="enhance-preset-chip" data-preset="soft">Soft</button>
-      </div>
-      <!-- v2.1 round 133 (Terry 2026-06-12) — Frame chips. Adds an
-           even border around the photo, baked at save as a new
-           variant. -->
+      <div class="enhance-strip" id="enhance-looks-strip"></div>
+      <!-- v2.1 round 134 — Frame colour palette (was white/black only).
+           Pick any colour; Thin/Mat width; custom colour picker.
+           Decorative/ornate frames join here once their artwork
+           exists. -->
       <div class="enhance-presets-label">Frame</div>
-      <div class="enhance-presets" id="enhance-frames" style="grid-template-columns: repeat(4, 1fr);">
-        <button class="enhance-preset-chip" data-border="none">None</button>
-        <button class="enhance-preset-chip" data-border="white">White</button>
-        <button class="enhance-preset-chip" data-border="black">Black</button>
-        <button class="enhance-preset-chip" data-border="whiteThick">Mat</button>
+      <div class="frame-row" id="enhance-frames">
+        <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
+        <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+        <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+        <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
+        <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
+        <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
+        <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+        <button class="frame-swatch" data-color="#9aa886" style="background:#9aa886" title="Sage"></button>
+        <button class="frame-swatch" data-color="#7a4a2b" style="background:#7a4a2b" title="Walnut"></button>
+        <input type="color" class="frame-custom" id="frame-custom" value="#ffffff" title="Custom colour" />
+      </div>
+      <div class="frame-weight" id="enhance-frame-weight">
+        <button data-weight="thin" class="active">Thin</button>
+        <button data-weight="mat">Mat (wide)</button>
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
@@ -4577,15 +4653,20 @@ function zoomTo(newZoom, centreX, centreY) {
         temperature: 0, // -50..+50 → hue-rotate + sepia approximation
         bw: false,
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
-        border: 'none', // v2.1 round 133 — 'none'|'white'|'black'|'whiteThick' frame
+        borderColor: '', // v2.1 round 134 — '' = no frame, else hex
+        borderWeight: 'thin', // 'thin' | 'mat'
       };
 
-      function composeFilterString() {
+      // v2.1 round 134 — accepts an optional state so the Looks strip
+      // can compose each preset's filter for its thumbnail; defaults
+      // to the live state for the main preview.
+      function composeFilterString(s) {
+        s = s || state;
         const parts = [];
-        if (state.brightness !== 100) parts.push('brightness(' + (state.brightness / 100) + ')');
-        if (state.contrast !== 100) parts.push('contrast(' + (state.contrast / 100) + ')');
-        if (state.saturation !== 100 && !state.bw) parts.push('saturate(' + (state.saturation / 100) + ')');
-        if (state.bw) parts.push('grayscale(1)');
+        if (s.brightness !== 100) parts.push('brightness(' + (s.brightness / 100) + ')');
+        if (s.contrast !== 100) parts.push('contrast(' + (s.contrast / 100) + ')');
+        if (s.saturation !== 100 && !s.bw) parts.push('saturate(' + (s.saturation / 100) + ')');
+        if (s.bw) parts.push('grayscale(1)');
         // v2.0.15 (Terry 2026-06-06) — Temperature was using sepia +
         // hue-rotate, which desaturated the preview heavily (sepia is
         // a tint-toward-brown operation, basically B&W with brown
@@ -4595,20 +4676,18 @@ function zoomTo(newZoom, centreX, centreY) {
         // without desaturating. Imperfect — CSS has no native colour
         // balance filter — but matches the saved output visually
         // much more closely than the old combo.
-        if (state.temperature !== 0) {
+        if (s.temperature !== 0) {
           // v2.1 round 133 — preview strengthened to match the
           // doubled backend Temperature effect (was ±10°). Warm →
-          // orange shift; cool → blue shift. A touch of saturate on
-          // the warm side reads closer to the backend's red-channel
-          // lift.
-          const deg = -(state.temperature / 50) * 18;
+          // orange shift; cool → blue shift.
+          const deg = -(s.temperature / 50) * 18;
           parts.push('hue-rotate(' + deg + 'deg)');
         }
         // v2.1 round 132 — tone preview. CSS sepia() approximates the
         // backend colour matrix closely enough for the live preview;
         // the saved file uses the exact .recomb() matrix.
-        if (state.tone === 'sepia') parts.push('sepia(0.85)');
-        else if (state.tone === 'vintage') parts.push('sepia(0.4)');
+        if (s.tone === 'sepia') parts.push('sepia(0.85)');
+        else if (s.tone === 'vintage') parts.push('sepia(0.4)');
         return parts.length ? parts.join(' ') : 'none';
       }
 
@@ -4619,6 +4698,15 @@ function zoomTo(newZoom, centreX, centreY) {
         // querySelectorAll handles transitions cleanly.)
         const containerEl = document.getElementById('container');
         if (!containerEl) return;
+        // v2.1 round 134 — keep the Looks strip in sync with the photo
+        // on screen: if the user navigated to a different image while
+        // the panel is open, rebuild the thumbnails. Guarded on a src
+        // change so slider drags don't rebuild.
+        try {
+          if (looksStrip && panel.classList.contains('open') && currentImageSrc() && currentImageSrc() !== looksStripSrc) {
+            buildLooksStrip();
+          }
+        } catch (_) {}
         const targets = containerEl.querySelectorAll('img, video');
         targets.forEach(function (el) {
           el.style.filter = filterStr;
@@ -4627,12 +4715,11 @@ function zoomTo(newZoom, centreX, centreY) {
           // relayouts or fights the viewer's zoom/pan. Thickness
           // tracks the displayed image so it reads like the baked
           // frame. The exact frame is composited by sharp on save.
-          if (state.border && state.border !== 'none') {
+          if (state.borderColor) {
             const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
-            const frac = state.border === 'whiteThick' ? 0.08 : 0.035;
+            const frac = state.borderWeight === 'mat' ? 0.08 : 0.035;
             const w = Math.max(4, Math.round(shortPx * frac));
-            const col = state.border === 'black' ? '#111111' : '#ffffff';
-            el.style.boxShadow = '0 0 0 ' + w + 'px ' + col;
+            el.style.boxShadow = '0 0 0 ' + w + 'px ' + state.borderColor;
           } else {
             el.style.boxShadow = 'none';
           }
@@ -4658,7 +4745,8 @@ function zoomTo(newZoom, centreX, centreY) {
         state.temperature = 0;
         state.bw = false;
         state.tone = 'none';
-        state.border = 'none';
+        state.borderColor = '';
+        state.borderWeight = 'thin';
         clearActivePreset();
         clearActiveFrame();
         updateUI();
@@ -4679,10 +4767,55 @@ function zoomTo(newZoom, centreX, centreY) {
         cool:     { brightness: 100, contrast: 100, saturation: 102, temperature: -30, bw: false, tone: 'none' },
         soft:     { brightness: 106, contrast: 92,  saturation: 96,  temperature: 0, bw: false, tone: 'none' },
       };
-      const presetsRow = document.getElementById('enhance-presets');
+      const LOOK_ORDER = ['original', 'bw', 'sepia', 'vintage', 'vivid', 'warm', 'cool', 'soft'];
+      const LOOK_LABEL = { original: 'Original', bw: 'B&W', sepia: 'Sepia', vintage: 'Vintage', vivid: 'Vivid', warm: 'Warm', cool: 'Cool', soft: 'Soft' };
+
+      // v2.1 round 134 — the current displayed photo's URL, used as the
+      // background of each Look thumbnail. Videos don't get strip
+      // previews (the look still applies live to the main element).
+      function currentImageSrc() {
+        const c = document.getElementById('container');
+        const img = c ? c.querySelector('img') : null;
+        return img && img.src ? img.src : '';
+      }
+
+      const looksStrip = document.getElementById('enhance-looks-strip');
+      let looksStripSrc = '';
       function clearActivePreset() {
-        if (!presetsRow) return;
-        presetsRow.querySelectorAll('.enhance-preset-chip').forEach(function (c) { c.classList.remove('active'); });
+        if (!looksStrip) return;
+        looksStrip.querySelectorAll('.look-thumb').forEach(function (c) { c.classList.remove('active'); });
+      }
+      // Build (or rebuild when the photo changes) the Looks strip:
+      // one live thumbnail per look, each the current photo with that
+      // look's CSS filter applied — compare side by side, scroll L↔R.
+      function buildLooksStrip() {
+        if (!looksStrip) return;
+        const src = currentImageSrc();
+        looksStripSrc = src;
+        looksStrip.innerHTML = '';
+        LOOK_ORDER.forEach(function (name) {
+          const thumb = document.createElement('button');
+          thumb.className = 'look-thumb';
+          thumb.setAttribute('data-preset', name);
+          if (name !== 'original' && state.tone === PRESETS[name].tone && isPresetActive(name)) thumb.classList.add('active');
+          const im = document.createElement('span');
+          im.className = 'look-thumb-img';
+          if (src) im.style.backgroundImage = 'url("' + src.replace(/"/g, '\\"') + '")';
+          im.style.filter = composeFilterString(PRESETS[name]);
+          const cap = document.createElement('span');
+          cap.className = 'look-thumb-cap';
+          cap.textContent = LOOK_LABEL[name];
+          thumb.appendChild(im);
+          thumb.appendChild(cap);
+          thumb.addEventListener('click', function () { applyPreset(name, thumb); });
+          looksStrip.appendChild(thumb);
+        });
+      }
+      function isPresetActive(name) {
+        const p = PRESETS[name];
+        return state.brightness === p.brightness && state.contrast === p.contrast &&
+               state.saturation === p.saturation && state.temperature === p.temperature &&
+               state.bw === p.bw && state.tone === p.tone;
       }
       function applyPreset(name, chipEl) {
         const p = PRESETS[name];
@@ -4697,33 +4830,43 @@ function zoomTo(newZoom, centreX, centreY) {
         if (name !== 'original' && chipEl) chipEl.classList.add('active');
         updateUI();
         applyEnhanceFilter();
-        // Presets must flip the Save buttons on (sliders do this via
-        // their own input listeners; a preset click bypasses those).
+        // Presets bypass the slider input listeners, so flip Save on.
         try { updateSaveAvailability(); } catch (_) {}
       }
-      if (presetsRow) {
-        presetsRow.querySelectorAll('.enhance-preset-chip').forEach(function (chip) {
-          chip.addEventListener('click', function () { applyPreset(chip.getAttribute('data-preset'), chip); });
-        });
-      }
 
-      // v2.1 round 133 — Frame chips. Independent of the Looks above
-      // (you can have a Sepia photo with a White frame). 'None' clears.
+      // v2.1 round 134 — Frame colour palette. Independent of Looks
+      // (Sepia + a gold frame is fine). Swatches set any colour; the
+      // custom picker allows arbitrary; Thin/Mat sets the width.
       const framesRow = document.getElementById('enhance-frames');
+      const frameWeightRow = document.getElementById('enhance-frame-weight');
+      const frameCustom = document.getElementById('frame-custom');
       function clearActiveFrame() {
-        if (!framesRow) return;
-        framesRow.querySelectorAll('.enhance-preset-chip').forEach(function (c) { c.classList.remove('active'); });
+        if (framesRow) framesRow.querySelectorAll('.frame-swatch').forEach(function (c) { c.classList.remove('active'); });
       }
-      function applyFrame(name, chipEl) {
-        state.border = name || 'none';
+      function applyFrameColor(color, swatchEl) {
+        state.borderColor = color || '';
         clearActiveFrame();
-        if (name !== 'none' && chipEl) chipEl.classList.add('active');
+        if (swatchEl) swatchEl.classList.add('active');
+        else if (!color && framesRow) { const none = framesRow.querySelector('.frame-none'); if (none) none.classList.add('active'); }
         applyEnhanceFilter();
         try { updateSaveAvailability(); } catch (_) {}
       }
       if (framesRow) {
-        framesRow.querySelectorAll('.enhance-preset-chip').forEach(function (chip) {
-          chip.addEventListener('click', function () { applyFrame(chip.getAttribute('data-border'), chip); });
+        framesRow.querySelectorAll('.frame-swatch').forEach(function (sw) {
+          sw.addEventListener('click', function () { applyFrameColor(sw.getAttribute('data-color') || '', sw); });
+        });
+      }
+      if (frameCustom) {
+        frameCustom.addEventListener('input', function () { applyFrameColor(frameCustom.value, null); });
+      }
+      if (frameWeightRow) {
+        frameWeightRow.querySelectorAll('button').forEach(function (b) {
+          b.addEventListener('click', function () {
+            state.borderWeight = b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin';
+            frameWeightRow.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
+            b.classList.add('active');
+            applyEnhanceFilter();
+          });
         });
       }
 
@@ -4850,6 +4993,9 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.0.15 — body class lets the next-photo arrow CSS shift
         // left of the panel so it stays clickable.
         document.body.classList.add('enhance-panel-open');
+        // v2.1 round 134 — (re)build the Looks strip against whatever
+        // photo is showing now. rAF lets the image settle first.
+        try { requestAnimationFrame(buildLooksStrip); } catch (_) { try { buildLooksStrip(); } catch (e) {} }
       }
       function closePanel() {
         panel.classList.remove('open');
@@ -6288,7 +6434,7 @@ function zoomTo(newZoom, centreX, centreY) {
                state.temperature !== 0 ||
                state.bw === true ||
                state.tone !== 'none' ||
-               state.border !== 'none';
+               state.borderColor !== '';
       }
       function deriveEnhancedFilename(filePath) {
         // Mirror main.ts logic: <basename>_E.jpg next to original.
