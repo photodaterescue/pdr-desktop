@@ -1893,6 +1893,10 @@
     body.collage-mode #btn-rotateRight,
     body.collage-mode #btn-drag-file,
     body.collage-mode #btn-copy-filename { display: none !important; }
+    /* v2.1 round 144 — collage Undo/Redo/Refresh live on the toolbar in
+       collage mode only. */
+    .tb-collage { display: none; }
+    body.collage-mode .tb-collage { display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
     /* Collage section in the Enhance panel — only in collage mode. */
     .enhance-collage-section { display: none; }
     body.collage-mode .enhance-collage-section { display: block; }
@@ -1944,6 +1948,19 @@
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
     body.collage-mode .enhance-collage-only { display: flex; }
+    /* v2.1 round 144 (Terry) — unified Background/Frame colour picker.
+       The per-tile Frame palette is hidden in collage mode (the unified
+       picker drives it). */
+    body.collage-mode #enhance-frame-section { display: none; }
+    .ec-color-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
+    .ec-ctgl {
+      flex: 1; background: transparent; border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff; font-size: 11px; padding: 5px 4px; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-ctgl:hover { background: rgba(169,156,255,0.10); }
+    .ec-ctgl.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    .ec-frame-hint { font-size: 11px; color: #9a93c8; margin-top: 8px; line-height: 1.4; }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
     .enhance-collapse { padding: 0; }
@@ -2007,6 +2024,13 @@
       </button>
     </div>
     <div class="toolbar-actions">
+      <!-- v2.1 round 144 (Terry) — collage Undo/Redo/Refresh on the
+           toolbar (was in the side panel, eating space). Refresh =
+           shuffle into a fresh arrangement (NOT a reset — your photos +
+           edits stay, only their positions change). Collage mode only. -->
+      <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)">&#8634;</button>
+      <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)">&#8635;</button>
+      <button class="toolbar-btn tb-collage" id="tb-collage-refresh" data-pdr-tooltip="Shuffle into a fresh arrangement">&#10227;</button>
       <span class="toolbar-counter" id="counter" style="display:none"></span>
       <button class="toolbar-btn" id="btn-fit" data-pdr-tooltip="Fit to window (F)">Fit</button>
       <button class="toolbar-btn" id="btn-100" data-pdr-tooltip="Actual size (0)">100%</button>
@@ -2092,26 +2116,41 @@
            Frame / slider sections BELOW edit the currently-selected
            collage tile; the hint covers the "nothing selected" state. -->
       <div class="enhance-collage-section">
-        <!-- v2.1 round 143 (Terry) — Undo / Redo. "changes can be made
-             quickly and without worry of screwing up." Also Ctrl+Z / Ctrl+Y. -->
-        <div class="ec-row" style="margin-bottom:10px">
-          <button class="ec-shape-btn" id="collage-undo" type="button" disabled data-pdr-tooltip="Undo (Ctrl+Z)">&#8634; Undo</button>
-          <button class="ec-shape-btn" id="collage-redo" type="button" disabled data-pdr-tooltip="Redo (Ctrl+Y)">&#8635; Redo</button>
-        </div>
+        <!-- v2.1 round 144 (Terry) — Undo/Redo moved to the toolbar to
+             free panel space; they're #tb-collage-undo / -redo now. -->
         <div class="enhance-presets-label">Collage shape</div>
         <div class="ec-row">
           <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
           <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
           <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
         </div>
-        <div class="enhance-presets-label">Background</div>
-        <div class="frame-palette" id="collage-bg-palette">
-          <button class="frame-add" id="collage-bg-add" title="Pick a custom background colour">
-            <span class="frame-add-plus">+</span>
-          </button>
-          <input type="color" id="collage-bg-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-          <!-- background swatches injected by initCollage() (mirror the Frame palette) -->
-        </div>
+        <!-- v2.1 round 144 (Terry) — ONE colour picker for both the
+             collage Background and the selected photo's Frame, with a
+             toggle, in a chevron. Shared swatches + saved colours. -->
+        <details class="enhance-collapse" id="collage-colour-collapse">
+          <summary>Colour</summary>
+          <div class="ec-color-toggle">
+            <button class="ec-ctgl active" data-ctarget="background" type="button">Background</button>
+            <button class="ec-ctgl" data-ctarget="frame" type="button">Frame</button>
+          </div>
+          <div class="frame-palette" id="collage-color-palette">
+            <button class="frame-add" id="collage-color-add" title="Pick a custom colour"><span class="frame-add-plus">+</span></button>
+            <input type="color" id="collage-color-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" title="No frame" style="display:none">&#8709;</button>
+            <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+            <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+            <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
+            <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
+            <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
+            <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+            <span class="frame-saved" id="collage-color-saved"></span>
+          </div>
+          <div class="frame-weight" id="collage-frame-weight" style="display:none">
+            <button data-weight="thin" class="active" type="button">Thin</button>
+            <button data-weight="mat" type="button">Mat (wide)</button>
+          </div>
+          <div class="ec-frame-hint" id="collage-frame-hint" style="display:none">Select a photo on the canvas to frame it.</div>
+        </details>
         <!-- v2.1 round 142 (Terry) — background from a library PHOTO,
              faded over the colour above (the picker opens in the main
              window: Memories/Albums/S&D). Screenshot tip meets the
@@ -2160,6 +2199,11 @@
            palette: all colours visible at once (wrapping, no hidden
            scroll), a "+" custom-colour button up front (left), and a
            Saved row that remembers colours you pick. -->
+      <!-- v2.1 round 144 (Terry) — in COLLAGE mode this per-tile Frame
+           palette is hidden; the unified Colour picker in the Collage
+           section (Background/Frame toggle) drives the frame instead.
+           Single-photo Enhance still uses this section unchanged. -->
+      <div id="enhance-frame-section">
       <div class="enhance-presets-label">Frame colour</div>
       <div class="frame-palette" id="enhance-frames">
         <button class="frame-add" id="frame-add" title="Pick a custom colour">
@@ -2178,6 +2222,7 @@
       <div class="frame-weight" id="enhance-frame-weight">
         <button data-weight="thin" class="active">Thin</button>
         <button data-weight="mat">Mat (wide)</button>
+      </div>
       </div>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
            chevron to declutter ("largely pre-chosen by Looks; if someone
@@ -4637,6 +4682,9 @@
       // v2.1 round 140 — point the Enhance panel at this tile (or clear
       // it). The panel then edits this photo's own Look/frame/sliders.
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
+      // v2.1 round 144 — keep the unified colour picker in sync (frame
+      // mode reflects the newly-selected tile's frame; hint toggles).
+      try { if (typeof refreshCollageColorForSelection === 'function') refreshCollageColorForSelection(); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -4890,8 +4938,8 @@
       collagePendingSnap = null;
     }
     function updateUndoButtons() {
-      const u = document.getElementById('collage-undo');
-      const r = document.getElementById('collage-redo');
+      const u = document.getElementById('tb-collage-undo');
+      const r = document.getElementById('tb-collage-redo');
       if (u) u.disabled = collageUndo.length === 0;
       if (r) r.disabled = collageRedo.length === 0;
     }
@@ -4945,28 +4993,104 @@
     // v2.1 round 140 — background swatches live in the Enhance panel's
     // Collage section now, and reuse the Frame palette's swatch styling
     // (same look) so background + frame colours read as one system.
-    function buildBgSwatches() {
-      const host = document.getElementById('collage-bg-palette');
+    // v2.1 round 144 (Terry) — ONE colour picker for the collage
+    // Background AND the selected photo's Frame, with a toggle + shared
+    // saved colours. Swatches are static in the HTML now.
+    let collageColorTarget = 'background';
+    let collageColorWired = false;
+    const COLLAGE_SAVED_KEY = 'pdr-frame-saved-colors'; // shared with the single-photo frame palette
+    function collageGetSaved() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_SAVED_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, 8) : []; } catch (_) { return []; } }
+    function collageSaveColor(c) {
+      if (!c) return;
+      let cols = collageGetSaved().filter((x) => x.toLowerCase() !== c.toLowerCase());
+      cols.unshift(c); cols = cols.slice(0, 8);
+      try { localStorage.setItem(COLLAGE_SAVED_KEY, JSON.stringify(cols)); } catch (_) {}
+      renderCollageSavedColors();
+    }
+    function renderCollageSavedColors() {
+      const host = document.getElementById('collage-color-saved');
       if (!host) return;
-      host.querySelectorAll('.frame-swatch').forEach((s) => s.remove());
-      COLLAGE_BG_SWATCHES.forEach((hex) => {
+      host.innerHTML = '';
+      collageGetSaved().forEach((c) => {
         const b = document.createElement('button');
-        b.className = 'frame-swatch' + (hex.toLowerCase() === (collageBg || '').toLowerCase() ? ' active' : '');
-        b.type = 'button';
-        b.style.background = hex;
-        b.setAttribute('data-color', hex);
-        b.title = hex;
-        b.addEventListener('click', () => setCollageBg(hex));
+        b.className = 'frame-swatch'; b.type = 'button'; b.style.background = c; b.setAttribute('data-color', c); b.title = c;
+        b.addEventListener('click', () => onCollageColorPick(c));
         host.appendChild(b);
       });
+      markCollageColorActive();
+    }
+    function currentColorForTarget() {
+      if (collageColorTarget === 'frame') return (collageSelected && collageSelected.enh) ? (collageSelected.enh.borderColor || '') : '';
+      return collageBg || '';
+    }
+    function markCollageColorActive() {
+      const cur = (currentColorForTarget() || '').toLowerCase();
+      document.querySelectorAll('#collage-color-palette .frame-swatch').forEach((s) => {
+        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
+      });
+    }
+    function onCollageColorPick(hex) {
+      if (collageColorTarget === 'frame') {
+        if (!collageSelected) return; // hint tells them to select a photo
+        if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setFrameColor) window.pdrEnhanceBridge.setFrameColor(hex || '');
+      } else {
+        if (!hex) return; // background must have a colour
+        setCollageBg(hex);
+      }
+      markCollageColorActive();
+    }
+    function setColorTarget(t) {
+      collageColorTarget = (t === 'frame') ? 'frame' : 'background';
+      document.querySelectorAll('.ec-ctgl').forEach((b) => b.classList.toggle('active', b.dataset.ctarget === collageColorTarget));
+      const frame = collageColorTarget === 'frame';
+      const none = document.getElementById('collage-color-none');
+      const fw = document.getElementById('collage-frame-weight');
+      const hint = document.getElementById('collage-frame-hint');
+      if (none) none.style.display = frame ? '' : 'none';
+      if (fw) fw.style.display = (frame && collageSelected) ? 'flex' : 'none';
+      if (hint) hint.style.display = (frame && !collageSelected) ? 'block' : 'none';
+      refreshCollageColorForSelection();
+    }
+    function refreshCollageColorForSelection() {
+      const frame = collageColorTarget === 'frame';
+      const fw = document.getElementById('collage-frame-weight');
+      const hint = document.getElementById('collage-frame-hint');
+      if (hint) hint.style.display = (frame && !collageSelected) ? 'block' : 'none';
+      if (fw) {
+        fw.style.display = (frame && collageSelected) ? 'flex' : 'none';
+        if (collageSelected) {
+          const w = (collageSelected.enh && collageSelected.enh.borderWeight) || 'thin';
+          fw.querySelectorAll('button').forEach((x) => x.classList.toggle('active', (x.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin') === w));
+        }
+      }
+      markCollageColorActive();
     }
     function setCollageBg(hex) {
       if (!hex) return;
       collageBg = hex;
       if (collageCanvasEl) collageCanvasEl.style.background = hex;
-      document.querySelectorAll('#collage-bg-palette .frame-swatch').forEach((s) => {
-        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === hex.toLowerCase());
-      });
+      markCollageColorActive();
+    }
+    function initCollageColorPicker() {
+      renderCollageSavedColors();
+      if (collageColorWired) return;
+      collageColorWired = true;
+      document.querySelectorAll('.ec-ctgl').forEach((b) => b.addEventListener('click', () => setColorTarget(b.dataset.ctarget)));
+      const pal = document.getElementById('collage-color-palette');
+      if (pal) pal.addEventListener('click', (e) => { const sw = e.target.closest ? e.target.closest('.frame-swatch') : null; if (sw && pal.contains(sw)) onCollageColorPick(sw.getAttribute('data-color') || ''); });
+      const add = document.getElementById('collage-color-add');
+      const custom = document.getElementById('collage-color-custom');
+      if (add && custom) {
+        add.addEventListener('click', () => { try { custom.click(); } catch (_) {} });
+        custom.addEventListener('input', () => onCollageColorPick(custom.value));
+        custom.addEventListener('change', () => collageSaveColor(custom.value));
+      }
+      const fw = document.getElementById('collage-frame-weight');
+      if (fw) fw.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
+        const w = b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin';
+        fw.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
+        if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setFrameWeight) window.pdrEnhanceBridge.setFrameWeight(w);
+      }));
     }
     // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles,
     // faded over the bg colour). Re-created after buildCollageItems
@@ -5077,11 +5201,16 @@
       if (tidyBtn) tidyBtn.addEventListener('click', () => gridArrange());
       const jumbleBtn = document.getElementById('collage-jumble');
       if (jumbleBtn) jumbleBtn.addEventListener('click', () => jumbleArrange());
-      // v2.1 round 143 — undo / redo buttons + Ctrl+Z / Ctrl+Y.
-      const undoBtn = document.getElementById('collage-undo');
+      // v2.1 round 144 — undo / redo / refresh on the TOOLBAR + Ctrl+Z/Y.
+      const undoBtn = document.getElementById('tb-collage-undo');
       if (undoBtn) undoBtn.addEventListener('click', () => undoCollage());
-      const redoBtn = document.getElementById('collage-redo');
+      const redoBtn = document.getElementById('tb-collage-redo');
       if (redoBtn) redoBtn.addEventListener('click', () => redoCollage());
+      const refreshBtn = document.getElementById('tb-collage-refresh');
+      if (refreshBtn) refreshBtn.addEventListener('click', () => {
+        // Refresh = shuffle to a fresh arrangement (undoable, not a reset).
+        beginCollageChange(); jumbleArrange(); commitCollageChange();
+      });
       window.addEventListener('keydown', (e) => {
         if (!collageMode) return;
         const k = (e.key || '').toLowerCase();
@@ -5094,14 +5223,8 @@
       const panelEl = document.getElementById('enhance-panel');
       if (panelEl) panelEl.addEventListener('pointerdown', () => beginCollageChange(), true);
       window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
-      // Custom background colour ("+" → native picker; live-preview on
-      // input, same pattern as the Frame palette's custom picker).
-      const bgAdd = document.getElementById('collage-bg-add');
-      const bgCustom = document.getElementById('collage-bg-custom');
-      if (bgAdd && bgCustom) {
-        bgAdd.addEventListener('click', () => { try { bgCustom.click(); } catch (_) {} });
-        bgCustom.addEventListener('input', () => setCollageBg(bgCustom.value));
-      }
+      // v2.1 round 144 — unified Background/Frame colour picker.
+      initCollageColorPicker();
       // v2.1 round 142 — background PHOTO: open the shared picker in the
       // main window; fade slider; remove.
       const bgPhotoBtn = document.getElementById('collage-bg-photo');
@@ -5142,7 +5265,6 @@
       document.title = 'Collage (' + files.length + ') — PDR Viewer';
       try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
       buildCollageItems();
-      buildBgSwatches();
       // Collapse the manual Levels in collage mode — the panel is busier
       // here and Looks pre-set them (single-photo mode keeps it open).
       try { const lv = document.getElementById('enhance-levels'); if (lv) lv.removeAttribute('open'); } catch (_) {}
@@ -7880,6 +8002,19 @@ function zoomTo(newZoom, centreX, centreY) {
         applyTileEnh: function (tile) {
           if (!tile || !tile.imgEl) return;
           applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}));
+        },
+        // v2.1 round 144 — the unified collage colour picker drives the
+        // selected tile's frame through these (only when a tile is the
+        // panel's target).
+        setFrameColor: function (hex) {
+          if (!collageActive || !collageTile) return;
+          state.borderColor = hex || '';
+          applyEnhanceFilter();
+        },
+        setFrameWeight: function (w) {
+          if (!collageActive || !collageTile) return;
+          state.borderWeight = (w === 'mat') ? 'mat' : 'thin';
+          applyEnhanceFilter();
         },
       };
 
