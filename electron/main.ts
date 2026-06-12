@@ -12776,6 +12776,11 @@ interface SaveEnhancedRequest {
     // preset slider combinations and arrive as the values above with
     // tone='none'. Optional for backward compatibility.
     tone?: 'none' | 'sepia' | 'vintage';
+    // v2.1 round 133 (Terry 2026-06-12) — frame/border baked at save
+    // via sharp .extend(): adds an even margin around the photo in
+    // the chosen colour (white/black), thickness proportional to the
+    // image. 'whiteThick' is a wider gallery mat. Optional.
+    border?: 'none' | 'white' | 'black' | 'whiteThick';
   };
   // v2.0.15 Phase 5+ — When set, the sharp pipeline reads from this
   // path instead of req.filePath. Used by the AI Enhance flows
@@ -13055,8 +13060,12 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     // their own matrix anyway).
     if (temperature !== 0 && tone === 'none') {
       const t = temperature / 50; // -1..+1
-      const rGain = 1 + 0.15 * t;
-      const bGain = 1 - 0.15 * t;
+      // v2.1 round 133 (Terry 2026-06-12) — Temperature was barely
+      // visible: ±0.15 (15%) per channel at the slider's ends. Doubled
+      // to ±0.30 so the full warm↔cool travel reads clearly; the
+      // slider still lets the user dial back for subtlety.
+      const rGain = 1 + 0.30 * t;
+      const bGain = 1 - 0.30 * t;
       pipeline = pipeline.recomb([
         [rGain, 0,     0    ],
         [0,     1,     0    ],
@@ -13085,6 +13094,24 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
 
     if (bw) {
       pipeline = pipeline.greyscale();
+    }
+
+    // v2.1 round 133 — frame/border via .extend(). Thickness scales
+    // with the image's short side so it looks the same on any
+    // resolution. Read the (rotation-corrected) dimensions first so
+    // the margin is proportional, then extend with the frame colour.
+    const border = fs2State.border ?? 'none';
+    if (border !== 'none') {
+      try {
+        const dims = await sharp(pipelineSource, { failOnError: false }).rotate().metadata();
+        const shortSide = Math.min(dims.width || 1000, dims.height || 1000);
+        const frac = border === 'whiteThick' ? 0.08 : 0.035;
+        const px = Math.max(8, Math.round(shortSide * frac));
+        const bg = border === 'black' ? '#111111' : '#ffffff';
+        pipeline = pipeline.extend({ top: px, bottom: px, left: px, right: px, background: bg });
+      } catch (extErr) {
+        log.warn(`[viewer:saveEnhanced] border extend skipped (non-fatal): ${(extErr as Error).message}`);
+      }
     }
 
     // .withMetadata() preserves the source's EXIF/IPTC/XMP so we don't

@@ -1660,6 +1660,16 @@
         <button class="enhance-preset-chip" data-preset="cool">Cool</button>
         <button class="enhance-preset-chip" data-preset="soft">Soft</button>
       </div>
+      <!-- v2.1 round 133 (Terry 2026-06-12) — Frame chips. Adds an
+           even border around the photo, baked at save as a new
+           variant. -->
+      <div class="enhance-presets-label">Frame</div>
+      <div class="enhance-presets" id="enhance-frames" style="grid-template-columns: repeat(4, 1fr);">
+        <button class="enhance-preset-chip" data-border="none">None</button>
+        <button class="enhance-preset-chip" data-border="white">White</button>
+        <button class="enhance-preset-chip" data-border="black">Black</button>
+        <button class="enhance-preset-chip" data-border="whiteThick">Mat</button>
+      </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-brightness">Brightness</label>
@@ -4567,6 +4577,7 @@ function zoomTo(newZoom, centreX, centreY) {
         temperature: 0, // -50..+50 → hue-rotate + sepia approximation
         bw: false,
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
+        border: 'none', // v2.1 round 133 — 'none'|'white'|'black'|'whiteThick' frame
       };
 
       function composeFilterString() {
@@ -4585,9 +4596,12 @@ function zoomTo(newZoom, centreX, centreY) {
         // balance filter — but matches the saved output visually
         // much more closely than the old combo.
         if (state.temperature !== 0) {
-          // ±10° at the slider's ±50 endpoints. Positive (warm) →
-          // orange shift; negative (cool) → blue shift.
-          const deg = -(state.temperature / 50) * 10;
+          // v2.1 round 133 — preview strengthened to match the
+          // doubled backend Temperature effect (was ±10°). Warm →
+          // orange shift; cool → blue shift. A touch of saturate on
+          // the warm side reads closer to the backend's red-channel
+          // lift.
+          const deg = -(state.temperature / 50) * 18;
           parts.push('hue-rotate(' + deg + 'deg)');
         }
         // v2.1 round 132 — tone preview. CSS sepia() approximates the
@@ -4608,6 +4622,20 @@ function zoomTo(newZoom, centreX, centreY) {
         const targets = containerEl.querySelectorAll('img, video');
         targets.forEach(function (el) {
           el.style.filter = filterStr;
+          // v2.1 round 133 — frame preview via box-shadow spread (a
+          // solid outset ring). Layout-safe: box-shadow never
+          // relayouts or fights the viewer's zoom/pan. Thickness
+          // tracks the displayed image so it reads like the baked
+          // frame. The exact frame is composited by sharp on save.
+          if (state.border && state.border !== 'none') {
+            const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
+            const frac = state.border === 'whiteThick' ? 0.08 : 0.035;
+            const w = Math.max(4, Math.round(shortPx * frac));
+            const col = state.border === 'black' ? '#111111' : '#ffffff';
+            el.style.boxShadow = '0 0 0 ' + w + 'px ' + col;
+          } else {
+            el.style.boxShadow = 'none';
+          }
         });
       }
 
@@ -4630,7 +4658,9 @@ function zoomTo(newZoom, centreX, centreY) {
         state.temperature = 0;
         state.bw = false;
         state.tone = 'none';
+        state.border = 'none';
         clearActivePreset();
+        clearActiveFrame();
         updateUI();
         applyEnhanceFilter();
       }
@@ -4674,6 +4704,26 @@ function zoomTo(newZoom, centreX, centreY) {
       if (presetsRow) {
         presetsRow.querySelectorAll('.enhance-preset-chip').forEach(function (chip) {
           chip.addEventListener('click', function () { applyPreset(chip.getAttribute('data-preset'), chip); });
+        });
+      }
+
+      // v2.1 round 133 — Frame chips. Independent of the Looks above
+      // (you can have a Sepia photo with a White frame). 'None' clears.
+      const framesRow = document.getElementById('enhance-frames');
+      function clearActiveFrame() {
+        if (!framesRow) return;
+        framesRow.querySelectorAll('.enhance-preset-chip').forEach(function (c) { c.classList.remove('active'); });
+      }
+      function applyFrame(name, chipEl) {
+        state.border = name || 'none';
+        clearActiveFrame();
+        if (name !== 'none' && chipEl) chipEl.classList.add('active');
+        applyEnhanceFilter();
+        try { updateSaveAvailability(); } catch (_) {}
+      }
+      if (framesRow) {
+        framesRow.querySelectorAll('.enhance-preset-chip').forEach(function (chip) {
+          chip.addEventListener('click', function () { applyFrame(chip.getAttribute('data-border'), chip); });
         });
       }
 
@@ -6237,7 +6287,8 @@ function zoomTo(newZoom, centreX, centreY) {
                state.saturation !== 100 ||
                state.temperature !== 0 ||
                state.bw === true ||
-               state.tone !== 'none';
+               state.tone !== 'none' ||
+               state.border !== 'none';
       }
       function deriveEnhancedFilename(filePath) {
         // Mirror main.ts logic: <basename>_E.jpg next to original.
@@ -6357,6 +6408,7 @@ function zoomTo(newZoom, centreX, centreY) {
               temperature: state.temperature,
               bw: state.bw,
               tone: state.tone,
+              border: state.border,
             },
             sourceOverride: aiResultPath || undefined,
             enhancementType: finalEnhancementType,
