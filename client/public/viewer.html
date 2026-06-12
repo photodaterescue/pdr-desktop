@@ -1257,16 +1257,46 @@
     .look-thumb.active .look-thumb-img { border-color: var(--accent, #a99cff); }
     .look-thumb-cap { font-size: 10px; color: #b8b8c0; white-space: nowrap; }
     .look-thumb.active .look-thumb-cap { color: #fff; }
-    /* Frame palette */
+    /* v2.1 round 136 — Canva-style frame palette: wraps so every
+       colour is visible at once (no hidden-to-the-right scroll), with
+       a "+" custom button first and a Saved row. */
+    .frame-palette {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 8px;
+      padding: 2px 0 4px 0;
+    }
+    .frame-add {
+      flex: 0 0 auto;
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      border: none;
+      cursor: pointer;
+      padding: 0;
+      position: relative;
+      /* rainbow ring = the recognizable "add a colour" affordance */
+      background: conic-gradient(red, yellow, lime, aqua, blue, magenta, red);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .frame-add .frame-add-plus {
+      width: 20px; height: 20px; border-radius: 50%;
+      background: #1f1f24; color: #fff;
+      font-size: 15px; line-height: 20px; font-weight: 600;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .frame-add:hover { transform: scale(1.08); }
+    .frame-saved { display: contents; }
+    /* Legacy alias kept so any stale reference doesn't break. */
     .frame-row {
       display: flex;
       align-items: center;
       gap: 7px;
-      overflow-x: auto;
-      padding: 2px 0 6px 0;
-      scrollbar-width: thin;
+      flex-wrap: wrap;
     }
-    .frame-row::-webkit-scrollbar { height: 6px; }
     .frame-swatch {
       flex: 0 0 auto;
       width: 26px;
@@ -1752,20 +1782,24 @@
            Pick any colour; Thin/Mat width; custom colour picker.
            Decorative/ornate frames join here once their artwork
            exists. -->
-      <div class="enhance-presets-label">Frame</div>
-      <div class="strip-wrap">
-        <button class="strip-arrow" data-strip="enhance-frames" data-dir="-1" aria-label="Scroll frames left">&#8249;</button>
-        <div class="frame-row" id="enhance-frames">
-          <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
-          <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
-          <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
-          <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
-          <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
-          <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
-          <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
-          <input type="color" class="frame-custom" id="frame-custom" value="#ffffff" title="Custom colour" />
-        </div>
-        <button class="strip-arrow" data-strip="enhance-frames" data-dir="1" aria-label="Scroll frames right">&#8250;</button>
+      <!-- v2.1 round 136 (Terry 2026-06-12) — Canva-style frame
+           palette: all colours visible at once (wrapping, no hidden
+           scroll), a "+" custom-colour button up front (left), and a
+           Saved row that remembers colours you pick. -->
+      <div class="enhance-presets-label">Frame colour</div>
+      <div class="frame-palette" id="enhance-frames">
+        <button class="frame-add" id="frame-add" title="Pick a custom colour">
+          <span class="frame-add-plus">+</span>
+        </button>
+        <input type="color" id="frame-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+        <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
+        <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+        <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+        <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
+        <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
+        <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
+        <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+        <span class="frame-saved" id="frame-saved"></span>
       </div>
       <div class="frame-weight" id="enhance-frame-weight">
         <button data-weight="thin" class="active">Thin</button>
@@ -4773,7 +4807,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.borderColor = '';
         state.borderWeight = 'thin';
         clearActivePreset();
-        clearActiveFrame();
+        markActiveSwatchByColor('');
         updateUI();
         applyEnhanceFilter();
       }
@@ -4868,22 +4902,72 @@ function zoomTo(newZoom, centreX, centreY) {
       function clearActiveFrame() {
         if (framesRow) framesRow.querySelectorAll('.frame-swatch').forEach(function (c) { c.classList.remove('active'); });
       }
-      function applyFrameColor(color, swatchEl) {
-        state.borderColor = color || '';
+      function markActiveSwatchByColor(color) {
         clearActiveFrame();
-        if (swatchEl) swatchEl.classList.add('active');
-        else if (!color && framesRow) { const none = framesRow.querySelector('.frame-none'); if (none) none.classList.add('active'); }
+        if (!framesRow) return;
+        const all = framesRow.querySelectorAll('.frame-swatch');
+        let matched = false;
+        all.forEach(function (sw) {
+          if ((sw.getAttribute('data-color') || '') === (color || '')) { sw.classList.add('active'); matched = true; }
+        });
+        if (!matched && !color) { const none = framesRow.querySelector('.frame-none'); if (none) none.classList.add('active'); }
+      }
+      function applyFrameColor(color) {
+        state.borderColor = color || '';
+        markActiveSwatchByColor(color || '');
         applyEnhanceFilter();
         try { updateSaveAvailability(); } catch (_) {}
       }
+      // v2.1 round 136 — event delegation so dynamically-added Saved
+      // swatches work the same as the built-in ones.
       if (framesRow) {
-        framesRow.querySelectorAll('.frame-swatch').forEach(function (sw) {
-          sw.addEventListener('click', function () { applyFrameColor(sw.getAttribute('data-color') || '', sw); });
+        framesRow.addEventListener('click', function (e) {
+          const sw = e.target.closest ? e.target.closest('.frame-swatch') : null;
+          if (sw && framesRow.contains(sw)) applyFrameColor(sw.getAttribute('data-color') || '');
         });
       }
-      if (frameCustom) {
-        frameCustom.addEventListener('input', function () { applyFrameColor(frameCustom.value, null); });
+
+      // v2.1 round 136 — Saved colours (Canva-style). The "+" opens
+      // the native colour picker; picking adds the colour to a
+      // persisted Saved row (deduped, most-recent-first, capped) so
+      // the user can reuse colours they like.
+      const frameAdd = document.getElementById('frame-add');
+      const frameSaved = document.getElementById('frame-saved');
+      const SAVED_KEY = 'pdr-frame-saved-colors';
+      function getSavedColors() {
+        try { const v = JSON.parse(localStorage.getItem(SAVED_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, 10) : []; } catch (_) { return []; }
       }
+      function renderSavedColors() {
+        if (!frameSaved) return;
+        const cols = getSavedColors();
+        frameSaved.innerHTML = '';
+        cols.forEach(function (c) {
+          const b = document.createElement('button');
+          b.className = 'frame-swatch';
+          b.setAttribute('data-color', c);
+          b.style.background = c;
+          b.title = c;
+          if (state.borderColor && state.borderColor.toLowerCase() === c.toLowerCase()) b.classList.add('active');
+          frameSaved.appendChild(b);
+        });
+      }
+      function saveColor(c) {
+        if (!c) return;
+        let cols = getSavedColors().filter(function (x) { return x.toLowerCase() !== c.toLowerCase(); });
+        cols.unshift(c);
+        cols = cols.slice(0, 8);
+        try { localStorage.setItem(SAVED_KEY, JSON.stringify(cols)); } catch (_) {}
+        renderSavedColors();
+      }
+      if (frameAdd && frameCustom) {
+        frameAdd.addEventListener('click', function () { try { frameCustom.click(); } catch (_) {} });
+        frameCustom.addEventListener('input', function () {
+          const c = frameCustom.value;
+          applyFrameColor(c);
+          saveColor(c);
+        });
+      }
+      renderSavedColors();
       if (frameWeightRow) {
         frameWeightRow.querySelectorAll('button').forEach(function (b) {
           b.addEventListener('click', function () {
@@ -4907,7 +4991,9 @@ function zoomTo(newZoom, centreX, centreY) {
         }, { passive: false });
       }
       attachWheelScroll(looksStrip);
-      attachWheelScroll(framesRow);
+      // (Frames are a wrapping palette now — no horizontal scroll, so
+      // no wheel hijack there; it would block the panel's vertical
+      // scroll.)
       document.querySelectorAll('.strip-arrow').forEach(function (btn) {
         btn.addEventListener('click', function () {
           const el = document.getElementById(btn.getAttribute('data-strip'));
