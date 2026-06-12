@@ -412,6 +412,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recordCamToggle: () => ipcRenderer.send('capture:record-cam-toggle'),
     // Round 130 — re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
+    // Round 131 — change the recorded screen from the bar's dropdown.
+    recordSetScreen: (displayId: string) => ipcRenderer.send('capture:record-set-screen', displayId),
     // Round 130 — the widget measures its own content width and asks
     // main to size the window to fit, so controls never clip however
     // many buttons are shown.

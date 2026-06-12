@@ -33,6 +33,12 @@
     -webkit-user-select: none;
     background: #000;
   }
+  /* Round 131 — LIVE mode (recording area pick): the window is
+     transparent and shows the real desktop; no frozen screenshot is
+     pasted (that produced a confusing second taskbar). Only the
+     dimming veil sits over the live desktop. */
+  body.live, html.live { background: transparent; }
+  body.live #shot { display: none; }
   #shot {
     position: absolute;
     inset: 0;
@@ -138,7 +144,12 @@
 
   if (pdr && pdr.capture && pdr.capture.onOverlayInit) {
     pdr.capture.onOverlayInit(function (info) {
-      if (info && info.imageDataUrl) shot.src = info.imageDataUrl;
+      if (info && info.live) {
+        document.body.classList.add('live');
+        document.documentElement.classList.add('live');
+      } else if (info && info.imageDataUrl) {
+        shot.src = info.imageDataUrl;
+      }
       if (info && info.windows && info.windows.length) windowRects = info.windows;
       rebuildEdges();
     });

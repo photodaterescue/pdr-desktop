@@ -212,6 +212,20 @@ export async function listCaptureDisplays(): Promise<CaptureDisplayInfo[]> {
 }
 
 /**
+ * Round 131 — the desktopCapturer source for one display (its id is
+ * what the widget's getUserMedia needs). Thumbnails irrelevant here,
+ * so request 1×1. Falls back to the sole source when display_ids are
+ * blank (some Windows configs).
+ */
+async function getDisplaySource(display: Electron.Display): Promise<Electron.DesktopCapturerSource | null> {
+  const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+  return (
+    sources.find((s) => s.display_id === String(display.id)) ??
+    (sources.length === 1 ? sources[0] : null)
+  );
+}
+
+/**
  * Shared display resolution for both capture verbs.
  * - explicit displayId → that display (remembered for the session)
  * - hotkey → display under the cursor, never any UI
@@ -585,10 +599,19 @@ ipcMain.on('capture:overlay-cancel', (event) => {
  */
 function openRegionOverlay(
   display: Electron.Display,
-  frozenDataUrl: string,
+  frozenDataUrl: string | null,
   windows: SelectionRect[],
   onShown?: () => void,
+  opts?: { live?: boolean },
 ): Promise<SelectionRect | null> {
+  // Round 131 (Terry) — LIVE mode: a transparent dimming veil over
+  // the real desktop instead of a pasted frozen screenshot. The
+  // frozen-image overlay showed the captured taskbar on TOP of the
+  // real Windows taskbar — "two taskbars", disorienting. Recording
+  // area-selection doesn't need a frozen frame (the recording grabs
+  // live later), so it uses live mode; screenshot region capture
+  // still freezes (it must capture that exact instant).
+  const live = opts?.live === true;
   return new Promise<SelectionRect | null>((resolve) => {
     overlayResolve = resolve;
     const win = new BrowserWindow({
@@ -605,7 +628,8 @@ function openRegionOverlay(
       fullscreenable: false,
       skipTaskbar: true,
       alwaysOnTop: true,
-      backgroundColor: '#000000',
+      transparent: live,
+      backgroundColor: live ? '#00000000' : '#000000',
       webPreferences: {
         preload: path.join(__dirname, 'preload.js'),
         contextIsolation: true,
@@ -635,7 +659,7 @@ function openRegionOverlay(
 
     win.webContents.once('did-finish-load', () => {
       if (win.isDestroyed()) return;
-      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl, windows });
+      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl, windows, live });
       win.show();
       win.focus();
       // PDR's hidden windows restore NOW, underneath the overlay —
@@ -1070,58 +1094,33 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     };
   }
   try {
-    const resolved = resolveTargetDisplay(opts);
-    if ('error' in resolved) return { success: false, error: resolved.error };
-    if ('pick' in resolved) {
-      return { success: false, needsDisplayPick: true, displays: await listCaptureDisplays() };
-    }
-    const display = resolved.display;
+    // Round 131 (Terry) — MENU FIRST. Clicking record no longer gates
+    // on a screen picker or an immediate area-freeze (both were
+    // disorienting: you couldn't arrange windows first, and the
+    // frozen frame showed a second taskbar). Instead the bar opens
+    // straight away, ARMED, targeting a sensible default; WHICH
+    // screen and WHICH area are now choices ON the bar (Screen
+    // dropdown + Area button), changeable freely before you press
+    // Record. Default display = explicit pick, else PRIMARY (fresh
+    // each time — never silently the last session's screen).
+    const allDisplays = screen.getAllDisplays();
+    const display = opts.displayId
+      ? (allDisplays.find((d) => String(d.id) === String(opts.displayId)) ?? screen.getPrimaryDisplay())
+      : screen.getPrimaryDisplay();
 
-    // Round 129 — establish WHAT is being recorded before anything
-    // else: freeze the screen as it stands and let the user click a
-    // window, drag an area, or press Enter for the whole screen.
-    // Esc abandons the whole setup. No hiding — the recording will
-    // show the live screen, so the selection should too.
-    if (captureInFlight) {
-      return { success: false, error: 'A capture is already in progress.' };
-    }
-    captureInFlight = true;
-    let areaRect: SelectionRect | null = null;
-    let grabW = 0;
-    let grabH = 0;
-    try {
-      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
-      if (!grab) return { success: false, error: 'Could not access the screen for recording.' };
-      grab.restore(); // no-op — nothing hidden
-      grabW = grab.width;
-      grabH = grab.height;
-      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-      areaRect = await openRegionOverlay(display, dataUrl, grab.windows);
-    } finally {
-      captureInFlight = false;
-    }
-    if (!areaRect) {
-      log.info('[capture] recording setup cancelled at area selection');
-      return { success: false, cancelled: true };
-    }
-
-    recordRegionCrop = computeRegionCrop(areaRect, display, grabW, grabH);
-    recordRegionCssRect = recordRegionCrop ? areaRect : null;
-
-    // The widget's getUserMedia needs the desktopCapturer SOURCE id
-    // for this display (thumbnails irrelevant — request 1×1).
-    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
-    const source =
-      sources.find((s) => s.display_id === String(display.id)) ??
-      (sources.length === 1 ? sources[0] : undefined);
+    const source = await getDisplaySource(display);
     if (!source) return { success: false, error: 'Could not access the screen for recording.' };
 
-    // ARMED — nothing recorded yet. Temp file + timestamps are
-    // created when the user presses Record (capture:record-started).
+    // ARMED — nothing recorded yet, full screen by default (Area
+    // button sets a region). Temp file + timestamps are created when
+    // the user presses Record (capture:record-started).
     recordStartedAt = null;
     recordTempPath = null;
     recordDisplay = display;
+    recordRegionCrop = null;
+    recordRegionCssRect = null;
     recordMeta = { width: null, height: null, hasAudio: false };
+    const screenList = await listCaptureDisplays();
 
     const recordAudio = (() => {
       try { return getSettings().captureRecordAudio !== false; } catch { return true; }
@@ -1186,6 +1185,9 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         // user presses its Record button.
         armed: true,
         region: recordRegionCrop,
+        // Round 131 — screen picker lives on the bar now.
+        screens: screenList.map((s) => ({ id: s.id, label: s.label })),
+        currentScreenId: String(display.id),
       });
       // showInactive — setting up a recording must not steal focus
       // from whatever the user is about to record.
@@ -1195,9 +1197,6 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
 
     recordingState = 'armed';
     broadcastRecordingState();
-    // Region outline so the user always knows what's in frame — the
-    // marker is content-protected, so the footage never shows it.
-    if (recordRegionCrop && recordRegionCssRect) createRegionMarker(display, recordRegionCssRect);
     // Round 128 — camera bubble: auto-start when enabled in Settings;
     // the per-recording cam hotkey toggles it either way. Both work
     // during the armed stage too, so the user can frame themselves
@@ -1207,7 +1206,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     })();
     if (camEnabled) createCamBubble(display);
     registerCamHotkey();
-    log.info(`[capture] recording ARMED on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'}, region: ${recordRegionCrop ? `${recordRegionCrop.width}×${recordRegionCrop.height}` : 'full screen'}) — waiting for Record`);
+    log.info(`[capture] recording ARMED on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'}, full screen) — waiting for Record`);
     return { success: true };
   } catch (err) {
     log.warn(`[capture] startRecording failed: ${(err as Error).message}`);
@@ -1812,27 +1811,86 @@ ipcMain.on('capture:record-area-request', (event) => {
     return;
   }
   captureInFlight = true;
+  // Hide the stale outline while re-picking so it can't confuse the
+  // new selection.
+  closeRegionMarker();
   void (async () => {
     try {
-      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
-      if (!grab) { reply(); return; }
-      grab.restore(); // no-op — nothing hidden
-      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-      const rect = await openRegionOverlay(display, dataUrl, grab.windows);
+      // Round 131 — LIVE veil (no frozen grab): the user already
+      // arranged their windows before clicking Area, so we just need
+      // the rectangle over the live desktop. Native pixel size for
+      // the crop scale = the display's CSS bounds × scaleFactor (the
+      // recording captures at that native resolution).
+      const windows = enumerateWindowRectsForDisplay(display);
+      const nativeW = Math.round(display.bounds.width * display.scaleFactor);
+      const nativeH = Math.round(display.bounds.height * display.scaleFactor);
+      const rect = await openRegionOverlay(display, null, windows, undefined, { live: true });
       if (rect) {
-        recordRegionCrop = computeRegionCrop(rect, display, grab.width, grab.height);
+        recordRegionCrop = computeRegionCrop(rect, display, nativeW, nativeH);
         recordRegionCssRect = recordRegionCrop ? rect : null;
-        closeRegionMarker();
         if (recordRegionCrop && recordRegionCssRect) createRegionMarker(display, recordRegionCssRect);
-        log.info(`[capture] recording area re-picked: ${recordRegionCrop ? `${recordRegionCrop.width}×${recordRegionCrop.height}` : 'full screen'}`);
+        log.info(`[capture] recording area set: ${recordRegionCrop ? `${recordRegionCrop.width}×${recordRegionCrop.height}` : 'full screen'}`);
+      } else if (recordRegionCssRect) {
+        // Esc kept the previous area — restore its outline.
+        createRegionMarker(display, recordRegionCssRect);
       }
       reply();
     } catch (err) {
-      log.warn(`[capture] area re-pick failed: ${(err as Error).message}`);
+      log.warn(`[capture] area pick failed: ${(err as Error).message}`);
       reply();
     } finally {
       captureInFlight = false;
     }
+  })();
+});
+
+// Round 131 — change the recorded screen from the bar's Screen
+// dropdown (Terry: pick the screen AFTER seeing the menu, and never
+// silently assume last time's). Resets the region to full (a region
+// on the old screen doesn't map to the new one), moves the bar + cam
+// to the new display, and hands the widget the new source id so the
+// engine records the right screen when Record is pressed.
+ipcMain.on('capture:record-set-screen', (event, displayId: string) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  if (recordingState !== 'armed') return;
+  const display = screen.getAllDisplays().find((d) => String(d.id) === String(displayId));
+  if (!display) return;
+  recordDisplay = display;
+  recordRegionCrop = null;
+  recordRegionCssRect = null;
+  closeRegionMarker();
+  // Move the bar to the newly-targeted display (bottom-right); the
+  // self-sizer will re-anchor width on its next tick.
+  try {
+    const b = recordWidget.getBounds();
+    recordWidget.setBounds({
+      x: display.bounds.x + display.bounds.width - b.width - 24,
+      y: display.bounds.y + display.bounds.height - b.height - 56,
+      width: b.width,
+      height: b.height,
+    });
+  } catch { /* non-fatal */ }
+  // Re-home the camera bubble if it's up.
+  if (camWindow && !camWindow.isDestroyed()) {
+    const wasVisible = camVisible;
+    closeCamBubble();
+    createCamBubble(display);
+    if (!wasVisible) { /* it will show on init; toggle off shortly after if needed */ }
+  }
+  void (async () => {
+    const source = await getDisplaySource(display);
+    if (recordWidget && !recordWidget.isDestroyed()) {
+      try {
+        recordWidget.webContents.send('capture:record-do', {
+          action: 'screen-set',
+          sourceId: source?.id ?? null,
+          maxWidth: Math.round(display.bounds.width * display.scaleFactor),
+          maxHeight: Math.round(display.bounds.height * display.scaleFactor),
+          screenId: String(display.id),
+        });
+      } catch { /* non-fatal */ }
+    }
+    log.info(`[capture] recorded screen changed to display ${display.id}`);
   })();
 });
 

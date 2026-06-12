@@ -136,6 +136,25 @@
   #quality:hover { background: rgba(255, 255, 255, 0.14); }
   #quality:disabled { opacity: 0.45; }
   #quality option { background: #16161a; color: #fff; }
+  /* Round 131 — Screen dropdown (armed only): pick which display to
+     record, after the menu is up, never silently assumed. Same look
+     as the quality dropdown. */
+  #screen {
+    -webkit-app-region: no-drag;
+    height: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    border-radius: 8px;
+    font: 500 11.5px/1 system-ui, 'Segoe UI', sans-serif;
+    padding: 0 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 132px;
+    display: none;
+  }
+  #screen:hover { background: rgba(255, 255, 255, 0.14); }
+  #screen option { background: #16161a; color: #fff; }
   #stop {
     background: #e5484d;
     border-color: #e5484d;
@@ -177,7 +196,8 @@
     <div id="dot"></div>
     <span id="time">0:00</span>
     <span id="size">0 KB</span>
-    <button id="area" type="button" title="Re-pick what gets recorded — arrange your windows first, then choose the area">Area</button>
+    <select id="screen" title="Which screen to record"></select>
+    <button id="area" type="button" title="Choose an area to record — arrange your windows first, then drag a box (or click a window)">Area</button>
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
@@ -200,6 +220,7 @@
   var dot = document.getElementById('dot');
   var timeEl = document.getElementById('time');
   var sizeEl = document.getElementById('size');
+  var screenSel = document.getElementById('screen');
   var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
   var blurBtn = document.getElementById('blur');
@@ -210,7 +231,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [areaBtn, camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -274,6 +295,9 @@
     // crop applies to the whole video.
     areaBtn.style.display = 'inline-block';
     areaBtn.disabled = false;
+    // Screen dropdown only when there's more than one display, and
+    // only while armed (you can't change screen mid-recording).
+    if (screenSel.options.length > 1) screenSel.style.display = 'inline-block';
     requestResize();
   }
   function enterRecordingUI() {
@@ -285,8 +309,10 @@
     pauseBtn.disabled = false;
     snapBtn.disabled = false;
     blurBtn.disabled = false;
-    // Area is meaningless once recording — hide it (frees bar space).
+    // Area + Screen are meaningless once recording — hide them
+    // (frees bar space; the screen/crop are locked in).
     areaBtn.style.display = 'none';
+    screenSel.style.display = 'none';
     requestResize();
   }
 
@@ -467,13 +493,20 @@
     try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(); } catch (e) {}
   });
 
-  // ── Round 130: Area re-pick (armed only). Main freezes the screen
-  // AS IT NOW STANDS and reopens the selector; Esc there keeps the
-  // previous area. The result comes back on record-do
-  // {action:'area-set'}.
+  // ── Round 130: Area pick (armed only). Main shows a live veil over
+  // the screen as it now stands and opens the selector; Esc keeps the
+  // previous area. Result comes back on record-do {action:'area-set'}.
   areaBtn.addEventListener('click', function () {
     if (finished || !armed) return;
     try { if (pdr && pdr.capture && pdr.capture.recordAreaRequest) pdr.capture.recordAreaRequest(); } catch (e) {}
+  });
+
+  // ── Round 131: Screen dropdown (armed only). Changing it re-homes
+  // the recording to that display; main hands back the new source id
+  // via record-do {action:'screen-set'} so Record captures it.
+  screenSel.addEventListener('change', function () {
+    if (finished || !armed) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordSetScreen) pdr.capture.recordSetScreen(screenSel.value); } catch (e) {}
   });
 
   // ── Round 127: Blur ──
@@ -526,6 +559,19 @@
           quality = storedInit.quality;
           qualitySel.value = quality;
         }
+        // Round 131 — populate the Screen dropdown from the display
+        // list (already sorted left→right with position labels).
+        if (storedInit.screens && storedInit.screens.length) {
+          screenSel.innerHTML = '';
+          storedInit.screens.forEach(function (s) {
+            var o = document.createElement('option');
+            o.value = s.id;
+            // Trim the "— 1920×1080" tail; the bar is tight.
+            o.textContent = String(s.label).replace(/\s*—.*$/, '');
+            screenSel.appendChild(o);
+          });
+          if (storedInit.currentScreenId) screenSel.value = storedInit.currentScreenId;
+        }
         if (storedInit.armed) {
           enterArmedUI(storedInit.region || null);
         } else {
@@ -544,6 +590,18 @@
             sizeEl.textContent = cmd.region ? 'Ready · ' + cmd.region.width + '×' + cmd.region.height : 'Ready';
             requestResize();
           }
+        }
+        else if (cmd.action === 'screen-set') {
+          // Round 131 — the recorded screen changed; update the
+          // engine inputs so Record captures the new display, and
+          // reflect the reset-to-full-screen area.
+          if (storedInit) {
+            if (cmd.sourceId) storedInit.sourceId = cmd.sourceId;
+            if (cmd.maxWidth) storedInit.maxWidth = cmd.maxWidth;
+            if (cmd.maxHeight) storedInit.maxHeight = cmd.maxHeight;
+          }
+          if (cmd.screenId) screenSel.value = cmd.screenId;
+          if (armed && !finished) { sizeEl.textContent = 'Ready'; requestResize(); }
         }
         else if (cmd.action === 'cam-state') {
           camBtn.classList.toggle('active', !!cmd.visible);
