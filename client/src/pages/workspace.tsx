@@ -803,6 +803,12 @@ useEffect(() => {
     personId?: number;
     personName?: string;
   } | null>(null);
+  // v2.1 round 142 (Terry) — shared photo-picker mode driven from the
+  // PDRV collage editor (cross-window): the collage asks the main window
+  // to pick a background photo; we enter pick mode, land on Memories, and
+  // a click on any photo tile (data-pick-path) delivers it back.
+  const [collageBgPick, setCollageBgPick] = useState(false);
+  const [collageBgPickLabel, setCollageBgPickLabel] = useState('your collage');
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -811,6 +817,49 @@ useEffect(() => {
   const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState<AnalysisProgress>({ current: 0, total: 0, currentFile: '' });
   const [sourceAnalysisResults, setSourceAnalysisResults] = useState<Record<string, SourceAnalysisResult>>({});
+
+  // v2.1 round 142 (Terry) — listen for the collage editor (PDRV) asking
+  // us to pick a background photo. Enter pick mode + land on Memories.
+  useEffect(() => {
+    if (!isElectron()) return;
+    const off = (window as any).pdr?.photoPick?.onStart?.((info: { purpose: string; label: string }) => {
+      if (info?.purpose === 'collage-bg') {
+        setCollageBgPickLabel(info.label || 'your collage');
+        setCollageBgPick(true);
+        setActiveView('memories');
+      }
+    });
+    return () => { try { off?.(); } catch { /* noop */ } };
+  }, []);
+
+  // While picking, a capture-phase click on any photo tile (data-pick-path)
+  // delivers it to the requesting window and exits pick mode. Capture +
+  // stopPropagation means the tile's own click (open viewer / select)
+  // never fires — the click only picks.
+  const cancelCollageBgPick = useCallback(() => {
+    try { (window as any).pdr?.photoPick?.cancel?.(); } catch { /* noop */ }
+    setCollageBgPick(false);
+  }, []);
+  useEffect(() => {
+    if (!collageBgPick) return;
+    const handler = (e: MouseEvent) => {
+      const el = (e.target as HTMLElement)?.closest?.('[data-pick-path]') as HTMLElement | null;
+      if (!el) return;
+      const path = el.getAttribute('data-pick-path');
+      if (!path) return;
+      e.preventDefault();
+      e.stopPropagation();
+      try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path); } catch { /* noop */ }
+      setCollageBgPick(false);
+    };
+    document.addEventListener('click', handler, true);
+    const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelCollageBgPick(); };
+    window.addEventListener('keydown', onEsc, true);
+    return () => {
+      document.removeEventListener('click', handler, true);
+      window.removeEventListener('keydown', onEsc, true);
+    };
+  }, [collageBgPick, cancelCollageBgPick]);
 
   // On mount: restore cached analysis results from localStorage
   useEffect(() => {
@@ -2793,6 +2842,22 @@ return (
         mount its compact chip here, so the chip stays visible no
         matter which view is active. */}
     <div id="pdr-fix-chip-portal" />
+
+    {/* v2.1 round 142 (Terry) — app-level photo-pick banner. Floats at
+        top-centre so it FOLLOWS the user across Memories / Albums / S&D
+        while choosing a collage background (the old Trees picker banner
+        lived only inside S&D and vanished on navigation). The capture-
+        phase click handler above does the actual picking. */}
+    {collageBgPick && (
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-3 px-4 py-2.5 rounded-full bg-primary text-primary-foreground shadow-lg border border-white/20 max-w-[90vw]">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-90"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+        <div className="text-sm truncate">
+          <span className="font-semibold">Choosing a background for {collageBgPickLabel}</span>
+          <span className="opacity-80"> — click any photo to use it</span>
+        </div>
+        <button onClick={cancelCollageBgPick} className="ml-1 shrink-0 text-xs px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 transition-colors">Cancel</button>
+      </div>
+    )}
 
     {/* Zoom controls — vertical pill at bottom-right. Only affects the
         Dashboard / Workspace zoomable content (via CSS `zoom` on that

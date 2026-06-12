@@ -471,12 +471,35 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // full-resolution originals with sharp and lands a _CO file.
   collage: {
     saveLayout: (layout: {
-      canvas: { w: number; h: number; bg: string };
-      items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number }>;
+      canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number } };
+      items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: unknown }>;
     }) =>
       ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
       }>,
+    // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
+    // open the shared photo picker for a background, and listens for the
+    // chosen photo coming back.
+    pickBackground: (label?: string) =>
+      ipcRenderer.invoke('photoPick:start', { purpose: 'collage-bg', label: label || '' }) as Promise<{ success: boolean; error?: string }>,
+    onBackgroundPicked: (callback: (filePath: string) => void) => {
+      const handler = (_event: any, p: any) => { if (p && p.purpose === 'collage-bg' && p.filePath) callback(p.filePath); };
+      ipcRenderer.on('photoPick:picked', handler);
+      return () => ipcRenderer.removeListener('photoPick:picked', handler);
+    },
+  },
+
+  // v2.1 round 142 (Terry) — shared photo-picker mode (main React window
+  // side). The main window enters pick mode when 'photoPick:start' fires,
+  // delivers the chosen photo, or cancels.
+  photoPick: {
+    onStart: (callback: (info: { purpose: string; label: string }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('photoPick:start', handler);
+      return () => ipcRenderer.removeListener('photoPick:start', handler);
+    },
+    deliver: (purpose: string, filePath: string) => ipcRenderer.send('photoPick:deliver', { purpose, filePath }),
+    cancel: () => ipcRenderer.send('photoPick:cancel'),
   },
 
 

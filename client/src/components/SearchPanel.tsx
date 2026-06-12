@@ -5874,7 +5874,7 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
       <div>
     <ContextMenu>
       <ContextMenuTrigger asChild>
-    <div data-file-id={file.id} onClick={onClick} onDoubleClick={onDoubleClick}
+    <div data-file-id={file.id} data-pick-path={file.file_type === 'video' ? undefined : file.file_path} onClick={onClick} onDoubleClick={onDoubleClick}
       // v2.0.15 (Terry 2026-05-28) — native OS drag to external apps
       // (WhatsApp, Discord, mail, Photoshop, etc.). See MemoriesView
       // for the full rationale + the File Explorer caveat.

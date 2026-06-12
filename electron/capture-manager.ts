@@ -845,9 +845,13 @@ export async function flushPendingCaptures(): Promise<number> {
 interface CollageEnhance {
   brightness?: number; contrast?: number; saturation?: number; temperature?: number;
   bw?: boolean; tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
+  opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
 }
 interface CollageLayout {
-  canvas: { w: number; h: number; bg: string };
+  // v2.1 round 142 (Terry) — bgImage: an optional library photo used as
+  // the canvas backdrop, faded over the solid bg colour at `opacity`
+  // (same idea as the Trees canvas background).
+  canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number } };
   items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -938,6 +942,16 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
           rotW = rotated.info.width;
           rotH = rotated.info.height;
         }
+        // v2.1 round 143 (Terry) — per-tile transparency. Multiply the
+        // tile's alpha by `opacity` via a dest-in composite with a
+        // uniform-alpha layer (Porter-Duff dest-in = dest × src.alpha),
+        // so it works whether or not the tile already has alpha (frame /
+        // rotation). Skipped when opaque.
+        const op = item.enh && item.enh.opacity != null ? Math.max(0.1, Math.min(1, item.enh.opacity)) : 1;
+        if (op < 1) {
+          const mask = await sharp({ create: { width: rotW, height: rotH, channels: 4, background: { r: 0, g: 0, b: 0, alpha: op } } }).png().toBuffer();
+          tile = await sharp(tile).ensureAlpha().composite([{ input: mask, blend: 'dest-in' }]).png().toBuffer();
+        }
         // Centre on the unframed box centre — a frame grows the tile
         // symmetrically, so the centre is unchanged.
         const cx = xFrac * W + iw / 2;
@@ -953,6 +967,27 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
       }
     }
     if (composites.length === 0) return { success: false, error: 'None of the photos could be read.' };
+
+    // v2.1 round 142 (Terry) — optional background PHOTO, faded over the
+    // solid colour at `opacity`. Prepended (bottom layer) so the tiles
+    // sit on top. Resized cover to the canvas, alpha set to opacity so
+    // the solid bg colour shows through underneath (the "Fade" slider).
+    const bgImage = layout.canvas.bgImage;
+    if (bgImage && bgImage.path && fs.existsSync(toLongPath(bgImage.path))) {
+      try {
+        const op = Math.max(0, Math.min(1, Number.isFinite(bgImage.opacity) ? bgImage.opacity : 0.4));
+        const bgBuf = await sharp(toLongPath(bgImage.path), { failOnError: false })
+          .rotate()
+          .resize(W, H, { fit: 'cover', position: 'attention' })
+          .removeAlpha()      // drop any source alpha so the fade is uniform
+          .ensureAlpha(op)    // whole image at `opacity` → bg colour shows through
+          .png()
+          .toBuffer();
+        composites.unshift({ input: bgBuf, left: PAD, top: PAD });
+      } catch (bgErr) {
+        log.warn(`[collage] background image skipped (non-fatal): ${(bgErr as Error).message}`);
+      }
+    }
 
     // Two pipelines, deliberately: sharp applies .composite() at the
     // END of a pipeline, AFTER .extract(). Chaining composite→extract in

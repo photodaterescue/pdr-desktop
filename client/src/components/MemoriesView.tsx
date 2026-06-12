@@ -3128,6 +3128,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       // out of the library unless the user holds Ctrl.
                       // Practical user guidance: drag to apps, never
                       // to File Explorer windows.
+                      data-pick-path={f.file_type === 'video' ? undefined : f.file_path}
                       draggable
                       onDragStart={(e) => {
                         try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }

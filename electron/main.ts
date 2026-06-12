@@ -11416,6 +11416,51 @@ ipcMain.on('search:viewerIndexChange', (event, index: number, filePath: string) 
   }
 });
 
+// ═══ Cross-window photo picker (v2.1 round 142, Terry) ═══════════════════════
+// A shared "pick a photo from the library" mode. The PDRV collage editor
+// (viewer window) asks the MAIN window to enter pick mode; the user browses
+// Memories/Albums/S&D there and clicks a photo; the chosen path is routed
+// back to the viewer. Keeps the browsing surfaces (which only exist in the
+// main window) as the single picker UI, reused by collage now + Trees later.
+let photoPickRequesterId: number | null = null;
+ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: string }) => {
+  photoPickRequesterId = event.sender.id; // remember who asked (the collage viewer)
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    try {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.moveTop();
+      mainWindow.webContents.send('photoPick:start', { purpose: opts?.purpose || 'generic', label: opts?.label || '' });
+    } catch (err) {
+      log.warn(`[photoPick] start failed: ${(err as Error).message}`);
+      return { success: false, error: (err as Error).message };
+    }
+    return { success: true };
+  }
+  return { success: false, error: 'Main window unavailable.' };
+});
+// Main window (React) delivers the chosen photo → route it back to the
+// requesting window (the collage viewer) and bring that window forward.
+ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string }) => {
+  const requester = photoPickRequesterId != null
+    ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.id === photoPickRequesterId)
+    : (viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : null);
+  photoPickRequesterId = null;
+  if (requester) {
+    try {
+      requester.webContents.send('photoPick:picked', { purpose: payload?.purpose, filePath: payload?.filePath });
+      requester.show();
+      requester.focus();
+      requester.moveTop();
+    } catch (err) {
+      log.warn(`[photoPick] deliver failed: ${(err as Error).message}`);
+    }
+  }
+});
+// Picker cancelled in the main window — just clear the requester.
+ipcMain.on('photoPick:cancel', () => { photoPickRequesterId = null; });
+
 // ═══ People Manager Window ═══════════════════════════════════════════════════
 //
 // Two-stage open flow:

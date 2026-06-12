@@ -1123,6 +1123,7 @@
       justify-content: space-between;
       padding: 14px 18px 12px 18px;
       border-bottom: 1px solid rgba(169, 156, 255, 0.12);
+      flex-shrink: 0; /* never let a tall body squeeze the header */
     }
     .enhance-title {
       font-size: 14px;
@@ -1166,6 +1167,12 @@
        the consolidated [aria-pressed="true"] block above. */
     .enhance-body {
       flex: 1;
+      /* v2.1 round 143 (Terry "overlapping") — without min-height:0 a
+         flex child won't shrink below its content height, so when the
+         collage section makes the body taller than the panel it squeezed
+         the header instead of scrolling — header + first controls
+         overlapped. min-height:0 lets the body scroll properly. */
+      min-height: 0;
       overflow-y: auto;
       /* v2.1 (Terry 2026-06-07) — explicit overflow-x: hidden so
          the implicit-auto behavior (when only overflow-y is set)
@@ -1918,13 +1925,18 @@
       border-radius: 8px; padding: 9px 11px; margin-bottom: 4px;
     }
     body.collage-mode.collage-no-tile .enhance-tile-hint { display: block; }
-    /* When no tile is selected, dim the per-photo editing sections. */
-    body.collage-mode.collage-no-tile .enhance-presets-label,
-    body.collage-mode.collage-no-tile .strip-wrap,
-    body.collage-mode.collage-no-tile .frame-palette,
-    body.collage-mode.collage-no-tile .frame-weight,
-    body.collage-mode.collage-no-tile .enhance-control,
-    body.collage-mode.collage-no-tile .enhance-label-row { opacity: 0.4; pointer-events: none; }
+    /* v2.1 round 143 (Terry) — dim ONLY the per-tile controls wrapper
+       when no tile is selected. The Collage section (shape/background/
+       tidy) stays fully usable — the background is independent of any
+       photo, so clicking the canvas must not disable it. (The old rule
+       dimmed shared classes — .frame-palette / .enhance-presets-label —
+       which also matched the background palette + its labels.) */
+    .enhance-tile-controls { display: flex; flex-direction: column; gap: 16px; }
+    body.collage-mode.collage-no-tile .enhance-tile-controls { opacity: 0.4; pointer-events: none; }
+    /* Controls that only make sense inside a collage (e.g. per-photo
+       Opacity over the collage background). */
+    .enhance-collage-only { display: none; }
+    body.collage-mode .enhance-collage-only { display: flex; }
     /* Hide the Faces + AI sections in collage mode (per-tile face
        marking doesn't apply to a composite). */
     body.collage-mode .enhance-mark-face-section,
@@ -2061,6 +2073,12 @@
            Frame / slider sections BELOW edit the currently-selected
            collage tile; the hint covers the "nothing selected" state. -->
       <div class="enhance-collage-section">
+        <!-- v2.1 round 143 (Terry) — Undo / Redo. "changes can be made
+             quickly and without worry of screwing up." Also Ctrl+Z / Ctrl+Y. -->
+        <div class="ec-row" style="margin-bottom:10px">
+          <button class="ec-shape-btn" id="collage-undo" type="button" disabled data-pdr-tooltip="Undo (Ctrl+Z)">&#8634; Undo</button>
+          <button class="ec-shape-btn" id="collage-redo" type="button" disabled data-pdr-tooltip="Redo (Ctrl+Y)">&#8635; Redo</button>
+        </div>
         <div class="enhance-presets-label">Collage shape</div>
         <div class="ec-row">
           <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
@@ -2075,13 +2093,36 @@
           <input type="color" id="collage-bg-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
           <!-- background swatches injected by initCollage() (mirror the Frame palette) -->
         </div>
-        <button class="ec-tidy-btn" id="collage-tidy" type="button" style="margin-top:10px" data-pdr-tooltip="Re-arrange the photos into a tidy grid">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
-          Tidy up
+        <!-- v2.1 round 142 (Terry) — background from a library PHOTO,
+             faded over the colour above (the picker opens in the main
+             window: Memories/Albums/S&D). Screenshot tip meets the
+             "photo not in library yet" case halfway. -->
+        <button class="ec-tidy-btn" id="collage-bg-photo" type="button" style="margin-top:8px" data-pdr-tooltip="Use one of your photos as the backdrop. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates, ready to pick.">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          Use a photo…
         </button>
+        <div id="collage-bg-fade-row" style="display:none; margin-top:10px">
+          <div class="enhance-label-row"><label for="collage-bg-fade">Photo fade</label><span class="enhance-val" id="collage-bg-fade-val">40</span></div>
+          <input class="enhance-slider" id="collage-bg-fade" type="range" min="5" max="100" step="1" value="40">
+          <button id="collage-bg-remove" type="button" style="margin-top:8px;width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
+        </div>
+        <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
+             Jumble (random scatter). Both re-arrange ALL photos, so they
+             undo cleanly (see Undo/Redo). -->
+        <div class="enhance-presets-label" style="margin-top:12px">Arrange</div>
+        <div class="ec-row">
+          <button class="ec-shape-btn" id="collage-tidy" type="button" data-pdr-tooltip="Line every photo up in a neat grid (replaces the current arrangement)">Tidy grid</button>
+          <button class="ec-shape-btn" id="collage-jumble" type="button" data-pdr-tooltip="Scatter the photos at jaunty random angles (replaces the current arrangement)">Jumble</button>
+        </div>
         <div style="margin:14px 0 10px;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <div class="enhance-tile-hint">Click a photo on the canvas to edit just that one — give it its own Look, frame, brightness, colour and so on. Each photo keeps its own settings.</div>
       </div>
+      <!-- v2.1 round 143 (Terry) — per-tile editing controls wrapped so
+           ONLY these dim when no collage tile is selected. The Collage
+           section above (shape/background/tidy) stays fully usable even
+           with nothing selected — the background is separate from any
+           photo, so clicking the canvas must NOT disable it. -->
+      <div class="enhance-tile-controls">
       <!-- v2.1 round 134 (Terry 2026-06-12) — Looks as a sliding strip
            of LIVE previews (was a button grid). Each thumb shows the
            current photo with that look applied; scroll left↔right to
@@ -2152,6 +2193,18 @@
           <label for="toggle-bw">Black &amp; White</label>
           <input type="checkbox" class="enhance-toggle" id="toggle-bw">
         </div>
+      </div>
+      <!-- v2.1 round 143 (Terry) — per-photo Opacity (transparency).
+           Collage-only: meaningful over the collage background. A
+           transparent single photo would just flatten to the frame/
+           white on JPEG save, so it's hidden outside collage mode. -->
+      <div class="enhance-control enhance-collage-only">
+        <div class="enhance-label-row">
+          <label for="slider-opacity">Opacity</label>
+          <span class="enhance-val" id="val-opacity">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
+      </div>
       </div>
 
       <!-- v2.1 round 8 (Terry 2026-06-07) — AI ENHANCEMENT section
@@ -2505,6 +2558,10 @@
     let collageAspectKey = 'landscape';
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
+    // v2.1 round 142 (Terry) — optional background PHOTO behind the tiles,
+    // faded over the bg colour (like the Trees canvas background).
+    let collageBgImagePath = '';
+    let collageBgOpacity = 0.4;
     const COLLAGE_ASPECTS = { landscape: 3 / 2, square: 1, portrait: 2 / 3 };
     // v2.1 round 140 (Terry) — background palette mirrors the Frame
     // colour palette exactly (White/Black/Cream/Gold/Navy/Blush) so the
@@ -4558,6 +4615,7 @@
 
     function startItemDrag(it, e) {
       e.preventDefault();
+      beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
@@ -4583,6 +4641,7 @@
 
     function startItemResize(it, e) {
       e.preventDefault(); e.stopPropagation();
+      beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
       const rect = collageCanvasEl.getBoundingClientRect();
@@ -4614,6 +4673,7 @@
 
     function startItemRotate(it, e) {
       e.preventDefault(); e.stopPropagation();
+      beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
       const rect = collageCanvasEl.getBoundingClientRect();
@@ -4646,6 +4706,7 @@
       it.rot = 0;
     }
     function setItemOn(it, on) {
+      beginCollageChange(); // snapshot before the keep/remove for undo
       it.on = on;
       if (on) {
         // v2.1 round 140 (Terry) — restore the tile to its PRIOR size,
@@ -4712,6 +4773,102 @@
       renderAllCollage();
     }
 
+    // v2.1 round 143 (Terry: "I want to jumble the photos back") —
+    // scatter the photos at random sizes + angles (vs Tidy's neat grid).
+    function jumbleArrange() {
+      const on = collageItems.filter((it) => it.on);
+      if (!on.length) return;
+      on.forEach((it) => {
+        const wFrac = 0.20 + Math.random() * 0.20;   // 0.20–0.40 of width
+        it.wFrac = wFrac;
+        const ihFrac = itemHeightFrac(it);
+        const cx = 0.13 + Math.random() * 0.74;       // centre stays on-canvas
+        const cy = 0.13 + Math.random() * 0.74;
+        it.xFrac = cx - wFrac / 2;
+        it.yFrac = cy - ihFrac / 2;
+        it.rot = Math.random() * 40 - 20;             // −20°..+20°
+        it.z = ++collageZTop;
+      });
+      renderAllCollage();
+    }
+
+    // ─── Undo / redo (v2.1 round 143, Terry) ──────────────────────────
+    // Terry: "it's missing an undo/redo button, so changes can be made
+    // quickly and without worry of screwing up." Snapshots the FULL
+    // collage state (geometry + per-tile enhance + background) at each
+    // action boundary; begin() captures the pre-action state, commit()
+    // pushes it only if something actually changed.
+    const collageUndo = [];
+    const collageRedo = [];
+    let collagePendingSnap = null;
+    const COLLAGE_UNDO_CAP = 60;
+    function snapshotCollage() {
+      return JSON.stringify({
+        bg: collageBg, bgImagePath: collageBgImagePath, bgOpacity: collageBgOpacity, aspectKey: collageAspectKey,
+        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, enh: it.enh })),
+      });
+    }
+    function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
+    function commitCollageChange() {
+      if (!collageMode || collagePendingSnap == null) return;
+      const now = snapshotCollage();
+      if (now !== collagePendingSnap) {
+        collageUndo.push(collagePendingSnap);
+        if (collageUndo.length > COLLAGE_UNDO_CAP) collageUndo.shift();
+        collageRedo.length = 0;
+        updateUndoButtons();
+      }
+      collagePendingSnap = null;
+    }
+    function restoreCollageSnapshot(snapStr) {
+      let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
+      collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageBgOpacity = s.bgOpacity; collageAspectKey = s.aspectKey;
+      let maxZ = 1;
+      s.items.forEach((si) => {
+        const it = collageItems[si.idx];
+        if (!it) return;
+        it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
+        it.enh = Object.assign({}, si.enh);
+        if (si.z > maxZ) maxZ = si.z;
+      });
+      collageZTop = maxZ;
+      setCollageBg(collageBg);
+      document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
+      const fade = document.getElementById('collage-bg-fade');
+      const fadeVal = document.getElementById('collage-bg-fade-val');
+      if (fade) fade.value = String(Math.round(collageBgOpacity * 100));
+      if (fadeVal) fadeVal.textContent = String(Math.round(collageBgOpacity * 100));
+      renderCollageBgLayer();
+      layoutCanvasSize();
+      collageItems.forEach((it) => { if (it.imgEl && window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); });
+      updateCollageFilmstrip();
+      if (collageSelected && !collageSelected.on) selectCollageItem(null);
+      else if (collageSelected && window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected);
+    }
+    function undoCollage() {
+      if (!collageUndo.length) return;
+      collageRedo.push(snapshotCollage());
+      restoreCollageSnapshot(collageUndo.pop());
+      updateUndoButtons();
+      // The undo button lives in the panel, so the begin/commit wrapper
+      // also fired for this click — drop its pending snapshot so the
+      // trailing commit can't re-push onto the undo stack.
+      collagePendingSnap = null;
+    }
+    function redoCollage() {
+      if (!collageRedo.length) return;
+      collageUndo.push(snapshotCollage());
+      restoreCollageSnapshot(collageRedo.pop());
+      updateUndoButtons();
+      collagePendingSnap = null;
+    }
+    function updateUndoButtons() {
+      const u = document.getElementById('collage-undo');
+      const r = document.getElementById('collage-redo');
+      if (u) u.disabled = collageUndo.length === 0;
+      if (r) r.disabled = collageRedo.length === 0;
+    }
+
     function buildCollageItems() {
       collageCanvasEl.innerHTML = '';
       collageItems.length = 0;
@@ -4720,7 +4877,7 @@
         // enh = this tile's own Enhance state (edited via the side panel
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
-          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin' } };
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -4753,6 +4910,9 @@
         collageCanvasEl.appendChild(el);
         collageItems.push(it);
       });
+      // The innerHTML clear above removed any background-photo layer —
+      // re-create it so it survives a rebuild.
+      renderCollageBgLayer();
     }
 
     // v2.1 round 140 — background swatches live in the Enhance panel's
@@ -4780,6 +4940,34 @@
       document.querySelectorAll('#collage-bg-palette .frame-swatch').forEach((s) => {
         s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === hex.toLowerCase());
       });
+    }
+    // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles,
+    // faded over the bg colour). Re-created after buildCollageItems
+    // clears the canvas; opacity driven by the Photo-fade slider.
+    function renderCollageBgLayer() {
+      if (!collageCanvasEl) return;
+      let layer = document.getElementById('collage-bg-layer');
+      if (!collageBgImagePath) { if (layer) layer.style.display = 'none'; updateBgFadeRow(); return; }
+      if (!layer) {
+        layer = document.createElement('div');
+        layer.id = 'collage-bg-layer';
+        layer.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center;pointer-events:none;z-index:0;';
+        collageCanvasEl.insertBefore(layer, collageCanvasEl.firstChild);
+      }
+      layer.style.display = '';
+      layer.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
+      layer.style.opacity = String(collageBgOpacity);
+      updateBgFadeRow();
+    }
+    function updateBgFadeRow() {
+      const row = document.getElementById('collage-bg-fade-row');
+      if (row) row.style.display = collageBgImagePath ? 'block' : 'none';
+      const photoBtn = document.getElementById('collage-bg-photo');
+      if (photoBtn) photoBtn.lastChild.textContent = collageBgImagePath ? ' Change photo…' : ' Use a photo…';
+    }
+    function setCollageBgImage(path) {
+      collageBgImagePath = path || '';
+      renderCollageBgLayer();
     }
     function setCollageAspect(key) {
       if (!COLLAGE_ASPECTS[key]) return;
@@ -4828,7 +5016,10 @@
           // per-photo by the backend.
           enh: it.enh,
         }));
-        const layout = { canvas: { w: W, h: H, bg: collageBg }, items };
+        const canvas = { w: W, h: H, bg: collageBg };
+        // v2.1 round 142 — background photo (faded) baked under the tiles.
+        if (collageBgImagePath) canvas.bgImage = { path: collageBgImagePath, opacity: collageBgOpacity };
+        const layout = { canvas, items };
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
           // Reload THIS window into normal mode showing the saved
@@ -4857,6 +5048,25 @@
       });
       const tidyBtn = document.getElementById('collage-tidy');
       if (tidyBtn) tidyBtn.addEventListener('click', () => gridArrange());
+      const jumbleBtn = document.getElementById('collage-jumble');
+      if (jumbleBtn) jumbleBtn.addEventListener('click', () => jumbleArrange());
+      // v2.1 round 143 — undo / redo buttons + Ctrl+Z / Ctrl+Y.
+      const undoBtn = document.getElementById('collage-undo');
+      if (undoBtn) undoBtn.addEventListener('click', () => undoCollage());
+      const redoBtn = document.getElementById('collage-redo');
+      if (redoBtn) redoBtn.addEventListener('click', () => redoCollage());
+      window.addEventListener('keydown', (e) => {
+        if (!collageMode) return;
+        const k = (e.key || '').toLowerCase();
+        if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
+        else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
+      });
+      // Snapshot for undo around every Enhance-panel edit: begin on a
+      // pointerdown anywhere in the panel, commit just after the change
+      // settles (setTimeout lets click/change handlers mutate first).
+      const panelEl = document.getElementById('enhance-panel');
+      if (panelEl) panelEl.addEventListener('pointerdown', () => beginCollageChange(), true);
+      window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
       // Custom background colour ("+" → native picker; live-preview on
       // input, same pattern as the Frame palette's custom picker).
       const bgAdd = document.getElementById('collage-bg-add');
@@ -4865,6 +5075,28 @@
         bgAdd.addEventListener('click', () => { try { bgCustom.click(); } catch (_) {} });
         bgCustom.addEventListener('input', () => setCollageBg(bgCustom.value));
       }
+      // v2.1 round 142 — background PHOTO: open the shared picker in the
+      // main window; fade slider; remove.
+      const bgPhotoBtn = document.getElementById('collage-bg-photo');
+      if (bgPhotoBtn) bgPhotoBtn.addEventListener('click', () => {
+        try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
+      });
+      const fade = document.getElementById('collage-bg-fade');
+      const fadeVal = document.getElementById('collage-bg-fade-val');
+      if (fade) fade.addEventListener('input', () => {
+        collageBgOpacity = Math.max(0.05, Math.min(1, parseInt(fade.value, 10) / 100));
+        if (fadeVal) fadeVal.textContent = String(parseInt(fade.value, 10));
+        renderCollageBgLayer();
+      });
+      const bgRemove = document.getElementById('collage-bg-remove');
+      if (bgRemove) bgRemove.addEventListener('click', () => setCollageBgImage(''));
+      // The chosen background photo comes back from the main-window
+      // picker (async, not a pointer interaction) — snapshot explicitly.
+      try {
+        if (window.pdr.collage.onBackgroundPicked) {
+          window.pdr.collage.onBackgroundPicked((fp) => { if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); } });
+        }
+      } catch (_) {}
       // Click empty canvas → deselect (panel shows the "pick a photo" hint).
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.target === collageStageEl || e.target === collageCanvasEl) selectCollageItem(null);
@@ -5436,10 +5668,12 @@ function zoomTo(newZoom, centreX, centreY) {
       const sSat = document.getElementById('slider-saturation');
       const sTemp = document.getElementById('slider-temperature');
       const tBW = document.getElementById('toggle-bw');
+      const sOpacity = document.getElementById('slider-opacity');
       const vBright = document.getElementById('val-brightness');
       const vContrast = document.getElementById('val-contrast');
       const vSat = document.getElementById('val-saturation');
       const vTemp = document.getElementById('val-temperature');
+      const vOpacity = document.getElementById('val-opacity');
       if (!panel || !openBtn) return;
 
       const state = {
@@ -5451,6 +5685,7 @@ function zoomTo(newZoom, centreX, centreY) {
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
         borderWeight: 'thin', // 'thin' | 'mat'
+        opacity: 1, // v2.1 round 143 — per-tile transparency (collage only); 1 = solid
       };
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
@@ -5503,6 +5738,9 @@ function zoomTo(newZoom, centreX, centreY) {
       // image path and the per-tile collage path share it.
       function applyFilterToEl(el, s, filterStr) {
         el.style.filter = filterStr;
+        // v2.1 round 143 (Terry) — per-tile transparency. 1 in single-
+        // image mode (the control is collage-only) so this is a no-op there.
+        el.style.opacity = (s.opacity != null && s.opacity < 1) ? String(s.opacity) : '';
         // v2.1 round 137 (Terry) — frame preview via an inset BORDER,
         // not box-shadow (box-shadow clipped top/bottom on full-height
         // portraits). box-sizing:border-box draws inside the box, all 4
@@ -5534,6 +5772,7 @@ function zoomTo(newZoom, centreX, centreY) {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, bw: state.bw, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight,
+              opacity: state.opacity,
             };
           }
           // Keep the Looks strip in sync with the selected tile's photo.
@@ -5570,6 +5809,8 @@ function zoomTo(newZoom, centreX, centreY) {
         sSat.value = String(state.saturation);
         sTemp.value = String(state.temperature);
         tBW.checked = state.bw;
+        if (sOpacity) sOpacity.value = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
+        if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
       }
 
       function resetState() {
@@ -5581,6 +5822,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.tone = 'none';
         state.borderColor = '';
         state.borderWeight = 'thin';
+        state.opacity = 1;
         clearActivePreset();
         markActiveSwatchByColor('');
         updateUI();
@@ -5816,6 +6058,13 @@ function zoomTo(newZoom, centreX, centreY) {
       });
       tBW.addEventListener('change', function () {
         state.bw = !!tBW.checked;
+        applyEnhanceFilter();
+      });
+      // v2.1 round 143 (Terry) — per-tile Opacity (collage only).
+      if (sOpacity) sOpacity.addEventListener('input', function () {
+        const pct = clampOrDefault(sOpacity.value, 100);
+        state.opacity = Math.max(0.1, Math.min(1, pct / 100));
+        if (vOpacity) vOpacity.textContent = String(pct);
         applyEnhanceFilter();
       });
       resetBtn.addEventListener('click', resetState);
@@ -7558,6 +7807,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.tone = e.tone || 'none';
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';
+        state.opacity = e.opacity != null ? e.opacity : 1;
         updateUI();
         markActiveSwatchByColor(state.borderColor);
         markActiveWeight(state.borderWeight);
@@ -7594,6 +7844,13 @@ function zoomTo(newZoom, centreX, centreY) {
           }
         },
         isCollage: function () { return collageActive; },
+        // v2.1 round 143 — repaint a tile's <img> from its own enh
+        // (used by undo/redo + re-add to refresh non-selected tiles
+        // without routing through the panel's live state).
+        applyTileEnh: function (tile) {
+          if (!tile || !tile.imgEl) return;
+          applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}));
+        },
       };
 
       // Initial state.

@@ -3222,6 +3222,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         // v2.0.15 (Terry 2026-05-28) — native OS drag
                         // to external apps. See MemoriesView for the
                         // full rationale + the File Explorer caveat.
+                        data-pick-path={isVideoPathExt(p.file_path) ? undefined : p.file_path}
                         draggable
                         onDragStart={(e) => {
                           try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
