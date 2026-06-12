@@ -1830,7 +1830,7 @@
       justify-content: center;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     }
-    .ch-rotate svg { width: 14px; height: 14px; stroke: #7c5cd6; pointer-events: none; }
+    .ch-rotate svg { width: 15px; height: 15px; fill: #7c5cd6; pointer-events: none; }
     .ch-rotate::before {
       content: '';
       position: absolute;
@@ -4735,9 +4735,10 @@
         img.src = getFileSrc(fp);
         el.appendChild(img);
         const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap to 15°)';
-        // v2.1 round 140 (Terry) — proper rotate-arrow icon (was a plain
-        // dot). Curved arrow, the universal "rotate" affordance.
-        hRot.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6"></path><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path></svg>';
+        // v2.1 round 141 (Terry) — clean single circular-arrow rotate
+        // glyph (Bootstrap arrow-clockwise) — the Paint 3D shape. The
+        // round-140 Feather "refresh" glyph read as sync, not rotate.
+        hRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
         const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.title = 'Resize';
         const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.title = 'Remove from collage';
         el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
