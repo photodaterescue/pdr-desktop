@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Recording</title>
+<!--
+  v2.1 round 125 (Terry 2026-06-11) — PDR screen-recording widget.
+
+  A small frameless always-on-top window (content-protected, so it
+  never appears in the recording) that BOTH shows the recording
+  controls AND hosts the recording engine: getUserMedia with the
+  desktop source main hands over, MediaRecorder producing WebM
+  chunks every second, each chunk streamed to main over IPC where it
+  appends to a temp file. Putting the engine here (not in the main
+  PDR window) means recording survives the user minimising or
+  closing nothing-in-particular — this window is alive and visible
+  by definition while a recording runs.
+
+  Controls: pause/resume, Stop (finalises → FFmpeg → library),
+  Cancel (discards). Draggable anywhere via the body drag region.
+
+  Self-contained vanilla HTML/JS, same as capture-overlay.html —
+  this is OS chrome, not app UI.
+-->
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: #16161a;
+    user-select: none;
+    -webkit-user-select: none;
+    font: 500 13px/1.4 system-ui, 'Segoe UI', sans-serif;
+    color: #fff;
+  }
+  #bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    height: 100%;
+    padding: 0 12px;
+    box-sizing: border-box;
+    -webkit-app-region: drag;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+  }
+  #dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #e5484d;
+    flex-shrink: 0;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  #dot.paused {
+    animation: none;
+    background: #c8c8cf;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.35; }
+  }
+  #time {
+    font-variant-numeric: tabular-nums;
+    min-width: 44px;
+    font-size: 14px;
+  }
+  #state {
+    color: #9a9aa3;
+    font-size: 11px;
+    flex: 1 1 auto;
+    white-space: nowrap;
+    overflow: hidden;
+  }
+  button {
+    -webkit-app-region: no-drag;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    border-radius: 8px;
+    height: 32px;
+    padding: 0 10px;
+    font: 500 12px/1 system-ui, 'Segoe UI', sans-serif;
+    cursor: pointer;
+  }
+  button:hover { background: rgba(255, 255, 255, 0.14); }
+  #stop {
+    background: #e5484d;
+    border-color: #e5484d;
+    font-weight: 600;
+    padding: 0 14px;
+  }
+  #stop:hover { background: #f2555a; }
+  #cancel {
+    width: 32px;
+    padding: 0;
+    color: #9a9aa3;
+  }
+  #cancel:hover { color: #fff; }
+</style>
+</head>
+<body>
+  <div id="bar">
+    <div id="dot"></div>
+    <span id="time">0:00</span>
+    <span id="state">Recording</span>
+    <button id="pause" type="button" title="Pause recording">Pause</button>
+    <button id="stop" type="button" title="Stop and save to your library">Stop</button>
+    <button id="cancel" type="button" title="Discard this recording">✕</button>
+  </div>
+<script>
+(function () {
+  var pdr = window.pdr;
+  var dot = document.getElementById('dot');
+  var timeEl = document.getElementById('time');
+  var stateEl = document.getElementById('state');
+  var pauseBtn = document.getElementById('pause');
+  var stopBtn = document.getElementById('stop');
+  var cancelBtn = document.getElementById('cancel');
+
+  var recorder = null;
+  var stream = null;
+  var cancelled = false;
+  var finished = false;
+  var startedAtMs = 0;
+  var pausedTotalMs = 0;
+  var pausedAtMs = 0;
+  var paused = false;
+
+  function fmt(ms) {
+    var s = Math.max(0, Math.floor(ms / 1000));
+    var m = Math.floor(s / 60);
+    var r = s % 60;
+    return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  setInterval(function () {
+    if (!startedAtMs) return;
+    var now = Date.now();
+    var effectivePaused = pausedTotalMs + (paused ? (now - pausedAtMs) : 0);
+    timeEl.textContent = fmt(now - startedAtMs - effectivePaused);
+  }, 400);
+
+  function reportError(message) {
+    try { if (pdr && pdr.capture && pdr.capture.recordError) pdr.capture.recordError({ message: message }); } catch (e) {}
+  }
+
+  function stopTracks() {
+    try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+  }
+
+  async function start(init) {
+    try {
+      var videoConstraints = {
+        mandatory: {
+          chromeMediaSource: 'desktop',
+          chromeMediaSourceId: init.sourceId,
+          maxWidth: init.maxWidth || 3840,
+          maxHeight: init.maxHeight || 2160,
+          maxFrameRate: 30,
+        },
+      };
+      try {
+        if (init.audio) {
+          // Windows desktop loopback — system audio, no driver needed.
+          // Requested together with desktop video per the Electron
+          // recipe; some systems refuse, so fall back to video-only.
+          stream = await navigator.mediaDevices.getUserMedia({
+            audio: { mandatory: { chromeMediaSource: 'desktop' } },
+            video: videoConstraints,
+          });
+        } else {
+          stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
+        }
+      } catch (audioErr) {
+        if (!init.audio) throw audioErr;
+        stream = await navigator.mediaDevices.getUserMedia({ audio: false, video: videoConstraints });
+      }
+
+      var vTrack = stream.getVideoTracks()[0];
+      var settings = vTrack && vTrack.getSettings ? vTrack.getSettings() : {};
+      var hasAudio = stream.getAudioTracks().length > 0;
+      if (pdr && pdr.capture && pdr.capture.recordStarted) {
+        pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAudio });
+      }
+
+      var mime = '';
+      var candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8,opus', 'video/webm'];
+      for (var i = 0; i < candidates.length; i++) {
+        if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidates[i])) { mime = candidates[i]; break; }
+      }
+      recorder = new MediaRecorder(stream, {
+        mimeType: mime || undefined,
+        videoBitsPerSecond: 8_000_000,
+        audioBitsPerSecond: 128_000,
+      });
+      recorder.ondataavailable = function (ev) {
+        if (!ev.data || ev.data.size === 0) return;
+        ev.data.arrayBuffer().then(function (buf) {
+          try { if (pdr && pdr.capture && pdr.capture.recordChunk) pdr.capture.recordChunk(buf); } catch (e) {}
+        });
+      };
+      recorder.onstop = function () {
+        stopTracks();
+        // Give the final ondataavailable chunk a beat to cross IPC.
+        setTimeout(function () {
+          if (cancelled) {
+            if (pdr && pdr.capture && pdr.capture.recordCancelled) pdr.capture.recordCancelled();
+          } else {
+            if (pdr && pdr.capture && pdr.capture.recordStopped) pdr.capture.recordStopped({});
+          }
+        }, 250);
+      };
+      recorder.onerror = function (ev) {
+        reportError((ev && ev.error && ev.error.message) || 'Recorder error');
+      };
+      recorder.start(1000); // 1s chunks → streamed to main
+      startedAtMs = Date.now();
+    } catch (err) {
+      reportError((err && err.message) || 'Could not start the recorder');
+    }
+  }
+
+  function finish(asCancel) {
+    if (finished) return;
+    finished = true;
+    cancelled = !!asCancel;
+    stateEl.textContent = asCancel ? 'Discarding' : 'Saving';
+    pauseBtn.disabled = true;
+    stopBtn.disabled = true;
+    cancelBtn.disabled = true;
+    try {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();
+      else if (cancelled) { if (pdr && pdr.capture && pdr.capture.recordCancelled) pdr.capture.recordCancelled(); }
+      else { if (pdr && pdr.capture && pdr.capture.recordStopped) pdr.capture.recordStopped({}); }
+    } catch (e) {
+      reportError('Stop failed: ' + e.message);
+    }
+  }
+
+  pauseBtn.addEventListener('click', function () {
+    if (!recorder || finished) return;
+    if (!paused && recorder.state === 'recording') {
+      recorder.pause();
+      paused = true;
+      pausedAtMs = Date.now();
+      pauseBtn.textContent = 'Resume';
+      stateEl.textContent = 'Paused';
+      dot.classList.add('paused');
+    } else if (paused && recorder.state === 'paused') {
+      recorder.resume();
+      paused = false;
+      pausedTotalMs += Date.now() - pausedAtMs;
+      pauseBtn.textContent = 'Pause';
+      stateEl.textContent = 'Recording';
+      dot.classList.remove('paused');
+    }
+  });
+  stopBtn.addEventListener('click', function () { finish(false); });
+  cancelBtn.addEventListener('click', function () { finish(true); });
+
+  if (pdr && pdr.capture) {
+    if (pdr.capture.onRecordInit) {
+      pdr.capture.onRecordInit(function (init) { void start(init || {}); });
+    }
+    if (pdr.capture.onRecordDo) {
+      // Main-driven commands (title-bar Stop while recording).
+      pdr.capture.onRecordDo(function (cmd) {
+        if (!cmd) return;
+        if (cmd.action === 'stop') finish(false);
+        else if (cmd.action === 'cancel') finish(true);
+      });
+    }
+  }
+})();
+</script>
+</body>
+</html>

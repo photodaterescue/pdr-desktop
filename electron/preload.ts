@@ -357,6 +357,48 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // keyboard hooks consume the combo before WM_HOTKEY fires).
     checkConflicts: () =>
       ipcRenderer.invoke('capture:checkConflicts') as Promise<{ success: boolean; tools?: string[]; error?: string }>,
+    // ── Screen recording (v2.1 round 125, step 3) ──
+    startRecording: (opts?: { displayId?: string }) =>
+      ipcRenderer.invoke('capture:startRecording', opts ?? {}) as Promise<{
+        success: boolean;
+        alreadyRecording?: boolean;
+        needsDisplayPick?: boolean;
+        displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
+        error?: string;
+      }>,
+    stopRecording: () => ipcRenderer.invoke('capture:stopRecording') as Promise<{ success: boolean; error?: string }>,
+    cancelRecording: () => ipcRenderer.invoke('capture:cancelRecording') as Promise<{ success: boolean }>,
+    onRecordingState: (callback: (info: { state: 'idle' | 'recording' | 'processing' }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:recordingState', handler);
+      return () => ipcRenderer.removeListener('capture:recordingState', handler);
+    },
+    onRecordError: (callback: (info: { message: string }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:recordError', handler);
+      return () => ipcRenderer.removeListener('capture:recordError', handler);
+    },
+    // ── Recording-widget page channels (capture-record-widget.html only) ──
+    // The widget hosts the actual recorder engine; these carry the
+    // init handshake, main-driven stop/cancel commands, the WebM
+    // chunk stream, and the lifecycle reports back to main.
+    onRecordInit: (callback: (info: { sourceId: string; audio: boolean; maxWidth: number; maxHeight: number }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:record-init', handler);
+      return () => ipcRenderer.removeListener('capture:record-init', handler);
+    },
+    onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
+      const handler = (_event: any, cmd: any) => callback(cmd);
+      ipcRenderer.on('capture:record-do', handler);
+      return () => ipcRenderer.removeListener('capture:record-do', handler);
+    },
+    recordChunk: (chunk: ArrayBuffer) => ipcRenderer.send('capture:record-chunk', chunk),
+    recordStarted: (info: { width: number | null; height: number | null; hasAudio: boolean }) =>
+      ipcRenderer.send('capture:record-started', info),
+    recordStopped: (info: Record<string, never> | { durationMs?: number }) =>
+      ipcRenderer.send('capture:record-stopped', info),
+    recordCancelled: () => ipcRenderer.send('capture:record-cancelled'),
+    recordError: (info: { message: string }) => ipcRenderer.send('capture:record-error', info),
     // ── Region-overlay page channels (capture-overlay.html only) ──
     // The overlay window loads this same preload; these three are its
     // entire API surface: receive the frozen frame (+ snap-to-window

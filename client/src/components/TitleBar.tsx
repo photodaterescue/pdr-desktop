@@ -1,11 +1,11 @@
 import React, { useEffect, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw, Camera, Monitor, Crop } from 'lucide-react';
+import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, ArrowLeft, Trash2, RotateCcw, Camera, Monitor, Crop, Video, Square, Loader2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -166,8 +166,11 @@ export function TitleBar() {
   }, []);
   useEffect(() => {
     const offCompleted = onCaptureCompleted((info) => {
+      // v2.1 round 125 — one channel carries screenshots AND
+      // recordings; the copy follows the kind.
+      const noun = info.kind === 'recording' ? 'Screen recording' : 'Screenshot';
       if (info.pending) {
-        toast.success('Screenshot saved', {
+        toast.success(`${noun} saved`, {
           description: 'Your Library Drive is disconnected — PDR will add this capture to your library automatically when it reconnects.',
         });
       } else {
@@ -176,7 +179,7 @@ export function TitleBar() {
         // the house toast style (see useTranscribeVideos' Dismiss)
         // uses the muted cancel variant. cancel's onClick still
         // fires the handler and dismisses the toast.
-        toast.success('Screenshot added to your library', {
+        toast.success(`${noun} added to your library`, {
           description: info.filename,
           cancel: { label: 'Open in Viewer', onClick: () => { void openSearchViewer(info.filePath, info.filename); } },
         });
@@ -196,15 +199,25 @@ export function TitleBar() {
   // remembers WHICH verb opened it and re-invokes the right one after
   // the user picks a screen. A cancelled region selection resolves
   // with cancelled: true and stays silent — Esc IS the feedback.
-  const [capturePickerMode, setCapturePickerMode] = useState<'full' | 'region'>('full');
-  const handleCaptureResult = (res: Awaited<ReturnType<typeof captureScreenshot>> | undefined, mode: 'full' | 'region') => {
+  const [capturePickerMode, setCapturePickerMode] = useState<'full' | 'region' | 'record'>('full');
+  // v2.1 round 125 — recording state drives the record button's three
+  // faces (idle camera / pulsing red stop / processing spinner).
+  const [recordingState, setRecordingState] = useState<CaptureRecordingState>('idle');
+  useEffect(() => {
+    const offState = onCaptureRecordingState((info) => setRecordingState(info.state));
+    const offError = onCaptureRecordError((info) => {
+      toast.error('Recording failed', { description: info.message });
+    });
+    return () => { offState(); offError(); };
+  }, []);
+  const handleCaptureResult = (res: Awaited<ReturnType<typeof captureScreenshot>> | undefined, mode: 'full' | 'region' | 'record') => {
     if (res?.needsDisplayPick && res.displays?.length) {
       setCapturePickerMode(mode);
       setCaptureDisplays(res.displays);
       return;
     }
     if (res && !res.success && !res.cancelled && res.error) {
-      toast.error('Screenshot failed', { description: res.error });
+      toast.error(mode === 'record' ? 'Recording failed' : 'Screenshot failed', { description: res.error });
     }
   };
   const handleCaptureFull = async () => {
@@ -213,11 +226,21 @@ export function TitleBar() {
   const handleCaptureRegion = async () => {
     handleCaptureResult(await captureRegion(), 'region');
   };
+  const handleRecordClick = async () => {
+    if (recordingState === 'recording') {
+      await captureStopRecording();
+      return;
+    }
+    if (recordingState === 'processing') return; // saving — nothing to do
+    handleCaptureResult(await captureStartRecording(), 'record');
+  };
   const handleCapturePick = async (displayId: string) => {
     setCaptureDisplays(null);
-    const res = capturePickerMode === 'region'
-      ? await captureRegion({ displayId })
-      : await captureScreenshot({ displayId });
+    const res = capturePickerMode === 'record'
+      ? await captureStartRecording({ displayId })
+      : capturePickerMode === 'region'
+        ? await captureRegion({ displayId })
+        : await captureScreenshot({ displayId });
     handleCaptureResult(res, capturePickerMode);
   };
 
@@ -560,6 +583,41 @@ export function TitleBar() {
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
+        {/* v2.1 round 125 (step 3) — Screen Record button, Terry's
+            locked placement: its own icon NEXT TO the camera (camera
+            = screenshots, record = recordings). Three faces: idle
+            video icon → start; pulsing red square while recording →
+            stop; spinner while FFmpeg saves. The floating widget
+            carries the full controls (pause / stop / discard +
+            elapsed time); this button is the start verb + a stop
+            mirror. */}
+        <IconTooltip
+          label={
+            recordingState === 'recording' ? 'Recording — click to stop and save'
+            : recordingState === 'processing' ? 'Saving your recording…'
+            : 'Record your screen — straight into your library'
+          }
+          side="bottom"
+        >
+          <button
+            onClick={() => { void handleRecordClick(); }}
+            className={`flex items-center justify-center w-7 h-7 rounded-full transition-all ${
+              recordingState === 'recording'
+                ? 'bg-red-500/25 text-red-200 hover:bg-red-500/40 animate-pulse'
+                : 'hover:bg-white/20 text-white/80 hover:text-white'
+            }`}
+            data-testid="titlebar-record"
+            aria-label={recordingState === 'recording' ? 'Stop recording' : 'Record your screen'}
+          >
+            {recordingState === 'recording' ? (
+              <Square className="w-3 h-3 fill-current" />
+            ) : recordingState === 'processing' ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Video className="w-3.5 h-3.5" />
+            )}
+          </button>
+        </IconTooltip>
         <IconTooltip label={recycleCount > 0 ? `Recycle Bin · ${recycleCount} item${recycleCount === 1 ? '' : 's'}` : 'Recycle Bin'} side="bottom">
           <button
             onClick={() => window.dispatchEvent(new CustomEvent('pdr:openRecycleBin'))}

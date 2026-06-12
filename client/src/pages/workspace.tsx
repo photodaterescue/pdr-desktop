@@ -12643,6 +12643,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // JPG smaller) + the names of any running capture tools whose
   // keyboard hooks can eat the PDR hotkey (Lightshot ate Terry's).
   const [captureFormat, setCaptureFormatState] = useState<'png' | 'jpg'>('png');
+  // v2.1 round 125 — system audio in screen recordings (Windows
+  // loopback, no driver). Default ON.
+  const [captureRecordAudio, setCaptureRecordAudioState] = useState<boolean>(true);
   const [captureConflicts, setCaptureConflicts] = useState<string[]>([]);
   useEffect(() => {
     captureCheckConflicts().then(setCaptureConflicts).catch(() => { /* best-effort */ });
@@ -12714,6 +12717,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureHotkeyState(((settings as any).captureHotkey as string) ?? 'Ctrl+Shift+S');
       setCaptureHotkeyActionState(((settings as any).captureHotkeyAction as 'fullscreen' | 'region') ?? 'fullscreen');
       setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
+      setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
     });
   }, []);
 
@@ -12789,6 +12793,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleCaptureFormatChange = (format: 'png' | 'jpg') => {
     setCaptureFormatState(format);
     setSetting('captureFormat' as any, format);
+  };
+
+  const handleCaptureRecordAudioToggle = (checked: boolean) => {
+    setCaptureRecordAudioState(checked);
+    setSetting('captureRecordAudio' as any, checked);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -13179,7 +13188,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     // screen-recording options when that ships later in v2.1.
     // Positioned after AI and before Privacy — it's a "PDR does
     // something for you" feature, not a data-control one.
-    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording snip grab print screen monitor display region area select crop' },
+    { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording video snip grab print screen monitor display region area select crop audio sound mp4 png jpg format' },
     // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
     // for global render-time switches that hide personal content
     // when sharing the screen (captions, transcripts, future:
@@ -14578,7 +14587,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                   <div className="flex items-start gap-3 p-3 rounded-xl bg-amber-50/40 dark:bg-amber-950/15 border border-amber-200/60 dark:border-amber-800/30">
                     <Camera className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 shrink-0" />
                     <p className="text-xs text-amber-700 dark:text-amber-300">
-                      <strong>{captureConflicts.join(' and ')} is running on this computer.</strong> Capture tools like this grab keyboard shortcuts before Windows can pass them to PDR — if pressing the hotkey below shows another tool's capture screen (or does nothing), that's why. Close {captureConflicts.length === 1 ? 'it' : 'them'} or pick a hotkey {captureConflicts.length === 1 ? "it doesn't" : "they don't"} use. The title-bar camera button is unaffected.
+                      <strong>{captureConflicts.join(' and ')} is running on this computer.</strong> Tools like this can grab keyboard shortcuts system-wide before Windows passes them to PDR — if pressing the hotkey below shows another tool's screen (or does nothing), that's why. Close {captureConflicts.length === 1 ? 'it' : 'them'}, change {captureConflicts.length === 1 ? 'its' : 'their'} shortcut, or pick a different one for PDR. The title-bar buttons are unaffected.
                     </p>
                   </div>
                 )}
@@ -14701,6 +14710,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     ))}
                   </div>
                 </div>
+                {/* v2.1 round 125 (step 3) — screen-recording audio.
+                    Same label-row + Switch recipe as the Privacy
+                    toggles. */}
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col">
+                    <span className="text-sm font-medium text-foreground">Record system audio</span>
+                    <span className="text-xs text-muted-foreground">Include the sound your computer is playing — video calls, music, app audio — in screen recordings. Windows captures this natively, no extra software needed. Turn off for silent recordings. Recordings save as MP4 in the same PDR Captures folder as screenshots.</span>
+                  </div>
+                  <Switch
+                    checked={captureRecordAudio}
+                    onCheckedChange={(checked) => handleCaptureRecordAudioToggle(!!checked)}
+                    data-testid="checkbox-capture-record-audio"
+                  />
+                </label>
               </div>
             </>
           )}

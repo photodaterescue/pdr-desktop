@@ -2900,6 +2900,9 @@ export async function captureCheckConflicts(): Promise<string[]> {
 }
 
 export interface CaptureCompletedInfo {
+  /** 'screenshot' (full-screen + region) or 'recording'. Older
+   *  payloads may omit it — treat undefined as screenshot. */
+  kind?: 'screenshot' | 'recording';
   filePath: string;
   filename: string;
   fileId: number | null;
@@ -2917,6 +2920,51 @@ export function onCaptureCompleted(callback: (info: CaptureCompletedInfo) => voi
 export function onCapturePendingFlushed(callback: (info: { count: number }) => void): () => void {
   if (!isElectron()) return () => {};
   try { return (window as any).pdr?.capture?.onPendingFlushed?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
+// ─── Screen recording (v2.1 round 125, step 3) ──────────────────────────────
+// start spawns the floating recorder widget; stop finalises through
+// FFmpeg → MP4 → library; cancel discards. State broadcasts drive the
+// title-bar record button (idle / recording / processing).
+
+export interface StartRecordingResult {
+  success: boolean;
+  alreadyRecording?: boolean;
+  needsDisplayPick?: boolean;
+  displays?: CaptureDisplayInfo[];
+  error?: string;
+}
+
+export async function captureStartRecording(opts?: { displayId?: string }): Promise<StartRecordingResult> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.capture?.startRecording?.(opts); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function captureStopRecording(): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.capture?.stopRecording?.(); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function captureCancelRecording(): Promise<{ success: boolean }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.capture?.cancelRecording?.(); }
+  catch { return { success: false }; }
+}
+
+export type CaptureRecordingState = 'idle' | 'recording' | 'processing';
+
+export function onCaptureRecordingState(callback: (info: { state: CaptureRecordingState }) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.capture?.onRecordingState?.(callback) ?? (() => {}); }
+  catch { return () => {}; }
+}
+
+export function onCaptureRecordError(callback: (info: { message: string }) => void): () => void {
+  if (!isElectron()) return () => {};
+  try { return (window as any).pdr?.capture?.onRecordError?.(callback) ?? (() => {}); }
   catch { return () => {}; }
 }
 

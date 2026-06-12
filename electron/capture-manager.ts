@@ -139,7 +139,7 @@ function onlineLibraryRoot(): string | null {
  * Mirrors the viewer:saveEnhanced exiftool pattern — failure only
  * costs the embedded metadata, never the capture itself.
  */
-async function stampCaptureMetadata(filePath: string, capturedAt: Date): Promise<void> {
+async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabel: string = 'screenshot'): Promise<void> {
   try {
     const { ExifTool } = await import('exiftool-vendored');
     const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
@@ -153,7 +153,7 @@ async function stampCaptureMetadata(filePath: string, capturedAt: Date): Promise
         'XMP-photoshop:DateCreated': isoLocal,
         'XMP-xmp:Label': 'PDR-Capture',
         'XMP-xmpMM:HistoryAction': 'created',
-        'XMP-xmpMM:HistorySoftwareAgent': `Photo Date Rescue ${app.getVersion()} (screenshot)`,
+        'XMP-xmpMM:HistorySoftwareAgent': `Photo Date Rescue ${app.getVersion()} (${kindLabel})`,
         'XMP-xmpMM:HistoryWhen': isoLocal,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any;
@@ -470,6 +470,7 @@ async function persistCapture(
   }
 
   broadcast('capture:completed', {
+    kind: 'screenshot',
     filePath: outPath,
     filename,
     fileId,
@@ -833,6 +834,10 @@ const KNOWN_CAPTURE_TOOLS: Array<{ match: RegExp; label: string }> = [
   { match: /picpick/i, label: 'PicPick' },
   { match: /screenpresso/i, label: 'Screenpresso' },
   { match: /flameshot/i, label: 'Flameshot' },
+  // Round 125 — not a capture tool, but it's the tool that actually
+  // ate Terry's hotkey (its own capture feature showed the red
+  // corner UI). Any shortcut-hooking utility belongs on this list.
+  { match: /mousewithoutborders/i, label: 'Mouse Without Borders' },
 ];
 
 export function checkConflictingCaptureTools(): string[] {
@@ -846,4 +851,439 @@ export function checkConflictingCaptureTools(): string[] {
   } catch {
     return [];
   }
+}
+
+// ─── Screen recording (step 3) ───────────────────────────────────────────────
+//
+// The recording ENGINE lives in the floating widget's renderer — a
+// small frameless always-on-top window (content-protected, so it
+// never appears in the recording itself) that owns getUserMedia +
+// MediaRecorder and streams WebM chunks to main over IPC. Main
+// appends them to a temp .webm as they arrive (no renderer memory
+// growth on long recordings), then on stop pipes the WebM through
+// the bundled FFmpeg → H.264/AAC MP4 with +faststart (PDRV scrubbing
+// needs the moov atom up front) and lands it via the same
+// persist/index/broadcast pipeline as screenshots — filename suffix
+// _SR, fileType 'video'.
+//
+// PDR's own windows are deliberately NOT hidden or minimised when a
+// recording starts — recording is a session the user orchestrates
+// (they may well be recording PDR itself), unlike the instantaneous
+// screenshot where "get PDR out of the shot" is almost always right.
+
+let recordingState: 'idle' | 'recording' | 'processing' = 'idle';
+let recordWidget: BrowserWindow | null = null;
+let recordTempPath: string | null = null;
+let recordStream: fs.WriteStream | null = null;
+let recordStartedAt: Date | null = null;
+let recordMeta: { width: number | null; height: number | null; hasAudio: boolean } = { width: null, height: null, hasAudio: false };
+
+function recordTempDir(): string {
+  return path.join(app.getPath('userData'), 'Captures-temp');
+}
+
+function broadcastRecordingState(): void {
+  broadcast('capture:recordingState', { state: recordingState });
+}
+
+// Lazy ffmpeg path — same ffmpeg-static resolution main.ts uses for
+// thumbnails + HEVC transcodes (asarUnpack'd in packaged builds).
+let ffmpegPathCached: string | null | undefined;
+function ffmpegPath(): string | null {
+  if (ffmpegPathCached !== undefined) return ffmpegPathCached;
+  try {
+    const p = esmRequire('ffmpeg-static') as string;
+    ffmpegPathCached = p && fs.existsSync(p) ? p : null;
+  } catch {
+    ffmpegPathCached = null;
+  }
+  return ffmpegPathCached;
+}
+
+function teardownRecording(opts: { discardTemp: boolean }): void {
+  if (recordWidget && !recordWidget.isDestroyed()) {
+    try { recordWidget.close(); } catch { /* non-fatal */ }
+  }
+  recordWidget = null;
+  if (recordStream) {
+    try { recordStream.end(); } catch { /* non-fatal */ }
+    recordStream = null;
+  }
+  if (opts.discardTemp && recordTempPath) {
+    const p = recordTempPath;
+    // Give the stream a beat to flush before unlinking.
+    setTimeout(() => { try { fs.unlinkSync(toLongPath(p)); } catch { /* non-fatal */ } }, 500);
+  }
+  recordTempPath = null;
+  recordStartedAt = null;
+  recordingState = 'idle';
+  broadcastRecordingState();
+}
+
+export interface StartRecordingResult {
+  success: boolean;
+  alreadyRecording?: boolean;
+  needsDisplayPick?: boolean;
+  displays?: CaptureDisplayInfo[];
+  error?: string;
+}
+
+export async function startRecording(opts: { displayId?: string; trigger: 'button' }): Promise<StartRecordingResult> {
+  if (recordingState !== 'idle') {
+    return {
+      success: false,
+      alreadyRecording: true,
+      error: recordingState === 'processing'
+        ? 'Still saving your previous recording — one moment.'
+        : 'A recording is already in progress.',
+    };
+  }
+  try {
+    const resolved = resolveTargetDisplay(opts);
+    if ('error' in resolved) return { success: false, error: resolved.error };
+    if ('pick' in resolved) {
+      return { success: false, needsDisplayPick: true, displays: await listCaptureDisplays() };
+    }
+    const display = resolved.display;
+
+    // The widget's getUserMedia needs the desktopCapturer SOURCE id
+    // for this display (thumbnails irrelevant — request 1×1).
+    const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
+    const source =
+      sources.find((s) => s.display_id === String(display.id)) ??
+      (sources.length === 1 ? sources[0] : undefined);
+    if (!source) return { success: false, error: 'Could not access the screen for recording.' };
+
+    recordStartedAt = new Date();
+    const { date, time } = timestampParts(recordStartedAt);
+    fs.mkdirSync(toLongPath(recordTempDir()), { recursive: true });
+    // Temp name carries the start timestamp so the startup orphan
+    // recovery can rebuild the right capture date after a crash.
+    recordTempPath = path.join(recordTempDir(), `rec-${date}_${time}.webm`);
+    recordStream = fs.createWriteStream(toLongPath(recordTempPath));
+    recordMeta = { width: null, height: null, hasAudio: false };
+
+    const recordAudio = (() => {
+      try { return getSettings().captureRecordAudio !== false; } catch { return true; }
+    })();
+
+    const widget = new BrowserWindow({
+      width: 300,
+      height: 64,
+      x: display.bounds.x + display.bounds.width - 320,
+      y: display.bounds.y + display.bounds.height - 120,
+      frame: false,
+      show: false,
+      resizable: false,
+      movable: true,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+      skipTaskbar: true,
+      alwaysOnTop: true,
+      backgroundColor: '#16161a',
+      webPreferences: {
+        preload: path.join(__dirname, 'preload.js'),
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    recordWidget = widget;
+    try { widget.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+    // WDA_EXCLUDEFROMCAPTURE — the widget stays visible to the user
+    // but never appears in the recording (Win10 2004+).
+    try { widget.setContentProtection(true); } catch { /* non-fatal */ }
+    widget.setMenu(null);
+
+    widget.on('closed', () => {
+      // External close (Alt+F4 on the widget) while recording —
+      // treat as cancel; the engine died with the renderer.
+      if (recordWidget === widget && recordingState === 'recording') {
+        log.info('[capture] recording widget closed externally — discarding recording');
+        recordWidget = null;
+        teardownRecording({ discardTemp: true });
+      }
+    });
+
+    widget.webContents.once('did-finish-load', () => {
+      if (widget.isDestroyed()) return;
+      widget.webContents.send('capture:record-init', {
+        sourceId: source.id,
+        audio: recordAudio,
+        maxWidth: Math.round(display.bounds.width * display.scaleFactor),
+        maxHeight: Math.round(display.bounds.height * display.scaleFactor),
+      });
+      // showInactive — starting a recording must not steal focus from
+      // whatever the user is about to record.
+      widget.showInactive();
+    });
+    void widget.loadFile(path.join(__dirname, '../dist/public/capture-record-widget.html'));
+
+    recordingState = 'recording';
+    broadcastRecordingState();
+    log.info(`[capture] recording started on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'})`);
+    return { success: true };
+  } catch (err) {
+    log.warn(`[capture] startRecording failed: ${(err as Error).message}`);
+    teardownRecording({ discardTemp: true });
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+/** Ask the widget's recorder to stop (it flushes and reports back on
+ *  capture:record-stopped, which runs the finalize pipeline). */
+export function stopRecording(): { success: boolean; error?: string } {
+  if (recordingState !== 'recording' || !recordWidget || recordWidget.isDestroyed()) {
+    return { success: false, error: 'No recording in progress.' };
+  }
+  try { recordWidget.webContents.send('capture:record-do', { action: 'stop' }); } catch { /* non-fatal */ }
+  return { success: true };
+}
+
+export function cancelRecording(): { success: boolean } {
+  if (recordingState === 'recording' && recordWidget && !recordWidget.isDestroyed()) {
+    try { recordWidget.webContents.send('capture:record-do', { action: 'cancel' }); } catch { /* non-fatal */ }
+    // The widget replies on capture:record-cancelled; belt-and-braces
+    // teardown happens there. If the widget is wedged, the closed
+    // handler covers it.
+    return { success: true };
+  }
+  return { success: false };
+}
+
+/**
+ * WebM → H.264/AAC MP4 with +faststart. Returns the mp4 path, or
+ * null when FFmpeg is unavailable / fails (caller falls back to
+ * keeping the WebM — Chromium plays VP9 natively, so the recording
+ * is still viewable in PDRV; losing the user's recording is the only
+ * unacceptable outcome).
+ */
+async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
+  const ffmpeg = ffmpegPath();
+  if (!ffmpeg) {
+    log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
+    return null;
+  }
+  const outPath = webmPath.replace(/\.webm$/i, '.mp4');
+  // ffmpeg can't open \\?\-prefixed paths (see extractVideoFrame).
+  const src = webmPath.replace(/^\\\\\?\\/, '');
+  const dst = outPath.replace(/^\\\\\?\\/, '');
+  // ultrafast + crf 21: verification on Terry's machine showed
+  // veryfast took ~2 min for a 6-second 1080p clip on an older CPU —
+  // the encode time scales with recording length, so a long recording
+  // would feel broken. ultrafast roughly halves it; for screen
+  // content (flat regions, text) the quality difference is
+  // negligible, and the slightly lower crf claws back what the
+  // cheaper preset loses.
+  const args = [
+    '-hide_banner', '-loglevel', 'error',
+    '-i', src,
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '21', '-pix_fmt', 'yuv420p',
+    '-c:a', 'aac', '-b:a', '160k',
+    '-movflags', '+faststart',
+    '-y', dst,
+  ];
+  const { spawn } = await import('child_process');
+  return new Promise<string | null>((resolve) => {
+    const proc = spawn(ffmpeg, args, { windowsHide: true });
+    let stderrBuf = '';
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      if (stderrBuf.length < 4096) stderrBuf += chunk.toString('utf8');
+    });
+    proc.on('error', (err) => {
+      log.warn(`[capture] ffmpeg spawn failed: ${err.message}`);
+      resolve(null);
+    });
+    proc.on('close', (code) => {
+      if (code === 0 && fs.existsSync(outPath)) {
+        resolve(outPath);
+      } else {
+        log.warn(`[capture] ffmpeg transcode failed (code ${code}): ${stderrBuf.trim().slice(0, 500)}`);
+        resolve(null);
+      }
+    });
+  });
+}
+
+/**
+ * Shared tail for recordings — mirrors persistCapture but for an
+ * already-encoded video file: place under PDR Captures (or pending),
+ * stamp XMP, index as fileType 'video', broadcast. The capture
+ * timestamp is the recording START.
+ */
+async function persistRecording(
+  videoPath: string,
+  startedAt: Date,
+  width: number | null,
+  height: number | null,
+): Promise<CaptureScreenshotResult> {
+  const { date, time, month } = timestampParts(startedAt);
+  const libRoot = onlineLibraryRoot();
+  const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
+  fs.mkdirSync(toLongPath(destDir), { recursive: true });
+  const ext = path.extname(videoPath).toLowerCase() || '.mp4';
+  const outPath = uniqueCapturePath(destDir, `${date}_${time}_SR`, ext);
+  try {
+    fs.renameSync(toLongPath(videoPath), toLongPath(outPath));
+  } catch {
+    fs.copyFileSync(toLongPath(videoPath), toLongPath(outPath));
+    try { fs.unlinkSync(toLongPath(videoPath)); } catch { /* non-fatal */ }
+  }
+  const filename = path.basename(outPath);
+
+  await stampCaptureMetadata(outPath, startedAt, 'screen recording');
+
+  let fileId: number | null = null;
+  if (libRoot) {
+    try {
+      fileId = await indexCapturedFile(outPath, libRoot, startedAt, width, height, 'video');
+      if (fileId != null) {
+        broadcast('library:filesAdded', { reason: 'capture', newFilePath: outPath, fileId });
+      }
+    } catch (idxErr) {
+      log.warn(`[capture] recording index pass failed (file still saved): ${(idxErr as Error).message}`);
+    }
+    log.info(`[capture] recording ${filename} (${width}×${height}) → library${fileId != null ? ` (file id ${fileId})` : ' (NOT indexed)'}`);
+  } else {
+    log.info(`[capture] recording ${filename} → pending (Library Drive offline); will flush on reconnect`);
+  }
+
+  broadcast('capture:completed', {
+    kind: 'recording',
+    filePath: outPath,
+    filename,
+    fileId,
+    pending: !libRoot,
+    width,
+    height,
+  });
+  return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
+}
+
+async function finalizeRecording(): Promise<void> {
+  const webmPath = recordTempPath;
+  const startedAt = recordStartedAt ?? new Date();
+  const meta = recordMeta;
+  // Close the widget + stream, keep the temp file.
+  if (recordWidget && !recordWidget.isDestroyed()) {
+    try { recordWidget.close(); } catch { /* non-fatal */ }
+  }
+  recordWidget = null;
+  recordingState = 'processing';
+  broadcastRecordingState();
+  if (recordStream) {
+    const stream = recordStream;
+    recordStream = null;
+    await new Promise<void>((resolve) => {
+      stream.end(() => resolve());
+    });
+  }
+  recordTempPath = null;
+  recordStartedAt = null;
+
+  try {
+    if (!webmPath || !fs.existsSync(toLongPath(webmPath)) || fs.statSync(toLongPath(webmPath)).size === 0) {
+      log.warn('[capture] recording produced no data — nothing to save');
+      return;
+    }
+    const mp4Path = await transcodeWebmToMp4(webmPath);
+    if (mp4Path) {
+      try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
+      await persistRecording(mp4Path, startedAt, meta.width, meta.height);
+    } else {
+      // FFmpeg unavailable/failed — persist the WebM itself rather
+      // than lose the recording.
+      await persistRecording(webmPath, startedAt, meta.width, meta.height);
+    }
+  } catch (err) {
+    log.warn(`[capture] recording finalize failed: ${(err as Error).message}`);
+    broadcast('capture:recordError', { message: (err as Error).message });
+  } finally {
+    recordingState = 'idle';
+    broadcastRecordingState();
+  }
+}
+
+// Widget → main channels. Sender-pinned to the live widget.
+ipcMain.on('capture:record-chunk', (event, chunk: ArrayBuffer | Uint8Array) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents && recordStream) {
+    try { recordStream.write(Buffer.from(chunk as ArrayBuffer)); } catch { /* non-fatal */ }
+  }
+});
+ipcMain.on('capture:record-started', (event, info: { width?: number; height?: number; hasAudio?: boolean }) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    recordMeta = { width: info?.width ?? null, height: info?.height ?? null, hasAudio: !!info?.hasAudio };
+    log.info(`[capture] recorder running ${recordMeta.width}×${recordMeta.height}, audio: ${recordMeta.hasAudio ? 'yes' : 'no'}`);
+  }
+});
+ipcMain.on('capture:record-stopped', (event) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    void finalizeRecording();
+  }
+});
+ipcMain.on('capture:record-cancelled', (event) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    log.info('[capture] recording cancelled by user — discarded');
+    teardownRecording({ discardTemp: true });
+  }
+});
+ipcMain.on('capture:record-error', (event, info: { message?: string }) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    log.warn(`[capture] recorder error: ${info?.message ?? 'unknown'}`);
+    broadcast('capture:recordError', { message: info?.message ?? 'Recording failed.' });
+    teardownRecording({ discardTemp: true });
+  }
+});
+
+/** App-quit safety: flush the temp WebM so the startup orphan
+ *  recovery can transcode + index it on next launch. */
+export function flushRecordingOnQuit(): void {
+  if (recordStream) {
+    try { recordStream.end(); } catch { /* non-fatal */ }
+    recordStream = null;
+  }
+}
+
+/**
+ * Startup recovery — any rec-*.webm left in Captures-temp means a
+ * recording was live when PDR quit or crashed. Transcode + land it
+ * rather than silently losing the user's one-shot moment. The start
+ * timestamp comes back out of the temp filename.
+ */
+export async function recoverOrphanRecordings(): Promise<number> {
+  const dir = recordTempDir();
+  if (!fs.existsSync(dir)) return 0;
+  if (recordingState !== 'idle') return 0;
+  let entries: string[] = [];
+  try {
+    entries = fs.readdirSync(dir).filter((f) => /^rec-.*\.webm$/i.test(f));
+  } catch {
+    return 0;
+  }
+  let recovered = 0;
+  for (const name of entries) {
+    try {
+      const full = path.join(dir, name);
+      if (fs.statSync(toLongPath(full)).size === 0) {
+        try { fs.unlinkSync(toLongPath(full)); } catch { /* non-fatal */ }
+        continue;
+      }
+      const m = name.match(/^rec-(\d{4})-(\d{2})-(\d{2})_(\d{2})-(\d{2})-(\d{2})/);
+      const startedAt = m
+        ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +m[6])
+        : fs.statSync(toLongPath(full)).mtime;
+      const mp4Path = await transcodeWebmToMp4(full);
+      if (mp4Path) {
+        try { fs.unlinkSync(toLongPath(full)); } catch { /* non-fatal */ }
+        await persistRecording(mp4Path, startedAt, null, null);
+      } else {
+        await persistRecording(full, startedAt, null, null);
+      }
+      recovered++;
+      log.info(`[capture] recovered orphaned recording ${name}`);
+    } catch (err) {
+      log.warn(`[capture] orphan recording recovery failed for ${name} (left in place): ${(err as Error).message}`);
+    }
+  }
+  return recovered;
 }

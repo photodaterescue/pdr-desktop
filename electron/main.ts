@@ -322,6 +322,11 @@ import {
   registerCaptureHotkey,
   unregisterCaptureHotkey,
   checkConflictingCaptureTools,
+  startRecording,
+  stopRecording,
+  cancelRecording,
+  recoverOrphanRecordings,
+  flushRecordingOnQuit,
 } from './capture-manager.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
@@ -2722,6 +2727,12 @@ app.whenReady().then(() => {
   setTimeout(() => {
     flushPendingCaptures().catch((e) =>
       log.warn(`[Startup] pending-captures flush failed (non-fatal): ${(e as Error).message}`),
+    );
+    // v2.1 round 125 — recordings interrupted by a quit/crash leave a
+    // rec-*.webm in Captures-temp; transcode + land them rather than
+    // silently losing the user's one-shot moment.
+    recoverOrphanRecordings().catch((e) =>
+      log.warn(`[Startup] orphan-recording recovery failed (non-fatal): ${(e as Error).message}`),
     );
   }, 5000);
 
@@ -13189,6 +13200,34 @@ ipcMain.handle('capture:checkConflicts', async () => {
   }
 });
 
+// v2.1 round 125 (step 3) — screen recording. start spawns the
+// floating recorder widget (which owns getUserMedia + MediaRecorder);
+// stop/cancel command it; finalisation (FFmpeg → MP4 → index →
+// broadcast) runs in capture-manager when the widget reports back.
+ipcMain.handle('capture:startRecording', async (_event, opts?: { displayId?: string }) => {
+  try {
+    return await startRecording({ displayId: opts?.displayId, trigger: 'button' });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('capture:stopRecording', async () => {
+  try {
+    return stopRecording();
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('capture:cancelRecording', async () => {
+  try {
+    return cancelRecording();
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // Saves the new accelerator AND re-registers in one round-trip so the
 // Settings → Capture recorder can tell the user immediately when
 // Windows refused the combo (another app owns it). Mirrors
@@ -13469,4 +13508,7 @@ app.on('before-quit', () => {
   prewarmedAnalysisWorker = null;
   // v2.1 — release the screenshot hotkey back to the OS.
   try { unregisterCaptureHotkey(); } catch { /* best-effort */ }
+  // v2.1 round 125 — flush any in-flight recording's temp WebM so the
+  // startup orphan recovery can transcode + index it next launch.
+  try { flushRecordingOnQuit(); } catch { /* best-effort */ }
 });

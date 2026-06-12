@@ -122,13 +122,12 @@ export interface PDRSettings {
    *  keeps working regardless. */
   captureHotkey: string;
   /** v2.1 step 2 (Terry 2026-06-11) — what the global capture hotkey
-   *  DOES. 'fullscreen' grabs the whole display under the cursor
-   *  instantly (the step-1 behaviour, kept as default so the shipped
-   *  muscle-memory doesn't change); 'region' freezes the screen and
-   *  opens the drag-to-select overlay first — the Win+Shift+S-style
-   *  flow for users who mostly want a piece of the screen, not all
-   *  of it. The title-bar camera menu always offers both verbs
-   *  regardless of this setting. */
+   *  DOES. 'region' (default since round 125 — Terry pressed the
+   *  hotkey expecting to select an area; Win+Shift+S muscle-memory
+   *  agrees) freezes the screen and opens the click-a-window /
+   *  drag-to-select overlay. 'fullscreen' grabs the whole display
+   *  under the cursor instantly. The title-bar camera menu always
+   *  offers both verbs regardless of this setting. */
   captureHotkeyAction: 'fullscreen' | 'region';
   /** v2.1 round 124 (Terry 2026-06-11) — file format screenshots are
    *  saved in. 'png' (default) is lossless — text and UI stay
@@ -137,6 +136,13 @@ export interface PDRSettings {
    *  on fine text. Applies to both full-screen and region captures;
    *  recordings (later step) have their own format story (MP4). */
   captureFormat: 'png' | 'jpg';
+  /** v2.1 round 125 (Terry 2026-06-11) — include system audio (what
+   *  the computer is playing: calls, videos, music) in screen
+   *  recordings. Windows captures this natively via desktop loopback
+   *  — no virtual audio driver needed. Default ON; flip off for
+   *  silent recordings. Microphone capture is a separate later
+   *  feature (needs a device picker). */
+  captureRecordAudio: boolean;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -285,9 +291,13 @@ export const optimisedDefaults: PDRSettings = {
   captureHotkey: 'Ctrl+Shift+S',
   // v2.1 step 2 — hotkey takes the full screen by default; 'region'
   // opens the drag-to-select overlay instead. Button menu has both.
-  captureHotkeyAction: 'fullscreen',
+  // v2.1 round 125 — region default (was fullscreen): Terry pressed
+  // the hotkey expecting area-select; matches Win+Shift+S instinct.
+  captureHotkeyAction: 'region',
   // v2.1 round 124 — PNG default: lossless, sharp text.
   captureFormat: 'png',
+  // v2.1 round 125 — system audio in recordings by default.
+  captureRecordAudio: true,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -368,6 +378,7 @@ export function getSettings(): PDRSettings {
     captureHotkey: store.get('captureHotkey', optimisedDefaults.captureHotkey),
     captureHotkeyAction: store.get('captureHotkeyAction', optimisedDefaults.captureHotkeyAction),
     captureFormat: store.get('captureFormat', optimisedDefaults.captureFormat),
+    captureRecordAudio: store.get('captureRecordAudio', optimisedDefaults.captureRecordAudio),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),
