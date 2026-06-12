@@ -852,7 +852,7 @@ interface CollageLayout {
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
   canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number } };
-  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance }>;
+  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -869,8 +869,14 @@ const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n))
 // so the caller can read the result dims. The placement rotation is
 // applied by the caller afterwards.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance) {
-  let p = sharp(srcLong, { failOnError: false }).rotate().resize(iw, ih, { fit: 'cover', position: 'attention' });
+function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance, cropRect?: { left: number; top: number; width: number; height: number }) {
+  let p = sharp(srcLong, { failOnError: false }).rotate();
+  // v2.1 round 145 (Terry) — crop: extract the user's rect (in oriented
+  // px) BEFORE resizing to the tile box.
+  if (cropRect && cropRect.width > 1 && cropRect.height > 1) {
+    p = p.extract({ left: Math.max(0, cropRect.left), top: Math.max(0, cropRect.top), width: cropRect.width, height: cropRect.height });
+  }
+  p = p.resize(iw, ih, { fit: 'cover', position: 'attention' });
   if (enh) {
     const b = (enh.brightness ?? 100) / 100;
     const c = (enh.contrast ?? 100) / 100;
@@ -924,10 +930,29 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         const yFrac = clamp01(item.yFrac);
         const iw = Math.max(2, Math.round(wFrac * W));
         const ih = Math.max(2, Math.round(iw / aspect));
-        // Bake the tile (resize + its own Enhance state + frame). The
-        // result may be larger than iw×ih if a frame was added, so read
-        // its real dims back.
-        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh)
+        // v2.1 round 145 (Terry) — crop: convert the fractional rect to
+        // oriented pixels (swap dims for EXIF 90/270) for sharp .extract.
+        let cropRect: { left: number; top: number; width: number; height: number } | undefined;
+        const cr = item.crop;
+        if (cr && (cr.l > 0.001 || cr.t > 0.001 || cr.r < 0.999 || cr.b < 0.999)) {
+          try {
+            const meta = await sharp(toLongPath(item.path), { failOnError: false }).metadata();
+            let ow = meta.width || 0, oh = meta.height || 0;
+            if (meta.orientation && meta.orientation >= 5) { const tmp = ow; ow = oh; oh = tmp; }
+            const cl = clamp01(cr.l), ct = clamp01(cr.t), crr = clamp01(cr.r), cbb = clamp01(cr.b);
+            if (ow > 0 && oh > 0 && crr > cl && cbb > ct) {
+              cropRect = {
+                left: Math.round(cl * ow), top: Math.round(ct * oh),
+                width: Math.max(1, Math.min(ow - Math.round(cl * ow), Math.round((crr - cl) * ow))),
+                height: Math.max(1, Math.min(oh - Math.round(ct * oh), Math.round((cbb - ct) * oh))),
+              };
+            }
+          } catch { /* crop best-effort; fall back to full image */ }
+        }
+        // Bake the tile (crop + resize + its own Enhance state + frame).
+        // The result may be larger than iw×ih if a frame was added, so
+        // read its real dims back.
+        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect)
           .png()
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;

@@ -1799,10 +1799,12 @@
       box-shadow: 0 2px 10px rgba(0,0,0,0.25);
       will-change: transform, left, top, width, height;
     }
+    /* v2.1 round 145 (Terry) — crop. The image lives in a clip wrapper
+       (overflow:hidden) so it can be enlarged + offset to show only the
+       cropped region while the frame border (on the .collage-item box)
+       still surrounds it. */
+    .collage-clip { position: absolute; inset: 0; overflow: hidden; }
     .collage-item img {
-      width: 100%;
-      height: 100%;
-      object-fit: cover;
       display: block;
       pointer-events: none;
       -webkit-user-drag: none;
@@ -1859,6 +1861,16 @@
       cursor: pointer;
       font-weight: 700;
     }
+    /* v2.1 round 145 (Terry) — crop edge handles (thin bars at edge
+       midpoints; drag inward to trim that side). Distinct from the round
+       corner resize handle. */
+    .ch-crop { background: #fff; border: 2px solid #a78bfa; z-index: 6; }
+    .ch-crop-l, .ch-crop-r { width: 7px; height: 28px; top: 50%; margin-top: -14px; border-radius: 3px; cursor: ew-resize; }
+    .ch-crop-l { left: -4px; }
+    .ch-crop-r { right: -4px; }
+    .ch-crop-t, .ch-crop-b { height: 7px; width: 28px; left: 50%; margin-left: -14px; border-radius: 3px; cursor: ns-resize; }
+    .ch-crop-t { top: -4px; }
+    .ch-crop-b { bottom: -4px; }
     /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
        a + so the user knows clicking re-adds it. */
     .filmstrip .thumb.collage-off,
@@ -4655,7 +4667,18 @@
     const collageCanvasEl = document.getElementById('collage-canvas');
 
     function getCanvasAspect() { return COLLAGE_ASPECTS[collageAspectKey] || (3 / 2); }
-    function itemHeightFrac(it) { return (it.wFrac / (it.aspect || 1)) * getCanvasAspect(); }
+    // v2.1 round 145 (Terry) — effective aspect accounts for the crop
+    // rect (cropping changes the visible region's shape). crop defaults
+    // to the whole photo {l:0,t:0,r:1,b:1}.
+    function cropWH(it) {
+      const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
+      return { cw: Math.max(0.05, c.r - c.l), ch: Math.max(0.05, c.b - c.t) };
+    }
+    function effectiveAspect(it) {
+      const { cw, ch } = cropWH(it);
+      return (it.aspect || 1) * (cw / ch);
+    }
+    function itemHeightFrac(it) { return (it.wFrac / effectiveAspect(it)) * getCanvasAspect(); }
 
     function renderCollageItem(it) {
       if (!it || !it.el) return;
@@ -4663,13 +4686,28 @@
       it.el.style.display = '';
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       const iwPx = it.wFrac * cw;
-      const ihPx = iwPx / (it.aspect || 1);
+      const ihPx = iwPx / effectiveAspect(it);   // box matches the CROPPED shape
       it.el.style.width = iwPx + 'px';
       it.el.style.height = ihPx + 'px';
       it.el.style.left = (it.xFrac * cw) + 'px';
       it.el.style.top = (it.yFrac * ch) + 'px';
       it.el.style.transform = 'rotate(' + it.rot + 'deg)';
       it.el.style.zIndex = String(it.z);
+      // v2.1 round 145 — position the image inside the clip so only the
+      // crop region shows (enlarge by 1/cropW × 1/cropH, offset by the
+      // crop origin). With no crop this is an exact box fill.
+      if (it.imgEl) {
+        const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
+        const { cw: cropW } = cropWH(it);
+        const fullW = iwPx / cropW;
+        const fullH = fullW / (it.aspect || 1);
+        it.imgEl.style.position = 'absolute';
+        it.imgEl.style.width = fullW + 'px';
+        it.imgEl.style.height = fullH + 'px';
+        it.imgEl.style.left = (-c.l * fullW) + 'px';
+        it.imgEl.style.top = (-c.t * fullH) + 'px';
+        it.imgEl.style.objectFit = 'fill';
+      }
     }
     function renderAllCollage() {
       for (const it of collageItems) renderCollageItem(it);
@@ -4762,6 +4800,41 @@
         let deg = ang + 90; // rotate handle sits at the top of the tile
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         it.rot = deg;
+        renderCollageItem(it);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    // v2.1 round 145 (Terry) — crop: drag an edge handle inward to trim
+    // that side. crop is stored as {l,t,r,b} fractions of the photo;
+    // renderCollageItem enlarges + offsets the image to show just that
+    // region; the backend extracts the same rect on save.
+    function startItemCrop(it, e, edge) {
+      e.preventDefault(); e.stopPropagation();
+      beginCollageChange();
+      selectCollageItem(it);
+      const startX = e.clientX, startY = e.clientY;
+      const sc = { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b };
+      const cwpx = collageCanvasEl.clientWidth;
+      const iwPx = it.wFrac * cwpx;
+      const ihPx = iwPx / effectiveAspect(it);
+      const dims = cropWH(it);
+      const rad = (it.rot || 0) * Math.PI / 180;
+      const cosR = Math.cos(rad), sinR = Math.sin(rad);
+      const MIN = 0.08; // never crop below 8% of the photo
+      const move = (ev) => {
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        const localX = dx * cosR + dy * sinR;
+        const localY = -dx * sinR + dy * cosR;
+        if (edge === 'l') it.crop.l = Math.max(0, Math.min(sc.r - MIN, sc.l + localX * (dims.cw / iwPx)));
+        else if (edge === 'r') it.crop.r = Math.min(1, Math.max(sc.l + MIN, sc.r + localX * (dims.cw / iwPx)));
+        else if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, sc.t + localY * (dims.ch / ihPx)));
+        else if (edge === 'b') it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY * (dims.ch / ihPx)));
         renderCollageItem(it);
       };
       const up = () => {
@@ -4880,7 +4953,7 @@
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, bgOpacity: collageBgOpacity, aspectKey: collageAspectKey,
-        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, enh: it.enh })),
+        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, enh: it.enh })),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -4903,6 +4976,7 @@
         const it = collageItems[si.idx];
         if (!it) return;
         it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
+        if (si.crop) it.crop = { l: si.crop.l, t: si.crop.t, r: si.crop.r, b: si.crop.b };
         it.enh = Object.assign({}, si.enh);
         if (si.z > maxZ) maxZ = si.z;
       });
@@ -4952,10 +5026,15 @@
         // enh = this tile's own Enhance state (edited via the side panel
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
+          crop: { l: 0, t: 0, r: 1, b: 1 },
           enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
+        // v2.1 round 145 — image in a clip wrapper so crop can enlarge +
+        // offset it without spilling past the frame.
+        const clip = document.createElement('div');
+        clip.className = 'collage-clip';
         const img = document.createElement('img');
         img.alt = '';
         let imgRetried = false;
@@ -4965,7 +5044,8 @@
           renderCollageItem(it);
         };
         img.src = getFileSrc(fp);
-        el.appendChild(img);
+        clip.appendChild(img);
+        el.appendChild(clip);
         const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap to 15°)';
         // v2.1 round 141 (Terry) — clean single circular-arrow rotate
         // glyph (Bootstrap arrow-clockwise) — the Paint 3D shape. The
@@ -4973,15 +5053,26 @@
         hRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
         const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.title = 'Resize';
         const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.title = 'Remove from collage';
+        // v2.1 round 145 — crop edge handles (drag inward to trim a side).
+        const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.title = 'Crop left edge';
+        const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.title = 'Crop right edge';
+        const hCropT = document.createElement('div'); hCropT.className = 'ch ch-crop ch-crop-t'; hCropT.title = 'Crop top edge';
+        const hCropB = document.createElement('div'); hCropB.className = 'ch ch-crop ch-crop-b'; hCropB.title = 'Crop bottom edge';
         el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
+        el.appendChild(hCropL); el.appendChild(hCropR); el.appendChild(hCropT); el.appendChild(hCropB);
+        const handles = [hRot, hRes, hRem, hCropL, hCropR, hCropT, hCropB];
         el.addEventListener('pointerdown', (e) => {
-          if (e.target === hRot || e.target === hRes || e.target === hRem) return;
+          if (handles.indexOf(e.target) !== -1) return;
           startItemDrag(it, e);
         });
         hRes.addEventListener('pointerdown', (e) => startItemResize(it, e));
         hRot.addEventListener('pointerdown', (e) => startItemRotate(it, e));
         hRem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
-        it.el = el; it.imgEl = img;
+        hCropL.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'l'));
+        hCropR.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'r'));
+        hCropT.addEventListener('pointerdown', (e) => startItemCrop(it, e, 't'));
+        hCropB.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'b'));
+        it.el = el; it.imgEl = img; it.clipEl = clip;
         collageCanvasEl.appendChild(el);
         collageItems.push(it);
       });
@@ -5162,7 +5253,10 @@
         // is drawn last.
         const ordered = on.slice().sort((p, q) => p.z - q.z);
         const items = ordered.map((it) => ({
-          path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
+          path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac,
+          // v2.1 round 145 — send the CROPPED aspect so the backend tile
+          // box matches what's on screen; crop rect baked via extract.
+          aspect: effectiveAspect(it), rot: it.rot, crop: it.crop,
           // v2.1 round 140 — each tile's own Enhance settings, baked
           // per-photo by the backend.
           enh: it.enh,
@@ -5888,26 +5982,30 @@ function zoomTo(newZoom, centreX, centreY) {
       // Apply a filter string + (inset border) frame preview to one
       // element from a given state. Factored out so both the single-
       // image path and the per-tile collage path share it.
-      function applyFilterToEl(el, s, filterStr) {
+      // v2.1 round 145 (Terry) — borderEl lets the frame go on a DIFFERENT
+      // element than the filtered one. Collage tiles filter the <img> (in
+      // a clip wrapper) but draw the frame on the .collage-item box, so a
+      // cropped image doesn't clip its own frame. Single-photo: both = img.
+      function applyFilterToEl(el, s, filterStr, borderEl) {
         el.style.filter = filterStr;
         // v2.1 round 143 (Terry) — per-tile transparency. 1 in single-
         // image mode (the control is collage-only) so this is a no-op there.
         el.style.opacity = (s.opacity != null && s.opacity < 1) ? String(s.opacity) : '';
+        const bEl = borderEl || el;
         // v2.1 round 137 (Terry) — frame preview via an inset BORDER,
         // not box-shadow (box-shadow clipped top/bottom on full-height
         // portraits). box-sizing:border-box draws inside the box, all 4
         // sides always visible. The saved file is an even outset frame
         // (sharp .extend) — this is just a faithful all-sides preview.
         if (s.borderColor) {
-          const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
+          const shortPx = Math.min(bEl.clientWidth || 600, bEl.clientHeight || 400);
           const frac = s.borderWeight === 'mat' ? 0.08 : 0.035;
           const w = Math.max(4, Math.round(shortPx * frac));
-          el.style.boxSizing = 'border-box';
-          el.style.border = w + 'px solid ' + s.borderColor;
-          el.style.boxShadow = 'none';
+          bEl.style.boxSizing = 'border-box';
+          bEl.style.border = w + 'px solid ' + s.borderColor;
+          bEl.style.boxShadow = 'none';
         } else {
-          el.style.border = '';
-          el.style.boxShadow = 'none';
+          bEl.style.border = '';
         }
       }
 
@@ -5919,7 +6017,7 @@ function zoomTo(newZoom, centreX, centreY) {
         // and remove/re-add.
         if (collageActive) {
           if (collageTile && collageTile.imgEl) {
-            applyFilterToEl(collageTile.imgEl, state, filterStr);
+            applyFilterToEl(collageTile.imgEl, state, filterStr, collageTile.el);
             collageTile.enh = {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, bw: state.bw, tone: state.tone,
@@ -8001,7 +8099,7 @@ function zoomTo(newZoom, centreX, centreY) {
         // without routing through the panel's live state).
         applyTileEnh: function (tile) {
           if (!tile || !tile.imgEl) return;
-          applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}));
+          applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}), tile.el);
         },
         // v2.1 round 144 — the unified collage colour picker drives the
         // selected tile's frame through these (only when a tile is the
