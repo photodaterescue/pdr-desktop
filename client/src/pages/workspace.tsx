@@ -2849,13 +2849,16 @@ return (
         lived only inside S&D and vanished on navigation). The capture-
         phase click handler above does the actual picking. */}
     {collageBgPick && (
-      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-3 px-4 py-2.5 rounded-full bg-primary text-primary-foreground shadow-lg border border-white/20 max-w-[90vw]">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0 opacity-90"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+      // v2.1 round 143 (Terry) — GOLD (not lavender) so it doesn't clash
+      // with the lavender title bar and grabs instant attention, matching
+      // the gold selection chips.
+      <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-3 px-4 py-2.5 rounded-full bg-[var(--color-gold)] text-[#1f1a08] shadow-lg border border-[#1f1a08]/15 max-w-[90vw]">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
         <div className="text-sm truncate">
           <span className="font-semibold">Choosing a background for {collageBgPickLabel}</span>
           <span className="opacity-80"> — click any photo to use it</span>
         </div>
-        <button onClick={cancelCollageBgPick} className="ml-1 shrink-0 text-xs px-3 py-1 rounded-full bg-white/15 hover:bg-white/25 transition-colors">Cancel</button>
+        <button onClick={cancelCollageBgPick} className="ml-1 shrink-0 text-xs font-medium px-3 py-1 rounded-full bg-[#1f1a08]/12 hover:bg-[#1f1a08]/22 transition-colors">Cancel</button>
       </div>
     )}
 

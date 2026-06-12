@@ -1897,6 +1897,13 @@
     .enhance-collage-section { display: none; }
     body.collage-mode .enhance-collage-section { display: block; }
     .enhance-collage-section .ec-row { display: flex; gap: 6px; margin: 6px 0 12px; flex-wrap: wrap; }
+    /* v2.1 round 143 (Terry "overlap is still an issue") — the global
+       .enhance-presets-label has margin-bottom:-6px (tightens the Looks
+       strip). In the collage section that pulled the Background swatches
+       + shape buttons UP onto their labels. Give the collage labels real
+       breathing room so nothing overlaps. */
+    .enhance-collage-section .enhance-presets-label { margin: 6px 0 6px; }
+    .enhance-collage-section .frame-palette { margin-top: 2px; }
     .ec-shape-btn {
       flex: 1; min-width: 64px;
       background: transparent;
@@ -1937,6 +1944,18 @@
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
     body.collage-mode .enhance-collage-only { display: flex; }
+    /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
+       the Enhance panel from getting "chocka block". */
+    .enhance-collapse { padding: 0; }
+    .enhance-collapse > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a8a93;
+      display: flex; align-items: center; gap: 6px; padding: 2px 0; user-select: none;
+    }
+    .enhance-collapse > summary::-webkit-details-marker { display: none; }
+    .enhance-collapse > summary::before { content: '\25B8'; font-size: 10px; transition: transform 120ms; color: #a99cff; }
+    .enhance-collapse[open] > summary::before { transform: rotate(90deg); }
+    .enhance-collapse[open] { display: flex; flex-direction: column; gap: 14px; }
     /* Hide the Faces + AI sections in collage mode (per-tile face
        marking doesn't apply to a composite). */
     body.collage-mode .enhance-mark-face-section,
@@ -2102,7 +2121,7 @@
           Use a photo…
         </button>
         <div id="collage-bg-fade-row" style="display:none; margin-top:10px">
-          <div class="enhance-label-row"><label for="collage-bg-fade">Photo fade</label><span class="enhance-val" id="collage-bg-fade-val">40</span></div>
+          <div class="enhance-label-row"><label for="collage-bg-fade">Background fade</label><span class="enhance-val" id="collage-bg-fade-val">40</span></div>
           <input class="enhance-slider" id="collage-bg-fade" type="range" min="5" max="100" step="1" value="40">
           <button id="collage-bg-remove" type="button" style="margin-top:8px;width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
         </div>
@@ -2160,6 +2179,13 @@
         <button data-weight="thin" class="active">Thin</button>
         <button data-weight="mat">Mat (wide)</button>
       </div>
+      <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
+           chevron to declutter ("largely pre-chosen by Looks; if someone
+           wants to manually do it, then they can"). Open by default in
+           single-photo mode; enterCollageMode() collapses it for the
+           busier collage panel. -->
+      <details class="enhance-collapse" id="enhance-levels" open>
+        <summary>Adjust levels</summary>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-brightness">Brightness</label>
@@ -2194,13 +2220,14 @@
           <input type="checkbox" class="enhance-toggle" id="toggle-bw">
         </div>
       </div>
+      </details>
       <!-- v2.1 round 143 (Terry) — per-photo Opacity (transparency).
            Collage-only: meaningful over the collage background. A
            transparent single photo would just flatten to the frame/
            white on JPEG save, so it's hidden outside collage mode. -->
       <div class="enhance-control enhance-collage-only">
         <div class="enhance-label-row">
-          <label for="slider-opacity">Opacity</label>
+          <label for="slider-opacity">Fade this photo</label>
           <span class="enhance-val" id="val-opacity">100</span>
         </div>
         <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
@@ -5116,6 +5143,9 @@
       try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
       buildCollageItems();
       buildBgSwatches();
+      // Collapse the manual Levels in collage mode — the panel is busier
+      // here and Looks pre-set them (single-photo mode keeps it open).
+      try { const lv = document.getElementById('enhance-levels'); if (lv) lv.removeAttribute('open'); } catch (_) {}
       wireCollageControls();
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.enterCollage(saveCollage); } catch (_) {}
       // Lay out + tidy once now, and again after the panel slide + layout
