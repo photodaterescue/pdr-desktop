@@ -430,6 +430,24 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
     camFadedOut: () => ipcRenderer.send('capture:cam-fadedout'),
     camError: (info: { message: string }) => ipcRenderer.send('capture:cam-error', info),
+  },
+
+  // v2.1 round 138 (Terry 2026-06-12) — Collage. open() launches the
+  // composer window with the selected photos; the composer page uses
+  // onInit / create / close.
+  collage: {
+    open: (filePaths: string[]) =>
+      ipcRenderer.invoke('collage:open', filePaths) as Promise<{ success: boolean; error?: string }>,
+    create: (opts: { filePaths: string[]; cols?: number; background?: string }) =>
+      ipcRenderer.invoke('collage:create', opts) as Promise<{
+        success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
+      }>,
+    close: () => ipcRenderer.send('collage:close'),
+    onInit: (callback: (info: { items: Array<{ path: string; url: string }> }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('collage:init', handler);
+      return () => ipcRenderer.removeListener('collage:init', handler);
+    },
     onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
       const handler = (_event: any, cmd: any) => callback(cmd);
       ipcRenderer.on('capture:record-do', handler);

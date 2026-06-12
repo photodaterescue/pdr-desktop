@@ -821,6 +821,167 @@ export async function flushPendingCaptures(): Promise<number> {
   return flushed;
 }
 
+// ─── Collage (v2.1 round 138, Terry 2026-06-12) ──────────────────────────────
+//
+// Multi-select → "Create Collage" opens a composer window where the
+// user jumbles / removes / reorders the chosen photos; pressing Create
+// composites them into ONE image (sharp grid) saved as a born-in-PDR
+// file, then opens it in PDRV so all the usual Looks / Frames / sliders
+// apply to the finished collage. The composer just decides ORDER +
+// which photos + the column count; this function does the pixels.
+
+function autoCollageCols(n: number): number {
+  if (n <= 1) return 1;
+  if (n <= 4) return 2;
+  if (n <= 9) return 3;
+  if (n <= 16) return 4;
+  return 5;
+}
+
+export interface CreateCollageResult {
+  success: boolean;
+  filePath?: string;
+  filename?: string;
+  fileId?: number | null;
+  pending?: boolean;
+  error?: string;
+}
+
+/**
+ * Composite an ordered list of photos into a square-cell grid collage
+ * and land it in the library like a capture. cols defaults to an
+ * auto grid; gap + background are the mat between/around cells.
+ */
+export async function createCollage(opts: {
+  filePaths: string[];
+  cols?: number;
+  gap?: number;
+  background?: string;
+}): Promise<CreateCollageResult> {
+  const paths = (opts.filePaths || []).filter((p) => p && fs.existsSync(toLongPath(p)));
+  if (paths.length < 2) return { success: false, error: 'Pick at least two photos for a collage.' };
+  try {
+    const sharp = (await import('sharp')).default;
+    const cols = Math.max(1, Math.min(opts.cols || autoCollageCols(paths.length), 6));
+    const rows = Math.ceil(paths.length / cols);
+    const cell = 640;
+    const gap = Math.max(0, opts.gap ?? 14);
+    const bg = /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(opts.background || '') ? opts.background! : '#ffffff';
+    const canvasW = cols * cell + (cols + 1) * gap;
+    const canvasH = rows * cell + (rows + 1) * gap;
+
+    const composites: Array<{ input: Buffer; left: number; top: number }> = [];
+    for (let i = 0; i < paths.length; i++) {
+      const col = i % cols;
+      const row = Math.floor(i / cols);
+      try {
+        const buf = await sharp(toLongPath(paths[i]), { failOnError: false })
+          .rotate()
+          .resize(cell, cell, { fit: 'cover', position: 'attention' })
+          .toBuffer();
+        composites.push({ input: buf, left: gap + col * (cell + gap), top: gap + row * (cell + gap) });
+      } catch (cellErr) {
+        log.warn(`[collage] skipped a photo (${paths[i]}): ${(cellErr as Error).message}`);
+      }
+    }
+    if (composites.length === 0) return { success: false, error: 'None of the photos could be read.' };
+
+    const collageBuf = await sharp({
+      create: { width: canvasW, height: canvasH, channels: 3, background: bg },
+    }).composite(composites).jpeg({ quality: 90, mozjpeg: true }).toBuffer();
+
+    const capturedAt = new Date();
+    const { date, time, month } = timestampParts(capturedAt);
+    const libRoot = onlineLibraryRoot();
+    const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
+    fs.mkdirSync(toLongPath(destDir), { recursive: true });
+    // _CO suffix joins the _SS/_SR capture-suffix family (rebuild
+    // re-derives confirmed + PDR-Capture from it).
+    const outPath = uniqueCapturePath(destDir, `${date}_${time}_CO`, '.jpg');
+    fs.writeFileSync(toLongPath(outPath), collageBuf);
+    const filename = path.basename(outPath);
+    await stampCaptureMetadata(outPath, capturedAt, 'collage');
+
+    let fileId: number | null = null;
+    if (libRoot) {
+      try {
+        fileId = await indexCapturedFile(outPath, libRoot, capturedAt, canvasW, canvasH, 'photo');
+        if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
+      } catch (idxErr) {
+        log.warn(`[collage] index pass failed (file still saved): ${(idxErr as Error).message}`);
+      }
+    }
+    log.info(`[collage] created ${filename} (${composites.length} photos, ${cols}×${rows}, ${canvasW}×${canvasH})${fileId != null ? ` → library id ${fileId}` : libRoot ? '' : ' → pending'}`);
+    return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
+  } catch (err) {
+    log.warn(`[collage] create failed: ${(err as Error).message}`);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+// The composer window (collage.html) — a frameless window that shows
+// the chosen photos as draggable/removable tiles and calls back with
+// the final order + column count. One at a time.
+let collageWindow: BrowserWindow | null = null;
+
+export function openCollageComposer(filePaths: string[]): { success: boolean; error?: string } {
+  const paths = (filePaths || []).filter((p) => p && fs.existsSync(toLongPath(p)));
+  if (paths.length < 2) return { success: false, error: 'Select at least two photos to make a collage.' };
+  if (collageWindow && !collageWindow.isDestroyed()) {
+    try { collageWindow.focus(); } catch { /* non-fatal */ }
+    return { success: true };
+  }
+  const win = new BrowserWindow({
+    width: 980,
+    height: 760,
+    title: 'Create Collage — PDR',
+    backgroundColor: '#16161a',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  collageWindow = win;
+  win.setMenu(null);
+  win.on('closed', () => { if (collageWindow === win) collageWindow = null; });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    // Send the photos as pdr-file URLs the page can show as <img>.
+    const items = paths.map((p) => ({ path: p, url: 'pdr-file://local/?f=' + encodeURIComponent(p) }));
+    win.webContents.send('collage:init', { items });
+    win.show();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/collage.html'));
+  return { success: true };
+}
+
+function closeCollageComposer(): void {
+  if (collageWindow && !collageWindow.isDestroyed()) {
+    try { collageWindow.close(); } catch { /* non-fatal */ }
+  }
+  collageWindow = null;
+}
+
+// Composer → main: composite the collage from the final order/cols and
+// return the saved path. The composer renderer then opens it in PDRV
+// (via its own window.pdr.search.openViewer) and closes itself — keeps
+// the viewer-open out of this module (no circular import into main).
+ipcMain.handle('collage:create', async (_event, opts: { filePaths: string[]; cols?: number; background?: string }) => {
+  return await createCollage(opts);
+});
+// Renderer (a multi-selection surface) → open the composer window.
+ipcMain.handle('collage:open', async (_event, filePaths: string[]) => {
+  return openCollageComposer(Array.isArray(filePaths) ? filePaths : []);
+});
+// Composer asks to close itself after it has opened the result.
+ipcMain.on('collage:close', (event) => {
+  if (collageWindow && !collageWindow.isDestroyed() && event.sender === collageWindow.webContents) {
+    closeCollageComposer();
+  }
+});
+
 // ─── Global hotkey ───────────────────────────────────────────────────────────
 
 let currentAccelerator: string | null = null;

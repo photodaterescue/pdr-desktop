@@ -2971,6 +2971,16 @@ export function onCaptureRecordError(callback: (info: { message: string }) => vo
   catch { return () => {}; }
 }
 
+// ─── Collage (v2.1 round 138) ───────────────────────────────────────────────
+// Open the collage composer with the selected photos' file paths. The
+// composer handles reorder/remove/jumble + composite, then opens the
+// result in PDRV.
+export async function openCollageComposer(filePaths: string[]): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false, error: 'Not running in Electron' };
+  try { return await (window as any).pdr?.collage?.open?.(filePaths); }
+  catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
 // v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model
 // installer bridge. The Settings cards call these to surface the
 // install/uninstall state of the optional ONNX models (CodeFormer +

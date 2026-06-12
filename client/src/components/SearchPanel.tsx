@@ -120,6 +120,7 @@ import {
   formatBytes,
   isElectron,
   openSearchViewer,
+  openCollageComposer,
   prepareVideoForPlayback,
   listScannerOverrides,
   setScannerOverride,
@@ -5099,6 +5100,22 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
                   </DropdownMenuItem>
+                  {/* v2.1 round 138 (Terry) — Create Collage from 2+
+                      selected photos → composer → PDRV. Photos only. */}
+                  {(() => {
+                    const photos = Array.from(selectedFilesMap.values()).filter(f => f.file_type !== 'video');
+                    if (photos.length < 2) return null;
+                    return (
+                      <DropdownMenuItem
+                        disabled={fixActive}
+                        onSelect={() => { void openCollageComposer(photos.map(p => p.file_path)); }}
+                        data-testid="sd-create-collage"
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                        Create collage from {photos.length} photos…
+                      </DropdownMenuItem>
+                    );
+                  })()}
                   {(() => {
                     const videos = Array.from(selectedFilesMap.values()).filter(f => f.file_type === 'video');
                     if (videos.length === 0) return null;

@@ -7,6 +7,7 @@ import {
   ChevronRight,
   ChevronUp,
   ChevronDown,
+  LayoutGrid,
   Sparkles,
   Film,
   Scissors,
@@ -67,7 +68,7 @@ import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
 import MemoriesPendingView from '@/components/MemoriesPendingView';
-import { getPendingCounts, type PendingCounts, type PendingTier } from '@/lib/electron-bridge';
+import { getPendingCounts, openCollageComposer, type PendingCounts, type PendingTier } from '@/lib/electron-bridge';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import {
   DropdownMenu,
@@ -2707,6 +2708,22 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   <FolderPlus className="w-3.5 h-3.5 mr-2" />
                   Add to album…
                 </DropdownMenuItem>
+                {/* v2.1 round 138 (Terry) — Create Collage from 2+
+                    selected photos. Opens the composer → PDRV. Photos
+                    only (videos can't be tiled into a still collage). */}
+                {(() => {
+                  const photos = base.filter(f => selectedFileIds.has(f.id) && f.file_type !== 'video');
+                  if (photos.length < 2) return null;
+                  return (
+                    <DropdownMenuItem
+                      onSelect={() => { void openCollageComposer(photos.map(p => p.file_path)); }}
+                      data-testid="memories-actions-create-collage"
+                    >
+                      <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                      Create collage from {photos.length} photos…
+                    </DropdownMenuItem>
+                  );
+                })()}
                 {selectedVideos.length > 0 && (
                   <DropdownMenuItem
                     onSelect={() => transcribeSelectedVideos(selectedVideos.map(v => v.file_path))}

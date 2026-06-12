@@ -42,6 +42,7 @@ import {
   HardDrive,
   Search,
   FolderPlus,
+  LayoutGrid,
   Captions,
   Copy,
   Undo2,
@@ -78,6 +79,7 @@ import {
   restorePendingDates,
   moveToRecycleBin,
   openSearchViewer,
+  openCollageComposer,
   type PendingFile,
   type PendingTier,
   type PendingCounts,
@@ -1176,6 +1178,18 @@ export default function MemoriesPendingView({
                 Add {selectedFileIds.size} to S&amp;D pile
               </DropdownMenuItem>
               <DropdownMenuSeparator />
+              {/* v2.1 round 138 (Terry) — Create Collage from 2+
+                  selected photos → composer → PDRV. Photos only. */}
+              {(() => {
+                const photos = (visibleFiles ?? []).filter((f) => selectedFileIds.has(f.id) && f.file_type !== 'video');
+                if (photos.length < 2) return null;
+                return (
+                  <DropdownMenuItem onSelect={() => { void openCollageComposer(photos.map((p) => p.file_path)); }}>
+                    <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                    Create collage from {photos.length} photos…
+                  </DropdownMenuItem>
+                );
+              })()}
               <DropdownMenuItem onSelect={() => setAddToAlbumOpenTick((t) => t + 1)}>
                 <FolderPlus className="w-3.5 h-3.5 mr-2" />
                 Add to album…

@@ -64,6 +64,7 @@ import {
   getThumbnail,
   openSearchViewer,
   setAlbumCoverPhoto,
+  openCollageComposer,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
@@ -3357,6 +3358,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <SearchIcon className="w-3.5 h-3.5 mr-2" />
                         Send to S&amp;D{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id) ? ` (${selectedAlbumPhotoIds.size})` : ''}
                       </ContextMenuItem>
+                      {/* v2.1 round 138 (Terry) — Create Collage from a
+                          multi-selection of album photos → composer →
+                          PDRV. Photos only. */}
+                      {(() => {
+                        if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) return null;
+                        const photos = albumPhotos.filter(ph => selectedAlbumPhotoIds.has(ph.id) && !isVideoPathExt(ph.file_path));
+                        if (photos.length < 2) return null;
+                        return (
+                          <ContextMenuItem
+                            onSelect={() => { void openCollageComposer(photos.map(ph => ph.file_path)); }}
+                            data-testid={`album-create-collage-${p.id}`}
+                          >
+                            <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                            Create collage from {photos.length} photos…
+                          </ContextMenuItem>
+                        );
+                      })()}
                       <ContextMenuItem
                         onSelect={() => {
                           const fileIds = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
