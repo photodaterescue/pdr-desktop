@@ -430,24 +430,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
     camFadedOut: () => ipcRenderer.send('capture:cam-fadedout'),
     camError: (info: { message: string }) => ipcRenderer.send('capture:cam-error', info),
-  },
-
-  // v2.1 round 138 (Terry 2026-06-12) — Collage. open() launches the
-  // composer window with the selected photos; the composer page uses
-  // onInit / create / close.
-  collage: {
-    open: (filePaths: string[]) =>
-      ipcRenderer.invoke('collage:open', filePaths) as Promise<{ success: boolean; error?: string }>,
-    create: (opts: { filePaths: string[]; cols?: number; background?: string }) =>
-      ipcRenderer.invoke('collage:create', opts) as Promise<{
-        success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
-      }>,
-    close: () => ipcRenderer.send('collage:close'),
-    onInit: (callback: (info: { items: Array<{ path: string; url: string }> }) => void) => {
-      const handler = (_event: any, info: any) => callback(info);
-      ipcRenderer.on('collage:init', handler);
-      return () => ipcRenderer.removeListener('collage:init', handler);
-    },
+    // ── Recording widget channels (capture-record-widget.html) ──
+    // v2.1 round 139 — these (and the region-overlay channels below)
+    // were briefly trapped inside the `collage` namespace when round
+    // 138 inserted it mid-object; the widget calls them as
+    // pdr.capture.record* / pdr.capture.overlay* and they silently
+    // resolved to undefined (guarded calls → no chunks sent → empty
+    // recordings; region overlay select/cancel dead). Restored to
+    // capture where they belong.
     onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
       const handler = (_event: any, cmd: any) => callback(cmd);
       ipcRenderer.on('capture:record-do', handler);
@@ -473,6 +463,20 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     overlaySelect: (rect: { x: number; y: number; width: number; height: number }) =>
       ipcRenderer.send('capture:overlay-select', rect),
     overlayCancel: () => ipcRenderer.send('capture:overlay-cancel'),
+  },
+
+  // v2.1 round 139 (Terry 2026-06-12) — Collage. The freeform editor
+  // lives in PDRV now (opened via search:openViewer with the collage
+  // flag); this is just the save-back channel — main composites the
+  // full-resolution originals with sharp and lands a _CO file.
+  collage: {
+    saveLayout: (layout: {
+      canvas: { w: number; h: number; bg: string };
+      items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number }>;
+    }) =>
+      ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{
+        success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
+      }>,
   },
 
 
@@ -799,7 +803,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       delete: (id: number) => ipcRenderer.invoke('search:favourites:delete', id),
       rename: (id: number, name: string) => ipcRenderer.invoke('search:favourites:rename', id, name),
     },
-    openViewer: (filePaths: string[], fileNames: string[], startIndex?: number) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex),
+    openViewer: (filePaths: string[], fileNames: string[], startIndex?: number, collage?: boolean) => ipcRenderer.invoke('search:openViewer', filePaths, fileNames, startIndex, collage),
     checkPathsExist: (paths: string[]) => ipcRenderer.invoke('search:checkPathsExist', paths),
     /** Sent by the viewer window each time the user navigates to a
      *  different photo. Other renderers (PM's FaceGridModal) can

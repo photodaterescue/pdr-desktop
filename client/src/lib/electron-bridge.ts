@@ -2971,14 +2971,17 @@ export function onCaptureRecordError(callback: (info: { message: string }) => vo
   catch { return () => {}; }
 }
 
-// ─── Collage (v2.1 round 138) ───────────────────────────────────────────────
-// Open the collage composer with the selected photos' file paths. The
-// composer handles reorder/remove/jumble + composite, then opens the
-// result in PDRV.
+// ─── Collage (v2.1 round 139) ───────────────────────────────────────────────
+// Open the selected photos straight into PDRV's freeform collage editor
+// (round 139 — Terry: build on PDRV, not a separate window). The
+// `collage` flag on openViewer routes the viewer into collage mode,
+// where the photos become the filmstrip pool + the freeform stage.
 export async function openCollageComposer(filePaths: string[]): Promise<{ success: boolean; error?: string }> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
-  try { return await (window as any).pdr?.collage?.open?.(filePaths); }
-  catch (e) { return { success: false, error: (e as Error).message }; }
+  try {
+    const names = filePaths.map(p => p.split(/[\\/]/).pop() || 'photo');
+    return await (window as any).pdr?.search?.openViewer?.(filePaths, names, 0, true);
+  } catch (e) { return { success: false, error: (e as Error).message }; }
 }
 
 // v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model

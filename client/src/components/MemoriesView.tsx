@@ -3356,6 +3356,24 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <Search className="w-3.5 h-3.5 mr-2" />
                     Send to S&amp;D{selectedFileIds.size > 0 && selectedFileIds.has(f.id) ? ` (${selectedFileIds.size})` : ''}
                   </ContextMenuItem>
+                  {/* v2.1 round 139 (Terry) — Create collage in the
+                      per-tile right-click menu too (was only in the
+                      Actions bulk menu). Shown when 2+ photos selected. */}
+                  {(() => {
+                    if (!(selectedFileIds.size >= 2 && selectedFileIds.has(f.id))) return null;
+                    const base = visibleFiles ?? files ?? [];
+                    const photos = base.filter(x => selectedFileIds.has(x.id) && x.file_type !== 'video');
+                    if (photos.length < 2) return null;
+                    return (
+                      <ContextMenuItem
+                        onSelect={() => { void openCollageComposer(photos.map(p => p.file_path)); }}
+                        data-testid={`memories-tile-create-collage-${f.id}`}
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                        Create collage from {photos.length} photos…
+                      </ContextMenuItem>
+                    );
+                  })()}
                   <ContextMenuItem
                     onSelect={() => {
                       const fileIds = selectedFileIds.size > 0 && selectedFileIds.has(f.id)

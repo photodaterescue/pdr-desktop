@@ -11227,7 +11227,7 @@ let viewerLoadInFlight = false;
 // process state instead — the viewer fetches it once on mount via the
 // viewer:getPendingFileList IPC. Cleared after consumption so a stale
 // list can't leak across opens.
-let viewerPendingFiles: { files: string[]; startIndex: number } | null = null;
+let viewerPendingFiles: { files: string[]; startIndex: number; collage?: boolean } | null = null;
 ipcMain.handle('viewer:getPendingFileList', () => {
   const payload = viewerPendingFiles;
   viewerPendingFiles = null;
@@ -11269,7 +11269,7 @@ ipcMain.handle('viewer:getFileDates', async (_event, filePaths: string[]): Promi
   }
 });
 
-ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileNames: string[], startIndex?: number) => {
+ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileNames: string[], startIndex?: number, collage?: boolean) => {
   // Skip if a previous open is mid-flight. Returns success:true on
   // purpose — the caller doesn't need to retry; the previous load
   // will resolve and the viewer will appear with its file set. A
@@ -11286,10 +11286,15 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     // v2.0.14 — stash the file list in main state; the viewer fetches
     // it via viewer:getPendingFileList instead of parsing a URL with
     // a 6,000-element JSON blob in it.
-    viewerPendingFiles = { files: filePaths, startIndex: start };
-    const title = filePaths.length === 1
-      ? fileNames[0] + ' — PDR Viewer'
-      : `${start + 1} of ${filePaths.length} — PDR Viewer`;
+    // v2.1 round 139 (Terry) — collage flag rides along so the viewer
+    // opens straight into the freeform collage editor (the photos
+    // become the collage pool), instead of a separate window.
+    viewerPendingFiles = { files: filePaths, startIndex: start, collage: collage === true };
+    const title = collage === true
+      ? `Collage (${filePaths.length}) — PDR Viewer`
+      : filePaths.length === 1
+        ? fileNames[0] + ' — PDR Viewer'
+        : `${start + 1} of ${filePaths.length} — PDR Viewer`;
 
     // Release the load lock as soon as the viewer's webContents
     // reports finished — succeed or fail. Attached once per

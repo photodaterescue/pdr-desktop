@@ -1669,9 +1669,200 @@
       0%, 70% { opacity: 1; }
       100% { opacity: 0; }
     }
+
+    /* ===========================================================
+       v2.1 round 139 (Terry 2026-06-12) — FREEFORM COLLAGE EDITOR
+       The viewer opens straight into this when the collage flag is
+       set on the pending file list. The selected photos become a
+       freely arrangeable pool: each tile moves (grab), resizes
+       (corner) and rotates (top handle). The bottom filmstrip is
+       repurposed as a keep / sideline pool — click a tile there to
+       drop it from the canvas or bring it back, without re-picking.
+       =========================================================== */
+    #collage-root {
+      flex: 1 1 auto;
+      min-height: 0;
+      display: none;
+      flex-direction: column;
+      background: #16161f;
+    }
+    #collage-root.active { display: flex; }
+    .collage-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 12px;
+      background: #1f1f2b;
+      border-bottom: 1px solid rgba(255,255,255,0.07);
+      flex: 0 0 auto;
+      flex-wrap: wrap;
+    }
+    .collage-bar .cb-title {
+      font-size: 13px;
+      font-weight: 600;
+      color: #ddd6fe;
+      margin-right: 4px;
+    }
+    .collage-bar .cb-hint {
+      font-size: 11px;
+      color: #8b8b9a;
+      margin-right: auto;
+    }
+    .collage-group {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .collage-group .cb-label {
+      font-size: 11px;
+      color: #9a9aa8;
+      margin-right: 2px;
+    }
+    .cb-aspect {
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.14);
+      color: #cfcfe0;
+      font-size: 11px;
+      padding: 4px 9px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms, color 120ms;
+    }
+    .cb-aspect:hover { background: rgba(255,255,255,0.06); }
+    .cb-aspect.active {
+      background: rgba(167,139,250,0.22);
+      border-color: rgba(167,139,250,0.6);
+      color: #ede9fe;
+    }
+    .cb-swatch {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid rgba(255,255,255,0.25);
+      cursor: pointer;
+      padding: 0;
+      transition: transform 120ms, border-color 120ms;
+    }
+    .cb-swatch:hover { transform: scale(1.12); }
+    .cb-swatch.active { border-color: #a78bfa; box-shadow: 0 0 0 2px rgba(167,139,250,0.35); }
+    .cb-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: transparent;
+      border: 1px solid rgba(255,255,255,0.16);
+      color: #d8d8e6;
+      font-size: 12px;
+      padding: 6px 12px;
+      border-radius: 7px;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .cb-btn:hover { background: rgba(255,255,255,0.07); }
+    .cb-btn svg { width: 14px; height: 14px; }
+    .cb-btn.cb-primary {
+      background: linear-gradient(135deg, #8b5cf6, #6d49d6);
+      border-color: transparent;
+      color: #fff;
+      font-weight: 600;
+    }
+    .cb-btn.cb-primary:hover { filter: brightness(1.08); }
+    .cb-btn.cb-primary:disabled { opacity: 0.5; cursor: default; filter: none; }
+    /* Stage — the dark area the paper floats in. */
+    #collage-stage {
+      flex: 1 1 auto;
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 22px;
+    }
+    /* The paper — the actual collage canvas. */
+    #collage-canvas {
+      position: relative;
+      background: #ffffff;
+      box-shadow: 0 8px 40px rgba(0,0,0,0.45);
+      overflow: hidden;
+    }
+    .collage-item {
+      position: absolute;
+      cursor: grab;
+      user-select: none;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+      will-change: transform, left, top, width, height;
+    }
+    .collage-item img {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      pointer-events: none;
+      -webkit-user-drag: none;
+    }
+    .collage-item.dragging { cursor: grabbing; }
+    .collage-item.selected { outline: 2px solid #a78bfa; outline-offset: 0; }
+    /* Handles — only shown on the selected tile. */
+    .collage-item .ch {
+      position: absolute;
+      display: none;
+      z-index: 5;
+    }
+    .collage-item.selected .ch { display: block; }
+    .ch-resize {
+      width: 16px; height: 16px;
+      right: -8px; bottom: -8px;
+      background: #a78bfa;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      cursor: nwse-resize;
+    }
+    .ch-rotate {
+      width: 16px; height: 16px;
+      left: 50%; top: -30px;
+      margin-left: -8px;
+      background: #fff;
+      border: 2px solid #a78bfa;
+      border-radius: 50%;
+      cursor: grab;
+    }
+    .ch-rotate::before {
+      content: '';
+      position: absolute;
+      left: 50%; top: 14px;
+      width: 2px; height: 16px;
+      margin-left: -1px;
+      background: #a78bfa;
+    }
+    .ch-remove {
+      width: 20px; height: 20px;
+      right: -10px; top: -10px;
+      background: #ef4444;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 13px;
+      line-height: 16px;
+      text-align: center;
+      cursor: pointer;
+      font-weight: 700;
+    }
+    /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
+       a + so the user knows clicking re-adds it. */
+    .filmstrip .thumb.collage-off,
+    .filmstrip .video-thumb.collage-off { opacity: 0.32; filter: grayscale(0.6); }
+    .filmstrip-pool-hint {
+      position: absolute;
+      left: 50%; top: 4px;
+      transform: translateX(-50%);
+      font-size: 10px;
+      color: #8b8b9a;
+      pointer-events: none;
+      z-index: 2;
+    }
   </style>
 
-  <div class="toolbar">
+  <div class="toolbar" id="toolbar">
     <!-- v2.0.15 (Terry 2026-06-06 round 2) — title + copy icon grouped
          so the icon sits IMMEDIATELY after the truncated filename, not
          pushed far right by flex:1 on the title alone. -->
@@ -1734,6 +1925,38 @@
       <span>No image loaded</span>
     </div>
   </div>
+  <!-- v2.1 round 139 (Terry 2026-06-12) — Freeform collage editor.
+       Replaces the body image area when the viewer is opened with the
+       collage flag set. The bottom filmstrip stays visible as the
+       keep/sideline pool. Built/populated by initCollage(). -->
+  <div id="collage-root">
+    <div class="collage-bar">
+      <span class="cb-title">Collage</span>
+      <span class="cb-hint">Drag to move · corner to resize · top handle to rotate · click a filmstrip photo to drop or re-add it</span>
+      <div class="collage-group">
+        <span class="cb-label">Shape</span>
+        <button class="cb-aspect active" data-aspect="landscape" type="button">Landscape</button>
+        <button class="cb-aspect" data-aspect="square" type="button">Square</button>
+        <button class="cb-aspect" data-aspect="portrait" type="button">Portrait</button>
+      </div>
+      <div class="collage-group" id="collage-bg-swatches">
+        <span class="cb-label">Background</span>
+        <!-- swatches injected by initCollage() -->
+      </div>
+      <button class="cb-btn" id="collage-shuffle" type="button" data-pdr-tooltip="Re-arrange into a tidy grid">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"></polyline><line x1="4" y1="20" x2="21" y2="3"></line><polyline points="21 16 21 21 16 21"></polyline><line x1="15" y1="15" x2="21" y2="21"></line><line x1="4" y1="4" x2="9" y2="9"></line></svg>
+        Tidy up
+      </button>
+      <button class="cb-btn cb-primary" id="collage-save" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+        Save collage
+      </button>
+    </div>
+    <div id="collage-stage">
+      <div id="collage-canvas"></div>
+    </div>
+  </div>
+
   <!-- v2.1 (Terry 2026-06-08) — filmstrip wrapper hosts the floating
        date-pill overlay that appears while the user drags the
        scrollbar. The wrapper is purely a positioning context (no
@@ -2172,6 +2395,19 @@
     let currentIndex = 0;
     let startIndex = 0;
 
+    // v2.1 round 139 (Terry) — freeform collage editor state. When
+    // collageMode is true the viewer skips normal single-photo display
+    // and the bottom filmstrip becomes a keep/sideline pool (see
+    // handleThumbActivate + initCollage further down).
+    let collageMode = false;
+    const collageItems = [];   // { idx, path, on, xFrac, yFrac, wFrac, aspect, rot, z, el, imgEl }
+    let collageBg = '#ffffff';
+    let collageAspectKey = 'landscape';
+    let collageZTop = 1;
+    let collageSelected = null; // currently-selected item (shows handles)
+    const COLLAGE_ASPECTS = { landscape: 3 / 2, square: 1, portrait: 2 / 3 };
+    const COLLAGE_BG_SWATCHES = ['#ffffff', '#000000', '#f5f1e8', '#1f1f2b', '#e8b4b8', '#a7c4bc'];
+
     // v2.0.14 — file list is now fetched via IPC from main process
     // state, not parsed from the URL. The previous URL-query approach
     // stalled the viewer open for ~60s on a year-drilldown click
@@ -2197,6 +2433,9 @@
             files = payload.files;
             const parsed = payload.startIndex;
             if (typeof parsed === 'number' && parsed >= 0 && parsed < files.length) startIndex = parsed;
+            // v2.1 round 139 — open straight into the freeform collage
+            // editor when the multi-select surfaces requested a collage.
+            if (payload.collage === true && files.length >= 2) collageMode = true;
           }
         } catch (e) {
           console.warn('[viewer] getPendingFileList failed:', e && e.message ? e.message : e);
@@ -3797,8 +4036,14 @@
     // build is chunked into 200-element batches with setTimeout
     // yields between, so the browser gets a paint cycle every chunk.
     // First paint of the image happens during the first yield.
-    if (files.length > 0) {
+    // v2.1 round 139 — in collage mode the normal single-photo view is
+    // suppressed; initCollage() (called after the filmstrip builds)
+    // takes over the body area. Otherwise load the first photo as usual.
+    if (files.length > 0 && !collageMode) {
       loadMedia(startIndex);
+    }
+    if (collageMode) {
+      enterCollageMode();
     }
 
     if (files.length > 1) {
@@ -3991,7 +4236,7 @@
             // without re-binding every handler.
             div.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
-              loadMedia(idx);
+              handleThumbActivate(idx);
             });
             filmstripEl.appendChild(div);
             lazyObserver.observe(div);
@@ -4012,7 +4257,7 @@
             thumb.dataset.fp = fp;
             thumb.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
-              loadMedia(idx);
+              handleThumbActivate(idx);
             });
             filmstripEl.appendChild(thumb);
             lazyObserver.observe(thumb);
@@ -4048,6 +4293,10 @@
         if (window.pdr && window.pdr.library && window.pdr.library.onFilesAdded) {
           window.pdr.library.onFilesAdded((info) => {
             if (!info || !info.newFilePath) return;
+            // v2.1 round 139 — ignore live-splice while the collage
+            // editor owns the filmstrip (it manages its own pool, and
+            // a save reloads the whole window anyway).
+            if (collageMode) return;
             if (files.indexOf(info.newFilePath) !== -1) return; // already there
             const fp = info.newFilePath;
 
@@ -4088,7 +4337,7 @@
             newTile.dataset.fp = fp;
             newTile.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
-              loadMedia(idx);
+              handleThumbActivate(idx);
             });
 
             // Locate the tile that currently sits at `insertAt` (the
@@ -4157,6 +4406,344 @@
     // Diagnostic: confirm preload attached + prepare() available
     console.log('[viewer] window.pdr =', !!window.pdr, '| video.prepare =', !!(window.pdr && window.pdr.video && window.pdr.video.prepare), '| files =', files.length);
     }); // end filesReady.then
+
+    /* =============================================================
+       v2.1 round 139 (Terry 2026-06-12) — FREEFORM COLLAGE EDITOR
+       Geometry model: each item stores x/y/w as FRACTIONS of the
+       canvas (resolution-independent), plus the photo's aspect ratio
+       and a rotation in degrees. Item height is always derived from
+       width ÷ aspect so photos never distort (landscape stays
+       landscape, portrait stays portrait). The same fractions are
+       sent to main on save, where sharp composites the full-res
+       originals — so the export is pixel-quality, not the on-screen
+       thumbnails, and there's no canvas-taint from pdr-file://.
+       ============================================================= */
+    const collageRootEl = document.getElementById('collage-root');
+    const collageStageEl = document.getElementById('collage-stage');
+    const collageCanvasEl = document.getElementById('collage-canvas');
+
+    function getCanvasAspect() { return COLLAGE_ASPECTS[collageAspectKey] || (3 / 2); }
+    function itemHeightFrac(it) { return (it.wFrac / (it.aspect || 1)) * getCanvasAspect(); }
+
+    function renderCollageItem(it) {
+      if (!it || !it.el) return;
+      if (!it.on) { it.el.style.display = 'none'; return; }
+      it.el.style.display = '';
+      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      const iwPx = it.wFrac * cw;
+      const ihPx = iwPx / (it.aspect || 1);
+      it.el.style.width = iwPx + 'px';
+      it.el.style.height = ihPx + 'px';
+      it.el.style.left = (it.xFrac * cw) + 'px';
+      it.el.style.top = (it.yFrac * ch) + 'px';
+      it.el.style.transform = 'rotate(' + it.rot + 'deg)';
+      it.el.style.zIndex = String(it.z);
+    }
+    function renderAllCollage() {
+      for (const it of collageItems) renderCollageItem(it);
+      updateCollageFilmstrip();
+    }
+    function selectCollageItem(it) {
+      if (collageSelected && collageSelected.el) collageSelected.el.classList.remove('selected');
+      collageSelected = it || null;
+      if (it && it.el) it.el.classList.add('selected');
+    }
+    function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
+
+    function startItemDrag(it, e) {
+      e.preventDefault();
+      selectCollageItem(it);
+      bringFront(it);
+      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      const startX = e.clientX, startY = e.clientY;
+      const sx = it.xFrac, sy = it.yFrac;
+      it.el.classList.add('dragging');
+      const move = (ev) => {
+        const dx = (ev.clientX - startX) / cw;
+        const dy = (ev.clientY - startY) / ch;
+        const ihFrac = itemHeightFrac(it);
+        it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, sx + dx));
+        it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, sy + dy));
+        renderCollageItem(it);
+      };
+      const up = () => {
+        it.el.classList.remove('dragging');
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    function startItemResize(it, e) {
+      e.preventDefault(); e.stopPropagation();
+      selectCollageItem(it);
+      bringFront(it);
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const cw = rect.width, ch = rect.height;
+      const ihFrac0 = itemHeightFrac(it);
+      const cxFrac = it.xFrac + it.wFrac / 2;
+      const cyFrac = it.yFrac + ihFrac0 / 2;
+      const centerX = rect.left + cxFrac * cw;
+      const centerY = rect.top + cyFrac * ch;
+      const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY) || 1;
+      const startW = it.wFrac;
+      const move = (ev) => {
+        const dist = Math.hypot(ev.clientX - centerX, ev.clientY - centerY);
+        let nw = startW * (dist / startDist);
+        nw = Math.max(0.05, Math.min(1.4, nw));
+        it.wFrac = nw;
+        const ihFrac = itemHeightFrac(it);
+        it.xFrac = cxFrac - nw / 2;
+        it.yFrac = cyFrac - ihFrac / 2;
+        renderCollageItem(it);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    function startItemRotate(it, e) {
+      e.preventDefault(); e.stopPropagation();
+      selectCollageItem(it);
+      bringFront(it);
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const cw = rect.width, ch = rect.height;
+      const cxFrac = it.xFrac + it.wFrac / 2;
+      const cyFrac = it.yFrac + itemHeightFrac(it) / 2;
+      const centerX = rect.left + cxFrac * cw;
+      const centerY = rect.top + cyFrac * ch;
+      const move = (ev) => {
+        const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
+        let deg = ang + 90; // rotate handle sits at the top of the tile
+        if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
+        it.rot = deg;
+        renderCollageItem(it);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+
+    function placeCenter(it) {
+      const wFrac = Math.min(0.42, it.wFrac || 0.35);
+      it.wFrac = wFrac;
+      const ihFrac = itemHeightFrac(it);
+      it.xFrac = 0.5 - wFrac / 2;
+      it.yFrac = 0.5 - ihFrac / 2;
+      it.rot = 0;
+    }
+    function setItemOn(it, on) {
+      it.on = on;
+      if (on) { it.z = ++collageZTop; placeCenter(it); selectCollageItem(it); }
+      else if (collageSelected === it) selectCollageItem(null);
+      renderCollageItem(it);
+      updateCollageFilmstrip();
+    }
+    function toggleCollageItem(idx) {
+      const it = collageItems[idx];
+      if (!it) return;
+      if (isVideoPath(it.path)) return; // videos can't join a photo collage
+      setItemOn(it, !it.on);
+    }
+    // Filmstrip thumb activation — collage mode toggles keep/sideline;
+    // normal mode opens that photo. Called from the filmstrip click
+    // handlers (replaces the old direct loadMedia(idx)).
+    function handleThumbActivate(idx) {
+      if (collageMode) { toggleCollageItem(idx); return; }
+      loadMedia(idx);
+    }
+    function updateCollageFilmstrip() {
+      if (!collageMode) return;
+      const thumbs = filmstripEl.querySelectorAll('[data-idx]');
+      thumbs.forEach((t) => {
+        const i = parseInt(t.dataset.idx, 10);
+        const it = collageItems[i];
+        t.classList.toggle('collage-off', !!(it && !it.on));
+      });
+    }
+
+    function gridArrange() {
+      const on = collageItems.filter((it) => it.on);
+      const n = on.length;
+      if (!n) return;
+      const cols = Math.ceil(Math.sqrt(n));
+      const rows = Math.ceil(n / cols);
+      const cellW = 1 / cols, cellH = 1 / rows;
+      const canvasAspect = getCanvasAspect();
+      const margin = 0.06; // fraction of each cell left as gutter
+      on.forEach((it, i) => {
+        const col = i % cols, row = Math.floor(i / cols);
+        const cx = (col + 0.5) * cellW;
+        const cy = (row + 0.5) * cellH;
+        const availW = cellW * (1 - margin * 2);
+        const availH = cellH * (1 - margin * 2);
+        let wFrac = Math.min(availW, availH * (it.aspect || 1) / canvasAspect);
+        if (!isFinite(wFrac) || wFrac <= 0) wFrac = availW;
+        it.wFrac = wFrac;
+        const ihFrac = itemHeightFrac(it);
+        it.xFrac = cx - wFrac / 2;
+        it.yFrac = cy - ihFrac / 2;
+        it.rot = 0;
+        it.z = ++collageZTop;
+      });
+      renderAllCollage();
+    }
+
+    function buildCollageItems() {
+      collageCanvasEl.innerHTML = '';
+      collageItems.length = 0;
+      files.forEach((fp, i) => {
+        const isVid = isVideoPath(fp);
+        const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null };
+        const el = document.createElement('div');
+        el.className = 'collage-item';
+        el.dataset.idx = String(i);
+        const img = document.createElement('img');
+        img.alt = '';
+        let imgRetried = false;
+        img.onerror = () => { if (!imgRetried) { imgRetried = true; img.src = getFileSrcFallback(fp); } };
+        img.onload = () => {
+          if (img.naturalWidth && img.naturalHeight) it.aspect = img.naturalWidth / img.naturalHeight;
+          renderCollageItem(it);
+        };
+        img.src = getFileSrc(fp);
+        el.appendChild(img);
+        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap)';
+        const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.title = 'Resize';
+        const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.title = 'Remove from collage';
+        el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
+        el.addEventListener('pointerdown', (e) => {
+          if (e.target === hRot || e.target === hRes || e.target === hRem) return;
+          startItemDrag(it, e);
+        });
+        hRes.addEventListener('pointerdown', (e) => startItemResize(it, e));
+        hRot.addEventListener('pointerdown', (e) => startItemRotate(it, e));
+        hRem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
+        it.el = el; it.imgEl = img;
+        collageCanvasEl.appendChild(el);
+        collageItems.push(it);
+      });
+    }
+
+    function buildBgSwatches() {
+      const host = document.getElementById('collage-bg-swatches');
+      if (!host) return;
+      host.querySelectorAll('.cb-swatch').forEach((s) => s.remove());
+      COLLAGE_BG_SWATCHES.forEach((hex) => {
+        const b = document.createElement('button');
+        b.className = 'cb-swatch' + (hex === collageBg ? ' active' : '');
+        b.type = 'button';
+        b.style.background = hex;
+        b.dataset.hex = hex;
+        b.title = hex;
+        b.addEventListener('click', () => setCollageBg(hex));
+        host.appendChild(b);
+      });
+    }
+    function setCollageBg(hex) {
+      collageBg = hex;
+      collageCanvasEl.style.background = hex;
+      document.querySelectorAll('#collage-bg-swatches .cb-swatch').forEach((s) => {
+        s.classList.toggle('active', s.dataset.hex === hex);
+      });
+    }
+    function setCollageAspect(key) {
+      if (!COLLAGE_ASPECTS[key]) return;
+      collageAspectKey = key;
+      document.querySelectorAll('.cb-aspect').forEach((b) => b.classList.toggle('active', b.dataset.aspect === key));
+      layoutCanvasSize();
+      gridArrange();
+    }
+    function layoutCanvasSize() {
+      if (!collageStageEl) return;
+      const availW = collageStageEl.clientWidth - 44;  // 22px stage padding × 2
+      const availH = collageStageEl.clientHeight - 44;
+      const a = getCanvasAspect();
+      let w = availW, h = w / a;
+      if (h > availH) { h = availH; w = h * a; }
+      w = Math.max(120, w); h = Math.max(120, h);
+      collageCanvasEl.style.width = w + 'px';
+      collageCanvasEl.style.height = h + 'px';
+      collageCanvasEl.style.background = collageBg;
+      renderAllCollage();
+    }
+
+    async function saveCollage() {
+      const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
+      if (on.length === 0) { window.alert('Add at least one photo to the collage first.'); return; }
+      const saveBtn = document.getElementById('collage-save');
+      const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+      try {
+        const a = getCanvasAspect();
+        const LONG = 2000;
+        let W, H;
+        if (a >= 1) { W = LONG; H = Math.round(LONG / a); } else { H = LONG; W = Math.round(LONG * a); }
+        // Composite back-to-front: ascending z so the front-most tile
+        // is drawn last.
+        const ordered = on.slice().sort((p, q) => p.z - q.z);
+        const items = ordered.map((it) => ({
+          path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
+        }));
+        const layout = { canvas: { w: W, h: H, bg: collageBg }, items };
+        const res = await window.pdr.collage.saveLayout(layout);
+        if (res && res.success && res.filePath) {
+          // Reload THIS window into normal mode showing the saved
+          // collage so the user can enhance it straight away.
+          const name = res.filename || res.filePath.split(/[\\/]/).pop();
+          await window.pdr.search.openViewer([res.filePath], [name], 0, false);
+        } else {
+          window.alert('Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.'));
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+        }
+      } catch (err) {
+        window.alert('Collage save error:\n\n' + (err && err.message ? err.message : String(err)));
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+      }
+    }
+
+    let collageBarWired = false;
+    function wireCollageBar() {
+      if (collageBarWired) return;
+      collageBarWired = true;
+      document.querySelectorAll('.cb-aspect').forEach((b) => {
+        b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
+      });
+      const shuffleBtn = document.getElementById('collage-shuffle');
+      if (shuffleBtn) shuffleBtn.addEventListener('click', () => gridArrange());
+      const saveBtn = document.getElementById('collage-save');
+      if (saveBtn) saveBtn.addEventListener('click', saveCollage);
+      collageStageEl.addEventListener('pointerdown', (e) => {
+        if (e.target === collageStageEl || e.target === collageCanvasEl) selectCollageItem(null);
+      });
+      window.addEventListener('resize', layoutCanvasSize);
+    }
+
+    function enterCollageMode() {
+      collageMode = true;
+      const toolbar = document.getElementById('toolbar');
+      if (toolbar) toolbar.style.display = 'none';
+      if (container) container.style.display = 'none';
+      if (collageRootEl) collageRootEl.classList.add('active');
+      document.title = 'Collage (' + files.length + ') — PDR Viewer';
+      buildBgSwatches();
+      buildCollageItems();
+      wireCollageBar();
+      // Lay out + tidy once now, and again after the strip/layout settle
+      // (the canvas can measure 0×0 before first paint — same throttle
+      // that bit the Looks strip in round 135).
+      layoutCanvasSize();
+      gridArrange();
+      setTimeout(() => { layoutCanvasSize(); gridArrange(); }, 80);
+      setTimeout(() => { layoutCanvasSize(); }, 300);
+    }
 
     // v2.0.14 (Terry 2026-05-28) — filmstrip refresh on rotate. The
     // viewer broadcasts pdr:rotationChanged when the user clicks the
