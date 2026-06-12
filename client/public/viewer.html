@@ -1184,6 +1184,39 @@
       flex-direction: column;
       gap: 6px;
     }
+    /* v2.1 round 132 (Terry 2026-06-12) — one-tap "Looks": mainstream
+       photo treatments (B&W, Sepia, Vintage…) for serious photos.
+       Each applies instantly to the live preview; saving keeps the
+       original and writes a new variant (the existing _E save flow). */
+    .enhance-presets-label {
+      font-size: 11px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8a8a93;
+      margin-bottom: -6px;
+    }
+    .enhance-presets {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    .enhance-preset-chip {
+      appearance: none;
+      border: 1px solid rgba(255,255,255,0.16);
+      background: rgba(255,255,255,0.05);
+      color: #e8e8ec;
+      border-radius: 8px;
+      padding: 7px 4px;
+      font: 500 11px/1.2 system-ui, 'Segoe UI', sans-serif;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .enhance-preset-chip:hover { background: rgba(255,255,255,0.12); }
+    .enhance-preset-chip.active {
+      border-color: var(--accent, #a99cff);
+      background: rgba(169,156,255,0.18);
+      color: #fff;
+    }
     .enhance-label-row {
       display: flex;
       align-items: center;
@@ -1613,6 +1646,20 @@
       <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
+      <!-- v2.1 round 132 (Terry 2026-06-12) — one-tap Looks. Mainstream
+           treatments for serious photos; each previews live and saves
+           as a new variant via the existing save flow. -->
+      <div class="enhance-presets-label">Looks</div>
+      <div class="enhance-presets" id="enhance-presets">
+        <button class="enhance-preset-chip" data-preset="original">Original</button>
+        <button class="enhance-preset-chip" data-preset="bw">B&amp;W</button>
+        <button class="enhance-preset-chip" data-preset="sepia">Sepia</button>
+        <button class="enhance-preset-chip" data-preset="vintage">Vintage</button>
+        <button class="enhance-preset-chip" data-preset="vivid">Vivid</button>
+        <button class="enhance-preset-chip" data-preset="warm">Warm</button>
+        <button class="enhance-preset-chip" data-preset="cool">Cool</button>
+        <button class="enhance-preset-chip" data-preset="soft">Soft</button>
+      </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-brightness">Brightness</label>
@@ -4519,6 +4566,7 @@ function zoomTo(newZoom, centreX, centreY) {
         saturation: 100,
         temperature: 0, // -50..+50 → hue-rotate + sepia approximation
         bw: false,
+        tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
       };
 
       function composeFilterString() {
@@ -4542,6 +4590,11 @@ function zoomTo(newZoom, centreX, centreY) {
           const deg = -(state.temperature / 50) * 10;
           parts.push('hue-rotate(' + deg + 'deg)');
         }
+        // v2.1 round 132 — tone preview. CSS sepia() approximates the
+        // backend colour matrix closely enough for the live preview;
+        // the saved file uses the exact .recomb() matrix.
+        if (state.tone === 'sepia') parts.push('sepia(0.85)');
+        else if (state.tone === 'vintage') parts.push('sepia(0.4)');
         return parts.length ? parts.join(' ') : 'none';
       }
 
@@ -4576,8 +4629,52 @@ function zoomTo(newZoom, centreX, centreY) {
         state.saturation = 100;
         state.temperature = 0;
         state.bw = false;
+        state.tone = 'none';
+        clearActivePreset();
         updateUI();
         applyEnhanceFilter();
+      }
+
+      // v2.1 round 132 — preset "Looks". Each is a full filterState
+      // the existing sliders + tone can express; the chip just sets it
+      // and previews. Sepia/Vintage carry a `tone` the backend bakes
+      // with a colour matrix; the rest are slider combinations.
+      const PRESETS = {
+        original: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none' },
+        bw:       { brightness: 100, contrast: 108, saturation: 100, temperature: 0, bw: true,  tone: 'none' },
+        sepia:    { brightness: 102, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'sepia' },
+        vintage:  { brightness: 104, contrast: 90,  saturation: 85,  temperature: 0, bw: false, tone: 'vintage' },
+        vivid:    { brightness: 100, contrast: 118, saturation: 140, temperature: 0, bw: false, tone: 'none' },
+        warm:     { brightness: 102, contrast: 100, saturation: 105, temperature: 30, bw: false, tone: 'none' },
+        cool:     { brightness: 100, contrast: 100, saturation: 102, temperature: -30, bw: false, tone: 'none' },
+        soft:     { brightness: 106, contrast: 92,  saturation: 96,  temperature: 0, bw: false, tone: 'none' },
+      };
+      const presetsRow = document.getElementById('enhance-presets');
+      function clearActivePreset() {
+        if (!presetsRow) return;
+        presetsRow.querySelectorAll('.enhance-preset-chip').forEach(function (c) { c.classList.remove('active'); });
+      }
+      function applyPreset(name, chipEl) {
+        const p = PRESETS[name];
+        if (!p) return;
+        state.brightness = p.brightness;
+        state.contrast = p.contrast;
+        state.saturation = p.saturation;
+        state.temperature = p.temperature;
+        state.bw = p.bw;
+        state.tone = p.tone;
+        clearActivePreset();
+        if (name !== 'original' && chipEl) chipEl.classList.add('active');
+        updateUI();
+        applyEnhanceFilter();
+        // Presets must flip the Save buttons on (sliders do this via
+        // their own input listeners; a preset click bypasses those).
+        try { updateSaveAvailability(); } catch (_) {}
+      }
+      if (presetsRow) {
+        presetsRow.querySelectorAll('.enhance-preset-chip').forEach(function (chip) {
+          chip.addEventListener('click', function () { applyPreset(chip.getAttribute('data-preset'), chip); });
+        });
       }
 
       // v2.1 (Terry 2026-06-07) — BUG FIX. Was `parseInt(...) || 100`
@@ -6139,7 +6236,8 @@ function zoomTo(newZoom, centreX, centreY) {
                state.contrast !== 100 ||
                state.saturation !== 100 ||
                state.temperature !== 0 ||
-               state.bw === true;
+               state.bw === true ||
+               state.tone !== 'none';
       }
       function deriveEnhancedFilename(filePath) {
         // Mirror main.ts logic: <basename>_E.jpg next to original.
@@ -6258,6 +6356,7 @@ function zoomTo(newZoom, centreX, centreY) {
               saturation: state.saturation,
               temperature: state.temperature,
               bw: state.bw,
+              tone: state.tone,
             },
             sourceOverride: aiResultPath || undefined,
             enhancementType: finalEnhancementType,

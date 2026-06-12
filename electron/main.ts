@@ -12769,6 +12769,13 @@ interface SaveEnhancedRequest {
     saturation: number;   // 0..200, default 100
     temperature: number;  // -50..+50, default 0
     bw: boolean;          // default false
+    // v2.1 round 132 (Terry 2026-06-12) — preset "look" / tone.
+    // 'sepia' and 'vintage' need a colour matrix the sliders can't
+    // express, so they ride here and are baked via .recomb(); the
+    // other mainstream looks (B&W, Vivid, Warm, Cool, Soft) are just
+    // preset slider combinations and arrive as the values above with
+    // tone='none'. Optional for backward compatibility.
+    tone?: 'none' | 'sepia' | 'vintage';
   };
   // v2.0.15 Phase 5+ — When set, the sharp pipeline reads from this
   // path instead of req.filePath. Used by the AI Enhance flows
@@ -12999,6 +13006,8 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     const saturationF = (fs2State.saturation ?? 100) / 100;   // 1.0 = neutral
     const temperature = fs2State.temperature ?? 0;
     const bw = !!fs2State.bw;
+    // v2.1 round 132 (Terry 2026-06-12) — preset tone (sepia/vintage).
+    const tone = fs2State.tone ?? 'none';
 
     // v2.0.15 Phase 5+ — if sourceOverride is set (AI Enhance flows),
     // bake the manual sliders on top of the AI output temp file
@@ -13040,7 +13049,11 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     // the colour balance toward warm (more R, less B) or cool (less
     // R, more B). 0.15 magnitude per channel = subtle but visible at
     // ±50 slider position.
-    if (temperature !== 0) {
+    // Temperature recomb is skipped when a sepia/vintage tone is set
+    // (those carry their own colour matrix below; stacking two recombs
+    // would muddy the result, and the warm presets express warmth via
+    // their own matrix anyway).
+    if (temperature !== 0 && tone === 'none') {
       const t = temperature / 50; // -1..+1
       const rGain = 1 + 0.15 * t;
       const bGain = 1 - 0.15 * t;
@@ -13048,6 +13061,25 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
         [rGain, 0,     0    ],
         [0,     1,     0    ],
         [0,     0,     bGain],
+      ]);
+    }
+
+    // v2.1 round 132 — preset tone via colour matrix. Sepia is the
+    // standard heritage matrix; Vintage is that matrix blended 50/50
+    // with identity for a gentler, faded warmth (the slider
+    // brightness/contrast in the Vintage preset do the "faded" part).
+    // recomb desaturates+tints in one pass, so no greyscale needed.
+    if (tone === 'sepia') {
+      pipeline = pipeline.recomb([
+        [0.393, 0.769, 0.189],
+        [0.349, 0.686, 0.168],
+        [0.272, 0.534, 0.131],
+      ]);
+    } else if (tone === 'vintage') {
+      pipeline = pipeline.recomb([
+        [0.696, 0.385, 0.095],
+        [0.175, 0.843, 0.084],
+        [0.136, 0.267, 0.566],
       ]);
     }
 
