@@ -12646,6 +12646,9 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // v2.1 round 125 — system audio in screen recordings (Windows
   // loopback, no driver). Default ON.
   const [captureRecordAudio, setCaptureRecordAudioState] = useState<boolean>(true);
+  // v2.1 round 126 — recording quality preset (bitrate + save-time
+  // H.264 quality). Applies to recordings started after the change.
+  const [captureRecordQuality, setCaptureRecordQualityState] = useState<'high' | 'standard' | 'compact'>('standard');
   const [captureConflicts, setCaptureConflicts] = useState<string[]>([]);
   useEffect(() => {
     captureCheckConflicts().then(setCaptureConflicts).catch(() => { /* best-effort */ });
@@ -12718,6 +12721,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureHotkeyActionState(((settings as any).captureHotkeyAction as 'fullscreen' | 'region') ?? 'fullscreen');
       setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
+      setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
     });
   }, []);
 
@@ -12798,6 +12802,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleCaptureRecordAudioToggle = (checked: boolean) => {
     setCaptureRecordAudioState(checked);
     setSetting('captureRecordAudio' as any, checked);
+  };
+
+  const handleCaptureRecordQualityChange = (quality: 'high' | 'standard' | 'compact') => {
+    setCaptureRecordQualityState(quality);
+    setSetting('captureRecordQuality' as any, quality);
   };
 
   const handleBypassLargeZipPreExtractToggle = (checked: boolean) => {
@@ -14716,7 +14725,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col">
                     <span className="text-sm font-medium text-foreground">Record system audio</span>
-                    <span className="text-xs text-muted-foreground">Include the sound your computer is playing — video calls, music, app audio — in screen recordings. Windows captures this natively, no extra software needed. Turn off for silent recordings. Recordings save as MP4 in the same PDR Captures folder as screenshots.</span>
+                    <span className="text-xs text-muted-foreground">Include the sound your computer is playing — video calls, music, app audio — in screen recordings. Windows captures this natively, no extra software needed. Turn off for silent recordings, or use the Mute button on the recording bar to silence just part of one. Recordings save as MP4 in the same PDR Captures folder as screenshots.</span>
                   </div>
                   <Switch
                     checked={captureRecordAudio}
@@ -14724,6 +14733,40 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     data-testid="checkbox-capture-record-audio"
                   />
                 </label>
+                {/* v2.1 round 126 — recording quality preset. Same
+                    radio-card recipe as the other Capture choosers. */}
+                <div className="p-3 rounded-lg border border-border">
+                  <span className="text-sm font-medium text-foreground">Recording quality</span>
+                  <p className="text-xs text-muted-foreground mt-1 mb-3">
+                    Balances picture quality against file size and how long the save step takes. Applies to recordings you start after changing it — the live size is shown on the recording bar.
+                  </p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {([
+                      { value: 'high', label: 'High', desc: 'Crispest picture. Larger files, slower save.' },
+                      { value: 'standard', label: 'Standard', desc: 'The right balance for almost everything.' },
+                      { value: 'compact', label: 'Compact', desc: 'Smallest files, fastest save. Fine detail softens.' },
+                    ] as const).map((opt) => (
+                      <label
+                        key={opt.value}
+                        className={`flex flex-col gap-1 p-3 rounded-lg border cursor-pointer transition-colors ${
+                          captureRecordQuality === opt.value ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                        }`}
+                        data-testid={`option-capture-record-quality-${opt.value}`}
+                      >
+                        <input
+                          type="radio"
+                          name="captureRecordQuality"
+                          value={opt.value}
+                          checked={captureRecordQuality === opt.value}
+                          onChange={() => handleCaptureRecordQualityChange(opt.value)}
+                          className="sr-only"
+                        />
+                        <span className="text-sm font-medium text-foreground">{opt.label}</span>
+                        <span className="text-xs text-muted-foreground">{opt.desc}</span>
+                      </label>
+                    ))}
+                  </div>
+                </div>
               </div>
             </>
           )}

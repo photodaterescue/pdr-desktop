@@ -143,6 +143,14 @@ export interface PDRSettings {
    *  silent recordings. Microphone capture is a separate later
    *  feature (needs a device picker). */
   captureRecordAudio: boolean;
+  /** v2.1 round 126 (Terry 2026-06-12) — recording quality preset.
+   *  Drives BOTH the live capture bitrate and the save-time H.264
+   *  quality: 'high' = 12 Mbps / crf 19 (crisper, larger, slower
+   *  save), 'standard' = 8 Mbps / crf 21 (the round-125 behaviour),
+   *  'compact' = 4 Mbps / crf 26 (smallest files, softer fine
+   *  detail, fastest save). Applies to recordings started AFTER the
+   *  change. */
+  captureRecordQuality: 'high' | 'standard' | 'compact';
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -298,6 +306,8 @@ export const optimisedDefaults: PDRSettings = {
   captureFormat: 'png',
   // v2.1 round 125 — system audio in recordings by default.
   captureRecordAudio: true,
+  // v2.1 round 126 — balanced quality/size/save-speed default.
+  captureRecordQuality: 'standard',
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -379,6 +389,7 @@ export function getSettings(): PDRSettings {
     captureHotkeyAction: store.get('captureHotkeyAction', optimisedDefaults.captureHotkeyAction),
     captureFormat: store.get('captureFormat', optimisedDefaults.captureFormat),
     captureRecordAudio: store.get('captureRecordAudio', optimisedDefaults.captureRecordAudio),
+    captureRecordQuality: store.get('captureRecordQuality', optimisedDefaults.captureRecordQuality),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

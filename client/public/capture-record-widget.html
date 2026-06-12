@@ -67,12 +67,24 @@
     min-width: 44px;
     font-size: 14px;
   }
+  /* Round 126 — live size of the captured footage so far. Indicative
+     (the saved MP4 lands in the same ballpark after conversion). */
+  #size {
+    font-variant-numeric: tabular-nums;
+    color: #9a9aa3;
+    font-size: 11px;
+    min-width: 56px;
+  }
   #state {
     color: #9a9aa3;
     font-size: 11px;
     flex: 1 1 auto;
     white-space: nowrap;
     overflow: hidden;
+  }
+  #mute.muted {
+    color: #f2b8ba;
+    border-color: rgba(229, 72, 77, 0.55);
   }
   button {
     -webkit-app-region: no-drag;
@@ -105,7 +117,10 @@
   <div id="bar">
     <div id="dot"></div>
     <span id="time">0:00</span>
+    <span id="size">0 KB</span>
     <span id="state">Recording</span>
+    <button id="snap" type="button" title="Take a screenshot of what's being recorded — it goes into your library too">Snap</button>
+    <button id="mute" type="button" title="Mute system audio for part of the recording" style="display:none">Mute</button>
     <button id="pause" type="button" title="Pause recording">Pause</button>
     <button id="stop" type="button" title="Stop and save to your library">Stop</button>
     <button id="cancel" type="button" title="Discard this recording">✕</button>
@@ -115,7 +130,10 @@
   var pdr = window.pdr;
   var dot = document.getElementById('dot');
   var timeEl = document.getElementById('time');
+  var sizeEl = document.getElementById('size');
   var stateEl = document.getElementById('state');
+  var snapBtn = document.getElementById('snap');
+  var muteBtn = document.getElementById('mute');
   var pauseBtn = document.getElementById('pause');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
@@ -128,12 +146,18 @@
   var pausedTotalMs = 0;
   var pausedAtMs = 0;
   var paused = false;
+  var capturedBytes = 0;
+  var muted = false;
 
   function fmt(ms) {
     var s = Math.max(0, Math.floor(ms / 1000));
     var m = Math.floor(s / 60);
     var r = s % 60;
     return m + ':' + (r < 10 ? '0' : '') + r;
+  }
+  function fmtBytes(n) {
+    if (n < 1024 * 1024) return Math.max(1, Math.round(n / 1024)) + ' KB';
+    return (n / (1024 * 1024)).toFixed(1) + ' MB';
   }
   setInterval(function () {
     if (!startedAtMs) return;
@@ -184,6 +208,19 @@
       if (pdr && pdr.capture && pdr.capture.recordStarted) {
         pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAudio });
       }
+      // Round 126 — live mute toggle. Only meaningful when an audio
+      // track exists (audio can't be ADDED to a running recorder, so
+      // recordings started with audio off have no button at all).
+      if (hasAudio) {
+        muteBtn.style.display = '';
+        muteBtn.addEventListener('click', function () {
+          muted = !muted;
+          stream.getAudioTracks().forEach(function (t) { t.enabled = !muted; });
+          muteBtn.textContent = muted ? 'Unmute' : 'Mute';
+          muteBtn.classList.toggle('muted', muted);
+          muteBtn.title = muted ? 'Sound is muted — click to record audio again' : 'Mute system audio for part of the recording';
+        });
+      }
 
       var mime = '';
       var candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8,opus', 'video/webm'];
@@ -192,11 +229,15 @@
       }
       recorder = new MediaRecorder(stream, {
         mimeType: mime || undefined,
-        videoBitsPerSecond: 8_000_000,
+        // Round 126 — bitrate comes from the Settings → Capture
+        // quality preset (High 12 / Standard 8 / Compact 4 Mbps).
+        videoBitsPerSecond: init.videoBitsPerSecond || 8_000_000,
         audioBitsPerSecond: 128_000,
       });
       recorder.ondataavailable = function (ev) {
         if (!ev.data || ev.data.size === 0) return;
+        capturedBytes += ev.data.size;
+        sizeEl.textContent = fmtBytes(capturedBytes);
         ev.data.arrayBuffer().then(function (buf) {
           try { if (pdr && pdr.capture && pdr.capture.recordChunk) pdr.capture.recordChunk(buf); } catch (e) {}
         });
@@ -230,6 +271,8 @@
     pauseBtn.disabled = true;
     stopBtn.disabled = true;
     cancelBtn.disabled = true;
+    snapBtn.disabled = true;
+    muteBtn.disabled = true;
     try {
       if (recorder && recorder.state !== 'inactive') recorder.stop();
       else if (cancelled) { if (pdr && pdr.capture && pdr.capture.recordCancelled) pdr.capture.recordCancelled(); }
@@ -238,6 +281,15 @@
       reportError('Stop failed: ' + e.message);
     }
   }
+
+  // Round 126 — mid-recording screenshot. Main grabs the recorded
+  // display exactly as it stands (no window hiding — a hide would
+  // blip inside the footage) and the still rides the normal
+  // screenshot pipeline into the library.
+  snapBtn.addEventListener('click', function () {
+    if (finished) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordSnap) pdr.capture.recordSnap(); } catch (e) {}
+  });
 
   pauseBtn.addEventListener('click', function () {
     if (!recorder || finished) return;

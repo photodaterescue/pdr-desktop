@@ -239,12 +239,17 @@ function resolveTargetDisplay(opts: { displayId?: string; trigger: 'button' | 'h
  */
 async function grabDisplayPng(
   target: Electron.Display,
-  opts?: { includeWindows?: boolean },
+  opts?: { includeWindows?: boolean; hideWindows?: boolean },
 ): Promise<{ buffer: Buffer; width: number; height: number; windows: SelectionRect[]; restore: () => void } | null> {
   const toRestore: Array<{ win: BrowserWindow; focused: boolean }> = [];
-  for (const win of BrowserWindow.getAllWindows()) {
-    if (!win.isDestroyed() && win.isVisible() && !win.isMinimized()) {
-      toRestore.push({ win, focused: win.isFocused() });
+  // hideWindows false = "grab the screen exactly as it stands" — used
+  // by the mid-recording Snap button, where hiding PDR would put a
+  // visible blip INTO the recording (round 126).
+  if (opts?.hideWindows !== false) {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed() && win.isVisible() && !win.isMinimized()) {
+        toRestore.push({ win, focused: win.isFocused() });
+      }
     }
   }
   let restored = false;
@@ -876,7 +881,16 @@ let recordWidget: BrowserWindow | null = null;
 let recordTempPath: string | null = null;
 let recordStream: fs.WriteStream | null = null;
 let recordStartedAt: Date | null = null;
+let recordDisplay: Electron.Display | null = null;
+let recordQuality: 'high' | 'standard' | 'compact' = 'standard';
 let recordMeta: { width: number | null; height: number | null; hasAudio: boolean } = { width: null, height: null, hasAudio: false };
+
+// Quality presets (round 126): live capture bitrate + save-time crf.
+const RECORD_QUALITY = {
+  high: { bitsPerSecond: 12_000_000, crf: '19' },
+  standard: { bitsPerSecond: 8_000_000, crf: '21' },
+  compact: { bitsPerSecond: 4_000_000, crf: '26' },
+} as const;
 
 function recordTempDir(): string {
   return path.join(app.getPath('userData'), 'Captures-temp');
@@ -916,6 +930,7 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   }
   recordTempPath = null;
   recordStartedAt = null;
+  recordDisplay = null;
   recordingState = 'idle';
   broadcastRecordingState();
 }
@@ -955,6 +970,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     if (!source) return { success: false, error: 'Could not access the screen for recording.' };
 
     recordStartedAt = new Date();
+    recordDisplay = display;
     const { date, time } = timestampParts(recordStartedAt);
     fs.mkdirSync(toLongPath(recordTempDir()), { recursive: true });
     // Temp name carries the start timestamp so the startup orphan
@@ -966,11 +982,14 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     const recordAudio = (() => {
       try { return getSettings().captureRecordAudio !== false; } catch { return true; }
     })();
+    recordQuality = (() => {
+      try { return (getSettings().captureRecordQuality as 'high' | 'standard' | 'compact') || 'standard'; } catch { return 'standard'; }
+    })();
 
     const widget = new BrowserWindow({
-      width: 300,
+      width: 430,
       height: 64,
-      x: display.bounds.x + display.bounds.width - 320,
+      x: display.bounds.x + display.bounds.width - 450,
       y: display.bounds.y + display.bounds.height - 120,
       frame: false,
       show: false,
@@ -1012,6 +1031,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         audio: recordAudio,
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
+        videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
       });
       // showInactive — starting a recording must not steal focus from
       // whatever the user is about to record.
@@ -1058,7 +1078,7 @@ export function cancelRecording(): { success: boolean } {
  * is still viewable in PDRV; losing the user's recording is the only
  * unacceptable outcome).
  */
-async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
+async function transcodeWebmToMp4(webmPath: string, crf: string = '21'): Promise<string | null> {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) {
     log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
@@ -1068,17 +1088,16 @@ async function transcodeWebmToMp4(webmPath: string): Promise<string | null> {
   // ffmpeg can't open \\?\-prefixed paths (see extractVideoFrame).
   const src = webmPath.replace(/^\\\\\?\\/, '');
   const dst = outPath.replace(/^\\\\\?\\/, '');
-  // ultrafast + crf 21: verification on Terry's machine showed
+  // ultrafast preset: verification on Terry's machine showed
   // veryfast took ~2 min for a 6-second 1080p clip on an older CPU —
   // the encode time scales with recording length, so a long recording
   // would feel broken. ultrafast roughly halves it; for screen
   // content (flat regions, text) the quality difference is
-  // negligible, and the slightly lower crf claws back what the
-  // cheaper preset loses.
+  // negligible. crf comes from the quality preset (round 126).
   const args = [
     '-hide_banner', '-loglevel', 'error',
     '-i', src,
-    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', '21', '-pix_fmt', 'yuv420p',
+    '-c:v', 'libx264', '-preset', 'ultrafast', '-crf', crf, '-pix_fmt', 'yuv420p',
     '-c:a', 'aac', '-b:a', '160k',
     '-movflags', '+faststart',
     '-y', dst,
@@ -1180,13 +1199,14 @@ async function finalizeRecording(): Promise<void> {
   }
   recordTempPath = null;
   recordStartedAt = null;
+  recordDisplay = null;
 
   try {
     if (!webmPath || !fs.existsSync(toLongPath(webmPath)) || fs.statSync(toLongPath(webmPath)).size === 0) {
       log.warn('[capture] recording produced no data — nothing to save');
       return;
     }
-    const mp4Path = await transcodeWebmToMp4(webmPath);
+    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf);
     if (mp4Path) {
       try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
       await persistRecording(mp4Path, startedAt, meta.width, meta.height);
@@ -1233,6 +1253,32 @@ ipcMain.on('capture:record-error', (event, info: { message?: string }) => {
     broadcast('capture:recordError', { message: info?.message ?? 'Recording failed.' });
     teardownRecording({ discardTemp: true });
   }
+});
+// Round 126 — Snap button on the widget: a still of the recorded
+// display, taken mid-recording WITHOUT hiding PDR's windows (a
+// hide/restore would blip INSIDE the recording; what's on screen is
+// by definition what the user is recording). The widget itself is
+// content-protected, so it appears in neither the recording nor the
+// snap. Lands through the normal screenshot pipeline → toast →
+// indexed → S&D Captures.
+ipcMain.on('capture:record-snap', (event) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const display = recordDisplay;
+  if (!display || recordingState !== 'recording') return;
+  void (async () => {
+    try {
+      const capturedAt = new Date();
+      const grab = await grabDisplayPng(display, { hideWindows: false });
+      if (!grab) {
+        log.warn('[capture] mid-recording snap failed: could not grab display');
+        return;
+      }
+      grab.restore(); // no-op (nothing hidden) — keeps the contract
+      await persistCapture(grab.buffer, capturedAt, grab.width, grab.height, 'screenshot');
+    } catch (err) {
+      log.warn(`[capture] mid-recording snap failed: ${(err as Error).message}`);
+    }
+  })();
 });
 
 /** App-quit safety: flush the temp WebM so the startup orphan
