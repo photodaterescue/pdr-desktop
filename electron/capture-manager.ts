@@ -171,20 +171,38 @@ async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabe
  * Thumbnails at 320px wide are plenty for "which screen is which".
  */
 export async function listCaptureDisplays(): Promise<CaptureDisplayInfo[]> {
-  const displays = screen.getAllDisplays();
+  // Round 130 (Terry) — the picker must mirror the PHYSICAL desk:
+  // his left monitor was showing on the right because
+  // getAllDisplays() enumerates in arbitrary order. Windows already
+  // knows the arrangement (every display's virtual-desktop origin),
+  // so sort by position — left → right, ties top → bottom — and
+  // label by POSITION rather than enumeration number. If this still
+  // reads backwards for a user, their Windows display arrangement
+  // itself is swapped (Settings → System → Display) and fixing it
+  // there fixes every app at once.
+  const displays = [...screen.getAllDisplays()].sort((a, b) =>
+    a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y,
+  );
   const sources = await desktopCapturer.getSources({
     types: ['screen'],
     thumbnailSize: { width: 320, height: 320 },
   });
+  // Positional fallback for blank display_ids must use Electron's
+  // ORIGINAL enumeration order (that's what sources align to).
+  const enumOrder = screen.getAllDisplays();
   return displays.map((d, i) => {
     const source =
       sources.find((s) => s.display_id === String(d.id)) ??
-      // Some Windows configs report blank display_ids — fall back to
-      // positional pairing, which matches Electron's enumeration order.
-      sources[i];
+      sources[enumOrder.findIndex((e) => e.id === d.id)];
+    const positionName =
+      displays.length === 2
+        ? (i === 0 ? 'Left display' : 'Right display')
+        : displays.length === 1
+          ? 'Display'
+          : `Display ${i + 1} (left to right)`;
     return {
       id: String(d.id),
-      label: `Display ${i + 1}${d.id === screen.getPrimaryDisplay().id ? ' (primary)' : ''} — ${Math.round(d.bounds.width * d.scaleFactor)}×${Math.round(d.bounds.height * d.scaleFactor)}`,
+      label: `${positionName}${d.id === screen.getPrimaryDisplay().id ? ' (primary)' : ''} — ${Math.round(d.bounds.width * d.scaleFactor)}×${Math.round(d.bounds.height * d.scaleFactor)}`,
       width: Math.round(d.bounds.width * d.scaleFactor),
       height: Math.round(d.bounds.height * d.scaleFactor),
       isPrimary: d.id === screen.getPrimaryDisplay().id,
@@ -901,9 +919,33 @@ let recordMeta: { width: number | null; height: number | null; hasAudio: boolean
 // (null = whole screen). The capture itself is always full-screen;
 // FFmpeg crops at save time (same zero-live-cost pattern as blur).
 let recordRegionCrop: SelectionRect | null = null;
+// The same region in display CSS pixels — what the on-screen marker
+// draws, and what the armed-stage Area re-pick replaces.
+let recordRegionCssRect: SelectionRect | null = null;
 // Click-through, content-protected outline marking the recorded
 // region on screen — the USER sees the boundary, the footage doesn't.
 let regionMarkerWindow: BrowserWindow | null = null;
+
+/** Map an overlay selection (display CSS px) to a video-pixel crop;
+ *  a selection covering (effectively) the whole display means no
+ *  crop at all. */
+function computeRegionCrop(areaRect: SelectionRect, display: Electron.Display, grabW: number, grabH: number): SelectionRect | null {
+  const coversAll =
+    areaRect.x <= 2 && areaRect.y <= 2 &&
+    areaRect.width >= display.bounds.width - 4 &&
+    areaRect.height >= display.bounds.height - 4;
+  if (coversAll) return null;
+  const scaleX = grabW / display.bounds.width;
+  const scaleY = grabH / display.bounds.height;
+  const even = (n: number) => Math.max(0, 2 * Math.floor(n / 2));
+  const x = even(areaRect.x * scaleX);
+  const y = even(areaRect.y * scaleY);
+  let width = even(areaRect.width * scaleX);
+  let height = even(areaRect.height * scaleY);
+  width = Math.max(64, Math.min(width, even(grabW) - x));
+  height = Math.max(64, Math.min(height, even(grabH) - y));
+  return { x, y, width, height };
+}
 
 // Quality presets (round 126): live capture bitrate + save-time crf.
 const RECORD_QUALITY = {
@@ -979,6 +1021,7 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   closeRegionMarker();
   unregisterCamHotkey();
   recordRegionCrop = null;
+  recordRegionCssRect = null;
   if (recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.close(); } catch { /* non-fatal */ }
   }
@@ -1062,26 +1105,8 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       return { success: false, cancelled: true };
     }
 
-    // Map the chosen area to video pixels; a selection covering
-    // (effectively) the whole display means no crop at all.
-    const scaleX = grabW / display.bounds.width;
-    const scaleY = grabH / display.bounds.height;
-    const even = (n: number) => Math.max(0, 2 * Math.floor(n / 2));
-    const coversAll =
-      areaRect.x <= 2 && areaRect.y <= 2 &&
-      areaRect.width >= display.bounds.width - 4 &&
-      areaRect.height >= display.bounds.height - 4;
-    if (coversAll) {
-      recordRegionCrop = null;
-    } else {
-      let x = even(areaRect.x * scaleX);
-      let y = even(areaRect.y * scaleY);
-      let width = even(areaRect.width * scaleX);
-      let height = even(areaRect.height * scaleY);
-      width = Math.max(64, Math.min(width, even(grabW) - x));
-      height = Math.max(64, Math.min(height, even(grabH) - y));
-      recordRegionCrop = { x, y, width, height };
-    }
+    recordRegionCrop = computeRegionCrop(areaRect, display, grabW, grabH);
+    recordRegionCssRect = recordRegionCrop ? areaRect : null;
 
     // The widget's getUserMedia needs the desktopCapturer SOURCE id
     // for this display (thumbnails irrelevant — request 1×1).
@@ -1106,12 +1131,13 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     })();
 
     const widget = new BrowserWindow({
-      // Round 128 — wide enough for Cam + Blur + the quality dropdown
-      // + Snap + Mute + Pause/Resume (fixed-width) + Stop + the ghost
-      // close icon without ever clipping when labels swap.
-      width: 660,
+      // Round 130 — generous initial width so nothing clips on the
+      // first paint; the widget then measures its real content and
+      // asks main to size the window exactly (capture:record-resize),
+      // so the bar can never clip however many controls are shown.
+      width: 780,
       height: 64,
-      x: display.bounds.x + display.bounds.width - 680,
+      x: display.bounds.x + display.bounds.width - 804,
       y: display.bounds.y + display.bounds.height - 120,
       frame: false,
       show: false,
@@ -1171,7 +1197,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     broadcastRecordingState();
     // Region outline so the user always knows what's in frame — the
     // marker is content-protected, so the footage never shows it.
-    if (recordRegionCrop) createRegionMarker(display, areaRect);
+    if (recordRegionCrop && recordRegionCssRect) createRegionMarker(display, recordRegionCssRect);
     // Round 128 — camera bubble: auto-start when enabled in Settings;
     // the per-recording cam hotkey toggles it either way. Both work
     // during the armed stage too, so the user can frame themselves
@@ -1383,6 +1409,7 @@ async function finalizeRecording(): Promise<void> {
   recordBlurSegments = [];
   const regionCrop = recordRegionCrop;
   recordRegionCrop = null;
+  recordRegionCssRect = null;
   closeCamBubble();
   closeRegionMarker();
   unregisterCamHotkey();
@@ -1763,6 +1790,69 @@ function unregisterCamHotkey(): void {
     camHotkeyAccelerator = null;
   }
 }
+
+// Round 130 (Terry) — re-pick the recorded area from the ARMED bar.
+// His exact scenario: pick the screen while PDR is fullscreen, arm
+// with Enter, alt-tab to arrange the windows he actually wants to
+// record (nothing cancels — only the selector overlay is modal),
+// then press Area on the bar for a FRESH freeze of the screen as it
+// now stands. Esc in the re-pick keeps the previous area rather than
+// abandoning the setup.
+ipcMain.on('capture:record-area-request', (event) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const display = recordDisplay;
+  const widget = recordWidget;
+  const reply = () => {
+    if (widget && !widget.isDestroyed()) {
+      try { widget.webContents.send('capture:record-do', { action: 'area-set', region: recordRegionCrop }); } catch { /* non-fatal */ }
+    }
+  };
+  if (!display || recordingState !== 'armed' || captureInFlight) {
+    reply();
+    return;
+  }
+  captureInFlight = true;
+  void (async () => {
+    try {
+      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
+      if (!grab) { reply(); return; }
+      grab.restore(); // no-op — nothing hidden
+      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
+      const rect = await openRegionOverlay(display, dataUrl, grab.windows);
+      if (rect) {
+        recordRegionCrop = computeRegionCrop(rect, display, grab.width, grab.height);
+        recordRegionCssRect = recordRegionCrop ? rect : null;
+        closeRegionMarker();
+        if (recordRegionCrop && recordRegionCssRect) createRegionMarker(display, recordRegionCssRect);
+        log.info(`[capture] recording area re-picked: ${recordRegionCrop ? `${recordRegionCrop.width}×${recordRegionCrop.height}` : 'full screen'}`);
+      }
+      reply();
+    } catch (err) {
+      log.warn(`[capture] area re-pick failed: ${(err as Error).message}`);
+      reply();
+    } finally {
+      captureInFlight = false;
+    }
+  })();
+});
+
+// Round 130 — the widget measures its own content and asks for a
+// window width that fits every visible control, anchored to the
+// recorded display's bottom-right. Future-proofs the bar against
+// clipping no matter how many buttons appear (the bug where Record
+// fell off the right edge after Area was added).
+ipcMain.on('capture:record-resize', (event, width: number) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const display = recordDisplay ?? screen.getPrimaryDisplay();
+  const target = Math.round(Math.max(280, Math.min(width || 0, display.bounds.width - 48)));
+  try {
+    const cur = recordWidget.getBounds();
+    if (Math.abs(cur.width - target) < 2) return; // already there
+    // Keep the right edge anchored to the display's right margin.
+    const right = display.bounds.x + display.bounds.width - 24;
+    recordWidget.setBounds({ x: right - target, y: cur.y, width: target, height: cur.height });
+  } catch { /* non-fatal */ }
+});
 
 ipcMain.on('capture:record-cam-toggle', (event) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {

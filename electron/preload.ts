@@ -410,6 +410,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // (capture-cam.html) receives init/show/hide and reports fades
     // and camera failures.
     recordCamToggle: () => ipcRenderer.send('capture:record-cam-toggle'),
+    // Round 130 — re-pick the recorded area from the armed bar.
+    recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
+    // Round 130 — the widget measures its own content width and asks
+    // main to size the window to fit, so controls never clip however
+    // many buttons are shown.
+    recordResize: (width: number) => ipcRenderer.send('capture:record-resize', width),
     onCamInit: (callback: (info: { deviceId: string; shape: 'circle' | 'rectangle' }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:cam-init', handler);

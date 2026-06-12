@@ -75,15 +75,16 @@
     font-size: 14px;
   }
   /* Live size of the captured footage; doubles as the Saving /
-     Discarding status once the recording finishes. */
+     Discarding status once the recording finishes. Round 130: no
+     longer flex-grows (that absorbed slack and hid the bar's true
+     content width from the auto-sizer) — it sizes to its text, and
+     the window sizes to the whole bar. */
   #size {
     font-variant-numeric: tabular-nums;
     color: #9a9aa3;
     font-size: 11px;
-    flex: 1 1 0;
-    min-width: 0;
+    min-width: 56px;
     white-space: nowrap;
-    overflow: hidden;
   }
   button {
     -webkit-app-region: no-drag;
@@ -176,6 +177,7 @@
     <div id="dot"></div>
     <span id="time">0:00</span>
     <span id="size">0 KB</span>
+    <button id="area" type="button" title="Re-pick what gets recorded — arrange your windows first, then choose the area">Area</button>
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
@@ -198,6 +200,7 @@
   var dot = document.getElementById('dot');
   var timeEl = document.getElementById('time');
   var sizeEl = document.getElementById('size');
+  var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
   var blurBtn = document.getElementById('blur');
   var qualitySel = document.getElementById('quality');
@@ -207,7 +210,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [areaBtn, camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -232,25 +235,59 @@
   var storedInit = null;
   var armed = false;
 
+  var bar = document.getElementById('bar');
+  // Round 130 — size the WINDOW to the bar's real content so no
+  // control can ever clip (the bug where Record fell off the right
+  // edge once Area was added). Sum every visible child + gaps +
+  // the bar's own padding/border, and ask main to match. rAF lets
+  // layout/fonts settle before measuring.
+  function requestResize() {
+    requestAnimationFrame(function () {
+      var total = 22 + 2; // bar padding (12+10) + border (1+1)
+      var visible = 0;
+      for (var i = 0; i < bar.children.length; i++) {
+        var c = bar.children[i];
+        if (getComputedStyle(c).display === 'none') continue;
+        total += c.offsetWidth;
+        visible++;
+      }
+      total += Math.max(0, visible - 1) * 8; // inter-child gaps
+      total += 10; // small breathing margin
+      try { if (pdr && pdr.capture && pdr.capture.recordResize) pdr.capture.recordResize(Math.ceil(total)); } catch (e) {}
+    });
+  }
+
   function enterArmedUI(region) {
     armed = true;
     dot.classList.add('paused');
     sizeEl.textContent = region ? 'Ready · ' + region.width + '×' + region.height : 'Ready';
-    recordBtn.style.display = '';
+    // Explicit 'inline-block', NOT '' — #record's CSS default is
+    // display:none, so clearing the inline style would leave it
+    // hidden (round 130 bug: the armed bar showed no Record button;
+    // .click()-by-id tests fired on the hidden element and missed it).
+    recordBtn.style.display = 'inline-block';
     stopBtn.style.display = 'none';
     pauseBtn.disabled = true;
     snapBtn.disabled = true;
     blurBtn.disabled = true;
+    // Area re-pick only makes sense BEFORE recording starts — the
+    // crop applies to the whole video.
+    areaBtn.style.display = 'inline-block';
+    areaBtn.disabled = false;
+    requestResize();
   }
   function enterRecordingUI() {
     armed = false;
     dot.classList.remove('paused');
     sizeEl.textContent = '0 KB';
     recordBtn.style.display = 'none';
-    stopBtn.style.display = '';
+    stopBtn.style.display = 'inline-block';
     pauseBtn.disabled = false;
     snapBtn.disabled = false;
     blurBtn.disabled = false;
+    // Area is meaningless once recording — hide it (frees bar space).
+    areaBtn.style.display = 'none';
+    requestResize();
   }
 
   function fmt(ms) {
@@ -335,7 +372,12 @@
         pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAudio });
       }
       if (hasAudio) {
-        muteBtn.style.display = '';
+        // Explicit value, NOT '' — #mute's CSS default is
+        // display:none, so '' would leave it hidden (the same bug
+        // that hid Record; Mute has silently never shown since
+        // round 126 for this reason).
+        muteBtn.style.display = 'inline-block';
+        requestResize(); // the Mute button just claimed bar width
         muteBtn.addEventListener('click', function () {
           muted = !muted;
           stream.getAudioTracks().forEach(function (t) { t.enabled = !muted; });
@@ -425,6 +467,15 @@
     try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(); } catch (e) {}
   });
 
+  // ── Round 130: Area re-pick (armed only). Main freezes the screen
+  // AS IT NOW STANDS and reopens the selector; Esc there keeps the
+  // previous area. The result comes back on record-do
+  // {action:'area-set'}.
+  areaBtn.addEventListener('click', function () {
+    if (finished || !armed) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordAreaRequest) pdr.capture.recordAreaRequest(); } catch (e) {}
+  });
+
   // ── Round 127: Blur ──
   // Click while no blur is active: auto-pause (so the selection
   // overlay never appears in the footage), ask main to open the
@@ -488,6 +539,12 @@
         if (!cmd) return;
         if (cmd.action === 'stop') finish(false);
         else if (cmd.action === 'cancel') finish(true);
+        else if (cmd.action === 'area-set') {
+          if (armed && !finished) {
+            sizeEl.textContent = cmd.region ? 'Ready · ' + cmd.region.width + '×' + cmd.region.height : 'Ready';
+            requestResize();
+          }
+        }
         else if (cmd.action === 'cam-state') {
           camBtn.classList.toggle('active', !!cmd.visible);
           camBtn.title = cmd.visible ? 'Camera is in the recording — click to hide it' : 'Show or hide your camera bubble in the recording';
