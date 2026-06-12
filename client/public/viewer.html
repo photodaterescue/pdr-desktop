@@ -4774,12 +4774,24 @@ function zoomTo(newZoom, centreX, centreY) {
           // relayouts or fights the viewer's zoom/pan. Thickness
           // tracks the displayed image so it reads like the baked
           // frame. The exact frame is composited by sharp on save.
+          // v2.1 round 137 (Terry) — frame preview via an inset BORDER,
+          // not box-shadow. box-shadow spreads OUTSIDE the image, so
+          // when a portrait photo fills the viewport height the top &
+          // bottom of the ring were clipped by the container — the
+          // frame looked like it was only on the left/right. A border
+          // with box-sizing:border-box draws inside the element's box
+          // (all 4 sides always visible, no layout shift, no clip).
+          // The saved file is still an even outset frame (sharp
+          // .extend) — this is just a faithful all-sides preview.
           if (state.borderColor) {
             const shortPx = Math.min(el.clientWidth || 600, el.clientHeight || 400);
             const frac = state.borderWeight === 'mat' ? 0.08 : 0.035;
             const w = Math.max(4, Math.round(shortPx * frac));
-            el.style.boxShadow = '0 0 0 ' + w + 'px ' + state.borderColor;
+            el.style.boxSizing = 'border-box';
+            el.style.border = w + 'px solid ' + state.borderColor;
+            el.style.boxShadow = 'none';
           } else {
+            el.style.border = '';
             el.style.boxShadow = 'none';
           }
         });
@@ -4961,11 +4973,13 @@ function zoomTo(newZoom, centreX, centreY) {
       }
       if (frameAdd && frameCustom) {
         frameAdd.addEventListener('click', function () { try { frameCustom.click(); } catch (_) {} });
-        frameCustom.addEventListener('input', function () {
-          const c = frameCustom.value;
-          applyFrameColor(c);
-          saveColor(c);
-        });
+        // v2.1 round 137 (Terry) — 'input' fires continuously while the
+        // user drags inside the native picker, so saving on 'input'
+        // flooded the Saved row with ~8 near-identical colours. Live-
+        // preview on 'input', but only SAVE on 'change' (fires once
+        // when the picker commits/closes).
+        frameCustom.addEventListener('input', function () { applyFrameColor(frameCustom.value); });
+        frameCustom.addEventListener('change', function () { saveColor(frameCustom.value); });
       }
       renderSavedColors();
       if (frameWeightRow) {

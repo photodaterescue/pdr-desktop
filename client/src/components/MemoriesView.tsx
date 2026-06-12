@@ -3447,7 +3447,10 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       Welcome reads fresh) and bump the parent's refresh
                       tick (so the month tile updates as soon as the user
                       goes back). */}
-                  {month != null && (
+                  {/* v2.1 round 137 (Terry) — a monthly thumbnail is a
+                      single photo, so hide this when a multi-selection
+                      is active (size > 1). 0 or 1 selected = fine. */}
+                  {month != null && selectedFileIds.size <= 1 && (
                     <>
                       <ContextMenuSeparator />
                       <ContextMenuItem

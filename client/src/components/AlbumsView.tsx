@@ -3434,7 +3434,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           date cover. Writes to albums.cover_file_id and
                           refreshes the album list so the change is
                           visible immediately when the user navigates
-                          back to the album grid. */}
+                          back to the album grid.
+                          v2.1 round 137 (Terry) — a cover is one photo,
+                          so hide this when a multi-selection is active
+                          (size > 1). 0 or 1 selected = fine. */}
+                      {selectedAlbumPhotoIds.size <= 1 && (
                       <ContextMenuItem
                         onSelect={async () => {
                           const result = await setAlbumCoverPhoto(selectedAlbum.id, p.id);
@@ -3452,6 +3456,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <Star className="w-3.5 h-3.5 mr-2" />
                         Set as album thumbnail
                       </ContextMenuItem>
+                      )}
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
