@@ -2931,6 +2931,9 @@ export function onCapturePendingFlushed(callback: (info: { count: number }) => v
 export interface StartRecordingResult {
   success: boolean;
   alreadyRecording?: boolean;
+  /** Round 129 — user pressed Esc at the area-selection stage.
+   *  Silent; nothing was set up. */
+  cancelled?: boolean;
   needsDisplayPick?: boolean;
   displays?: CaptureDisplayInfo[];
   error?: string;
@@ -2954,7 +2957,7 @@ export async function captureCancelRecording(): Promise<{ success: boolean }> {
   catch { return { success: false }; }
 }
 
-export type CaptureRecordingState = 'idle' | 'recording' | 'processing';
+export type CaptureRecordingState = 'idle' | 'armed' | 'recording' | 'processing';
 
 export function onCaptureRecordingState(callback: (info: { state: CaptureRecordingState }) => void): () => void {
   if (!isElectron()) return () => {};

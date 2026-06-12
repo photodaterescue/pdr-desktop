@@ -142,6 +142,17 @@
     padding: 0 12px;
   }
   #stop:hover { background: #f2555a; }
+  /* Round 129 — the armed bar's Record button: same red family as
+     Stop, the single obvious "go" control while everything else
+     waits. */
+  #record {
+    background: #e5484d;
+    border-color: #e5484d;
+    font-weight: 600;
+    padding: 0 14px;
+    display: none;
+  }
+  #record:hover { background: #f2555a; }
   /* Ghost icon close — PDR titlebar button family (borderless,
      round, hover wash), not a bordered text glyph (round 127). */
   #cancel {
@@ -175,6 +186,7 @@
     <button id="snap" type="button" title="Take a screenshot of what's being recorded — it goes into your library too">Snap</button>
     <button id="mute" type="button" title="Mute system audio for part of the recording">Mute</button>
     <button id="pause" type="button" title="Pause recording">Pause</button>
+    <button id="record" type="button" title="Start recording — until you press this, nothing is captured">Record</button>
     <button id="stop" type="button" title="Stop and save to your library">Stop</button>
     <button id="cancel" type="button" title="Discard this recording" aria-label="Discard this recording">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><line x1="6" y1="6" x2="18" y2="18"/><line x1="18" y1="6" x2="6" y2="18"/></svg>
@@ -192,9 +204,10 @@
   var snapBtn = document.getElementById('snap');
   var muteBtn = document.getElementById('mute');
   var pauseBtn = document.getElementById('pause');
+  var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, stopBtn, cancelBtn];
+  var allButtons = [camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -208,8 +221,37 @@
   var muted = false;
   var quality = 'standard';
   var QUALITY_LABEL = { compact: 'Compact', standard: 'Standard', high: 'High' };
+  // Capture bitrate per preset — applied at the moment Record is
+  // pressed, so a quality change made while armed affects the live
+  // capture too (mid-recording changes still only affect the save).
+  var QUALITY_BITRATE = { compact: 4000000, standard: 8000000, high: 12000000 };
   var blurActive = false;       // a blur segment is currently open
   var blurSelecting = false;    // the selection overlay is up
+  // Round 129 — armed stage: init is stored, the engine stays cold,
+  // and NOTHING is captured until the user presses Record.
+  var storedInit = null;
+  var armed = false;
+
+  function enterArmedUI(region) {
+    armed = true;
+    dot.classList.add('paused');
+    sizeEl.textContent = region ? 'Ready · ' + region.width + '×' + region.height : 'Ready';
+    recordBtn.style.display = '';
+    stopBtn.style.display = 'none';
+    pauseBtn.disabled = true;
+    snapBtn.disabled = true;
+    blurBtn.disabled = true;
+  }
+  function enterRecordingUI() {
+    armed = false;
+    dot.classList.remove('paused');
+    sizeEl.textContent = '0 KB';
+    recordBtn.style.display = 'none';
+    stopBtn.style.display = '';
+    pauseBtn.disabled = false;
+    snapBtn.disabled = false;
+    blurBtn.disabled = false;
+  }
 
   function fmt(ms) {
     var s = Math.max(0, Math.floor(ms / 1000));
@@ -262,10 +304,6 @@
 
   async function start(init) {
     try {
-      if (init && init.quality && QUALITY_LABEL[init.quality]) {
-        quality = init.quality;
-        qualitySel.value = quality;
-      }
       var videoConstraints = {
         mandatory: {
           chromeMediaSource: 'desktop',
@@ -417,12 +455,33 @@
     if (!recorder || finished) return;
     if (paused) doResume(); else doPause();
   });
+  // Round 129 — the user's moment of choice: until this click, the
+  // engine is cold and nothing has been captured. Quality picked
+  // while armed applies to the live capture bitrate here.
+  recordBtn.addEventListener('click', function () {
+    if (finished || recorder || !storedInit) return;
+    storedInit.videoBitsPerSecond = QUALITY_BITRATE[quality] || storedInit.videoBitsPerSecond;
+    enterRecordingUI();
+    void start(storedInit);
+  });
   stopBtn.addEventListener('click', function () { finish(false); });
   cancelBtn.addEventListener('click', function () { finish(true); });
 
   if (pdr && pdr.capture) {
     if (pdr.capture.onRecordInit) {
-      pdr.capture.onRecordInit(function (init) { void start(init || {}); });
+      pdr.capture.onRecordInit(function (init) {
+        storedInit = init || {};
+        if (storedInit.quality && QUALITY_LABEL[storedInit.quality]) {
+          quality = storedInit.quality;
+          qualitySel.value = quality;
+        }
+        if (storedInit.armed) {
+          enterArmedUI(storedInit.region || null);
+        } else {
+          // Legacy immediate-start path (not used since round 129).
+          void start(storedInit);
+        }
+      });
     }
     if (pdr.capture.onRecordDo) {
       pdr.capture.onRecordDo(function (cmd) {

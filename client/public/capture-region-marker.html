@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Region</title>
+<!--
+  v2.1 round 129 (Terry 2026-06-12) — recorded-region marker.
+
+  A transparent, click-through, CONTENT-PROTECTED window covering the
+  recorded display that draws a border around the recorded region —
+  so the user always knows exactly what's in frame, while the footage
+  itself never shows the marker (content protection excludes it from
+  capture, the inverse trick to the camera bubble).
+
+  Self-contained vanilla HTML/JS — OS chrome, not app UI.
+-->
+<style>
+  html, body {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    overflow: hidden;
+    background: transparent;
+    pointer-events: none;
+  }
+  #frame {
+    position: absolute;
+    border: 2px solid rgba(229, 72, 77, 0.9);
+    border-radius: 3px;
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.35);
+    display: none;
+  }
+  #tag {
+    position: absolute;
+    padding: 2px 8px;
+    border-radius: 6px;
+    background: rgba(229, 72, 77, 0.9);
+    color: #fff;
+    font: 600 10px/1.6 system-ui, 'Segoe UI', sans-serif;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    display: none;
+  }
+</style>
+</head>
+<body>
+  <div id="frame"></div>
+  <div id="tag">Recording area</div>
+<script>
+(function () {
+  var pdr = window.pdr;
+  var frame = document.getElementById('frame');
+  var tag = document.getElementById('tag');
+  if (pdr && pdr.capture && pdr.capture.onRegionMarkerInit) {
+    pdr.capture.onRegionMarkerInit(function (info) {
+      if (!info || !info.rect) return;
+      var r = info.rect;
+      frame.style.left = (r.x - 2) + 'px';
+      frame.style.top = (r.y - 2) + 'px';
+      frame.style.width = r.width + 'px';
+      frame.style.height = r.height + 'px';
+      frame.style.display = 'block';
+      // Tag above the frame; below when the frame touches the top.
+      var tagTop = r.y - 24;
+      if (tagTop < 4) tagTop = r.y + r.height + 6;
+      tag.style.left = Math.max(4, r.x - 2) + 'px';
+      tag.style.top = tagTop + 'px';
+      tag.style.display = 'block';
+    });
+  }
+})();
+</script>
+</body>
+</html>

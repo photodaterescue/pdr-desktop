@@ -5,7 +5,7 @@ import { toast } from 'sonner';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, captureCancelRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -252,6 +252,13 @@ export function TitleBar() {
   const handleRecordClick = async () => {
     if (recordingState === 'recording') {
       await captureStopRecording();
+      return;
+    }
+    // Round 129 — while ARMED (set up, not yet recording) the
+    // titlebar click backs out of the setup; the bar's Record button
+    // is the only thing that starts capture.
+    if (recordingState === 'armed') {
+      await captureCancelRecording();
       return;
     }
     if (recordingState === 'processing') return; // saving — nothing to do
@@ -617,6 +624,7 @@ export function TitleBar() {
         <IconTooltip
           label={
             recordingState === 'recording' ? 'Recording — click to stop and save'
+            : recordingState === 'armed' ? 'Recording set up — press Record on the bar when ready · click here to cancel'
             : recordingState === 'processing' ? 'Saving your recording…'
             : 'Record your screen — straight into your library'
           }
@@ -627,10 +635,16 @@ export function TitleBar() {
             className={`flex items-center justify-center w-7 h-7 rounded-full transition-all ${
               recordingState === 'recording'
                 ? 'bg-red-500/25 text-red-200 hover:bg-red-500/40 animate-pulse'
-                : 'hover:bg-white/20 text-white/80 hover:text-white'
+                : recordingState === 'armed'
+                  ? 'bg-red-500/15 text-red-200/90 hover:bg-red-500/30'
+                  : 'hover:bg-white/20 text-white/80 hover:text-white'
             }`}
             data-testid="titlebar-record"
-            aria-label={recordingState === 'recording' ? 'Stop recording' : 'Record your screen'}
+            aria-label={
+              recordingState === 'recording' ? 'Stop recording'
+              : recordingState === 'armed' ? 'Cancel recording setup'
+              : 'Record your screen'
+            }
           >
             {recordingState === 'recording' ? (
               <Square className="w-3 h-3 fill-current" />

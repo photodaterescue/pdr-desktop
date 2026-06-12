@@ -881,7 +881,15 @@ export function checkConflictingCaptureTools(): string[] {
 // (they may well be recording PDR itself), unlike the instantaneous
 // screenshot where "get PDR out of the shot" is almost always right.
 
-let recordingState: 'idle' | 'recording' | 'processing' = 'idle';
+// Round 129 (Terry) — recording is TWO-STAGE. Clicking record first
+// ESTABLISHES what's being recorded (screen via the picker, then the
+// area via the freeze-frame selector: click a window, drag a region,
+// or Enter for the whole screen). That arms the bar in a pre-record
+// state — the user can set up the cam, change quality, make a cup of
+// tea — and NOTHING is captured until they press Record on the bar.
+// 'armed' is that waiting state; the temp file, the stream, and the
+// filename timestamp are all created at the actual Record press.
+let recordingState: 'idle' | 'armed' | 'recording' | 'processing' = 'idle';
 let recordWidget: BrowserWindow | null = null;
 let recordTempPath: string | null = null;
 let recordStream: fs.WriteStream | null = null;
@@ -889,6 +897,13 @@ let recordStartedAt: Date | null = null;
 let recordDisplay: Electron.Display | null = null;
 let recordQuality: 'high' | 'standard' | 'compact' = 'standard';
 let recordMeta: { width: number | null; height: number | null; hasAudio: boolean } = { width: null, height: null, hasAudio: false };
+// Round 129 — region recording: the chosen area in VIDEO pixels
+// (null = whole screen). The capture itself is always full-screen;
+// FFmpeg crops at save time (same zero-live-cost pattern as blur).
+let recordRegionCrop: SelectionRect | null = null;
+// Click-through, content-protected outline marking the recorded
+// region on screen — the USER sees the boundary, the footage doesn't.
+let regionMarkerWindow: BrowserWindow | null = null;
 
 // Quality presets (round 126): live capture bitrate + save-time crf.
 const RECORD_QUALITY = {
@@ -925,7 +940,13 @@ function blurSidecarPath(webmPath: string): string {
 function persistBlurSidecar(): void {
   if (!recordTempPath) return;
   try {
-    fs.writeFileSync(toLongPath(blurSidecarPath(recordTempPath)), JSON.stringify(recordBlurSegments));
+    // Round 129 — the sidecar now carries the region crop too, so a
+    // crash mid-region-recording can't recover the FULL screen
+    // (which would leak everything around the chosen area).
+    fs.writeFileSync(
+      toLongPath(blurSidecarPath(recordTempPath)),
+      JSON.stringify({ crop: recordRegionCrop, segments: recordBlurSegments }),
+    );
   } catch (err) {
     log.warn(`[capture] blur sidecar write failed (non-fatal): ${(err as Error).message}`);
   }
@@ -955,7 +976,9 @@ function ffmpegPath(): string | null {
 
 function teardownRecording(opts: { discardTemp: boolean }): void {
   closeCamBubble();
+  closeRegionMarker();
   unregisterCamHotkey();
+  recordRegionCrop = null;
   if (recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.close(); } catch { /* non-fatal */ }
   }
@@ -983,6 +1006,9 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
 export interface StartRecordingResult {
   success: boolean;
   alreadyRecording?: boolean;
+  /** Round 129 — the user pressed Esc at the area-selection stage;
+   *  nothing was set up. Callers stay silent. */
+  cancelled?: boolean;
   needsDisplayPick?: boolean;
   displays?: CaptureDisplayInfo[];
   error?: string;
@@ -995,7 +1021,9 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       alreadyRecording: true,
       error: recordingState === 'processing'
         ? 'Still saving your previous recording — one moment.'
-        : 'A recording is already in progress.',
+        : recordingState === 'armed'
+          ? 'A recording is already set up — press Record on the bar, or close it first.'
+          : 'A recording is already in progress.',
     };
   }
   try {
@@ -1006,6 +1034,55 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     }
     const display = resolved.display;
 
+    // Round 129 — establish WHAT is being recorded before anything
+    // else: freeze the screen as it stands and let the user click a
+    // window, drag an area, or press Enter for the whole screen.
+    // Esc abandons the whole setup. No hiding — the recording will
+    // show the live screen, so the selection should too.
+    if (captureInFlight) {
+      return { success: false, error: 'A capture is already in progress.' };
+    }
+    captureInFlight = true;
+    let areaRect: SelectionRect | null = null;
+    let grabW = 0;
+    let grabH = 0;
+    try {
+      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
+      if (!grab) return { success: false, error: 'Could not access the screen for recording.' };
+      grab.restore(); // no-op — nothing hidden
+      grabW = grab.width;
+      grabH = grab.height;
+      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
+      areaRect = await openRegionOverlay(display, dataUrl, grab.windows);
+    } finally {
+      captureInFlight = false;
+    }
+    if (!areaRect) {
+      log.info('[capture] recording setup cancelled at area selection');
+      return { success: false, cancelled: true };
+    }
+
+    // Map the chosen area to video pixels; a selection covering
+    // (effectively) the whole display means no crop at all.
+    const scaleX = grabW / display.bounds.width;
+    const scaleY = grabH / display.bounds.height;
+    const even = (n: number) => Math.max(0, 2 * Math.floor(n / 2));
+    const coversAll =
+      areaRect.x <= 2 && areaRect.y <= 2 &&
+      areaRect.width >= display.bounds.width - 4 &&
+      areaRect.height >= display.bounds.height - 4;
+    if (coversAll) {
+      recordRegionCrop = null;
+    } else {
+      let x = even(areaRect.x * scaleX);
+      let y = even(areaRect.y * scaleY);
+      let width = even(areaRect.width * scaleX);
+      let height = even(areaRect.height * scaleY);
+      width = Math.max(64, Math.min(width, even(grabW) - x));
+      height = Math.max(64, Math.min(height, even(grabH) - y));
+      recordRegionCrop = { x, y, width, height };
+    }
+
     // The widget's getUserMedia needs the desktopCapturer SOURCE id
     // for this display (thumbnails irrelevant — request 1×1).
     const sources = await desktopCapturer.getSources({ types: ['screen'], thumbnailSize: { width: 1, height: 1 } });
@@ -1014,14 +1091,11 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       (sources.length === 1 ? sources[0] : undefined);
     if (!source) return { success: false, error: 'Could not access the screen for recording.' };
 
-    recordStartedAt = new Date();
+    // ARMED — nothing recorded yet. Temp file + timestamps are
+    // created when the user presses Record (capture:record-started).
+    recordStartedAt = null;
+    recordTempPath = null;
     recordDisplay = display;
-    const { date, time } = timestampParts(recordStartedAt);
-    fs.mkdirSync(toLongPath(recordTempDir()), { recursive: true });
-    // Temp name carries the start timestamp so the startup orphan
-    // recovery can rebuild the right capture date after a crash.
-    recordTempPath = path.join(recordTempDir(), `rec-${date}_${time}.webm`);
-    recordStream = fs.createWriteStream(toLongPath(recordTempPath));
     recordMeta = { width: null, height: null, hasAudio: false };
 
     const recordAudio = (() => {
@@ -1063,10 +1137,11 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
     widget.setMenu(null);
 
     widget.on('closed', () => {
-      // External close (Alt+F4 on the widget) while recording —
-      // treat as cancel; the engine died with the renderer.
-      if (recordWidget === widget && recordingState === 'recording') {
-        log.info('[capture] recording widget closed externally — discarding recording');
+      // External close (Alt+F4 on the widget) while armed or
+      // recording — treat as cancel; the engine died with the
+      // renderer.
+      if (recordWidget === widget && (recordingState === 'recording' || recordingState === 'armed')) {
+        log.info('[capture] recording widget closed externally — discarding');
         recordWidget = null;
         teardownRecording({ discardTemp: true });
       }
@@ -1081,23 +1156,32 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
         quality: recordQuality,
+        // Round 129 — the bar opens ARMED: engine idle until the
+        // user presses its Record button.
+        armed: true,
+        region: recordRegionCrop,
       });
-      // showInactive — starting a recording must not steal focus from
-      // whatever the user is about to record.
+      // showInactive — setting up a recording must not steal focus
+      // from whatever the user is about to record.
       widget.showInactive();
     });
     void widget.loadFile(path.join(__dirname, '../dist/public/capture-record-widget.html'));
 
-    recordingState = 'recording';
+    recordingState = 'armed';
     broadcastRecordingState();
+    // Region outline so the user always knows what's in frame — the
+    // marker is content-protected, so the footage never shows it.
+    if (recordRegionCrop) createRegionMarker(display, areaRect);
     // Round 128 — camera bubble: auto-start when enabled in Settings;
-    // the per-recording cam hotkey toggles it either way.
+    // the per-recording cam hotkey toggles it either way. Both work
+    // during the armed stage too, so the user can frame themselves
+    // before pressing Record.
     const camEnabled = (() => {
       try { return getSettings().captureCamEnabled === true; } catch { return false; }
     })();
     if (camEnabled) createCamBubble(display);
     registerCamHotkey();
-    log.info(`[capture] recording started on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'})`);
+    log.info(`[capture] recording ARMED on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'}, region: ${recordRegionCrop ? `${recordRegionCrop.width}×${recordRegionCrop.height}` : 'full screen'}) — waiting for Record`);
     return { success: true };
   } catch (err) {
     log.warn(`[capture] startRecording failed: ${(err as Error).message}`);
@@ -1117,7 +1201,7 @@ export function stopRecording(): { success: boolean; error?: string } {
 }
 
 export function cancelRecording(): { success: boolean } {
-  if (recordingState === 'recording' && recordWidget && !recordWidget.isDestroyed()) {
+  if ((recordingState === 'recording' || recordingState === 'armed') && recordWidget && !recordWidget.isDestroyed()) {
     try { recordWidget.webContents.send('capture:record-do', { action: 'cancel' }); } catch { /* non-fatal */ }
     // The widget replies on capture:record-cancelled; belt-and-braces
     // teardown happens there. If the widget is wedged, the closed
@@ -1143,10 +1227,32 @@ export function cancelRecording(): { success: boolean } {
  * segments compose. Pure save-time work: recording itself never
  * touches a pixel.
  */
-function buildBlurFilter(segments: BlurSegment[]): string {
+/**
+ * Compose the save-time video filter chain: an optional region crop
+ * first (round 129 — region recording captures full-screen and crops
+ * here), then the blur segments (coords shifted into the cropped
+ * space; segments falling outside the region are dropped).
+ */
+function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | null): { filter: string; outLabel: string } | null {
   const parts: string[] = [];
   let cur = '0:v';
-  segments.forEach((s, i) => {
+  if (regionCrop) {
+    parts.push(`[${cur}]crop=${regionCrop.width}:${regionCrop.height}:${regionCrop.x}:${regionCrop.y}[vc]`);
+    cur = 'vc';
+  }
+  const adjusted = segments
+    .map((s) => {
+      if (!regionCrop) return s;
+      const x1 = Math.max(s.x, regionCrop.x);
+      const y1 = Math.max(s.y, regionCrop.y);
+      const x2 = Math.min(s.x + s.width, regionCrop.x + regionCrop.width);
+      const y2 = Math.min(s.y + s.height, regionCrop.y + regionCrop.height);
+      if (x2 - x1 < 4 || y2 - y1 < 4) return null; // outside the region
+      const even = (n: number) => Math.max(0, 2 * Math.floor(n / 2));
+      return { ...s, x: even(x1 - regionCrop.x), y: even(y1 - regionCrop.y), width: even(x2 - x1), height: even(y2 - y1) };
+    })
+    .filter((s): s is BlurSegment => s !== null);
+  adjusted.forEach((s, i) => {
     const start = (s.startMs / 1000).toFixed(3);
     // Open segment (never unblurred) runs to end-of-clip.
     const end = s.endMs === null ? '999999' : (s.endMs / 1000).toFixed(3);
@@ -1155,10 +1261,11 @@ function buildBlurFilter(segments: BlurSegment[]): string {
     parts.push(`[a${i}][bb${i}]overlay=${s.x}:${s.y}:enable='between(t,${start},${end})'[v${i}]`);
     cur = `v${i}`;
   });
-  return parts.join(';');
+  if (parts.length === 0) return null;
+  return { filter: parts.join(';'), outLabel: cur };
 }
 
-async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = []): Promise<string | null> {
+async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = [], regionCrop: SelectionRect | null = null): Promise<string | null> {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) {
     log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
@@ -1175,11 +1282,12 @@ async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegm
   // content (flat regions, text) the quality difference is
   // negligible. crf comes from the quality preset (round 126).
   const segments = blurSegments.filter((s) => s.width >= 2 && s.height >= 2);
-  const videoArgs = segments.length > 0
-    ? ['-filter_complex', buildBlurFilter(segments), '-map', `[v${segments.length - 1}]`, '-map', '0:a?']
+  const built = buildVideoFilter(segments, regionCrop);
+  const videoArgs = built
+    ? ['-filter_complex', built.filter, '-map', `[${built.outLabel}]`, '-map', '0:a?']
     : [];
-  if (segments.length > 0) {
-    log.info(`[capture] applying ${segments.length} blur segment(s) at save time`);
+  if (built) {
+    log.info(`[capture] save-time filters: ${regionCrop ? `region crop ${regionCrop.width}×${regionCrop.height}` : 'no crop'}${segments.length > 0 ? ` + ${segments.length} blur segment(s)` : ''}`);
   }
   const args = [
     '-hide_banner', '-loglevel', 'error',
@@ -1273,7 +1381,10 @@ async function finalizeRecording(): Promise<void> {
   const meta = recordMeta;
   const blurSegments = recordBlurSegments;
   recordBlurSegments = [];
+  const regionCrop = recordRegionCrop;
+  recordRegionCrop = null;
   closeCamBubble();
+  closeRegionMarker();
   unregisterCamHotkey();
   // Close the widget + stream, keep the temp file.
   if (recordWidget && !recordWidget.isDestroyed()) {
@@ -1298,11 +1409,11 @@ async function finalizeRecording(): Promise<void> {
       log.warn('[capture] recording produced no data — nothing to save');
       return;
     }
-    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments);
+    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments, regionCrop);
     if (mp4Path) {
       try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
       try { fs.unlinkSync(toLongPath(blurSidecarPath(webmPath))); } catch { /* non-fatal */ }
-      await persistRecording(mp4Path, startedAt, meta.width, meta.height);
+      await persistRecording(mp4Path, startedAt, regionCrop?.width ?? meta.width, regionCrop?.height ?? meta.height);
     } else {
       // FFmpeg unavailable/failed — persist the WebM itself rather
       // than lose the recording. NOTE: blur segments can only be
@@ -1333,6 +1444,24 @@ ipcMain.on('capture:record-chunk', (event, chunk: ArrayBuffer | Uint8Array) => {
 ipcMain.on('capture:record-started', (event, info: { width?: number; height?: number; hasAudio?: boolean }) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
     recordMeta = { width: info?.width ?? null, height: info?.height ?? null, hasAudio: !!info?.hasAudio };
+    // Round 129 — THIS is the moment recording truly begins (the
+    // user pressed Record on the armed bar). The temp file, the
+    // stream, and the filename timestamp are all born here, so a
+    // recording armed at 9:00 but started at 9:07 is dated 9:07.
+    // IPC ordering guarantees this handler runs before the first
+    // chunk arrives (the widget reports started before recorder.start).
+    if (recordingState === 'armed') {
+      recordStartedAt = new Date();
+      const { date, time } = timestampParts(recordStartedAt);
+      fs.mkdirSync(toLongPath(recordTempDir()), { recursive: true });
+      recordTempPath = path.join(recordTempDir(), `rec-${date}_${time}.webm`);
+      recordStream = fs.createWriteStream(toLongPath(recordTempPath));
+      // Region recordings get their sidecar immediately so crash
+      // recovery knows the crop even with zero blur segments.
+      if (recordRegionCrop) persistBlurSidecar();
+      recordingState = 'recording';
+      broadcastRecordingState();
+    }
     log.info(`[capture] recorder running ${recordMeta.width}×${recordMeta.height}, audio: ${recordMeta.hasAudio ? 'yes' : 'no'}`);
   }
 });
@@ -1374,7 +1503,20 @@ ipcMain.on('capture:record-snap', (event) => {
         return;
       }
       grab.restore(); // no-op (nothing hidden) — keeps the contract
-      await persistCapture(grab.buffer, capturedAt, grab.width, grab.height, 'screenshot');
+      // Round 129 — region recordings snap the REGION, not the whole
+      // screen: the still should match what's being recorded.
+      let buffer = grab.buffer;
+      let w: number | null = grab.width;
+      let h: number | null = grab.height;
+      if (recordRegionCrop) {
+        const cropped = nativeImage.createFromBuffer(grab.buffer).crop(recordRegionCrop);
+        if (!cropped.isEmpty()) {
+          buffer = cropped.toPNG();
+          w = recordRegionCrop.width;
+          h = recordRegionCrop.height;
+        }
+      }
+      await persistCapture(buffer, capturedAt, w, h, 'screenshot');
     } catch (err) {
       log.warn(`[capture] mid-recording snap failed: ${(err as Error).message}`);
     }
@@ -1449,6 +1591,62 @@ ipcMain.on('capture:record-blur-request', (event) => {
   })();
 });
 
+// ─── Round 129: region marker ────────────────────────────────────────────────
+
+/**
+ * A click-through, content-protected, transparent window covering the
+ * recorded display that draws a border around the recorded region —
+ * the user always sees what's in frame; the footage never does.
+ * rect is in display CSS pixels (the overlay selection, pre-scale).
+ */
+function createRegionMarker(display: Electron.Display, rect: SelectionRect): void {
+  closeRegionMarker();
+  const win = new BrowserWindow({
+    x: display.bounds.x,
+    y: display.bounds.y,
+    width: display.bounds.width,
+    height: display.bounds.height,
+    frame: false,
+    show: false,
+    transparent: true,
+    hasShadow: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  regionMarkerWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  try { win.setContentProtection(true); } catch { /* non-fatal */ }
+  try { win.setIgnoreMouseEvents(true); } catch { /* non-fatal */ }
+  win.setMenu(null);
+  win.on('closed', () => {
+    if (regionMarkerWindow === win) regionMarkerWindow = null;
+  });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('capture:region-marker-init', { rect });
+    win.showInactive();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-region-marker.html'));
+}
+
+function closeRegionMarker(): void {
+  if (regionMarkerWindow && !regionMarkerWindow.isDestroyed()) {
+    try { regionMarkerWindow.close(); } catch { /* non-fatal */ }
+  }
+  regionMarkerWindow = null;
+}
+
 // ─── Round 128: camera bubble ────────────────────────────────────────────────
 
 function notifyWidgetCamState(): void {
@@ -1516,7 +1714,9 @@ function createCamBubble(display: Electron.Display): void {
 /** Show/hide the bubble with the page-side fade. Creates it on first
  *  toggle if the recording started without one. */
 function toggleCamBubble(): void {
-  if (recordingState !== 'recording' || !recordDisplay) return;
+  // Armed counts too (round 129) — the user frames their camera
+  // BEFORE pressing Record.
+  if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
   if (!camWindow || camWindow.isDestroyed()) {
     createCamBubble(recordDisplay);
     return;
@@ -1643,18 +1843,24 @@ export async function recoverOrphanRecordings(): Promise<number> {
       // crash/quit; the sidecar JSON travels with the temp WebM
       // precisely so sensitive content never resurfaces unblurred.
       let blurSegments: BlurSegment[] = [];
+      let crop: SelectionRect | null = null;
       try {
         const sidecar = blurSidecarPath(full);
         if (fs.existsSync(toLongPath(sidecar))) {
           const parsed = JSON.parse(fs.readFileSync(toLongPath(sidecar), 'utf8'));
-          if (Array.isArray(parsed)) blurSegments = parsed;
+          if (Array.isArray(parsed)) {
+            blurSegments = parsed; // pre-round-129 shape
+          } else if (parsed && typeof parsed === 'object') {
+            if (Array.isArray(parsed.segments)) blurSegments = parsed.segments;
+            if (parsed.crop && typeof parsed.crop.width === 'number') crop = parsed.crop;
+          }
         }
-      } catch { /* recover without blur metadata */ }
-      const mp4Path = await transcodeWebmToMp4(full, '21', blurSegments);
+      } catch { /* recover without blur/crop metadata */ }
+      const mp4Path = await transcodeWebmToMp4(full, '21', blurSegments, crop);
       if (mp4Path) {
         try { fs.unlinkSync(toLongPath(full)); } catch { /* non-fatal */ }
         try { fs.unlinkSync(toLongPath(blurSidecarPath(full))); } catch { /* non-fatal */ }
-        await persistRecording(mp4Path, startedAt, null, null);
+        await persistRecording(mp4Path, startedAt, crop?.width ?? null, crop?.height ?? null);
       } else {
         if (blurSegments.length > 0) {
           log.warn(`[capture] orphan recovery: transcode failed with ${blurSegments.length} blur segment(s) — recovered WebM is NOT blurred`);

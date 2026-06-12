@@ -5785,11 +5785,17 @@ export function clearMonthlyThumbnailOverride(year: number, month: number): void
 export function getMemoriesOnThisDay(month: number, day: number, runIds?: number[], limit: number = 50): MemoriesOnThisDayItem[] {
   const database = getDb();
   const clause = runIdsClause(runIds);
-  const params: any[] = [month, day, ...clause.params, limit];
+  // v2.1 round 129 (Terry 2026-06-12) — "previous years" means
+  // exactly that: exclude the CURRENT year. Without this, anything
+  // dated today (most visibly fresh PDR screen captures) appeared in
+  // the nostalgia card alongside genuinely old photos. The card's
+  // whole premise is rediscovery; today's files are not a memory.
+  const currentYear = new Date().getFullYear();
+  const params: any[] = [month, day, currentYear, ...clause.params, limit];
   return database.prepare(`
     SELECT id, file_path, filename, file_type, derived_date, year
     FROM indexed_files
-    WHERE month = ? AND day = ? ${clause.sql}
+    WHERE month = ? AND day = ? AND year < ? ${clause.sql}
       AND derived_date IS NOT NULL
       AND (in_recycle_bin IS NULL OR in_recycle_bin = 0)
     ORDER BY year DESC, derived_date DESC
