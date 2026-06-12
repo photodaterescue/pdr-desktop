@@ -1199,6 +1199,25 @@
        strip of LIVE previews instead of a wall of buttons. Each thumb
        shows the current photo with that look applied so the user can
        compare side by side, scroll left↔right. */
+    /* v2.1 round 135 — strip + flanking arrow buttons (Terry: add
+       discreet left/right buttons + mouse-wheel scroll). */
+    .strip-wrap { display: flex; align-items: center; gap: 4px; }
+    .strip-arrow {
+      flex: 0 0 auto;
+      width: 18px;
+      height: 58px;
+      border: none;
+      background: rgba(255,255,255,0.06);
+      color: #cfcfd6;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 15px;
+      line-height: 1;
+      padding: 0;
+      transition: background 120ms, color 120ms;
+    }
+    .strip-arrow:hover { background: rgba(255,255,255,0.16); color: #fff; }
+    .strip-wrap .enhance-strip, .strip-wrap .frame-row { flex: 1 1 auto; min-width: 0; }
     .enhance-strip {
       display: flex;
       gap: 8px;
@@ -1724,23 +1743,29 @@
            current photo with that look applied; scroll left↔right to
            compare. Populated by buildLooksStrip(). -->
       <div class="enhance-presets-label">Looks</div>
-      <div class="enhance-strip" id="enhance-looks-strip"></div>
+      <div class="strip-wrap">
+        <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="-1" aria-label="Scroll looks left">&#8249;</button>
+        <div class="enhance-strip" id="enhance-looks-strip"></div>
+        <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="1" aria-label="Scroll looks right">&#8250;</button>
+      </div>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
            Pick any colour; Thin/Mat width; custom colour picker.
            Decorative/ornate frames join here once their artwork
            exists. -->
       <div class="enhance-presets-label">Frame</div>
-      <div class="frame-row" id="enhance-frames">
-        <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
-        <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
-        <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
-        <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
-        <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
-        <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
-        <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
-        <button class="frame-swatch" data-color="#9aa886" style="background:#9aa886" title="Sage"></button>
-        <button class="frame-swatch" data-color="#7a4a2b" style="background:#7a4a2b" title="Walnut"></button>
-        <input type="color" class="frame-custom" id="frame-custom" value="#ffffff" title="Custom colour" />
+      <div class="strip-wrap">
+        <button class="strip-arrow" data-strip="enhance-frames" data-dir="-1" aria-label="Scroll frames left">&#8249;</button>
+        <div class="frame-row" id="enhance-frames">
+          <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
+          <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
+          <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
+          <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
+          <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
+          <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
+          <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+          <input type="color" class="frame-custom" id="frame-custom" value="#ffffff" title="Custom colour" />
+        </div>
+        <button class="strip-arrow" data-strip="enhance-frames" data-dir="1" aria-label="Scroll frames right">&#8250;</button>
       </div>
       <div class="frame-weight" id="enhance-frame-weight">
         <button data-weight="thin" class="active">Thin</button>
@@ -4870,6 +4895,28 @@ function zoomTo(newZoom, centreX, centreY) {
         });
       }
 
+      // v2.1 round 135 (Terry) — mouse-wheel horizontal scroll on both
+      // strips (same feel as PM's face-thumb strip: vertical wheel →
+      // horizontal scrollLeft) + the discreet L/R arrow buttons.
+      function attachWheelScroll(el) {
+        if (!el) return;
+        el.addEventListener('wheel', function (e) {
+          if (!e.deltaY) return;
+          e.preventDefault();
+          el.scrollLeft += e.deltaY;
+        }, { passive: false });
+      }
+      attachWheelScroll(looksStrip);
+      attachWheelScroll(framesRow);
+      document.querySelectorAll('.strip-arrow').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          const el = document.getElementById(btn.getAttribute('data-strip'));
+          if (!el) return;
+          const dir = parseInt(btn.getAttribute('data-dir'), 10) || 1;
+          el.scrollBy({ left: dir * Math.max(120, el.clientWidth * 0.7), behavior: 'smooth' });
+        });
+      });
+
       // v2.1 (Terry 2026-06-07) — BUG FIX. Was `parseInt(...) || 100`
       // which falls back to 100 when the user slides to exactly 0
       // (because 0 is falsy in JS). That's why Terry saw Saturation
@@ -4993,9 +5040,15 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.0.15 — body class lets the next-photo arrow CSS shift
         // left of the panel so it stays clickable.
         document.body.classList.add('enhance-panel-open');
-        // v2.1 round 134 — (re)build the Looks strip against whatever
-        // photo is showing now. rAF lets the image settle first.
-        try { requestAnimationFrame(buildLooksStrip); } catch (_) { try { buildLooksStrip(); } catch (e) {} }
+        // v2.1 round 135 — build the Looks strip NOW (synchronously).
+        // Round 134 deferred this to requestAnimationFrame, which gets
+        // throttled when the viewer isn't the foreground window, so
+        // the strip rendered empty (8px tall, 0 thumbs — Terry's
+        // screenshot). A direct call always runs; a short setTimeout
+        // backup re-runs once the photo's <img> has its src in case
+        // the panel opened a hair before the image did.
+        try { buildLooksStrip(); } catch (e) {}
+        setTimeout(function () { try { buildLooksStrip(); } catch (e) {} }, 200);
       }
       function closePanel() {
         panel.classList.remove('open');
