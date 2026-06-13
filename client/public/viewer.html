@@ -1812,6 +1812,10 @@
       box-shadow: 0 8px 40px rgba(0,0,0,0.45);
       overflow: hidden;
     }
+    /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
+       selected element, ring the canvas itself (not the faded background
+       layer) so the selection cue stays full-strength at any Fade level. */
+    body.collage-bg-selected #collage-canvas { box-shadow: 0 8px 40px rgba(0,0,0,0.45), inset 0 0 0 3px rgba(169,156,255,0.95); }
     .collage-item {
       position: absolute;
       cursor: grab;
@@ -1980,10 +1984,10 @@
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
     body.collage-mode .enhance-collage-only { display: flex; }
-    /* v2.1 round 144 (Terry) — unified Background/Frame colour picker.
-       The per-tile Frame palette is hidden in collage mode (the unified
-       picker drives it). */
-    body.collage-mode #enhance-frame-section { display: none; }
+    /* v2.1 round 149 (Terry 2026-06-13) — the shared Frame chevron is used
+       in collage too (it frames the selected tile). Hide it only when the
+       collage BACKGROUND is the selected element — a background has no frame. */
+    body.collage-mode.collage-bg-selected #enhance-frame-collapse { display: none; }
     .ec-color-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
     .ec-ctgl {
       flex: 1; background: transparent; border: 1px solid rgba(169,156,255,0.3);
@@ -2152,19 +2156,18 @@
           <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
           <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
         </div>
-        <!-- v2.1 round 144 (Terry) — ONE colour picker for both the
-             collage Background and the selected photo's Frame, with a
-             toggle, in a chevron. Shared swatches + saved colours. -->
-        <details class="enhance-collapse" id="collage-colour-collapse">
-          <summary>Colour</summary>
-          <div class="ec-color-toggle">
-            <button class="ec-ctgl active" data-ctarget="background" type="button">Background</button>
-            <button class="ec-ctgl" data-ctarget="frame" type="button">Frame</button>
-          </div>
+        <!-- v2.1 round 149 (Terry 2026-06-13) — Background is its OWN
+             control now, fully separate from Frame (Terry: "Colour isn't
+             the right word, it should be Frame... then a separate one for
+             Background"). A colour palette + custom + saved, plus "Use a
+             photo…" for a photo backdrop, all grouped here. The background
+             photo's Fade / Look / levels are reached by clicking it on the
+             canvas — it shares the one Fade slider below. -->
+        <details class="enhance-collapse" id="collage-bg-collapse">
+          <summary>Background</summary>
           <div class="frame-palette" id="collage-color-palette">
             <button class="frame-add" id="collage-color-add" title="Pick a custom colour"><span class="frame-add-plus">+</span></button>
             <input type="color" id="collage-color-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" title="No frame" style="display:none">&#8709;</button>
             <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
             <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
             <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
@@ -2173,25 +2176,18 @@
             <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
             <span class="frame-saved" id="collage-color-saved"></span>
           </div>
-          <div class="frame-weight" id="collage-frame-weight" style="display:none">
-            <button data-weight="thin" class="active" type="button">Thin</button>
-            <button data-weight="mat" type="button">Mat (wide)</button>
+          <!-- background from a library PHOTO; picker opens in the main
+               window (Memories/Albums/S&D). Screenshot tip covers the
+               "photo not in library yet" case. -->
+          <button class="ec-tidy-btn" id="collage-bg-photo" type="button" style="margin-top:8px" data-pdr-tooltip="Use one of your photos as the backdrop. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates, ready to pick.">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+            Use a photo…
+          </button>
+          <div id="collage-bg-fade-row" style="display:none; margin-top:8px">
+            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background on the canvas to give it a Look, levels or Fade.</div>
+            <button id="collage-bg-remove" type="button" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
           </div>
-          <div class="ec-frame-hint" id="collage-frame-hint" style="display:none">Select a photo on the canvas to frame it.</div>
         </details>
-        <!-- v2.1 round 142 (Terry) — background from a library PHOTO,
-             faded over the colour above (the picker opens in the main
-             window: Memories/Albums/S&D). Screenshot tip meets the
-             "photo not in library yet" case halfway. -->
-        <button class="ec-tidy-btn" id="collage-bg-photo" type="button" style="margin-top:8px" data-pdr-tooltip="Use one of your photos as the backdrop. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates, ready to pick.">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-          Use a photo…
-        </button>
-        <div id="collage-bg-fade-row" style="display:none; margin-top:10px">
-          <div class="enhance-label-row"><label for="collage-bg-fade">Background fade</label><span class="enhance-val" id="collage-bg-fade-val">40</span></div>
-          <input class="enhance-slider" id="collage-bg-fade" type="range" min="5" max="100" step="1" value="40">
-          <button id="collage-bg-remove" type="button" style="margin-top:8px;width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
-        </div>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
              undo cleanly (see Undo/Redo). -->
@@ -2227,12 +2223,14 @@
            palette: all colours visible at once (wrapping, no hidden
            scroll), a "+" custom-colour button up front (left), and a
            Saved row that remembers colours you pick. -->
-      <!-- v2.1 round 144 (Terry) — in COLLAGE mode this per-tile Frame
-           palette is hidden; the unified Colour picker in the Collage
-           section (Background/Frame toggle) drives the frame instead.
-           Single-photo Enhance still uses this section unchanged. -->
-      <div id="enhance-frame-section">
-      <div class="enhance-presets-label">Frame colour</div>
+      <!-- v2.1 round 149 (Terry 2026-06-13) — Frame is now ONE shared
+           chevron used by BOTH the viewer (frames the photo) and collage
+           (frames the selected tile). The chevron summary IS the label,
+           so the old "Frame colour" text no longer overlaps the swatches
+           (the overlap bug Terry flagged in PDRV). Hidden only when the
+           collage BACKGROUND is selected (a background has no frame). -->
+      <details class="enhance-collapse" id="enhance-frame-collapse">
+      <summary>Frame</summary>
       <div class="frame-palette" id="enhance-frames">
         <button class="frame-add" id="frame-add" title="Pick a custom colour">
           <span class="frame-add-plus">+</span>
@@ -2251,7 +2249,7 @@
         <button data-weight="thin" class="active">Thin</button>
         <button data-weight="mat">Mat (wide)</button>
       </div>
-      </div>
+      </details>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
            chevron to declutter ("largely pre-chosen by Looks; if someone
            wants to manually do it, then they can"). Open by default in
@@ -2294,13 +2292,14 @@
         </div>
       </div>
       </details>
-      <!-- v2.1 round 143 (Terry) — per-photo Opacity (transparency).
-           Collage-only: meaningful over the collage background. A
-           transparent single photo would just flatten to the frame/
-           white on JPEG save, so it's hidden outside collage mode. -->
+      <!-- v2.1 round 149 (Terry 2026-06-13) — ONE Fade slider for the
+           whole collage. It fades whatever is selected — a photo OR the
+           background (Terry: "you can just have one and call it Fade").
+           Collage-only: a transparent single photo would just flatten to
+           white on JPEG save, so it stays hidden in the viewer. -->
       <div class="enhance-control enhance-collage-only">
         <div class="enhance-label-row">
-          <label for="slider-opacity">Fade this photo</label>
+          <label for="slider-opacity">Fade</label>
           <span class="enhance-val" id="val-opacity">100</span>
         </div>
         <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
@@ -2680,7 +2679,23 @@
     // v2.1 round 142 (Terry) — optional background PHOTO behind the tiles,
     // faded over the bg colour (like the Trees canvas background).
     let collageBgImagePath = '';
-    let collageBgOpacity = 0.4;
+    // v2.1 round 149 (Terry 2026-06-13) — the background PHOTO is now a
+    // selectable, enhanceable element: a stable pseudo-tile that flows
+    // through the SAME panel machinery as real tiles (Looks, levels, and
+    // the one shared Fade slider). Its enh.opacity IS the old "background
+    // fade", so there's a single Fade control, not two.
+    let collageBgTile = null;
+    function defaultBgEnh() {
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 0.4 };
+    }
+    function ensureCollageBgTile() {
+      if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
+      collageBgTile.imgEl = document.getElementById('collage-bg-layer');
+      collageBgTile.el = collageBgTile.imgEl;
+      collageBgTile.path = collageBgImagePath;
+      collageBgTile.bgSrc = collageBgImagePath ? getFileSrc(collageBgImagePath) : '';
+      return collageBgTile;
+    }
     const COLLAGE_ASPECTS = { landscape: 3 / 2, square: 1, portrait: 2 / 3 };
     // v2.1 round 140 (Terry) — background palette mirrors the Frame
     // colour palette exactly (White/Black/Cream/Gold/Navy/Blush) so the
@@ -4751,15 +4766,15 @@
       updateCollageFilmstrip();
     }
     function selectCollageItem(it) {
-      if (collageSelected && collageSelected.el) collageSelected.el.classList.remove('selected');
+      // v2.1 round 149 — selection can be a real tile OR the background
+      // pseudo-tile (it.isBg). Tiles show the handle ring on their box; the
+      // background's cue is the canvas ring driven by the collage-bg-selected
+      // body class (set in bridge.setTile), so nothing to toggle here.
+      if (collageSelected && !collageSelected.isBg && collageSelected.el) collageSelected.el.classList.remove('selected');
       collageSelected = it || null;
-      if (it && it.el) it.el.classList.add('selected');
-      // v2.1 round 140 — point the Enhance panel at this tile (or clear
-      // it). The panel then edits this photo's own Look/frame/sliders.
+      if (it && !it.isBg && it.el) it.el.classList.add('selected');
+      // Point the Enhance panel at this element (tile, background, or null).
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
-      // v2.1 round 144 — keep the unified colour picker in sync (frame
-      // mode reflects the newly-selected tile's frame; hint toggles).
-      try { if (typeof refreshCollageColorForSelection === 'function') refreshCollageColorForSelection(); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -5003,7 +5018,10 @@
     const COLLAGE_UNDO_CAP = 60;
     function snapshotCollage() {
       return JSON.stringify({
-        bg: collageBg, bgImagePath: collageBgImagePath, bgOpacity: collageBgOpacity, aspectKey: collageAspectKey,
+        bg: collageBg, bgImagePath: collageBgImagePath,
+        // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
+        // not just the old single fade value.
+        bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
         items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, enh: it.enh })),
       });
     }
@@ -5021,7 +5039,12 @@
     }
     function restoreCollageSnapshot(snapStr) {
       let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
-      collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageBgOpacity = s.bgOpacity; collageAspectKey = s.aspectKey;
+      collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageAspectKey = s.aspectKey;
+      // v2.1 round 149 — restore the background's enh (fall back to the
+      // pre-149 single fade value for old snapshots in the undo stack).
+      ensureCollageBgTile();
+      if (s.bgEnh) collageBgTile.enh = Object.assign(defaultBgEnh(), s.bgEnh);
+      else if (s.bgOpacity != null) collageBgTile.enh = Object.assign(defaultBgEnh(), { opacity: s.bgOpacity });
       let maxZ = 1;
       s.items.forEach((si) => {
         const it = collageItems[si.idx];
@@ -5034,15 +5057,13 @@
       collageZTop = maxZ;
       setCollageBg(collageBg);
       document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
-      const fade = document.getElementById('collage-bg-fade');
-      const fadeVal = document.getElementById('collage-bg-fade-val');
-      if (fade) fade.value = String(Math.round(collageBgOpacity * 100));
-      if (fadeVal) fadeVal.textContent = String(Math.round(collageBgOpacity * 100));
       renderCollageBgLayer();
       layoutCanvasSize();
       collageItems.forEach((it) => { if (it.imgEl && window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); });
       updateCollageFilmstrip();
-      if (collageSelected && !collageSelected.on) selectCollageItem(null);
+      // Re-point the panel at the still-valid selection (a real tile that's
+      // been turned off deselects; the background tile survives).
+      if (collageSelected && !collageSelected.isBg && !collageSelected.on) selectCollageItem(null);
       else if (collageSelected && window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected);
     }
     function undoCollage() {
@@ -5161,50 +5182,18 @@
       });
       markCollageColorActive();
     }
-    function currentColorForTarget() {
-      if (collageColorTarget === 'frame') return (collageSelected && collageSelected.enh) ? (collageSelected.enh.borderColor || '') : '';
-      return collageBg || '';
-    }
+    // v2.1 round 149 (Terry 2026-06-13) — this palette is the BACKGROUND
+    // colour ONLY now. The selected tile's frame is driven by the shared
+    // Frame chevron (#enhance-frames), the same control the viewer uses.
     function markCollageColorActive() {
-      const cur = (currentColorForTarget() || '').toLowerCase();
+      const cur = (collageBg || '').toLowerCase();
       document.querySelectorAll('#collage-color-palette .frame-swatch').forEach((s) => {
         s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
       });
     }
     function onCollageColorPick(hex) {
-      if (collageColorTarget === 'frame') {
-        if (!collageSelected) return; // hint tells them to select a photo
-        if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setFrameColor) window.pdrEnhanceBridge.setFrameColor(hex || '');
-      } else {
-        if (!hex) return; // background must have a colour
-        setCollageBg(hex);
-      }
-      markCollageColorActive();
-    }
-    function setColorTarget(t) {
-      collageColorTarget = (t === 'frame') ? 'frame' : 'background';
-      document.querySelectorAll('.ec-ctgl').forEach((b) => b.classList.toggle('active', b.dataset.ctarget === collageColorTarget));
-      const frame = collageColorTarget === 'frame';
-      const none = document.getElementById('collage-color-none');
-      const fw = document.getElementById('collage-frame-weight');
-      const hint = document.getElementById('collage-frame-hint');
-      if (none) none.style.display = frame ? '' : 'none';
-      if (fw) fw.style.display = (frame && collageSelected) ? 'flex' : 'none';
-      if (hint) hint.style.display = (frame && !collageSelected) ? 'block' : 'none';
-      refreshCollageColorForSelection();
-    }
-    function refreshCollageColorForSelection() {
-      const frame = collageColorTarget === 'frame';
-      const fw = document.getElementById('collage-frame-weight');
-      const hint = document.getElementById('collage-frame-hint');
-      if (hint) hint.style.display = (frame && !collageSelected) ? 'block' : 'none';
-      if (fw) {
-        fw.style.display = (frame && collageSelected) ? 'flex' : 'none';
-        if (collageSelected) {
-          const w = (collageSelected.enh && collageSelected.enh.borderWeight) || 'thin';
-          fw.querySelectorAll('button').forEach((x) => x.classList.toggle('active', (x.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin') === w));
-        }
-      }
+      if (!hex) return; // the background always has a colour
+      setCollageBg(hex);
       markCollageColorActive();
     }
     function setCollageBg(hex) {
@@ -5217,7 +5206,8 @@
       renderCollageSavedColors();
       if (collageColorWired) return;
       collageColorWired = true;
-      document.querySelectorAll('.ec-ctgl').forEach((b) => b.addEventListener('click', () => setColorTarget(b.dataset.ctarget)));
+      // v2.1 round 149 — background colour only (no target toggle, no
+      // frame-weight here; the Frame chevron owns those now).
       const pal = document.getElementById('collage-color-palette');
       if (pal) pal.addEventListener('click', (e) => { const sw = e.target.closest ? e.target.closest('.frame-swatch') : null; if (sw && pal.contains(sw)) onCollageColorPick(sw.getAttribute('data-color') || ''); });
       const add = document.getElementById('collage-color-add');
@@ -5227,29 +5217,43 @@
         custom.addEventListener('input', () => onCollageColorPick(custom.value));
         custom.addEventListener('change', () => collageSaveColor(custom.value));
       }
-      const fw = document.getElementById('collage-frame-weight');
-      if (fw) fw.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => {
-        const w = b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin';
-        fw.querySelectorAll('button').forEach((x) => x.classList.toggle('active', x === b));
-        if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setFrameWeight) window.pdrEnhanceBridge.setFrameWeight(w);
-      }));
     }
-    // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles,
-    // faded over the bg colour). Re-created after buildCollageItems
-    // clears the canvas; opacity driven by the Photo-fade slider.
+    // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles, over
+    // the bg colour). Re-created after buildCollageItems clears the canvas.
+    // v2.1 round 149 — the layer is now CLICKABLE (select it to edit the
+    // background) and carries the background tile's own enh (Look / levels /
+    // Fade), applied through the shared applyTileEnh path.
     function renderCollageBgLayer() {
       if (!collageCanvasEl) return;
       let layer = document.getElementById('collage-bg-layer');
-      if (!collageBgImagePath) { if (layer) layer.style.display = 'none'; updateBgFadeRow(); return; }
+      if (!collageBgImagePath) {
+        if (layer) layer.style.display = 'none';
+        if (collageSelected && collageSelected.isBg) selectCollageItem(null);
+        updateBgFadeRow();
+        return;
+      }
       if (!layer) {
         layer = document.createElement('div');
         layer.id = 'collage-bg-layer';
-        layer.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center;pointer-events:none;z-index:0;';
+        layer.style.cssText = 'position:absolute;inset:0;background-size:cover;background-position:center;z-index:0;';
+        // Click the background photo to select + edit it (begins an
+        // undo step; stopPropagation so the canvas deselect doesn't fire).
+        layer.addEventListener('pointerdown', (e) => {
+          e.stopPropagation();
+          beginCollageChange();
+          selectCollageItem(ensureCollageBgTile());
+        });
         collageCanvasEl.insertBefore(layer, collageCanvasEl.firstChild);
       }
       layer.style.display = '';
+      layer.style.pointerEvents = 'auto';
       layer.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
-      layer.style.opacity = String(collageBgOpacity);
+      ensureCollageBgTile();
+      // Apply the background's enh (filter + fade) via the shared path.
+      try {
+        if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(collageBgTile);
+        else layer.style.opacity = String(collageBgTile.enh.opacity);
+      } catch (_) { layer.style.opacity = String(collageBgTile.enh.opacity); }
       updateBgFadeRow();
     }
     function updateBgFadeRow() {
@@ -5259,8 +5263,18 @@
       if (photoBtn) photoBtn.lastChild.textContent = collageBgImagePath ? ' Change photo…' : ' Use a photo…';
     }
     function setCollageBgImage(path) {
+      const fresh = path && path !== collageBgImagePath;
       collageBgImagePath = path || '';
+      // A brand-new background photo starts with clean enh (a previous
+      // photo's Look shouldn't carry over); undo/restore set enh directly.
+      if (fresh && collageBgTile) collageBgTile.enh = defaultBgEnh();
       renderCollageBgLayer();
+      // If the background is the active selection, refresh the panel to the
+      // new photo (Looks strip + sliders).
+      if (collageSelected && collageSelected.isBg && window.pdrEnhanceBridge) {
+        if (collageBgImagePath) { ensureCollageBgTile(); window.pdrEnhanceBridge.setTile(collageBgTile); }
+        else selectCollageItem(null);
+      }
     }
     function setCollageAspect(key) {
       if (!COLLAGE_ASPECTS[key]) return;
@@ -5313,8 +5327,12 @@
           enh: it.enh,
         }));
         const canvas = { w: W, h: H, bg: collageBg };
-        // v2.1 round 142 — background photo (faded) baked under the tiles.
-        if (collageBgImagePath) canvas.bgImage = { path: collageBgImagePath, opacity: collageBgOpacity };
+        // v2.1 round 142 — background photo baked under the tiles.
+        // v2.1 round 149 — with its own enh (Look/levels) + Fade opacity.
+        if (collageBgImagePath) {
+          const be = (collageBgTile && collageBgTile.enh) || defaultBgEnh();
+          canvas.bgImage = { path: collageBgImagePath, opacity: be.opacity != null ? be.opacity : 0.4, enh: be };
+        }
         const layout = { canvas, items };
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
@@ -5368,20 +5386,14 @@
       const panelEl = document.getElementById('enhance-panel');
       if (panelEl) panelEl.addEventListener('pointerdown', () => beginCollageChange(), true);
       window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
-      // v2.1 round 144 — unified Background/Frame colour picker.
+      // v2.1 round 149 — background COLOUR picker (background-only now).
       initCollageColorPicker();
       // v2.1 round 142 — background PHOTO: open the shared picker in the
-      // main window; fade slider; remove.
+      // main window. v2.1 round 149 — fade is the shared Fade slider now
+      // (select the background to use it), so no separate fade slider here.
       const bgPhotoBtn = document.getElementById('collage-bg-photo');
       if (bgPhotoBtn) bgPhotoBtn.addEventListener('click', () => {
         try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
-      });
-      const fade = document.getElementById('collage-bg-fade');
-      const fadeVal = document.getElementById('collage-bg-fade-val');
-      if (fade) fade.addEventListener('input', () => {
-        collageBgOpacity = Math.max(0.05, Math.min(1, parseInt(fade.value, 10) / 100));
-        if (fadeVal) fadeVal.textContent = String(parseInt(fade.value, 10));
-        renderCollageBgLayer();
       });
       const bgRemove = document.getElementById('collage-bg-remove');
       if (bgRemove) bgRemove.addEventListener('click', () => setCollageBgImage(''));
@@ -6154,6 +6166,9 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.1 round 140 — in collage mode the "current photo" is the
         // selected tile, so the Looks strip previews that tile's image.
         if (collageActive) {
+          // v2.1 round 149 — the background is a <div> (background-image,
+          // not <img>.src), so read its source URL explicitly.
+          if (collageTile && collageTile.isBg) return collageTile.bgSrc || '';
           return (collageTile && collageTile.imgEl && collageTile.imgEl.src) ? collageTile.imgEl.src : '';
         }
         const c = document.getElementById('container');
@@ -8130,40 +8145,32 @@ function zoomTo(newZoom, centreX, centreY) {
           collageActive = false; collageTile = null; collageSaveFn = null;
           document.body.classList.remove('collage-mode');
           document.body.classList.remove('collage-no-tile');
+          document.body.classList.remove('collage-bg-selected');
         },
-        // Point the panel at a tile (or null to show the "pick a photo"
-        // hint). Loads the tile's own enhance settings into the panel.
+        // Point the panel at a tile, the background, or null (the "pick a
+        // photo" hint). Loads that element's own enhance settings.
         setTile: function (tile) {
           collageTile = tile || null;
           if (collageTile) {
             document.body.classList.remove('collage-no-tile');
+            // v2.1 round 149 — hide the Frame chevron when the background
+            // is the target (a background has no frame).
+            document.body.classList.toggle('collage-bg-selected', !!collageTile.isBg);
             loadStateFromTile(collageTile);
             try { buildLooksStrip(); } catch (_) {}
             applyEnhanceFilter();
           } else {
             document.body.classList.add('collage-no-tile');
+            document.body.classList.remove('collage-bg-selected');
           }
         },
         isCollage: function () { return collageActive; },
-        // v2.1 round 143 — repaint a tile's <img> from its own enh
-        // (used by undo/redo + re-add to refresh non-selected tiles
-        // without routing through the panel's live state).
+        // v2.1 round 143 — repaint a tile's <img> from its own enh (used by
+        // undo/redo + re-add). v2.1 round 149 — also repaints the background
+        // layer (a <div>) from collageBgTile.enh — same code path.
         applyTileEnh: function (tile) {
           if (!tile || !tile.imgEl) return;
           applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}), tile.el);
-        },
-        // v2.1 round 144 — the unified collage colour picker drives the
-        // selected tile's frame through these (only when a tile is the
-        // panel's target).
-        setFrameColor: function (hex) {
-          if (!collageActive || !collageTile) return;
-          state.borderColor = hex || '';
-          applyEnhanceFilter();
-        },
-        setFrameWeight: function (w) {
-          if (!collageActive || !collageTile) return;
-          state.borderWeight = (w === 'mat') ? 'mat' : 'thin';
-          applyEnhanceFilter();
         },
       };
 

@@ -471,7 +471,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // full-resolution originals with sharp and lands a _CO file.
   collage: {
     saveLayout: (layout: {
-      canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number } };
+      canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: unknown } };
       items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: unknown }>;
     }) =>
       ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{

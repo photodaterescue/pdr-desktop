@@ -851,7 +851,7 @@ interface CollageLayout {
   // v2.1 round 142 (Terry) — bgImage: an optional library photo used as
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
-  canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number } };
+  canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
   items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -1001,9 +1001,14 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     if (bgImage && bgImage.path && fs.existsSync(toLongPath(bgImage.path))) {
       try {
         const op = Math.max(0, Math.min(1, Number.isFinite(bgImage.opacity) ? bgImage.opacity : 0.4));
-        const bgBuf = await sharp(toLongPath(bgImage.path), { failOnError: false })
-          .rotate()
-          .resize(W, H, { fit: 'cover', position: 'attention' })
+        // v2.1 round 149 (Terry) — the background is enhanceable now: bake
+        // its own Look/levels through the SAME tile pipeline (no crop, no
+        // frame — borderColor is always '' for a background), then apply the
+        // Fade via the alpha exactly as before.
+        const bgPipe = bgImage.enh
+          ? buildCollageTilePipeline(sharp, toLongPath(bgImage.path), W, H, bgImage.enh)
+          : sharp(toLongPath(bgImage.path), { failOnError: false }).rotate().resize(W, H, { fit: 'cover', position: 'attention' });
+        const bgBuf = await bgPipe
           .removeAlpha()      // drop any source alpha so the fade is uniform
           .ensureAlpha(op)    // whole image at `opacity` → bg colour shows through
           .png()
