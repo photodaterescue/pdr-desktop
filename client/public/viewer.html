@@ -1987,6 +1987,12 @@
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
     body.collage-mode .enhance-collage-only { display: flex; }
+    /* v2.1 round 154 (Terry) — the "Effects" chevron (Fade + Blend) is
+       collage-only. id-based rules so an [open] <details> can't leak into
+       the single-photo viewer via .enhance-collapse[open]'s specificity. */
+    #enhance-fx { display: none; }
+    body.collage-mode #enhance-fx[open] { display: flex; flex-direction: column; gap: 14px; }
+    body.collage-mode #enhance-fx:not([open]) { display: block; }
     /* v2.1 round 149 (Terry 2026-06-13) — the shared Frame chevron is used
        in collage too (it frames the selected tile). Hide it only when the
        collage BACKGROUND is the selected element — a background has no frame. */
@@ -2265,7 +2271,7 @@
            single-photo mode; enterCollageMode() collapses it for the
            busier collage panel. -->
       <details class="enhance-collapse" id="enhance-levels" open>
-        <summary>Adjust levels</summary>
+        <summary>Tone &amp; colour</summary>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-brightness">Brightness</label>
@@ -2307,29 +2313,34 @@
         <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" title="Middle = normal · down = black &amp; white · up = extra vivid">
       </div>
       </details>
-      <!-- v2.1 round 149 (Terry 2026-06-13) — ONE Fade slider for the
-           whole collage. It fades whatever is selected — a photo OR the
-           background (Terry: "you can just have one and call it Fade").
-           Collage-only: a transparent single photo would just flatten to
-           white on JPEG save, so it stays hidden in the viewer. -->
-      <div class="enhance-control enhance-collage-only">
-        <div class="enhance-label-row">
-          <label for="slider-opacity">Fade</label>
-          <span class="enhance-val" id="val-opacity">100</span>
+      <!-- v2.1 round 154 (Terry) — Fade + Blend grouped under an "Effects"
+           chevron, parallel to the "Tone & colour" chevron above (same
+           .enhance-collapse styling → identical heading look + internal
+           spacing, fixing the spacing inconsistency Terry flagged). These
+           are finishing effects, not tonal levels, so they read as their
+           own group. Collage-only (no backdrop to blend into in the single-
+           photo viewer); default open since they're commonly used. -->
+      <details class="enhance-collapse" id="enhance-fx" open>
+        <summary>Effects</summary>
+        <!-- ONE Fade slider for the whole collage — fades whatever's
+             selected (a photo OR the background). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-opacity">Fade</label>
+            <span class="enhance-val" id="val-opacity">100</span>
+          </div>
+          <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
         </div>
-        <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
-      </div>
-      <!-- v2.1 round 150 (Terry) — Blend: feather the photo's EDGES into
-           whatever's behind it. The slider widens/narrows the soft band
-           around all four edges (0 = crisp edge). Preview via a CSS mask;
-           baked as a feathered alpha on save. -->
-      <div class="enhance-control enhance-collage-only">
-        <div class="enhance-label-row">
-          <label for="slider-blend">Blend edges</label>
-          <span class="enhance-val" id="val-blend">0</span>
+        <!-- Blend: feather the photo's EDGES so it melts into whatever's
+             behind it (CSS-mask preview; feathered-alpha bake on save). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-blend">Blend edges</label>
+            <span class="enhance-val" id="val-blend">0</span>
+          </div>
+          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" title="Soften the photo's edges so it melts into the background — drag up to widen the blend">
         </div>
-        <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" title="Soften the photo's edges so it melts into the background — drag up to widen the blend">
-      </div>
+      </details>
       </div>
 
       <!-- v2.1 round 8 (Terry 2026-06-07) — AI ENHANCEMENT section
@@ -6494,6 +6505,8 @@ function zoomTo(newZoom, centreX, centreY) {
       attachDblClickReset(sTemp, 0, 'temperature', vTemp, function (v) {
         return (v > 0 ? '+' : '') + String(v);
       });
+      // v2.1 round 154 (Terry) — Colour resets to its MIDPOINT (50 = normal).
+      if (sColour) attachDblClickReset(sColour, 50, 'colour', vColour);
 
       // v2.1 round 4 (Terry 2026-06-07) — click the value label to
       // type a number directly. Same shortcut Photoshop / Lightroom

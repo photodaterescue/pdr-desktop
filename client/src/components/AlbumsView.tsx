@@ -3326,6 +3326,25 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <HardDrive className="w-3.5 h-3.5 mr-2" />
                         Show in File Explorer
                       </ContextMenuItem>
+                      {/* v2.1 round 138 (Terry) — Create Collage from a
+                          multi-selection of album photos → composer →
+                          PDRV. Photos only. v2.1 round 154 (Terry) —
+                          moved ABOVE the two S&D items so "Send to S&D"
+                          + "Add to S&D pile" stay adjacent. */}
+                      {(() => {
+                        if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) return null;
+                        const photos = albumPhotos.filter(ph => selectedAlbumPhotoIds.has(ph.id) && !isVideoPathExt(ph.file_path));
+                        if (photos.length < 2) return null;
+                        return (
+                          <ContextMenuItem
+                            onSelect={() => { void openCollageComposer(photos.map(ph => ph.file_path)); }}
+                            data-testid={`album-create-collage-${p.id}`}
+                          >
+                            <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                            Create collage from {photos.length} photos…
+                          </ContextMenuItem>
+                        );
+                      })()}
                       {/* v2.0.15 (Terry 2026-06-05) — Send to S&D.
                           When the right-clicked tile is part of an
                           active multi-select, sends the whole
@@ -3359,23 +3378,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <SearchIcon className="w-3.5 h-3.5 mr-2" />
                         Send to S&amp;D{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id) ? ` (${selectedAlbumPhotoIds.size})` : ''}
                       </ContextMenuItem>
-                      {/* v2.1 round 138 (Terry) — Create Collage from a
-                          multi-selection of album photos → composer →
-                          PDRV. Photos only. */}
-                      {(() => {
-                        if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) return null;
-                        const photos = albumPhotos.filter(ph => selectedAlbumPhotoIds.has(ph.id) && !isVideoPathExt(ph.file_path));
-                        if (photos.length < 2) return null;
-                        return (
-                          <ContextMenuItem
-                            onSelect={() => { void openCollageComposer(photos.map(ph => ph.file_path)); }}
-                            data-testid={`album-create-collage-${p.id}`}
-                          >
-                            <LayoutGrid className="w-3.5 h-3.5 mr-2" />
-                            Create collage from {photos.length} photos…
-                          </ContextMenuItem>
-                        );
-                      })()}
                       <ContextMenuItem
                         onSelect={() => {
                           const fileIds = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
