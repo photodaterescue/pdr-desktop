@@ -1838,6 +1838,23 @@
     }
     .collage-item.dragging { cursor: grabbing; }
     .collage-item.selected { outline: 2px solid #a78bfa; outline-offset: 0; }
+    /* ─── v2.1 round 158 (Terry) — COLLAGE IDENTITY = GOLD ───────────────
+       The Viewer wears lavender; the Collage tool wears gold (same dark navy
+       base, just the accent + a gold dot by the "Collage (N)" title), so the
+       two tools read as distinct surfaces. Scoped to body.collage-mode so the
+       single-photo Viewer is untouched. Gold = #FEC242 (the pick-pill / logo
+       gold from the sunrise palette). */
+    body.collage-mode .toolbar-title-wrap { display: flex; align-items: center; }
+    body.collage-mode .toolbar-title-wrap::before {
+      content: ''; width: 9px; height: 9px; border-radius: 50%; flex: 0 0 auto;
+      background: #FEC242; margin-right: 8px; box-shadow: 0 0 8px rgba(254,194,66,0.65);
+    }
+    body.collage-mode .enhance-collapse > summary::before { color: #FEC242; }
+    body.collage-mode .enhance-collapse-all button { color: #FEC242; }
+    body.collage-mode .enhance-collapse-all button:hover { color: #ffd778; }
+    body.collage-mode .enhance-slider::-webkit-slider-thumb { background: #FEC242; box-shadow: 0 0 0 1px rgba(254,194,66,0.6); }
+    body.collage-mode .collage-item.selected { outline-color: #FEC242; }
+    body.collage-mode.collage-bg-selected #collage-canvas { outline-color: #FEC242; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(254,194,66,0.28), 0 0 22px 4px rgba(254,194,66,0.35); }
     /* Handles — only shown on the selected tile. */
     .collage-item .ch {
       position: absolute;
@@ -1969,14 +1986,6 @@
     .ec-tidy-btn:hover { background: rgba(169,156,255,0.18); }
     .ec-tidy-btn svg { width: 14px; height: 14px; }
     /* The per-tile hint that shows when nothing is selected. */
-    .enhance-tile-hint {
-      display: none;
-      font-size: 11px; color: #9a93c8; line-height: 1.45;
-      background: rgba(169,156,255,0.08);
-      border: 1px solid rgba(169,156,255,0.18);
-      border-radius: 8px; padding: 9px 11px; margin-bottom: 4px;
-    }
-    body.collage-mode.collage-no-tile .enhance-tile-hint { display: block; }
     /* v2.1 round 143 (Terry) — dim ONLY the per-tile controls wrapper
        when no tile is selected. The Collage section (shape/background/
        tidy) stays fully usable — the background is independent of any
@@ -2239,7 +2248,8 @@
           </div>
         </details>
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
-        <div class="enhance-tile-hint">Click a photo on the canvas to edit just that one — give it its own Look, frame, brightness, colour and so on. Each photo keeps its own settings.</div>
+        <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
+             edit it" hint; the dimmed per-photo sections already signal it. -->
       </div>
       <!-- v2.1 round 143 (Terry) — per-tile editing controls wrapped so
            ONLY these dim when no collage tile is selected. The Collage
