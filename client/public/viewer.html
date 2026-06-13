@@ -31,7 +31,29 @@
       border-bottom: 1px solid rgba(169, 156, 255, 0.15);
       -webkit-app-region: drag;
       flex-shrink: 0;
+      position: relative;   /* anchor for the centered window-kind label */
     }
+    /* v2.1 round 161 (Terry) — centered window-type label: "Viewer" in the
+       lavender Viewer window, "Collage" in the gold Collage window. The
+       filename/count stays on the left, Enhance on the right. Purely a label
+       (pointer-events:none) so it never interferes with dragging or clicks. */
+    .window-kind {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      pointer-events: none;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      white-space: nowrap;
+      color: rgba(169, 156, 255, 0.9);   /* lavender = Viewer */
+      z-index: 1;
+    }
+    .window-kind::after { content: 'Viewer'; }
+    body.collage-mode .window-kind { color: rgba(254, 194, 66, 0.92); }   /* gold = Collage */
+    body.collage-mode .window-kind::after { content: 'Collage'; }
     /* Interactive bits in the title bar must opt out of the drag region
        or they swallow clicks. */
     .toolbar button, .toolbar input, .toolbar .speed-wrap, .toolbar [role="button"] { -webkit-app-region: no-drag; }
@@ -2061,6 +2083,9 @@
   </style>
 
   <div class="toolbar" id="toolbar">
+    <!-- v2.1 round 161 (Terry) — centered window-type label, text supplied by
+         CSS (::after) so it follows the lavender Viewer / gold Collage branding. -->
+    <span class="window-kind" id="window-kind" aria-hidden="true"></span>
     <!-- v2.0.15 (Terry 2026-06-06 round 2) — title + copy icon grouped
          so the icon sits IMMEDIATELY after the truncated filename, not
          pushed far right by flex:1 on the title alone. -->
@@ -4851,7 +4876,16 @@
       if (it.imgEl) {
         const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
         const { cw: cropW } = cropWH(it);
-        const fullW = iwPx / cropW;
+        // v2.1 round 161 (Terry) — FRAME = MATTE. Size the image to the box
+        // MINUS the frame, so the whole photo sits INSIDE the frame (matches
+        // the saved file). The frame border is drawn on it.el (border-box) so
+        // the .collage-clip is already inset by the frame; we mirror that
+        // width here. Without this the image stayed full-tile size and the
+        // frame clipped its edges — Terry: "the frame is eating the photo".
+        const fbc = ((it.enh && it.enh.borderColor) || '').trim();
+        const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * ((it.enh.borderWeight === 'mat') ? 0.08 : 0.035))) : 0;
+        const innerW = Math.max(2, iwPx - frameInset * 2);
+        const fullW = innerW / cropW;
         const fullH = fullW / (it.aspect || 1);
         it.imgEl.style.position = 'absolute';
         it.imgEl.style.width = fullW + 'px';
@@ -5583,7 +5617,10 @@
       if (container) container.style.display = 'none';
       if (collageRootEl) collageRootEl.classList.add('active');
       document.title = 'Collage (' + files.length + ') — PDR Collage';
-      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
+      // v2.1 round 161 (Terry) — the window is now named "Collage" centred in
+      // the title bar, so the left label just carries the photo count (no
+      // redundant "Collage" word).
+      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = files.length + (files.length === 1 ? ' photo' : ' photos'); } catch (_) {}
       buildCollageItems();
       // v2.1 round 157 (Terry) — section open/closed state is now persisted
       // per-user (setupCollapsePersistence), so we no longer force-collapse
@@ -6259,7 +6296,14 @@ function zoomTo(newZoom, centreX, centreY) {
         // sides always visible. The saved file is an even outset frame
         // (sharp .extend) — this is just a faithful all-sides preview.
         if (s.borderColor) {
-          const shortPx = Math.min(bEl.clientWidth || 600, bEl.clientHeight || 400);
+          // v2.1 round 161 (Terry) — in collage mode measure the tile's
+          // border-box (offsetWidth, the stable tile slot incl. any existing
+          // border) so the frame width matches renderCollageItem's matte inset
+          // and never drifts on repeated applies. Single-photo keeps clientWidth
+          // (the image's intrinsic size; its frame is drawn outset).
+          const shortPx = collageActive
+            ? Math.min(bEl.offsetWidth || 600, bEl.offsetHeight || 400)
+            : Math.min(bEl.clientWidth || 600, bEl.clientHeight || 400);
           const frac = s.borderWeight === 'mat' ? 0.08 : 0.035;
           const w = Math.max(4, Math.round(shortPx * frac));
           bEl.style.boxSizing = 'border-box';
@@ -6292,6 +6336,9 @@ function zoomTo(newZoom, centreX, centreY) {
               borderColor: state.borderColor, borderWeight: state.borderWeight,
               opacity: state.opacity, blend: state.blend, flipH: state.flipH, flipV: state.flipV,
             };
+            // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
+            // changed) matte frame so a frame never clips the photo's edges.
+            if (!collageTile.isBg) renderCollageItem(collageTile);
           }
           // Keep the Looks strip in sync with the selected tile's photo.
           try {

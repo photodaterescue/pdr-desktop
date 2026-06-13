@@ -905,7 +905,17 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
   // passes 'centre' so the bake matches the editor's CSS background-position:
   // center — sharp's default 'attention' was cropping the bg to a different
   // region, so the saved background looked shifted vs the editor.
-  p = p.resize(iw, ih, { fit: 'cover', position: coverPos });
+  // v2.1 round 161 (Terry) — FRAME = MATTE. Resize the photo to the INNER box
+  // (tile minus the frame) and extend the frame back out to iw×ih below, so a
+  // framed tile keeps its footprint and the photo sits fully INSIDE the frame.
+  // Previously we resized to iw×ih then extended the frame OUTSIDE, which grew
+  // the tile and made the on-screen preview clip the photo's outer edge —
+  // Terry: "the frame is eating up the photo image". Frame % matches the
+  // editor preview (applyFilterToEl): mat 8%, thin 3.5% of the short side.
+  const _bc = enh ? (enh.borderColor || '').trim() : '';
+  const _hasFrame = !!_bc && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(_bc);
+  const _framePx = _hasFrame ? Math.max(3, Math.round(Math.min(iw, ih) * (enh!.borderWeight === 'mat' ? 0.08 : 0.035))) : 0;
+  p = p.resize(Math.max(2, iw - _framePx * 2), Math.max(2, ih - _framePx * 2), { fit: 'cover', position: coverPos });
   if (enh) {
     const b = (enh.brightness ?? 100) / 100;
     const c = (enh.contrast ?? 100) / 100;
@@ -929,11 +939,10 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
     // frame stays square around the transformed image.
     if (enh.flipH) p = p.flop();
     if (enh.flipV) p = p.flip();
-    const bc = (enh.borderColor || '').trim();
-    if (bc && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(bc)) {
-      const frac = enh.borderWeight === 'mat' ? 0.06 : 0.03;
-      const px = Math.max(3, Math.round(Math.min(iw, ih) * frac));
-      p = p.extend({ top: px, bottom: px, left: px, right: px, background: bc });
+    // v2.1 round 161 (Terry) — extend the matte frame back out to iw×ih
+    // (width computed above as _framePx). Footprint preserved; photo inside.
+    if (_hasFrame) {
+      p = p.extend({ top: _framePx, bottom: _framePx, left: _framePx, right: _framePx, background: _bc });
     }
   }
   return p;
@@ -1099,6 +1108,21 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
       try {
         fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
         if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
+        // v2.1 round 161 (Terry) — every saved collage joins a "PDR Collages"
+        // album (created on first save), so they're all gathered in one place
+        // in the Albums view. Non-fatal: a failure here never blocks the save.
+        if (fileId != null) {
+          try {
+            const { listAlbums, createUserAlbum, addPhotosToAlbum } = await import('./search-database.js');
+            const ALBUM_TITLE = 'PDR Collages';
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const existing = (listAlbums() as any[]).find((a) => (a && a.title || '').toLowerCase() === ALBUM_TITLE.toLowerCase());
+            const albumId = existing ? existing.id : createUserAlbum(ALBUM_TITLE);
+            if (albumId != null) addPhotosToAlbum(albumId, [fileId]);
+          } catch (albErr) {
+            log.warn(`[collage] add to "PDR Collages" album failed (non-fatal): ${(albErr as Error).message}`);
+          }
+        }
       } catch (idxErr) {
         log.warn(`[collage] composite index pass failed (file saved): ${(idxErr as Error).message}`);
       }
