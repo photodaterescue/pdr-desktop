@@ -12827,8 +12827,9 @@ interface SaveEnhancedRequest {
     brightness: number;   // 0..200, default 100
     contrast: number;     // 0..200, default 100
     saturation: number;   // 0..200, default 100
-    temperature: number;  // -50..+50, default 0
+    temperature: number;  // -75..+75, default 0
     bw: boolean;          // default false
+    bwTint?: string;      // v2.1 round 151 — hex tone for B&W ('' = neutral)
     // v2.1 round 132 (Terry 2026-06-12) — preset "look" / tone.
     // 'sepia' and 'vintage' need a colour matrix the sliders can't
     // express, so they ride here and are baked via .recomb(); the
@@ -13159,6 +13160,14 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
 
     if (bw) {
       pipeline = pipeline.greyscale();
+      // v2.1 round 151 (Terry) — toned monochrome: .tint() pushes the greys
+      // toward the chosen tone while keeping luminance.
+      const tintHex = (fs2State.bwTint || '').trim();
+      const tm = /^#?([0-9a-fA-F]{6})$/.exec(tintHex);
+      if (tm) {
+        const tn = parseInt(tm[1], 16);
+        pipeline = pipeline.tint({ r: (tn >> 16) & 255, g: (tn >> 8) & 255, b: tn & 255 });
+      }
     }
 
     // v2.1 round 133 — frame/border via .extend(). Thickness scales
