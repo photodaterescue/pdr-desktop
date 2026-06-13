@@ -5456,10 +5456,17 @@
         const layout = { canvas, items };
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
-          // Reload THIS window into normal mode showing the saved
-          // collage so the user can enhance it straight away.
+          // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
+          // saved result opens in the SEPARATE Viewer window and this collage
+          // window stays open for more edits. Re-enable Save + briefly confirm
+          // (the window no longer reloads, which previously reset the button).
           const name = res.filename || res.filePath.split(/[\\/]/).pop();
           await window.pdr.search.openViewer([res.filePath], [name], 0, false);
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '✓ Saved — opened in Viewer';
+            setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2200);
+          }
         } else {
           window.alert('Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.'));
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
@@ -5575,7 +5582,7 @@
       // editing + Save collage). The panel is forced open + pinned.
       if (container) container.style.display = 'none';
       if (collageRootEl) collageRootEl.classList.add('active');
-      document.title = 'Collage (' + files.length + ') — PDR Viewer';
+      document.title = 'Collage (' + files.length + ') — PDR Collage';
       try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
       buildCollageItems();
       // v2.1 round 157 (Terry) — section open/closed state is now persisted

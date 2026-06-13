@@ -1304,6 +1304,10 @@ function createWindow() {
         viewerWindow.destroy();
         viewerWindow = null;
       }
+      if (collageWindow && !collageWindow.isDestroyed()) {
+        collageWindow.destroy();
+        collageWindow = null;
+      }
       if (peopleWindow && !peopleWindow.isDestroyed()) {
         peopleWindow.destroy();
         peopleWindow = null;
@@ -3172,6 +3176,10 @@ app.on('window-all-closed', () => {
     if (viewerWindow && !viewerWindow.isDestroyed()) {
       viewerWindow.destroy();
       viewerWindow = null;
+    }
+    if (collageWindow && !collageWindow.isDestroyed()) {
+      collageWindow.destroy();
+      collageWindow = null;
     }
     if (peopleWindow && !peopleWindow.isDestroyed()) {
       peopleWindow.destroy();
@@ -11204,6 +11212,11 @@ ipcMain.handle('library:bumpDirty', async () => {
 });
 
 let viewerWindow: BrowserWindow | null = null;
+// v2.1 round 159 (Terry) — the Collage editor is its OWN window now, separate
+// from the single-photo Viewer, so both can be open at once (build a collage,
+// save it, view the result in the Viewer). Same viewer.html, collage flag.
+let collageWindow: BrowserWindow | null = null;
+let collageLoadInFlight = false;
 
 // Rapid-click guard. The viewer's loadFile is asynchronous and
 // passes a JSON-encoded file list in the URL query string — for
@@ -11227,10 +11240,13 @@ let viewerLoadInFlight = false;
 // process state instead — the viewer fetches it once on mount via the
 // viewer:getPendingFileList IPC. Cleared after consumption so a stale
 // list can't leak across opens.
-let viewerPendingFiles: { files: string[]; startIndex: number; collage?: boolean } | null = null;
-ipcMain.handle('viewer:getPendingFileList', () => {
-  const payload = viewerPendingFiles;
-  viewerPendingFiles = null;
+// v2.1 round 159 — pending file list keyed by the requesting webContents, so
+// the Viewer window and the Collage window each fetch their OWN payload (a
+// single global raced when both opened near-simultaneously).
+const pendingByWc = new Map<number, { files: string[]; startIndex: number; collage?: boolean }>();
+ipcMain.handle('viewer:getPendingFileList', (event) => {
+  const payload = pendingByWc.get(event.sender.id);
+  pendingByWc.delete(event.sender.id);
   return payload ?? { files: [], startIndex: 0 };
 });
 
@@ -11275,23 +11291,23 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
   // will resolve and the viewer will appear with its file set. A
   // distinct error code would propagate as a toast in some callers
   // and look like a real failure.
-  if (viewerLoadInFlight) {
+  // v2.1 round 159 — collage opens in its own window; route by kind.
+  const isCollage = collage === true;
+  // Per-kind rapid-click guard (the two windows load independently).
+  if (isCollage ? collageLoadInFlight : viewerLoadInFlight) {
     return { success: true, deduped: true };
   }
   try {
-    viewerLoadInFlight = true;
+    if (isCollage) collageLoadInFlight = true; else viewerLoadInFlight = true;
     // Clamp the start index defensively so a bad caller can't open
     // the viewer at a non-existent slot.
     const start = (typeof startIndex === 'number' && startIndex >= 0 && startIndex < filePaths.length) ? startIndex : 0;
-    // v2.0.14 — stash the file list in main state; the viewer fetches
-    // it via viewer:getPendingFileList instead of parsing a URL with
-    // a 6,000-element JSON blob in it.
-    // v2.1 round 139 (Terry) — collage flag rides along so the viewer
-    // opens straight into the freeform collage editor (the photos
-    // become the collage pool), instead of a separate window.
-    viewerPendingFiles = { files: filePaths, startIndex: start, collage: collage === true };
-    const title = collage === true
-      ? `Collage (${filePaths.length}) — PDR Viewer`
+    // v2.1 round 159 — payload is routed to the specific window via
+    // pendingByWc, set just before loadFile (the viewer fetches it via
+    // viewer:getPendingFileList; keeps the 6k-path list out of the URL).
+    const payload = { files: filePaths, startIndex: start, collage: isCollage };
+    const title = isCollage
+      ? `Collage (${filePaths.length}) — PDR Collage`
       : filePaths.length === 1
         ? fileNames[0] + ' — PDR Viewer'
         : `${start + 1} of ${filePaths.length} — PDR Viewer`;
@@ -11302,43 +11318,42 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     // when it fires). Wrapped in a small helper so both branches
     // (reuse + create-new) can share the same lifecycle.
     const releaseOn = (win: BrowserWindow) => {
-      const release = () => { viewerLoadInFlight = false; };
+      const release = () => { if (isCollage) collageLoadInFlight = false; else viewerLoadInFlight = false; };
       win.webContents.once('did-finish-load', release);
       win.webContents.once('did-fail-load', release);
-      // Belt-and-braces — if neither event fires for some reason
-      // (window destroyed mid-load, etc.), don't strand the lock
-      // forever. 5 seconds is well beyond any realistic load.
+      // Belt-and-braces — if neither event fires (window destroyed mid-
+      // load, etc.), don't strand the lock forever.
       setTimeout(release, 5000);
     };
 
-    // If viewer already open, reuse it
-    if (viewerWindow && !viewerWindow.isDestroyed()) {
-      // Same __dirname-relative pattern the main + people + date-
-      // editor windows use. In packaged builds `__dirname` is
-      // inside `app.asar/dist-electron`, so joining `../dist/public`
-      // resolves to `app.asar/dist/public/...` and Electron's asar
-      // loader handles it. The earlier `process.resourcesPath`
-      // branch resolved to `resources/dist/public/` (outside asar),
-      // which doesn't exist in our packaged layout — viewer.html
-      // wasn't loading in the live v2.0.8 build. v2.0.9 hotfix.
-      const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
-      releaseOn(viewerWindow);
-      viewerWindow.loadFile(viewerHtml);
-      viewerWindow.setTitle(title);
-      // v2.1 round 153 (Terry) — the reuse branch only called .focus(),
-      // which on Windows often just flashes the taskbar instead of raising
-      // a window that's behind the main window — so clicking another photo
-      // (or re-opening) looked like "nothing happened". Restore if
-      // minimised, show, raise to top, then focus — matching the
-      // create-new branch's ready-to-show treatment.
-      if (viewerWindow.isMinimized()) viewerWindow.restore();
-      viewerWindow.show();
-      viewerWindow.moveTop();
-      viewerWindow.focus();
+    // v2.0.9 — __dirname-relative resolves inside app.asar in packaged
+    // builds (process.resourcesPath/dist/public sits OUTSIDE asar).
+    const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
+    const existing = isCollage ? collageWindow : viewerWindow;
+    // Reuse the existing window OF THIS KIND.
+    if (existing && !existing.isDestroyed()) {
+      pendingByWc.set(existing.webContents.id, payload);
+      releaseOn(existing);
+      existing.loadFile(viewerHtml);
+      existing.setTitle(title);
+      // v2.1 round 153 — on Windows .focus() alone often just flashes the
+      // taskbar instead of raising a window behind the main one.
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.moveTop();
+      existing.focus();
       return { success: true };
     }
 
-    viewerWindow = new BrowserWindow({
+    // v2.1 round 159 — offset the two kinds so opening both doesn't stack
+    // them perfectly on top of each other (the user can still drag freely).
+    const W = 1000, H = 750;
+    const work = screen.getPrimaryDisplay().workAreaSize;
+    const baseX = Math.round((work.width - W) / 2), baseY = Math.round((work.height - H) / 2);
+    const offX = isCollage ? 36 : -36, offY = isCollage ? 28 : -28;
+    const win = new BrowserWindow({
+      x: Math.max(0, baseX + offX),
+      y: Math.max(0, baseY + offY),
       width: 1000,
       height: 750,
       minWidth: 500,
@@ -11364,61 +11379,39 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
         preload: path.join(__dirname, 'preload.js'),
       },
     });
-    hardenWindowAgainstNavigation(viewerWindow);
+    hardenWindowAgainstNavigation(win);
+    if (isCollage) collageWindow = win; else viewerWindow = win;
+    const wcId = win.webContents.id;
+    pendingByWc.set(wcId, payload);
 
-    // Same `__dirname`-relative pattern the reuse branch above and
-    // the main / people / date-editor windows use. The earlier
-    // v2.0.9 fix patched the REUSE branch but missed THIS one (the
-    // create-new-viewer-window branch — runs on the very first
-    // viewer open per launch). In packaged builds `__dirname` is
-    // inside `app.asar/dist-electron`, so joining `../dist/public`
-    // resolves to `app.asar/dist/public/viewer.html` and Electron's
-    // asar loader handles it. `process.resourcesPath/dist/public/...`
-    // sits OUTSIDE asar and doesn't exist in our packaged layout —
-    // which is exactly what broke the viewer in v2.0.8 for every
-    // first-time user.
-    const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
+    releaseOn(win);
+    win.loadFile(viewerHtml);
 
-    releaseOn(viewerWindow);
-    viewerWindow.loadFile(viewerHtml);
-
-    // v2.1 round 62 (Terry 2026-06-09) — fix "every new PDRV needs 3
-    // titlebar-drag attempts before it moves". On Windows, when a
-    // BrowserWindow opens while another window holds the foreground,
-    // the new window is visible but the OS hasn't activated it for
-    // input — the first 1-2 clicks on the custom titlebar get
-    // consumed by OS focus-grab rather than triggering the
-    // -webkit-app-region:drag behaviour. The reuse-existing-viewer
-    // branch above already calls .focus(); the CREATE-NEW branch
-    // missed it. Wait for ready-to-show so focus + moveTop fire
-    // AFTER the content has painted (focusing pre-paint can be
-    // squashed by Windows' own focus-grant ordering on slower
-    // hardware). moveTop ensures the new viewer sits ON TOP of the
-    // existing one in z-order, so the user's first click on the
-    // titlebar is unambiguously a drag, not a window-raise.
-    viewerWindow.once('ready-to-show', () => {
-      if (viewerWindow && !viewerWindow.isDestroyed()) {
-        viewerWindow.focus();
-        viewerWindow.moveTop();
+    // v2.1 round 62 — wait for ready-to-show so focus + moveTop fire AFTER
+    // paint; on Windows a pre-paint focus can be squashed by the OS focus-
+    // grant ordering, which made the new window need a few title-bar clicks
+    // before it would drag.
+    win.once('ready-to-show', () => {
+      if (win && !win.isDestroyed()) {
+        win.focus();
+        win.moveTop();
       }
     });
 
-    // Log renderer console messages to the main process so we can diagnose
-    // preload / prepare failures that wouldn't otherwise be visible.
-    viewerWindow.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
-      console.log(`[viewer] ${sourceId}:${line} ${message}`);
+    // Log renderer console messages to the main process for diagnostics.
+    win.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
+      console.log(`[${isCollage ? 'collage' : 'viewer'}] ${sourceId}:${line} ${message}`);
     });
 
-    viewerWindow.on('closed', () => {
-      viewerWindow = null;
+    win.on('closed', () => {
+      pendingByWc.delete(wcId);
+      if (isCollage) collageWindow = null; else viewerWindow = null;
     });
 
     return { success: true };
   } catch (err) {
-    // Release the lock on early failure so the user can retry
-    // (otherwise the very next click would deduplicate against the
-    // lock that's still set from the failed call).
-    viewerLoadInFlight = false;
+    // Release the per-kind lock on early failure so the user can retry.
+    if (collage === true) collageLoadInFlight = false; else viewerLoadInFlight = false;
     return { success: false, error: (err as Error).message };
   }
 });
@@ -11464,7 +11457,9 @@ ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: strin
 ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string }) => {
   const requester = photoPickRequesterId != null
     ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.id === photoPickRequesterId)
-    : (viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : null);
+    // v2.1 round 159 — the background pick comes from the collage window, so
+    // fall back to it (then the viewer) if the requester id is missing.
+    : (collageWindow && !collageWindow.isDestroyed() ? collageWindow : (viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : null));
   photoPickRequesterId = null;
   if (requester) {
     try {
