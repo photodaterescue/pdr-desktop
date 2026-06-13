@@ -35,6 +35,14 @@
     /* Interactive bits in the title bar must opt out of the drag region
        or they swallow clicks. */
     .toolbar button, .toolbar input, .toolbar .speed-wrap, .toolbar [role="button"] { -webkit-app-region: no-drag; }
+    /* v2.1 round 148 (Terry) — the view controls (Fit/zoom/rotate/count/
+       zoom%) moved off the title bar into the existing bottom info-bar so
+       the title bar stays draggable. */
+    .info-bar-controls { display: flex; align-items: center; gap: 2px; }
+    .info-divider { width: 1px; height: 14px; background: rgba(255, 255, 255, 0.18); margin: 0 5px; }
+    .info-bar .toolbar-counter { position: static; font-size: 12px; color: #b8b8c6; }
+    .info-bar .zoom-level { font-size: 12px; color: #cfcfe0; min-width: 40px; text-align: right; }
+    body.collage-mode #info-bar { display: none; }
     /* v2.0.15 (Terry 2026-06-06 round 2) — wrap title + copy icon so
        they sit together as one group at the left of the toolbar. The
        wrap takes flex:1 (filling space available between the group
@@ -2056,14 +2064,12 @@
       <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)"><span style="display:inline-block;transform:rotate(90deg)">&#8635;</span></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-refresh" data-pdr-tooltip="Shuffle into a fresh arrangement">&#10227;</button>
     </div>
+    <!-- v2.1 round 148 (Terry) — the title bar keeps ONLY a slim set so
+         there's room to grab + drag the window: filename, copy, D&D,
+         undo/redo/refresh (left), Enhance + slideshow (right). The view
+         controls (count, fit, zoom, rotate, playback) moved to the
+         bottom status bar so they don't eat the drag area. -->
     <div class="toolbar-actions">
-      <span class="toolbar-counter" id="counter" style="display:none"></span>
-      <button class="toolbar-btn" id="btn-fit" data-pdr-tooltip="Fit to window (F)">Fit</button>
-      <button class="toolbar-btn" id="btn-100" data-pdr-tooltip="Actual size (0)">100%</button>
-      <button class="toolbar-btn" id="btn-zoomIn" data-pdr-tooltip="Zoom in (+)">+</button>
-      <button class="toolbar-btn" id="btn-zoomOut" data-pdr-tooltip="Zoom out (-)">−</button>
-      <button class="toolbar-btn" id="btn-rotateLeft" data-pdr-tooltip="Rotate left 90° (R)">⟲</button>
-      <button class="toolbar-btn" id="btn-rotateRight" data-pdr-tooltip="Rotate right 90° (Shift+R)">⟳</button>
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
       <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
       <button class="toolbar-btn" id="btn-slideshow" data-pdr-tooltip="Start slideshow (Space)" hidden>▶</button>
@@ -2071,11 +2077,6 @@
         <button class="toolbar-btn" id="btn-slideshowInterval" data-pdr-tooltip="Slideshow interval">5s</button>
         <div class="speed-menu" id="slideshow-menu" style="display:none"></div>
       </div>
-      <div class="speed-wrap" id="speed-wrap" hidden>
-        <button class="toolbar-btn" id="btn-speed" data-pdr-tooltip="Playback speed (shift+, / shift+.)">1x</button>
-        <div class="speed-menu" id="speed-menu" style="display:none"></div>
-      </div>
-      <button class="toolbar-btn" id="btn-openExternal" data-pdr-tooltip="Open in system player" hidden>Open externally</button>
     </div>
   </div>
   <div class="viewer-container" id="container">
@@ -2110,6 +2111,7 @@
     <div id="filmstrip-date-pill" class="filmstrip-date-pill" aria-hidden="true"></div>
     <div id="filmstrip" class="filmstrip"></div>
   </div>
+
 
   <!-- v2.0.15 (Terry 2026-06-06) — Enhance side panel. Right-side
        slide-in, 280px wide, dark theme matching the viewer chrome.
@@ -2456,9 +2458,28 @@
     <span class="caption-label">Caption</span>
     <span class="caption-text" id="captionText"></span>
   </div>
-  <div class="info-bar">
+  <!-- v2.1 round 148 (Terry) — this bottom bar now also hosts the view
+       controls that used to crowd the title bar: Fit / Actual size /
+       zoom / rotate (+ video playback), then the count next to the live
+       zoom %, divider between. Keeps the title bar free to drag. -->
+  <div class="info-bar" id="info-bar">
     <span id="dimensions"></span>
-    <span class="zoom-level" id="zoomLabel">100%</span>
+    <div class="info-bar-controls">
+      <button class="toolbar-btn" id="btn-fit" data-pdr-tooltip="Fit to window (F)">Fit</button>
+      <button class="toolbar-btn" id="btn-100" data-pdr-tooltip="Actual size (0)">1:1</button>
+      <button class="toolbar-btn" id="btn-zoomIn" data-pdr-tooltip="Zoom in (+)">+</button>
+      <button class="toolbar-btn" id="btn-zoomOut" data-pdr-tooltip="Zoom out (-)">−</button>
+      <button class="toolbar-btn" id="btn-rotateLeft" data-pdr-tooltip="Rotate left 90° (R)">⟲</button>
+      <button class="toolbar-btn" id="btn-rotateRight" data-pdr-tooltip="Rotate right 90° (Shift+R)">⟳</button>
+      <div class="speed-wrap" id="speed-wrap" hidden>
+        <button class="toolbar-btn" id="btn-speed" data-pdr-tooltip="Playback speed (shift+, / shift+.)">1x</button>
+        <div class="speed-menu" id="speed-menu" style="display:none"></div>
+      </div>
+      <button class="toolbar-btn" id="btn-openExternal" data-pdr-tooltip="Open in system player" hidden>Open externally</button>
+      <span class="toolbar-counter" id="counter" style="display:none"></span>
+      <span class="info-divider" id="status-divider" style="display:none"></span>
+      <span class="zoom-level" id="zoomLabel">100%</span>
+    </div>
   </div>
 
   <script>
@@ -4245,10 +4266,12 @@
       filenameEl.textContent = name;
       document.title = name + ' \u2014 PDR Viewer';
 
-      // Update counter
+      // Update counter (+ the divider that separates it from the zoom %)
       if (files.length > 1) {
         counterEl.style.display = '';
         counterEl.textContent = (currentIndex + 1) + ' / ' + files.length;
+        const divEl = document.getElementById('status-divider');
+        if (divEl) divEl.style.display = '';
       }
 
       // Update nav arrows
