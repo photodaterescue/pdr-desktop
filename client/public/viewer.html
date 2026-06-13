@@ -2025,6 +2025,11 @@
     .enhance-collapse > summary::before { content: '\25B8'; font-size: 10px; transition: transform 120ms; color: #a99cff; }
     .enhance-collapse[open] > summary::before { transform: rotate(90deg); }
     .enhance-collapse[open] { display: flex; flex-direction: column; gap: 14px; }
+    /* v2.1 round 157 (Terry) — Expand all / Collapse all links. */
+    .enhance-collapse-all { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 2px; }
+    .enhance-collapse-all button { background: none; border: none; color: #a99cff; cursor: pointer; font-size: 11px; padding: 0; letter-spacing: 0.02em; }
+    .enhance-collapse-all button:hover { color: #c4b9ff; text-decoration: underline; }
+    .enhance-collapse-all span { color: #555; font-size: 11px; }
     /* Hide the Faces + AI sections in collage mode (per-tile face
        marking doesn't apply to a composite). */
     body.collage-mode .enhance-mark-face-section,
@@ -2158,6 +2163,15 @@
       <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
+      <!-- v2.1 round 157 (Terry) — Expand all / Collapse all for the section
+           chevrons. Each section's open/closed state persists (localStorage)
+           across collages AND PDR sessions, so the panel reopens exactly how
+           the user left it. -->
+      <div class="enhance-collapse-all">
+        <button type="button" id="enhance-expand-all">Expand all</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="enhance-collapse-all">Collapse all</button>
+      </div>
       <!-- v2.1 round 140 (Terry 2026-06-12) — Collage controls. Shown
            only in collage mode (body.collage-mode). Shape + Background
            (same palette as the Frame colours) + Tidy up. The Looks /
@@ -2168,7 +2182,7 @@
              free panel space; they're #tb-collage-undo / -redo now. -->
         <!-- v2.1 round 156 (Terry) — every panel section is now a chevron
              for a consistent, tidy, premium look. -->
-        <details class="enhance-collapse" open>
+        <details class="enhance-collapse" id="ec-shape-collapse" open>
           <summary>Collage shape</summary>
           <div class="ec-row">
             <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
@@ -2217,7 +2231,7 @@
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
              undo cleanly (see Undo/Redo). v2.1 round 156 — chevron. -->
-        <details class="enhance-collapse" open>
+        <details class="enhance-collapse" id="ec-arrange-collapse" open>
           <summary>Arrange</summary>
           <div class="ec-row">
             <button class="ec-shape-btn" id="collage-tidy" type="button" data-pdr-tooltip="Line every photo up in a neat grid (replaces the current arrangement)">Tidy grid</button>
@@ -5554,9 +5568,9 @@
       document.title = 'Collage (' + files.length + ') — PDR Viewer';
       try { const fn = document.getElementById('filename'); if (fn) fn.textContent = 'Collage (' + files.length + ')'; } catch (_) {}
       buildCollageItems();
-      // Collapse the manual Levels in collage mode — the panel is busier
-      // here and Looks pre-set them (single-photo mode keeps it open).
-      try { const lv = document.getElementById('enhance-levels'); if (lv) lv.removeAttribute('open'); } catch (_) {}
+      // v2.1 round 157 (Terry) — section open/closed state is now persisted
+      // per-user (setupCollapsePersistence), so we no longer force-collapse
+      // Tone & colour here — that would override the user's saved choice.
       wireCollageControls();
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.enterCollage(saveCollage); } catch (_) {}
       // Lay out + tidy once now, and again after the panel slide + layout
@@ -6301,18 +6315,10 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       function resetState() {
-        state.brightness = 100;
-        state.contrast = 100;
-        state.saturation = 100;
-        state.temperature = 0;
-        state.colour = 50;
-        state.flipH = false;
-        state.flipV = false;
-        state.tone = 'none';
-        state.borderColor = '';
-        state.borderWeight = 'thin';
-        state.opacity = 1;
-        state.blend = 0;
+        // v2.1 round 157 (Terry) — reset EVERY enh field from the single
+        // defaults source (defaultBgEnh), so a newly-added field can never be
+        // forgotten here again. Geometry (rotation/crop) is handled below.
+        Object.assign(state, defaultBgEnh());
         clearActivePreset();
         markActiveSwatchByColor('');
         // v2.1 round 152 (Terry) — Reset background also clears the base
@@ -6632,7 +6638,12 @@ function zoomTo(newZoom, centreX, centreY) {
       // type a number directly. Same shortcut Photoshop / Lightroom
       // use. Enter or blur commits; Escape reverts; clamps to the
       // slider's min/max.
-      function attachClickToEditValue(valSpan, slider, prop, fmt) {
+      // v2.1 round 157 (Terry) — type-in for EVERY slider. Generalised to
+      // read()/write() callbacks (in DISPLAY units) so sliders whose display
+      // differs from the stored value (Fade = opacity×100) or that aren't in
+      // `state` at all (Angle = the tile's rotation) all work uniformly.
+      function attachClickToEditValue(valSpan, slider, read, write, fmt) {
+        if (!valSpan || !slider) return;
         valSpan.style.cursor = 'text';
         valSpan.setAttribute('data-pdr-tooltip', 'Click to type a value');
         valSpan.addEventListener('click', function () {
@@ -6644,7 +6655,7 @@ function zoomTo(newZoom, centreX, centreY) {
           input.type = 'number';
           input.min = String(min);
           input.max = String(max);
-          input.value = String(state[prop]);
+          input.value = String(read());
           input.style.cssText = [
             'width: 56px',
             'padding: 0 4px',
@@ -6671,23 +6682,29 @@ function zoomTo(newZoom, centreX, centreY) {
 
           function commit() {
             const raw = parseInt(input.value, 10);
-            const clamped = Number.isFinite(raw) ? Math.max(min, Math.min(max, raw)) : state[prop];
-            state[prop] = clamped;
-            slider.value = String(clamped);
+            const clamped = Number.isFinite(raw) ? Math.max(min, Math.min(max, raw)) : read();
+            write(clamped);
             valSpan.textContent = fmt ? fmt(clamped) : String(clamped);
-            applyEnhanceFilter();
           }
           function cancel() {
             valSpan.textContent = original;
           }
         });
       }
-      attachClickToEditValue(vBright, sBright, 'brightness');
-      attachClickToEditValue(vContrast, sContrast, 'contrast');
-      attachClickToEditValue(vSat, sSat, 'saturation');
-      attachClickToEditValue(vTemp, sTemp, 'temperature', function (v) {
-        return (v > 0 ? '+' : '') + String(v);
-      });
+      attachClickToEditValue(vBright, sBright, function () { return state.brightness; }, function (n) { state.brightness = n; sBright.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vContrast, sContrast, function () { return state.contrast; }, function (n) { state.contrast = n; sContrast.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vSat, sSat, function () { return state.saturation; }, function (n) { state.saturation = n; sSat.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vTemp, sTemp, function () { return state.temperature; }, function (n) { state.temperature = n; sTemp.value = n; applyEnhanceFilter(); }, function (v) { return (v > 0 ? '+' : '') + String(v); });
+      attachClickToEditValue(vColour, sColour, function () { return state.colour == null ? 50 : state.colour; }, function (n) { state.colour = n; if (sColour) sColour.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vOpacity, sOpacity, function () { return Math.round((state.opacity != null ? state.opacity : 1) * 100); }, function (n) { state.opacity = Math.max(0.1, Math.min(1, n / 100)); if (sOpacity) sOpacity.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vBlend, sBlend, function () { return Math.round(state.blend || 0); }, function (n) { state.blend = Math.max(0, Math.min(100, n)); if (sBlend) sBlend.value = n; applyEnhanceFilter(); });
+      // Angle = the selected tile's rotation (geometry, not in `state`).
+      const sAngleEl = document.getElementById('slider-angle');
+      const vAngleEl = document.getElementById('val-angle');
+      attachClickToEditValue(vAngleEl, sAngleEl,
+        function () { if (!collageSelected || collageSelected.isBg) return 0; let r = ((collageSelected.rot || 0) % 360 + 360) % 360; if (r > 180) r -= 360; return Math.round(r); },
+        function (n) { if (collageSelected && !collageSelected.isBg) { collageSelected.rot = n; renderCollageItem(collageSelected); } },
+        function (v) { return v + '°'; });
 
       function openPanel() {
         panel.classList.add('open');
@@ -8410,6 +8427,36 @@ function zoomTo(newZoom, centreX, centreY) {
 
       // Initial state.
       updateSaveAvailability();
+    })();
+
+    // v2.1 round 157 (Terry) — chevron expand/collapse persistence. Each
+    // section's open state is saved to localStorage so the panel reopens the
+    // same way across collages AND PDR sessions; Expand all / Collapse all
+    // toggle every section at once.
+    (function setupCollapsePersistence() {
+      const KEY = 'pdr-enhance-collapse-v1';
+      const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || '{}') || {}; } catch (_) { return {}; } };
+      const save = (o) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (_) {} };
+      const chevrons = Array.from(document.querySelectorAll('#enhance-panel details.enhance-collapse')).filter((d) => d.id);
+      const stored = load();
+      chevrons.forEach((d) => {
+        if (Object.prototype.hasOwnProperty.call(stored, d.id)) {
+          if (stored[d.id]) d.setAttribute('open', ''); else d.removeAttribute('open');
+        }
+        // 'toggle' fires for both user clicks and programmatic open changes;
+        // the restore above ran before this listener was attached, so it
+        // won't re-save during restore.
+        d.addEventListener('toggle', () => { const s = load(); s[d.id] = d.open; save(s); });
+      });
+      function setAll(open) {
+        const s = load();
+        chevrons.forEach((d) => { if (open) d.setAttribute('open', ''); else d.removeAttribute('open'); s[d.id] = open; });
+        save(s);
+      }
+      const eb = document.getElementById('enhance-expand-all');
+      const cb = document.getElementById('enhance-collapse-all');
+      if (eb) eb.addEventListener('click', () => setAll(true));
+      if (cb) cb.addEventListener('click', () => setAll(false));
     })();
 
     // ─── v2.1 (Terry 2026-06-07) — JS tooltip manager for elements
