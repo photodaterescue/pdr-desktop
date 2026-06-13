@@ -1839,7 +1839,7 @@
       justify-content: center;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     }
-    .ch-rotate svg { width: 15px; height: 15px; fill: #7c5cd6; pointer-events: none; }
+    .ch-rotate svg { width: 17px; height: 17px; fill: #2e2960; pointer-events: none; }
     .ch-rotate::before {
       content: '';
       position: absolute;
@@ -2034,15 +2034,17 @@
         </svg>
         D&amp;D
       </button>
-    </div>
-    <div class="toolbar-actions">
-      <!-- v2.1 round 144 (Terry) — collage Undo/Redo/Refresh on the
-           toolbar (was in the side panel, eating space). Refresh =
-           shuffle into a fresh arrangement (NOT a reset — your photos +
-           edits stay, only their positions change). Collage mode only. -->
+      <!-- v2.1 round 146 (Terry) — collage Undo/Redo/Refresh on the LEFT
+           of the toolbar. They were on the right before, but the pinned
+           Enhance panel (fixed, top-right) covered them — "there's no
+           undo/redo". Left of the filename they're always visible.
+           Refresh = shuffle into a fresh arrangement (NOT a reset).
+           Collage mode only. -->
       <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)">&#8634;</button>
       <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)">&#8635;</button>
       <button class="toolbar-btn tb-collage" id="tb-collage-refresh" data-pdr-tooltip="Shuffle into a fresh arrangement">&#10227;</button>
+    </div>
+    <div class="toolbar-actions">
       <span class="toolbar-counter" id="counter" style="display:none"></span>
       <button class="toolbar-btn" id="btn-fit" data-pdr-tooltip="Fit to window (F)">Fit</button>
       <button class="toolbar-btn" id="btn-100" data-pdr-tooltip="Actual size (0)">100%</button>
@@ -4821,9 +4823,16 @@
       const startX = e.clientX, startY = e.clientY;
       const sc = { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b };
       const cwpx = collageCanvasEl.clientWidth;
-      const iwPx = it.wFrac * cwpx;
-      const ihPx = iwPx / effectiveAspect(it);
-      const dims = cropWH(it);
+      const dims0 = cropWH(it);
+      // S = the displayed FULL-photo width in px. Held constant through a
+      // crop drag so the photo does NOT zoom — only the box/window
+      // changes (the round-145 bug zoomed because it kept box width
+      // fixed instead). The opposite edge is anchored so the side you
+      // grab is the side that moves.
+      const S = (it.wFrac * cwpx) / dims0.cw;
+      const aspect = it.aspect || 1;
+      const rightFrac = it.xFrac + it.wFrac;               // anchor for left crop
+      const bottomFrac0 = it.yFrac + itemHeightFrac(it);   // anchor for top crop
       const rad = (it.rot || 0) * Math.PI / 180;
       const cosR = Math.cos(rad), sinR = Math.sin(rad);
       const MIN = 0.08; // never crop below 8% of the photo
@@ -4831,10 +4840,17 @@
         const dx = ev.clientX - startX, dy = ev.clientY - startY;
         const localX = dx * cosR + dy * sinR;
         const localY = -dx * sinR + dy * cosR;
-        if (edge === 'l') it.crop.l = Math.max(0, Math.min(sc.r - MIN, sc.l + localX * (dims.cw / iwPx)));
-        else if (edge === 'r') it.crop.r = Math.min(1, Math.max(sc.l + MIN, sc.r + localX * (dims.cw / iwPx)));
-        else if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, sc.t + localY * (dims.ch / ihPx)));
-        else if (edge === 'b') it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY * (dims.ch / ihPx)));
+        if (edge === 'l' || edge === 'r') {
+          if (edge === 'l') it.crop.l = Math.max(0, Math.min(sc.r - MIN, sc.l + localX / S));
+          else it.crop.r = Math.min(1, Math.max(sc.l + MIN, sc.r + localX / S));
+          it.wFrac = ((it.crop.r - it.crop.l) * S) / cwpx; // box narrows with the crop (no zoom)
+          if (edge === 'l') it.xFrac = rightFrac - it.wFrac; // right edge stays put
+        } else {
+          const vS = S / aspect; // px per photo-height-fraction
+          if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, sc.t + localY / vS));
+          else it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY / vS));
+          if (edge === 't') it.yFrac = bottomFrac0 - itemHeightFrac(it); // bottom edge stays put
+        }
         renderCollageItem(it);
       };
       const up = () => {
