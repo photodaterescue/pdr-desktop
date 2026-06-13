@@ -1815,7 +1815,10 @@
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
-    body.collage-bg-selected #collage-canvas { box-shadow: 0 8px 40px rgba(0,0,0,0.45), inset 0 0 0 3px rgba(169,156,255,0.95); }
+    /* v2.1 round 152 (Terry) — an OUTER ring (outline draws outside the box,
+       so the faded background layer can't cover it like an inset shadow did)
+       + a soft glow, so it's obvious the whole collage backdrop is selected. */
+    body.collage-bg-selected #collage-canvas { outline: 3px solid #a99cff; outline-offset: 3px; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(169,156,255,0.28), 0 0 22px 4px rgba(169,156,255,0.35); }
     .collage-item {
       position: absolute;
       cursor: grab;
@@ -2291,23 +2294,16 @@
         </div>
         <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" title="Negative = cooler, positive = warmer">
       </div>
-      <!-- v2.1 round 151 (Terry) — Black & white is now a TINT control, not
-           a checkbox (the checkbox was redundant with the B&W Look). Off =
-           colour; Neutral = plain greyscale; the toned swatches give a
-           duotone-style monochrome (sharp .tint preserves luminance). -->
+      <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
+           (Terry: "was meant to be on a slider"). Labelled "Colour": 100 =
+           full colour, 0 = black & white; partial = a faded-colour look.
+           Baked as a saturation factor that multiplies the Saturation slider. -->
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label>Black &amp; white</label>
+          <label for="slider-colour">Colour</label>
+          <span class="enhance-val" id="val-colour">100</span>
         </div>
-        <div class="frame-palette" id="bw-tint-palette" style="margin-top:4px">
-          <button class="frame-swatch frame-none active" data-bwtint="off" title="Off — keep colour">&#8709;</button>
-          <button class="frame-swatch" data-bwtint="" style="background:linear-gradient(135deg,#fafafa,#1a1a1a)" title="Neutral black &amp; white"></button>
-          <button class="frame-swatch" data-bwtint="#7a5a36" style="background:linear-gradient(135deg,#efe2cf,#5a4124)" title="Warm (sepia tone)"></button>
-          <button class="frame-swatch" data-bwtint="#3f5f86" style="background:linear-gradient(135deg,#d6e3f2,#22344e)" title="Cool (blue tone)"></button>
-          <button class="frame-swatch" data-bwtint="#6a4a78" style="background:linear-gradient(135deg,#e6d6ef,#4a2f5a)" title="Plum tone"></button>
-          <button class="frame-add" id="bw-tint-add" title="Custom tint"><span class="frame-add-plus">+</span></button>
-          <input type="color" id="bw-tint-custom" value="#888888" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-        </div>
+        <input class="enhance-slider" id="slider-colour" type="range" min="0" max="100" step="1" value="100" title="Slide down to drain colour — 0 = black &amp; white">
       </div>
       </details>
       <!-- v2.1 round 149 (Terry 2026-06-13) — ONE Fade slider for the
@@ -2718,7 +2714,7 @@
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
       // colour is kept underneath and revealed by lowering Fade.
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 100, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -5131,7 +5127,7 @@
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
           crop: { l: 0, t: 0, r: 1, b: 1 },
-          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 100, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -5437,9 +5433,14 @@
           window.pdr.collage.onBackgroundPicked((fp) => { if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); } });
         }
       } catch (_) {}
-      // Click empty canvas → deselect (panel shows the "pick a photo" hint).
+      // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
+      // layer over it) → select the BACKGROUND so it can be reset/edited and
+      // shows the selection ring; click OUTSIDE the canvas (stage padding) →
+      // deselect. (With a bg photo, the photo layer's own pointerdown fires
+      // first and selects the background too.)
       collageStageEl.addEventListener('pointerdown', (e) => {
-        if (e.target === collageStageEl || e.target === collageCanvasEl) selectCollageItem(null);
+        if (e.target === collageCanvasEl) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
+        else if (e.target === collageStageEl) selectCollageItem(null);
       });
       window.addEventListener('resize', layoutCanvasSize);
     }
@@ -6009,7 +6010,8 @@ function zoomTo(newZoom, centreX, centreY) {
       const sContrast = document.getElementById('slider-contrast');
       const sSat = document.getElementById('slider-saturation');
       const sTemp = document.getElementById('slider-temperature');
-      const bwTintPalette = document.getElementById('bw-tint-palette');
+      const sColour = document.getElementById('slider-colour');
+      const vColour = document.getElementById('val-colour');
       const sOpacity = document.getElementById('slider-opacity');
       const sBlend = document.getElementById('slider-blend');
       const vBright = document.getElementById('val-brightness');
@@ -6025,8 +6027,7 @@ function zoomTo(newZoom, centreX, centreY) {
         contrast: 100,
         saturation: 100,
         temperature: 0, // -75..+75 → hue-rotate + sepia approximation
-        bw: false,
-        bwTint: '', // v2.1 round 151 — '' = neutral B&W, else a hex tone for toned monochrome
+        colour: 100, // v2.1 round 152 — colour amount; 100 = full colour, 0 = B&W
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
         borderWeight: 'thin', // 'thin' | 'mat'
@@ -6048,31 +6049,16 @@ function zoomTo(newZoom, centreX, centreY) {
       // v2.1 round 134 — accepts an optional state so the Looks strip
       // can compose each preset's filter for its thumbnail; defaults
       // to the live state for the main preview.
-      // v2.1 round 151 — hue (0–360) of a hex, for the toned-B&W preview.
-      function hexToHue(hex) {
-        const m = /^#?([0-9a-fA-F]{6})$/.exec(hex || ''); if (!m) return 0;
-        const n = parseInt(m[1], 16); const r = (n >> 16 & 255) / 255, g = (n >> 8 & 255) / 255, b = (n & 255) / 255;
-        const mx = Math.max(r, g, b), mn = Math.min(r, g, b), d = mx - mn; if (!d) return 0;
-        let h; if (mx === r) h = ((g - b) / d) % 6; else if (mx === g) h = (b - r) / d + 2; else h = (r - g) / d + 4;
-        h *= 60; if (h < 0) h += 360; return h;
-      }
       function composeFilterString(s) {
         s = s || state;
         const parts = [];
         if (s.brightness !== 100) parts.push('brightness(' + (s.brightness / 100) + ')');
         if (s.contrast !== 100) parts.push('contrast(' + (s.contrast / 100) + ')');
-        if (s.saturation !== 100 && !s.bw) parts.push('saturate(' + (s.saturation / 100) + ')');
-        if (s.bw) {
-          // v2.1 round 151 — toned monochrome: grayscale, then push the
-          // sepia base hue (≈40°) round to the tint's hue. The saved file
-          // uses sharp .tint() (exact); this is a faithful-enough preview.
-          if (s.bwTint) {
-            const rot = Math.round(hexToHue(s.bwTint) - 40);
-            parts.push('grayscale(1) sepia(0.65) hue-rotate(' + rot + 'deg) saturate(1.8)');
-          } else {
-            parts.push('grayscale(1)');
-          }
-        }
+        // v2.1 round 152 — Colour is a master desaturation that multiplies
+        // the Saturation slider: at colour=0 the result is black & white.
+        const colour = (s.colour == null ? 100 : s.colour);
+        const sat = (s.saturation / 100) * (colour / 100);
+        if (sat !== 1) parts.push('saturate(' + sat + ')');
         // v2.0.15 (Terry 2026-06-06) — Temperature was using sepia +
         // hue-rotate, which desaturated the preview heavily (sepia is
         // a tint-toward-brown operation, basically B&W with brown
@@ -6159,7 +6145,7 @@ function zoomTo(newZoom, centreX, centreY) {
             applyFilterToEl(collageTile.imgEl, state, filterStr, collageTile.el);
             collageTile.enh = {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
-              temperature: state.temperature, bw: state.bw, bwTint: state.bwTint, tone: state.tone,
+              temperature: state.temperature, colour: state.colour, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight,
               opacity: state.opacity, blend: state.blend,
             };
@@ -6197,14 +6183,9 @@ function zoomTo(newZoom, centreX, centreY) {
         sContrast.value = String(state.contrast);
         sSat.value = String(state.saturation);
         sTemp.value = String(state.temperature);
-        // v2.1 round 151 — mark the active B&W tint swatch (Off / Neutral /
-        // a tone). 'off' = colour; '' = neutral B&W; else a hex tone.
-        if (bwTintPalette) {
-          const cur = state.bw ? (state.bwTint || '') : 'off';
-          bwTintPalette.querySelectorAll('.frame-swatch').forEach((sw) => {
-            sw.classList.toggle('active', (sw.getAttribute('data-bwtint') || '') === cur);
-          });
-        }
+        // v2.1 round 152 — Colour slider (100 = full colour, 0 = B&W).
+        if (sColour) sColour.value = String(state.colour == null ? 100 : state.colour);
+        if (vColour) vColour.textContent = String(state.colour == null ? 100 : state.colour);
         if (sOpacity) sOpacity.value = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (sBlend) sBlend.value = String(Math.round(state.blend || 0));
@@ -6216,8 +6197,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.contrast = 100;
         state.saturation = 100;
         state.temperature = 0;
-        state.bw = false;
-        state.bwTint = '';
+        state.colour = 100;
         state.tone = 'none';
         state.borderColor = '';
         state.borderWeight = 'thin';
@@ -6225,6 +6205,13 @@ function zoomTo(newZoom, centreX, centreY) {
         state.blend = 0;
         clearActivePreset();
         markActiveSwatchByColor('');
+        // v2.1 round 152 (Terry) — Reset background also clears the base
+        // COLOUR back to default white (so a colour-only backdrop returns to
+        // its original state), and repaints any bg photo at defaults.
+        if (collageActive && collageTile && collageTile.isBg) {
+          try { setCollageBg(''); } catch (_) {}
+          try { if (collageBgTile) collageBgTile.enh = defaultBgEnh(); renderCollageBgLayer(); } catch (_) {}
+        }
         updateUI();
         applyEnhanceFilter();
       }
@@ -6235,7 +6222,7 @@ function zoomTo(newZoom, centreX, centreY) {
       // with a colour matrix; the rest are slider combinations.
       const PRESETS = {
         original: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none' },
-        bw:       { brightness: 100, contrast: 108, saturation: 100, temperature: 0, bw: true,  tone: 'none' },
+        bw:       { brightness: 100, contrast: 108, saturation: 100, temperature: 0, colour: 0,   tone: 'none' },
         sepia:    { brightness: 102, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'sepia' },
         vintage:  { brightness: 104, contrast: 90,  saturation: 85,  temperature: 0, bw: false, tone: 'vintage' },
         vivid:    { brightness: 100, contrast: 118, saturation: 140, temperature: 0, bw: false, tone: 'none' },
@@ -6245,7 +6232,7 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.1 round 151 (Terry) — trending additions.
         matte:    { brightness: 105, contrast: 84,  saturation: 88,  temperature: 4,  bw: false, tone: 'none' }, // faded / lifted-blacks matte
         film:     { brightness: 100, contrast: 113, saturation: 112, temperature: 10, bw: false, tone: 'none' }, // punchy warm filmic
-        noir:     { brightness: 98,  contrast: 136, saturation: 100, temperature: 0,  bw: true,  tone: 'none' }, // dramatic high-contrast mono
+        noir:     { brightness: 98,  contrast: 136, saturation: 100, temperature: 0,  colour: 0,   tone: 'none' }, // dramatic high-contrast mono
       };
       const LOOK_ORDER = ['original', 'bw', 'noir', 'sepia', 'vintage', 'film', 'matte', 'vivid', 'warm', 'cool', 'soft'];
       const LOOK_LABEL = { original: 'Original', bw: 'B&W', noir: 'Noir', sepia: 'Sepia', vintage: 'Vintage', film: 'Film', matte: 'Matte', vivid: 'Vivid', warm: 'Warm', cool: 'Cool', soft: 'Soft' };
@@ -6303,7 +6290,7 @@ function zoomTo(newZoom, centreX, centreY) {
         const p = PRESETS[name];
         return state.brightness === p.brightness && state.contrast === p.contrast &&
                state.saturation === p.saturation && state.temperature === p.temperature &&
-               state.bw === p.bw && state.tone === p.tone && (state.bwTint || '') === (p.bwTint || '');
+               (state.colour == null ? 100 : state.colour) === (p.colour == null ? 100 : p.colour) && state.tone === p.tone;
       }
       function applyPreset(name, chipEl) {
         const p = PRESETS[name];
@@ -6312,9 +6299,8 @@ function zoomTo(newZoom, centreX, centreY) {
         state.contrast = p.contrast;
         state.saturation = p.saturation;
         state.temperature = p.temperature;
-        state.bw = p.bw;
-        // v2.1 round 151 — a Look resets the B&W tint (the B&W Look is plain).
-        state.bwTint = p.bwTint || '';
+        // v2.1 round 152 — Looks drive the Colour slider (B&W / Noir = 0).
+        state.colour = p.colour != null ? p.colour : 100;
         state.tone = p.tone;
         clearActivePreset();
         if (name !== 'original' && chipEl) chipEl.classList.add('active');
@@ -6465,27 +6451,13 @@ function zoomTo(newZoom, centreX, centreY) {
         vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
         applyEnhanceFilter();
       });
-      // v2.1 round 151 (Terry) — Black & white TINT control (replaces the
-      // checkbox). 'off' = colour; '' = neutral B&W; a hex = toned mono.
-      function pickBwTint(val) {
-        if (val === 'off') { state.bw = false; state.bwTint = ''; }
-        else { state.bw = true; state.bwTint = val || ''; }
-        updateUI();
+      // v2.1 round 152 (Terry) — Colour slider (100 = colour, 0 = B&W).
+      if (sColour) sColour.addEventListener('input', function () {
+        state.colour = Math.max(0, Math.min(100, clampOrDefault(sColour.value, 100)));
+        if (vColour) vColour.textContent = String(state.colour);
         applyEnhanceFilter();
         try { updateSaveAvailability(); } catch (_) {}
-      }
-      if (bwTintPalette) {
-        bwTintPalette.addEventListener('click', function (e) {
-          const sw = e.target.closest ? e.target.closest('.frame-swatch') : null;
-          if (sw && bwTintPalette.contains(sw)) pickBwTint(sw.getAttribute('data-bwtint') || '');
-        });
-        const bwAdd = document.getElementById('bw-tint-add');
-        const bwCustom = document.getElementById('bw-tint-custom');
-        if (bwAdd && bwCustom) {
-          bwAdd.addEventListener('click', function () { try { bwCustom.click(); } catch (_) {} });
-          bwCustom.addEventListener('input', function () { pickBwTint(bwCustom.value); });
-        }
-      }
+      });
       // v2.1 round 143 (Terry) — per-tile Opacity (collage only).
       if (sOpacity) sOpacity.addEventListener('input', function () {
         const pct = clampOrDefault(sOpacity.value, 100);
@@ -6926,7 +6898,7 @@ function zoomTo(newZoom, centreX, centreY) {
         sContrast.value = 100; state.contrast = 100; vContrast.textContent = '100';
         sSat.value = 100; state.saturation = 100; vSat.textContent = '100';
         sTemp.value = 0; state.temperature = 0; vTemp.textContent = '0';
-        state.bw = false; state.bwTint = '';
+        state.colour = 100;
         try { updateUI(); } catch (_) {}
         applyEnhanceFilter();
       }
@@ -7971,7 +7943,7 @@ function zoomTo(newZoom, centreX, centreY) {
           brightness: state.brightness,
           contrast: state.contrast,
           saturation: state.saturation,
-          bw: !!state.bw,
+          bw: state.colour === 0,
         };
         exitManualBoxMode();
         openAiProgress('Restoring face (manual box)…');
@@ -8002,7 +7974,7 @@ function zoomTo(newZoom, centreX, centreY) {
             // original (accurate); the brightened preview was just
             // a viewing aid for drawing the box, not the
             // ground-truth comparison target.
-            const hadBake = state.brightness !== 100 || state.contrast !== 100 || state.saturation !== 100 || state.bw;
+            const hadBake = state.brightness !== 100 || state.contrast !== 100 || state.saturation !== 100 || (state.colour != null && state.colour !== 100);
             if (hadBake) {
               resetSlidersToDefaults();
             }
@@ -8038,7 +8010,7 @@ function zoomTo(newZoom, centreX, centreY) {
                state.contrast !== 100 ||
                state.saturation !== 100 ||
                state.temperature !== 0 ||
-               state.bw === true ||
+               (state.colour != null && state.colour !== 100) ||
                state.tone !== 'none' ||
                state.borderColor !== '';
       }
@@ -8082,8 +8054,8 @@ function zoomTo(newZoom, centreX, centreY) {
       [sBright, sContrast, sSat, sTemp].forEach(function (el) {
         el.addEventListener('input', updateSaveAvailability);
       });
-      // v2.1 round 151 — the B&W tint palette calls updateSaveAvailability
-      // itself (in pickBwTint), so no separate listener needed here.
+      // v2.1 round 152 — the Colour slider calls updateSaveAvailability
+      // itself (in its input handler), so no separate listener needed here.
       // Re-check availability when the panel opens or new image loads.
       openBtn.addEventListener('click', updateSaveAvailability);
       window.addEventListener('keydown', function (e) {
@@ -8159,8 +8131,7 @@ function zoomTo(newZoom, centreX, centreY) {
               contrast: state.contrast,
               saturation: state.saturation,
               temperature: state.temperature,
-              bw: state.bw,
-              bwTint: state.bwTint,
+              colour: state.colour,
               tone: state.tone,
               border: state.border,
             },
@@ -8238,8 +8209,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.contrast = e.contrast != null ? e.contrast : 100;
         state.saturation = e.saturation != null ? e.saturation : 100;
         state.temperature = e.temperature != null ? e.temperature : 0;
-        state.bw = !!e.bw;
-        state.bwTint = e.bwTint || '';
+        state.colour = e.colour != null ? e.colour : 100;
         state.tone = e.tone || 'none';
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';
