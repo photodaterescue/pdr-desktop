@@ -1938,7 +1938,9 @@
     body.collage-mode .tb-collage { display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
     /* Collage section in the Enhance panel — only in collage mode. */
     .enhance-collage-section { display: none; }
-    body.collage-mode .enhance-collage-section { display: block; }
+    /* v2.1 round 156 (Terry) — flex column with the same 14px gap as the
+       tile-controls + chevrons, so every section sits consistently spaced. */
+    body.collage-mode .enhance-collage-section { display: flex; flex-direction: column; gap: 14px; }
     .enhance-collage-section .ec-row { display: flex; gap: 6px; margin: 6px 0 12px; flex-wrap: wrap; }
     /* v2.1 round 143 (Terry "overlap is still an issue") — the global
        .enhance-presets-label has margin-bottom:-6px (tightens the Looks
@@ -1990,9 +1992,9 @@
     /* v2.1 round 154 (Terry) — the "Effects" chevron (Fade + Blend) is
        collage-only. id-based rules so an [open] <details> can't leak into
        the single-photo viewer via .enhance-collapse[open]'s specificity. */
-    #enhance-fx { display: none; }
-    body.collage-mode #enhance-fx[open] { display: flex; flex-direction: column; gap: 14px; }
-    body.collage-mode #enhance-fx:not([open]) { display: block; }
+    #enhance-fx, #tile-transform-row { display: none; }
+    body.collage-mode #enhance-fx[open], body.collage-mode #tile-transform-row[open] { display: flex; flex-direction: column; gap: 14px; }
+    body.collage-mode #enhance-fx:not([open]), body.collage-mode #tile-transform-row:not([open]) { display: block; }
     /* v2.1 round 149 (Terry 2026-06-13) — the shared Frame chevron is used
        in collage too (it frames the selected tile). Hide it only when the
        collage BACKGROUND is the selected element — a background has no frame. */
@@ -2000,7 +2002,8 @@
     /* v2.1 round 155 — Rotate uses the tile's placement angle, which the
        background doesn't have (its own rotation is a separate item), so hide
        it when the background is selected. Mirror/Flip still apply. */
-    body.collage-mode.collage-bg-selected #tile-rotate { display: none; }
+    body.collage-mode.collage-bg-selected #tile-rotate,
+    body.collage-mode.collage-bg-selected #tile-angle-control { display: none; }
     .ec-color-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
     .ec-ctgl {
       flex: 1; background: transparent; border: 1px solid rgba(169,156,255,0.3);
@@ -2163,12 +2166,16 @@
       <div class="enhance-collage-section">
         <!-- v2.1 round 144 (Terry) — Undo/Redo moved to the toolbar to
              free panel space; they're #tb-collage-undo / -redo now. -->
-        <div class="enhance-presets-label">Collage shape</div>
-        <div class="ec-row">
-          <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
-          <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
-          <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
-        </div>
+        <!-- v2.1 round 156 (Terry) — every panel section is now a chevron
+             for a consistent, tidy, premium look. -->
+        <details class="enhance-collapse" open>
+          <summary>Collage shape</summary>
+          <div class="ec-row">
+            <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
+            <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
+            <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
+          </div>
+        </details>
         <!-- v2.1 round 149 (Terry 2026-06-13) — Background is its OWN
              control now, fully separate from Frame (Terry: "Colour isn't
              the right word, it should be Frame... then a separate one for
@@ -2209,13 +2216,15 @@
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
-             undo cleanly (see Undo/Redo). -->
-        <div class="enhance-presets-label" style="margin-top:12px">Arrange</div>
-        <div class="ec-row">
-          <button class="ec-shape-btn" id="collage-tidy" type="button" data-pdr-tooltip="Line every photo up in a neat grid (replaces the current arrangement)">Tidy grid</button>
-          <button class="ec-shape-btn" id="collage-jumble" type="button" data-pdr-tooltip="Scatter the photos at jaunty random angles (replaces the current arrangement)">Jumble</button>
-        </div>
-        <div style="margin:14px 0 10px;border-top:1px solid rgba(169,156,255,0.15)"></div>
+             undo cleanly (see Undo/Redo). v2.1 round 156 — chevron. -->
+        <details class="enhance-collapse" open>
+          <summary>Arrange</summary>
+          <div class="ec-row">
+            <button class="ec-shape-btn" id="collage-tidy" type="button" data-pdr-tooltip="Line every photo up in a neat grid (replaces the current arrangement)">Tidy grid</button>
+            <button class="ec-shape-btn" id="collage-jumble" type="button" data-pdr-tooltip="Scatter the photos at jaunty random angles (replaces the current arrangement)">Jumble</button>
+          </div>
+        </details>
+        <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <div class="enhance-tile-hint">Click a photo on the canvas to edit just that one — give it its own Look, frame, brightness, colour and so on. Each photo keeps its own settings.</div>
       </div>
       <!-- v2.1 round 143 (Terry) — per-tile editing controls wrapped so
@@ -2228,25 +2237,35 @@
            of LIVE previews (was a button grid). Each thumb shows the
            current photo with that look applied; scroll left↔right to
            compare. Populated by buildLooksStrip(). -->
-      <div class="enhance-presets-label">Looks</div>
+      <details class="enhance-collapse" id="enhance-looks-collapse" open>
+      <summary>Looks</summary>
       <div class="strip-wrap">
         <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="-1" aria-label="Scroll looks left">&#8249;</button>
         <div class="enhance-strip" id="enhance-looks-strip"></div>
         <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="1" aria-label="Scroll looks right">&#8250;</button>
       </div>
+      </details>
       <!-- v2.1 round 155 (Terry) — Mirror / Flip / Rotate the selected photo
            (or background). Mirror = left↔right, Flip = top↕bottom (both baked
            via sharp flop/flip); Rotate = +90° using the tile's free rotation.
            Collage-only; Rotate hides for the background (its own rotation is
            a separate item). -->
-      <div class="enhance-collage-only" id="tile-transform-row" style="flex-direction:column;gap:6px;margin-top:2px">
-        <div class="enhance-presets-label" style="margin:0">Flip &amp; rotate</div>
+      <details class="enhance-collapse" id="tile-transform-row" open>
+        <summary>Flip &amp; rotate</summary>
         <div style="display:flex;gap:6px">
           <button class="ec-shape-btn" id="tile-mirror" type="button" data-pdr-tooltip="Mirror left to right">Mirror</button>
           <button class="ec-shape-btn" id="tile-flip" type="button" data-pdr-tooltip="Flip top to bottom">Flip</button>
           <button class="ec-shape-btn" id="tile-rotate" type="button" data-pdr-tooltip="Rotate 90°">Rotate</button>
         </div>
-      </div>
+        <!-- v2.1 round 156 (Terry) — fine rotation: nudge the angle a degree
+             at a time (the on-canvas handle is the coarse control). Bipolar
+             so the centre is upright; double-click snaps back to 0°. Hidden
+             for the background. -->
+        <div class="enhance-control" id="tile-angle-control">
+          <div class="enhance-label-row"><label for="slider-angle">Angle</label><span class="enhance-val" id="val-angle">0&deg;</span></div>
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0" title="Fine-tune the angle (double-click to reset to upright)">
+        </div>
+      </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
            Pick any colour; Thin/Mat width; custom colour picker.
            Decorative/ornate frames join here once their artwork
@@ -4822,6 +4841,23 @@
       for (const it of collageItems) renderCollageItem(it);
       updateCollageFilmstrip();
     }
+    // v2.1 round 156 (Terry) — sync the fine-rotation slider to the selected
+    // tile's angle (normalised to -180..180). Called on select, on free-rotate
+    // drag, and after the Rotate-90 button.
+    function updateAngleSlider() {
+      const s = document.getElementById('slider-angle');
+      const v = document.getElementById('val-angle');
+      if (!s) return;
+      if (collageSelected && !collageSelected.isBg) {
+        let r = ((collageSelected.rot || 0) % 360 + 360) % 360;
+        if (r > 180) r -= 360;
+        s.value = String(Math.round(r));
+        if (v) v.textContent = Math.round(r) + '°';
+      } else {
+        s.value = '0';
+        if (v) v.textContent = '0°';
+      }
+    }
     function selectCollageItem(it) {
       // v2.1 round 149 — selection can be a real tile OR the background
       // pseudo-tile (it.isBg). Tiles show the handle ring on their box; the
@@ -4832,6 +4868,7 @@
       if (it && !it.isBg && it.el) it.el.classList.add('selected');
       // Point the Enhance panel at this element (tile, background, or null).
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
+      updateAngleSlider();
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -4910,6 +4947,7 @@
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         it.rot = deg;
         renderCollageItem(it);
+        updateAngleSlider();
       };
       const up = () => {
         window.removeEventListener('pointermove', move);
@@ -5431,7 +5469,28 @@
         if (!collageSelected || collageSelected.isBg) return;
         collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
         renderCollageItem(collageSelected);
+        updateAngleSlider();
       });
+      // v2.1 round 156 (Terry) — fine rotation slider: degree-by-degree
+      // nudging of the selected tile's angle (the canvas handle is coarse).
+      const angleSlider = document.getElementById('slider-angle');
+      const angleVal = document.getElementById('val-angle');
+      if (angleSlider) {
+        angleSlider.addEventListener('input', () => {
+          if (!collageSelected || collageSelected.isBg) return;
+          collageSelected.rot = parseInt(angleSlider.value, 10) || 0;
+          if (angleVal) angleVal.textContent = (parseInt(angleSlider.value, 10) || 0) + '°';
+          renderCollageItem(collageSelected);
+        });
+        // double-click → upright (0°), matching the other sliders' reset.
+        angleSlider.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          if (!collageSelected || collageSelected.isBg) return;
+          collageSelected.rot = 0;
+          renderCollageItem(collageSelected);
+          updateAngleSlider();
+        });
+      }
       // v2.1 round 144 — undo / redo / refresh on the TOOLBAR + Ctrl+Z/Y.
       const undoBtn = document.getElementById('tb-collage-undo');
       if (undoBtn) undoBtn.addEventListener('click', () => undoCollage());
@@ -6262,6 +6321,16 @@ function zoomTo(newZoom, centreX, centreY) {
         if (collageActive && collageTile && collageTile.isBg) {
           try { setCollageBg(''); } catch (_) {}
           try { if (collageBgTile) collageBgTile.enh = defaultBgEnh(); renderCollageBgLayer(); } catch (_) {}
+        }
+        // v2.1 round 156 (Terry) — "Reset photo" must also undo the photo's
+        // ROTATION + CROP (not just the look/levels), so the photo returns to
+        // how it began. Placement (position/size) is left alone — that's what
+        // Tidy grid is for. Was the round-155 regression: Rotate isn't an enh
+        // field, so Reset left rotated photos rotated.
+        if (collageActive && collageTile && !collageTile.isBg) {
+          collageTile.rot = 0;
+          collageTile.crop = { l: 0, t: 0, r: 1, b: 1 };
+          try { renderCollageItem(collageTile); } catch (_) {}
         }
         updateUI();
         applyEnhanceFilter();
