@@ -846,6 +846,28 @@ interface CollageEnhance {
   brightness?: number; contrast?: number; saturation?: number; temperature?: number;
   bw?: boolean; tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
   opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
+  blend?: number; // v2.1 round 150 — edge feather %, 0–100 (0 = crisp)
+}
+// v2.1 round 150 (Terry) — feather an image's four edges to a transparent
+// alpha so it melts into the background (matches the CSS-mask preview:
+// band = blend% × 0.45 of each dimension, alpha = fx × fy). dest-in keeps
+// any existing alpha (frame / fade) and multiplies the feather over it.
+async function featherImage(sharp: any, buf: Buffer, w: number, h: number, blend: number): Promise<Buffer> {
+  const b = Math.max(0, Math.min(100, blend || 0));
+  if (b <= 0 || w < 2 || h < 2) return buf;
+  const frac = (b / 100) * 0.45;
+  const fxPx = Math.max(1, frac * w);
+  const fyPx = Math.max(1, frac * h);
+  const mask = Buffer.alloc(w * h * 4);
+  for (let y = 0; y < h; y++) {
+    const fy = Math.min(1, Math.min(y, h - 1 - y) / fyPx);
+    for (let x = 0; x < w; x++) {
+      const fx = Math.min(1, Math.min(x, w - 1 - x) / fxPx);
+      mask[(y * w + x) * 4 + 3] = Math.round(255 * fx * fy);
+    }
+  }
+  const maskPng = await sharp(mask, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
+  return await sharp(buf).ensureAlpha().composite([{ input: maskPng, blend: 'dest-in' }]).png().toBuffer();
 }
 interface CollageLayout {
   // v2.1 round 142 (Terry) — bgImage: an optional library photo used as
@@ -957,6 +979,11 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;
         let rotW = baked.info.width, rotH = baked.info.height;
+        // v2.1 round 150 (Terry) — Blend: feather the (framed) tile's edges
+        // BEFORE rotation, so the soft band aligns with the tile rectangle.
+        if (item.enh && item.enh.blend && item.enh.blend > 0) {
+          tile = await featherImage(sharp, tile, rotW, rotH, item.enh.blend);
+        }
         const rot = ((item.rot || 0) % 360 + 360) % 360;
         if (rot > 0.1 && rot < 359.9) {
           const rotated = await sharp(tile)
@@ -1008,11 +1035,15 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         const bgPipe = bgImage.enh
           ? buildCollageTilePipeline(sharp, toLongPath(bgImage.path), W, H, bgImage.enh)
           : sharp(toLongPath(bgImage.path), { failOnError: false }).rotate().resize(W, H, { fit: 'cover', position: 'attention' });
-        const bgBuf = await bgPipe
+        let bgBuf = await bgPipe
           .removeAlpha()      // drop any source alpha so the fade is uniform
           .ensureAlpha(op)    // whole image at `opacity` → bg colour shows through
           .png()
           .toBuffer();
+        // v2.1 round 150 — Blend on the background = vignette its edges to
+        // the base colour at the canvas border.
+        const bgBlend = bgImage.enh && (bgImage.enh as CollageEnhance).blend;
+        if (bgBlend && bgBlend > 0) bgBuf = await featherImage(sharp, bgBuf, W, H, bgBlend);
         composites.unshift({ input: bgBuf, left: PAD, top: PAD });
       } catch (bgErr) {
         log.warn(`[collage] background image skipped (non-fatal): ${(bgErr as Error).message}`);

@@ -2168,6 +2168,9 @@
           <div class="frame-palette" id="collage-color-palette">
             <button class="frame-add" id="collage-color-add" title="Pick a custom colour"><span class="frame-add-plus">+</span></button>
             <input type="color" id="collage-color-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+            <!-- v2.1 round 150 (Terry) — None = no base colour (plain white
+                 behind the photo); restores parity with the Frame palette. -->
+            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" title="None — plain white base">&#8709;</button>
             <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
             <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
             <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
@@ -2184,7 +2187,10 @@
             Use a photo…
           </button>
           <div id="collage-bg-fade-row" style="display:none; margin-top:8px">
-            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background on the canvas to give it a Look, levels or Fade.</div>
+            <!-- v2.1 round 150 (Terry) — the photo now fills the background
+                 fully by default; the chosen colour is kept underneath as a
+                 base, and lowering the photo's Fade blends it back through. -->
+            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The colour above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
             <button id="collage-bg-remove" type="button" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
           </div>
         </details>
@@ -2303,6 +2309,17 @@
           <span class="enhance-val" id="val-opacity">100</span>
         </div>
         <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
+      </div>
+      <!-- v2.1 round 150 (Terry) — Blend: feather the photo's EDGES into
+           whatever's behind it. The slider widens/narrows the soft band
+           around all four edges (0 = crisp edge). Preview via a CSS mask;
+           baked as a feathered alpha on save. -->
+      <div class="enhance-control enhance-collage-only">
+        <div class="enhance-label-row">
+          <label for="slider-blend">Blend edges</label>
+          <span class="enhance-val" id="val-blend">0</span>
+        </div>
+        <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" title="Soften the photo's edges so it melts into the background — drag up to widen the blend">
       </div>
       </div>
 
@@ -2686,7 +2703,10 @@
     // fade", so there's a single Fade control, not two.
     let collageBgTile = null;
     function defaultBgEnh() {
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 0.4 };
+      // v2.1 round 150 (Terry) — a new background photo now fills fully
+      // (opacity 1) so it "swaps" to the photo as he expected; the base
+      // colour is kept underneath and revealed by lowering Fade.
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, bw: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -5192,14 +5212,15 @@
       });
     }
     function onCollageColorPick(hex) {
-      if (!hex) return; // the background always has a colour
-      setCollageBg(hex);
+      // v2.1 round 150 (Terry) — '' is the None swatch: a plain white base.
+      setCollageBg(hex || '');
       markCollageColorActive();
     }
     function setCollageBg(hex) {
-      if (!hex) return;
-      collageBg = hex;
-      if (collageCanvasEl) collageCanvasEl.style.background = hex;
+      collageBg = hex || '';
+      // None ('') renders as plain white on screen and bakes to white on save
+      // (hexToRgb('') already falls back to white).
+      if (collageCanvasEl) collageCanvasEl.style.background = collageBg || '#ffffff';
       markCollageColorActive();
     }
     function initCollageColorPicker() {
@@ -5978,11 +5999,13 @@ function zoomTo(newZoom, centreX, centreY) {
       const sTemp = document.getElementById('slider-temperature');
       const tBW = document.getElementById('toggle-bw');
       const sOpacity = document.getElementById('slider-opacity');
+      const sBlend = document.getElementById('slider-blend');
       const vBright = document.getElementById('val-brightness');
       const vContrast = document.getElementById('val-contrast');
       const vSat = document.getElementById('val-saturation');
       const vTemp = document.getElementById('val-temperature');
       const vOpacity = document.getElementById('val-opacity');
+      const vBlend = document.getElementById('val-blend');
       if (!panel || !openBtn) return;
 
       const state = {
@@ -5995,6 +6018,7 @@ function zoomTo(newZoom, centreX, centreY) {
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
         borderWeight: 'thin', // 'thin' | 'mat'
         opacity: 1, // v2.1 round 143 — per-tile transparency (collage only); 1 = solid
+        blend: 0, // v2.1 round 150 — edge feather % (collage only); 0 = crisp edge
       };
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
@@ -6042,6 +6066,20 @@ function zoomTo(newZoom, centreX, centreY) {
         return parts.length ? parts.join(' ') : 'none';
       }
 
+      // v2.1 round 150 (Terry) — Blend: feather an element's four edges via
+      // a CSS mask (two crossed gradients, intersected). Resolution-
+      // independent (% bands) so it survives tile resize without recompute.
+      // The save bakes the matching feathered alpha (capture-manager).
+      function applyBlendMask(elm, blend) {
+        if (!elm) return;
+        const b = Math.max(0, Math.min(100, blend || 0));
+        if (b <= 0) { elm.style.webkitMaskImage = ''; elm.style.maskImage = ''; return; }
+        const p = (b / 100) * 45; // feather band: 0–45% of each side
+        const g = 'linear-gradient(to right, transparent 0, #000 ' + p + '%, #000 ' + (100 - p) + '%, transparent 100%), ' +
+                  'linear-gradient(to bottom, transparent 0, #000 ' + p + '%, #000 ' + (100 - p) + '%, transparent 100%)';
+        elm.style.webkitMaskImage = g; elm.style.maskImage = g;
+        elm.style.webkitMaskComposite = 'source-in'; elm.style.maskComposite = 'intersect';
+      }
       // Apply a filter string + (inset border) frame preview to one
       // element from a given state. Factored out so both the single-
       // image path and the per-tile collage path share it.
@@ -6070,6 +6108,13 @@ function zoomTo(newZoom, centreX, centreY) {
         } else {
           bEl.style.border = '';
         }
+        // v2.1 round 150 — feather the IMAGE into the background. Apply to
+        // the image's clip wrapper (a collage tile's `.collage-clip`), NOT
+        // the box — so the selection handles + any frame on the box stay
+        // crisp and grabbable. The background layer has no clip wrapper, so
+        // it feathers itself (a vignette).
+        const blendTarget = (el.parentNode && el.parentNode.classList && el.parentNode.classList.contains('collage-clip')) ? el.parentNode : el;
+        applyBlendMask(blendTarget, s.blend);
       }
 
       function applyEnhanceFilter() {
@@ -6085,7 +6130,7 @@ function zoomTo(newZoom, centreX, centreY) {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, bw: state.bw, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight,
-              opacity: state.opacity,
+              opacity: state.opacity, blend: state.blend,
             };
           }
           // Keep the Looks strip in sync with the selected tile's photo.
@@ -6124,6 +6169,8 @@ function zoomTo(newZoom, centreX, centreY) {
         tBW.checked = state.bw;
         if (sOpacity) sOpacity.value = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
+        if (sBlend) sBlend.value = String(Math.round(state.blend || 0));
+        if (vBlend) vBlend.textContent = String(Math.round(state.blend || 0));
       }
 
       function resetState() {
@@ -6136,6 +6183,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.borderColor = '';
         state.borderWeight = 'thin';
         state.opacity = 1;
+        state.blend = 0;
         clearActivePreset();
         markActiveSwatchByColor('');
         updateUI();
@@ -6381,6 +6429,12 @@ function zoomTo(newZoom, centreX, centreY) {
         const pct = clampOrDefault(sOpacity.value, 100);
         state.opacity = Math.max(0.1, Math.min(1, pct / 100));
         if (vOpacity) vOpacity.textContent = String(pct);
+        applyEnhanceFilter();
+      });
+      // v2.1 round 150 (Terry) — per-tile edge Blend (collage only).
+      if (sBlend) sBlend.addEventListener('input', function () {
+        state.blend = Math.max(0, Math.min(100, clampOrDefault(sBlend.value, 0)));
+        if (vBlend) vBlend.textContent = String(state.blend);
         applyEnhanceFilter();
       });
       resetBtn.addEventListener('click', resetState);
@@ -8124,6 +8178,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';
         state.opacity = e.opacity != null ? e.opacity : 1;
+        state.blend = e.blend != null ? e.blend : 0;
         updateUI();
         markActiveSwatchByColor(state.borderColor);
         markActiveWeight(state.borderWeight);
