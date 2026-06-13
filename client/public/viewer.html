@@ -5989,8 +5989,14 @@ function zoomTo(newZoom, centreX, centreY) {
     // the user hasn't taken explicit zoom control. Simpler and more
     // reliable than the old 'zoom ≈ fitZoom' heuristic which failed when
     // the initial fit was computed against a pre-layout container size.
+    // v2.1 round 163 (Terry) — a WINDOW resize always re-fits + re-centres,
+    // even if the user had zoomed. Resizing/maximising/restoring the window is
+    // a "reset my view" gesture; leaving a zoomed image stranded in a corner
+    // (Terry's SS1) "looks shit". (The ResizeObserver below stays guarded so
+    // opening/closing the Enhance panel doesn't undo a deliberate zoom.)
     window.addEventListener('resize', () => {
-      if (!mediaEl || isVideo || userHasZoomed) return;
+      if (!mediaEl || isVideo) return;
+      userHasZoomed = false;
       fitToWindow();
     });
     window.addEventListener('load', () => {
