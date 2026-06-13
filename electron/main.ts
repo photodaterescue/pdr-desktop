@@ -11336,6 +11336,16 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       minHeight: 400,
       backgroundColor: '#1a1a2e',
       title,
+      // v2.1 round 147 (Terry) — custom title bar for the viewer: the
+      // HTML toolbar becomes the title bar (it's already a -webkit-app-
+      // region:drag region), so collage Undo/Redo/Refresh sit ON the
+      // title bar. Native min/max/close stay as a themed overlay on the
+      // right (matched to the dark toolbar). Same pattern as the main +
+      // People windows.
+      titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
+      ...(process.platform === 'win32' ? {
+        titleBarOverlay: { color: '#12122a', symbolColor: '#e8e6ff', height: 40 },
+      } : {}),
       icon: app.isPackaged
         ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
         : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),

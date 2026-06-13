@@ -20,12 +20,21 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      padding: 8px 16px;
+      /* v2.1 round 147 (Terry) — the toolbar IS the title bar now
+         (titleBarStyle:hidden). Match the 40px overlay height and
+         reserve the right edge for the native min/max/close overlay
+         (~138px) so the actions don't slide under them. */
+      min-height: 40px;
+      box-sizing: border-box;
+      padding: 4px 146px 4px 16px;
       background: #12122a;
       border-bottom: 1px solid rgba(169, 156, 255, 0.15);
       -webkit-app-region: drag;
       flex-shrink: 0;
     }
+    /* Interactive bits in the title bar must opt out of the drag region
+       or they swallow clicks. */
+    .toolbar button, .toolbar input, .toolbar .speed-wrap, .toolbar [role="button"] { -webkit-app-region: no-drag; }
     /* v2.0.15 (Terry 2026-06-06 round 2) — wrap title + copy icon so
        they sit together as one group at the left of the toolbar. The
        wrap takes flex:1 (filling space available between the group
@@ -1086,7 +1095,10 @@
   <style>
     .enhance-panel {
       position: fixed;
-      top: 0;
+      /* v2.1 round 147 (Terry) — sits BELOW the 40px title bar so its
+         header (pin) doesn't collide with the native min/max/close
+         overlay, which the OS draws over the top-right corner. */
+      top: 40px;
       right: 0;
       bottom: 0;
       /* v2.1 (Terry 2026-06-07) — widened 280→320px so the AI
@@ -2040,8 +2052,8 @@
            undo/redo". Left of the filename they're always visible.
            Refresh = shuffle into a fresh arrangement (NOT a reset).
            Collage mode only. -->
-      <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)">&#8634;</button>
-      <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)">&#8635;</button>
+      <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)"><span style="display:inline-block;transform:rotate(-90deg)">&#8634;</span></button>
+      <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)"><span style="display:inline-block;transform:rotate(90deg)">&#8635;</span></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-refresh" data-pdr-tooltip="Shuffle into a fresh arrangement">&#10227;</button>
     </div>
     <div class="toolbar-actions">
