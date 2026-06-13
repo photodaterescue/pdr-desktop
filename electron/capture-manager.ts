@@ -893,14 +893,19 @@ const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n))
 // so the caller can read the result dims. The placement rotation is
 // applied by the caller afterwards.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance, cropRect?: { left: number; top: number; width: number; height: number }) {
+function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance, cropRect?: { left: number; top: number; width: number; height: number }, coverPos: string = 'attention') {
   let p = sharp(srcLong, { failOnError: false }).rotate();
   // v2.1 round 145 (Terry) — crop: extract the user's rect (in oriented
   // px) BEFORE resizing to the tile box.
   if (cropRect && cropRect.width > 1 && cropRect.height > 1) {
     p = p.extract({ left: Math.max(0, cropRect.left), top: Math.max(0, cropRect.top), width: cropRect.width, height: cropRect.height });
   }
-  p = p.resize(iw, ih, { fit: 'cover', position: 'attention' });
+  // v2.1 round 160 (Terry) — coverPos: tiles use 'attention' (a smart crop,
+  // moot in practice since the box aspect matches the photo). The BACKGROUND
+  // passes 'centre' so the bake matches the editor's CSS background-position:
+  // center — sharp's default 'attention' was cropping the bg to a different
+  // region, so the saved background looked shifted vs the editor.
+  p = p.resize(iw, ih, { fit: 'cover', position: coverPos });
   if (enh) {
     const b = (enh.brightness ?? 100) / 100;
     const c = (enh.contrast ?? 100) / 100;
@@ -1041,9 +1046,11 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         // its own Look/levels through the SAME tile pipeline (no crop, no
         // frame — borderColor is always '' for a background), then apply the
         // Fade via the alpha exactly as before.
+        // v2.1 round 160 (Terry) — 'centre' so the saved background matches
+        // the editor's centered cover (was 'attention' → shifted on save).
         const bgPipe = bgImage.enh
-          ? buildCollageTilePipeline(sharp, toLongPath(bgImage.path), W, H, bgImage.enh)
-          : sharp(toLongPath(bgImage.path), { failOnError: false }).rotate().resize(W, H, { fit: 'cover', position: 'attention' });
+          ? buildCollageTilePipeline(sharp, toLongPath(bgImage.path), W, H, bgImage.enh, undefined, 'centre')
+          : sharp(toLongPath(bgImage.path), { failOnError: false }).rotate().resize(W, H, { fit: 'cover', position: 'centre' });
         let bgBuf = await bgPipe
           .removeAlpha()      // drop any source alpha so the fade is uniform
           .ensureAlpha(op)    // whole image at `opacity` → bg colour shows through

@@ -2209,17 +2209,17 @@
         <details class="enhance-collapse" id="collage-bg-collapse">
           <summary>Background</summary>
           <div class="frame-palette" id="collage-color-palette">
-            <button class="frame-add" id="collage-color-add" title="Pick a custom colour"><span class="frame-add-plus">+</span></button>
+            <button class="frame-add" id="collage-color-add" data-pdr-tooltip="Pick a custom colour"><span class="frame-add-plus">+</span></button>
             <input type="color" id="collage-color-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
             <!-- v2.1 round 150 (Terry) — None = no base colour (plain white
                  behind the photo); restores parity with the Frame palette. -->
-            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" title="None — plain white base">&#8709;</button>
-            <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
-            <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
-            <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
-            <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
-            <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
-            <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" data-pdr-tooltip="None — plain white base">&#8709;</button>
+            <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+            <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+            <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
+            <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" data-pdr-tooltip="Gold"></button>
+            <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
+            <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
             <span class="frame-saved" id="collage-color-saved"></span>
           </div>
           <!-- background from a library PHOTO; picker opens in the main
@@ -2287,7 +2287,7 @@
              for the background. -->
         <div class="enhance-control" id="tile-angle-control">
           <div class="enhance-label-row"><label for="slider-angle">Angle</label><span class="enhance-val" id="val-angle">0&deg;</span></div>
-          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0" title="Fine-tune the angle (double-click to reset to upright)">
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0" data-pdr-tooltip="Fine-tune the angle (double-click to reset to upright)">
         </div>
       </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
@@ -2307,17 +2307,17 @@
       <details class="enhance-collapse" id="enhance-frame-collapse">
       <summary>Frame</summary>
       <div class="frame-palette" id="enhance-frames">
-        <button class="frame-add" id="frame-add" title="Pick a custom colour">
+        <button class="frame-add" id="frame-add" data-pdr-tooltip="Pick a custom colour">
           <span class="frame-add-plus">+</span>
         </button>
         <input type="color" id="frame-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-        <button class="frame-swatch frame-none active" data-color="" title="No frame">&#8709;</button>
-        <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" title="White"></button>
-        <button class="frame-swatch" data-color="#111111" style="background:#111111" title="Black"></button>
-        <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" title="Cream"></button>
-        <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" title="Gold"></button>
-        <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" title="Navy"></button>
-        <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" title="Blush"></button>
+        <button class="frame-swatch frame-none active" data-color="" data-pdr-tooltip="No frame">&#8709;</button>
+        <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+        <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+        <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
+        <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" data-pdr-tooltip="Gold"></button>
+        <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
+        <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
         <span class="frame-saved" id="frame-saved"></span>
       </div>
       <div class="frame-weight" id="enhance-frame-weight">
@@ -2358,7 +2358,7 @@
           <label for="slider-temperature">Temperature</label>
           <span class="enhance-val" id="val-temperature">0</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" title="Negative = cooler, positive = warmer">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" data-pdr-tooltip="Negative = cooler, positive = warmer">
       </div>
       <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
            (Terry: "was meant to be on a slider"). v2.1 round 153 — the
@@ -2370,7 +2370,7 @@
           <label for="slider-colour">Colour</label>
           <span class="enhance-val" id="val-colour">50</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" title="Middle = normal · down = black &amp; white · up = extra vivid">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">
       </div>
       </details>
       <!-- v2.1 round 154 (Terry) — Fade + Blend grouped under an "Effects"
@@ -2398,7 +2398,7 @@
             <label for="slider-blend">Blend edges</label>
             <span class="enhance-val" id="val-blend">0</span>
           </div>
-          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" title="Soften the photo's edges so it melts into the background — drag up to widen the blend">
+          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">
         </div>
       </details>
       </div>
@@ -2675,10 +2675,10 @@
         try {
           await navigator.clipboard.writeText(basename);
           copyFilenameBtn.classList.add('copied');
-          copyFilenameBtn.title = 'Copied!';
+          copyFilenameBtn.setAttribute('data-pdr-tooltip', 'Copied!');
           setTimeout(function () {
             copyFilenameBtn.classList.remove('copied');
-            copyFilenameBtn.title = 'Copy filename to clipboard';
+            copyFilenameBtn.setAttribute('data-pdr-tooltip', 'Copy filename to clipboard');
           }, 1200);
         } catch (err) {
           console.warn('[viewer] copy filename failed:', err);
@@ -3008,7 +3008,7 @@
       const fsClose = document.createElement('button');
       fsClose.type = 'button';
       fsClose.className = 'pdrv-fs-close';
-      fsClose.title = 'Exit fullscreen (Esc)';
+      fsClose.setAttribute('data-pdr-tooltip', 'Exit fullscreen (Esc)');
       fsClose.innerHTML = wrapSvg(ICON_CLOSE, 20);
       wrap.appendChild(fsClose);
 
@@ -3081,12 +3081,12 @@
       seekBar.appendChild(trimRegion);
       const trimInHandle = document.createElement('div');
       trimInHandle.className = 'pdrv-trim-handle';
-      trimInHandle.title = 'Drag to set clip start';
+      trimInHandle.setAttribute('data-pdr-tooltip', 'Drag to set clip start');
       trimInHandle.style.display = 'none';
       seekBar.appendChild(trimInHandle);
       const trimOutHandle = document.createElement('div');
       trimOutHandle.className = 'pdrv-trim-handle';
-      trimOutHandle.title = 'Drag to set clip end';
+      trimOutHandle.setAttribute('data-pdr-tooltip', 'Drag to set clip end');
       trimOutHandle.style.display = 'none';
       seekBar.appendChild(trimOutHandle);
 
@@ -3100,7 +3100,7 @@
         if (video.ended)        playBtn.innerHTML = wrapSvg(ICON_REPLAY);
         else if (video.paused)  playBtn.innerHTML = wrapSvg(ICON_PLAY);
         else                    playBtn.innerHTML = wrapSvg(ICON_PAUSE);
-        playBtn.title = video.ended ? 'Replay' : (video.paused ? 'Play (Space)' : 'Pause (Space)');
+        playBtn.setAttribute('data-pdr-tooltip', video.ended ? 'Replay' : (video.paused ? 'Play (Space)' : 'Pause (Space)'));
       }
       function refreshVolume() {
         const muted = video.muted || video.volume === 0;
@@ -3437,7 +3437,7 @@
       loopBtn.addEventListener('click', () => {
         video.loop = !video.loop;
         loopBtn.classList.toggle('active', video.loop);
-        loopBtn.title = video.loop ? 'Loop on (click to turn off)' : 'Loop video';
+        loopBtn.setAttribute('data-pdr-tooltip', video.loop ? 'Loop on (click to turn off)' : 'Loop video');
       });
 
       // v2.1 (Terry 2026-06-07) — Settings popover with YouTube-style
@@ -5237,18 +5237,18 @@
         img.src = getFileSrc(fp);
         clip.appendChild(img);
         el.appendChild(clip);
-        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.title = 'Rotate (hold Shift to snap to 15°)';
+        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
         // v2.1 round 141 (Terry) — clean single circular-arrow rotate
         // glyph (Bootstrap arrow-clockwise) — the Paint 3D shape. The
         // round-140 Feather "refresh" glyph read as sync, not rotate.
         hRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
-        const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.title = 'Resize';
-        const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.title = 'Remove from collage';
+        const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.setAttribute('data-pdr-tooltip', 'Resize');
+        const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
         // v2.1 round 145 — crop edge handles (drag inward to trim a side).
-        const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.title = 'Crop left edge';
-        const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.title = 'Crop right edge';
-        const hCropT = document.createElement('div'); hCropT.className = 'ch ch-crop ch-crop-t'; hCropT.title = 'Crop top edge';
-        const hCropB = document.createElement('div'); hCropB.className = 'ch ch-crop ch-crop-b'; hCropB.title = 'Crop bottom edge';
+        const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
+        const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
+        const hCropT = document.createElement('div'); hCropT.className = 'ch ch-crop ch-crop-t'; hCropT.setAttribute('data-pdr-tooltip', 'Crop top edge');
+        const hCropB = document.createElement('div'); hCropB.className = 'ch ch-crop ch-crop-b'; hCropB.setAttribute('data-pdr-tooltip', 'Crop bottom edge');
         el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
         el.appendChild(hCropL); el.appendChild(hCropR); el.appendChild(hCropT); el.appendChild(hCropB);
         const handles = [hRot, hRes, hRem, hCropL, hCropR, hCropT, hCropB];
@@ -5295,7 +5295,7 @@
       host.innerHTML = '';
       collageGetSaved().forEach((c) => {
         const b = document.createElement('button');
-        b.className = 'frame-swatch'; b.type = 'button'; b.style.background = c; b.setAttribute('data-color', c); b.title = c;
+        b.className = 'frame-swatch'; b.type = 'button'; b.style.background = c; b.setAttribute('data-color', c); b.setAttribute('data-pdr-tooltip', c);
         b.addEventListener('click', () => onCollageColorPick(c));
         host.appendChild(b);
       });
@@ -5817,9 +5817,9 @@ function zoomTo(newZoom, centreX, centreY) {
       slideshowMenu.appendChild(divider);
       const includeVideosBtn = document.createElement('button');
       includeVideosBtn.textContent = (slideshowIncludeVideos ? '✓ ' : '') + 'Include videos';
-      includeVideosBtn.title = slideshowIncludeVideos
+      includeVideosBtn.setAttribute('data-pdr-tooltip', slideshowIncludeVideos
         ? 'Videos play during slideshow (auto-advance on end)'
-        : 'Slideshow skips videos and shows photos only';
+        : 'Slideshow skips videos and shows photos only');
       if (slideshowIncludeVideos) includeVideosBtn.classList.add('active');
       includeVideosBtn.addEventListener('click', () => {
         slideshowIncludeVideos = !slideshowIncludeVideos;
@@ -5894,7 +5894,7 @@ function zoomTo(newZoom, centreX, centreY) {
       if (files.length <= 1) return;
       slideshowTimerId = setInterval(advanceSlideshow, slideshowIntervalSec * 1000);
       btnSlideshow.textContent = '❚❚';
-      btnSlideshow.title = 'Pause slideshow (Space)';
+      btnSlideshow.setAttribute('data-pdr-tooltip', 'Pause slideshow (Space)');
     }
     function stopSlideshow() {
       if (slideshowTimerId) {
@@ -5902,7 +5902,7 @@ function zoomTo(newZoom, centreX, centreY) {
         slideshowTimerId = null;
       }
       btnSlideshow.textContent = '▶';
-      btnSlideshow.title = 'Start slideshow (Space)';
+      btnSlideshow.setAttribute('data-pdr-tooltip', 'Start slideshow (Space)');
     }
     btnSlideshow.addEventListener('click', () => {
       if (isSlideshowRunning()) stopSlideshow(); else startSlideshow();
@@ -6241,7 +6241,14 @@ function zoomTo(newZoom, centreX, centreY) {
         el.style.filter = filterStr;
         // v2.1 round 155 (Terry) — Mirror (flipH) / Flip (flipV) via a scale
         // transform on the image. Baked with sharp .flop()/.flip() on save.
-        el.style.transform = (s.flipH || s.flipV) ? ('scaleX(' + (s.flipH ? -1 : 1) + ') scaleY(' + (s.flipV ? -1 : 1) + ')') : '';
+        // v2.1 round 160 (Terry) — ONLY touch transform in collage mode. In
+        // the single-photo Viewer the image's transform IS its zoom/pan (set
+        // by applyTransform); clobbering it here made applying a frame jump
+        // the photo to full natural size (a massive zoom). Flip is collage-
+        // only, so the Viewer never needs this.
+        if (collageActive) {
+          el.style.transform = (s.flipH || s.flipV) ? ('scaleX(' + (s.flipH ? -1 : 1) + ') scaleY(' + (s.flipV ? -1 : 1) + ')') : '';
+        }
         // v2.1 round 143 (Terry) — per-tile transparency. 1 in single-
         // image mode (the control is collage-only) so this is a no-op there.
         el.style.opacity = (s.opacity != null && s.opacity < 1) ? String(s.opacity) : '';
@@ -6506,7 +6513,7 @@ function zoomTo(newZoom, centreX, centreY) {
           b.className = 'frame-swatch';
           b.setAttribute('data-color', c);
           b.style.background = c;
-          b.title = c;
+          b.setAttribute('data-pdr-tooltip', c);
           if (state.borderColor && state.borderColor.toLowerCase() === c.toLowerCase()) b.classList.add('active');
           frameSaved.appendChild(b);
         });
@@ -7587,13 +7594,13 @@ function zoomTo(newZoom, centreX, centreY) {
             '<div data-face-id="' + box.id + '"' +
             (box.cluster_id != null ? ' data-cluster-id="' + box.cluster_id + '"' : '') +
             ' data-face-action="' + (isUnnamed ? 'name' : 'none') + '"' +
-            ' title="' + escapeForFaceLabel(labelTitle) + '"' +
+            ' data-pdr-tooltip="' + escapeForFaceLabel(labelTitle) + '"' +
             ' style="position:absolute;left:-2px;bottom:100%;margin-bottom:4px;background:' + colour + ';color:#1a1a2e;font-size:11px;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap;pointer-events:auto;cursor:' + labelCursor + ';">' +
             escapeForFaceLabel(name) +
             '</div>' +
             // × delete button (unnamed only)
             (isUnnamed ?
-              ('<button type="button" data-face-id="' + box.id + '" data-face-action="delete" title="Delete this face box" style="position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:11px;background:#1a1a2e;color:' + colour + ';border:2px solid ' + colour + ';font-size:14px;font-weight:700;line-height:1;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;padding:0;">×</button>')
+              ('<button type="button" data-face-id="' + box.id + '" data-face-action="delete" data-pdr-tooltip="Delete this face box" style="position:absolute;top:-10px;right:-10px;width:22px;height:22px;border-radius:11px;background:#1a1a2e;color:' + colour + ';border:2px solid ' + colour + ';font-size:14px;font-weight:700;line-height:1;cursor:pointer;pointer-events:auto;display:flex;align-items:center;justify-content:center;padding:0;">×</button>')
               : ''
             ) +
             '</div>'
@@ -8496,9 +8503,12 @@ function zoomTo(newZoom, centreX, centreY) {
 
       function buildTooltipEl(text) {
         const el = document.createElement('div');
+        // v2.1 round 160 (Terry) — tooltips follow the window's branding:
+        // gold in the Collage window, lavender in the Viewer.
+        const tipBg = document.body.classList.contains('collage-mode') ? '#FEC242' : '#A99CFF';
         el.style.cssText = [
           'position:fixed',
-          'background:#A99CFF',
+          'background:' + tipBg,
           'color:#1a1a2e',
           'font-size:12px',
           'font-weight:500',
