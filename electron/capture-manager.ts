@@ -905,7 +905,7 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
     const c = (enh.contrast ?? 100) / 100;
     // v2.1 round 152 (Terry) — Colour slider (100 = colour, 0 = B&W) is a
     // master desaturation that multiplies the Saturation slider.
-    const s = ((enh.saturation ?? 100) / 100) * ((enh.colour ?? 100) / 100);
+    const s = ((enh.saturation ?? 100) / 100) * ((enh.colour ?? 50) / 50);
     const t = enh.temperature ?? 0;
     const bw = s <= 0.001;
     const tone = enh.tone ?? 'none';

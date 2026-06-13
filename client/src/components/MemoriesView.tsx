@@ -3307,6 +3307,20 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     </button>
                 </ContextMenuTrigger>
                 <ContextMenuContent>
+                  {/* v2.1 round 153 (Terry 2026-06-13) — right-click should
+                      always offer "Open in viewer", whether or not the photo
+                      is selected. Opens the visible set at this tile so the
+                      user can page through (same as a plain left-click). */}
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const baseArr = visibleFiles ?? files ?? [];
+                      openSearchViewer(baseArr.map(x => x.file_path), baseArr.map(x => x.filename), idx);
+                    }}
+                    data-testid={`memories-tile-open-${f.id}`}
+                  >
+                    <Eye className="w-3.5 h-3.5 mr-2" />
+                    Open in viewer
+                  </ContextMenuItem>
                   {/* v2.0.15 (Terry 2026-05-28) — "Show in File
                       Explorer" — opens File Explorer at the photo's
                       folder and highlights the file. Lets users see

@@ -2295,15 +2295,16 @@
         <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" title="Negative = cooler, positive = warmer">
       </div>
       <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
-           (Terry: "was meant to be on a slider"). Labelled "Colour": 100 =
-           full colour, 0 = black & white; partial = a faded-colour look.
-           Baked as a saturation factor that multiplies the Saturation slider. -->
+           (Terry: "was meant to be on a slider"). v2.1 round 153 — the
+           MIDPOINT (50) is normal/default; slide down toward 0 for black &
+           white, up toward 100 for extra-vivid colour. Bipolar like the
+           other levels so every slider's default sits in the middle. -->
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-colour">Colour</label>
-          <span class="enhance-val" id="val-colour">100</span>
+          <span class="enhance-val" id="val-colour">50</span>
         </div>
-        <input class="enhance-slider" id="slider-colour" type="range" min="0" max="100" step="1" value="100" title="Slide down to drain colour — 0 = black &amp; white">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" title="Middle = normal · down = black &amp; white · up = extra vivid">
       </div>
       </details>
       <!-- v2.1 round 149 (Terry 2026-06-13) — ONE Fade slider for the
@@ -2714,7 +2715,7 @@
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
       // colour is kept underneath and revealed by lowering Fade.
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 100, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -5127,7 +5128,7 @@
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
           crop: { l: 0, t: 0, r: 1, b: 1 },
-          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 100, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -6027,7 +6028,7 @@ function zoomTo(newZoom, centreX, centreY) {
         contrast: 100,
         saturation: 100,
         temperature: 0, // -75..+75 → hue-rotate + sepia approximation
-        colour: 100, // v2.1 round 152 — colour amount; 100 = full colour, 0 = B&W
+        colour: 50, // v2.1 round 153 — colour amount; 50 = normal (midpoint), 0 = B&W, 100 = extra vivid
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
         borderWeight: 'thin', // 'thin' | 'mat'
@@ -6056,8 +6057,8 @@ function zoomTo(newZoom, centreX, centreY) {
         if (s.contrast !== 100) parts.push('contrast(' + (s.contrast / 100) + ')');
         // v2.1 round 152 — Colour is a master desaturation that multiplies
         // the Saturation slider: at colour=0 the result is black & white.
-        const colour = (s.colour == null ? 100 : s.colour);
-        const sat = (s.saturation / 100) * (colour / 100);
+        const colour = (s.colour == null ? 50 : s.colour);
+        const sat = (s.saturation / 100) * (colour / 50);
         if (sat !== 1) parts.push('saturate(' + sat + ')');
         // v2.0.15 (Terry 2026-06-06) — Temperature was using sepia +
         // hue-rotate, which desaturated the preview heavily (sepia is
@@ -6184,8 +6185,8 @@ function zoomTo(newZoom, centreX, centreY) {
         sSat.value = String(state.saturation);
         sTemp.value = String(state.temperature);
         // v2.1 round 152 — Colour slider (100 = full colour, 0 = B&W).
-        if (sColour) sColour.value = String(state.colour == null ? 100 : state.colour);
-        if (vColour) vColour.textContent = String(state.colour == null ? 100 : state.colour);
+        if (sColour) sColour.value = String(state.colour == null ? 50 : state.colour);
+        if (vColour) vColour.textContent = String(state.colour == null ? 50 : state.colour);
         if (sOpacity) sOpacity.value = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (sBlend) sBlend.value = String(Math.round(state.blend || 0));
@@ -6197,7 +6198,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.contrast = 100;
         state.saturation = 100;
         state.temperature = 0;
-        state.colour = 100;
+        state.colour = 50;
         state.tone = 'none';
         state.borderColor = '';
         state.borderWeight = 'thin';
@@ -6290,7 +6291,7 @@ function zoomTo(newZoom, centreX, centreY) {
         const p = PRESETS[name];
         return state.brightness === p.brightness && state.contrast === p.contrast &&
                state.saturation === p.saturation && state.temperature === p.temperature &&
-               (state.colour == null ? 100 : state.colour) === (p.colour == null ? 100 : p.colour) && state.tone === p.tone;
+               (state.colour == null ? 50 : state.colour) === (p.colour == null ? 50 : p.colour) && state.tone === p.tone;
       }
       function applyPreset(name, chipEl) {
         const p = PRESETS[name];
@@ -6300,7 +6301,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.saturation = p.saturation;
         state.temperature = p.temperature;
         // v2.1 round 152 — Looks drive the Colour slider (B&W / Noir = 0).
-        state.colour = p.colour != null ? p.colour : 100;
+        state.colour = p.colour != null ? p.colour : 50;
         state.tone = p.tone;
         clearActivePreset();
         if (name !== 'original' && chipEl) chipEl.classList.add('active');
@@ -6898,7 +6899,7 @@ function zoomTo(newZoom, centreX, centreY) {
         sContrast.value = 100; state.contrast = 100; vContrast.textContent = '100';
         sSat.value = 100; state.saturation = 100; vSat.textContent = '100';
         sTemp.value = 0; state.temperature = 0; vTemp.textContent = '0';
-        state.colour = 100;
+        state.colour = 50;
         try { updateUI(); } catch (_) {}
         applyEnhanceFilter();
       }
@@ -7974,7 +7975,7 @@ function zoomTo(newZoom, centreX, centreY) {
             // original (accurate); the brightened preview was just
             // a viewing aid for drawing the box, not the
             // ground-truth comparison target.
-            const hadBake = state.brightness !== 100 || state.contrast !== 100 || state.saturation !== 100 || (state.colour != null && state.colour !== 100);
+            const hadBake = state.brightness !== 100 || state.contrast !== 100 || state.saturation !== 100 || (state.colour != null && state.colour !== 50);
             if (hadBake) {
               resetSlidersToDefaults();
             }
@@ -8010,7 +8011,7 @@ function zoomTo(newZoom, centreX, centreY) {
                state.contrast !== 100 ||
                state.saturation !== 100 ||
                state.temperature !== 0 ||
-               (state.colour != null && state.colour !== 100) ||
+               (state.colour != null && state.colour !== 50) ||
                state.tone !== 'none' ||
                state.borderColor !== '';
       }
@@ -8209,7 +8210,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.contrast = e.contrast != null ? e.contrast : 100;
         state.saturation = e.saturation != null ? e.saturation : 100;
         state.temperature = e.temperature != null ? e.temperature : 0;
-        state.colour = e.colour != null ? e.colour : 100;
+        state.colour = e.colour != null ? e.colour : 50;
         state.tone = e.tone || 'none';
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';

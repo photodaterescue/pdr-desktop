@@ -11325,6 +11325,15 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       releaseOn(viewerWindow);
       viewerWindow.loadFile(viewerHtml);
       viewerWindow.setTitle(title);
+      // v2.1 round 153 (Terry) — the reuse branch only called .focus(),
+      // which on Windows often just flashes the taskbar instead of raising
+      // a window that's behind the main window — so clicking another photo
+      // (or re-opening) looked like "nothing happened". Restore if
+      // minimised, show, raise to top, then focus — matching the
+      // create-new branch's ready-to-show treatment.
+      if (viewerWindow.isMinimized()) viewerWindow.restore();
+      viewerWindow.show();
+      viewerWindow.moveTop();
       viewerWindow.focus();
       return { success: true };
     }
@@ -13078,7 +13087,7 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
     const temperature = fs2State.temperature ?? 0;
     // v2.1 round 152 (Terry) — Colour slider (100 = colour, 0 = B&W) is a
     // master desaturation that multiplies the Saturation slider.
-    const colourF = (fs2State.colour ?? 100) / 100;
+    const colourF = (fs2State.colour ?? 50) / 50;   // 50 = midpoint/neutral, 0 = B&W, 100 = 2x
     const satEff = saturationF * colourF;   // 0 → black & white
     const bw = satEff <= 0.001;
     // v2.1 round 132 (Terry 2026-06-12) — preset tone (sepia/vintage).
