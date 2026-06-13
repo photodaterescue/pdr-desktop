@@ -1997,6 +1997,10 @@
        in collage too (it frames the selected tile). Hide it only when the
        collage BACKGROUND is the selected element — a background has no frame. */
     body.collage-mode.collage-bg-selected #enhance-frame-collapse { display: none; }
+    /* v2.1 round 155 — Rotate uses the tile's placement angle, which the
+       background doesn't have (its own rotation is a separate item), so hide
+       it when the background is selected. Mirror/Flip still apply. */
+    body.collage-mode.collage-bg-selected #tile-rotate { display: none; }
     .ec-color-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
     .ec-ctgl {
       flex: 1; background: transparent; border: 1px solid rgba(169,156,255,0.3);
@@ -2229,6 +2233,19 @@
         <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="-1" aria-label="Scroll looks left">&#8249;</button>
         <div class="enhance-strip" id="enhance-looks-strip"></div>
         <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="1" aria-label="Scroll looks right">&#8250;</button>
+      </div>
+      <!-- v2.1 round 155 (Terry) — Mirror / Flip / Rotate the selected photo
+           (or background). Mirror = left↔right, Flip = top↕bottom (both baked
+           via sharp flop/flip); Rotate = +90° using the tile's free rotation.
+           Collage-only; Rotate hides for the background (its own rotation is
+           a separate item). -->
+      <div class="enhance-collage-only" id="tile-transform-row" style="flex-direction:column;gap:6px;margin-top:2px">
+        <div class="enhance-presets-label" style="margin:0">Flip &amp; rotate</div>
+        <div style="display:flex;gap:6px">
+          <button class="ec-shape-btn" id="tile-mirror" type="button" data-pdr-tooltip="Mirror left to right">Mirror</button>
+          <button class="ec-shape-btn" id="tile-flip" type="button" data-pdr-tooltip="Flip top to bottom">Flip</button>
+          <button class="ec-shape-btn" id="tile-rotate" type="button" data-pdr-tooltip="Rotate 90°">Rotate</button>
+        </div>
       </div>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
            Pick any colour; Thin/Mat width; custom colour picker.
@@ -2726,7 +2743,7 @@
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
       // colour is kept underneath and revealed by lowering Fade.
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -5139,7 +5156,7 @@
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
           crop: { l: 0, t: 0, r: 1, b: 1 },
-          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -5405,6 +5422,16 @@
       if (tidyBtn) tidyBtn.addEventListener('click', () => gridArrange());
       const jumbleBtn = document.getElementById('collage-jumble');
       if (jumbleBtn) jumbleBtn.addEventListener('click', () => jumbleArrange());
+      // v2.1 round 155 (Terry) — Rotate the selected tile 90° (its free
+      // placement angle, baked via sharp .rotate). Undo is handled by the
+      // Enhance-panel pointerdown/up begin/commit wrapper. No-op for the
+      // background (its rotation is a separate item).
+      const rotateBtn = document.getElementById('tile-rotate');
+      if (rotateBtn) rotateBtn.addEventListener('click', () => {
+        if (!collageSelected || collageSelected.isBg) return;
+        collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
+        renderCollageItem(collageSelected);
+      });
       // v2.1 round 144 — undo / redo / refresh on the TOOLBAR + Ctrl+Z/Y.
       const undoBtn = document.getElementById('tb-collage-undo');
       if (undoBtn) undoBtn.addEventListener('click', () => undoCollage());
@@ -6026,6 +6053,8 @@ function zoomTo(newZoom, centreX, centreY) {
       const vColour = document.getElementById('val-colour');
       const sOpacity = document.getElementById('slider-opacity');
       const sBlend = document.getElementById('slider-blend');
+      const tileMirror = document.getElementById('tile-mirror');
+      const tileFlip = document.getElementById('tile-flip');
       const vBright = document.getElementById('val-brightness');
       const vContrast = document.getElementById('val-contrast');
       const vSat = document.getElementById('val-saturation');
@@ -6040,6 +6069,8 @@ function zoomTo(newZoom, centreX, centreY) {
         saturation: 100,
         temperature: 0, // -75..+75 → hue-rotate + sepia approximation
         colour: 50, // v2.1 round 153 — colour amount; 50 = normal (midpoint), 0 = B&W, 100 = extra vivid
+        flipH: false, // v2.1 round 155 — mirror left↔right
+        flipV: false, // v2.1 round 155 — flip top↕bottom
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
         borderWeight: 'thin', // 'thin' | 'mat'
@@ -6118,6 +6149,9 @@ function zoomTo(newZoom, centreX, centreY) {
       // cropped image doesn't clip its own frame. Single-photo: both = img.
       function applyFilterToEl(el, s, filterStr, borderEl) {
         el.style.filter = filterStr;
+        // v2.1 round 155 (Terry) — Mirror (flipH) / Flip (flipV) via a scale
+        // transform on the image. Baked with sharp .flop()/.flip() on save.
+        el.style.transform = (s.flipH || s.flipV) ? ('scaleX(' + (s.flipH ? -1 : 1) + ') scaleY(' + (s.flipV ? -1 : 1) + ')') : '';
         // v2.1 round 143 (Terry) — per-tile transparency. 1 in single-
         // image mode (the control is collage-only) so this is a no-op there.
         el.style.opacity = (s.opacity != null && s.opacity < 1) ? String(s.opacity) : '';
@@ -6159,7 +6193,7 @@ function zoomTo(newZoom, centreX, centreY) {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, colour: state.colour, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight,
-              opacity: state.opacity, blend: state.blend,
+              opacity: state.opacity, blend: state.blend, flipH: state.flipH, flipV: state.flipV,
             };
           }
           // Keep the Looks strip in sync with the selected tile's photo.
@@ -6202,6 +6236,9 @@ function zoomTo(newZoom, centreX, centreY) {
         if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (sBlend) sBlend.value = String(Math.round(state.blend || 0));
         if (vBlend) vBlend.textContent = String(Math.round(state.blend || 0));
+        // v2.1 round 155 — highlight Mirror/Flip when active.
+        if (tileMirror) tileMirror.classList.toggle('active', !!state.flipH);
+        if (tileFlip) tileFlip.classList.toggle('active', !!state.flipV);
       }
 
       function resetState() {
@@ -6210,6 +6247,8 @@ function zoomTo(newZoom, centreX, centreY) {
         state.saturation = 100;
         state.temperature = 0;
         state.colour = 50;
+        state.flipH = false;
+        state.flipV = false;
         state.tone = 'none';
         state.borderColor = '';
         state.borderWeight = 'thin';
@@ -6482,6 +6521,18 @@ function zoomTo(newZoom, centreX, centreY) {
         state.blend = Math.max(0, Math.min(100, clampOrDefault(sBlend.value, 0)));
         if (vBlend) vBlend.textContent = String(state.blend);
         applyEnhanceFilter();
+      });
+      // v2.1 round 155 (Terry) — Mirror (left↔right) / Flip (top↕bottom)
+      // toggles. They edit the selected tile's (or background's) enh, so
+      // they ride the same persist + bake path as the sliders. Undo is
+      // handled by the panel's pointerdown/up begin/commit wrapper.
+      if (tileMirror) tileMirror.addEventListener('click', function () {
+        state.flipH = !state.flipH; updateUI(); applyEnhanceFilter();
+        try { updateSaveAvailability(); } catch (_) {}
+      });
+      if (tileFlip) tileFlip.addEventListener('click', function () {
+        state.flipV = !state.flipV; updateUI(); applyEnhanceFilter();
+        try { updateSaveAvailability(); } catch (_) {}
       });
       resetBtn.addEventListener('click', resetState);
 
@@ -8224,6 +8275,8 @@ function zoomTo(newZoom, centreX, centreY) {
         state.saturation = e.saturation != null ? e.saturation : 100;
         state.temperature = e.temperature != null ? e.temperature : 0;
         state.colour = e.colour != null ? e.colour : 50;
+        state.flipH = !!e.flipH;
+        state.flipV = !!e.flipV;
         state.tone = e.tone || 'none';
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';

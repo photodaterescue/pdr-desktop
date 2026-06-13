@@ -845,6 +845,7 @@ export async function flushPendingCaptures(): Promise<number> {
 interface CollageEnhance {
   brightness?: number; contrast?: number; saturation?: number; temperature?: number;
   colour?: number; // v2.1 round 152 — 0..100, 100 = full colour, 0 = B&W
+  flipH?: boolean; flipV?: boolean; // v2.1 round 155 — mirror / flip
   tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
   opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
   blend?: number; // v2.1 round 150 — edge feather %, 0–100 (0 = crisp)
@@ -918,6 +919,11 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
     if (tone === 'sepia') p = p.recomb([[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]]);
     else if (tone === 'vintage') p = p.recomb([[0.696, 0.385, 0.095], [0.175, 0.843, 0.084], [0.136, 0.267, 0.566]]);
     if (bw) p = p.greyscale();
+    // v2.1 round 155 (Terry) — Mirror = .flop() (left↔right), Flip = .flip()
+    // (top↕bottom). After the crop/resize/enhance, before the frame, so the
+    // frame stays square around the transformed image.
+    if (enh.flipH) p = p.flop();
+    if (enh.flipV) p = p.flip();
     const bc = (enh.borderColor || '').trim();
     if (bc && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(bc)) {
       const frac = enh.borderWeight === 'mat' ? 0.06 : 0.03;
