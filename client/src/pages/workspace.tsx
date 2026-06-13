@@ -12714,6 +12714,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // v2.1 round 125 — system audio in screen recordings (Windows
   // loopback, no driver). Default ON.
   const [captureRecordAudio, setCaptureRecordAudioState] = useState<boolean>(true);
+  // v2.1 round 162 (Terry) — saved collages → "PDR Collages" album (default on).
+  const [saveCollagesToAlbum, setSaveCollagesToAlbumState] = useState<boolean>(true);
   // v2.1 round 126 — recording quality preset (bitrate + save-time
   // H.264 quality). Applies to recordings started after the change.
   const [captureRecordQuality, setCaptureRecordQualityState] = useState<'high' | 'standard' | 'compact'>('standard');
@@ -12824,6 +12826,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureHotkeyActionState(((settings as any).captureHotkeyAction as 'fullscreen' | 'region') ?? 'fullscreen');
       setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
+      setSaveCollagesToAlbumState(((settings as any).saveCollagesToAlbum as boolean) ?? true);
       setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
       setCaptureCamEnabledState(((settings as any).captureCamEnabled as boolean) ?? false);
       setCaptureCamShapeState(((settings as any).captureCamShape as 'circle' | 'rectangle') ?? 'circle');
@@ -12909,6 +12912,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleCaptureRecordAudioToggle = (checked: boolean) => {
     setCaptureRecordAudioState(checked);
     setSetting('captureRecordAudio' as any, checked);
+  };
+
+  const handleSaveCollagesToAlbumToggle = (checked: boolean) => {
+    setSaveCollagesToAlbumState(checked);
+    setSetting('saveCollagesToAlbum' as any, checked);
   };
 
   const handleCaptureRecordQualityChange = (quality: 'high' | 'standard' | 'compact') => {
@@ -14985,6 +14993,18 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-xs text-muted-foreground">Show / hide the camera while recording. Only active during a recording — it never blocks this shortcut for other apps the rest of the time.</span>
                   </div>
                 </div>
+                {/* v2.1 round 162 (Terry) — saved collages → "PDR Collages" album. */}
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-foreground">Add saved collages to a "PDR Collages" album</span>
+                    <span className="text-xs text-muted-foreground">When on, every collage you save is also gathered into a "PDR Collages" album in the Albums view — it still saves to your library exactly as before. Turn off to keep saved collages out of that album.</span>
+                  </div>
+                  <Switch
+                    checked={saveCollagesToAlbum}
+                    onCheckedChange={(checked) => handleSaveCollagesToAlbumToggle(!!checked)}
+                    data-testid="checkbox-save-collages-to-album"
+                  />
+                </label>
               </div>
             </>
           )}

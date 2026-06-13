@@ -8510,6 +8510,32 @@ function zoomTo(newZoom, centreX, centreY) {
       const save = (o) => { try { localStorage.setItem(KEY, JSON.stringify(o)); } catch (_) {} };
       const chevrons = Array.from(document.querySelectorAll('#enhance-panel details.enhance-collapse')).filter((d) => d.id);
       const stored = load();
+      // v2.1 round 162 (Terry) — when opening a section pushes its content
+      // below the panel's visible area, scroll it into view automatically; if
+      // the content is already fully visible, don't scroll at all. Suppressed
+      // during Expand-all so the panel doesn't jump around.
+      let bulkToggling = false;
+      const panelBody = document.querySelector('#enhance-panel .enhance-body');
+      function autoScrollOpened(d) {
+        if (!panelBody) return;
+        // Read geometry directly (NOT inside requestAnimationFrame). The layout
+        // already reflects the open state when 'toggle' fires, and
+        // getBoundingClientRect forces a reflow if needed — whereas rAF is
+        // PAUSED when the window is unfocused/occluded, which silently killed
+        // the scroll.
+        const dr = d.getBoundingClientRect();
+        const cr = panelBody.getBoundingClientRect();
+        if (dr.bottom <= cr.bottom) return;          // already fully visible → no scroll
+        const summary = d.querySelector('summary');
+        const sr = summary ? summary.getBoundingClientRect() : dr;
+        const overflow = dr.bottom - cr.bottom;       // how far content runs past the bottom
+        const summaryToTop = sr.top - cr.top - 8;     // room above the heading
+        const delta = Math.max(0, Math.min(overflow, summaryToTop));
+        // 'auto' (instant), not 'smooth': the smooth animation is throttled
+        // whenever the window isn't user-focused, which would make the scroll
+        // silently no-op. Instant always lands and reads as snappy.
+        if (delta > 1) panelBody.scrollBy({ top: delta, behavior: 'auto' });
+      }
       chevrons.forEach((d) => {
         if (Object.prototype.hasOwnProperty.call(stored, d.id)) {
           if (stored[d.id]) d.setAttribute('open', ''); else d.removeAttribute('open');
@@ -8517,12 +8543,18 @@ function zoomTo(newZoom, centreX, centreY) {
         // 'toggle' fires for both user clicks and programmatic open changes;
         // the restore above ran before this listener was attached, so it
         // won't re-save during restore.
-        d.addEventListener('toggle', () => { const s = load(); s[d.id] = d.open; save(s); });
+        d.addEventListener('toggle', () => {
+          const s = load(); s[d.id] = d.open; save(s);
+          if (d.open && !bulkToggling) autoScrollOpened(d);
+        });
       });
       function setAll(open) {
+        bulkToggling = true;
         const s = load();
         chevrons.forEach((d) => { if (open) d.setAttribute('open', ''); else d.removeAttribute('open'); s[d.id] = open; });
         save(s);
+        // toggle events fire as queued tasks; clear the flag after they've run.
+        setTimeout(() => { bulkToggling = false; }, 80);
       }
       const eb = document.getElementById('enhance-expand-all');
       const cb = document.getElementById('enhance-collapse-all');

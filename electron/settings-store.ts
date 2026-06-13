@@ -172,6 +172,11 @@ export interface PDRSettings {
    *  combo outside recordings. Same remap UI as the screenshot
    *  hotkey. */
   captureCamHotkey: string;
+  /** v2.1 round 162 (Terry 2026-06-13) — when ON (default), every saved
+   *  collage is added to a "PDR Collages" album so they're gathered in one
+   *  place. Toggle OFF in Settings → Capture to keep saved collages out of
+   *  that album (they still save to the library exactly as before). */
+  saveCollagesToAlbum: boolean;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -335,6 +340,8 @@ export const optimisedDefaults: PDRSettings = {
   captureCamShape: 'circle',
   captureCamDevice: '',
   captureCamHotkey: 'Ctrl+Shift+C',
+  // v2.1 round 162 — saved collages join a "PDR Collages" album by default.
+  saveCollagesToAlbum: true,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -421,6 +428,7 @@ export function getSettings(): PDRSettings {
     captureCamShape: store.get('captureCamShape', optimisedDefaults.captureCamShape),
     captureCamDevice: store.get('captureCamDevice', optimisedDefaults.captureCamDevice),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
+    saveCollagesToAlbum: store.get('saveCollagesToAlbum', optimisedDefaults.saveCollagesToAlbum),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

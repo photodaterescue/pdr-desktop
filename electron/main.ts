@@ -9252,6 +9252,31 @@ ipcMain.handle('albums:setCoverPhoto', async (_event, args: { albumId: number; f
   }
 });
 
+// v2.1 round 162 (Terry) — one-shot back-fill: gather every collage already
+// in the library into the "PDR Collages" album (the save-time auto-add only
+// catches NEW saves). Collages are born-in-PDR "_CO" files (collision suffix
+// -2, -3, …). addPhotosToAlbum de-dups, so this is safe to run repeatedly.
+ipcMain.handle('collage:backfillAlbum', async () => {
+  try {
+    const { listAlbums, createUserAlbum, addPhotosToAlbum } = await import('./search-database.js');
+    const db = getDb();
+    const rows = db.prepare(
+      `SELECT id FROM indexed_files WHERE file_path LIKE '%\\_CO.jpg' ESCAPE '\\' OR file_path LIKE '%\\_CO-%.jpg' ESCAPE '\\'`
+    ).all() as Array<{ id: number }>;
+    const ids = rows.map((r) => r.id).filter((n) => Number.isFinite(n));
+    if (ids.length === 0) return { success: true, albumId: null, total: 0, added: 0 };
+    const ALBUM_TITLE = 'PDR Collages';
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const existing = (listAlbums() as any[]).find((a) => (((a && a.title) || '') as string).toLowerCase() === ALBUM_TITLE.toLowerCase());
+    const albumId = existing ? existing.id : createUserAlbum(ALBUM_TITLE);
+    const added = albumId != null ? addPhotosToAlbum(albumId, ids) : 0;
+    markDbDirty();
+    return { success: true, albumId, total: ids.length, added };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // v2.0.8 — Album group (folder) CRUD + tree listing IPC. Drives the
 // AlbumsView's hierarchical multi-membership tree.
 ipcMain.handle('albumGroups:list', async () => {

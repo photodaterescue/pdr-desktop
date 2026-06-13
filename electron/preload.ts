@@ -487,6 +487,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('photoPick:picked', handler);
       return () => ipcRenderer.removeListener('photoPick:picked', handler);
     },
+    // v2.1 round 162 (Terry) — one-shot back-fill of existing collages into
+    // the "PDR Collages" album.
+    backfillAlbum: () =>
+      ipcRenderer.invoke('collage:backfillAlbum') as Promise<{ success: boolean; albumId?: number | null; total?: number; added?: number; error?: string }>,
   },
 
   // v2.1 round 142 (Terry) — shared photo-picker mode (main React window

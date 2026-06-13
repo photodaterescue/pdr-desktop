@@ -1111,7 +1111,9 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         // v2.1 round 161 (Terry) — every saved collage joins a "PDR Collages"
         // album (created on first save), so they're all gathered in one place
         // in the Albums view. Non-fatal: a failure here never blocks the save.
-        if (fileId != null) {
+        // v2.1 round 162 (Terry) — gated on Settings → Capture toggle (default on).
+        const wantCollagesAlbum = (() => { try { return getSettings().saveCollagesToAlbum !== false; } catch { return true; } })();
+        if (fileId != null && wantCollagesAlbum) {
           try {
             const { listAlbums, createUserAlbum, addPhotosToAlbum } = await import('./search-database.js');
             const ALBUM_TITLE = 'PDR Collages';
