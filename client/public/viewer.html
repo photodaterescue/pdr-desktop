@@ -2274,6 +2274,11 @@
                  see-through and the collage saves as a PNG. Checkerboard swatch =
                  the universal "transparent" cue. Mutually exclusive with a bg photo. -->
             <button class="frame-swatch frame-bg-transparent" data-color="__transparent__" id="collage-color-transparent" data-pdr-tooltip="Transparent — saves as a see-through PNG (removed/empty areas stay clear)" style="background:repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50%/10px 10px"></button>
+            <!-- v2.1 round 178 (Terry) — switch back to the chosen background PHOTO
+                 without re-picking it. Hidden until a bg photo is set; its
+                 thumbnail IS the photo. Going Transparent now keeps the photo
+                 remembered (this swatch restores it). -->
+            <button class="frame-swatch frame-bg-photo" data-color="__bgphoto__" id="collage-color-bgphoto" data-pdr-tooltip="Switch back to your background photo" style="display:none;background-size:cover;background-position:center"></button>
             <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
             <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
             <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
@@ -5484,6 +5489,8 @@
       setCollageBg(collageBg);
       document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
       renderCollageBgLayer();
+      updateBgPhotoSwatch();        // v2.1 round 178 — keep the bg-photo swatch in sync on undo/redo
+      markCollageColorActive();
       layoutCanvasSize();
       collageItems.forEach((it) => { if (it.imgEl && window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); });
       updateCollageFilmstrip();
@@ -5624,27 +5631,50 @@
     function applyCanvasBgVisual() {
       if (collageCanvasEl) collageCanvasEl.style.background = collageTransparent ? COLLAGE_CHECKER_BG : (collageBg || '#ffffff');
     }
+    // v2.1 round 178 (Terry) — the "switch back to your background photo" swatch:
+    // shown only when a bg photo is remembered; its thumbnail IS the photo.
+    function updateBgPhotoSwatch() {
+      const sw = document.getElementById('collage-color-bgphoto');
+      if (!sw) return;
+      if (collageBgImagePath) {
+        sw.style.display = '';
+        sw.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
+      } else {
+        sw.style.display = 'none';
+        sw.style.backgroundImage = '';
+      }
+    }
     function markCollageColorActive() {
       const cur = (collageBg || '').toLowerCase();
+      const photoShowing = !!collageBgImagePath && !collageTransparent;
       document.querySelectorAll('#collage-color-palette .frame-swatch').forEach((s) => {
         const dc = (s.getAttribute('data-color') || '').toLowerCase();
-        s.classList.toggle('active', dc === '__transparent__' ? collageTransparent : (!collageTransparent && dc === cur));
+        let active;
+        if (dc === '__transparent__') active = collageTransparent;
+        else if (dc === '__bgphoto__') active = photoShowing;
+        else active = !collageTransparent && !photoShowing && dc === cur;
+        s.classList.toggle('active', active);
       });
     }
-    // v2.1 round 177 (Terry) — toggle transparent background. Clears any bg photo
-    // (they can't coexist) and shows the checkerboard on the canvas.
+    // v2.1 round 178 (Terry) — Transparent now KEEPS the bg photo remembered
+    // (renderCollageBgLayer hides the layer while transparent); the bg-photo
+    // swatch switches straight back to it without re-picking.
     function setCollageTransparent(on) {
       collageTransparent = !!on;
-      if (collageTransparent && collageBgImagePath) setCollageBgImage('');
       applyCanvasBgVisual();
+      renderCollageBgLayer();
+      updateBgPhotoSwatch();
       markCollageColorActive();
     }
     function onCollageColorPick(hex) {
-      // v2.1 round 177 — the Transparent swatch uses a sentinel data-color.
+      // v2.1 round 177/178 — Transparent + bg-photo swatches use sentinel colours.
       if (hex === '__transparent__') { setCollageTransparent(true); return; }
+      if (hex === '__bgphoto__') { setCollageTransparent(false); return; }
       // A real colour (incl. None '') exits transparent mode.
       collageTransparent = false;
       setCollageBg(hex || '');
+      renderCollageBgLayer();   // re-show the photo if transparent had hidden it
+      updateBgPhotoSwatch();
     }
     function setCollageBg(hex) {
       collageBg = hex || '';
@@ -5677,7 +5707,9 @@
     function renderCollageBgLayer() {
       if (!collageCanvasEl) return;
       let layer = document.getElementById('collage-bg-layer');
-      if (!collageBgImagePath) {
+      // v2.1 round 178 (Terry) — hide the photo layer when there's no photo OR
+      // when transparent mode is on (the photo is remembered, just not shown).
+      if (!collageBgImagePath || collageTransparent) {
         if (layer) layer.style.display = 'none';
         if (collageSelected && collageSelected.isBg) selectCollageItem(null);
         updateBgFadeRow();
@@ -5722,6 +5754,8 @@
       // photo's Look shouldn't carry over); undo/restore set enh directly.
       if (fresh && collageBgTile) collageBgTile.enh = defaultBgEnh();
       renderCollageBgLayer();
+      updateBgPhotoSwatch();        // v2.1 round 178 — show/hide + thumbnail the bg-photo swatch
+      markCollageColorActive();
       // If the background is the active selection, refresh the panel to the
       // new photo (Looks strip + sliders).
       if (collageSelected && collageSelected.isBg && window.pdrEnhanceBridge) {
