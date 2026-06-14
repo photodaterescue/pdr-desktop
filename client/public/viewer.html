@@ -1870,6 +1870,13 @@
     }
     .collage-item.dragging { cursor: grabbing; }
     .collage-item.selected { outline: 2px solid #a78bfa; outline-offset: 0; }
+    /* v2.1 round 185 (Text #1) — draggable text layers. Each is an absolutely-
+       positioned wrapper holding a transparent canvas (the rendered text);
+       centred at its xFrac/yFrac via translate(-50%,-50%). A dashed ring marks
+       the selection (the gold variant is set under body.collage-mode below). */
+    .collage-text { position: absolute; cursor: move; user-select: none; line-height: 0; }
+    .collage-text canvas { display: block; pointer-events: none; -webkit-user-drag: none; }
+    .collage-text.selected { outline: 1px dashed #a78bfa; outline-offset: 3px; }
     /* ─── v2.1 round 158 (Terry) — COLLAGE IDENTITY = GOLD ───────────────
        The Viewer wears lavender; the Collage tool wears gold (same dark navy
        base, just the accent + a gold dot by the "Collage (N)" title), so the
@@ -1895,6 +1902,7 @@
     body.collage-mode .filmstrip-wrap { border-top-color: rgba(254, 194, 66, 0.5); }
     body.collage-mode #enhance-pin { display: none !important; }   /* beats the inline display:flex on the button */
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
+    body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     body.collage-mode.collage-bg-selected #collage-canvas { outline-color: #FEC242; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(254,194,66,0.28), 0 0 22px 4px rgba(254,194,66,0.35); }
     /* Handles — only shown on the selected tile. */
     .collage-item .ch {
@@ -2321,6 +2329,65 @@
                thumbnails (populated by buildArrangeMenu). Replaces the old
                Tidy grid / Jumble pair (those are now Grid / Scatter). -->
           <div class="ec-arrange-grid" id="ec-arrange-grid"></div>
+        </details>
+        <!-- v2.1 round 185 (Text #1) — draggable, editable text layers baked
+             into the saved collage. Lives in the collage section (independent
+             of tile selection, like Background). "Add text" creates a layer;
+             the controls below bind to the SELECTED text layer (shown only
+             when one is selected). Same colour-palette / slider / toggle
+             primitives as Frame / Background. -->
+        <details class="enhance-collapse" id="collage-text-collapse">
+          <summary>Text</summary>
+          <button class="ec-tidy-btn" id="collage-text-add" type="button" style="width:100%" data-pdr-tooltip="Add a text layer — drag it on the collage, double-click to edit">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
+            Add text
+          </button>
+          <!-- Per-layer controls — revealed by syncTextControls() when a text
+               layer is selected (click a text on the canvas to select it). -->
+          <div id="collage-text-controls" style="display:none;margin-top:10px">
+            <textarea id="collage-text-input" rows="2" placeholder="Type your text…" style="width:100%;box-sizing:border-box;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:7px;font-size:13px"></textarea>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-text-font">Font</label></div>
+              <select id="collage-text-font" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px;font-size:13px">
+                <option value="Impact">Impact</option>
+                <option value="Arial">Arial</option>
+                <option value="Segoe UI">Segoe UI</option>
+                <option value="Georgia">Georgia</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Comic Sans MS">Comic Sans MS</option>
+                <option value="Consolas">Consolas</option>
+                <option value="Bahnschrift">Bahnschrift</option>
+              </select>
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
+              <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="25" step="1" value="8">
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
+              <div style="display:flex;gap:6px" id="collage-text-align">
+                <button class="ec-shape-btn" data-align="left" type="button" data-pdr-tooltip="Align left">L</button>
+                <button class="ec-shape-btn active" data-align="center" type="button" data-pdr-tooltip="Centre">C</button>
+                <button class="ec-shape-btn" data-align="right" type="button" data-pdr-tooltip="Align right">R</button>
+              </div>
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label data-pdr-tooltip="Text colour">Colour</label></div>
+              <div class="frame-palette" id="collage-text-palette">
+                <button class="frame-add" id="collage-text-coloradd" data-pdr-tooltip="Pick a custom colour"><span class="frame-add-plus">+</span></button>
+                <input type="color" id="collage-text-colorcustom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+                <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+                <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+                <button class="frame-swatch" data-color="#e23b3b" style="background:#e23b3b" data-pdr-tooltip="Red"></button>
+                <button class="frame-swatch" data-color="#ffd400" style="background:#ffd400" data-pdr-tooltip="Yellow"></button>
+                <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" data-pdr-tooltip="Gold"></button>
+                <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
+                <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
+              </div>
+            </div>
+            <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px" data-pdr-tooltip="Delete this text layer">Delete text</button>
+          </div>
         </details>
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
@@ -2915,6 +2982,15 @@
     // the one shared Fade slider). Its enh.opacity IS the old "background
     // fade", so there's a single Fade control, not two.
     let collageBgTile = null;
+    // v2.1 round 185 (Text #1) — draggable, editable text layers on the
+    // collage, baked into the saved image. Each layer is rendered to a
+    // transparent PNG via renderTextToCanvas (the SAME function drives the
+    // on-screen preview AND the bake), so preview == saved with no font
+    // dependency in sharp. `el` = the live DOM wrapper (not serialized).
+    // { id, text, xFrac, yFrac, sizeFrac, font, color, align, rot, z, el }
+    let collageTexts = [];
+    let selectedText = null;
+    let collageTextSeq = 1;
     function defaultBgEnh() {
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
@@ -5097,6 +5173,164 @@
       for (const it of collageItems) renderCollageItem(it);
       updateCollageFilmstrip();
     }
+
+    // ─── v2.1 round 185 (Text #1) — TEXT LAYERS ──────────────────────────
+    // Core renderer: draw a text layer onto a TRANSPARENT canvas. This same
+    // function drives the on-screen preview AND the bake — preview is fed the
+    // on-screen collage short-side px; the bake is fed the OUTPUT short-side
+    // px — so the text lands at the same relative position + size in both, and
+    // sharp only composites the resulting bitmap (no font dependency backend).
+    function renderTextToCanvas(layer, shortPx) {
+      const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);
+      const lines = String(layer.text == null ? '' : layer.text).split('\n');
+      const canvas = document.createElement('canvas');
+      const ctx = canvas.getContext('2d');
+      const fontStr = fontPx + 'px ' + (layer.font || 'Impact');
+      ctx.font = fontStr;
+      // Widest line decides the canvas width; a few px pad each side so the
+      // glyph overhangs (italics / Impact's wide strokes) aren't clipped.
+      let maxW = 0;
+      for (const ln of lines) { const w = ctx.measureText(ln).width; if (w > maxW) maxW = w; }
+      const pad = Math.max(4, Math.round(fontPx * 0.15));
+      const lineH = fontPx * 1.25;
+      canvas.width = Math.max(2, Math.ceil(maxW + pad * 2));
+      canvas.height = Math.max(2, Math.ceil(lines.length * lineH + pad * 2));
+      // Re-set the font (resizing the canvas resets the 2D context state).
+      ctx.font = fontStr;
+      ctx.textBaseline = 'top';
+      ctx.fillStyle = layer.color || '#ffffff';
+      const align = layer.align || 'center';
+      ctx.textAlign = align;
+      let x = pad;
+      if (align === 'center') x = canvas.width / 2;
+      else if (align === 'right') x = canvas.width - pad;
+      lines.forEach((ln, i) => { ctx.fillText(ln, x, pad + i * lineH); });
+      return canvas;
+    }
+    // The collage canvas's on-screen short side (drives the preview render).
+    function collageShortPx() {
+      if (!collageCanvasEl) return 0;
+      return Math.min(collageCanvasEl.clientWidth, collageCanvasEl.clientHeight);
+    }
+    // Create/update a layer's live DOM wrapper: an absolutely-positioned div
+    // in collageCanvasEl, CENTERED at xFrac/yFrac (translate -50%), rotated,
+    // sitting ABOVE the tiles. Its child canvas is replaced on every render so
+    // text / font / size / colour / align changes repaint cleanly.
+    const COLLAGE_TEXT_Z = 100000;   // text always sits above tiles
+    function renderTextLayer(layer) {
+      if (!collageCanvasEl) return;
+      if (!layer.el) {
+        const el = document.createElement('div');
+        el.className = 'collage-text';
+        el.style.cssText = 'position:absolute;transform-origin:center center;cursor:move;user-select:none;';
+        el.dataset.tid = String(layer.id);
+        el.addEventListener('pointerdown', (e) => startTextDrag(layer, e));
+        el.addEventListener('dblclick', (e) => { e.preventDefault(); selectText(layer); const ta = document.getElementById('collage-text-input'); if (ta) { try { ta.focus(); ta.select(); } catch (_) {} } });
+        collageCanvasEl.appendChild(el);
+        layer.el = el;
+      }
+      const el = layer.el;
+      // Replace the child canvas with a freshly-rendered one.
+      const canvas = renderTextToCanvas(layer, collageShortPx());
+      el.innerHTML = '';
+      el.appendChild(canvas);
+      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      el.style.left = (layer.xFrac * cw) + 'px';
+      el.style.top = (layer.yFrac * ch) + 'px';
+      el.style.transform = 'translate(-50%,-50%) rotate(' + (layer.rot || 0) + 'deg)';
+      el.style.zIndex = String(COLLAGE_TEXT_Z + (layer.z || 0));
+      el.classList.toggle('selected', selectedText === layer);
+    }
+    function renderAllTexts() {
+      for (const layer of collageTexts) renderTextLayer(layer);
+    }
+    function addTextLayer() {
+      beginCollageChange();
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: '#ffffff', align: 'center', rot: 0, z: collageTexts.length + 1, el: null };
+      collageTexts.push(layer);
+      renderTextLayer(layer);
+      selectText(layer);
+      commitCollageChange();
+    }
+    // Selecting a text deselects any tile/background (and vice-versa) — a
+    // text and a tile are never co-selected. Reveals + binds the Text panel
+    // controls to this layer.
+    function selectText(layer) {
+      if (layer) {
+        if (collageSelected) selectCollageItem(null);   // drop tile/bg selection
+      }
+      const prev = selectedText;
+      selectedText = layer || null;
+      if (prev && prev !== layer && prev.el) prev.el.classList.remove('selected');
+      if (selectedText && selectedText.el) selectedText.el.classList.add('selected');
+      syncTextControls();
+    }
+    function deleteTextLayer(layer) {
+      if (!layer) return;
+      beginCollageChange();
+      const i = collageTexts.indexOf(layer);
+      if (i !== -1) collageTexts.splice(i, 1);
+      if (layer.el && layer.el.parentNode) layer.el.parentNode.removeChild(layer.el);
+      if (selectedText === layer) selectedText = null;
+      syncTextControls();
+      commitCollageChange();
+    }
+    // Drag a text layer: mirrors the tile drag math (delta in fractions of the
+    // canvas, clamp 0..1) but the layer is CENTER-anchored, so xFrac/yFrac are
+    // the centre. One undo step per drag via begin/commitCollageChange.
+    function startTextDrag(layer, e) {
+      e.preventDefault();
+      e.stopPropagation();   // don't let the canvas pointerdown deselect / select bg
+      beginCollageChange();
+      selectText(layer);
+      // Bring this layer to the front of the text stack.
+      layer.z = collageTexts.reduce((m, t) => Math.max(m, t.z || 0), 0) + 1;
+      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      const startX = e.clientX, startY = e.clientY;
+      const sx = layer.xFrac, sy = layer.yFrac;
+      const move = (ev) => {
+        const dx = (ev.clientX - startX) / cw;
+        const dy = (ev.clientY - startY) / ch;
+        layer.xFrac = Math.max(0, Math.min(1, sx + dx));
+        layer.yFrac = Math.max(0, Math.min(1, sy + dy));
+        renderTextLayer(layer);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        commitCollageChange();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+    // Show/hide + populate the per-layer Text controls for the current
+    // selection. Called on select / delete / restore.
+    function syncTextControls() {
+      const ctl = document.getElementById('collage-text-controls');
+      if (ctl) ctl.style.display = selectedText ? 'block' : 'none';
+      if (!selectedText) return;
+      const ta = document.getElementById('collage-text-input');
+      if (ta) ta.value = selectedText.text || '';
+      const fontSel = document.getElementById('collage-text-font');
+      if (fontSel) fontSel.value = selectedText.font || 'Impact';
+      const sizeSlider = document.getElementById('collage-text-size');
+      const sizeVal = document.getElementById('val-text-size');
+      if (sizeSlider) {
+        const pct = Math.round((selectedText.sizeFrac || 0.08) * 100);
+        sizeSlider.value = String(pct);
+        if (sizeVal) sizeVal.textContent = pct + '%';
+      }
+      // Alignment toggle: mark the active L/C/R button.
+      document.querySelectorAll('#collage-text-align .ec-shape-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.align === (selectedText.align || 'center'));
+      });
+      // Colour swatches: ring the one matching the layer's colour.
+      const cur = (selectedText.color || '').toLowerCase();
+      document.querySelectorAll('#collage-text-palette .frame-swatch').forEach((s) => {
+        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
+      });
+    }
+
     // v2.1 round 156 (Terry) — sync the fine-rotation slider to the selected
     // tile's angle (normalised to -180..180). Called on select, on free-rotate
     // drag, and after the Rotate-90 button.
@@ -5122,6 +5356,9 @@
       if (collageSelected && !collageSelected.isBg && collageSelected.el) collageSelected.el.classList.remove('selected');
       collageSelected = it || null;
       if (it && !it.isBg && it.el) it.el.classList.add('selected');
+      // v2.1 round 185 (Text #1) — a tile/background and a text layer are
+      // never co-selected: picking a tile drops any text selection.
+      if (it && selectedText) selectText(null);
       // Point the Enhance panel at this element (tile, background, or null).
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
       updateAngleSlider();
@@ -5494,6 +5731,11 @@
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
         items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50 })),
+        // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
+        // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
+        // selection so undo/redo restores it too.
+        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z })),
+        selTextId: selectedText ? selectedText.id : null,
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -5535,6 +5777,15 @@
         if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
         if (si.z > maxZ) maxZ = si.z;
       });
+      // v2.1 round 185 (Text #1) — rebuild text layers from the snapshot: tear
+      // down the live els, recreate plain layer objects (renderAllTexts below
+      // makes fresh els). selTextId restores the selection. Old snapshots in
+      // the undo stack (pre-185) have no `texts` → treat as no text.
+      collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, el: null }));
+      const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
+      if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
+      selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
       collageZTop = maxZ;
       setCollageBg(collageBg);
       document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
@@ -5544,6 +5795,10 @@
       layoutCanvasSize();
       collageItems.forEach((it) => { if (it.imgEl && window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); });
       updateCollageFilmstrip();
+      // v2.1 round 185 (Text #1) — recreate the text els from the restored
+      // layers + refresh the Text controls for the restored selection.
+      renderAllTexts();
+      syncTextControls();
       // Re-point the panel at the still-valid selection (a real tile that's
       // been turned off deselects; the background tile survives).
       if (collageSelected && !collageSelected.isBg && !collageSelected.on) selectCollageItem(null);
@@ -5575,6 +5830,9 @@
 
     function buildCollageItems() {
       collageCanvasEl.innerHTML = '';
+      // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
+      // text els; null them so renderAllTexts (end of this fn) recreates them.
+      collageTexts.forEach((t) => { t.el = null; });
       collageItems.length = 0;
       files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
@@ -5644,6 +5902,7 @@
       // The innerHTML clear above removed any background-photo layer —
       // re-create it so it survives a rebuild.
       renderCollageBgLayer();
+      renderAllTexts();   // v2.1 round 185 (Text #1) — recreate text els on top
     }
 
     // v2.1 round 140 — background swatches live in the Enhance panel's
@@ -5838,6 +6097,7 @@
       collageCanvasEl.style.height = h + 'px';
       collageCanvasEl.style.background = collageBg;
       renderAllCollage();
+      renderAllTexts();   // v2.1 round 185 (Text #1) — reposition/resize text on canvas resize
     }
 
     async function saveCollage() {
@@ -5875,7 +6135,18 @@
           const be = (collageBgTile && collageBgTile.enh) || defaultBgEnh();
           canvas.bgImage = { path: collageBgImagePath, opacity: be.opacity != null ? be.opacity : 0.4, enh: be };
         }
-        const layout = { canvas, items };
+        // v2.1 round 185 (Text #1) — bake each text layer to a transparent PNG
+        // using the OUTPUT short side, so the text lands at the same relative
+        // position + size as the preview (which uses collageShortPx). The PNG
+        // is sent as a full data URL; capture-manager strips the prefix and
+        // composites the bitmap ON TOP of the tiles (no font dependency in
+        // sharp). xFrac/yFrac are the layer CENTRE; rot in degrees.
+        const outputShortPx = Math.min(W, H);
+        const texts = collageTexts.map((t) => ({
+          pngBase64: renderTextToCanvas(t, outputShortPx).toDataURL('image/png'),
+          xFrac: t.xFrac, yFrac: t.yFrac, rot: t.rot || 0,
+        }));
+        const layout = { canvas, items, texts };
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
@@ -6231,6 +6502,10 @@
       });
       window.addEventListener('keydown', (e) => {
         if (!collageMode) return;
+        // v2.1 round 185 (Text #1) — let the text <textarea> own Ctrl+Z/Y for
+        // native in-field undo; don't hijack it for the collage undo stack.
+        const t = e.target;
+        if (t && (t.id === 'collage-text-input' || t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
         const k = (e.key || '').toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
@@ -6286,7 +6561,83 @@
         if (collageZoomTimer) clearTimeout(collageZoomTimer);
         collageZoomTimer = setTimeout(() => { collageZoomGesture = false; commitCollageChange(); }, 400);
       }, { passive: false });
+      wireCollageTextControls();   // v2.1 round 185 (Text #1)
       window.addEventListener('resize', layoutCanvasSize);
+    }
+
+    // v2.1 round 185 (Text #1) — wire the Text section. Most controls rely on
+    // the panel's global pointerdown→begin / pointerup→commit wrapper for one
+    // undo step per interaction; the <textarea> (no pointer cycle while typing)
+    // snapshots on focus + commits on blur, giving one undo step per edit.
+    function wireCollageTextControls() {
+      const addBtn = document.getElementById('collage-text-add');
+      if (addBtn) addBtn.addEventListener('click', () => addTextLayer());
+      const ta = document.getElementById('collage-text-input');
+      if (ta) {
+        // The panel's global pointerdown→begin / pointerup→commit wrapper would
+        // commit (and clear the pending snapshot) on the click that focuses the
+        // field — BEFORE any typing — so a focus-time begin gets consumed with
+        // no change. Instead: snapshot lazily on the FIRST keystroke of a burst
+        // (when no snapshot is pending), capturing the pre-edit text, then
+        // commit on blur. One undo step per editing session.
+        ta.addEventListener('input', () => {
+          if (!selectedText) return;
+          if (collagePendingSnap == null) beginCollageChange();   // snapshot pre-edit
+          selectedText.text = ta.value;
+          renderTextLayer(selectedText);
+        });
+        ta.addEventListener('blur', () => commitCollageChange());
+        // Keep Escape from leaking to the collage key handler; Enter inserts a
+        // newline (multi-line text is supported by renderTextToCanvas).
+        ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); ta.blur(); } });
+      }
+      const fontSel = document.getElementById('collage-text-font');
+      if (fontSel) fontSel.addEventListener('change', () => {
+        if (!selectedText) return;
+        selectedText.font = fontSel.value;
+        renderTextLayer(selectedText);
+      });
+      const sizeSlider = document.getElementById('collage-text-size');
+      const sizeVal = document.getElementById('val-text-size');
+      if (sizeSlider) sizeSlider.addEventListener('input', () => {
+        if (!selectedText) return;
+        const pct = parseInt(sizeSlider.value, 10) || 8;
+        selectedText.sizeFrac = pct / 100;
+        if (sizeVal) sizeVal.textContent = pct + '%';
+        renderTextLayer(selectedText);
+      });
+      const alignWrap = document.getElementById('collage-text-align');
+      if (alignWrap) alignWrap.addEventListener('click', (e) => {
+        const b = e.target.closest ? e.target.closest('.ec-shape-btn') : null;
+        if (!b || !selectedText) return;
+        selectedText.align = b.dataset.align || 'center';
+        alignWrap.querySelectorAll('.ec-shape-btn').forEach((x) => x.classList.toggle('active', x === b));
+        renderTextLayer(selectedText);
+      });
+      const palette = document.getElementById('collage-text-palette');
+      if (palette) palette.addEventListener('click', (e) => {
+        const sw = e.target.closest ? e.target.closest('.frame-swatch') : null;
+        if (!sw || !selectedText) return;
+        setTextColor(sw.getAttribute('data-color') || '#ffffff');
+      });
+      const colorAdd = document.getElementById('collage-text-coloradd');
+      const colorCustom = document.getElementById('collage-text-colorcustom');
+      if (colorAdd && colorCustom) {
+        colorAdd.addEventListener('click', () => { try { colorCustom.click(); } catch (_) {} });
+        colorCustom.addEventListener('input', () => setTextColor(colorCustom.value));
+      }
+      const delBtn = document.getElementById('collage-text-delete');
+      if (delBtn) delBtn.addEventListener('click', () => deleteTextLayer(selectedText));
+    }
+    function setTextColor(hex) {
+      if (!selectedText) return;
+      selectedText.color = hex || '#ffffff';
+      renderTextLayer(selectedText);
+      // Ring the matching swatch (custom colours match nothing → none ringed).
+      const cur = (selectedText.color || '').toLowerCase();
+      document.querySelectorAll('#collage-text-palette .frame-swatch').forEach((s) => {
+        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
+      });
     }
 
     function enterCollageMode() {

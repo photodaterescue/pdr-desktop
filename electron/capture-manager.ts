@@ -887,6 +887,12 @@ interface CollageLayout {
   // (same idea as the Trees canvas background).
   canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
+  // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
+  // renderer (the SAME canvas render that drives the on-screen preview), so the
+  // text lands at the same relative position + size here and sharp never renders
+  // text (no font dependency). pngBase64 is a data URL (or bare base64); xFrac/
+  // yFrac are the layer CENTRE in canvas fractions; rot in degrees.
+  texts?: Array<{ pngBase64: string; xFrac: number; yFrac: number; rot: number }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -1133,6 +1139,50 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         composites.unshift({ input: bgBuf, left: PAD, top: PAD });
       } catch (bgErr) {
         log.warn(`[collage] background image skipped (non-fatal): ${(bgErr as Error).message}`);
+      }
+    }
+
+    // v2.1 round 185 (Text #1) — composite the text layers ON TOP of the tiles
+    // (and background). Each pngBase64 is a transparent PNG already rendered at
+    // the OUTPUT short side by the renderer's renderTextToCanvas, so it lands at
+    // the same relative position + size as the on-screen preview. We only decode
+    // + place it (optionally rotating about its centre). Anchored CENTRE at
+    // xFrac/yFrac, in the SAME +PAD coordinate system as the tiles, then clamped
+    // to the padded base. The generous PAD means the clamp effectively never
+    // fires (a centre-on-canvas layer can't reach a negative origin); if a future
+    // huge layer did, it clamps to the base edge rather than erroring.
+    if (Array.isArray(layout.texts)) {
+      for (const t of layout.texts) {
+        if (!t || !t.pngBase64) continue;
+        try {
+          const b64 = t.pngBase64.replace(/^data:image\/png;base64,/, '');
+          let textBuf = Buffer.from(b64, 'base64');
+          let textW = 0, textH = 0;
+          const rot = ((t.rot || 0) % 360 + 360) % 360;
+          if (rot > 0.1 && rot < 359.9) {
+            const rotated = await sharp(textBuf)
+              .rotate(rot, { background: { r: 0, g: 0, b: 0, alpha: 0 } })
+              .png()
+              .toBuffer({ resolveWithObject: true });
+            textBuf = rotated.data;
+            textW = rotated.info.width;
+            textH = rotated.info.height;
+          } else {
+            const meta = await sharp(textBuf).metadata();
+            textW = meta.width || 0;
+            textH = meta.height || 0;
+          }
+          if (textW < 1 || textH < 1) continue;
+          const cx = clamp01(t.xFrac) * W;
+          const cy = clamp01(t.yFrac) * H;
+          let left = Math.round(cx - textW / 2) + PAD;
+          let top = Math.round(cy - textH / 2) + PAD;
+          left = Math.max(0, Math.min(baseW - textW, left));
+          top = Math.max(0, Math.min(baseH - textH, top));
+          composites.push({ input: textBuf, left, top });
+        } catch (txtErr) {
+          log.warn(`[collage] text layer skipped (non-fatal): ${(txtErr as Error).message}`);
+        }
       }
     }
 
