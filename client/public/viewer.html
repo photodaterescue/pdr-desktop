@@ -4971,18 +4971,26 @@
         const fbc = ((it.enh && it.enh.borderColor) || '').trim();
         const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * ((it.enh.borderWeight === 'mat') ? 0.08 : 0.035))) : 0;
         const innerW = Math.max(2, iwPx - frameInset * 2);
-        const fullW = innerW / cropW;
+        const innerH = Math.max(2, ihPx - frameInset * 2);
+        // v2.1 round 168 (Terry) — per-tile photo ZOOM (Ctrl+scroll, 1–2×).
+        // Magnify the centre of the visible crop region: size the image to
+        // (crop-fill × zoom) and centre it on the crop region's centre. At
+        // zoom 1 this equals the plain crop fill (the offset below reduces to
+        // −crop.l×fullW). Done via image SIZING, not a CSS transform, so it
+        // never collides with the Mirror/Flip transform on the same <img>.
+        const zoom = Math.max(1, Math.min(2, it.zoom || 1));
+        const fullW = (innerW / cropW) * zoom;
         const fullH = fullW / (it.aspect || 1);
+        const ccx = (c.l + c.r) / 2, ccy = (c.t + c.b) / 2;
         it.imgEl.style.position = 'absolute';
         it.imgEl.style.width = fullW + 'px';
         it.imgEl.style.height = fullH + 'px';
-        it.imgEl.style.left = (-c.l * fullW) + 'px';
-        it.imgEl.style.top = (-c.t * fullH) + 'px';
+        it.imgEl.style.left = (innerW / 2 - ccx * fullW) + 'px';
+        it.imgEl.style.top = (innerH / 2 - ccy * fullH) + 'px';
         it.imgEl.style.objectFit = 'fill';
         // v2.1 round 164 (Terry) — curved corners + Blend feather, applied to
         // the clip (content area inside any frame). Same mask the bake uses, so
         // the preview matches the saved file.
-        const innerH = Math.max(2, ihPx - frameInset * 2);
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, innerW, innerH);
       }
     }
@@ -5348,7 +5356,7 @@
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
-        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, enh: it.enh })),
+        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, enh: it.enh })),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -5377,6 +5385,7 @@
         if (!it) return;
         it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         if (si.crop) it.crop = { l: si.crop.l, t: si.crop.t, r: si.crop.r, b: si.crop.b };
+        it.zoom = (typeof si.zoom === 'number') ? si.zoom : 1;   // v2.1 round 168 — photo zoom
         it.enh = Object.assign({}, si.enh);
         if (si.z > maxZ) maxZ = si.z;
       });
@@ -5424,7 +5433,7 @@
         // enh = this tile's own Enhance state (edited via the side panel
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
-          crop: { l: 0, t: 0, r: 1, b: 1 },
+          crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1,
           enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] } };
         const el = document.createElement('div');
         el.className = 'collage-item';
@@ -5648,7 +5657,7 @@
           path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac,
           // v2.1 round 145 — send the CROPPED aspect so the backend tile
           // box matches what's on screen; crop rect baked via extract.
-          aspect: effectiveAspect(it), rot: it.rot, crop: it.crop,
+          aspect: effectiveAspect(it), rot: it.rot, crop: it.crop, zoom: it.zoom,
           // v2.1 round 140 — each tile's own Enhance settings, baked
           // per-photo by the backend.
           enh: it.enh,
@@ -5778,6 +5787,23 @@
         if (e.target === collageCanvasEl) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
         else if (e.target === collageStageEl) selectCollageItem(null);
       });
+      // v2.1 round 168 (Terry) — Ctrl+scroll zooms the SELECTED photo in to 2×;
+      // it can't zoom out past its original (zoom clamps at 1). Done on the
+      // tile's own zoom factor (preview + bake share the same centre-magnify),
+      // with ONE undo step per gesture (begin on the first wheel, commit ~400ms
+      // after the last). preventDefault stops the whole window from zooming.
+      let collageZoomGesture = false, collageZoomTimer = null;
+      collageStageEl.addEventListener('wheel', (e) => {
+        if (!e.ctrlKey) return;
+        const it = collageSelected;
+        if (!it || it.isBg) return;
+        e.preventDefault();
+        if (!collageZoomGesture) { collageZoomGesture = true; beginCollageChange(); }
+        it.zoom = Math.max(1, Math.min(2, (it.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)));
+        renderCollageItem(it);
+        if (collageZoomTimer) clearTimeout(collageZoomTimer);
+        collageZoomTimer = setTimeout(() => { collageZoomGesture = false; commitCollageChange(); }, 400);
+      }, { passive: false });
       window.addEventListener('resize', layoutCanvasSize);
     }
 
@@ -6585,6 +6611,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (collageActive && collageTile && !collageTile.isBg) {
           collageTile.rot = 0;
           collageTile.crop = { l: 0, t: 0, r: 1, b: 1 };
+          collageTile.zoom = 1;   // v2.1 round 168 — Reset photo also undoes Ctrl+scroll zoom
           try { renderCollageItem(collageTile); } catch (_) {}
         }
         updateUI();

@@ -886,7 +886,7 @@ interface CollageLayout {
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
   canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
-  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
+  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -1003,6 +1003,32 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
               };
             }
           } catch { /* crop best-effort; fall back to full image */ }
+        }
+        // v2.1 round 168 (Terry) — Ctrl+scroll photo zoom (1–2×): magnify the
+        // centre of the visible region by insetting the extract rect to its
+        // centre 1/zoom (defaulting to the full photo when there's no crop).
+        // One extract → resize, so the saved file matches the editor preview.
+        const _zoom = Math.max(1, Math.min(2, item.zoom || 1));
+        if (_zoom > 1) {
+          let region = cropRect;
+          if (!region) {
+            try {
+              const meta = await sharp(toLongPath(item.path), { failOnError: false }).metadata();
+              let ow = meta.width || 0, oh = meta.height || 0;
+              if (meta.orientation && meta.orientation >= 5) { const tmp = ow; ow = oh; oh = tmp; }
+              if (ow > 0 && oh > 0) region = { left: 0, top: 0, width: ow, height: oh };
+            } catch { /* zoom best-effort */ }
+          }
+          if (region) {
+            const insetX = region.width * (1 - 1 / _zoom) / 2;
+            const insetY = region.height * (1 - 1 / _zoom) / 2;
+            cropRect = {
+              left: Math.round(region.left + insetX),
+              top: Math.round(region.top + insetY),
+              width: Math.max(1, Math.round(region.width / _zoom)),
+              height: Math.max(1, Math.round(region.height / _zoom)),
+            };
+          }
         }
         // Bake the tile (crop + resize + its own Enhance state + frame).
         // The result may be larger than iw×ih if a frame was added, so
