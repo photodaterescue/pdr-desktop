@@ -7045,6 +7045,13 @@ function zoomTo(newZoom, centreX, centreY) {
 
     // Keyboard shortcuts
     window.addEventListener('keydown', (e) => {
+      // v2.1 round 186 (Terry) — NEVER fire single-key shortcuts (r = rotate,
+      // space = slideshow, arrows, etc.) while the user is typing in a field
+      // (the collage Text editor, the font picker, any input). Typing "r" in
+      // the text box was rotating the photo. Mirrors the guards already on the
+      // other keydown handlers (collage undo / slideshow-nav).
+      const _et = e.target;
+      if (_et && (_et.tagName === 'INPUT' || _et.tagName === 'TEXTAREA' || _et.tagName === 'SELECT' || _et.isContentEditable)) return;
       if (isVideo && (e.key === ' ' || e.code === 'Space')) {
         // Let <video> handle its own space-toggle when focused, otherwise toggle ourselves
         if (document.activeElement !== mediaEl) {
@@ -9281,6 +9288,8 @@ function zoomTo(newZoom, centreX, centreY) {
         refreshAiButtonState();
       };
       window.addEventListener('keydown', function (e) {
+        const _t = e.target; // v2.1 round 186 — don't fire while typing in a field
+        if (_t && (_t.tagName === 'INPUT' || _t.tagName === 'TEXTAREA' || _t.tagName === 'SELECT' || _t.isContentEditable)) return;
         if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') clearAiOnNav();
       });
 
@@ -9338,6 +9347,8 @@ function zoomTo(newZoom, centreX, centreY) {
       // Re-check availability when the panel opens or new image loads.
       openBtn.addEventListener('click', updateSaveAvailability);
       window.addEventListener('keydown', function (e) {
+        const _t = e.target; // v2.1 round 186 — don't fire while typing in a field
+        if (_t && (_t.tagName === 'INPUT' || _t.tagName === 'TEXTAREA' || _t.tagName === 'SELECT' || _t.isContentEditable)) return;
         if (e.key === 'e' || e.key === 'E') {
           setTimeout(updateSaveAvailability, 0);
         }
