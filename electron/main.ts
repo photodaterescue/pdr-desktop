@@ -7966,9 +7966,10 @@ async function ensureEnhanceWorker(): Promise<import('worker_threads').Worker> {
   const userData = app.getPath('userData');
   const codeformerPath = path.join(userData, 'ai-models', 'codeformer', 'codeformer.onnx');
   const realesrganPath = path.join(userData, 'ai-models', 'realesrgan', 'RealESRGAN_x4plus.fp16.onnx');
+  const bgremoverPath = path.join(userData, 'ai-models', 'bgremover', 'isnet-general-use.onnx');
 
   enhanceWorker = new Worker(workerPath, {
-    workerData: { codeformerPath, realesrganPath },
+    workerData: { codeformerPath, realesrganPath, bgremoverPath },
   });
 
   enhanceWorker.on('message', (msg: any) => {
@@ -8111,6 +8112,54 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
         outputPath,
         faceBoxes: faceRows,
         fidelity: typeof req.fidelity === 'number' ? req.fidelity : 0.5,
+      });
+    });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 round 173 (Terry 2026-06-14) — Background remover. Runs BiRefNet on the
+// source photo in the enhance worker and returns a temp transparent PNG (the
+// subject cut out, background gone). The renderer uses that PNG as the collage
+// tile's image for BOTH the live preview and the bake, so preview == saved.
+ipcMain.handle('viewer:removeBackground', async (event, req: { filePath: string }) => {
+  try {
+    console.log('[viewer:removeBackground] start', { filePath: req?.filePath });
+    if (!req?.filePath || !fs.existsSync(req.filePath)) {
+      return { success: false, error: 'Source file not found.' };
+    }
+
+    // Verify the background-remover model is installed.
+    const installer = await import('./ai-model-installer.js');
+    if (installer.getInstallState('bgremover') !== 'installed') {
+      console.warn('[viewer:removeBackground] background remover not installed');
+      return { success: false, error: 'The Background remover model is not installed.', requiresInstall: 'bgremover' };
+    }
+
+    // Output a transparent PNG to a temp file; the renderer uses it as the
+    // tile's image (preview) and passes its path to the collage bake.
+    const tmpDir = path.join(app.getPath('temp'), 'pdr-enhance');
+    try { fs.mkdirSync(tmpDir, { recursive: true }); } catch {}
+    const requestId = `bg-${Date.now()}-${Math.floor(Math.random() * 1e6)}`;
+    const outputPath = path.join(tmpDir, `${requestId}.png`);
+
+    const worker = await ensureEnhanceWorker();
+
+    return await new Promise((resolve) => {
+      enhancePending.set(requestId, {
+        resolve: (info) => resolve({ success: true, outputPath: info.outputPath }),
+        reject: (err) => resolve({ success: false, error: err.message }),
+        onProgress: (phase, percent) => {
+          try { event.sender.send('viewer:enhanceProgress', { kind: 'bg', phase, percent }); } catch {}
+        },
+      });
+
+      worker.postMessage({
+        type: 'remove-background',
+        requestId,
+        sourcePath: req.filePath,
+        outputPath,
       });
     });
   } catch (err) {

@@ -911,6 +911,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'codeformer' | 'realesrgan';
       }>,
+    // v2.1 round 173 (Terry 2026-06-14) — Background remover. Returns a temp
+    // transparent PNG (subject cut out) the collage uses as a tile's image.
+    removeBackground: (req: { filePath: string }) =>
+      ipcRenderer.invoke('viewer:removeBackground', req) as Promise<{
+        success: boolean;
+        outputPath?: string;
+        error?: string;
+        requiresInstall?: 'bgremover';
+      }>,
     /** v2.1 (Terry 2026-06-07) — cancel any in-flight enhance run by
      *  terminating the underlying worker. */
     cancelEnhance: () =>

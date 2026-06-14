@@ -30,7 +30,7 @@ import log from 'electron-log';
 
 // ─── Catalogue ───────────────────────────────────────────────────────────────
 
-export type ModelKey = 'codeformer' | 'realesrgan';
+export type ModelKey = 'codeformer' | 'realesrgan' | 'bgremover';
 
 export interface ModelSpec {
   key: ModelKey;
@@ -78,6 +78,26 @@ export const MODELS: Record<ModelKey, ModelSpec> = {
     url: 'https://huggingface.co/tamnvcc/RealESRGAN-onnx/resolve/main/onnx/RealESRGAN_x4plus.fp16.onnx',
     subdir: 'realesrgan',
     filename: 'RealESRGAN_x4plus.fp16.onnx',
+  },
+  // v2.1 round 173 (Terry 2026-06-14) — Background remover (collage subject
+  // cut-out). Model = IS-Net "general-use" (the DIS dichotomous-segmentation
+  // network, Apache-2.0 from xuebinqin's repo — the same model rembg ships as
+  // its recommended general-purpose remover). Chosen after BiRefNet-lite was
+  // ruled out: its fixed 1024² deformable-conv stack needs multiple ~800 MB
+  // buffers and OOM'd on this 24 GB box (only ~6.7 GB free) in BOTH fp16 and
+  // fp32. IS-Net runs the same 1024² input in ~6 s on CPU with a clean
+  // dichotomous mask (keeps ALL foreground, not just the single salient
+  // object the way U2-Net does). Byte size verified 2026-06-14.
+  // Hosting: rembg's permanent v0.0.0 release; mirror to PDR R2 in v2.2.
+  bgremover: {
+    key: 'bgremover',
+    displayName: 'Background remover',
+    oneLiner: 'Removes the background from a photo, cutting out the subject so it sits cleanly on your collage background. Runs entirely on your device. Best for dropping people, pets, or objects onto a different backdrop.',
+    sizeMB: 179,
+    expectedBytes: 178648008,
+    url: 'https://github.com/danielgatis/rembg/releases/download/v0.0.0/isnet-general-use.onnx',
+    subdir: 'bgremover',
+    filename: 'isnet-general-use.onnx',
   },
 };
 

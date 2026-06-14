@@ -41,6 +41,8 @@ interface WorkerConfig {
   codeformerPath: string;
   /** Absolute path to <userData>/ai-models/realesrgan/RealESRGAN_x4plus.fp16.onnx */
   realesrganPath: string;
+  /** Absolute path to <userData>/ai-models/bgremover/isnet-general-use.onnx (background removal) */
+  bgremoverPath: string;
 }
 
 /** Normalised face box in 0-1 image coords (matches face_detections rows). */
@@ -71,11 +73,19 @@ interface EnhanceUpscaleMessage {
   tileSize?: number;
 }
 
+interface RemoveBackgroundMessage {
+  type: 'remove-background';
+  requestId: string;
+  sourcePath: string;
+  /** Output PNG path (transparent background where the subject isn't). */
+  outputPath: string;
+}
+
 interface UnloadMessage {
   type: 'unload';
 }
 
-type InboundMessage = EnhanceFacesMessage | EnhanceUpscaleMessage | UnloadMessage;
+type InboundMessage = EnhanceFacesMessage | EnhanceUpscaleMessage | RemoveBackgroundMessage | UnloadMessage;
 
 interface ProgressMessage {
   type: 'progress';
@@ -105,6 +115,7 @@ const config: WorkerConfig = workerData as WorkerConfig;
 
 let codeformerSession: ort.InferenceSession | null = null;
 let realesrganSession: ort.InferenceSession | null = null;
+let bgremoverSession: ort.InferenceSession | null = null;
 
 function log(msg: string): void {
   // eslint-disable-next-line no-console
@@ -156,6 +167,23 @@ async function getRealesrganSession(): Promise<ort.InferenceSession> {
   return realesrganSession;
 }
 
+async function getBgRemoverSession(): Promise<ort.InferenceSession> {
+  if (bgremoverSession) return bgremoverSession;
+  if (!fs.existsSync(config.bgremoverPath)) {
+    throw new Error(`Background remover model not found at ${config.bgremoverPath}. Install via Settings → AI → Background remover.`);
+  }
+  log(`Loading background-remover session from ${config.bgremoverPath}...`);
+  const t0 = Date.now();
+  bgremoverSession = await ort.InferenceSession.create(config.bgremoverPath, {
+    executionProviders: ['cpu'],
+    graphOptimizationLevel: 'all',
+    intraOpNumThreads: cpuThreadCap(),
+    interOpNumThreads: 1,
+  });
+  log(`Background remover loaded in ${Date.now() - t0}ms; inputs=${bgremoverSession.inputNames.join(',')} outputs=${bgremoverSession.outputNames.join(',')}; threads=${cpuThreadCap()}`);
+  return bgremoverSession;
+}
+
 // v2.1 — cap thread count to half the available cores (floor),
 // minimum 2. On Terry's 8-core box this becomes 4; on a 16-core
 // it'd be 8. Trade-off: each inference takes ~1.6x as long but
@@ -205,6 +233,21 @@ function rgbToNchwTensor0to1(rgb: Buffer, width: number, height: number): Float3
     out[i] = rgb[i * 3] / 255;
     out[i + channelSize] = rgb[i * 3 + 1] / 255;
     out[i + 2 * channelSize] = rgb[i * 3 + 2] / 255;
+  }
+  return out;
+}
+
+/** Convert RGB Buffer [H*W*3] uint8 → Float32Array NCHW, normalised the way
+ *  IS-Net expects: (pixel/255 − 0.5) / 1.0, i.e. centred to [−0.5, 0.5].
+ *  (This is rembg's normalisation for isnet-general-use — NOT ImageNet
+ *  mean/std, which produces a much weaker mask.) */
+function rgbToNchwIsnet(rgb: Buffer, width: number, height: number): Float32Array {
+  const channelSize = width * height;
+  const out = new Float32Array(3 * channelSize);
+  for (let i = 0; i < channelSize; i++) {
+    out[i] = rgb[i * 3] / 255 - 0.5;
+    out[i + channelSize] = rgb[i * 3 + 1] / 255 - 0.5;
+    out[i + 2 * channelSize] = rgb[i * 3 + 2] / 255 - 0.5;
   }
   return out;
 }
@@ -532,6 +575,110 @@ async function enhanceUpscale(msg: EnhanceUpscaleMessage): Promise<void> {
   post({ type: 'done', requestId: msg.requestId, outputPath: msg.outputPath });
 }
 
+// ─── BiRefNet (background removal) ────────────────────────────────────────────
+
+const BR_SIZE = 1024; // IS-Net input resolution (general-use model)
+
+/** Numerically-stable sigmoid. */
+function sigmoid(x: number): number {
+  return x >= 0 ? 1 / (1 + Math.exp(-x)) : Math.exp(x) / (1 + Math.exp(x));
+}
+
+/** Decode an IEEE-754 half-float (uint16 bits) to a JS number. onnxruntime-node
+ *  hands fp16 output tensors back as a Uint16Array, so we may need this. */
+function halfToFloat(h: number): number {
+  const s = (h & 0x8000) >> 15;
+  const e = (h & 0x7c00) >> 10;
+  const f = h & 0x03ff;
+  if (e === 0) return (s ? -1 : 1) * Math.pow(2, -14) * (f / 1024);
+  if (e === 0x1f) return f ? NaN : (s ? -Infinity : Infinity);
+  return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
+}
+
+async function removeBackground(msg: RemoveBackgroundMessage): Promise<void> {
+  const t0 = Date.now();
+  post({ type: 'progress', requestId: msg.requestId, phase: 'Loading the model…', percent: 5 });
+  const session = await getBgRemoverSession();
+  const inputName = session.inputNames[0];
+
+  // Full-resolution source (auto-oriented, alpha stripped). The mask is scaled
+  // back up to THIS size, so the cut-out keeps the photo's original detail.
+  post({ type: 'progress', requestId: msg.requestId, phase: 'Reading the photo…', percent: 15 });
+  const src = await readImageRaw(msg.sourcePath);
+
+  // Letterbox a copy into the model's square input — preserve aspect ratio and
+  // pad with black, NOT a plain squash. Squashing a non-square photo to 1024²
+  // distorts the subject badly and the mask comes back as a vague blob; letter-
+  // boxing keeps the subject's true proportions and the mask is crisp.
+  post({ type: 'progress', requestId: msg.requestId, phase: 'Finding the subject…', percent: 30 });
+  const scale = Math.min(BR_SIZE / src.width, BR_SIZE / src.height);
+  const rw = Math.max(1, Math.round(src.width * scale));
+  const rh = Math.max(1, Math.round(src.height * scale));
+  const padL = Math.floor((BR_SIZE - rw) / 2);
+  const padT = Math.floor((BR_SIZE - rh) / 2);
+  const inputRgb = await sharp(src.data, {
+    raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 },
+  })
+    .resize(rw, rh)
+    .extend({ top: padT, bottom: BR_SIZE - rh - padT, left: padL, right: BR_SIZE - rw - padL, background: { r: 0, g: 0, b: 0 } })
+    .raw()
+    .toBuffer();
+
+  // IS-Net is a plain fp32 model; feed its centred normalisation as NCHW.
+  const inputTensor = new ort.Tensor('float32', rgbToNchwIsnet(inputRgb, BR_SIZE, BR_SIZE), [1, 3, BR_SIZE, BR_SIZE]);
+  const result = await session.run({ [inputName]: inputTensor });
+
+  // IS-Net emits several side outputs; the FIRST is the fused final mask
+  // (single-channel [1,1,H,W]).
+  const ot = result[session.outputNames[0]];
+  const od = ot.data as unknown as { [i: number]: number; length: number };
+  const isF16 = (ot.type as string) === 'float16';
+  const getV = (i: number): number => (isF16 ? halfToFloat(od[i]) : od[i]);
+  const dims = ot.dims as readonly number[];
+  const mh = dims[dims.length - 2];
+  const mw = dims[dims.length - 1];
+  const n = mh * mw;
+
+  // Detect raw logits (apply sigmoid) vs already-probabilities (use as-is) so
+  // this works no matter how the ONNX export was traced.
+  let lo = Infinity, hi = -Infinity;
+  for (let i = 0; i < n; i++) { const v = getV(i); if (v < lo) lo = v; if (v > hi) hi = v; }
+  const needSigmoid = lo < -0.01 || hi > 1.01;
+
+  post({ type: 'progress', requestId: msg.requestId, phase: 'Cutting out the subject…', percent: 70 });
+  const maskBuf = Buffer.alloc(n);
+  for (let i = 0; i < n; i++) {
+    const v = needSigmoid ? sigmoid(getV(i)) : getV(i);
+    maskBuf[i] = clampToByte(v * 255);
+  }
+  log(`Background-remover mask ${mw}x${mh}; raw range [${lo.toFixed(3)},${hi.toFixed(3)}] sigmoid=${needSigmoid}`);
+
+  // Map the mask back to the original: crop the letterbox content region out of
+  // the square mask, then scale to the source. The mask MUST be re-encoded
+  // (PNG) before extract — a chained extract+resize on a RAW pixel buffer
+  // mis-maps the pixels in sharp (the cut-out came out scrambled), whereas
+  // extracting from a decoded image is correct.
+  const ex = Math.round(padL * mw / BR_SIZE), ey = Math.round(padT * mh / BR_SIZE);
+  const ew = Math.max(1, Math.round(rw * mw / BR_SIZE)), eh = Math.max(1, Math.round(rh * mh / BR_SIZE));
+  const maskPng = await sharp(maskBuf, { raw: { width: mw, height: mh, channels: 1 } }).png().toBuffer();
+  const maskFull = await sharp(maskPng)
+    .extract({ left: ex, top: ey, width: Math.min(ew, mw - ex), height: Math.min(eh, mh - ey) })
+    .resize(src.width, src.height, { fit: 'fill' })
+    .toColourspace('b-w')
+    .raw()
+    .toBuffer();
+
+  // Join the mask as the alpha channel of the full-res RGB → transparent PNG.
+  post({ type: 'progress', requestId: msg.requestId, phase: 'Saving…', percent: 90 });
+  await sharp(src.data, { raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 } })
+    .joinChannel(maskFull, { raw: { width: src.width, height: src.height, channels: 1 } })
+    .png()
+    .toFile(msg.outputPath);
+
+  log(`removeBackground done in ${Date.now() - t0}ms; ${src.width}x${src.height}`);
+  post({ type: 'done', requestId: msg.requestId, outputPath: msg.outputPath });
+}
+
 // ─── Message router ──────────────────────────────────────────────────────────
 
 parentPort?.on('message', async (msg: InboundMessage) => {
@@ -540,9 +687,12 @@ parentPort?.on('message', async (msg: InboundMessage) => {
       await enhanceFaces(msg);
     } else if (msg.type === 'enhance-upscale') {
       await enhanceUpscale(msg);
+    } else if (msg.type === 'remove-background') {
+      await removeBackground(msg);
     } else if (msg.type === 'unload') {
       codeformerSession = null;
       realesrganSession = null;
+      bgremoverSession = null;
       // Hint GC — node releases ONNX session memory deterministically
       // on the next major GC cycle.
       if (global.gc) try { global.gc(); } catch {}
@@ -551,7 +701,7 @@ parentPort?.on('message', async (msg: InboundMessage) => {
   } catch (err) {
     const error = err instanceof Error ? (err.stack || err.message) : String(err);
     log(`ERROR processing ${msg.type}: ${error}`);
-    if (msg.type === 'enhance-faces' || msg.type === 'enhance-upscale') {
+    if (msg.type === 'enhance-faces' || msg.type === 'enhance-upscale' || msg.type === 'remove-background') {
       post({ type: 'error', requestId: msg.requestId, error: (err as Error).message || error });
     }
   }
