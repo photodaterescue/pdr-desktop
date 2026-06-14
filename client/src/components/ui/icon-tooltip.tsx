@@ -1,5 +1,6 @@
 import * as React from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
+import { useShowTooltips } from '@/hooks/useShowTooltips';
 
 interface IconTooltipProps {
   label: React.ReactNode;
@@ -22,7 +23,10 @@ interface IconTooltipProps {
  * Radix tooltips would be a perf regression for no real UX gain.
  */
 export function IconTooltip({ label, side = 'top', delayMs = 120, children, disabled }: IconTooltipProps) {
-  if (disabled || label == null || label === '') return children;
+  // v2.1 round 167 (Terry) — global "Show tooltips" toggle. When off, render
+  // the child alone (no tooltip), matching the disabled/empty-label path.
+  const showTooltips = useShowTooltips();
+  if (!showTooltips || disabled || label == null || label === '') return children;
 
   // ONLY wrap in a span when the child is a disabled HTML button —
   // those have pointer-events: none (set by the Button variant), which

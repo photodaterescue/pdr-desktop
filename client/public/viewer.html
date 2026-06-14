@@ -2071,6 +2071,13 @@
     .enhance-collapse > summary::before { content: '\25B8'; font-size: 10px; transition: transform 120ms; color: #a99cff; }
     .enhance-collapse[open] > summary::before { transform: rotate(90deg); }
     .enhance-collapse[open] { display: flex; flex-direction: column; gap: 14px; }
+    /* v2.1 round 167 (Terry) — modern Chromium wraps a <details>'s body in a
+       ::details-content box, so the flex gap above only spaced the summary
+       from the body, NOT the controls inside it (they touched — the panel
+       looked overcrowded). Re-apply the column gap to the content box so every
+       slider gets the intended 14px breathing room, consistently across all
+       sections. The rule above stays for older engines. */
+    .enhance-collapse::details-content { display: flex; flex-direction: column; gap: 14px; }
     /* v2.1 round 157 (Terry) — Expand all / Collapse all links. */
     .enhance-collapse-all { display: flex; justify-content: flex-end; align-items: center; gap: 6px; margin-bottom: 2px; }
     .enhance-collapse-all button { background: none; border: none; color: #a99cff; cursor: pointer; font-size: 11px; padding: 0; letter-spacing: 0.02em; }
@@ -5287,12 +5294,20 @@
       });
       renderAllCollage();
     }
+    // v2.1 round 167 (Terry) — clicking the SAME layout again keeps the slots
+    // but randomly swaps which photo sits in each (a fresh look, same shape).
+    // Scatter is chaotic by nature, so it just re-scatters (no need to swap).
+    let lastArrangeKey = null;
+    function shuffleArr(a) { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = a[i]; a[i] = a[j]; a[j] = t; } return a; }
     function applyArrangeLayout(layout) {
       const on = collageItems.filter((it) => it.on);
       if (!on.length) return;
-      if (layout.key === 'grid') { gridArrange(); return; }     // reuse the tuned grid
-      if (layout.scatter) { jumbleArrange(); return; }          // reuse the scatter
-      applyArrangeCells(on, layout.cells(on.length));
+      if (layout.scatter) { lastArrangeKey = 'scatter'; jumbleArrange(); return; }   // re-scatter on every click
+      // First click of a layout → photos in their natural order; clicking the
+      // same layout again → shuffle the photos among the same positions.
+      const order = (lastArrangeKey === layout.key) ? shuffleArr(on.slice()) : on;
+      lastArrangeKey = layout.key;
+      applyArrangeCells(order, layout.cells(on.length));
     }
     function arrangeThumbSvg(layout) {
       let cells;
@@ -8752,6 +8767,16 @@ function zoomTo(newZoom, centreX, centreY) {
       let activeEl = null;
       let activeTrigger = null;
       let showTimer = null;
+      // v2.1 round 167 (Terry) — global "Show tooltips" toggle. Read once at
+      // load + live-update on the settings:changed broadcast; when off, the
+      // Viewer/Collage tooltips are suppressed (matches the React IconTooltip).
+      let tooltipsEnabled = true;
+      try {
+        if (window.pdr && window.pdr.settings) {
+          window.pdr.settings.get().then(function (s) { if (s && s.showTooltips === false) tooltipsEnabled = false; }).catch(function () {});
+          if (window.pdr.settings.onChanged) window.pdr.settings.onChanged(function (p) { if (p && p.key === 'showTooltips') tooltipsEnabled = (p.value !== false); });
+        }
+      } catch (_) {}
 
       function buildTooltipEl(text) {
         const el = document.createElement('div');
@@ -8785,6 +8810,7 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       function show(trigger) {
+        if (!tooltipsEnabled) return;
         const text = trigger.dataset.pdrTooltip;
         if (!text) return;
         hide();

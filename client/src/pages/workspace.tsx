@@ -12716,6 +12716,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [captureRecordAudio, setCaptureRecordAudioState] = useState<boolean>(true);
   // v2.1 round 162 (Terry) — saved collages → "PDR Collages" album (default on).
   const [saveCollagesToAlbum, setSaveCollagesToAlbumState] = useState<boolean>(true);
+  // v2.1 round 167 (Terry) — global Show-tooltips toggle (default on).
+  const [showTooltips, setShowTooltipsState] = useState<boolean>(true);
   // v2.1 round 126 — recording quality preset (bitrate + save-time
   // H.264 quality). Applies to recordings started after the change.
   const [captureRecordQuality, setCaptureRecordQualityState] = useState<'high' | 'standard' | 'compact'>('standard');
@@ -12827,6 +12829,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureFormatState(((settings as any).captureFormat as 'png' | 'jpg') ?? 'png');
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
       setSaveCollagesToAlbumState(((settings as any).saveCollagesToAlbum as boolean) ?? true);
+      setShowTooltipsState(((settings as any).showTooltips as boolean) ?? true);
       setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
       setCaptureCamEnabledState(((settings as any).captureCamEnabled as boolean) ?? false);
       setCaptureCamShapeState(((settings as any).captureCamShape as 'circle' | 'rectangle') ?? 'circle');
@@ -12917,6 +12920,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleSaveCollagesToAlbumToggle = (checked: boolean) => {
     setSaveCollagesToAlbumState(checked);
     setSetting('saveCollagesToAlbum' as any, checked);
+  };
+
+  const handleShowTooltipsToggle = (checked: boolean) => {
+    setShowTooltipsState(checked);
+    setSetting('showTooltips' as any, checked);
   };
 
   const handleCaptureRecordQualityChange = (quality: 'high' | 'standard' | 'compact') => {
@@ -13532,6 +13540,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     </button>
                   </div>
                 </div>
+              </div>
+
+              {/* v2.1 round 167 (Terry) — global Show-tooltips toggle. */}
+              <div className="pt-4 border-t border-border">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-foreground">Show tooltips</span>
+                    <span className="text-xs text-muted-foreground">The little hint bubbles that explain buttons and controls across PDR — including the Viewer and Collage editor. Helpful while you're learning your way around; turn off once you'd rather crack on without them in the way.</span>
+                  </div>
+                  <Switch
+                    checked={showTooltips}
+                    onCheckedChange={(checked) => handleShowTooltipsToggle(!!checked)}
+                    data-testid="checkbox-show-tooltips"
+                  />
+                </label>
               </div>
 
               {/* Notifications */}
