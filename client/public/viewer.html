@@ -17,6 +17,28 @@
     @font-face { font-family: 'Pacifico'; src: url('fonts/pacifico.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Bungee'; src: url('fonts/bungee.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Lobster'; src: url('fonts/lobster.woff2') format('woff2'); font-display: swap; }
+    /* v2.1 round 192 (Terry) — 18 more vendored fonts for the collage Text feature
+       (System/Essentials/Fun/Premium/Viral/Themed groups in #collage-text-font).
+       Same wiring as round 190: woff2 served alongside this page; the canvas only
+       renders these once document.fonts.load() resolves (see FUN_FAMILIES). */
+    @font-face { font-family: 'Montserrat'; src: url('fonts/montserrat.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Bebas Neue'; src: url('fonts/bebas-neue.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Anton'; src: url('fonts/anton.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Playfair Display'; src: url('fonts/playfair-display.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Fredoka'; src: url('fonts/fredoka.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Dancing Script'; src: url('fonts/dancing-script.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Luckiest Guy'; src: url('fonts/luckiest-guy.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Bangers'; src: url('fonts/bangers.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Raleway'; src: url('fonts/raleway.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'DM Sans'; src: url('fonts/dm-sans.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'League Spartan'; src: url('fonts/league-spartan.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Oswald'; src: url('fonts/oswald.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Permanent Marker'; src: url('fonts/permanent-marker.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Caveat'; src: url('fonts/caveat.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Quicksand'; src: url('fonts/quicksand.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Jost'; src: url('fonts/jost.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Manrope'; src: url('fonts/manrope.woff2') format('woff2'); font-display: swap; }
     body {
       background: #1a1a2e;
       color: #e0e0e0;
@@ -2398,26 +2420,59 @@
                    option so the Chromium popup is legible (was near-white text on
                    a light popup); each option previews its own typeface. -->
               <select id="collage-text-font" style="width:100%;background:#241f3a;border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px;font-size:13px">
-                <option value="Impact" style="font-family:Impact;background:#241f3a;color:#fff">Impact</option>
-                <option value="Arial" style="font-family:Arial;background:#241f3a;color:#fff">Arial</option>
-                <option value="Segoe UI" style="font-family:'Segoe UI';background:#241f3a;color:#fff">Segoe UI</option>
-                <option value="Georgia" style="font-family:Georgia;background:#241f3a;color:#fff">Georgia</option>
-                <option value="Times New Roman" style="font-family:'Times New Roman';background:#241f3a;color:#fff">Times New Roman</option>
-                <option value="Verdana" style="font-family:Verdana;background:#241f3a;color:#fff">Verdana</option>
-                <option value="Comic Sans MS" style="font-family:'Comic Sans MS';background:#241f3a;color:#fff">Comic Sans MS</option>
-                <option value="Consolas" style="font-family:Consolas;background:#241f3a;color:#fff">Consolas</option>
-                <option value="Bahnschrift" style="font-family:Bahnschrift;background:#241f3a;color:#fff">Bahnschrift</option>
-                <!-- v2.1 round 190 (Terry) — vendored decorative "fun" fonts. Each
-                     value IS the CSS font-family (so renderTextToCanvas picks it up)
-                     and previews in its own face like round 187. The canvas needs
-                     these loaded before fillText — see the FUN_FAMILIES wiring. -->
-                <option disabled>──────</option>
-                <option value="Creepster" style="font-family:'Creepster';background:#241f3a;color:#fff">Creepster (spooky)</option>
-                <option value="Cinzel Decorative" style="font-family:'Cinzel Decorative';background:#241f3a;color:#fff">Cinzel Decorative (fantasy)</option>
-                <option value="Mountains of Christmas" style="font-family:'Mountains of Christmas';background:#241f3a;color:#fff">Mountains of Christmas (festive)</option>
-                <option value="Pacifico" style="font-family:'Pacifico';background:#241f3a;color:#fff">Pacifico (brush)</option>
-                <option value="Bungee" style="font-family:'Bungee';background:#241f3a;color:#fff">Bungee (display)</option>
-                <option value="Lobster" style="font-family:'Lobster';background:#241f3a;color:#fff">Lobster (script)</option>
+                <!-- v2.1 round 192 (Terry) — fonts reorganised into labelled
+                     <optgroup>s (replaces the round-190 flat list + disabled
+                     separator). Each option's value IS the CSS font-family (so
+                     renderTextToCanvas + the change handler pick it up) and the
+                     round-187 inline style previews it in its own face. The two
+                     look-alikes get descriptive labels but keep their bare value.
+                     Vendored faces need document.fonts.load() before fillText —
+                     see the FUN_FAMILIES wiring (now 24 names). -->
+                <optgroup label="System">
+                  <option value="Impact" style="font-family:Impact;background:#241f3a;color:#fff">Impact</option>
+                  <option value="Arial" style="font-family:Arial;background:#241f3a;color:#fff">Arial</option>
+                  <option value="Segoe UI" style="font-family:'Segoe UI';background:#241f3a;color:#fff">Segoe UI</option>
+                  <option value="Georgia" style="font-family:Georgia;background:#241f3a;color:#fff">Georgia</option>
+                  <option value="Times New Roman" style="font-family:'Times New Roman';background:#241f3a;color:#fff">Times New Roman</option>
+                  <option value="Verdana" style="font-family:Verdana;background:#241f3a;color:#fff">Verdana</option>
+                  <option value="Comic Sans MS" style="font-family:'Comic Sans MS';background:#241f3a;color:#fff">Comic Sans MS</option>
+                  <option value="Consolas" style="font-family:Consolas;background:#241f3a;color:#fff">Consolas</option>
+                  <option value="Bahnschrift" style="font-family:Bahnschrift;background:#241f3a;color:#fff">Bahnschrift</option>
+                </optgroup>
+                <optgroup label="Essentials">
+                  <option value="Montserrat" style="font-family:'Montserrat';background:#241f3a;color:#fff">Montserrat</option>
+                  <option value="Poppins" style="font-family:'Poppins';background:#241f3a;color:#fff">Poppins</option>
+                  <option value="Bebas Neue" style="font-family:'Bebas Neue';background:#241f3a;color:#fff">Bebas Neue</option>
+                  <option value="Anton" style="font-family:'Anton';background:#241f3a;color:#fff">Anton</option>
+                  <option value="Playfair Display" style="font-family:'Playfair Display';background:#241f3a;color:#fff">Playfair Display</option>
+                </optgroup>
+                <optgroup label="Fun">
+                  <option value="Fredoka" style="font-family:'Fredoka';background:#241f3a;color:#fff">Fredoka</option>
+                  <option value="Pacifico" style="font-family:'Pacifico';background:#241f3a;color:#fff">Pacifico</option>
+                  <option value="Dancing Script" style="font-family:'Dancing Script';background:#241f3a;color:#fff">Dancing Script</option>
+                  <option value="Luckiest Guy" style="font-family:'Luckiest Guy';background:#241f3a;color:#fff">Luckiest Guy</option>
+                  <option value="Bangers" style="font-family:'Bangers';background:#241f3a;color:#fff">Bangers</option>
+                  <option value="Lobster" style="font-family:'Lobster';background:#241f3a;color:#fff">Lobster</option>
+                </optgroup>
+                <optgroup label="Premium">
+                  <option value="Manrope" style="font-family:'Manrope';background:#241f3a;color:#fff">Manrope (Avenir-style)</option>
+                  <option value="Jost" style="font-family:'Jost';background:#241f3a;color:#fff">Jost (Futura-style)</option>
+                  <option value="Raleway" style="font-family:'Raleway';background:#241f3a;color:#fff">Raleway</option>
+                  <option value="DM Sans" style="font-family:'DM Sans';background:#241f3a;color:#fff">DM Sans</option>
+                  <option value="League Spartan" style="font-family:'League Spartan';background:#241f3a;color:#fff">League Spartan</option>
+                </optgroup>
+                <optgroup label="Viral / TikTok">
+                  <option value="Oswald" style="font-family:'Oswald';background:#241f3a;color:#fff">Oswald</option>
+                  <option value="Permanent Marker" style="font-family:'Permanent Marker';background:#241f3a;color:#fff">Permanent Marker</option>
+                  <option value="Caveat" style="font-family:'Caveat';background:#241f3a;color:#fff">Caveat</option>
+                  <option value="Quicksand" style="font-family:'Quicksand';background:#241f3a;color:#fff">Quicksand</option>
+                  <option value="Bungee" style="font-family:'Bungee';background:#241f3a;color:#fff">Bungee</option>
+                </optgroup>
+                <optgroup label="Themed">
+                  <option value="Creepster" style="font-family:'Creepster';background:#241f3a;color:#fff">Creepster</option>
+                  <option value="Cinzel Decorative" style="font-family:'Cinzel Decorative';background:#241f3a;color:#fff">Cinzel Decorative</option>
+                  <option value="Mountains of Christmas" style="font-family:'Mountains of Christmas';background:#241f3a;color:#fff">Mountains of Christmas</option>
+                </optgroup>
               </select>
             </div>
             <div class="enhance-control" style="margin-top:8px">
@@ -3096,7 +3151,10 @@
     // canvas fillText silently falls back to a system face for any web font that
     // isn't ALREADY loaded, so we explicitly document.fonts.load() these and
     // re-render once they resolve. funFontsKicked guards the one-time bulk load.
-    const FUN_FAMILIES = ['Creepster', 'Cinzel Decorative', 'Mountains of Christmas', 'Pacifico', 'Bungee', 'Lobster'];
+    // v2.1 round 192 (Terry) — extended to 24: the round-190 6 PLUS the 18 new
+    // optgroup'd web fonts, so kickFunFonts() preloads them all and the canvas
+    // never falls back (and the change handler force-loads any picked family).
+    const FUN_FAMILIES = ['Creepster', 'Cinzel Decorative', 'Mountains of Christmas', 'Pacifico', 'Bungee', 'Lobster', 'Montserrat', 'Poppins', 'Bebas Neue', 'Anton', 'Playfair Display', 'Fredoka', 'Dancing Script', 'Luckiest Guy', 'Bangers', 'Raleway', 'DM Sans', 'League Spartan', 'Oswald', 'Permanent Marker', 'Caveat', 'Quicksand', 'Jost', 'Manrope'];
     let funFontsKicked = false;
     function kickFunFonts() {
       if (funFontsKicked) return;
@@ -5325,7 +5383,10 @@
       const k = (typeof layer.effectStrength === 'number' ? layer.effectStrength : 50) / 100;
       // v2.1 round 188 (Terry) — bold / italic baked into the font string so
       // the SAME render drives preview + bake (sharp only composites the bitmap).
-      const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px ' + (layer.font || 'Impact');
+      // v2.1 round 192 (Terry) — QUOTE the family so multi-word names (Bebas Neue,
+      // Playfair Display, DM Sans, Cinzel Decorative, …) resolve in canvas instead
+      // of silently falling back to a system face. Only the family quoting changed.
+      const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px "' + (layer.font || 'Impact') + '"';
       ctx.font = fontStr;
       // Widest line decides the canvas width.
       let maxW = 0;
