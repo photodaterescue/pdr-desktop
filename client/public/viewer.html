@@ -1998,6 +1998,21 @@
     }
     .ec-shape-btn:hover { background: rgba(169,156,255,0.10); }
     .ec-shape-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 165 (Terry) — Arrange = a grid of ~10 layout thumbnails. */
+    .ec-arrange-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 6px 0 10px; }
+    .ec-arrange-opt {
+      display: flex; flex-direction: column; align-items: center; gap: 3px;
+      padding: 5px 2px 4px; background: rgba(255,255,255,0.03);
+      border: 1px solid rgba(169,156,255,0.20); border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-arrange-opt:hover { background: rgba(169,156,255,0.12); border-color: #a99cff; }
+    body.collage-mode .ec-arrange-opt:hover { background: rgba(254,194,66,0.12); border-color: #FEC242; }
+    .ec-arrange-thumb { width: 100%; }
+    .ec-arrange-thumb svg { width: 100%; height: 22px; display: block; }
+    .ec-arrange-thumb svg rect { fill: rgba(169,156,255,0.55); }
+    body.collage-mode .ec-arrange-thumb svg rect { fill: rgba(254,194,66,0.6); }
+    .ec-arrange-lbl { font-size: 9px; line-height: 1.05; color: #a9a3c8; text-align: center; }
     .ec-tidy-btn {
       display: flex; align-items: center; justify-content: center; gap: 7px;
       width: 100%; padding: 8px 12px; border-radius: 8px;
@@ -2267,10 +2282,10 @@
              undo cleanly (see Undo/Redo). v2.1 round 156 — chevron. -->
         <details class="enhance-collapse" id="ec-arrange-collapse" open>
           <summary>Arrange</summary>
-          <div class="ec-row">
-            <button class="ec-shape-btn" id="collage-tidy" type="button" data-pdr-tooltip="Line every photo up in a neat grid (replaces the current arrangement)">Tidy grid</button>
-            <button class="ec-shape-btn" id="collage-jumble" type="button" data-pdr-tooltip="Scatter the photos at jaunty random angles (replaces the current arrangement)">Jumble</button>
-          </div>
+          <!-- v2.1 round 165 (Terry) — ~10 ready-made layouts with preview
+               thumbnails (populated by buildArrangeMenu). Replaces the old
+               Tidy grid / Jumble pair (those are now Grid / Scatter). -->
+          <div class="ec-arrange-grid" id="ec-arrange-grid"></div>
         </details>
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
@@ -5228,6 +5243,80 @@
       renderAllCollage();
     }
 
+    // ─── v2.1 round 165 (Terry) — ARRANGE LAYOUTS ────────────────────────
+    // Replaces the two Tidy/Jumble buttons with a grid of ~10 ready-made
+    // layouts, each shown as a little preview thumbnail. Each layout is a
+    // CELL generator (n → [{x,y,w,h}] fractions of the canvas); a tile is
+    // fitted into its cell preserving aspect. The SAME generator draws the
+    // thumbnail, so the picture matches what you get.
+    function arrGrid(n) { const cols = Math.max(1, Math.ceil(Math.sqrt(n))); const rows = Math.max(1, Math.ceil(n / cols)); const o = []; for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols); o.push({ x: c / cols, y: r / rows, w: 1 / cols, h: 1 / rows }); } return o; }
+    function arrCols(n, cols) { cols = Math.max(1, Math.min(cols, n)); const rows = Math.max(1, Math.ceil(n / cols)); const o = []; for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols); o.push({ x: c / cols, y: r / rows, w: 1 / cols, h: 1 / rows }); } return o; }
+    function arrRow(n) { const o = []; for (let i = 0; i < n; i++) o.push({ x: i / n, y: 0, w: 1 / n, h: 1 }); return o; }
+    function arrColumn(n) { const o = []; for (let i = 0; i < n; i++) o.push({ x: 0, y: i / n, w: 1, h: 1 / n }); return o; }
+    function arrFeatureLeft(n) { if (n <= 1) return [{ x: 0, y: 0, w: 1, h: 1 }]; const o = [{ x: 0, y: 0, w: 0.62, h: 1 }]; const m = n - 1; for (let i = 0; i < m; i++) o.push({ x: 0.62, y: i / m, w: 0.38, h: 1 / m }); return o; }
+    function arrFeatureTop(n) { if (n <= 1) return [{ x: 0, y: 0, w: 1, h: 1 }]; const o = [{ x: 0, y: 0, w: 1, h: 0.62 }]; const m = n - 1; for (let i = 0; i < m; i++) o.push({ x: i / m, y: 0.62, w: 1 / m, h: 0.38 }); return o; }
+    function arrStack(n) { const o = []; const sz = 0.56, span = 0.13; for (let i = 0; i < n; i++) { const t = n > 1 ? (i / (n - 1) - 0.5) : 0; o.push({ x: 0.22 + t * span, y: 0.22 + t * span, w: sz, h: sz }); } return o; }
+    function arrCascade(n) { const o = []; const sz = 0.52, step = n > 1 ? (1 - sz) / (n - 1) : 0; for (let i = 0; i < n; i++) o.push({ x: step * i, y: step * i, w: sz, h: sz }); return o; }
+    const ARRANGE_LAYOUTS = [
+      { key: 'grid', label: 'Grid', cells: arrGrid, tip: 'Even grid — fits every photo into a neat grid' },
+      { key: 'row', label: 'Row', cells: arrRow, tip: 'One horizontal row' },
+      { key: 'column', label: 'Column', cells: arrColumn, tip: 'One vertical column' },
+      { key: 'cols2', label: '2-col', cells: (n) => arrCols(n, 2), tip: 'Two columns' },
+      { key: 'cols3', label: '3-col', cells: (n) => arrCols(n, 3), tip: 'Three columns' },
+      { key: 'featL', label: 'Left', cells: arrFeatureLeft, tip: 'Feature the first photo on the left, the rest stacked down the right' },
+      { key: 'featT', label: 'Top', cells: arrFeatureTop, tip: 'Feature the first photo across the top, the rest in a row below' },
+      { key: 'stack', label: 'Stack', cells: arrStack, tip: 'Overlapping centred pile' },
+      { key: 'cascade', label: 'Cascade', cells: arrCascade, tip: 'Step the photos diagonally, overlapping' },
+      { key: 'scatter', label: 'Scatter', scatter: true, tip: 'Scatter the photos at jaunty random angles' },
+    ];
+    function applyArrangeCells(on, cells) {
+      const canvasAspect = getCanvasAspect();
+      const margin = 0.04;
+      on.forEach((it, i) => {
+        const cell = cells[i] || cells[cells.length - 1] || { x: 0, y: 0, w: 1, h: 1 };
+        const availW = cell.w * (1 - margin * 2);
+        const availH = cell.h * (1 - margin * 2);
+        let wFrac = Math.min(availW, availH * (it.aspect || 1) / canvasAspect);
+        if (!isFinite(wFrac) || wFrac <= 0) wFrac = availW;
+        it.wFrac = wFrac;
+        const ihFrac = itemHeightFrac(it);
+        it.xFrac = (cell.x + cell.w / 2) - wFrac / 2;
+        it.yFrac = (cell.y + cell.h / 2) - ihFrac / 2;
+        it.rot = 0;
+        it.z = ++collageZTop;
+      });
+      renderAllCollage();
+    }
+    function applyArrangeLayout(layout) {
+      const on = collageItems.filter((it) => it.on);
+      if (!on.length) return;
+      if (layout.key === 'grid') { gridArrange(); return; }     // reuse the tuned grid
+      if (layout.scatter) { jumbleArrange(); return; }          // reuse the scatter
+      applyArrangeCells(on, layout.cells(on.length));
+    }
+    function arrangeThumbSvg(layout) {
+      let cells;
+      if (layout.scatter) cells = [{ x: 0.04, y: 0.18, w: 0.46, h: 0.46 }, { x: 0.42, y: 0.04, w: 0.46, h: 0.46 }, { x: 0.27, y: 0.46, w: 0.5, h: 0.5 }];
+      else cells = layout.cells(4);
+      const W = 46, H = 34, pad = 3.5, iw = W - 2 * pad, ih = H - 2 * pad;
+      const r = cells.map((c) => { const x = pad + c.x * iw, y = pad + c.y * ih, w = Math.max(3, c.w * iw - 2), h = Math.max(3, c.h * ih - 2); return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5"/>'; }).join('');
+      return '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' + r + '</svg>';
+    }
+    function buildArrangeMenu() {
+      const host = document.getElementById('ec-arrange-grid');
+      if (!host) return;
+      host.innerHTML = '';
+      ARRANGE_LAYOUTS.forEach((layout) => {
+        const b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'ec-arrange-opt';
+        b.setAttribute('data-pdr-tooltip', layout.tip + ' (replaces the current arrangement)');
+        b.innerHTML = '<span class="ec-arrange-thumb">' + arrangeThumbSvg(layout) + '</span><span class="ec-arrange-lbl">' + layout.label + '</span>';
+        b.addEventListener('click', () => applyArrangeLayout(layout));
+        host.appendChild(b);
+      });
+    }
+
     // ─── Undo / redo (v2.1 round 143, Terry) ──────────────────────────
     // Terry: "it's missing an undo/redo button, so changes can be made
     // quickly and without worry of screwing up." Snapshots the FULL
@@ -5590,10 +5679,10 @@
       document.querySelectorAll('.ec-shape-btn').forEach((b) => {
         b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
       });
-      const tidyBtn = document.getElementById('collage-tidy');
-      if (tidyBtn) tidyBtn.addEventListener('click', () => gridArrange());
-      const jumbleBtn = document.getElementById('collage-jumble');
-      if (jumbleBtn) jumbleBtn.addEventListener('click', () => jumbleArrange());
+      // v2.1 round 165 (Terry) — Arrange is now a grid of ~10 layout
+      // thumbnails (Grid / Row / Column / 2-col / 3-col / Left / Top / Stack /
+      // Cascade / Scatter). Grid reuses gridArrange, Scatter reuses jumble.
+      buildArrangeMenu();
       // v2.1 round 155 (Terry) — Rotate the selected tile 90° (its free
       // placement angle, baked via sharp .rotate). Undo is handled by the
       // Enhance-panel pointerdown/up begin/commit wrapper. No-op for the
