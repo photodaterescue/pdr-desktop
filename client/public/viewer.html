@@ -2333,8 +2333,8 @@
              so the centre is upright; double-click snaps back to 0°. Hidden
              for the background. -->
         <div class="enhance-control" id="tile-angle-control">
-          <div class="enhance-label-row"><label for="slider-angle">Angle</label><span class="enhance-val" id="val-angle">0&deg;</span></div>
-          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0" data-pdr-tooltip="Fine-tune the angle (double-click to reset to upright)">
+          <div class="enhance-label-row"><label for="slider-angle" data-pdr-tooltip="Fine-tune the angle (double-click to reset to upright)">Angle</label><span class="enhance-val" id="val-angle">0&deg;</span></div>
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0">
         </div>
       </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
@@ -2402,10 +2402,10 @@
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-temperature">Temperature</label>
+          <label for="slider-temperature" data-pdr-tooltip="Negative = cooler, positive = warmer">Temperature</label>
           <span class="enhance-val" id="val-temperature">0</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" data-pdr-tooltip="Negative = cooler, positive = warmer">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0">
       </div>
       <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
            (Terry: "was meant to be on a slider"). v2.1 round 153 — the
@@ -2414,10 +2414,10 @@
            other levels so every slider's default sits in the middle. -->
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-colour">Colour</label>
+          <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Colour</label>
           <span class="enhance-val" id="val-colour">50</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50">
       </div>
       </details>
       <!-- v2.1 round 154 (Terry) — Fade + Blend grouped under an "Effects"
@@ -2442,19 +2442,19 @@
              behind it (CSS-mask preview; feathered-alpha bake on save). -->
         <div class="enhance-control">
           <div class="enhance-label-row">
-            <label for="slider-blend">Blend edges</label>
+            <label for="slider-blend" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">Blend edges</label>
             <span class="enhance-val" id="val-blend">0</span>
           </div>
-          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">
+          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0">
         </div>
         <!-- v2.1 round 164 (Terry) — Curved corners: round all four together
              with this slider (per-corner dragging on the photo comes next). -->
         <div class="enhance-control">
           <div class="enhance-label-row">
-            <label for="slider-corners">Curved corners</label>
+            <label for="slider-corners" data-pdr-tooltip="Round the photo's corners — drag up to round all four">Curved corners</label>
             <span class="enhance-val" id="val-corners">0</span>
           </div>
-          <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0" data-pdr-tooltip="Round the photo's corners — drag up to round all four">
+          <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0">
         </div>
       </details>
       </div>
@@ -8853,8 +8853,8 @@ function zoomTo(newZoom, centreX, centreY) {
       let tooltipsEnabled = true;
       try {
         if (window.pdr && window.pdr.settings) {
-          window.pdr.settings.get().then(function (s) { if (s && s.showTooltips === false) tooltipsEnabled = false; }).catch(function () {});
-          if (window.pdr.settings.onChanged) window.pdr.settings.onChanged(function (p) { if (p && p.key === 'showTooltips') tooltipsEnabled = (p.value !== false); });
+          window.pdr.settings.get().then(function (s) { if (s && s.showViewerTooltips === false) tooltipsEnabled = false; }).catch(function () {});
+          if (window.pdr.settings.onChanged) window.pdr.settings.onChanged(function (p) { if (p && p.key === 'showViewerTooltips') tooltipsEnabled = (p.value !== false); });
         }
       } catch (_) {}
 

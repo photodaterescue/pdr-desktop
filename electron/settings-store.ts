@@ -177,12 +177,18 @@ export interface PDRSettings {
    *  place. Toggle OFF in Settings → Capture to keep saved collages out of
    *  that album (they still save to the library exactly as before). */
   saveCollagesToAlbum: boolean;
-  /** v2.1 round 167 (Terry 2026-06-14) — show the PDR-branded tooltips. ON by
-   *  default (helps the learning curve); turn OFF in Settings → General once
-   *  you know your way around, to crack on without the tips getting in the
-   *  way. Gates BOTH the Viewer/Collage data-pdr-tooltip manager and the
-   *  React IconTooltip across the app. */
+  /** v2.1 round 167 (Terry 2026-06-14) — show the PDR-branded tooltips in the
+   *  main app (React IconTooltip). ON by default (helps the learning curve);
+   *  turn OFF in Settings → General once you know your way around. v2.1 round
+   *  170 — split: this now covers the REST of PDR; the Viewer/Collage editor
+   *  has its own showViewerTooltips below. */
   showTooltips: boolean;
+  /** v2.1 round 170 (Terry 2026-06-14) — show tooltips inside the Viewer &
+   *  Collage editor (the data-pdr-tooltip manager in viewer.html). Split from
+   *  showTooltips so the editor tips (which pop while you work) can be turned
+   *  off independently of the rest of PDR. ON by default. Lives in the new
+   *  Settings → Viewer & Collage category. */
+  showViewerTooltips: boolean;
   /** Calendar days (YYYY-MM-DD) on which the user has opened People
    *  Manager. Used to decide when to surface the "open PM on startup"
    *  onboarding banner — only show it once adoption is real, not on
@@ -350,6 +356,8 @@ export const optimisedDefaults: PDRSettings = {
   saveCollagesToAlbum: true,
   // v2.1 round 167 — tooltips on by default (helps the learning curve).
   showTooltips: true,
+  // v2.1 round 170 — Viewer/Collage editor tooltips on by default.
+  showViewerTooltips: true,
   pmOpenDays: [],
   pmStartupPromptDismissed: false,
   scannerOverrides: [],
@@ -438,6 +446,7 @@ export function getSettings(): PDRSettings {
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     saveCollagesToAlbum: store.get('saveCollagesToAlbum', optimisedDefaults.saveCollagesToAlbum),
     showTooltips: store.get('showTooltips', optimisedDefaults.showTooltips),
+    showViewerTooltips: store.get('showViewerTooltips', optimisedDefaults.showViewerTooltips),
     pmOpenDays: store.get('pmOpenDays', optimisedDefaults.pmOpenDays),
     pmStartupPromptDismissed: store.get('pmStartupPromptDismissed', optimisedDefaults.pmStartupPromptDismissed),
     scannerOverrides: store.get('scannerOverrides', optimisedDefaults.scannerOverrides),

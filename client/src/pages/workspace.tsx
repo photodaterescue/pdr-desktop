@@ -12718,6 +12718,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [saveCollagesToAlbum, setSaveCollagesToAlbumState] = useState<boolean>(true);
   // v2.1 round 167 (Terry) — global Show-tooltips toggle (default on).
   const [showTooltips, setShowTooltipsState] = useState<boolean>(true);
+  // v2.1 round 170 (Terry) — separate toggle for the Viewer/Collage editor tips.
+  const [showViewerTooltips, setShowViewerTooltipsState] = useState<boolean>(true);
   // v2.1 round 126 — recording quality preset (bitrate + save-time
   // H.264 quality). Applies to recordings started after the change.
   const [captureRecordQuality, setCaptureRecordQualityState] = useState<'high' | 'standard' | 'compact'>('standard');
@@ -12830,6 +12832,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
       setSaveCollagesToAlbumState(((settings as any).saveCollagesToAlbum as boolean) ?? true);
       setShowTooltipsState(((settings as any).showTooltips as boolean) ?? true);
+      setShowViewerTooltipsState(((settings as any).showViewerTooltips as boolean) ?? true);
       setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
       setCaptureCamEnabledState(((settings as any).captureCamEnabled as boolean) ?? false);
       setCaptureCamShapeState(((settings as any).captureCamShape as 'circle' | 'rectangle') ?? 'circle');
@@ -12925,6 +12928,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleShowTooltipsToggle = (checked: boolean) => {
     setShowTooltipsState(checked);
     setSetting('showTooltips' as any, checked);
+  };
+
+  const handleShowViewerTooltipsToggle = (checked: boolean) => {
+    setShowViewerTooltipsState(checked);
+    setSetting('showViewerTooltips' as any, checked);
   };
 
   const handleCaptureRecordQualityChange = (quality: 'high' | 'standard' | 'compact') => {
@@ -13311,7 +13319,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   // Refresh action lives) even though the word "refresh" isn't on
   // the tab label.
   const SETTINGS_TABS: Array<{
-    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'capture' | 'privacy' | 'backup';
+    id: 'general' | 'library' | 'workspace' | 'afterFix' | 'sd' | 'people' | 'ai' | 'capture' | 'viewerCollage' | 'privacy' | 'backup';
     label: string;
     icon: React.ComponentType<{ className?: string }>;
     keywords: string;
@@ -13338,6 +13346,10 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
     // Positioned after AI and before Privacy — it's a "PDR does
     // something for you" feature, not a data-control one.
     { id: 'capture',   label: 'Capture',     icon: Camera,            keywords: 'screenshot screen shot capture hotkey shortcut key combination record recording video snip grab print screen monitor display region area select crop audio sound mp4 png jpg format quality blur camera webcam bubble circle tutorial face cam' },
+    // v2.1 round 170 (Terry 2026-06-14) — Viewer & Collage category. Settings
+    // for the photo Viewer + the collage editor: tooltips in the editor, the
+    // enhance save default, and gathering saved collages into an album.
+    { id: 'viewerCollage', label: 'Viewer & Collage', icon: FileImage, keywords: 'viewer collage editor tooltips hints tips save enhanced replace new file album pdr collages photo zoom corners blend' },
     // v2.1 (Terry 2026-06-08) — Privacy & Security category. Home
     // for global render-time switches that hide personal content
     // when sharing the screen (captions, transcripts, future:
@@ -13547,7 +13559,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col pr-3">
                     <span className="text-sm font-medium text-foreground">Show tooltips</span>
-                    <span className="text-xs text-muted-foreground">The little hint bubbles that explain buttons and controls across PDR — including the Viewer and Collage editor. Helpful while you're learning your way around; turn off once you'd rather crack on without them in the way.</span>
+                    <span className="text-xs text-muted-foreground">The little hint bubbles that explain buttons and controls across the main PDR app. Helpful while you're learning your way around; turn off once you'd rather crack on without them. (The Viewer &amp; Collage editor has its own tooltip toggle, in Settings → Viewer &amp; Collage.)</span>
                   </div>
                   <Switch
                     checked={showTooltips}
@@ -14653,69 +14665,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 </div>
               </div>
               )}
-              {/* v2.1 round 8 (Terry 2026-06-07) — wrapper above hides
-                  the entire Photo Enhancement card block + privacy
-                  callout when isAiPhotoEnhancementEnabled() returns
-                  false. Default-save-action below stays visible
-                  because it's still relevant for manual slider saves
-                  from the Enhance panel. The opening div for this
-                  section sits ~150 lines up, also wrapped. */}
-              <div className="pt-4 border-t border-border">
-
-                {/* Sub-heading for the save preference, distinguishing it
-                    from the AI model cards above. */}
-                <label className="block text-sm font-medium text-foreground mb-1 mt-4">Default save action</label>
-                <p className="text-xs text-muted-foreground mb-3">
-                  When you save changes from the PDR Viewer's Enhance panel, which option should be highlighted by default?
-                </p>
-                <div className="space-y-2">
-                  <label
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                      viewerEnhanceSaveDefault === 'new' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
-                    }`}
-                    data-testid="option-viewer-enhance-save-new"
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="viewerEnhanceSaveDefault"
-                        value="new"
-                        checked={viewerEnhanceSaveDefault === 'new'}
-                        onChange={() => handleViewerEnhanceSaveDefaultChange('new')}
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">Save as new file <span className="text-xs font-normal text-muted-foreground">(recommended)</span></span>
-                        <span className="text-xs text-muted-foreground">Writes a sibling file with an <span className="font-mono">_E</span> suffix (e.g. <span className="font-mono">photo.jpg</span> → <span className="font-mono">photo_E.jpg</span>). Original is never touched, so an accidental save can&apos;t lose the unedited version.</span>
-                      </div>
-                    </div>
-                  </label>
-                  <label
-                    className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
-                      viewerEnhanceSaveDefault === 'replace' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
-                    }`}
-                    data-testid="option-viewer-enhance-save-replace"
-                  >
-                    <div className="flex items-center gap-3">
-                      <input
-                        type="radio"
-                        name="viewerEnhanceSaveDefault"
-                        value="replace"
-                        checked={viewerEnhanceSaveDefault === 'replace'}
-                        onChange={() => handleViewerEnhanceSaveDefaultChange('replace')}
-                        className="w-4 h-4 text-primary focus:ring-primary"
-                      />
-                      <div className="flex flex-col">
-                        <span className="text-sm font-medium text-foreground">Replace original</span>
-                        <span className="text-xs text-muted-foreground">Overwrites the existing file in place. Faster + no duplicate sibling, but the unedited original is gone. Best when you're confident the edit is final.</span>
-                      </div>
-                    </div>
-                  </label>
-                </div>
-                <p className="text-[11px] text-muted-foreground/85 mt-2">
-                  This only changes which button is highlighted when the Enhance Save panel opens — you can always click the other one per-save.
-                </p>
-              </div>
+              {/* v2.1 round 170 (Terry) — the "Default save action" preference
+                  moved to the new Settings → Viewer & Collage tab. */}
             </>
           )}
 
@@ -15016,7 +14967,28 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <span className="text-xs text-muted-foreground">Show / hide the camera while recording. Only active during a recording — it never blocks this shortcut for other apps the rest of the time.</span>
                   </div>
                 </div>
-                {/* v2.1 round 162 (Terry) — saved collages → "PDR Collages" album. */}
+                {/* v2.1 round 170 (Terry) — collages-album toggle moved to the
+                    new Settings → Viewer & Collage tab. */}
+              </div>
+            </>
+          )}
+          {/* v2.1 round 170 (Terry) — Viewer & Collage category: editor tooltips
+              (split from the app-wide toggle), the Viewer's enhance save default,
+              and the saved-collages album. Gathered here from Capture + AI. */}
+          {settingsTab === 'viewerCollage' && (
+            <>
+              <div className="space-y-4">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-foreground">Show tooltips in the Viewer &amp; Collage editor</span>
+                    <span className="text-xs text-muted-foreground">The hint bubbles that appear while you work in the photo Viewer and the collage editor. Helpful while learning; turn off to work without them in the way. (Tooltips elsewhere in PDR are controlled separately, in General.)</span>
+                  </div>
+                  <Switch
+                    checked={showViewerTooltips}
+                    onCheckedChange={(checked) => handleShowViewerTooltipsToggle(!!checked)}
+                    data-testid="checkbox-show-viewer-tooltips"
+                  />
+                </label>
                 <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
                   <div className="flex flex-col pr-3">
                     <span className="text-sm font-medium text-foreground">Add saved collages to a "PDR Collages" album</span>
@@ -15028,6 +15000,59 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     data-testid="checkbox-save-collages-to-album"
                   />
                 </label>
+                <div className="pt-4 border-t border-border">
+                  <label className="block text-sm font-medium text-foreground mb-1">Default save action</label>
+                  <p className="text-xs text-muted-foreground mb-3">
+                    When you save changes from the PDR Viewer's Enhance panel, which option should be highlighted by default?
+                  </p>
+                  <div className="space-y-2">
+                    <label
+                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                        viewerEnhanceSaveDefault === 'new' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                      }`}
+                      data-testid="option-viewer-enhance-save-new"
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="viewerEnhanceSaveDefault"
+                          value="new"
+                          checked={viewerEnhanceSaveDefault === 'new'}
+                          onChange={() => handleViewerEnhanceSaveDefaultChange('new')}
+                          className="w-4 h-4 text-primary focus:ring-primary"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">Save as new file <span className="text-xs font-normal text-muted-foreground">(recommended)</span></span>
+                          <span className="text-xs text-muted-foreground">Writes a sibling file with an <span className="font-mono">_E</span> suffix (e.g. <span className="font-mono">photo.jpg</span> → <span className="font-mono">photo_E.jpg</span>). Original is never touched, so an accidental save can&apos;t lose the unedited version.</span>
+                        </div>
+                      </div>
+                    </label>
+                    <label
+                      className={`flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-colors ${
+                        viewerEnhanceSaveDefault === 'replace' ? 'border-primary bg-primary/5' : 'border-border hover:border-primary/50 hover:bg-secondary/50'
+                      }`}
+                      data-testid="option-viewer-enhance-save-replace"
+                    >
+                      <div className="flex items-center gap-3">
+                        <input
+                          type="radio"
+                          name="viewerEnhanceSaveDefault"
+                          value="replace"
+                          checked={viewerEnhanceSaveDefault === 'replace'}
+                          onChange={() => handleViewerEnhanceSaveDefaultChange('replace')}
+                          className="w-4 h-4 text-primary focus:ring-primary"
+                        />
+                        <div className="flex flex-col">
+                          <span className="text-sm font-medium text-foreground">Replace original</span>
+                          <span className="text-xs text-muted-foreground">Overwrites the existing file in place. Faster + no duplicate sibling, but the unedited original is gone. Best when you are confident the edit is final.</span>
+                        </div>
+                      </div>
+                    </label>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground/85 mt-2">
+                    This only changes which button is highlighted when the Enhance Save panel opens — you can always click the other one per-save.
+                  </p>
+                </div>
               </div>
             </>
           )}
