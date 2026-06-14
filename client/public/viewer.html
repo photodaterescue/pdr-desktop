@@ -5927,7 +5927,9 @@
           const it = collageSelected;
           if (!it || it.isBg || !it.bgRemovedPath) return;
           if (bgSliderTimer) clearTimeout(bgSliderTimer);
-          bgSliderTimer = setTimeout(() => { applyBgStrengthChange(it, parseInt(bgSlider.value, 10) || 50); }, 250);
+          // NB: `parseInt(...) || 50` would turn a real 0 into 50 (0 is falsy) —
+          // that was the "slider snaps back to the middle at 0" bug.
+          bgSliderTimer = setTimeout(() => { const v = parseInt(bgSlider.value, 10); applyBgStrengthChange(it, isNaN(v) ? 50 : v); }, 250);
         });
         bgSlider.addEventListener('dblclick', (e) => {
           e.preventDefault();
