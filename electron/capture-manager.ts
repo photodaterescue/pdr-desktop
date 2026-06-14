@@ -886,7 +886,7 @@ interface CollageLayout {
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
   canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
-  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
+  items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -903,7 +903,13 @@ const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n))
 // so the caller can read the result dims. The placement rotation is
 // applied by the caller afterwards.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance, cropRect?: { left: number; top: number; width: number; height: number }, coverPos: string = 'attention') {
+function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: number, enh?: CollageEnhance, cropRect?: { left: number; top: number; width: number; height: number }, coverPos: string = 'attention', keepAlpha: boolean = false) {
+  // v2.1 round 173 (Terry) — keepAlpha = the source is a background-removed
+  // cut-out (transparent PNG). sharp's .linear() applies to EVERY channel,
+  // which would scale the alpha and bring the removed background back; so for
+  // cut-outs the contrast + temperature ops use per-channel arrays that leave
+  // the alpha (4th channel) untouched. modulate / greyscale / flip / recomb
+  // already preserve alpha.
   let p = sharp(srcLong, { failOnError: false }).rotate();
   // v2.1 round 145 (Terry) — crop: extract the user's rect (in oriented
   // px) BEFORE resizing to the tile box.
@@ -936,10 +942,17 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
     const bw = s <= 0.001;
     const tone = enh.tone ?? 'none';
     if (b !== 1 || (s !== 1 && !bw)) p = p.modulate({ brightness: b, ...(bw ? {} : { saturation: s }) });
-    if (c !== 1) { const slope = c; p = p.linear(slope, 128 * (1 - slope)); }
+    if (c !== 1) {
+      const slope = c, off = 128 * (1 - slope);
+      p = keepAlpha ? p.linear([slope, slope, slope, 1], [off, off, off, 0]) : p.linear(slope, off);
+    }
     if (t !== 0 && tone === 'none') {
       const tt = t / 50;
-      p = p.recomb([[1 + 0.30 * tt, 0, 0], [0, 1, 0], [0, 0, 1 - 0.30 * tt]]);
+      // Temperature is a diagonal recomb (R up, B down) = a per-channel multiply,
+      // so for cut-outs we use the alpha-safe per-channel linear instead.
+      p = keepAlpha
+        ? p.linear([1 + 0.30 * tt, 1, 1 - 0.30 * tt, 1], [0, 0, 0, 0])
+        : p.recomb([[1 + 0.30 * tt, 0, 0], [0, 1, 0], [0, 0, 1 - 0.30 * tt]]);
     }
     if (tone === 'sepia') p = p.recomb([[0.393, 0.769, 0.189], [0.349, 0.686, 0.168], [0.272, 0.534, 0.131]]);
     else if (tone === 'vintage') p = p.recomb([[0.696, 0.385, 0.095], [0.175, 0.843, 0.084], [0.136, 0.267, 0.566]]);
@@ -1037,7 +1050,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         // Bake the tile (crop + resize + its own Enhance state + frame).
         // The result may be larger than iw×ih if a frame was added, so
         // read its real dims back.
-        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect)
+        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect, 'attention', !!item.bgRemoved)
           .png()
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;

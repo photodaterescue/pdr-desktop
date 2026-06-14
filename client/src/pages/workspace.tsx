@@ -56,6 +56,7 @@ import {
   Archive,
   Smile,
   Maximize2,
+  Scissors,
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -14512,28 +14513,30 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               <div className="pt-4 border-t border-border">
                 <label className="block text-base font-semibold text-foreground mb-1">Photo Enhancement</label>
                 <p className="text-xs text-muted-foreground mb-3">
-                  Optional on-device AI models that the PDR Viewer's Enhance panel uses to restore old faces and upscale photos. Both run entirely on your computer — your photos are never uploaded.
+                  Optional on-device AI models that the PDR Viewer uses to restore old faces, upscale photos, and remove backgrounds. They all run entirely on your computer — your photos are never uploaded.
                 </p>
 
                 {/* Two cards — CodeFormer + Real-ESRGAN. Same structure
                     each. Inlined (not a helper) to keep the JSX readable
                     next to the surrounding settings code. */}
                 <div className="space-y-2 mb-3">
-                  {(['codeformer', 'realesrgan'] as AiModelKey[]).map((key) => {
+                  {(['codeformer', 'realesrgan', 'bgremover'] as AiModelKey[]).map((key) => {
                     const status = aiModelStatuses?.[key];
                     const spec = status?.spec;
                     const state = status?.state ?? 'not-installed';
                     const progress = status?.progress;
                     const err = aiModelErrors[key];
-                    const Icon = key === 'codeformer' ? Smile : Maximize2;
+                    const Icon = key === 'codeformer' ? Smile : key === 'realesrgan' ? Maximize2 : Scissors;
                     // Fallback display until aiModelStatuses loads — keeps
                     // the cards from popping in. Static title + size from
                     // the renderer-side knowledge so the layout is stable
                     // even before the first IPC round-trip completes.
                     const fallbackTitle = key === 'codeformer'
                       ? 'CodeFormer (face restoration)'
-                      : 'Real-ESRGAN (whole-image upscale)';
-                    const fallbackSizeMB = key === 'codeformer' ? 337 : 34;
+                      : key === 'realesrgan'
+                      ? 'Real-ESRGAN (whole-image upscale)'
+                      : 'Background remover';
+                    const fallbackSizeMB = key === 'codeformer' ? 337 : key === 'realesrgan' ? 34 : 179;
                     const title = spec?.displayName ?? fallbackTitle;
                     const sizeMB = spec?.sizeMB ?? fallbackSizeMB;
                     const oneLiner = spec?.oneLiner ?? '';

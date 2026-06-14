@@ -2988,7 +2988,7 @@ export async function openCollageComposer(filePaths: string[]): Promise<{ succes
 // installer bridge. The Settings cards call these to surface the
 // install/uninstall state of the optional ONNX models (CodeFormer +
 // Real-ESRGAN), and subscribe to live download progress.
-export type AiModelKey = 'codeformer' | 'realesrgan';
+export type AiModelKey = 'codeformer' | 'realesrgan' | 'bgremover';
 export type AiModelState = 'not-installed' | 'downloading' | 'installed';
 
 export interface AiModelSpec {

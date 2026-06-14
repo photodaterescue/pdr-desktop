@@ -2346,6 +2346,15 @@
           <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0">
         </div>
       </details>
+      <!-- v2.1 round 173 (Terry) — Remove background: AI subject cut-out for the
+           selected collage photo. Runs the on-device IS-Net model; swaps the
+           tile's image for a transparent cut-out so it sits on the collage
+           background. Toggles to Restore. Collage-only (hidden for the
+           background); needs the Background-remover model (Settings → AI). -->
+      <div id="tile-bgremove-row" style="margin:2px 0 6px">
+        <button class="ec-shape-btn" id="tile-bgremove" type="button" style="width:100%" data-pdr-tooltip="Cut out the subject and drop the background (runs on your device)">Remove background</button>
+        <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:5px;display:none"></div>
+      </div>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
            Pick any colour; Thin/Mat width; custom colour picker.
            Decorative/ornate frames join here once their artwork
@@ -5043,6 +5052,7 @@
       // Point the Enhance panel at this element (tile, background, or null).
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
       updateAngleSlider();
+      try { syncBgRemoveBtn(); } catch (_) {}   // v2.1 round 173 — Remove/Restore label per selection
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -5410,7 +5420,7 @@
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
-        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh })),
+        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null })),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -5443,6 +5453,11 @@
         it.panX = (typeof si.panX === 'number') ? si.panX : 0;   // v2.1 round 169 — zoom pan
         it.panY = (typeof si.panY === 'number') ? si.panY : 0;
         it.enh = Object.assign({}, si.enh);
+        // v2.1 round 173 — restore the background-removed cut-out (or the
+        // original). Setting the same src is a no-op in Chromium, so this only
+        // reloads when undo/redo actually flips the cut-out on or off.
+        it.bgRemovedPath = si.bgRemovedPath || null;
+        if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
         if (si.z > maxZ) maxZ = si.z;
       });
       collageZTop = maxZ;
@@ -5490,6 +5505,11 @@
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
           crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+          // v2.1 round 173 (Terry) — when the user removes the background, this
+          // holds the temp transparent-PNG cut-out path. The tile's <img> shows
+          // it and the bake uses it as the source, so preview == saved. null =
+          // background intact.
+          bgRemovedPath: null,
           enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] } };
         const el = document.createElement('div');
         el.className = 'collage-item';
@@ -5714,7 +5734,12 @@
         // is drawn last.
         const ordered = on.slice().sort((p, q) => p.z - q.z);
         const items = ordered.map((it) => ({
-          path: it.path, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac,
+          // v2.1 round 173 (Terry) — if the background was removed, bake from the
+          // transparent cut-out (so the saved tile matches the preview); else the
+          // original. bgRemoved flags the bake to keep the cut-out's alpha intact
+          // through the per-tile enhance steps.
+          path: it.bgRemovedPath || it.path, bgRemoved: !!it.bgRemovedPath,
+          xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac,
           // v2.1 round 145 — send the CROPPED aspect so the backend tile
           // box matches what's on screen; crop rect baked via extract.
           aspect: effectiveAspect(it), rot: it.rot, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY,
@@ -5756,6 +5781,27 @@
     // v2.1 round 140 — collage controls now live in the Enhance panel's
     // Collage section (shape / background / tidy). Save is wired by the
     // panel bridge (it calls saveCollage). Wired once.
+    // v2.1 round 173 (Terry) — Remove-background button state. Top-level so the
+    // panel-sync (on tile selection) can refresh the label too.
+    let bgRemoveBusy = false;
+    function setBgRemoveStatus(msg) {
+      const el = document.getElementById('tile-bgremove-status');
+      if (!el) return;
+      if (msg) { el.textContent = msg; el.style.display = ''; } else { el.style.display = 'none'; }
+    }
+    function syncBgRemoveBtn() {
+      const btn = document.getElementById('tile-bgremove');
+      const row = document.getElementById('tile-bgremove-row');
+      const it = collageSelected;
+      // Photos only — hidden for the background layer and for videos.
+      const isPhoto = !!(it && !it.isBg && !isVideoPath(it.path));
+      if (row) row.style.display = (it && !it.isBg) ? '' : 'none';
+      if (!btn) return;
+      btn.disabled = !isPhoto || bgRemoveBusy;
+      btn.textContent = bgRemoveBusy ? 'Removing…' : (isPhoto && it.bgRemovedPath ? 'Restore background' : 'Remove background');
+      if (!bgRemoveBusy) setBgRemoveStatus('');
+    }
+
     let collageControlsWired = false;
     function wireCollageControls() {
       if (collageControlsWired) return;
@@ -5777,6 +5823,43 @@
         collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
         renderCollageItem(collageSelected);
         updateAngleSlider();
+      });
+      // v2.1 round 173 (Terry) — Remove / restore the selected tile's background.
+      const bgBtn = document.getElementById('tile-bgremove');
+      if (bgBtn) bgBtn.addEventListener('click', async () => {
+        const it = collageSelected;
+        if (!it || it.isBg || isVideoPath(it.path) || bgRemoveBusy) return;
+        // Already cut out → restore the original photo.
+        if (it.bgRemovedPath) {
+          beginCollageChange();
+          it.bgRemovedPath = null;
+          if (it.imgEl) it.imgEl.src = getFileSrc(it.path);
+          renderCollageItem(it);
+          commitCollageChange();
+          syncBgRemoveBtn();
+          return;
+        }
+        // Run the on-device cut-out (takes a few seconds).
+        bgRemoveBusy = true; syncBgRemoveBtn();
+        setBgRemoveStatus('Removing background… this takes a few seconds.');
+        let res;
+        try { res = await window.pdr.viewer.removeBackground({ filePath: it.path }); }
+        catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
+        bgRemoveBusy = false;
+        if (res && res.success && res.outputPath) {
+          beginCollageChange();
+          it.bgRemovedPath = res.outputPath;
+          if (it.imgEl) it.imgEl.src = getFileSrc(res.outputPath);
+          renderCollageItem(it);
+          commitCollageChange();
+          syncBgRemoveBtn();
+        } else if (res && res.requiresInstall) {
+          syncBgRemoveBtn();
+          setBgRemoveStatus('First install the Background-remover model in Settings → AI.');
+        } else {
+          syncBgRemoveBtn();
+          setBgRemoveStatus("Couldn't remove the background" + (res && res.error ? ': ' + res.error : '.'));
+        }
       });
       // v2.1 round 156 (Terry) — fine rotation slider: degree-by-degree
       // nudging of the selected tile's angle (the canvas handle is coarse).
