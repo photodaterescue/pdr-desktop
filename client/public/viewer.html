@@ -2415,9 +2415,9 @@
         <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
         <span class="frame-saved" id="frame-saved"></span>
       </div>
-      <div class="frame-weight" id="enhance-frame-weight">
-        <button data-weight="thin" class="active">Thin</button>
-        <button data-weight="mat">Mat (wide)</button>
+      <div class="enhance-control" id="enhance-frame-weight" style="margin-top:8px">
+        <div class="enhance-label-row"><label for="slider-framewidth" data-pdr-tooltip="How thick the frame is, as a percentage of the photo's shorter side. Double-click to reset.">Frame thickness</label><span class="enhance-val" id="val-framewidth">3.5%</span></div>
+        <input class="enhance-slider" id="slider-framewidth" type="range" min="1" max="15" step="0.5" value="3.5">
       </div>
       </details>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
@@ -4994,6 +4994,14 @@
       elm.style.webkitMaskRepeat = 'no-repeat'; elm.style.maskRepeat = 'no-repeat';
       elm.style.webkitMaskComposite = ''; elm.style.maskComposite = '';
     }
+    // v2.1 round 183 (Terry) — frame thickness as a numeric % of the photo's
+    // shorter side (replaces the old Thin/Mat presets). Falls back to the old
+    // borderWeight for collages/snapshots saved before this round.
+    function frameFrac(enh) {
+      if (!enh) return 0.035;
+      if (typeof enh.borderPct === 'number') return enh.borderPct;
+      return enh.borderWeight === 'mat' ? 0.08 : 0.035;
+    }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
       if (!it.on) { it.el.style.display = 'none'; return; }
@@ -5027,7 +5035,7 @@
         // width here. Without this the image stayed full-tile size and the
         // frame clipped its edges — Terry: "the frame is eating the photo".
         const fbc = ((it.enh && it.enh.borderColor) || '').trim();
-        const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * ((it.enh.borderWeight === 'mat') ? 0.08 : 0.035))) : 0;
+        const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * frameFrac(it.enh))) : 0;
         const innerW = Math.max(2, iwPx - frameInset * 2);
         const innerH = Math.max(2, ihPx - frameInset * 2);
         // v2.1 round 168 (Terry) — per-tile photo ZOOM (Ctrl+scroll, 1–2×).
@@ -5244,7 +5252,7 @@
       const iwPx = it.wFrac * cwpx;
       const ihPx = iwPx / effectiveAspect(it);
       const fbc = ((it.enh && it.enh.borderColor) || '').trim();
-      const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * ((it.enh.borderWeight === 'mat') ? 0.08 : 0.035))) : 0;
+      const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * frameFrac(it.enh))) : 0;
       const innerW = Math.max(2, iwPx - frameInset * 2);
       const innerH = Math.max(2, ihPx - frameInset * 2);
       const z = Math.max(1, Math.min(2, it.zoom || 1));
@@ -6757,7 +6765,8 @@ function zoomTo(newZoom, centreX, centreY) {
         flipV: false, // v2.1 round 155 — flip top↕bottom
         tone: 'none', // v2.1 round 132 — 'none'|'sepia'|'vintage' preset colour matrix
         borderColor: '', // v2.1 round 134 — '' = no frame, else hex
-        borderWeight: 'thin', // 'thin' | 'mat'
+        borderWeight: 'thin', // legacy preset; superseded by borderPct (round 183)
+        borderPct: 0.035, // frame thickness as a fraction of the photo's shorter side (1%–15%)
         opacity: 1, // v2.1 round 143 — per-tile transparency (collage only); 1 = solid
         blend: 0, // v2.1 round 150 — edge feather % (collage only); 0 = crisp edge
       };
@@ -6851,7 +6860,7 @@ function zoomTo(newZoom, centreX, centreY) {
           const shortPx = collageActive
             ? Math.min(bEl.offsetWidth || 600, bEl.offsetHeight || 400)
             : Math.min(bEl.clientWidth || 600, bEl.clientHeight || 400);
-          const frac = s.borderWeight === 'mat' ? 0.08 : 0.035;
+          const frac = frameFrac(s);
           const w = Math.max(4, Math.round(shortPx * frac));
           bEl.style.boxSizing = 'border-box';
           bEl.style.border = w + 'px solid ' + s.borderColor;
@@ -6883,7 +6892,7 @@ function zoomTo(newZoom, centreX, centreY) {
             collageTile.enh = {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, colour: state.colour, tone: state.tone,
-              borderColor: state.borderColor, borderWeight: state.borderWeight,
+              borderColor: state.borderColor, borderWeight: state.borderWeight, borderPct: state.borderPct,
               opacity: state.opacity, blend: state.blend, corners: (Array.isArray(state.corners) ? state.corners.slice() : [0, 0, 0, 0]), flipH: state.flipH, flipV: state.flipV,
             };
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
@@ -7140,14 +7149,22 @@ function zoomTo(newZoom, centreX, centreY) {
         frameCustom.addEventListener('change', function () { saveColor(frameCustom.value); });
       }
       renderSavedColors();
-      if (frameWeightRow) {
-        frameWeightRow.querySelectorAll('button').forEach(function (b) {
-          b.addEventListener('click', function () {
-            state.borderWeight = b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin';
-            frameWeightRow.querySelectorAll('button').forEach(function (x) { x.classList.remove('active'); });
-            b.classList.add('active');
-            applyEnhanceFilter();
-          });
+      // v2.1 round 183 (Terry) — Frame thickness slider (replaces Thin/Mat).
+      // Slider value is a percent (1–15); ÷100 = borderPct fraction.
+      const frameWidthSlider = document.getElementById('slider-framewidth');
+      const frameWidthVal = document.getElementById('val-framewidth');
+      if (frameWidthSlider) {
+        frameWidthSlider.addEventListener('input', function () {
+          const v = parseFloat(frameWidthSlider.value); const pct = isNaN(v) ? 3.5 : v;
+          if (frameWidthVal) frameWidthVal.textContent = pct + '%';
+          state.borderPct = pct / 100;
+          applyEnhanceFilter();
+        });
+        frameWidthSlider.addEventListener('dblclick', function (e) {
+          e.preventDefault();
+          frameWidthSlider.value = '3.5'; if (frameWidthVal) frameWidthVal.textContent = '3.5%';
+          state.borderPct = 0.035;
+          applyEnhanceFilter();
         });
       }
 
@@ -8983,12 +9000,14 @@ function zoomTo(newZoom, centreX, centreY) {
       // through window.pdrEnhanceBridge, so the collage geometry/stage
       // code stays decoupled from the enhance internals (state,
       // applyEnhanceFilter, buildLooksStrip, the Looks/Frame/slider UI).
-      function markActiveWeight(w) {
-        if (!frameWeightRow) return;
-        const want = w === 'mat' ? 'mat' : 'thin';
-        frameWeightRow.querySelectorAll('button').forEach(function (b) {
-          b.classList.toggle('active', (b.getAttribute('data-weight') === 'mat' ? 'mat' : 'thin') === want);
-        });
+      // v2.1 round 183 (Terry) — sync the Frame thickness SLIDER from the
+      // model (state.borderPct, already set from the tile's enh via frameFrac).
+      function markActiveWeight() {
+        const _slider = document.getElementById('slider-framewidth');
+        const _val = document.getElementById('val-framewidth');
+        const _pct = Math.round(frameFrac(state) * 1000) / 10; // e.g. 3.5
+        if (_slider) _slider.value = String(_pct);
+        if (_val) _val.textContent = _pct + '%';
       }
       function loadStateFromTile(tile) {
         const e = (tile && tile.enh) || {};
@@ -9002,12 +9021,13 @@ function zoomTo(newZoom, centreX, centreY) {
         state.tone = e.tone || 'none';
         state.borderColor = e.borderColor || '';
         state.borderWeight = e.borderWeight || 'thin';
+        state.borderPct = frameFrac(e); // v2.1 round 183 — numeric frame thickness
         state.opacity = e.opacity != null ? e.opacity : 1;
         state.blend = e.blend != null ? e.blend : 0;
         state.corners = Array.isArray(e.corners) ? e.corners.slice() : [0, 0, 0, 0];
         updateUI();
         markActiveSwatchByColor(state.borderColor);
-        markActiveWeight(state.borderWeight);
+        markActiveWeight();
         try { clearActivePreset(); } catch (_) {}
       }
       const collageSaveBtn = document.getElementById('collage-save');

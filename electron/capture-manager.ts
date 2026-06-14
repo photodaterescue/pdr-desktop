@@ -846,7 +846,7 @@ interface CollageEnhance {
   brightness?: number; contrast?: number; saturation?: number; temperature?: number;
   colour?: number; // v2.1 round 152 — 0..100, 100 = full colour, 0 = B&W
   flipH?: boolean; flipV?: boolean; // v2.1 round 155 — mirror / flip
-  tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
+  tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat'; borderPct?: number;
   opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
   blend?: number; // v2.1 round 150 — edge feather %, 0–100 (0 = crisp)
   corners?: number[]; // v2.1 round 164 — curved corners [tl,tr,br,bl], 0–1 of half the short side
@@ -930,7 +930,7 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
   // editor preview (applyFilterToEl): mat 8%, thin 3.5% of the short side.
   const _bc = enh ? (enh.borderColor || '').trim() : '';
   const _hasFrame = !!_bc && /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(_bc);
-  const _framePx = _hasFrame ? Math.max(3, Math.round(Math.min(iw, ih) * (enh!.borderWeight === 'mat' ? 0.08 : 0.035))) : 0;
+  const _framePx = _hasFrame ? Math.max(3, Math.round(Math.min(iw, ih) * (typeof enh!.borderPct === 'number' ? enh!.borderPct : (enh!.borderWeight === 'mat' ? 0.08 : 0.035)))) : 0;
   p = p.resize(Math.max(2, iw - _framePx * 2), Math.max(2, ih - _framePx * 2), { fit: 'cover', position: coverPos });
   if (enh) {
     const b = (enh.brightness ?? 100) / 100;
