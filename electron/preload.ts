@@ -920,6 +920,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'bgremover';
       }>,
+    saveCutout: (req: { tempPath: string; originalPath?: string }) =>
+      ipcRenderer.invoke('viewer:saveCutout', req) as Promise<{
+        success: boolean;
+        filePath?: string;
+        filename?: string;
+        fileId?: number | null;
+        error?: string;
+      }>,
     /** v2.1 (Terry 2026-06-07) — cancel any in-flight enhance run by
      *  terminating the underlying worker. */
     cancelEnhance: () =>

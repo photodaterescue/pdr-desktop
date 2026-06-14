@@ -2382,6 +2382,7 @@
           <div class="enhance-label-row"><label for="slider-bgstrength" data-pdr-tooltip="Tune the cut-out — right cuts harder (removes faint edges); left keeps more (brings back bits the AI dropped). Double-click to reset.">Cut-out strength</label><span class="enhance-val" id="val-bgstrength">50</span></div>
           <input class="enhance-slider enhance-slider-bipolar" id="slider-bgstrength" type="range" min="0" max="100" step="1" value="50">
         </div>
+        <button class="ec-shape-btn" id="tile-bgremove-save" type="button" style="width:100%;display:none;margin-top:2px" data-pdr-tooltip="Save the cut-out as a new transparent PNG in your library">Save cut-out (PNG)</button>
         <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:4px;display:none"></div>
       </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
@@ -4482,6 +4483,12 @@
         };
         container.appendChild(img);
         mediaEl = img;
+        // v2.1 round 182 (Terry) — wire the (shared) Background-remover controls
+        // (guarded — runs once) and refresh the section for this newly-loaded
+        // photo. wireBgRemoveControls() is also called from wireCollageControls;
+        // whichever surface loads first wins, the other's call is a no-op. No-op
+        // for videos (the section hides itself); the pseudo-tile resets per file.
+        try { wireBgRemoveControls(); syncBgRemoveBtn(); } catch (_) {}
       }
 
       const name = getFilename(filePath);
@@ -5865,6 +5872,21 @@
     // v2.1 round 173 (Terry) — Remove-background button state. Top-level so the
     // panel-sync (on tile selection) can refresh the label too.
     let bgRemoveBusy = false;
+    // v2.1 round 182 (Terry) — bg-remover handlers are SHARED by collage + the
+    // single-photo Viewer. getBgTarget() = the thing the controls act on: the
+    // selected collage tile, or a pseudo-tile wrapping the open viewer photo +
+    // its <img> (mediaEl). Collage-only calls in the handlers no-op for the
+    // viewer pseudo-tile (no .el; collageMode false).
+    let viewerBgTile = null;
+    function getBgTarget() {
+      if (collageMode) return collageSelected;
+      const fp = files[currentIndex];
+      if (!fp || isVideoPath(fp) || !mediaEl || mediaEl.tagName !== 'IMG') return null;
+      if (!viewerBgTile || viewerBgTile.path !== fp) {
+        viewerBgTile = { path: fp, imgEl: mediaEl, isBg: false, isViewer: true, bgRemovedPath: null, bgRemoveStrength: 50 };
+      } else { viewerBgTile.imgEl = mediaEl; }
+      return viewerBgTile;
+    }
     function setBgRemoveStatus(msg) {
       const el = document.getElementById('tile-bgremove-status');
       if (!el) return;
@@ -5876,9 +5898,10 @@
       const strengthCtl = document.getElementById('tile-bgstrength-control');
       const slider = document.getElementById('slider-bgstrength');
       const valEl = document.getElementById('val-bgstrength');
-      const it = collageSelected;
-      // Photos only — hidden for the background layer, videos, and the single-
-      // photo Viewer (collage-only). 'block' overrides the markup's display:none.
+      const it = getBgTarget();
+      // Photos only — shown for any image in BOTH the collage and the single-
+      // photo Viewer (v2.1 round 182); hidden for the background layer and for
+      // videos. 'block' overrides the markup's default display:none.
       const isPhoto = !!(it && !it.isBg && !isVideoPath(it.path));
       if (section) section.style.display = isPhoto ? 'block' : 'none';
       if (!btn) return;
@@ -5891,6 +5914,10 @@
         const s = (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50;
         slider.value = String(s); valEl.textContent = String(s);
       }
+      // Viewer-only "Save cut-out" button (the collage bakes the cut-out into its
+      // composite instead, so it has no separate save).
+      const saveCutBtn = document.getElementById('tile-bgremove-save');
+      if (saveCutBtn) saveCutBtn.style.display = (it && it.isViewer && hasCut) ? 'block' : 'none';
       if (!bgRemoveBusy) setBgRemoveStatus('');
     }
 
@@ -5924,32 +5951,22 @@
       } else { bgPendingStrength = null; }
     }
 
-    let collageControlsWired = false;
-    function wireCollageControls() {
-      if (collageControlsWired) return;
-      collageControlsWired = true;
-      document.querySelectorAll('.ec-shape-btn').forEach((b) => {
-        b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
-      });
-      // v2.1 round 165 (Terry) — Arrange is now a grid of ~10 layout
-      // thumbnails (Grid / Row / Column / 2-col / 3-col / Left / Top / Stack /
-      // Cascade / Scatter). Grid reuses gridArrange, Scatter reuses jumble.
-      buildArrangeMenu();
-      // v2.1 round 155 (Terry) — Rotate the selected tile 90° (its free
-      // placement angle, baked via sharp .rotate). Undo is handled by the
-      // Enhance-panel pointerdown/up begin/commit wrapper. No-op for the
-      // background (its rotation is a separate item).
-      const rotateBtn = document.getElementById('tile-rotate');
-      if (rotateBtn) rotateBtn.addEventListener('click', () => {
-        if (!collageSelected || collageSelected.isBg) return;
-        collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
-        renderCollageItem(collageSelected);
-        updateAngleSlider();
-      });
+    // v2.1 round 182 (Terry) — Background-remover controls (Remove/Restore
+    // button + strength slider + Save-cut-out) are SHARED by the collage and
+    // the single-photo Viewer. The wiring lives here, behind its own guard, so
+    // it runs once whether the collage OR the Viewer reaches it first; every
+    // handler resolves its target via getBgTarget() — the selected collage tile
+    // in collage mode, or a per-file Viewer pseudo-tile in the Viewer. The
+    // collage-only calls (begin/commitCollageChange, renderCollageItem) safely
+    // no-op for the Viewer pseudo-tile.
+    let bgControlsWired = false;
+    function wireBgRemoveControls() {
+      if (bgControlsWired) return;
+      bgControlsWired = true;
       // v2.1 round 173 (Terry) — Remove / restore the selected tile's background.
       const bgBtn = document.getElementById('tile-bgremove');
       if (bgBtn) bgBtn.addEventListener('click', async () => {
-        const it = collageSelected;
+        const it = getBgTarget();
         if (!it || it.isBg || isVideoPath(it.path) || bgRemoveBusy) return;
         // Already cut out → restore the original photo.
         if (it.bgRemovedPath) {
@@ -5993,7 +6010,7 @@
       if (bgSlider) {
         bgSlider.addEventListener('input', () => {
           if (bgValEl) bgValEl.textContent = bgSlider.value;
-          const it = collageSelected;
+          const it = getBgTarget();
           if (!it || it.isBg || !it.bgRemovedPath) return;
           if (bgSliderTimer) clearTimeout(bgSliderTimer);
           // NB: `parseInt(...) || 50` would turn a real 0 into 50 (0 is falsy) —
@@ -6003,10 +6020,53 @@
         bgSlider.addEventListener('dblclick', (e) => {
           e.preventDefault();
           bgSlider.value = '50'; if (bgValEl) bgValEl.textContent = '50';
-          const it = collageSelected;
+          const it = getBgTarget();
           if (it && it.bgRemovedPath) applyBgStrengthChange(it, 50);
         });
       }
+      // v2.1 round 182 (Terry) — Save the Viewer cut-out as a transparent PNG.
+      const bgSaveBtn = document.getElementById('tile-bgremove-save');
+      if (bgSaveBtn) bgSaveBtn.addEventListener('click', async () => {
+        const it = getBgTarget();
+        if (!it || !it.isViewer || !it.bgRemovedPath || bgRemoveBusy) return;
+        bgSaveBtn.disabled = true; setBgRemoveStatus('Saving cut-out…');
+        let res;
+        try { res = await window.pdr.viewer.saveCutout({ tempPath: it.bgRemovedPath, originalPath: it.path }); }
+        catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
+        bgSaveBtn.disabled = false;
+        if (res && res.success && res.filePath) {
+          setBgRemoveStatus('Saved ✓ ' + (res.filename || ''));
+          try { if (window.pdr.search && window.pdr.search.openViewer) window.pdr.search.openViewer([res.filePath], [res.filename || 'cut-out.png'], 0, false); } catch (_) {}
+        } else { setBgRemoveStatus("Couldn't save: " + ((res && res.error) || 'unknown error')); }
+      });
+    }
+
+    let collageControlsWired = false;
+    function wireCollageControls() {
+      if (collageControlsWired) return;
+      collageControlsWired = true;
+      document.querySelectorAll('.ec-shape-btn').forEach((b) => {
+        b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
+      });
+      // v2.1 round 165 (Terry) — Arrange is now a grid of ~10 layout
+      // thumbnails (Grid / Row / Column / 2-col / 3-col / Left / Top / Stack /
+      // Cascade / Scatter). Grid reuses gridArrange, Scatter reuses jumble.
+      buildArrangeMenu();
+      // v2.1 round 155 (Terry) — Rotate the selected tile 90° (its free
+      // placement angle, baked via sharp .rotate). Undo is handled by the
+      // Enhance-panel pointerdown/up begin/commit wrapper. No-op for the
+      // background (its rotation is a separate item).
+      const rotateBtn = document.getElementById('tile-rotate');
+      if (rotateBtn) rotateBtn.addEventListener('click', () => {
+        if (!collageSelected || collageSelected.isBg) return;
+        collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
+        renderCollageItem(collageSelected);
+        updateAngleSlider();
+      });
+      // v2.1 round 182 (Terry) — Background-remover controls are SHARED with the
+      // single-photo Viewer; their wiring lives in wireBgRemoveControls() so it
+      // runs once whichever surface reaches it first.
+      wireBgRemoveControls();
       // v2.1 round 156 (Terry) — fine rotation slider: degree-by-degree
       // nudging of the selected tile's angle (the canvas handle is coarse).
       const angleSlider = document.getElementById('slider-angle');

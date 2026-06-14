@@ -1198,6 +1198,49 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
   }
 });
 
+// v2.1 round 182 (Terry) — save the single-photo Viewer's background cut-out as a
+// new transparent PNG in the library. The temp file is ALREADY a transparent PNG
+// (the bg-remover worker's output) — copy its bytes verbatim (no re-encode/flatten)
+// into PDR Captures and index it, mirroring the tail of collage:saveLayout. Unlike
+// collages it does NOT join the "PDR Collages" album.
+ipcMain.handle('viewer:saveCutout', async (_event, req: { tempPath: string; originalPath?: string }) => {
+  try {
+    if (!req || !req.tempPath || !fs.existsSync(toLongPath(req.tempPath))) {
+      return { success: false, error: 'Cut-out not found.' };
+    }
+    const sharp = (await import('sharp')).default;
+    const buf = fs.readFileSync(toLongPath(req.tempPath));
+    const capturedAt = new Date();
+    const { date, time, month } = timestampParts(capturedAt);
+    const libRoot = onlineLibraryRoot();
+    const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
+    fs.mkdirSync(toLongPath(destDir), { recursive: true });
+    const base = req.originalPath
+      ? `${path.basename(req.originalPath, path.extname(req.originalPath))}_BG`
+      : `${date}_${time}_BG`;
+    const outPath = uniqueCapturePath(destDir, base, '.png');
+    fs.writeFileSync(toLongPath(outPath), buf);
+    const filename = path.basename(outPath);
+    await stampCaptureMetadata(outPath, capturedAt, 'cutout');
+
+    let fileId: number | null = null;
+    if (libRoot) {
+      try {
+        const meta = await sharp(buf).metadata();
+        fileId = await indexCapturedFile(outPath, libRoot, capturedAt, meta.width ?? null, meta.height ?? null, 'photo');
+        if (fileId != null) broadcast('library:filesAdded', { reason: 'cutout', newFilePath: outPath, fileId });
+      } catch (idxErr) {
+        log.warn(`[cutout] index pass failed (file saved): ${(idxErr as Error).message}`);
+      }
+    }
+    log.info(`[cutout] saved transparent PNG ${filename}${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
+    return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
+  } catch (err) {
+    log.warn(`[cutout] saveCutout failed: ${(err as Error).message}`);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // ─── Global hotkey ───────────────────────────────────────────────────────────
 
 let currentAccelerator: string | null = null;
