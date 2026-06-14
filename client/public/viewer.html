@@ -6,6 +6,17 @@
   <title>PDR Viewer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
+    /* v2.1 round 190 (Terry) — 6 vendored decorative fonts for the collage Text
+       feature. Files live under dist/public/fonts/ (served as the relative URL
+       fonts/<file>.woff2 alongside this page). Used by #collage-text-font; the
+       canvas only renders these once document.fonts.load() has resolved (see the
+       FUN_FAMILIES loading wiring in script). */
+    @font-face { font-family: 'Creepster'; src: url('fonts/creepster.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Cinzel Decorative'; src: url('fonts/cinzel-decorative.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Mountains of Christmas'; src: url('fonts/mountains-of-christmas.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Pacifico'; src: url('fonts/pacifico.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Bungee'; src: url('fonts/bungee.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Lobster'; src: url('fonts/lobster.woff2') format('woff2'); font-display: swap; }
     body {
       background: #1a1a2e;
       color: #e0e0e0;
@@ -2396,6 +2407,17 @@
                 <option value="Comic Sans MS" style="font-family:'Comic Sans MS';background:#241f3a;color:#fff">Comic Sans MS</option>
                 <option value="Consolas" style="font-family:Consolas;background:#241f3a;color:#fff">Consolas</option>
                 <option value="Bahnschrift" style="font-family:Bahnschrift;background:#241f3a;color:#fff">Bahnschrift</option>
+                <!-- v2.1 round 190 (Terry) — vendored decorative "fun" fonts. Each
+                     value IS the CSS font-family (so renderTextToCanvas picks it up)
+                     and previews in its own face like round 187. The canvas needs
+                     these loaded before fillText — see the FUN_FAMILIES wiring. -->
+                <option disabled>──────</option>
+                <option value="Creepster" style="font-family:'Creepster';background:#241f3a;color:#fff">Creepster (spooky)</option>
+                <option value="Cinzel Decorative" style="font-family:'Cinzel Decorative';background:#241f3a;color:#fff">Cinzel Decorative (fantasy)</option>
+                <option value="Mountains of Christmas" style="font-family:'Mountains of Christmas';background:#241f3a;color:#fff">Mountains of Christmas (festive)</option>
+                <option value="Pacifico" style="font-family:'Pacifico';background:#241f3a;color:#fff">Pacifico (brush)</option>
+                <option value="Bungee" style="font-family:'Bungee';background:#241f3a;color:#fff">Bungee (display)</option>
+                <option value="Lobster" style="font-family:'Lobster';background:#241f3a;color:#fff">Lobster (script)</option>
               </select>
             </div>
             <div class="enhance-control" style="margin-top:8px">
@@ -3061,6 +3083,26 @@
     // next text added inherits it. Defaults BLACK (white text on the default
     // white background is invisible). First-ever add → black.
     let lastTextColor = '#111111';
+    // v2.1 round 190 (Terry) — the 6 vendored decorative fonts (must match the
+    // @font-face families + the #collage-text-font option values exactly). HTML
+    // canvas fillText silently falls back to a system face for any web font that
+    // isn't ALREADY loaded, so we explicitly document.fonts.load() these and
+    // re-render once they resolve. funFontsKicked guards the one-time bulk load.
+    const FUN_FAMILIES = ['Creepster', 'Cinzel Decorative', 'Mountains of Christmas', 'Pacifico', 'Bungee', 'Lobster'];
+    let funFontsKicked = false;
+    function kickFunFonts() {
+      if (funFontsKicked) return;
+      funFontsKicked = true;
+      // Re-render after the faces load so any text already using a decorative
+      // font sharpens from its fallback to the real glyphs.
+      try {
+        Promise.all(FUN_FAMILIES.map((f) => document.fonts.load('40px "' + f + '"')))
+          .then(() => { try { renderAllTexts(); } catch (_) {} })
+          .catch(() => {});
+      } catch (_) {}
+      // Belt-and-braces: re-render once the document's font set is fully ready.
+      try { document.fonts.ready.then(() => { try { renderAllTexts(); } catch (_) {} }); } catch (_) {}
+    }
     function defaultBgEnh() {
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
@@ -6825,6 +6867,10 @@
     // undo step per interaction; the <textarea> (no pointer cycle while typing)
     // snapshots on focus + commits on blur, giving one undo step per edit.
     function wireCollageTextControls() {
+      // v2.1 round 190 (Terry) — preload the 6 decorative fonts the moment the
+      // Text feature is wired, so the canvas has the real glyphs ready (one-time,
+      // guarded by funFontsKicked). Re-renders all texts when they resolve.
+      kickFunFonts();
       const addBtn = document.getElementById('collage-text-add');
       if (addBtn) addBtn.addEventListener('click', () => addTextLayer());
       const ta = document.getElementById('collage-text-input');
@@ -6849,8 +6895,22 @@
       const fontSel = document.getElementById('collage-text-font');
       if (fontSel) fontSel.addEventListener('change', () => {
         if (!selectedText) return;
-        selectedText.font = fontSel.value;
+        const fam = fontSel.value;
+        selectedText.font = fam;
         renderTextLayer(selectedText);
+        // v2.1 round 190 (Terry) — first pick of a decorative font can land before
+        // its face is loaded (canvas would draw a fallback for a frame). Load it,
+        // then re-render THIS layer once resolved. Captured by id so a quick
+        // re-selection of another layer can't re-render the wrong one.
+        if (FUN_FAMILIES.indexOf(fam) !== -1) {
+          const tid = selectedText.id;
+          try {
+            document.fonts.load('40px "' + fam + '"').then(() => {
+              const layer = collageTexts.find((t) => t.id === tid);
+              if (layer) renderTextLayer(layer);
+            }).catch(() => {});
+          } catch (_) {}
+        }
       });
       const sizeSlider = document.getElementById('collage-text-size');
       const sizeVal = document.getElementById('val-text-size');
