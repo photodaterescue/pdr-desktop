@@ -2270,6 +2270,10 @@
             <!-- v2.1 round 150 (Terry) — None = no base colour (plain white
                  behind the photo); restores parity with the Frame palette. -->
             <button class="frame-swatch frame-none" data-color="" id="collage-color-none" data-pdr-tooltip="None — plain white base">&#8709;</button>
+            <!-- v2.1 round 177 (Terry) — Transparent: the removed/empty areas stay
+                 see-through and the collage saves as a PNG. Checkerboard swatch =
+                 the universal "transparent" cue. Mutually exclusive with a bg photo. -->
+            <button class="frame-swatch frame-bg-transparent" data-color="__transparent__" id="collage-color-transparent" data-pdr-tooltip="Transparent — saves as a see-through PNG (removed/empty areas stay clear)" style="background:repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50%/10px 10px"></button>
             <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
             <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
             <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
@@ -2854,6 +2858,10 @@
     let collageMode = false;
     const collageItems = [];   // { idx, path, on, xFrac, yFrac, wFrac, aspect, rot, z, el, imgEl }
     let collageBg = '#ffffff';
+    // v2.1 round 177 (Terry) — transparent background mode (saves a see-through
+    // PNG). Mutually exclusive with a background colour/photo.
+    let collageTransparent = false;
+    const COLLAGE_CHECKER_BG = 'repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50% / 16px 16px';
     let collageAspectKey = 'landscape';
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
@@ -5426,7 +5434,7 @@
     const COLLAGE_UNDO_CAP = 60;
     function snapshotCollage() {
       return JSON.stringify({
-        bg: collageBg, bgImagePath: collageBgImagePath,
+        bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
@@ -5448,6 +5456,7 @@
     function restoreCollageSnapshot(snapStr) {
       let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
       collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageAspectKey = s.aspectKey;
+      collageTransparent = !!s.transparent;   // v2.1 round 177
       // v2.1 round 149 — restore the background's enh (fall back to the
       // pre-149 single fade value for old snapshots in the undo stack).
       ensureCollageBgTile();
@@ -5612,22 +5621,36 @@
     // v2.1 round 149 (Terry 2026-06-13) — this palette is the BACKGROUND
     // colour ONLY now. The selected tile's frame is driven by the shared
     // Frame chevron (#enhance-frames), the same control the viewer uses.
+    function applyCanvasBgVisual() {
+      if (collageCanvasEl) collageCanvasEl.style.background = collageTransparent ? COLLAGE_CHECKER_BG : (collageBg || '#ffffff');
+    }
     function markCollageColorActive() {
       const cur = (collageBg || '').toLowerCase();
       document.querySelectorAll('#collage-color-palette .frame-swatch').forEach((s) => {
-        s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
+        const dc = (s.getAttribute('data-color') || '').toLowerCase();
+        s.classList.toggle('active', dc === '__transparent__' ? collageTransparent : (!collageTransparent && dc === cur));
       });
     }
-    function onCollageColorPick(hex) {
-      // v2.1 round 150 (Terry) — '' is the None swatch: a plain white base.
-      setCollageBg(hex || '');
+    // v2.1 round 177 (Terry) — toggle transparent background. Clears any bg photo
+    // (they can't coexist) and shows the checkerboard on the canvas.
+    function setCollageTransparent(on) {
+      collageTransparent = !!on;
+      if (collageTransparent && collageBgImagePath) setCollageBgImage('');
+      applyCanvasBgVisual();
       markCollageColorActive();
+    }
+    function onCollageColorPick(hex) {
+      // v2.1 round 177 — the Transparent swatch uses a sentinel data-color.
+      if (hex === '__transparent__') { setCollageTransparent(true); return; }
+      // A real colour (incl. None '') exits transparent mode.
+      collageTransparent = false;
+      setCollageBg(hex || '');
     }
     function setCollageBg(hex) {
       collageBg = hex || '';
       // None ('') renders as plain white on screen and bakes to white on save
       // (hexToRgb('') already falls back to white).
-      if (collageCanvasEl) collageCanvasEl.style.background = collageBg || '#ffffff';
+      applyCanvasBgVisual();
       markCollageColorActive();
     }
     function initCollageColorPicker() {
@@ -5692,6 +5715,8 @@
     }
     function setCollageBgImage(path) {
       const fresh = path && path !== collageBgImagePath;
+      // v2.1 round 177 — a background photo and transparent are mutually exclusive.
+      if (path && collageTransparent) { collageTransparent = false; applyCanvasBgVisual(); markCollageColorActive(); }
       collageBgImagePath = path || '';
       // A brand-new background photo starts with clean enh (a previous
       // photo's Look shouldn't carry over); undo/restore set enh directly.
@@ -5759,7 +5784,7 @@
           // per-photo by the backend.
           enh: it.enh,
         }));
-        const canvas = { w: W, h: H, bg: collageBg };
+        const canvas = { w: W, h: H, bg: collageBg, transparent: collageTransparent };
         // v2.1 round 142 — background photo baked under the tiles.
         // v2.1 round 149 — with its own enh (Look/levels) + Fade opacity.
         if (collageBgImagePath) {

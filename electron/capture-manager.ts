@@ -885,7 +885,7 @@ interface CollageLayout {
   // v2.1 round 142 (Terry) — bgImage: an optional library photo used as
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
-  canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
@@ -980,6 +980,11 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     const W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
     const H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
     const bg = hexToRgb(layout.canvas.bg || '#ffffff');
+    // v2.1 round 177 (Terry) — transparent background: the removed areas (and
+    // any canvas not covered by a tile) stay see-through, and the collage is
+    // saved as a PNG instead of a flattened JPEG. Mutually exclusive with a
+    // background photo (the UI clears one when you pick the other).
+    const transparent = !!layout.canvas.transparent;
     // Generous padding so a rotated / dragged-to-the-edge tile never
     // overflows the composite base (sharp errors if an input extends
     // past the base bounds). 0.8·W covers a 45°-rotated full-width
@@ -1103,7 +1108,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     // solid colour at `opacity`. Prepended (bottom layer) so the tiles
     // sit on top. Resized cover to the canvas, alpha set to opacity so
     // the solid bg colour shows through underneath (the "Fade" slider).
-    const bgImage = layout.canvas.bgImage;
+    const bgImage = transparent ? undefined : layout.canvas.bgImage;
     if (bgImage && bgImage.path && fs.existsSync(toLongPath(bgImage.path))) {
       try {
         const op = Math.max(0, Math.min(1, Number.isFinite(bgImage.opacity) ? bgImage.opacity : 0.4));
@@ -1138,23 +1143,23 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     // the symptom). So composite onto the padded base → buffer, then
     // extract the centre region in a fresh pipeline.
     const paddedBuf = await sharp({
-      create: { width: baseW, height: baseH, channels: 4, background: { ...bg, alpha: 1 } },
+      create: { width: baseW, height: baseH, channels: 4, background: transparent ? { r: 0, g: 0, b: 0, alpha: 0 } : { ...bg, alpha: 1 } },
     })
       .composite(composites)
       .png()
       .toBuffer();
-    const collageBuf = await sharp(paddedBuf)
-      .extract({ left: PAD, top: PAD, width: W, height: H })
-      .flatten({ background: bg })
-      .jpeg({ quality: 92, mozjpeg: true })
-      .toBuffer();
+    // Transparent → keep the alpha + save PNG; otherwise flatten onto the bg
+    // colour + save JPEG (smaller, no needless alpha).
+    const collageBuf = transparent
+      ? await sharp(paddedBuf).extract({ left: PAD, top: PAD, width: W, height: H }).png().toBuffer()
+      : await sharp(paddedBuf).extract({ left: PAD, top: PAD, width: W, height: H }).flatten({ background: bg }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
 
     const capturedAt = new Date();
     const { date, time, month } = timestampParts(capturedAt);
     const libRoot = onlineLibraryRoot();
     const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
     fs.mkdirSync(toLongPath(destDir), { recursive: true });
-    const outPath = uniqueCapturePath(destDir, `${date}_${time}_CO`, '.jpg');
+    const outPath = uniqueCapturePath(destDir, `${date}_${time}_CO`, transparent ? '.png' : '.jpg');
     fs.writeFileSync(toLongPath(outPath), collageBuf);
     const filename = path.basename(outPath);
     await stampCaptureMetadata(outPath, capturedAt, 'collage');
