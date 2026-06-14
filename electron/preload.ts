@@ -920,7 +920,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'bgremover';
       }>,
-    saveCutout: (req: { tempPath: string; originalPath?: string }) =>
+    // v2.1 round 184 (Terry) — optional bg backdrop the cut-out is composited
+    // onto before saving (transparent PNG / flattened colour / a photo).
+    saveCutout: (req: {
+      tempPath: string;
+      originalPath?: string;
+      bg?: { type: 'transparent' | 'color' | 'photo'; value: string };
+    }) =>
       ipcRenderer.invoke('viewer:saveCutout', req) as Promise<{
         success: boolean;
         filePath?: string;

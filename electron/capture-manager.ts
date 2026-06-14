@@ -1203,43 +1203,92 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
 // (the bg-remover worker's output) — copy its bytes verbatim (no re-encode/flatten)
 // into PDR Captures and index it, mirroring the tail of collage:saveLayout. Unlike
 // collages it does NOT join the "PDR Collages" album.
-ipcMain.handle('viewer:saveCutout', async (_event, req: { tempPath: string; originalPath?: string }) => {
-  try {
-    if (!req || !req.tempPath || !fs.existsSync(toLongPath(req.tempPath))) {
-      return { success: false, error: 'Cut-out not found.' };
-    }
-    const sharp = (await import('sharp')).default;
-    const buf = fs.readFileSync(toLongPath(req.tempPath));
-    const capturedAt = new Date();
-    const { date, time, month } = timestampParts(capturedAt);
-    const libRoot = onlineLibraryRoot();
-    const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
-    fs.mkdirSync(toLongPath(destDir), { recursive: true });
-    const base = req.originalPath
-      ? `${path.basename(req.originalPath, path.extname(req.originalPath))}_BG`
-      : `${date}_${time}_BG`;
-    const outPath = uniqueCapturePath(destDir, base, '.png');
-    fs.writeFileSync(toLongPath(outPath), buf);
-    const filename = path.basename(outPath);
-    await stampCaptureMetadata(outPath, capturedAt, 'cutout');
-
-    let fileId: number | null = null;
-    if (libRoot) {
-      try {
-        const meta = await sharp(buf).metadata();
-        fileId = await indexCapturedFile(outPath, libRoot, capturedAt, meta.width ?? null, meta.height ?? null, 'photo');
-        if (fileId != null) broadcast('library:filesAdded', { reason: 'cutout', newFilePath: outPath, fileId });
-      } catch (idxErr) {
-        log.warn(`[cutout] index pass failed (file saved): ${(idxErr as Error).message}`);
+ipcMain.handle(
+  'viewer:saveCutout',
+  async (
+    _event,
+    req: {
+      tempPath: string;
+      originalPath?: string;
+      // v2.1 round 184 (Terry) — the backdrop the cut-out is placed on.
+      bg?: { type: 'transparent' | 'color' | 'photo'; value: string };
+    },
+  ) => {
+    try {
+      if (!req || !req.tempPath || !fs.existsSync(toLongPath(req.tempPath))) {
+        return { success: false, error: 'Cut-out not found.' };
       }
+      const sharp = (await import('sharp')).default;
+      const capturedAt = new Date();
+      const { date, time, month } = timestampParts(capturedAt);
+      const libRoot = onlineLibraryRoot();
+      const destDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
+      fs.mkdirSync(toLongPath(destDir), { recursive: true });
+      const base = req.originalPath
+        ? `${path.basename(req.originalPath, path.extname(req.originalPath))}_BG`
+        : `${date}_${time}_BG`;
+
+      // v2.1 round 184 (Terry) — compose the cut-out onto the chosen backdrop:
+      //  • transparent / missing → keep today's behaviour: the temp PNG verbatim.
+      //  • colour → flatten the transparent areas to the colour → JPEG.
+      //  • photo  → cover-fit the backdrop photo to the cut-out's pixel size,
+      //    composite the cut-out over it → JPEG.
+      const bgType = req.bg?.type;
+      let outBuf: Buffer;
+      let ext: '.png' | '.jpg';
+      if (bgType === 'color') {
+        outBuf = await sharp(toLongPath(req.tempPath))
+          .flatten({ background: hexToRgb(req.bg?.value || '#ffffff') })
+          .jpeg({ quality: 92 })
+          .toBuffer();
+        ext = '.jpg';
+      } else if (bgType === 'photo' && req.bg?.value && fs.existsSync(toLongPath(req.bg.value))) {
+        const cutMeta = await sharp(toLongPath(req.tempPath)).metadata();
+        const cutW = cutMeta.width ?? 0;
+        const cutH = cutMeta.height ?? 0;
+        if (cutW > 0 && cutH > 0) {
+          const bgBuf = await sharp(toLongPath(req.bg.value))
+            .resize(cutW, cutH, { fit: 'cover', position: 'attention' })
+            .toBuffer();
+          outBuf = await sharp(bgBuf)
+            .composite([{ input: toLongPath(req.tempPath) }])
+            .jpeg({ quality: 92 })
+            .toBuffer();
+          ext = '.jpg';
+        } else {
+          // Degenerate cut-out size — fall back to the verbatim transparent PNG.
+          outBuf = fs.readFileSync(toLongPath(req.tempPath));
+          ext = '.png';
+        }
+      } else {
+        // transparent / missing → verbatim transparent PNG (unchanged behaviour).
+        outBuf = fs.readFileSync(toLongPath(req.tempPath));
+        ext = '.png';
+      }
+
+      const outPath = uniqueCapturePath(destDir, base, ext);
+      fs.writeFileSync(toLongPath(outPath), outBuf);
+      const filename = path.basename(outPath);
+      await stampCaptureMetadata(outPath, capturedAt, 'cutout');
+
+      let fileId: number | null = null;
+      if (libRoot) {
+        try {
+          const meta = await sharp(outBuf).metadata();
+          fileId = await indexCapturedFile(outPath, libRoot, capturedAt, meta.width ?? null, meta.height ?? null, 'photo');
+          if (fileId != null) broadcast('library:filesAdded', { reason: 'cutout', newFilePath: outPath, fileId });
+        } catch (idxErr) {
+          log.warn(`[cutout] index pass failed (file saved): ${(idxErr as Error).message}`);
+        }
+      }
+      log.info(`[cutout] saved ${ext === '.jpg' ? 'composite JPEG' : 'transparent PNG'} ${filename}${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
+      return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
+    } catch (err) {
+      log.warn(`[cutout] saveCutout failed: ${(err as Error).message}`);
+      return { success: false, error: (err as Error).message };
     }
-    log.info(`[cutout] saved transparent PNG ${filename}${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
-    return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
-  } catch (err) {
-    log.warn(`[cutout] saveCutout failed: ${(err as Error).message}`);
-    return { success: false, error: (err as Error).message };
-  }
-});
+  },
+);
 
 // ─── Global hotkey ───────────────────────────────────────────────────────────
 

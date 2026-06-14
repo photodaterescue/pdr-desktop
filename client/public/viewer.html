@@ -2382,7 +2382,32 @@
           <div class="enhance-label-row"><label for="slider-bgstrength" data-pdr-tooltip="Tune the cut-out — right cuts harder (removes faint edges); left keeps more (brings back bits the AI dropped). Double-click to reset.">Cut-out strength</label><span class="enhance-val" id="val-bgstrength">50</span></div>
           <input class="enhance-slider enhance-slider-bipolar" id="slider-bgstrength" type="range" min="0" max="100" step="1" value="50">
         </div>
-        <button class="ec-shape-btn" id="tile-bgremove-save" type="button" style="width:100%;display:none;margin-top:2px" data-pdr-tooltip="Save the cut-out as a new transparent PNG in your library">Save cut-out (PNG)</button>
+        <!-- v2.1 round 184 (Terry) — Viewer background palette. Mirrors the
+             collage Background palette (same frame-palette / frame-swatch
+             classes) but acts on the single Viewer cut-out: place the subject
+             on Transparent, a colour, or another photo, then Save as new.
+             Shown by syncBgRemoveBtn() only for a Viewer image with a live
+             cut-out (it.isViewer && it.bgRemovedPath); hidden otherwise. No
+             "None" swatch — Transparent IS the no-background option here. -->
+        <div class="frame-palette" id="viewer-bg-palette" style="display:none;margin-top:6px">
+          <button class="frame-add" id="viewer-bg-add" data-pdr-tooltip="Pick a custom colour"><span class="frame-add-plus">+</span></button>
+          <input type="color" id="viewer-bg-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+          <button class="frame-swatch frame-bg-transparent" data-color="__transparent__" id="viewer-bg-transparent" data-pdr-tooltip="Transparent — saves as a see-through PNG (removed areas stay clear)" style="background:repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50%/10px 10px"></button>
+          <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+          <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+          <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
+          <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" data-pdr-tooltip="Gold"></button>
+          <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
+          <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
+        </div>
+        <!-- v2.1 round 184 (Terry) — use one of your library photos as the
+             backdrop behind the cut-out. Opens the shared picker in the main
+             window (same as the collage). -->
+        <button class="ec-tidy-btn" id="viewer-bg-photo" type="button" style="display:none;margin-top:6px" data-pdr-tooltip="Use one of your photos as the backdrop behind the cut-out. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates, ready to pick.">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
+          Use a photo…
+        </button>
+        <button class="ec-shape-btn" id="tile-bgremove-save" type="button" style="width:100%;display:none;margin-top:6px" data-pdr-tooltip="Save this cut-out on the chosen background as a new photo in your library">Save as new photo</button>
         <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:4px;display:none"></div>
       </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
@@ -5891,7 +5916,10 @@
       const fp = files[currentIndex];
       if (!fp || isVideoPath(fp) || !mediaEl || mediaEl.tagName !== 'IMG') return null;
       if (!viewerBgTile || viewerBgTile.path !== fp) {
-        viewerBgTile = { path: fp, imgEl: mediaEl, isBg: false, isViewer: true, bgRemovedPath: null, bgRemoveStrength: 50 };
+        // v2.1 round 184 (Terry) — bg = the chosen backdrop the cut-out sits on
+        // (Transparent / a colour / a photo). Defaults to transparent (today's
+        // behaviour) and resets per file with the rest of the pseudo-tile.
+        viewerBgTile = { path: fp, imgEl: mediaEl, isBg: false, isViewer: true, bgRemovedPath: null, bgRemoveStrength: 50, bg: { type: 'transparent', value: '' } };
       } else { viewerBgTile.imgEl = mediaEl; }
       return viewerBgTile;
     }
@@ -5922,11 +5950,72 @@
         const s = (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50;
         slider.value = String(s); valEl.textContent = String(s);
       }
-      // Viewer-only "Save cut-out" button (the collage bakes the cut-out into its
-      // composite instead, so it has no separate save).
+      // Viewer-only "Save as new photo" button (the collage bakes the cut-out
+      // into its composite instead, so it has no separate save).
       const saveCutBtn = document.getElementById('tile-bgremove-save');
       if (saveCutBtn) saveCutBtn.style.display = (it && it.isViewer && hasCut) ? 'block' : 'none';
+      // v2.1 round 184 (Terry) — Viewer background palette: only meaningful once
+      // a Viewer cut-out is live (the transparent PNG reveals the backdrop). Shown
+      // for a Viewer image with a cut-out, hidden otherwise.
+      const bgPalette = document.getElementById('viewer-bg-palette');
+      const bgPhotoBtn = document.getElementById('viewer-bg-photo');
+      const showBgPalette = !!(it && it.isViewer && hasCut);
+      if (bgPalette) bgPalette.style.display = showBgPalette ? '' : 'none';
+      if (bgPhotoBtn) bgPhotoBtn.style.display = showBgPalette ? '' : 'none';
+      if (showBgPalette) markViewerBgActive();
+      // Keep the live preview (background painted on the cut-out <img>) correct
+      // on load / remove / restore / strength re-tune / file change.
+      renderViewerBgLayer();
       if (!bgRemoveBusy) setBgRemoveStatus('');
+    }
+
+    // v2.1 round 184 (Terry) — Live preview for the single-photo Viewer: paint
+    // the chosen backdrop directly ON the cut-out <img> (mediaEl). The transparent
+    // cut-out PNG reveals the CSS background through the removed areas — perfect
+    // alignment, no extra element. Only paints for a Viewer image with a live
+    // cut-out; otherwise the background is cleared.
+    function renderViewerBgLayer() {
+      if (collageMode || !mediaEl || mediaEl.tagName !== 'IMG') return;
+      const it = (viewerBgTile && viewerBgTile.path === files[currentIndex]) ? viewerBgTile : null;
+      const active = !!(it && it.isViewer && it.bgRemovedPath);
+      if (!active) { mediaEl.style.background = ''; return; }
+      const bg = it.bg || { type: 'transparent', value: '' };
+      if (bg.type === 'color' && bg.value) {
+        mediaEl.style.background = bg.value;
+      } else if (bg.type === 'photo' && bg.value) {
+        mediaEl.style.background = 'url("' + getFileSrc(bg.value).replace(/"/g, '\\"') + '") center/cover';
+      } else {
+        mediaEl.style.background = COLLAGE_CHECKER_BG;
+      }
+    }
+
+    // v2.1 round 184 (Terry) — ring the chosen Viewer background swatch (matches
+    // markCollageColorActive). Transparent swatch active when type==='transparent';
+    // a colour swatch active when its data-color === the chosen colour. A photo
+    // backdrop rings nothing (it has no swatch — the "Use a photo…" button set it).
+    function markViewerBgActive() {
+      const it = (viewerBgTile && viewerBgTile.path === files[currentIndex]) ? viewerBgTile : null;
+      const bg = (it && it.bg) ? it.bg : { type: 'transparent', value: '' };
+      const cur = (bg.value || '').toLowerCase();
+      document.querySelectorAll('#viewer-bg-palette .frame-swatch').forEach((s) => {
+        const dc = (s.getAttribute('data-color') || '').toLowerCase();
+        let isActive;
+        if (dc === '__transparent__') isActive = bg.type === 'transparent';
+        else isActive = bg.type === 'color' && dc === cur;
+        s.classList.toggle('active', isActive);
+      });
+    }
+
+    // v2.1 round 184 (Terry) — Viewer background pick: thin handler (legitimately
+    // differs from the collage's canvas handler). Transparent / colour update the
+    // pseudo-tile's bg, then re-paint the live preview + re-ring the swatches.
+    function onViewerBgPick(hex) {
+      const it = getBgTarget();
+      if (!it || !it.isViewer || !it.bgRemovedPath) return;
+      if (hex === '__transparent__') it.bg = { type: 'transparent', value: '' };
+      else it.bg = { type: 'color', value: hex };
+      renderViewerBgLayer();
+      markViewerBgActive();
     }
 
     // v2.1 round 175 (Terry) — re-tune an existing cut-out to a new strength.
@@ -6032,21 +6121,56 @@
           if (it && it.bgRemovedPath) applyBgStrengthChange(it, 50);
         });
       }
-      // v2.1 round 182 (Terry) — Save the Viewer cut-out as a transparent PNG.
+      // v2.1 round 182 (Terry) — Save the Viewer cut-out as a new photo.
+      // v2.1 round 184 (Terry) — now composited onto the chosen backdrop
+      // (transparent PNG / flattened colour / a photo backdrop) — see
+      // capture-manager's viewer:saveCutout branches.
       const bgSaveBtn = document.getElementById('tile-bgremove-save');
       if (bgSaveBtn) bgSaveBtn.addEventListener('click', async () => {
         const it = getBgTarget();
         if (!it || !it.isViewer || !it.bgRemovedPath || bgRemoveBusy) return;
-        bgSaveBtn.disabled = true; setBgRemoveStatus('Saving cut-out…');
+        bgSaveBtn.disabled = true; setBgRemoveStatus('Saving…');
         let res;
-        try { res = await window.pdr.viewer.saveCutout({ tempPath: it.bgRemovedPath, originalPath: it.path }); }
+        try { res = await window.pdr.viewer.saveCutout({ tempPath: it.bgRemovedPath, originalPath: it.path, bg: it.bg }); }
         catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
         bgSaveBtn.disabled = false;
         if (res && res.success && res.filePath) {
           setBgRemoveStatus('Saved ✓ ' + (res.filename || ''));
-          try { if (window.pdr.search && window.pdr.search.openViewer) window.pdr.search.openViewer([res.filePath], [res.filename || 'cut-out.png'], 0, false); } catch (_) {}
+          try { if (window.pdr.search && window.pdr.search.openViewer) window.pdr.search.openViewer([res.filePath], [res.filename || 'cut-out'], 0, false); } catch (_) {}
         } else { setBgRemoveStatus("Couldn't save: " + ((res && res.error) || 'unknown error')); }
       });
+      // v2.1 round 184 (Terry) — Viewer background palette wiring (guarded with
+      // the rest of the bg controls so it runs once). Swatch click → onViewerBgPick;
+      // the "+" opens the hidden colour input; the colour input live-updates.
+      const viewerBgPal = document.getElementById('viewer-bg-palette');
+      if (viewerBgPal) viewerBgPal.addEventListener('click', (e) => { const sw = e.target.closest ? e.target.closest('.frame-swatch') : null; if (sw && viewerBgPal.contains(sw)) onViewerBgPick(sw.getAttribute('data-color') || ''); });
+      const viewerBgAdd = document.getElementById('viewer-bg-add');
+      const viewerBgCustom = document.getElementById('viewer-bg-custom');
+      if (viewerBgAdd && viewerBgCustom) {
+        viewerBgAdd.addEventListener('click', () => { try { viewerBgCustom.click(); } catch (_) {} });
+        viewerBgCustom.addEventListener('input', () => onViewerBgPick(viewerBgCustom.value));
+      }
+      // "Use a photo…" → open the shared picker in the main window (same bridge
+      // the collage uses). The result returns via onBackgroundPicked below.
+      const viewerBgPhotoBtn = document.getElementById('viewer-bg-photo');
+      if (viewerBgPhotoBtn) viewerBgPhotoBtn.addEventListener('click', () => {
+        try { window.pdr.collage.pickBackground('your photo'); } catch (_) {}
+      });
+      // The chosen backdrop photo comes back async from the picker. Subscribe
+      // ONCE; branch on collageMode so this Viewer handler only acts in a Viewer
+      // window (the collage has its OWN onBackgroundPicked in wireCollageControls).
+      try {
+        if (window.pdr.collage && window.pdr.collage.onBackgroundPicked) {
+          window.pdr.collage.onBackgroundPicked((fp) => {
+            if (collageMode || !fp) return;
+            const it = getBgTarget();
+            if (!it || !it.isViewer || !it.bgRemovedPath) return;
+            it.bg = { type: 'photo', value: fp };
+            renderViewerBgLayer();
+            markViewerBgActive();
+          });
+        }
+      } catch (_) {}
     }
 
     let collageControlsWired = false;
