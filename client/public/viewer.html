@@ -2029,6 +2029,33 @@
     }
     .ec-shape-btn:hover { background: rgba(169,156,255,0.10); }
     .ec-shape-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 188 (Terry) — compact square toggle for alignment icons +
+       B/I/U. Same palette/active-ring as .ec-shape-btn but fixed ~28px so the
+       icons read at a glance instead of stretching across the row. */
+    .ec-toggle-btn {
+      flex: 0 0 auto; width: 30px; height: 28px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent;
+      border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff;
+      font-size: 13px; padding: 0; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-toggle-btn:hover { background: rgba(169,156,255,0.10); }
+    .ec-toggle-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    .ec-toggle-btn svg { display: block; }
+    /* v2.1 round 188 (Terry) — effect chips: a wrap row of small pills. */
+    .ec-effect-row { display: flex; flex-wrap: wrap; gap: 6px; }
+    .ec-effect-btn {
+      flex: 0 0 auto;
+      background: transparent;
+      border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff;
+      font-size: 11px; padding: 5px 9px; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-effect-btn:hover { background: rgba(169,156,255,0.10); }
+    .ec-effect-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
     /* v2.1 round 165 (Terry) — Arrange = a grid of ~10 layout thumbnails. */
     .ec-arrange-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 6px 0 10px; }
     .ec-arrange-opt {
@@ -2371,12 +2398,38 @@
               <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
               <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="40" step="1" value="8">
             </div>
+            <!-- v2.1 round 188 (Terry) — Alignment as compact icon toggles
+                 (3 horizontal lines aligned L/C/R) replacing the old wide
+                 L/C/R buttons. Same data-align + handler. -->
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
               <div style="display:flex;gap:6px" id="collage-text-align">
-                <button class="ec-shape-btn" data-align="left" type="button" data-pdr-tooltip="Align left">L</button>
-                <button class="ec-shape-btn active" data-align="center" type="button" data-pdr-tooltip="Centre">C</button>
-                <button class="ec-shape-btn" data-align="right" type="button" data-pdr-tooltip="Align right">R</button>
+                <button class="ec-toggle-btn" data-align="left" type="button" data-pdr-tooltip="Align left" aria-label="Align left"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg></button>
+                <button class="ec-toggle-btn active" data-align="center" type="button" data-pdr-tooltip="Centre" aria-label="Centre"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg></button>
+                <button class="ec-toggle-btn" data-align="right" type="button" data-pdr-tooltip="Align right" aria-label="Align right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="6" y1="8" x2="14" y2="8"/><line x1="3" y1="12" x2="14" y2="12"/></svg></button>
+              </div>
+            </div>
+            <!-- v2.1 round 188 (Terry) — Style: Bold / Italic / Underline
+                 toggles, each styled to read at a glance. Flip the layer flag,
+                 re-render, one undo step each. -->
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label data-pdr-tooltip="Bold, italic, and underline">Style</label></div>
+              <div style="display:flex;gap:6px" id="collage-text-style">
+                <button class="ec-toggle-btn" data-style="bold" type="button" data-pdr-tooltip="Bold" aria-label="Bold" style="font-weight:700">B</button>
+                <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
+                <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
+              </div>
+            </div>
+            <!-- v2.1 round 188 (Terry) — Effect chips: None / Outline / Shadow
+                 / Neon / 3D. Sets layer.effect, re-renders, rings the active. -->
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label data-pdr-tooltip="Add a glow, outline, shadow, or 3D look to the text">Effect</label></div>
+              <div class="ec-effect-row" id="collage-text-effect">
+                <button class="ec-effect-btn active" data-effect="none" type="button" data-pdr-tooltip="No effect">None</button>
+                <button class="ec-effect-btn" data-effect="outline" type="button" data-pdr-tooltip="Outlined letters">Outline</button>
+                <button class="ec-effect-btn" data-effect="shadow" type="button" data-pdr-tooltip="Drop shadow">Shadow</button>
+                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon glow in the text colour">Neon</button>
+                <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Extruded 3D look">3D</button>
               </div>
             </div>
             <div class="enhance-control" style="margin-top:8px">
@@ -5191,31 +5244,125 @@
     // on-screen collage short-side px; the bake is fed the OUTPUT short-side
     // px — so the text lands at the same relative position + size in both, and
     // sharp only composites the resulting bitmap (no font dependency backend).
+    // v2.1 round 188 (Terry) — shade a #rrggbb hex toward black (amt<0) or
+    // white (amt>0), amt in -1..1. Used for the 3D extrusion shade and the
+    // neon core. Inline hex parse (no shared hexToRgb in this renderer).
+    function shadeHex(hex, amt) {
+      let h = String(hex || '#ffffff').replace('#', '');
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      let r = parseInt(h.slice(0, 2), 16); let g = parseInt(h.slice(2, 4), 16); let b = parseInt(h.slice(4, 6), 16);
+      if (isNaN(r) || isNaN(g) || isNaN(b)) { r = 255; g = 255; b = 255; }
+      const mix = (c) => Math.max(0, Math.min(255, Math.round(amt < 0 ? c * (1 + amt) : c + (255 - c) * amt)));
+      const to2 = (n) => ('0' + n.toString(16)).slice(-2);
+      return '#' + to2(mix(r)) + to2(mix(g)) + to2(mix(b));
+    }
     function renderTextToCanvas(layer, shortPx) {
       const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);
       const lines = String(layer.text == null ? '' : layer.text).split('\n');
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
-      const fontStr = fontPx + 'px ' + (layer.font || 'Impact');
+      const color = layer.color || '#ffffff';
+      const effect = layer.effect || 'none';
+      // v2.1 round 188 (Terry) — bold / italic baked into the font string so
+      // the SAME render drives preview + bake (sharp only composites the bitmap).
+      const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px ' + (layer.font || 'Impact');
       ctx.font = fontStr;
-      // Widest line decides the canvas width; a few px pad each side so the
-      // glyph overhangs (italics / Impact's wide strokes) aren't clipped.
+      // Widest line decides the canvas width.
       let maxW = 0;
       for (const ln of lines) { const w = ctx.measureText(ln).width; if (w > maxW) maxW = w; }
-      const pad = Math.max(4, Math.round(fontPx * 0.15));
+      // v2.1 round 188 (Terry) — effects (neon glow / drop-shadow / 3D depth /
+      // outline stroke) extend BEYOND the glyph box. Grow the canvas by a
+      // uniform pad on ALL four sides so they aren't clipped AND — because pad
+      // is symmetric — the visual text centre stays at the canvas centre =
+      // layer centre (xFrac/yFrac) in BOTH preview and bake. Do not break this.
+      const pad = Math.ceil(fontPx * 0.7);
       const lineH = fontPx * 1.25;
       canvas.width = Math.max(2, Math.ceil(maxW + pad * 2));
       canvas.height = Math.max(2, Math.ceil(lines.length * lineH + pad * 2));
       // Re-set the font (resizing the canvas resets the 2D context state).
       ctx.font = fontStr;
       ctx.textBaseline = 'top';
-      ctx.fillStyle = layer.color || '#ffffff';
       const align = layer.align || 'center';
       ctx.textAlign = align;
+      // Per-line x within the padded content box, honouring alignment.
       let x = pad;
       if (align === 'center') x = canvas.width / 2;
       else if (align === 'right') x = canvas.width - pad;
-      lines.forEach((ln, i) => { ctx.fillText(ln, x, pad + i * lineH); });
+      // Left edge of the content box (for the underline rule, which spans the
+      // measured glyph width regardless of alignment).
+      lines.forEach((ln, i) => {
+        const y = pad + i * lineH;
+        const lineW = ctx.measureText(ln).width;
+        let lineLeft = pad;
+        if (align === 'center') lineLeft = (canvas.width - lineW) / 2;
+        else if (align === 'right') lineLeft = canvas.width - pad - lineW;
+        // Wrap shadow-bearing draws in save/restore so the shadow state never
+        // leaks to the underline rule or the next line.
+        if (effect === 'outline') {
+          ctx.save();
+          ctx.lineJoin = 'round';
+          ctx.lineWidth = Math.max(2, fontPx * 0.09);
+          // Contrast outline: black for light text, white for dark text.
+          const lum = (() => { const c = shadeHex(color, 0); const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16); return 0.299 * r + 0.587 * g + 0.114 * b; })();
+          ctx.strokeStyle = lum > 140 ? '#000000' : '#ffffff';
+          ctx.strokeText(ln, x, y);
+          ctx.fillStyle = color;
+          ctx.fillText(ln, x, y);
+          ctx.restore();
+        } else if (effect === 'shadow') {
+          ctx.save();
+          ctx.shadowColor = 'rgba(0,0,0,0.55)';
+          ctx.shadowBlur = fontPx * 0.18;
+          ctx.shadowOffsetX = Math.round(fontPx * 0.06);
+          ctx.shadowOffsetY = Math.round(fontPx * 0.06);
+          ctx.fillStyle = color;
+          ctx.fillText(ln, x, y);
+          ctx.restore();
+        } else if (effect === 'neon') {
+          ctx.save();
+          // Build the glow in the text's own colour (3 stacked fills), then a
+          // brighter core on top with the blur reduced.
+          ctx.shadowColor = color;
+          ctx.shadowBlur = fontPx * 0.5;
+          ctx.fillStyle = color;
+          ctx.fillText(ln, x, y);
+          ctx.fillText(ln, x, y);
+          ctx.fillText(ln, x, y);
+          ctx.shadowBlur = fontPx * 0.2;
+          ctx.fillStyle = shadeHex(color, 0.7);   // lightened core
+          ctx.fillText(ln, x, y);
+          ctx.restore();
+        } else if (effect === '3d') {
+          ctx.save();
+          // Extruded: N copies stepping back-to-front in a darkened shade,
+          // largest offset first, then the face on top at offset 0.
+          const darker = shadeHex(color, -0.5);
+          const step = fontPx * 0.02;
+          for (let k = 8; k >= 1; k--) {
+            ctx.fillStyle = darker;
+            ctx.fillText(ln, x + k * step, y + k * step);
+          }
+          ctx.fillStyle = color;
+          ctx.fillText(ln, x, y);
+          ctx.restore();
+        } else {
+          ctx.fillStyle = color;
+          ctx.fillText(ln, x, y);
+        }
+        // v2.1 round 188 (Terry) — underline is independent of the effect:
+        // drawn after the fill as a rule under each line in the text colour.
+        if (layer.underline) {
+          ctx.save();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = Math.max(2, fontPx * 0.06);
+          const uy = y + fontPx * 0.92;
+          ctx.beginPath();
+          ctx.moveTo(lineLeft, uy);
+          ctx.lineTo(lineLeft + lineW, uy);
+          ctx.stroke();
+          ctx.restore();
+        }
+      });
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -5277,7 +5424,7 @@
     }
     function addTextLayer() {
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -5415,8 +5562,16 @@
         if (sizeVal) sizeVal.textContent = pct + '%';
       }
       // Alignment toggle: mark the active L/C/R button.
-      document.querySelectorAll('#collage-text-align .ec-shape-btn').forEach((b) => {
+      document.querySelectorAll('#collage-text-align .ec-toggle-btn').forEach((b) => {
         b.classList.toggle('active', b.dataset.align === (selectedText.align || 'center'));
+      });
+      // v2.1 round 188 (Terry) — Style toggles: pressed-state per B/I/U flag.
+      document.querySelectorAll('#collage-text-style .ec-toggle-btn').forEach((b) => {
+        b.classList.toggle('active', !!selectedText[b.dataset.style]);
+      });
+      // v2.1 round 188 (Terry) — Effect chips: ring the active effect.
+      document.querySelectorAll('#collage-text-effect .ec-effect-btn').forEach((b) => {
+        b.classList.toggle('active', b.dataset.effect === (selectedText.effect || 'none'));
       });
       // Colour swatches: ring the one matching the layer's colour.
       const cur = (selectedText.color || '').toLowerCase();
@@ -5828,7 +5983,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z })),
+        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none' })),
         selTextId: selectedText ? selectedText.id : null,
       });
     }
@@ -5876,7 +6031,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -6702,11 +6857,39 @@
       });
       const alignWrap = document.getElementById('collage-text-align');
       if (alignWrap) alignWrap.addEventListener('click', (e) => {
-        const b = e.target.closest ? e.target.closest('.ec-shape-btn') : null;
+        const b = e.target.closest ? e.target.closest('.ec-toggle-btn') : null;
         if (!b || !selectedText) return;
+        beginCollageChange();
         selectedText.align = b.dataset.align || 'center';
-        alignWrap.querySelectorAll('.ec-shape-btn').forEach((x) => x.classList.toggle('active', x === b));
+        alignWrap.querySelectorAll('.ec-toggle-btn').forEach((x) => x.classList.toggle('active', x === b));
         renderTextLayer(selectedText);
+        commitCollageChange();
+      });
+      // v2.1 round 188 (Terry) — Bold / Italic / Underline toggles. Flip the
+      // layer flag, re-render, one undo step each.
+      const styleWrap = document.getElementById('collage-text-style');
+      if (styleWrap) styleWrap.addEventListener('click', (e) => {
+        const b = e.target.closest ? e.target.closest('.ec-toggle-btn') : null;
+        if (!b || !selectedText) return;
+        const key = b.dataset.style;
+        if (key !== 'bold' && key !== 'italic' && key !== 'underline') return;
+        beginCollageChange();
+        selectedText[key] = !selectedText[key];
+        b.classList.toggle('active', !!selectedText[key]);
+        renderTextLayer(selectedText);
+        commitCollageChange();
+      });
+      // v2.1 round 188 (Terry) — Effect chips. Set layer.effect, ring the
+      // active chip, re-render, one undo step.
+      const effectWrap = document.getElementById('collage-text-effect');
+      if (effectWrap) effectWrap.addEventListener('click', (e) => {
+        const b = e.target.closest ? e.target.closest('.ec-effect-btn') : null;
+        if (!b || !selectedText) return;
+        beginCollageChange();
+        selectedText.effect = b.dataset.effect || 'none';
+        effectWrap.querySelectorAll('.ec-effect-btn').forEach((x) => x.classList.toggle('active', x === b));
+        renderTextLayer(selectedText);
+        commitCollageChange();
       });
       const palette = document.getElementById('collage-text-palette');
       if (palette) palette.addEventListener('click', (e) => {
