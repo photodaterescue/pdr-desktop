@@ -2460,6 +2460,14 @@
                 <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Extruded 3D look">3D</button>
               </div>
             </div>
+            <!-- v2.1 round 191 (Terry) — Effect STRENGTH: dial the chosen effect
+                 mild→strong. Hidden when the effect is None (strength is moot
+                 then); shown/positioned by syncTextControls + the effect chips.
+                 Default 50 = a tasteful moderate look. -->
+            <div class="enhance-control" id="collage-text-strength-row" style="margin-top:8px;display:none">
+              <div class="enhance-label-row"><label for="collage-text-strength" data-pdr-tooltip="How strong the effect is — mild to bold">Strength</label><span class="enhance-val" id="val-text-strength">50</span></div>
+              <input class="enhance-slider" id="collage-text-strength" type="range" min="0" max="100" step="1" value="50">
+            </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label data-pdr-tooltip="Text colour">Colour</label></div>
               <div class="frame-palette" id="collage-text-palette">
@@ -5311,6 +5319,10 @@
       const ctx = canvas.getContext('2d');
       const color = layer.color || '#ffffff';
       const effect = layer.effect || 'none';
+      // v2.1 round 191 (Terry) — effect STRENGTH (0–100) → k in 0..1 scales every
+      // effect's intensity below. k=0.5 is the moderate default (notably milder
+      // than the old fixed look, esp. 3D); k=1 bold; low k subtle.
+      const k = (typeof layer.effectStrength === 'number' ? layer.effectStrength : 50) / 100;
       // v2.1 round 188 (Terry) — bold / italic baked into the font string so
       // the SAME render drives preview + bake (sharp only composites the bitmap).
       const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px ' + (layer.font || 'Impact');
@@ -5323,7 +5335,10 @@
       // uniform pad on ALL four sides so they aren't clipped AND — because pad
       // is symmetric — the visual text centre stays at the canvas centre =
       // layer centre (xFrac/yFrac) in BOTH preview and bake. Do not break this.
-      const pad = Math.ceil(fontPx * 0.7);
+      // v2.1 round 191 (Terry) — bumped 0.7→0.95 so the MAX-strength (k=1) neon
+      // glow / 3D extrude / shadow never clips. Still symmetric on all 4 sides,
+      // so centre-anchor (preview==bake) holds; at low k it's just clear margin.
+      const pad = Math.ceil(fontPx * 0.95);
       const lineH = fontPx * 1.25;
       canvas.width = Math.max(2, Math.ceil(maxW + pad * 2));
       canvas.height = Math.max(2, Math.ceil(lines.length * lineH + pad * 2));
@@ -5349,7 +5364,7 @@
         if (effect === 'outline') {
           ctx.save();
           ctx.lineJoin = 'round';
-          ctx.lineWidth = Math.max(2, fontPx * 0.09);
+          ctx.lineWidth = Math.max(1, fontPx * 0.12 * k);   // v2.1 round 191 (Terry) — outline thickness scales with strength
           // Contrast outline: black for light text, white for dark text.
           const lum = (() => { const c = shadeHex(color, 0); const r = parseInt(c.slice(1, 3), 16), g = parseInt(c.slice(3, 5), 16), b = parseInt(c.slice(5, 7), 16); return 0.299 * r + 0.587 * g + 0.114 * b; })();
           ctx.strokeStyle = lum > 140 ? '#000000' : '#ffffff';
@@ -5360,9 +5375,10 @@
         } else if (effect === 'shadow') {
           ctx.save();
           ctx.shadowColor = 'rgba(0,0,0,0.55)';
-          ctx.shadowBlur = fontPx * 0.18;
-          ctx.shadowOffsetX = Math.round(fontPx * 0.06);
-          ctx.shadowOffsetY = Math.round(fontPx * 0.06);
+          // v2.1 round 191 (Terry) — drop-shadow blur + offset scale with strength.
+          ctx.shadowBlur = fontPx * 0.32 * k;
+          ctx.shadowOffsetX = Math.round(fontPx * 0.10 * k);
+          ctx.shadowOffsetY = Math.round(fontPx * 0.10 * k);
           ctx.fillStyle = color;
           ctx.fillText(ln, x, y);
           ctx.restore();
@@ -5371,12 +5387,12 @@
           // Build the glow in the text's own colour (3 stacked fills), then a
           // brighter core on top with the blur reduced.
           ctx.shadowColor = color;
-          ctx.shadowBlur = fontPx * 0.5;
+          ctx.shadowBlur = fontPx * 0.9 * k;   // v2.1 round 191 (Terry) — neon glow radius scales with strength
           ctx.fillStyle = color;
           ctx.fillText(ln, x, y);
           ctx.fillText(ln, x, y);
           ctx.fillText(ln, x, y);
-          ctx.shadowBlur = fontPx * 0.2;
+          ctx.shadowBlur = fontPx * 0.4 * k;   // v2.1 round 191 (Terry) — tighter core glow, also strength-scaled
           ctx.fillStyle = shadeHex(color, 0.7);   // lightened core
           ctx.fillText(ln, x, y);
           ctx.restore();
@@ -5385,10 +5401,14 @@
           // Extruded: N copies stepping back-to-front in a darkened shade,
           // largest offset first, then the face on top at offset 0.
           const darker = shadeHex(color, -0.5);
-          const step = fontPx * 0.02;
-          for (let k = 8; k >= 1; k--) {
+          // v2.1 round 191 (Terry) — extrude depth scales with strength k. At the
+          // default k=0.5 → step 0.0175·fontPx over 8 ⇒ depth ≈ 0.14·fontPx (milder
+          // than the old fixed 0.16); k=1 ⇒ ≈ 0.28·fontPx (bold). Loop var renamed
+          // step→i to avoid shadowing the outer strength `k`.
+          const step = fontPx * 0.035 * k;
+          for (let i = 8; i >= 1; i--) {
             ctx.fillStyle = darker;
-            ctx.fillText(ln, x + k * step, y + k * step);
+            ctx.fillText(ln, x + i * step, y + i * step);
           }
           ctx.fillStyle = color;
           ctx.fillText(ln, x, y);
@@ -5472,7 +5492,7 @@
     }
     function addTextLayer() {
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -5594,6 +5614,13 @@
     }
     // Show/hide + populate the per-layer Text controls for the current
     // selection. Called on select / delete / restore.
+    // v2.1 round 191 (Terry) — show/hide the effect Strength row (hidden for the
+    // None effect, where strength is meaningless). Shared by syncTextControls
+    // (on select) and the effect-chip handler (on effect change).
+    function setStrengthRowVisible(show) {
+      const row = document.getElementById('collage-text-strength-row');
+      if (row) row.style.display = show ? '' : 'none';
+    }
     function syncTextControls() {
       const ctl = document.getElementById('collage-text-controls');
       if (ctl) ctl.style.display = selectedText ? 'block' : 'none';
@@ -5621,6 +5648,16 @@
       document.querySelectorAll('#collage-text-effect .ec-effect-btn').forEach((b) => {
         b.classList.toggle('active', b.dataset.effect === (selectedText.effect || 'none'));
       });
+      // v2.1 round 191 (Terry) — Strength slider: load from the layer (default 50)
+      // and show it only when an effect is active (hidden for None).
+      const strSlider = document.getElementById('collage-text-strength');
+      const strVal = document.getElementById('val-text-strength');
+      if (strSlider) {
+        const sv = (typeof selectedText.effectStrength === 'number') ? selectedText.effectStrength : 50;
+        strSlider.value = String(sv);
+        if (strVal) strVal.textContent = String(sv);
+      }
+      setStrengthRowVisible((selectedText.effect || 'none') !== 'none');
       // Colour swatches: ring the one matching the layer's colour.
       const cur = (selectedText.color || '').toLowerCase();
       document.querySelectorAll('#collage-text-palette .frame-swatch').forEach((s) => {
@@ -6031,7 +6068,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none' })),
+        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50 })),   // v2.1 round 191 (Terry) — carry effectStrength
         selTextId: selectedText ? selectedText.id : null,
       });
     }
@@ -6079,7 +6116,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -6954,6 +6991,22 @@
         beginCollageChange();
         selectedText.effect = b.dataset.effect || 'none';
         effectWrap.querySelectorAll('.ec-effect-btn').forEach((x) => x.classList.toggle('active', x === b));
+        setStrengthRowVisible(selectedText.effect !== 'none');   // v2.1 round 191 (Terry) — reveal/hide Strength with the chosen effect
+        renderTextLayer(selectedText);
+        commitCollageChange();
+      });
+      // v2.1 round 191 (Terry) — Effect STRENGTH slider. Set layer.effectStrength,
+      // update the readout, re-render the layer, one undo step (mirrors the other
+      // discrete text controls' begin/commit).
+      const strSlider = document.getElementById('collage-text-strength');
+      const strVal = document.getElementById('val-text-strength');
+      if (strSlider) strSlider.addEventListener('input', () => {
+        if (!selectedText) return;
+        const v = parseInt(strSlider.value, 10);
+        const sv = isNaN(v) ? 50 : Math.max(0, Math.min(100, v));
+        beginCollageChange();
+        selectedText.effectStrength = sv;
+        if (strVal) strVal.textContent = String(sv);
         renderTextLayer(selectedText);
         commitCollageChange();
       });
