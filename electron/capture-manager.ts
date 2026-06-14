@@ -849,23 +849,33 @@ interface CollageEnhance {
   tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat';
   opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
   blend?: number; // v2.1 round 150 — edge feather %, 0–100 (0 = crisp)
+  corners?: number[]; // v2.1 round 164 — curved corners [tl,tr,br,bl], 0–1 of half the short side
 }
-// v2.1 round 150 (Terry) — feather an image's four edges to a transparent
-// alpha so it melts into the background (matches the CSS-mask preview:
-// band = blend% × 0.45 of each dimension, alpha = fx × fy). dest-in keeps
-// any existing alpha (frame / fade) and multiplies the feather over it.
-async function featherImage(sharp: any, buf: Buffer, w: number, h: number, blend: number): Promise<Buffer> {
+// v2.1 round 164 (Terry) — CURVED CORNERS + Blend, in one rounded-rect
+// signed-distance mask. corners = [tl,tr,br,bl] (0–1 of half the short side);
+// blend 0–100 widens the feather band inward from the rounded boundary so the
+// (rounded) edge melts away with no straight rectangle edge left. The formula
+// is IDENTICAL to the live preview (viewer.html applyShapeMask) so the saved
+// file matches the editor. dest-in keeps any existing alpha (frame / fade).
+async function roundedFeatherMask(sharp: any, buf: Buffer, w: number, h: number, corners?: number[], blend?: number): Promise<Buffer> {
   const b = Math.max(0, Math.min(100, blend || 0));
-  if (b <= 0 || w < 2 || h < 2) return buf;
-  const frac = (b / 100) * 0.45;
-  const fxPx = Math.max(1, frac * w);
-  const fyPx = Math.max(1, frac * h);
+  const c = Array.isArray(corners) ? corners : [0, 0, 0, 0];
+  const hasCorner = c.some((v) => (v || 0) > 0.001);
+  if ((b <= 0 && !hasCorner) || w < 2 || h < 2) return buf;
+  const minD = Math.min(w, h);
+  const radii = [c[0], c[1], c[2], c[3]].map((v) => Math.max(0, Math.min(1, v || 0)) * minD / 2);
+  const featherPx = Math.max(0.75, (b / 100) * 0.45 * minD);
+  const cx = w / 2, cy = h / 2;
   const mask = Buffer.alloc(w * h * 4);
   for (let y = 0; y < h; y++) {
-    const fy = Math.min(1, Math.min(y, h - 1 - y) / fyPx);
+    const py = y + 0.5;
     for (let x = 0; x < w; x++) {
-      const fx = Math.min(1, Math.min(x, w - 1 - x) / fxPx);
-      mask[(y * w + x) * 4 + 3] = Math.round(255 * fx * fy);
+      const px = x + 0.5;
+      const r = (px < cx) ? (py < cy ? radii[0] : radii[3]) : (py < cy ? radii[1] : radii[2]);
+      const qx = Math.abs(px - cx) - (cx - r);
+      const qy = Math.abs(py - cy) - (cy - r);
+      const sdf = Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - r;
+      mask[(y * w + x) * 4 + 3] = Math.round(Math.max(0, Math.min(1, -sdf / featherPx)) * 255);
     }
   }
   const maskPng = await sharp(mask, { raw: { width: w, height: h, channels: 4 } }).png().toBuffer();
@@ -1004,8 +1014,11 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         let rotW = baked.info.width, rotH = baked.info.height;
         // v2.1 round 150 (Terry) — Blend: feather the (framed) tile's edges
         // BEFORE rotation, so the soft band aligns with the tile rectangle.
-        if (item.enh && item.enh.blend && item.enh.blend > 0) {
-          tile = await featherImage(sharp, tile, rotW, rotH, item.enh.blend);
+        // v2.1 round 164 (Terry) — round corners + feather the (framed) tile's
+        // edges BEFORE rotation, so the shape aligns with the tile rectangle.
+        // No-op when neither corners nor blend are set.
+        if (item.enh) {
+          tile = await roundedFeatherMask(sharp, tile, rotW, rotH, item.enh.corners, item.enh.blend);
         }
         const rot = ((item.rot || 0) % 360 + 360) % 360;
         if (rot > 0.1 && rot < 359.9) {
@@ -1067,8 +1080,8 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
           .toBuffer();
         // v2.1 round 150 — Blend on the background = vignette its edges to
         // the base colour at the canvas border.
-        const bgBlend = bgImage.enh && (bgImage.enh as CollageEnhance).blend;
-        if (bgBlend && bgBlend > 0) bgBuf = await featherImage(sharp, bgBuf, W, H, bgBlend);
+        const bgEnh2 = (bgImage.enh || {}) as CollageEnhance;
+        bgBuf = await roundedFeatherMask(sharp, bgBuf, W, H, bgEnh2.corners, bgEnh2.blend);
         composites.unshift({ input: bgBuf, left: PAD, top: PAD });
       } catch (bgErr) {
         log.warn(`[collage] background image skipped (non-fatal): ${(bgErr as Error).message}`);

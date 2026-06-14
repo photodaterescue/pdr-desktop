@@ -2425,6 +2425,15 @@
           </div>
           <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">
         </div>
+        <!-- v2.1 round 164 (Terry) — Curved corners: round all four together
+             with this slider (per-corner dragging on the photo comes next). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-corners">Curved corners</label>
+            <span class="enhance-val" id="val-corners">0</span>
+          </div>
+          <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0" data-pdr-tooltip="Round the photo's corners — drag up to round all four">
+        </div>
       </details>
       </div>
 
@@ -2811,7 +2820,7 @@
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
       // colour is kept underneath and revealed by lowering Fade.
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0 };
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -4857,6 +4866,54 @@
     }
     function itemHeightFrac(it) { return (it.wFrac / effectiveAspect(it)) * getCanvasAspect(); }
 
+    // v2.1 round 164 (Terry) — CURVED CORNERS + blend-follows-the-curve.
+    // One rounded-rect signed-distance mask drives BOTH the corner rounding
+    // and the Blend feather, applied as a CSS mask-image on the photo's clip.
+    // The sharp bake (capture-manager roundedFeatherMask) uses the IDENTICAL
+    // formula, so the preview matches the saved file. corners = [tl,tr,br,bl]
+    // fractions 0-1 (×half the short side); blend 0-100 widens the feather
+    // band so the (rounded) edge melts away — no straight rectangle edge left.
+    function applyShapeMask(elm, corners, blend, w, h) {
+      if (!elm) return;
+      const c = Array.isArray(corners) ? corners : [0, 0, 0, 0];
+      const hasCorner = c.some(function (v) { return v > 0.001; });
+      const b = Math.max(0, Math.min(100, blend || 0));
+      if (!hasCorner && b <= 0) {
+        elm.style.webkitMaskImage = ''; elm.style.maskImage = '';
+        elm.style.webkitMaskComposite = ''; elm.style.maskComposite = '';
+        return;
+      }
+      w = Math.round(w || 0); h = Math.round(h || 0);
+      if (w < 2 || h < 2) return;
+      // Cap the mask resolution for perf; mask-size:100% 100% stretches it to
+      // the element, and the shape is normalised so it looks identical at any
+      // size (and matches the full-res bake).
+      const scale = Math.min(1, 360 / Math.max(w, h));
+      const cw = Math.max(2, Math.round(w * scale)), ch = Math.max(2, Math.round(h * scale));
+      const cnv = document.createElement('canvas'); cnv.width = cw; cnv.height = ch;
+      const ctx = cnv.getContext('2d');
+      const imgData = ctx.createImageData(cw, ch); const data = imgData.data;
+      const minD = Math.min(cw, ch);
+      const radii = [c[0], c[1], c[2], c[3]].map(function (v) { return Math.max(0, Math.min(1, v || 0)) * minD / 2; });
+      const featherPx = Math.max(0.75, (b / 100) * 0.45 * minD);
+      const cx = cw / 2, cy = ch / 2;
+      for (let y = 0; y < ch; y++) {
+        for (let x = 0; x < cw; x++) {
+          const px = x + 0.5, py = y + 0.5;
+          const r = (px < cx) ? (py < cy ? radii[0] : radii[3]) : (py < cy ? radii[1] : radii[2]);
+          const qx = Math.abs(px - cx) - (cx - r);
+          const qy = Math.abs(py - cy) - (cy - r);
+          const sdf = Math.min(Math.max(qx, qy), 0) + Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) - r;
+          data[(y * cw + x) * 4 + 3] = Math.round(Math.max(0, Math.min(1, -sdf / featherPx)) * 255);
+        }
+      }
+      ctx.putImageData(imgData, 0, 0);
+      const url = 'url(' + cnv.toDataURL() + ')';
+      elm.style.webkitMaskImage = url; elm.style.maskImage = url;
+      elm.style.webkitMaskSize = '100% 100%'; elm.style.maskSize = '100% 100%';
+      elm.style.webkitMaskRepeat = 'no-repeat'; elm.style.maskRepeat = 'no-repeat';
+      elm.style.webkitMaskComposite = ''; elm.style.maskComposite = '';
+    }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
       if (!it.on) { it.el.style.display = 'none'; return; }
@@ -4893,6 +4950,11 @@
         it.imgEl.style.left = (-c.l * fullW) + 'px';
         it.imgEl.style.top = (-c.t * fullH) + 'px';
         it.imgEl.style.objectFit = 'fill';
+        // v2.1 round 164 (Terry) — curved corners + Blend feather, applied to
+        // the clip (content area inside any frame). Same mask the bake uses, so
+        // the preview matches the saved file.
+        const innerH = Math.max(2, ihPx - frameInset * 2);
+        applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, innerW, innerH);
       }
     }
     function renderAllCollage() {
@@ -5252,7 +5314,7 @@
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
           crop: { l: 0, t: 0, r: 1, b: 1 },
-          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1 } };
+          enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] } };
         const el = document.createElement('div');
         el.className = 'collage-item';
         el.dataset.idx = String(i);
@@ -6194,6 +6256,8 @@ function zoomTo(newZoom, centreX, centreY) {
       const vTemp = document.getElementById('val-temperature');
       const vOpacity = document.getElementById('val-opacity');
       const vBlend = document.getElementById('val-blend');
+      const sCorners = document.getElementById('slider-corners');
+      const vCorners = document.getElementById('val-corners');
       if (!panel || !openBtn) return;
 
       const state = {
@@ -6259,20 +6323,10 @@ function zoomTo(newZoom, centreX, centreY) {
         return parts.length ? parts.join(' ') : 'none';
       }
 
-      // v2.1 round 150 (Terry) — Blend: feather an element's four edges via
-      // a CSS mask (two crossed gradients, intersected). Resolution-
-      // independent (% bands) so it survives tile resize without recompute.
-      // The save bakes the matching feathered alpha (capture-manager).
-      function applyBlendMask(elm, blend) {
-        if (!elm) return;
-        const b = Math.max(0, Math.min(100, blend || 0));
-        if (b <= 0) { elm.style.webkitMaskImage = ''; elm.style.maskImage = ''; return; }
-        const p = (b / 100) * 45; // feather band: 0–45% of each side
-        const g = 'linear-gradient(to right, transparent 0, #000 ' + p + '%, #000 ' + (100 - p) + '%, transparent 100%), ' +
-                  'linear-gradient(to bottom, transparent 0, #000 ' + p + '%, #000 ' + (100 - p) + '%, transparent 100%)';
-        elm.style.webkitMaskImage = g; elm.style.maskImage = g;
-        elm.style.webkitMaskComposite = 'source-in'; elm.style.maskComposite = 'intersect';
-      }
+      // v2.1 round 164 (Terry) — Blend now rides the top-level applyShapeMask
+      // (rounded-rect SDF feather) so it follows any curved corners and leaves
+      // no straight rectangle edge. Tiles get their mask from renderCollageItem
+      // (on the clip); the background/single-photo path applies it below.
       // Apply a filter string + (inset border) frame preview to one
       // element from a given state. Factored out so both the single-
       // image path and the per-tile collage path share it.
@@ -6323,8 +6377,11 @@ function zoomTo(newZoom, centreX, centreY) {
         // the box — so the selection handles + any frame on the box stay
         // crisp and grabbable. The background layer has no clip wrapper, so
         // it feathers itself (a vignette).
-        const blendTarget = (el.parentNode && el.parentNode.classList && el.parentNode.classList.contains('collage-clip')) ? el.parentNode : el;
-        applyBlendMask(blendTarget, s.blend);
+        // Tiles: the clip's shape mask is applied by renderCollageItem (so it
+        // tracks size + frame). Here, only the background layer (or single
+        // photo) — which has no clip wrapper — gets its mask applied directly.
+        const isTileClip = !!(el.parentNode && el.parentNode.classList && el.parentNode.classList.contains('collage-clip'));
+        if (!isTileClip) applyShapeMask(el, s.corners, s.blend, el.clientWidth, el.clientHeight);
       }
 
       function applyEnhanceFilter() {
@@ -6340,7 +6397,7 @@ function zoomTo(newZoom, centreX, centreY) {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
               temperature: state.temperature, colour: state.colour, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight,
-              opacity: state.opacity, blend: state.blend, flipH: state.flipH, flipV: state.flipV,
+              opacity: state.opacity, blend: state.blend, corners: (Array.isArray(state.corners) ? state.corners.slice() : [0, 0, 0, 0]), flipH: state.flipH, flipV: state.flipV,
             };
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
@@ -6386,6 +6443,10 @@ function zoomTo(newZoom, centreX, centreY) {
         if (vOpacity) vOpacity.textContent = String(Math.round((state.opacity != null ? state.opacity : 1) * 100));
         if (sBlend) sBlend.value = String(Math.round(state.blend || 0));
         if (vBlend) vBlend.textContent = String(Math.round(state.blend || 0));
+        // v2.1 round 164 — the all-together slider shows the largest corner.
+        const cmax = Array.isArray(state.corners) ? Math.round(Math.max.apply(null, state.corners.concat(0)) * 100) : 0;
+        if (sCorners) sCorners.value = String(cmax);
+        if (vCorners) vCorners.textContent = String(cmax);
         // v2.1 round 155 — highlight Mirror/Flip when active.
         if (tileMirror) tileMirror.classList.toggle('active', !!state.flipH);
         if (tileFlip) tileFlip.classList.toggle('active', !!state.flipV);
@@ -6674,6 +6735,14 @@ function zoomTo(newZoom, centreX, centreY) {
         if (vBlend) vBlend.textContent = String(state.blend);
         applyEnhanceFilter();
       });
+      // v2.1 round 164 (Terry) — Curved corners slider rounds all four corners
+      // together. (Per-corner dragging on the photo is the next step.)
+      if (sCorners) sCorners.addEventListener('input', function () {
+        const v = Math.max(0, Math.min(100, clampOrDefault(sCorners.value, 0))) / 100;
+        state.corners = [v, v, v, v];
+        if (vCorners) vCorners.textContent = String(Math.round(v * 100));
+        applyEnhanceFilter();
+      });
       // v2.1 round 155 (Terry) — Mirror (left↔right) / Flip (top↕bottom)
       // toggles. They edit the selected tile's (or background's) enh, so
       // they ride the same persist + bake path as the sliders. Undo is
@@ -6775,6 +6844,7 @@ function zoomTo(newZoom, centreX, centreY) {
       attachClickToEditValue(vColour, sColour, function () { return state.colour == null ? 50 : state.colour; }, function (n) { state.colour = n; if (sColour) sColour.value = n; applyEnhanceFilter(); });
       attachClickToEditValue(vOpacity, sOpacity, function () { return Math.round((state.opacity != null ? state.opacity : 1) * 100); }, function (n) { state.opacity = Math.max(0.1, Math.min(1, n / 100)); if (sOpacity) sOpacity.value = n; applyEnhanceFilter(); });
       attachClickToEditValue(vBlend, sBlend, function () { return Math.round(state.blend || 0); }, function (n) { state.blend = Math.max(0, Math.min(100, n)); if (sBlend) sBlend.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vCorners, sCorners, function () { return Array.isArray(state.corners) ? Math.round(Math.max.apply(null, state.corners.concat(0)) * 100) : 0; }, function (n) { const v = Math.max(0, Math.min(100, n)) / 100; state.corners = [v, v, v, v]; if (sCorners) sCorners.value = Math.round(v * 100); applyEnhanceFilter(); });
       // Angle = the selected tile's rotation (geometry, not in `state`).
       const sAngleEl = document.getElementById('slider-angle');
       const vAngleEl = document.getElementById('val-angle');
@@ -8445,6 +8515,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.borderWeight = e.borderWeight || 'thin';
         state.opacity = e.opacity != null ? e.opacity : 1;
         state.blend = e.blend != null ? e.blend : 0;
+        state.corners = Array.isArray(e.corners) ? e.corners.slice() : [0, 0, 0, 0];
         updateUI();
         markActiveSwatchByColor(state.borderColor);
         markActiveWeight(state.borderWeight);
