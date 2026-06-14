@@ -913,7 +913,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       }>,
     // v2.1 round 173 (Terry 2026-06-14) — Background remover. Returns a temp
     // transparent PNG (subject cut out) the collage uses as a tile's image.
-    removeBackground: (req: { filePath: string }) =>
+    removeBackground: (req: { filePath: string; strength?: number }) =>
       ipcRenderer.invoke('viewer:removeBackground', req) as Promise<{
         success: boolean;
         outputPath?: string;

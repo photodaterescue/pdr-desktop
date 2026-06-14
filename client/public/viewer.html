@@ -2351,10 +2351,20 @@
            tile's image for a transparent cut-out so it sits on the collage
            background. Toggles to Restore. Collage-only (hidden for the
            background); needs the Background-remover model (Settings → AI). -->
-      <div id="tile-bgremove-row" style="margin:2px 0 6px;display:none">
+      <!-- v2.1 round 175 (Terry) — Background remover is now a proper collapsible
+           section (like Frame / Looks), holding the Remove/Restore button + a
+           Cut-out strength slider. Default-hidden; shown only for a real collage
+           photo tile (collage-only). The strength control appears once a cut-out
+           exists, and re-tunes instantly (the AI mask is cached). -->
+      <details class="enhance-collapse" id="tile-bgremove-section" open style="display:none">
+        <summary>Background remover</summary>
         <button class="ec-shape-btn" id="tile-bgremove" type="button" style="width:100%" data-pdr-tooltip="Cut out the subject and drop the background (runs on your device)">Remove background</button>
-        <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:5px;display:none"></div>
-      </div>
+        <div class="enhance-control" id="tile-bgstrength-control" style="display:none">
+          <div class="enhance-label-row"><label for="slider-bgstrength" data-pdr-tooltip="Tune the cut-out — right cuts harder (removes faint edges); left keeps more (brings back bits the AI dropped). Double-click to reset.">Cut-out strength</label><span class="enhance-val" id="val-bgstrength">50</span></div>
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-bgstrength" type="range" min="0" max="100" step="1" value="50">
+        </div>
+        <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:4px;display:none"></div>
+      </details>
       <!-- v2.1 round 134 — Frame colour palette (was white/black only).
            Pick any colour; Thin/Mat width; custom colour picker.
            Decorative/ornate frames join here once their artwork
@@ -5420,7 +5430,7 @@
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
-        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null })),
+        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50 })),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -5457,6 +5467,7 @@
         // original). Setting the same src is a no-op in Chromium, so this only
         // reloads when undo/redo actually flips the cut-out on or off.
         it.bgRemovedPath = si.bgRemovedPath || null;
+        it.bgRemoveStrength = (typeof si.bgRemoveStrength === 'number') ? si.bgRemoveStrength : 50;
         if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
         if (si.z > maxZ) maxZ = si.z;
       });
@@ -5508,8 +5519,9 @@
           // v2.1 round 173 (Terry) — when the user removes the background, this
           // holds the temp transparent-PNG cut-out path. The tile's <img> shows
           // it and the bake uses it as the source, so preview == saved. null =
-          // background intact.
-          bgRemovedPath: null,
+          // background intact. bgRemoveStrength (round 175) = the slider value
+          // baked into the current cut-out (50 = neutral).
+          bgRemovedPath: null, bgRemoveStrength: 50,
           enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] } };
         const el = document.createElement('div');
         el.className = 'collage-item';
@@ -5790,19 +5802,57 @@
       if (msg) { el.textContent = msg; el.style.display = ''; } else { el.style.display = 'none'; }
     }
     function syncBgRemoveBtn() {
+      const section = document.getElementById('tile-bgremove-section');
       const btn = document.getElementById('tile-bgremove');
-      const row = document.getElementById('tile-bgremove-row');
+      const strengthCtl = document.getElementById('tile-bgstrength-control');
+      const slider = document.getElementById('slider-bgstrength');
+      const valEl = document.getElementById('val-bgstrength');
       const it = collageSelected;
-      // Photos only — hidden for the background layer and for videos.
+      // Photos only — hidden for the background layer, videos, and the single-
+      // photo Viewer (collage-only). 'block' overrides the markup's display:none.
       const isPhoto = !!(it && !it.isBg && !isVideoPath(it.path));
-      // Default-hidden (display:none in the markup) so the button never shows in
-      // the single-photo Viewer window (collage-only). Shown only for a real
-      // photo tile in a collage; 'block' overrides the markup default.
-      if (row) row.style.display = (it && !it.isBg) ? 'block' : 'none';
+      if (section) section.style.display = isPhoto ? 'block' : 'none';
       if (!btn) return;
+      const hasCut = !!(isPhoto && it.bgRemovedPath);
       btn.disabled = !isPhoto || bgRemoveBusy;
-      btn.textContent = bgRemoveBusy ? 'Removing…' : (isPhoto && it.bgRemovedPath ? 'Restore background' : 'Remove background');
+      btn.textContent = bgRemoveBusy ? 'Removing…' : (hasCut ? 'Restore background' : 'Remove background');
+      // The strength slider only matters once a cut-out exists.
+      if (strengthCtl) strengthCtl.style.display = hasCut ? '' : 'none';
+      if (hasCut && slider && valEl) {
+        const s = (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50;
+        slider.value = String(s); valEl.textContent = String(s);
+      }
       if (!bgRemoveBusy) setBgRemoveStatus('');
+    }
+
+    // v2.1 round 175 (Terry) — re-tune an existing cut-out to a new strength.
+    // The worker caches the AI mask, so this is fast (no ~9s re-run). bgPending
+    // coalesces drags that arrive while a re-tune is already in flight.
+    let bgPendingStrength = null;
+    async function applyBgStrengthChange(it, strength) {
+      if (!it || !it.bgRemovedPath) return;
+      if (bgRemoveBusy) { bgPendingStrength = strength; return; }
+      bgRemoveBusy = true;
+      const btn = document.getElementById('tile-bgremove'); if (btn) btn.textContent = 'Re-tuning…';
+      setBgRemoveStatus('Re-tuning the cut-out…');
+      let res;
+      try { res = await window.pdr.viewer.removeBackground({ filePath: it.path, strength: strength }); }
+      catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
+      bgRemoveBusy = false;
+      if (res && res.success && res.outputPath) {
+        beginCollageChange();
+        it.bgRemovedPath = res.outputPath;
+        it.bgRemoveStrength = strength;
+        if (it.imgEl) it.imgEl.src = getFileSrc(res.outputPath);
+        renderCollageItem(it);
+        commitCollageChange();
+      } else {
+        setBgRemoveStatus("Couldn't re-tune" + (res && res.error ? ': ' + res.error : '.'));
+      }
+      syncBgRemoveBtn();
+      if (bgPendingStrength != null && bgPendingStrength !== strength && it.bgRemovedPath) {
+        const p = bgPendingStrength; bgPendingStrength = null; applyBgStrengthChange(it, p);
+      } else { bgPendingStrength = null; }
     }
 
     let collageControlsWired = false;
@@ -5842,16 +5892,18 @@
           syncBgRemoveBtn();
           return;
         }
-        // Run the on-device cut-out (takes a few seconds).
+        // Run the on-device cut-out (takes a few seconds the first time).
+        const s = (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50;
         bgRemoveBusy = true; syncBgRemoveBtn();
         setBgRemoveStatus('Removing background… this takes a few seconds.');
         let res;
-        try { res = await window.pdr.viewer.removeBackground({ filePath: it.path }); }
+        try { res = await window.pdr.viewer.removeBackground({ filePath: it.path, strength: s }); }
         catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
         bgRemoveBusy = false;
         if (res && res.success && res.outputPath) {
           beginCollageChange();
           it.bgRemovedPath = res.outputPath;
+          it.bgRemoveStrength = s;
           if (it.imgEl) it.imgEl.src = getFileSrc(res.outputPath);
           renderCollageItem(it);
           commitCollageChange();
@@ -5864,6 +5916,26 @@
           setBgRemoveStatus("Couldn't remove the background" + (res && res.error ? ': ' + res.error : '.'));
         }
       });
+      // v2.1 round 175 (Terry) — Cut-out strength slider: live label on input,
+      // debounced re-tune (250ms) so dragging doesn't fire a call per pixel.
+      const bgSlider = document.getElementById('slider-bgstrength');
+      const bgValEl = document.getElementById('val-bgstrength');
+      let bgSliderTimer = null;
+      if (bgSlider) {
+        bgSlider.addEventListener('input', () => {
+          if (bgValEl) bgValEl.textContent = bgSlider.value;
+          const it = collageSelected;
+          if (!it || it.isBg || !it.bgRemovedPath) return;
+          if (bgSliderTimer) clearTimeout(bgSliderTimer);
+          bgSliderTimer = setTimeout(() => { applyBgStrengthChange(it, parseInt(bgSlider.value, 10) || 50); }, 250);
+        });
+        bgSlider.addEventListener('dblclick', (e) => {
+          e.preventDefault();
+          bgSlider.value = '50'; if (bgValEl) bgValEl.textContent = '50';
+          const it = collageSelected;
+          if (it && it.bgRemovedPath) applyBgStrengthChange(it, 50);
+        });
+      }
       // v2.1 round 156 (Terry) — fine rotation slider: degree-by-degree
       // nudging of the selected tile's angle (the canvas handle is coarse).
       const angleSlider = document.getElementById('slider-angle');

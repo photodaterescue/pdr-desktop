@@ -8123,9 +8123,9 @@ ipcMain.handle('viewer:enhanceFaces', async (event, req: { filePath: string; fid
 // source photo in the enhance worker and returns a temp transparent PNG (the
 // subject cut out, background gone). The renderer uses that PNG as the collage
 // tile's image for BOTH the live preview and the bake, so preview == saved.
-ipcMain.handle('viewer:removeBackground', async (event, req: { filePath: string }) => {
+ipcMain.handle('viewer:removeBackground', async (event, req: { filePath: string; strength?: number }) => {
   try {
-    console.log('[viewer:removeBackground] start', { filePath: req?.filePath });
+    console.log('[viewer:removeBackground] start', { filePath: req?.filePath, strength: req?.strength });
     if (!req?.filePath || !fs.existsSync(req.filePath)) {
       return { success: false, error: 'Source file not found.' };
     }
@@ -8160,6 +8160,7 @@ ipcMain.handle('viewer:removeBackground', async (event, req: { filePath: string 
         requestId,
         sourcePath: req.filePath,
         outputPath,
+        strength: typeof req.strength === 'number' ? req.strength : 50,
       });
     });
   } catch (err) {

@@ -79,6 +79,8 @@ interface RemoveBackgroundMessage {
   sourcePath: string;
   /** Output PNG path (transparent background where the subject isn't). */
   outputPath: string;
+  /** Cut-out strength 0-100 (50 = raw mask). >50 cuts harder, <50 keeps more. */
+  strength?: number;
 }
 
 interface UnloadMessage {
@@ -595,8 +597,39 @@ function halfToFloat(h: number): number {
   return (s ? -1 : 1) * Math.pow(2, e - 15) * (1 + f / 1024);
 }
 
+// v2.1 round 175 (Terry) — cache the raw IS-Net mask for the LAST photo so the
+// Cut-out strength slider can re-tune instantly (no ~9 s ISNet re-run). Single
+// entry keyed by source path; replaced when a different photo is processed.
+let bgMaskCache: {
+  sourcePath: string; maskBuf: Buffer; mw: number; mh: number;
+  ex: number; ey: number; ew: number; eh: number;
+  srcData: Buffer; srcW: number; srcH: number; srcCh: number;
+  outW: number; outH: number;
+} | null = null;
+
+// Remap the raw soft mask by the strength slider (0-100, 50 = neutral/raw).
+// >50 raises the alpha black point (cut harder — removes the faint halo);
+// <50 multiplies low alpha up (keep more — brings back bits the model dropped).
+function applyBgStrength(maskBuf: Buffer, strength: number): Buffer {
+  if (!(strength >= 0) || strength === 50) return maskBuf;
+  const out = Buffer.alloc(maskBuf.length);
+  if (strength > 50) {
+    const T = Math.round(((strength - 50) / 50) * 200); // black point 0..200
+    const denom = (255 - T) || 1;
+    for (let i = 0; i < maskBuf.length; i++) { const v = maskBuf[i]; out[i] = v <= T ? 0 : Math.min(255, Math.round((v - T) / denom * 255)); }
+  } else {
+    const gain = 1 + ((50 - strength) / 50) * 2; // boost 1..3
+    for (let i = 0; i < maskBuf.length; i++) { out[i] = Math.min(255, Math.round(maskBuf[i] * gain)); }
+  }
+  return out;
+}
+
 async function removeBackground(msg: RemoveBackgroundMessage): Promise<void> {
   const t0 = Date.now();
+  const strength = (typeof msg.strength === 'number') ? msg.strength : 50;
+  let c = (bgMaskCache && bgMaskCache.sourcePath === msg.sourcePath) ? bgMaskCache : null;
+  const cacheHit = !!c;
+  if (!c) {
   post({ type: 'progress', requestId: msg.requestId, phase: 'Loading the model…', percent: 5 });
   const session = await getBgRemoverSession();
   const inputName = session.inputNames[0];
@@ -672,28 +705,34 @@ async function removeBackground(msg: RemoveBackgroundMessage): Promise<void> {
   const outScale = longEdge > OUT_CAP ? OUT_CAP / longEdge : 1;
   const outW = Math.max(1, Math.round(src.width * outScale));
   const outH = Math.max(1, Math.round(src.height * outScale));
+  c = bgMaskCache = { sourcePath: msg.sourcePath, maskBuf, mw, mh, ex, ey, ew, eh, srcData: src.data, srcW: src.width, srcH: src.height, srcCh: src.channels, outW, outH };
+  }
 
-  const maskPng = await sharp(maskBuf, { raw: { width: mw, height: mh, channels: 1 } }).png().toBuffer();
+  // Apply the strength remap to the (cached) raw mask, then build the cut-out.
+  // On a cache hit this is the ONLY work — no ISNet — so the slider re-tunes fast.
+  post({ type: 'progress', requestId: msg.requestId, phase: cacheHit ? 'Re-tuning the cut-out…' : 'Cutting out the subject…', percent: 70 });
+  const effMask = applyBgStrength(c.maskBuf, strength);
+  const maskPng = await sharp(effMask, { raw: { width: c.mw, height: c.mh, channels: 1 } }).png().toBuffer();
   const maskFull = await sharp(maskPng)
-    .extract({ left: ex, top: ey, width: Math.min(ew, mw - ex), height: Math.min(eh, mh - ey) })
-    .resize(outW, outH, { fit: 'fill' })
+    .extract({ left: c.ex, top: c.ey, width: Math.min(c.ew, c.mw - c.ex), height: Math.min(c.eh, c.mh - c.ey) })
+    .resize(c.outW, c.outH, { fit: 'fill' })
     .toColourspace('b-w')
     .raw()
     .toBuffer();
 
   // Join the mask as the alpha channel of the (capped) RGB → transparent PNG.
   post({ type: 'progress', requestId: msg.requestId, phase: 'Saving…', percent: 90 });
-  const rgbOut = await sharp(src.data, { raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 } })
-    .resize(outW, outH, { fit: 'fill' })
+  const rgbOut = await sharp(c.srcData, { raw: { width: c.srcW, height: c.srcH, channels: c.srcCh as 1 | 2 | 3 | 4 } })
+    .resize(c.outW, c.outH, { fit: 'fill' })
     .removeAlpha()
     .raw()
     .toBuffer();
-  await sharp(rgbOut, { raw: { width: outW, height: outH, channels: 3 } })
-    .joinChannel(maskFull, { raw: { width: outW, height: outH, channels: 1 } })
+  await sharp(rgbOut, { raw: { width: c.outW, height: c.outH, channels: 3 } })
+    .joinChannel(maskFull, { raw: { width: c.outW, height: c.outH, channels: 1 } })
     .png()
     .toFile(msg.outputPath);
 
-  log(`removeBackground done in ${Date.now() - t0}ms; ${src.width}x${src.height} -> ${outW}x${outH}`);
+  log(`removeBackground done in ${Date.now() - t0}ms; strength=${strength} cacheHit=${cacheHit} ${c.srcW}x${c.srcH} -> ${c.outW}x${c.outH}`);
   post({ type: 'done', requestId: msg.requestId, outputPath: msg.outputPath });
 }
 
@@ -711,6 +750,7 @@ parentPort?.on('message', async (msg: InboundMessage) => {
       codeformerSession = null;
       realesrganSession = null;
       bgremoverSession = null;
+      bgMaskCache = null;
       // Hint GC — node releases ONNX session memory deterministically
       // on the next major GC cycle.
       if (global.gc) try { global.gc(); } catch {}
