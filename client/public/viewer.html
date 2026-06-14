@@ -1173,6 +1173,7 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
+      gap: 12px; /* v2.1 round 189 — space between title, Expand/Collapse, pin */
       padding: 14px 18px 12px 18px;
       border-bottom: 1px solid rgba(169, 156, 255, 0.12);
       flex-shrink: 0; /* never let a tall body squeeze the header */
@@ -1182,6 +1183,8 @@
       font-weight: 600;
       color: #e8e6ff;
       letter-spacing: 0.01em;
+      flex: 1; /* v2.1 round 189 — push Expand/Collapse + pin to the right */
+      min-width: 0;
     }
     .enhance-close {
       width: 24px;
@@ -2263,6 +2266,13 @@
   <aside id="enhance-panel" class="enhance-panel" aria-hidden="true">
     <div class="enhance-header">
       <span class="enhance-title">Enhance</span>
+      <!-- v2.1 round 189 (Terry) — Expand all / Collapse all moved up onto the
+           header row (was a dedicated row below, wasting vertical space). -->
+      <div class="enhance-collapse-all">
+        <button type="button" id="enhance-expand-all">Expand all</button>
+        <span aria-hidden="true">·</span>
+        <button type="button" id="enhance-collapse-all">Collapse all</button>
+      </div>
       <!-- v2.1 (Terry 2026-06-07 round 2) — X close button removed
            per Terry: "I would like the X to go when it's open, it's
            pointless to keep it." Pin button (toggle pinned/unpinned)
@@ -2277,15 +2287,9 @@
       <button class="enhance-close" id="enhance-close" style="display:none" aria-hidden="true" tabindex="-1">×</button>
     </div>
     <div class="enhance-body">
-      <!-- v2.1 round 157 (Terry) — Expand all / Collapse all for the section
-           chevrons. Each section's open/closed state persists (localStorage)
-           across collages AND PDR sessions, so the panel reopens exactly how
-           the user left it. -->
-      <div class="enhance-collapse-all">
-        <button type="button" id="enhance-expand-all">Expand all</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" id="enhance-collapse-all">Collapse all</button>
-      </div>
+      <!-- v2.1 round 189 (Terry) — Expand all / Collapse all relocated to the
+           header row above (per-section open state still persists via localStorage). -->
+
       <!-- v2.1 round 140 (Terry 2026-06-12) — Collage controls. Shown
            only in collage mode (body.collage-mode). Shape + Background
            (same palette as the Frame colours) + Tidy up. The Looks /
@@ -2398,26 +2402,28 @@
               <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
               <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="40" step="1" value="8">
             </div>
-            <!-- v2.1 round 188 (Terry) — Alignment as compact icon toggles
-                 (3 horizontal lines aligned L/C/R) replacing the old wide
-                 L/C/R buttons. Same data-align + handler. -->
+            <!-- v2.1 round 189 (Terry) — Alignment + Style now share ONE row,
+                 split by a thin divider (each was its own row before). Same
+                 ids / data-attrs / handlers — only the wrapping changed. -->
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
-              <div style="display:flex;gap:6px" id="collage-text-align">
-                <button class="ec-toggle-btn" data-align="left" type="button" data-pdr-tooltip="Align left" aria-label="Align left"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg></button>
-                <button class="ec-toggle-btn active" data-align="center" type="button" data-pdr-tooltip="Centre" aria-label="Centre"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg></button>
-                <button class="ec-toggle-btn" data-align="right" type="button" data-pdr-tooltip="Align right" aria-label="Align right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="6" y1="8" x2="14" y2="8"/><line x1="3" y1="12" x2="14" y2="12"/></svg></button>
-              </div>
-            </div>
-            <!-- v2.1 round 188 (Terry) — Style: Bold / Italic / Underline
-                 toggles, each styled to read at a glance. Flip the layer flag,
-                 re-render, one undo step each. -->
-            <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Bold, italic, and underline">Style</label></div>
-              <div style="display:flex;gap:6px" id="collage-text-style">
-                <button class="ec-toggle-btn" data-style="bold" type="button" data-pdr-tooltip="Bold" aria-label="Bold" style="font-weight:700">B</button>
-                <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
-                <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
+              <div style="display:flex;align-items:flex-end;gap:12px">
+                <div>
+                  <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
+                  <div style="display:flex;gap:6px" id="collage-text-align">
+                    <button class="ec-toggle-btn" data-align="left" type="button" data-pdr-tooltip="Align left" aria-label="Align left"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg></button>
+                    <button class="ec-toggle-btn active" data-align="center" type="button" data-pdr-tooltip="Centre" aria-label="Centre"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg></button>
+                    <button class="ec-toggle-btn" data-align="right" type="button" data-pdr-tooltip="Align right" aria-label="Align right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="6" y1="8" x2="14" y2="8"/><line x1="3" y1="12" x2="14" y2="12"/></svg></button>
+                  </div>
+                </div>
+                <div style="align-self:stretch;width:1px;background:rgba(255,255,255,0.16)"></div>
+                <div>
+                  <div class="enhance-label-row"><label data-pdr-tooltip="Bold, italic, and underline">Style</label></div>
+                  <div style="display:flex;gap:6px" id="collage-text-style">
+                    <button class="ec-toggle-btn" data-style="bold" type="button" data-pdr-tooltip="Bold" aria-label="Bold" style="font-weight:700">B</button>
+                    <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
+                    <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
+                  </div>
+                </div>
               </div>
             </div>
             <!-- v2.1 round 188 (Terry) — Effect chips: None / Outline / Shadow
