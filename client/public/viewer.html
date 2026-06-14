@@ -4927,6 +4927,13 @@
       it.el.style.top = (it.yFrac * ch) + 'px';
       it.el.style.transform = 'rotate(' + it.rot + 'deg)';
       it.el.style.zIndex = String(it.z);
+      // v2.1 round 165 (Terry) — a blended / rounded / framed photo must NOT
+      // keep the rectangular drop-shadow: it showed as a hard box outline
+      // around a photo whose edges had melted away ("this outline is still
+      // here"). Plain square photos keep the subtle depth shadow.
+      const _maskActive = !!(it.enh && ((it.enh.blend && it.enh.blend > 0) || (Array.isArray(it.enh.corners) && it.enh.corners.some(function (v) { return (v || 0) > 0.001; }))));
+      const _hasFrame = !!(it.enh && (it.enh.borderColor || '').trim());
+      it.el.style.boxShadow = (_maskActive || _hasFrame) ? 'none' : '';
       // v2.1 round 145 — position the image inside the clip so only the
       // crop region shows (enlarge by 1/cropW × 1/cropH, offset by the
       // crop origin). With no crop this is an exact box fill.
