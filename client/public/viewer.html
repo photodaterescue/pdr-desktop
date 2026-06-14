@@ -1905,12 +1905,16 @@
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     body.collage-mode.collage-bg-selected #collage-canvas { outline-color: #FEC242; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(254,194,66,0.28), 0 0 22px 4px rgba(254,194,66,0.35); }
     /* Handles — only shown on the selected tile. */
-    .collage-item .ch {
+    /* v2.1 round 187 (Terry) — text layers reuse the same .ch handles (resize +
+       rotate); show them only on the selected text, mirroring the tile rule. */
+    .collage-item .ch,
+    .collage-text .ch {
       position: absolute;
       display: none;
       z-index: 5;
     }
-    .collage-item.selected .ch { display: block; }
+    .collage-item.selected .ch,
+    .collage-text.selected .ch { display: block; }
     .ch-resize {
       width: 16px; height: 16px;
       right: -8px; bottom: -8px;
@@ -2348,21 +2352,24 @@
             <textarea id="collage-text-input" rows="2" placeholder="Type your text…" style="width:100%;box-sizing:border-box;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:7px;font-size:13px"></textarea>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="collage-text-font">Font</label></div>
-              <select id="collage-text-font" style="width:100%;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px;font-size:13px">
-                <option value="Impact">Impact</option>
-                <option value="Arial">Arial</option>
-                <option value="Segoe UI">Segoe UI</option>
-                <option value="Georgia">Georgia</option>
-                <option value="Times New Roman">Times New Roman</option>
-                <option value="Verdana">Verdana</option>
-                <option value="Comic Sans MS">Comic Sans MS</option>
-                <option value="Consolas">Consolas</option>
-                <option value="Bahnschrift">Bahnschrift</option>
+              <!-- v2.1 round 187 (Terry) — opaque dark bg on the select AND every
+                   option so the Chromium popup is legible (was near-white text on
+                   a light popup); each option previews its own typeface. -->
+              <select id="collage-text-font" style="width:100%;background:#241f3a;border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px;font-size:13px">
+                <option value="Impact" style="font-family:Impact;background:#241f3a;color:#fff">Impact</option>
+                <option value="Arial" style="font-family:Arial;background:#241f3a;color:#fff">Arial</option>
+                <option value="Segoe UI" style="font-family:'Segoe UI';background:#241f3a;color:#fff">Segoe UI</option>
+                <option value="Georgia" style="font-family:Georgia;background:#241f3a;color:#fff">Georgia</option>
+                <option value="Times New Roman" style="font-family:'Times New Roman';background:#241f3a;color:#fff">Times New Roman</option>
+                <option value="Verdana" style="font-family:Verdana;background:#241f3a;color:#fff">Verdana</option>
+                <option value="Comic Sans MS" style="font-family:'Comic Sans MS';background:#241f3a;color:#fff">Comic Sans MS</option>
+                <option value="Consolas" style="font-family:Consolas;background:#241f3a;color:#fff">Consolas</option>
+                <option value="Bahnschrift" style="font-family:Bahnschrift;background:#241f3a;color:#fff">Bahnschrift</option>
               </select>
             </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
-              <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="25" step="1" value="8">
+              <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="40" step="1" value="8">
             </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
@@ -2991,6 +2998,10 @@
     let collageTexts = [];
     let selectedText = null;
     let collageTextSeq = 1;
+    // v2.1 round 187 (Terry) — remember the last colour the user picked so the
+    // next text added inherits it. Defaults BLACK (white text on the default
+    // white background is invisible). First-ever add → black.
+    let lastTextColor = '#111111';
     function defaultBgEnh() {
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
@@ -5224,16 +5235,36 @@
         el.className = 'collage-text';
         el.style.cssText = 'position:absolute;transform-origin:center center;cursor:move;user-select:none;';
         el.dataset.tid = String(layer.id);
-        el.addEventListener('pointerdown', (e) => startTextDrag(layer, e));
+        // v2.1 round 187 (Terry) — on-canvas resize corner + rotate handle, the
+        // SAME .ch handles the tiles use (reuse the CSS; shown only when this
+        // text is .selected). Created once with the wrapper so they survive the
+        // per-render canvas swap below.
+        const tRot = document.createElement('div'); tRot.className = 'ch ch-rotate'; tRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
+        tRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
+        const tRes = document.createElement('div'); tRes.className = 'ch ch-resize'; tRes.setAttribute('data-pdr-tooltip', 'Resize');
+        const handles = [tRot, tRes];
+        // Drag the wrapper to move the text — but IGNORE pointerdowns that land
+        // on a handle (mirror the tile guard) so resize/rotate don't also drag.
+        el.addEventListener('pointerdown', (e) => {
+          if (handles.indexOf(e.target) !== -1) return;
+          startTextDrag(layer, e);
+        });
+        tRes.addEventListener('pointerdown', (e) => startTextResize(layer, e));
+        tRot.addEventListener('pointerdown', (e) => startTextRotate(layer, e));
         el.addEventListener('dblclick', (e) => { e.preventDefault(); selectText(layer); const ta = document.getElementById('collage-text-input'); if (ta) { try { ta.focus(); ta.select(); } catch (_) {} } });
+        el.appendChild(tRot); el.appendChild(tRes);
         collageCanvasEl.appendChild(el);
         layer.el = el;
       }
       const el = layer.el;
-      // Replace the child canvas with a freshly-rendered one.
+      // Replace the child canvas with a freshly-rendered one. v2.1 round 187 —
+      // swap ONLY the tracked canvas (not innerHTML='') so the .ch handles
+      // appended once above are preserved across re-renders.
       const canvas = renderTextToCanvas(layer, collageShortPx());
-      el.innerHTML = '';
-      el.appendChild(canvas);
+      canvas.style.display = 'block';   // v2.1 round 187 (Terry) — drop inline baseline gap so the wrapper hugs the canvas and the corner handles land on the text edges
+      if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
+      else el.insertBefore(canvas, el.firstChild);
+      layer.canvasEl = canvas;
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       el.style.left = (layer.xFrac * cw) + 'px';
       el.style.top = (layer.yFrac * ch) + 'px';
@@ -5246,7 +5277,7 @@
     }
     function addTextLayer() {
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: '#ffffff', align: 'center', rot: 0, z: collageTexts.length + 1, el: null };
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -5293,6 +5324,69 @@
         const dy = (ev.clientY - startY) / ch;
         layer.xFrac = Math.max(0, Math.min(1, sx + dx));
         layer.yFrac = Math.max(0, Math.min(1, sy + dy));
+        renderTextLayer(layer);
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        commitCollageChange();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+    // v2.1 round 187 (Terry) — drag the bottom-right corner to resize a text
+    // layer. Mirrors startItemResize: scale = (current dist from centre) /
+    // (start dist), applied to the size. Text is CENTRE-anchored (xFrac/yFrac
+    // is the centre), so the centre is fixed and only sizeFrac changes. One
+    // undo step per gesture.
+    function startTextResize(layer, e) {
+      e.preventDefault(); e.stopPropagation();
+      beginCollageChange();
+      selectText(layer);
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const centerX = rect.left + (layer.xFrac || 0) * rect.width;
+      const centerY = rect.top + (layer.yFrac || 0) * rect.height;
+      const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY) || 1;
+      const startSize = layer.sizeFrac || 0.08;
+      const move = (ev) => {
+        const dist = Math.hypot(ev.clientX - centerX, ev.clientY - centerY);
+        let ns = startSize * (dist / startDist);
+        ns = Math.max(0.02, Math.min(0.4, ns));
+        layer.sizeFrac = ns;
+        renderTextLayer(layer);
+        // Keep the Size slider/readout in step if this layer is the selection.
+        if (selectedText === layer) {
+          const sizeSlider = document.getElementById('collage-text-size');
+          const sizeVal = document.getElementById('val-text-size');
+          const pct = Math.round(ns * 100);
+          if (sizeSlider) sizeSlider.value = String(pct);
+          if (sizeVal) sizeVal.textContent = pct + '%';
+        }
+      };
+      const up = () => {
+        window.removeEventListener('pointermove', move);
+        window.removeEventListener('pointerup', up);
+        commitCollageChange();
+      };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+    // v2.1 round 187 (Terry) — drag the top handle to rotate a text layer
+    // around its CENTRE. Mirrors startItemRotate's angle math (atan2 from the
+    // centre, +90 because the handle sits above the text) and Shift = snap to
+    // 15°. One undo step per gesture.
+    function startTextRotate(layer, e) {
+      e.preventDefault(); e.stopPropagation();
+      beginCollageChange();
+      selectText(layer);
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const centerX = rect.left + (layer.xFrac || 0) * rect.width;
+      const centerY = rect.top + (layer.yFrac || 0) * rect.height;
+      const move = (ev) => {
+        const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
+        let deg = ang + 90; // rotate handle sits at the top of the text
+        if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
+        layer.rot = deg;
         renderTextLayer(layer);
       };
       const up = () => {
@@ -5782,7 +5876,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, el: null }));
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -5832,7 +5926,7 @@
       collageCanvasEl.innerHTML = '';
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
       // text els; null them so renderAllTexts (end of this fn) recreates them.
-      collageTexts.forEach((t) => { t.el = null; });
+      collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper
       collageItems.length = 0;
       files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
@@ -6632,6 +6726,7 @@
     function setTextColor(hex) {
       if (!selectedText) return;
       selectedText.color = hex || '#ffffff';
+      lastTextColor = selectedText.color;   // v2.1 round 187 (Terry) — next text inherits this colour
       renderTextLayer(selectedText);
       // Ring the matching swatch (custom colours match nothing → none ringed).
       const cur = (selectedText.color || '').toLowerCase();
