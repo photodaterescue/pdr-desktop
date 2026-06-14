@@ -886,7 +886,7 @@ interface CollageLayout {
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
   canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
-  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
+  items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
 }
 function hexToRgb(hex: string): { r: number; g: number; b: number } {
   const m = /^#?([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.exec(hex || '');
@@ -1022,9 +1022,13 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
           if (region) {
             const insetX = region.width * (1 - 1 / _zoom) / 2;
             const insetY = region.height * (1 - 1 / _zoom) / 2;
+            // v2.1 round 169 (Terry) — pan shift: panX/panY (−1..1) move the
+            // extract within the slack (±inset), matching the editor's pan.
+            const panShiftX = Math.max(-1, Math.min(1, item.panX || 0)) * insetX;
+            const panShiftY = Math.max(-1, Math.min(1, item.panY || 0)) * insetY;
             cropRect = {
-              left: Math.round(region.left + insetX),
-              top: Math.round(region.top + insetY),
+              left: Math.round(region.left + insetX + panShiftX),
+              top: Math.round(region.top + insetY + panShiftY),
               width: Math.max(1, Math.round(region.width / _zoom)),
               height: Math.max(1, Math.round(region.height / _zoom)),
             };
