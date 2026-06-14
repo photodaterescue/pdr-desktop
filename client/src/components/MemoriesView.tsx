@@ -1418,6 +1418,28 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // nothing regresses.
   const pressModifierRef = useRef<{ id: number | null; ctrl: boolean }>({ id: null, ctrl: false });
 
+  // v2.1 round 171 (Terry) — ALSO track Ctrl/Cmd held-state via document key
+  // events, as a supplement to the mousedown sample above. Terry: the FIRST
+  // Ctrl+click after opening Memories opened the viewer instead of selecting
+  // (had to "press Ctrl twice"). On that first click the webContents has only
+  // just gained focus, so the mousedown's e.ctrlKey can come through stale
+  // (false). This tracker attaches when Memories mounts, so a Ctrl pressed
+  // WHILE in Memories is always caught; both key events carry the live
+  // modifier state, and blur clears it if a key-up is missed off-window.
+  const ctrlHeldRef = useRef(false);
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => { ctrlHeldRef.current = e.ctrlKey || e.metaKey; };
+    const onBlur = () => { ctrlHeldRef.current = false; };
+    document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKey, true);
+    window.addEventListener('blur', onBlur);
+    return () => {
+      document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKey, true);
+      window.removeEventListener('blur', onBlur);
+    };
+  }, []);
+
   // Ctrl+scroll zoom on the grid container — same gesture Workspace
   // and PM use, so the muscle memory transfers. The wheel listener
   // attaches to the scroll area (not window) so vertical scrolling
@@ -3169,7 +3191,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         // e.ctrlKey so the non-racy normal path also
                         // works if mousedown was somehow missed.
                         const pressedCtrl = pressModifierRef.current.id === f.id && pressModifierRef.current.ctrl;
-                        if (e.ctrlKey || e.metaKey || pressedCtrl) {
+                        if (e.ctrlKey || e.metaKey || pressedCtrl || ctrlHeldRef.current) {
                           e.preventDefault();
                           toggleSelection(f);
                           lastClickedIndexRef.current = idx;

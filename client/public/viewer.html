@@ -50,6 +50,15 @@
       white-space: nowrap;
       color: rgba(169, 156, 255, 0.9);   /* lavender = Viewer */
       z-index: 1;
+      /* v2.1 round 171 (Terry) — the centered label sits ON TOP of the
+         title bar (z-index:1, absolute). Chromium decides the OS drag
+         region by the TOPMOST element at each pixel, so without this the
+         label punched a non-draggable hole in the dead centre of the
+         title bar — exactly where you instinctively grab to move the
+         window, which is why it took several tries. Mark it drag so the
+         whole bar moves the window; pointer-events:none above still lets
+         clicks fall through to anything beneath. */
+      -webkit-app-region: drag;
     }
     .window-kind::after { content: 'Viewer'; }
     body.collage-mode .window-kind { color: rgba(254, 194, 66, 0.92); }   /* gold = Collage */
@@ -2381,21 +2390,21 @@
         <summary>Tone &amp; colour</summary>
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-brightness">Brightness</label>
+          <label for="slider-brightness" data-pdr-tooltip="How light or dark the photo is (100 = unchanged)">Brightness</label>
           <span class="enhance-val" id="val-brightness">100</span>
         </div>
         <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100">
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-contrast">Contrast</label>
+          <label for="slider-contrast" data-pdr-tooltip="The punch between lights and darks (100 = unchanged)">Contrast</label>
           <span class="enhance-val" id="val-contrast">100</span>
         </div>
         <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100">
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-saturation">Saturation</label>
+          <label for="slider-saturation" data-pdr-tooltip="How rich the colours are (100 = unchanged)">Saturation</label>
           <span class="enhance-val" id="val-saturation">100</span>
         </div>
         <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100">
@@ -2433,7 +2442,7 @@
              selected (a photo OR the background). -->
         <div class="enhance-control">
           <div class="enhance-label-row">
-            <label for="slider-opacity">Fade</label>
+            <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Fade</label>
             <span class="enhance-val" id="val-opacity">100</span>
           </div>
           <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
@@ -8838,6 +8847,30 @@ function zoomTo(newZoom, centreX, centreY) {
     // top-level layer that escapes any overflow container and
     // clamps its X position to stay on-screen. Same lavender
     // styling + 120ms delay as the CSS variant.
+    // v2.1 round 171 (Terry) — focus-on-title-bar-hover. On Windows a frameless
+    // window that isn't the active window will NOT begin a -webkit-app-region
+    // drag until it has been focused, so dragging an unfocused viewer/collage
+    // window took several title-bar grabs (the first only focused it). We pull
+    // focus the instant the cursor reaches the title-bar strip — BEFORE the
+    // press — so the very first grab moves the window. Round 62 fixed this only
+    // at open time; this also covers returning to the window after using
+    // another one (e.g. picking photos in the main window, then dragging the
+    // collage). One IPC request per unfocused period, so no event-loop spam.
+    (function () {
+      var TITLEBAR_ZONE = 48;   // a touch beyond the 40px bar to catch the approach from below
+      var winFocused = document.hasFocus();
+      var focusReq = false;
+      window.addEventListener('focus', function () { winFocused = true; focusReq = false; });
+      window.addEventListener('blur', function () { winFocused = false; focusReq = false; });
+      document.addEventListener('mousemove', function (e) {
+        if (winFocused || focusReq) return;
+        if (e.clientY <= TITLEBAR_ZONE && window.pdr && window.pdr.focusSelf) {
+          focusReq = true;
+          window.pdr.focusSelf();
+        }
+      }, true);
+    })();
+
     (function () {
       const layer = document.createElement('div');
       layer.id = 'pdr-tooltip-layer';

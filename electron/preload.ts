@@ -176,6 +176,12 @@ playCompletionSound: () => ipcRenderer.invoke('play-completion-sound'),
 
 flashTaskbar: () => ipcRenderer.invoke('window:flashFrame'),
 
+// v2.1 round 171 (Terry) — let a custom-title-bar window (viewer/collage)
+// pull focus to itself the instant the cursor reaches its title bar, so an
+// unfocused window drags on the FIRST title-bar grab instead of needing a
+// focus-click first. See the main-process 'window:focus-self' handler.
+focusSelf: () => ipcRenderer.send('window:focus-self'),
+
 openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   settings: {

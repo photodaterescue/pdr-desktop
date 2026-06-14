@@ -3475,6 +3475,21 @@ ipcMain.handle('window:flashFrame', async () => {
   }
 });
 
+// v2.1 round 171 (Terry) — focus-on-title-bar-hover for the custom-title-bar
+// viewer / collage windows. On Windows a frameless window that isn't the
+// active window will NOT begin a -webkit-app-region drag until it has been
+// focused first, so dragging an unfocused collage/viewer window took several
+// title-bar grabs (the first grab only focuses it; round 62 fixed this only
+// for the moment the window opens). The renderer calls this the instant the
+// cursor enters the title-bar strip, so by the time the user presses to drag
+// the window is already focused and the very first grab moves it.
+ipcMain.on('window:focus-self', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (w && !w.isDestroyed() && !w.isFocused()) {
+    w.focus();
+  }
+});
+
 ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {
   try {
     // ── Path 1: fs.statfsSync (Node 18.15+) ──────────────────────────
