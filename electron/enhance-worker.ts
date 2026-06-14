@@ -660,22 +660,40 @@ async function removeBackground(msg: RemoveBackgroundMessage): Promise<void> {
   // extracting from a decoded image is correct.
   const ex = Math.round(padL * mw / BR_SIZE), ey = Math.round(padT * mh / BR_SIZE);
   const ew = Math.max(1, Math.round(rw * mw / BR_SIZE)), eh = Math.max(1, Math.round(rh * mh / BR_SIZE));
+
+  // v2.1 round 174 (Terry) — CAP the cut-out resolution. A collage bakes at
+  // 2000px and the preview tile is small, so a full-res cut-out is wasteful: a
+  // 48 MP phone photo decodes to ~190 MB as an <img>, and several of those in
+  // one collage exhausted the renderer's memory — the 2nd/3rd cut-out crashed
+  // the collage window (navy screen). 2000px long-edge is ample for both the
+  // bake and the preview, and keeps each cut-out a few MB instead of hundreds.
+  const OUT_CAP = 2000;
+  const longEdge = Math.max(src.width, src.height);
+  const outScale = longEdge > OUT_CAP ? OUT_CAP / longEdge : 1;
+  const outW = Math.max(1, Math.round(src.width * outScale));
+  const outH = Math.max(1, Math.round(src.height * outScale));
+
   const maskPng = await sharp(maskBuf, { raw: { width: mw, height: mh, channels: 1 } }).png().toBuffer();
   const maskFull = await sharp(maskPng)
     .extract({ left: ex, top: ey, width: Math.min(ew, mw - ex), height: Math.min(eh, mh - ey) })
-    .resize(src.width, src.height, { fit: 'fill' })
+    .resize(outW, outH, { fit: 'fill' })
     .toColourspace('b-w')
     .raw()
     .toBuffer();
 
-  // Join the mask as the alpha channel of the full-res RGB → transparent PNG.
+  // Join the mask as the alpha channel of the (capped) RGB → transparent PNG.
   post({ type: 'progress', requestId: msg.requestId, phase: 'Saving…', percent: 90 });
-  await sharp(src.data, { raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 } })
-    .joinChannel(maskFull, { raw: { width: src.width, height: src.height, channels: 1 } })
+  const rgbOut = await sharp(src.data, { raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 } })
+    .resize(outW, outH, { fit: 'fill' })
+    .removeAlpha()
+    .raw()
+    .toBuffer();
+  await sharp(rgbOut, { raw: { width: outW, height: outH, channels: 3 } })
+    .joinChannel(maskFull, { raw: { width: outW, height: outH, channels: 1 } })
     .png()
     .toFile(msg.outputPath);
 
-  log(`removeBackground done in ${Date.now() - t0}ms; ${src.width}x${src.height}`);
+  log(`removeBackground done in ${Date.now() - t0}ms; ${src.width}x${src.height} -> ${outW}x${outH}`);
   post({ type: 'done', requestId: msg.requestId, outputPath: msg.outputPath });
 }
 

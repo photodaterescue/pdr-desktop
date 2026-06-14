@@ -2351,7 +2351,7 @@
            tile's image for a transparent cut-out so it sits on the collage
            background. Toggles to Restore. Collage-only (hidden for the
            background); needs the Background-remover model (Settings → AI). -->
-      <div id="tile-bgremove-row" style="margin:2px 0 6px">
+      <div id="tile-bgremove-row" style="margin:2px 0 6px;display:none">
         <button class="ec-shape-btn" id="tile-bgremove" type="button" style="width:100%" data-pdr-tooltip="Cut out the subject and drop the background (runs on your device)">Remove background</button>
         <div id="tile-bgremove-status" style="font-size:11px;color:#9a93c0;margin-top:5px;display:none"></div>
       </div>
@@ -5795,7 +5795,10 @@
       const it = collageSelected;
       // Photos only — hidden for the background layer and for videos.
       const isPhoto = !!(it && !it.isBg && !isVideoPath(it.path));
-      if (row) row.style.display = (it && !it.isBg) ? '' : 'none';
+      // Default-hidden (display:none in the markup) so the button never shows in
+      // the single-photo Viewer window (collage-only). Shown only for a real
+      // photo tile in a collage; 'block' overrides the markup default.
+      if (row) row.style.display = (it && !it.isBg) ? 'block' : 'none';
       if (!btn) return;
       btn.disabled = !isPhoto || bgRemoveBusy;
       btn.textContent = bgRemoveBusy ? 'Removing…' : (isPhoto && it.bgRemovedPath ? 'Restore background' : 'Remove background');

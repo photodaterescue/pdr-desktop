@@ -11491,6 +11491,13 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     win.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
       console.log(`[${isCollage ? 'collage' : 'viewer'}] ${sourceId}:${line} ${message}`);
     });
+    // v2.1 round 174 (Terry) — log renderer crashes (the "navy screen"). reason
+    // = 'oom' / 'crashed' / 'killed' etc. tells us WHY if it recurs (the
+    // background-remover cut-outs are now resolution-capped to avoid the OOM
+    // that crashed the collage on the 2nd/3rd cut-out).
+    win.webContents.on('render-process-gone', (_e, details) => {
+      console.error(`[${isCollage ? 'collage' : 'viewer'}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
+    });
 
     win.on('closed', () => {
       pendingByWc.delete(wcId);
