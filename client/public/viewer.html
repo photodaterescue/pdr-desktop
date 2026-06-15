@@ -3508,7 +3508,23 @@
     // v2.1 round 187 (Terry) — remember the last colour the user picked so the
     // next text added inherits it. Defaults BLACK (white text on the default
     // white background is invisible). First-ever add → black.
-    let lastTextColor = '#111111';
+    // v2.1 round 209 (Terry) — persist that last colour across window opens via
+    // localStorage (mirrors the favourites pattern, key TEXT_FAV_KEY). Without
+    // this the value reset to black every time a Collage/Viewer window opened,
+    // forcing the user to re-pick. Seed from storage on init (validate it's a
+    // #rrggbb hex, else fall back to black); textSaveLastColor() writes it back
+    // wherever lastTextColor is assigned, so "use a colour once" sets the default.
+    const TEXT_LAST_COLOR_KEY = 'pdr-text-last-color';
+    function textLoadLastColor() {
+      try {
+        const v = String(localStorage.getItem(TEXT_LAST_COLOR_KEY) || '').trim();
+        return /^#[0-9a-f]{6}$/i.test(v) ? v : '#111111';
+      } catch (_) { return '#111111'; }
+    }
+    function textSaveLastColor(c) {
+      try { if (/^#[0-9a-f]{6}$/i.test(String(c || '').trim())) localStorage.setItem(TEXT_LAST_COLOR_KEY, c); } catch (_) {}
+    }
+    let lastTextColor = textLoadLastColor();
     // v2.1 round 190 (Terry) — the 6 vendored decorative fonts (must match the
     // @font-face families + the #collage-text-font option values exactly). HTML
     // canvas fillText silently falls back to a system face for any web font that
@@ -8186,8 +8202,15 @@
         if (window.pdr.collage.onBackgroundPicked) {
           window.pdr.collage.onBackgroundPicked((fp) => {
             const mode = collagePickMode;
-            collagePickMode = 'bg';   // always reset to the default after a delivery
+            // v2.1 round 209 (Terry) — multi-add: the main-window picker can stay
+            // OPEN across several CTRL-held clicks, so DON'T reset the mode after an
+            // 'add' delivery — keep it 'add' so each subsequent delivery still routes
+            // to addPhotoToCollage. The background re-arm (the Use-a-photo swatch sets
+            // collagePickMode='bg' before launching, ~below) and a fresh "+ Add photos"
+            // click (sets 'add') keep the flag correct for the NEXT pick session, so a
+            // later background pick can never misroute here. Only the bg branch resets.
             if (mode === 'add') { if (fp) addPhotoToCollage(fp); return; }
+            collagePickMode = 'bg';   // background delivery → back to the default
             if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); }
             markBgLockedSpecialsActive();
           });
@@ -8203,7 +8226,10 @@
         addPhotosBtn.dataset.wired = '1';
         addPhotosBtn.addEventListener('click', () => {
           collagePickMode = 'add';
-          try { window.pdr.collage.pickBackground('a photo to add'); } catch (_) { collagePickMode = 'bg'; }
+          // v2.1 round 209 (Terry) — pass multi:true so the main-window picker
+          // stays open while CTRL is held, letting several photos be added in one
+          // session. Each delivery routes here via onBackgroundPicked → addPhotoToCollage.
+          try { window.pdr.collage.pickBackground('a photo to add', true); } catch (_) { collagePickMode = 'bg'; }
         });
       }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
@@ -9002,6 +9028,7 @@
       if (!selectedText) return;
       selectedText.color = hex || '#ffffff';
       lastTextColor = selectedText.color;   // v2.1 round 187 (Terry) — next text inherits this colour
+      textSaveLastColor(lastTextColor);     // v2.1 round 209 (Terry) — persist across window opens
       renderTextLayer(selectedText);
       // v2.1 round 194 (Terry) — re-ring the single palette so the active swatch
       // tracks the new colour. Custom colours match nothing.

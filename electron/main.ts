@@ -11572,7 +11572,7 @@ ipcMain.on('search:viewerIndexChange', (event, index: number, filePath: string) 
 // back to the viewer. Keeps the browsing surfaces (which only exist in the
 // main window) as the single picker UI, reused by collage now + Trees later.
 let photoPickRequesterId: number | null = null;
-ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: string }) => {
+ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: string; multi?: boolean }) => {
   photoPickRequesterId = event.sender.id; // remember who asked (the collage viewer)
   if (mainWindow && !mainWindow.isDestroyed()) {
     try {
@@ -11580,7 +11580,9 @@ ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: strin
       mainWindow.show();
       mainWindow.focus();
       mainWindow.moveTop();
-      mainWindow.webContents.send('photoPick:start', { purpose: opts?.purpose || 'generic', label: opts?.label || '' });
+      // v2.1 round 209 (Terry) — forward the optional `multi` flag (add-photos
+      // flow) so the main window can keep the picker open while CTRL is held.
+      mainWindow.webContents.send('photoPick:start', { purpose: opts?.purpose || 'generic', label: opts?.label || '', multi: !!opts?.multi });
     } catch (err) {
       log.warn(`[photoPick] start failed: ${(err as Error).message}`);
       return { success: false, error: (err as Error).message };

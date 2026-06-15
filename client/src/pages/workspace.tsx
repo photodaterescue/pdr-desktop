@@ -810,6 +810,12 @@ useEffect(() => {
   // a click on any photo tile (data-pick-path) delivers it back.
   const [collageBgPick, setCollageBgPick] = useState(false);
   const [collageBgPickLabel, setCollageBgPickLabel] = useState('your collage');
+  // v2.1 round 209 (Terry) — true when the active pick session is the "+ Add
+  // photos" flow (the start info carried multi:true). In that session, a click
+  // with CTRL/⌘ held delivers the photo but KEEPS the picker open so several can
+  // be added; a plain click delivers and finishes. The background pick (multi
+  // unset) is unchanged — one click always exits.
+  const [collageBgPickMulti, setCollageBgPickMulti] = useState(false);
   const [showPreviewModal, setShowPreviewModal] = useState(false);
   const [showResultsModal, setShowResultsModal] = useState(false);
   const [showPreScanConfirm, setShowPreScanConfirm] = useState(false);
@@ -823,9 +829,12 @@ useEffect(() => {
   // us to pick a background photo. Enter pick mode + land on Memories.
   useEffect(() => {
     if (!isElectron()) return;
-    const off = (window as any).pdr?.photoPick?.onStart?.((info: { purpose: string; label: string }) => {
+    const off = (window as any).pdr?.photoPick?.onStart?.((info: { purpose: string; label: string; multi?: boolean }) => {
       if (info?.purpose === 'collage-bg') {
         setCollageBgPickLabel(info.label || 'your collage');
+        // v2.1 round 209 (Terry) — the add-photos flow sets multi:true so this
+        // session enables CTRL-held stay-open multi-add; the bg pick leaves it false.
+        setCollageBgPickMulti(!!info.multi);
         setCollageBgPick(true);
         setActiveView('memories');
       }
@@ -840,6 +849,38 @@ useEffect(() => {
   const cancelCollageBgPick = useCallback(() => {
     try { (window as any).pdr?.photoPick?.cancel?.(); } catch { /* noop */ }
     setCollageBgPick(false);
+    setCollageBgPickMulti(false);   // v2.1 round 209 (Terry) — clear the multi-add flag on exit
+  }, []);
+  // v2.1 round 209 (Terry) — briefly flash a gold ring + checkmark over a tile
+  // that was just added in a stay-open multi-add session, so the user gets a
+  // confirmation without the picker closing. Self-contained (fixed-position
+  // overlay over the tile's rect + a transient outline restored afterwards) so
+  // it works on any [data-pick-path] tile across Memories / Albums / S&D and
+  // doesn't depend on purgeable Tailwind classes or the tile's own layout.
+  const flashPickedTile = useCallback((el: HTMLElement) => {
+    try {
+      const rect = el.getBoundingClientRect();
+      if (!rect || rect.width === 0 || rect.height === 0) return;
+      const prevOutline = el.style.outline;
+      const prevOffset = el.style.outlineOffset;
+      el.style.outline = '3px solid var(--color-gold)';
+      el.style.outlineOffset = '-3px';
+      const badge = document.createElement('div');
+      badge.setAttribute('aria-hidden', 'true');
+      badge.style.cssText =
+        'position:fixed;z-index:90;display:flex;align-items:center;justify-content:center;' +
+        'width:34px;height:34px;border-radius:9999px;background:var(--color-gold);color:#1f1a08;' +
+        'box-shadow:0 2px 8px rgba(0,0,0,0.25);pointer-events:none;' +
+        'transition:opacity 180ms ease;opacity:1;' +
+        'left:' + (rect.left + rect.width / 2 - 17) + 'px;top:' + (rect.top + rect.height / 2 - 17) + 'px;';
+      badge.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
+      document.body.appendChild(badge);
+      window.setTimeout(() => { try { badge.style.opacity = '0'; } catch { /* noop */ } }, 420);
+      window.setTimeout(() => {
+        try { badge.remove(); } catch { /* noop */ }
+        try { el.style.outline = prevOutline; el.style.outlineOffset = prevOffset; } catch { /* noop */ }
+      }, 620);
+    } catch { /* noop */ }
   }, []);
   useEffect(() => {
     if (!collageBgPick) return;
@@ -851,7 +892,16 @@ useEffect(() => {
       e.preventDefault();
       e.stopPropagation();
       try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path); } catch { /* noop */ }
+      // v2.1 round 209 (Terry) — stay-open multi-add: in a multi session a click
+      // with CTRL (or ⌘ on Mac) held delivers this photo but KEEPS the picker
+      // open so more can be added; a plain click delivers and finishes. The
+      // background pick (collageBgPickMulti false) always exits on the first click.
+      if (collageBgPickMulti && (e.ctrlKey || e.metaKey)) {
+        flashPickedTile(el);   // visual confirmation; picker stays open
+        return;
+      }
       setCollageBgPick(false);
+      setCollageBgPickMulti(false);
     };
     document.addEventListener('click', handler, true);
     const onEsc = (e: KeyboardEvent) => { if (e.key === 'Escape') cancelCollageBgPick(); };
@@ -860,7 +910,7 @@ useEffect(() => {
       document.removeEventListener('click', handler, true);
       window.removeEventListener('keydown', onEsc, true);
     };
-  }, [collageBgPick, cancelCollageBgPick]);
+  }, [collageBgPick, collageBgPickMulti, cancelCollageBgPick, flashPickedTile]);
 
   // On mount: restore cached analysis results from localStorage
   useEffect(() => {
@@ -2855,10 +2905,19 @@ return (
       // the gold selection chips.
       <div className="fixed top-3 left-1/2 -translate-x-1/2 z-[80] flex items-center gap-3 px-4 py-2.5 rounded-full bg-[var(--color-gold)] text-[#1f1a08] shadow-lg border border-[#1f1a08]/15 max-w-[90vw]">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="shrink-0"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-        <div className="text-sm truncate">
-          <span className="font-semibold">Choosing a background for {collageBgPickLabel}</span>
-          <span className="opacity-80"> — click any photo to use it</span>
-        </div>
+        {/* v2.1 round 209 (Terry) — multi-add session shows the CTRL stay-open
+            hint; the background pick keeps its original single-click copy. */}
+        {collageBgPickMulti ? (
+          <div className="text-sm">
+            <span className="font-semibold">Adding photos to {collageBgPickLabel}</span>
+            <span className="opacity-80"> — hold Ctrl to add several; click without Ctrl, or Esc, to finish</span>
+          </div>
+        ) : (
+          <div className="text-sm truncate">
+            <span className="font-semibold">Choosing a background for {collageBgPickLabel}</span>
+            <span className="opacity-80"> — click any photo to use it</span>
+          </div>
+        )}
         <button onClick={cancelCollageBgPick} className="ml-1 shrink-0 text-xs font-medium px-3 py-1 rounded-full bg-[#1f1a08]/12 hover:bg-[#1f1a08]/22 transition-colors">Cancel</button>
       </div>
     )}

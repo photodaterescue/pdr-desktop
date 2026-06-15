@@ -503,8 +503,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
     // open the shared photo picker for a background, and listens for the
     // chosen photo coming back.
-    pickBackground: (label?: string) =>
-      ipcRenderer.invoke('photoPick:start', { purpose: 'collage-bg', label: label || '' }) as Promise<{ success: boolean; error?: string }>,
+    // v2.1 round 209 (Terry) — optional `multi` flag: when true the picker stays
+    // open while CTRL/⌘ is held so several photos can be added in one session
+    // (the "+ Add photos" flow). The delivery purpose stays 'collage-bg' so the
+    // existing onBackgroundPicked routing (below) is unchanged; only the start
+    // info carries the multi hint, which workspace.tsx reads to enable stay-open.
+    pickBackground: (label?: string, multi?: boolean) =>
+      ipcRenderer.invoke('photoPick:start', { purpose: 'collage-bg', label: label || '', multi: !!multi }) as Promise<{ success: boolean; error?: string }>,
     onBackgroundPicked: (callback: (filePath: string) => void) => {
       const handler = (_event: any, p: any) => { if (p && p.purpose === 'collage-bg' && p.filePath) callback(p.filePath); };
       ipcRenderer.on('photoPick:picked', handler);
@@ -520,7 +525,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // side). The main window enters pick mode when 'photoPick:start' fires,
   // delivers the chosen photo, or cancels.
   photoPick: {
-    onStart: (callback: (info: { purpose: string; label: string }) => void) => {
+    // v2.1 round 209 (Terry) — info now also carries an optional `multi` flag
+    // (the add-photos flow sets it) so the main window can offer CTRL-held
+    // stay-open multi-add. The handler forwards the whole info object unchanged.
+    onStart: (callback: (info: { purpose: string; label: string; multi?: boolean }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('photoPick:start', handler);
       return () => ipcRenderer.removeListener('photoPick:start', handler);
