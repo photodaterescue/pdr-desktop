@@ -8,9 +8,10 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     /* v2.1 round 190 (Terry) — 6 vendored decorative fonts for the collage Text
        feature. Files live under dist/public/fonts/ (served as the relative URL
-       fonts/<file>.woff2 alongside this page). Used by #collage-text-font; the
-       canvas only renders these once document.fonts.load() has resolved (see the
-       FUN_FAMILIES loading wiring in script). */
+       fonts/<file>.woff2 alongside this page). Used by the collage Font dropdown
+       (round 196 #collage-font-trigger / #collage-font-menu, was #collage-text-font);
+       the canvas only renders these once document.fonts.load() has resolved (see
+       the FUN_FAMILIES loading wiring in script). */
     @font-face { font-family: 'Creepster'; src: url('fonts/creepster.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Cinzel Decorative'; src: url('fonts/cinzel-decorative.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Mountains of Christmas'; src: url('fonts/mountains-of-christmas.woff2') format('woff2'); font-display: swap; }
@@ -18,7 +19,8 @@
     @font-face { font-family: 'Bungee'; src: url('fonts/bungee.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Lobster'; src: url('fonts/lobster.woff2') format('woff2'); font-display: swap; }
     /* v2.1 round 192 (Terry) — 18 more vendored fonts for the collage Text feature
-       (System/Essentials/Fun/Premium/Viral/Themed groups in #collage-text-font).
+       (System/Essentials/Fun/Premium/Viral/Themed groups; round 196 these are
+       declared in COLLAGE_FONT_GROUPS and rendered by the custom Font dropdown).
        Same wiring as round 190: woff2 served alongside this page; the canvas only
        renders these once document.fonts.load() resolves (see FUN_FAMILIES). */
     @font-face { font-family: 'Montserrat'; src: url('fonts/montserrat.woff2') format('woff2'); font-display: swap; }
@@ -2127,6 +2129,40 @@
     }
     .ec-effect-btn:hover { background: rgba(169,156,255,0.10); }
     .ec-effect-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 196 (Terry) — custom Font dropdown. The menu is position:FIXED
+       and appended to <body> (positioned in JS from the trigger's rect) so the
+       Enhance panel's overflow-y:auto / overflow-x:hidden body can't clip it;
+       z-index sits above the panel (90). Stays open across picks. */
+    #collage-font-trigger:hover { border-color: rgba(169,156,255,0.5); }
+    #collage-font-menu {
+      position: fixed;
+      z-index: 200;
+      max-height: 260px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      background: #1b1733;
+      border: 1px solid rgba(169,156,255,0.35);
+      border-radius: 8px;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.5);
+      padding: 4px;
+      scrollbar-width: thin;
+    }
+    #collage-font-menu::-webkit-scrollbar { width: 7px; }
+    #collage-font-menu::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+    .cfm-group {
+      font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+      color: #8a83b0; padding: 8px 8px 3px; pointer-events: none; user-select: none;
+    }
+    .cfm-group:first-child { padding-top: 4px; }
+    .cfm-opt {
+      display: block; width: 100%; text-align: left; box-sizing: border-box;
+      background: transparent; border: none; color: #eee;
+      padding: 6px 9px; border-radius: 6px; cursor: pointer; font-size: 14px;
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      transition: background 100ms;
+    }
+    .cfm-opt:hover { background: rgba(169,156,255,0.12); }
+    .cfm-opt.active { background: rgba(169,156,255,0.22); color: #fff; }
     /* v2.1 round 165 (Terry) — Arrange = a grid of ~10 layout thumbnails. */
     .ec-arrange-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; margin: 6px 0 10px; }
     .ec-arrange-opt {
@@ -2471,65 +2507,24 @@
           <div id="collage-text-controls" style="display:none;margin-top:10px">
             <textarea id="collage-text-input" rows="2" placeholder="Type your text…" style="width:100%;box-sizing:border-box;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:7px;font-size:13px"></textarea>
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label for="collage-text-font">Font</label></div>
-              <!-- v2.1 round 187 (Terry) — opaque dark bg on the select AND every
-                   option so the Chromium popup is legible (was near-white text on
-                   a light popup); each option previews its own typeface. -->
-              <select id="collage-text-font" style="width:100%;background:#241f3a;border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px;font-size:13px">
-                <!-- v2.1 round 192 (Terry) — fonts reorganised into labelled
-                     <optgroup>s (replaces the round-190 flat list + disabled
-                     separator). Each option's value IS the CSS font-family (so
-                     renderTextToCanvas + the change handler pick it up) and the
-                     round-187 inline style previews it in its own face. The two
-                     look-alikes get descriptive labels but keep their bare value.
-                     Vendored faces need document.fonts.load() before fillText —
-                     see the FUN_FAMILIES wiring (now 24 names). -->
-                <optgroup label="System">
-                  <option value="Impact" style="font-family:Impact;background:#241f3a;color:#fff">Impact</option>
-                  <option value="Arial" style="font-family:Arial;background:#241f3a;color:#fff">Arial</option>
-                  <option value="Segoe UI" style="font-family:'Segoe UI';background:#241f3a;color:#fff">Segoe UI</option>
-                  <option value="Georgia" style="font-family:Georgia;background:#241f3a;color:#fff">Georgia</option>
-                  <option value="Times New Roman" style="font-family:'Times New Roman';background:#241f3a;color:#fff">Times New Roman</option>
-                  <option value="Verdana" style="font-family:Verdana;background:#241f3a;color:#fff">Verdana</option>
-                  <option value="Comic Sans MS" style="font-family:'Comic Sans MS';background:#241f3a;color:#fff">Comic Sans MS</option>
-                  <option value="Consolas" style="font-family:Consolas;background:#241f3a;color:#fff">Consolas</option>
-                  <option value="Bahnschrift" style="font-family:Bahnschrift;background:#241f3a;color:#fff">Bahnschrift</option>
-                </optgroup>
-                <optgroup label="Essentials">
-                  <option value="Montserrat" style="font-family:'Montserrat';background:#241f3a;color:#fff">Montserrat</option>
-                  <option value="Poppins" style="font-family:'Poppins';background:#241f3a;color:#fff">Poppins</option>
-                  <option value="Bebas Neue" style="font-family:'Bebas Neue';background:#241f3a;color:#fff">Bebas Neue</option>
-                  <option value="Anton" style="font-family:'Anton';background:#241f3a;color:#fff">Anton</option>
-                  <option value="Playfair Display" style="font-family:'Playfair Display';background:#241f3a;color:#fff">Playfair Display</option>
-                </optgroup>
-                <optgroup label="Fun">
-                  <option value="Fredoka" style="font-family:'Fredoka';background:#241f3a;color:#fff">Fredoka</option>
-                  <option value="Pacifico" style="font-family:'Pacifico';background:#241f3a;color:#fff">Pacifico</option>
-                  <option value="Dancing Script" style="font-family:'Dancing Script';background:#241f3a;color:#fff">Dancing Script</option>
-                  <option value="Luckiest Guy" style="font-family:'Luckiest Guy';background:#241f3a;color:#fff">Luckiest Guy</option>
-                  <option value="Bangers" style="font-family:'Bangers';background:#241f3a;color:#fff">Bangers</option>
-                  <option value="Lobster" style="font-family:'Lobster';background:#241f3a;color:#fff">Lobster</option>
-                </optgroup>
-                <optgroup label="Premium">
-                  <option value="Manrope" style="font-family:'Manrope';background:#241f3a;color:#fff">Manrope (Avenir-style)</option>
-                  <option value="Jost" style="font-family:'Jost';background:#241f3a;color:#fff">Jost (Futura-style)</option>
-                  <option value="Raleway" style="font-family:'Raleway';background:#241f3a;color:#fff">Raleway</option>
-                  <option value="DM Sans" style="font-family:'DM Sans';background:#241f3a;color:#fff">DM Sans</option>
-                  <option value="League Spartan" style="font-family:'League Spartan';background:#241f3a;color:#fff">League Spartan</option>
-                </optgroup>
-                <optgroup label="Viral / TikTok">
-                  <option value="Oswald" style="font-family:'Oswald';background:#241f3a;color:#fff">Oswald</option>
-                  <option value="Permanent Marker" style="font-family:'Permanent Marker';background:#241f3a;color:#fff">Permanent Marker</option>
-                  <option value="Caveat" style="font-family:'Caveat';background:#241f3a;color:#fff">Caveat</option>
-                  <option value="Quicksand" style="font-family:'Quicksand';background:#241f3a;color:#fff">Quicksand</option>
-                  <option value="Bungee" style="font-family:'Bungee';background:#241f3a;color:#fff">Bungee</option>
-                </optgroup>
-                <optgroup label="Themed">
-                  <option value="Creepster" style="font-family:'Creepster';background:#241f3a;color:#fff">Creepster</option>
-                  <option value="Cinzel Decorative" style="font-family:'Cinzel Decorative';background:#241f3a;color:#fff">Cinzel Decorative</option>
-                  <option value="Mountains of Christmas" style="font-family:'Mountains of Christmas';background:#241f3a;color:#fff">Mountains of Christmas</option>
-                </optgroup>
-              </select>
+              <div class="enhance-label-row"><label for="collage-font-trigger">Font</label></div>
+              <!-- v2.1 round 196 (Terry) — the native <select> closed on every
+                   pick, but the user is "in selection mode" and wants to click
+                   through fonts seeing each one live on their text before
+                   committing. Replaced with a CUSTOM dropdown: a trigger button
+                   (shows the current font's label in that font + a chevron) and a
+                   popover list that STAYS OPEN while browsing, live-applying each
+                   pick and only closing on click-outside / Escape. The font list,
+                   groups and own-face labels are unchanged from the round-192
+                   optgroups — they're now declared in JS (COLLAGE_FONT_GROUPS,
+                   below) so the markup + previews can't desync. Vendored faces
+                   still need document.fonts.load() before fillText (FUN_FAMILIES).
+                   -->
+              <button id="collage-font-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"
+                      style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#241f3a;border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px 9px;font-size:13px;cursor:pointer;text-align:left">
+                <span id="collage-font-trigger-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto">Impact</span>
+                <span aria-hidden="true" style="flex:0 0 auto;opacity:0.7;font-size:11px">&#9662;</span>
+              </button>
             </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
@@ -3235,6 +3230,66 @@
       // Belt-and-braces: re-render once the document's font set is fully ready.
       try { document.fonts.ready.then(() => { try { renderAllTexts(); } catch (_) {} }); } catch (_) {}
     }
+    // v2.1 round 196 (Terry) — single source of truth for the custom Font
+    // dropdown: the SAME groups / families / labels the round-192 <optgroup>s
+    // had. `fam` is the CSS font-family (what gets stored on selectedText.font
+    // and read by renderTextToCanvas); `label` is the shown text, previewed in
+    // its own face. Building the popover from this (rather than parsing markup)
+    // keeps a single declaration so the list + previews can't desync.
+    const COLLAGE_FONT_GROUPS = [
+      { group: 'System', fonts: [
+        { fam: 'Impact', label: 'Impact' },
+        { fam: 'Arial', label: 'Arial' },
+        { fam: 'Segoe UI', label: 'Segoe UI' },
+        { fam: 'Georgia', label: 'Georgia' },
+        { fam: 'Times New Roman', label: 'Times New Roman' },
+        { fam: 'Verdana', label: 'Verdana' },
+        { fam: 'Comic Sans MS', label: 'Comic Sans MS' },
+        { fam: 'Consolas', label: 'Consolas' },
+        { fam: 'Bahnschrift', label: 'Bahnschrift' },
+      ] },
+      { group: 'Essentials', fonts: [
+        { fam: 'Montserrat', label: 'Montserrat' },
+        { fam: 'Poppins', label: 'Poppins' },
+        { fam: 'Bebas Neue', label: 'Bebas Neue' },
+        { fam: 'Anton', label: 'Anton' },
+        { fam: 'Playfair Display', label: 'Playfair Display' },
+      ] },
+      { group: 'Fun', fonts: [
+        { fam: 'Fredoka', label: 'Fredoka' },
+        { fam: 'Pacifico', label: 'Pacifico' },
+        { fam: 'Dancing Script', label: 'Dancing Script' },
+        { fam: 'Luckiest Guy', label: 'Luckiest Guy' },
+        { fam: 'Bangers', label: 'Bangers' },
+        { fam: 'Lobster', label: 'Lobster' },
+      ] },
+      { group: 'Premium', fonts: [
+        { fam: 'Manrope', label: 'Manrope (Avenir-style)' },
+        { fam: 'Jost', label: 'Jost (Futura-style)' },
+        { fam: 'Raleway', label: 'Raleway' },
+        { fam: 'DM Sans', label: 'DM Sans' },
+        { fam: 'League Spartan', label: 'League Spartan' },
+      ] },
+      { group: 'Viral / TikTok', fonts: [
+        { fam: 'Oswald', label: 'Oswald' },
+        { fam: 'Permanent Marker', label: 'Permanent Marker' },
+        { fam: 'Caveat', label: 'Caveat' },
+        { fam: 'Quicksand', label: 'Quicksand' },
+        { fam: 'Bungee', label: 'Bungee' },
+      ] },
+      { group: 'Themed', fonts: [
+        { fam: 'Creepster', label: 'Creepster' },
+        { fam: 'Cinzel Decorative', label: 'Cinzel Decorative' },
+        { fam: 'Mountains of Christmas', label: 'Mountains of Christmas' },
+      ] },
+    ];
+    // Map family → label so the trigger button can show the right label for
+    // whatever selectedText.font is (defaults to the family if not in the list).
+    const COLLAGE_FONT_LABELS = (function () {
+      const m = {};
+      COLLAGE_FONT_GROUPS.forEach((g) => g.fonts.forEach((f) => { m[f.fam] = f.label; }));
+      return m;
+    })();
     function defaultBgEnh() {
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
@@ -5776,14 +5831,156 @@
       // text select (syncTextControls) and on the effect-chip change.
       updateColorTargets();
     }
+    // ===== v2.1 round 196 (Terry) — custom Font dropdown ======================
+    // Replaces the native <select id="collage-text-font">. The menu stays open
+    // while the user clicks through fonts (each pick applies live to the selected
+    // text); it only closes on a click outside or Escape. The menu lives in
+    // <body> as a position:fixed element so the panel's scroll/overflow can't clip
+    // it. State is just whether it's open + the bound outside-click listener.
+    let collageFontMenuOpen = false;
+    let collageFontOutsideHandler = null;
+    // Apply a font family to the selected text layer LIVE — the exact logic the
+    // old change handler ran (set font, re-render, and force-load decorative
+    // faces then re-render that layer). Wrapped in begin/commit for ONE undo step
+    // per pick, mirroring the other discrete text controls (align/style/effect).
+    function applyTextFont(fam) {
+      if (!selectedText) return;
+      beginCollageChange();
+      selectedText.font = fam;
+      renderTextLayer(selectedText);
+      // First pick of a decorative font can land before its face is loaded
+      // (canvas would draw a fallback for a frame). Load it, then re-render THIS
+      // layer once resolved. Captured by id so a quick re-selection of another
+      // layer can't re-render the wrong one.
+      if (FUN_FAMILIES.indexOf(fam) !== -1) {
+        const tid = selectedText.id;
+        try {
+          document.fonts.load('40px "' + fam + '"').then(() => {
+            const layer = collageTexts.find((t) => t.id === tid);
+            if (layer) renderTextLayer(layer);
+          }).catch(() => {});
+        } catch (_) {}
+      }
+      commitCollageChange();
+    }
+    // Update the trigger button's label text + preview face to a family.
+    function setCollageFontTriggerLabel(fam) {
+      const lbl = document.getElementById('collage-font-trigger-label');
+      if (!lbl) return;
+      const f = fam || 'Impact';
+      lbl.textContent = COLLAGE_FONT_LABELS[f] || f;
+      lbl.style.fontFamily = "'" + f + "'";
+    }
+    // Build the popover rows from COLLAGE_FONT_GROUPS once (group header +
+    // own-face option per font). Returns the #collage-font-menu element.
+    function buildCollageFontMenu() {
+      let menu = document.getElementById('collage-font-menu');
+      if (menu) return menu;
+      menu = document.createElement('div');
+      menu.id = 'collage-font-menu';
+      menu.setAttribute('role', 'listbox');
+      menu.style.display = 'none';
+      COLLAGE_FONT_GROUPS.forEach((g) => {
+        const h = document.createElement('div');
+        h.className = 'cfm-group';
+        h.textContent = g.group;
+        menu.appendChild(h);
+        g.fonts.forEach((f) => {
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'cfm-opt';
+          b.setAttribute('role', 'option');
+          b.dataset.fam = f.fam;
+          b.textContent = f.label;
+          b.style.fontFamily = "'" + f.fam + "'";
+          // Pick = live-apply + KEEP open; just move the active highlight here.
+          b.addEventListener('click', () => {
+            applyTextFont(f.fam);
+            setCollageFontTriggerLabel(f.fam);
+            menu.querySelectorAll('.cfm-opt').forEach((x) => x.classList.toggle('active', x === b));
+          });
+          menu.appendChild(b);
+        });
+      });
+      document.body.appendChild(menu);
+      return menu;
+    }
+    // Position the fixed menu under (or above, if no room) the trigger, matching
+    // its width. Called on open + on resize while open.
+    function positionCollageFontMenu() {
+      const trig = document.getElementById('collage-font-trigger');
+      const menu = document.getElementById('collage-font-menu');
+      if (!trig || !menu) return;
+      const r = trig.getBoundingClientRect();
+      menu.style.width = r.width + 'px';
+      menu.style.left = r.left + 'px';
+      // Default: drop below. If it would overflow the viewport bottom and there's
+      // more room above, flip upward.
+      const gap = 4;
+      const mh = Math.min(260, menu.scrollHeight);
+      const below = window.innerHeight - r.bottom;
+      if (below < mh + gap && r.top > below) {
+        menu.style.top = Math.max(4, r.top - gap - mh) + 'px';
+      } else {
+        menu.style.top = (r.bottom + gap) + 'px';
+      }
+    }
+    function closeCollageFontMenu() {
+      const menu = document.getElementById('collage-font-menu');
+      const trig = document.getElementById('collage-font-trigger');
+      if (menu) menu.style.display = 'none';
+      if (trig) trig.setAttribute('aria-expanded', 'false');
+      collageFontMenuOpen = false;
+      if (collageFontOutsideHandler) {
+        document.removeEventListener('pointerdown', collageFontOutsideHandler, true);
+        window.removeEventListener('resize', positionCollageFontMenu);
+        collageFontOutsideHandler = null;
+      }
+    }
+    function openCollageFontMenu() {
+      const menu = buildCollageFontMenu();
+      const trig = document.getElementById('collage-font-trigger');
+      // Preload all faces so every preview row renders in its own typeface.
+      kickFunFonts();
+      // Mark the current font's row active.
+      const cur = (selectedText && selectedText.font) || 'Impact';
+      let activeRow = null;
+      menu.querySelectorAll('.cfm-opt').forEach((x) => {
+        const on = x.dataset.fam === cur;
+        x.classList.toggle('active', on);
+        if (on) activeRow = x;
+      });
+      menu.style.display = 'block';
+      if (trig) trig.setAttribute('aria-expanded', 'true');
+      collageFontMenuOpen = true;
+      positionCollageFontMenu();
+      // Scroll the active font into view.
+      if (activeRow) { try { activeRow.scrollIntoView({ block: 'nearest' }); } catch (_) {} }
+      // Close only on a click OUTSIDE the trigger + popover, or Escape.
+      collageFontOutsideHandler = (e) => {
+        if (menu.contains(e.target) || (trig && trig.contains(e.target))) return;
+        closeCollageFontMenu();
+      };
+      document.addEventListener('pointerdown', collageFontOutsideHandler, true);
+      window.addEventListener('resize', positionCollageFontMenu);
+    }
+    // ========================================================================
     function syncTextControls() {
       const ctl = document.getElementById('collage-text-controls');
       if (ctl) ctl.style.display = selectedText ? 'block' : 'none';
       if (!selectedText) return;
       const ta = document.getElementById('collage-text-input');
       if (ta) ta.value = selectedText.text || '';
-      const fontSel = document.getElementById('collage-text-font');
-      if (fontSel) fontSel.value = selectedText.font || 'Impact';
+      // v2.1 round 196 (Terry) — update the custom Font dropdown's TRIGGER label
+      // (+ preview face) to the selected layer's font (replaces the old
+      // <select>.value assignment). If the menu happens to be open, re-mark the
+      // active row too.
+      setCollageFontTriggerLabel(selectedText.font || 'Impact');
+      if (collageFontMenuOpen) {
+        const menu = document.getElementById('collage-font-menu');
+        const cur = selectedText.font || 'Impact';
+        if (menu) menu.querySelectorAll('.cfm-opt').forEach((x) => x.classList.toggle('active', x.dataset.fam === cur));
+      }
       const sizeSlider = document.getElementById('collage-text-size');
       const sizeVal = document.getElementById('val-text-size');
       if (sizeSlider) {
@@ -7063,26 +7260,24 @@
         // newline (multi-line text is supported by renderTextToCanvas).
         ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); ta.blur(); } });
       }
-      const fontSel = document.getElementById('collage-text-font');
-      if (fontSel) fontSel.addEventListener('change', () => {
-        if (!selectedText) return;
-        const fam = fontSel.value;
-        selectedText.font = fam;
-        renderTextLayer(selectedText);
-        // v2.1 round 190 (Terry) — first pick of a decorative font can land before
-        // its face is loaded (canvas would draw a fallback for a frame). Load it,
-        // then re-render THIS layer once resolved. Captured by id so a quick
-        // re-selection of another layer can't re-render the wrong one.
-        if (FUN_FAMILIES.indexOf(fam) !== -1) {
-          const tid = selectedText.id;
-          try {
-            document.fonts.load('40px "' + fam + '"').then(() => {
-              const layer = collageTexts.find((t) => t.id === tid);
-              if (layer) renderTextLayer(layer);
-            }).catch(() => {});
-          } catch (_) {}
-        }
-      });
+      // v2.1 round 196 (Terry) — custom Font dropdown. The trigger toggles a
+      // popover that STAYS OPEN while the user clicks through fonts (each pick
+      // applies live via applyTextFont, the menu re-marks its active row but does
+      // NOT close). It closes only on a click outside or Escape (wired in
+      // open/closeCollageFontMenu). The old native <select> change handler's
+      // apply logic now lives in applyTextFont(), reused by every row click.
+      const fontTrigger = document.getElementById('collage-font-trigger');
+      if (fontTrigger && !fontTrigger.dataset.wired) {
+        fontTrigger.dataset.wired = '1';
+        fontTrigger.addEventListener('click', () => {
+          if (collageFontMenuOpen) closeCollageFontMenu(); else openCollageFontMenu();
+        });
+        // Escape closes the menu (capture so the collage key handler can't eat it
+        // first); only acts when the menu is actually open.
+        document.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape' && collageFontMenuOpen) { e.stopPropagation(); closeCollageFontMenu(); }
+        }, true);
+      }
       const sizeSlider = document.getElementById('collage-text-size');
       const sizeVal = document.getElementById('val-text-size');
       if (sizeSlider) sizeSlider.addEventListener('input', () => {
