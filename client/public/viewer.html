@@ -2722,7 +2722,7 @@
                 <button class="ec-effect-btn active" data-effect="none" type="button" data-pdr-tooltip="No effect">None</button>
                 <button class="ec-effect-btn" data-effect="outline" type="button" data-pdr-tooltip="Outlined letters">Outline</button>
                 <button class="ec-effect-btn" data-effect="shadow" type="button" data-pdr-tooltip="Drop shadow">Shadow</button>
-                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon glow in the text colour">Neon</button>
+                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon: letters in the text colour, glow in the effect colour">Neon</button>
                 <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Extruded 3D look">3D</button>
               </div>
             </div>
@@ -5820,19 +5820,22 @@
           ctx.save();
           // Build the glow (3 stacked fills), then a brighter core on top with
           // the blur reduced.
-          // v2.1 round 193 (Terry) — neon glow colour: the chosen effect colour
-          // if set, else AUTO = the text's own colour (today's look). The lightened
-          // core tracks the SAME base so the glow drives the whole neon tint; with
-          // '' both fall back to `color`, identical to before.
-          const ec = hasEffColor ? effColor : color;
-          ctx.shadowColor = ec;
+          // v2.1 round 206 (Terry) — neon now keeps the LETTERS in the TEXT colour
+          // and tints only the GLOW with the effect colour, so a chosen Text colour
+          // no longer vanishes. The glow (shadowColor) = effect colour if set, else
+          // the text colour (classic neon, unchanged). The letter fills use the
+          // TEXT colour, and the bright tighter core is the lightened TEXT colour.
+          // Net: NO effect colour → all text colour (today's look); WITH an effect
+          // colour → text-coloured letters + an effect-coloured glow halo.
+          const glow = hasEffColor ? effColor : color;
+          ctx.shadowColor = glow;
           ctx.shadowBlur = fontPx * 0.9 * k;   // v2.1 round 191 (Terry) — neon glow radius scales with strength
-          ctx.fillStyle = ec;
+          ctx.fillStyle = color;               // v2.1 round 206 — letters in the TEXT colour
           ctx.fillText(ln, x, y);
           ctx.fillText(ln, x, y);
           ctx.fillText(ln, x, y);
           ctx.shadowBlur = fontPx * 0.4 * k;   // v2.1 round 191 (Terry) — tighter core glow, also strength-scaled
-          ctx.fillStyle = shadeHex(ec, 0.7);   // lightened core (of the glow colour)
+          ctx.fillStyle = shadeHex(color, 0.7);   // v2.1 round 206 — bright core = lightened TEXT colour
           ctx.fillText(ln, x, y);
           ctx.restore();
         } else if (effect === '3d') {
@@ -6145,8 +6148,20 @@
         layer.xFrac = Math.max(0, Math.min(1, sx + dx));
         layer.yFrac = Math.max(0, Math.min(1, sy + dy));
         renderTextLayer(layer);
+        // v2.1 round 206 (Terry) — Canva-style snapping (same helper as tiles).
+        // Text is centre-anchored, but xFrac/yFrac still move linearly with the
+        // element rect, so adding the px snap delta as a fraction works the same.
+        // ALT = free drop. No extra undo snapshot — still one step per gesture.
+        if (ev.altKey) { hideCollageSnapGuides(); return; }
+        const cRect = collageCanvasEl.getBoundingClientRect();
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 6);
+        if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
+        if (snap.dy) layer.yFrac = Math.max(0, Math.min(1, layer.yFrac + snap.dy / cRect.height));
+        if (snap.dx || snap.dy) renderTextLayer(layer);
+        showCollageSnapGuides(snap.vGuide, snap.hGuide);
       };
       const up = () => {
+        hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
         commitCollageChange();
@@ -6493,6 +6508,102 @@
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
+    // ─── v2.1 round 206 (Terry) — Canva-style alignment snapping ───────────────
+    // Shared by the TILE drag (startItemDrag) and the TEXT drag (startTextDrag).
+    // Snap is ON by default; hold ALT during the drag to drop freely (the callers
+    // skip this entirely when e.altKey). Everything is computed in PIXEL space via
+    // element rects, so it works for both anchor types (tiles are left-anchored,
+    // text is centre-anchored) — the caller converts the returned px delta to a
+    // fraction and ADDS it to xFrac/yFrac, which moves both linearly.
+    //
+    // Returns { dx, dy, vGuide, hGuide }: dx/dy are px deltas to apply on each
+    // axis (0 if no snap that axis); vGuide/hGuide are the canvas-relative px X/Y
+    // where a guide line should show (or null). X and Y snap independently.
+    function computeDragSnap(draggedEl, canvasEl, threshold) {
+      const T = threshold || 6;
+      const out = { dx: 0, dy: 0, vGuide: null, hGuide: null };
+      if (!draggedEl || !canvasEl) return out;
+      const cRect = canvasEl.getBoundingClientRect();
+      if (!cRect.width || !cRect.height) return out;
+      const dRect = draggedEl.getBoundingClientRect();
+      // Dragged element edges, relative to the canvas.
+      const dLeft = dRect.left - cRect.left;
+      const dRight = dRect.right - cRect.left;
+      const dCx = dLeft + dRect.width / 2;
+      const dTop = dRect.top - cRect.top;
+      const dBottom = dRect.bottom - cRect.top;
+      const dCy = dTop + dRect.height / 2;
+      // Candidate alignment lines (canvas-relative px). Canvas-centre is listed
+      // FIRST so that, with strict-less-than comparison below, it wins ties.
+      const vCand = [cRect.width / 2, 0, cRect.width];                 // centreX, left, right
+      const hCand = [cRect.height / 2, 0, cRect.height];               // centreY, top, bottom
+      for (let i = 0; i < collageItems.length; i++) {
+        const o = collageItems[i];
+        if (!o || !o.el || o.el === draggedEl) continue;
+        const r = o.el.getBoundingClientRect();
+        vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left);
+        hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top);
+      }
+      for (let i = 0; i < collageTexts.length; i++) {
+        const o = collageTexts[i];
+        if (!o || !o.el || o.el === draggedEl) continue;
+        const r = o.el.getBoundingClientRect();
+        vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left);
+        hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top);
+      }
+      // Best snap on X: test the dragged element's left / centre / right against
+      // every vertical candidate; keep the smallest gap within threshold.
+      let bestVGap = T + 1;
+      const dXEdges = [dLeft, dCx, dRight];
+      for (let c = 0; c < vCand.length; c++) {
+        for (let e = 0; e < dXEdges.length; e++) {
+          const gap = Math.abs(dXEdges[e] - vCand[c]);
+          if (gap < bestVGap) { bestVGap = gap; out.dx = vCand[c] - dXEdges[e]; out.vGuide = vCand[c]; }
+        }
+      }
+      if (bestVGap > T) { out.dx = 0; out.vGuide = null; }
+      // Best snap on Y: dragged top / centre / bottom vs horizontal candidates.
+      let bestHGap = T + 1;
+      const dYEdges = [dTop, dCy, dBottom];
+      for (let c = 0; c < hCand.length; c++) {
+        for (let e = 0; e < dYEdges.length; e++) {
+          const gap = Math.abs(dYEdges[e] - hCand[c]);
+          if (gap < bestHGap) { bestHGap = gap; out.dy = hCand[c] - dYEdges[e]; out.hGuide = hCand[c]; }
+        }
+      }
+      if (bestHGap > T) { out.dy = 0; out.hGuide = null; }
+      return out;
+    }
+    // Gold guide overlay lines, created lazily inside #collage-canvas and reused
+    // across gestures. One vertical + one horizontal max. Always hidden on
+    // pointerup (the drag `up`/cleanup calls hideCollageSnapGuides).
+    let collageSnapVEl = null, collageSnapHEl = null;
+    function showCollageSnapGuides(vGuide, hGuide) {
+      if (!collageCanvasEl) return;
+      if (vGuide != null) {
+        if (!collageSnapVEl) {
+          collageSnapVEl = document.createElement('div');
+          collageSnapVEl.style.cssText = 'position:absolute;top:0;width:1px;height:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
+          collageCanvasEl.appendChild(collageSnapVEl);
+        }
+        collageSnapVEl.style.left = Math.round(vGuide) + 'px';
+        collageSnapVEl.style.display = 'block';
+      } else if (collageSnapVEl) { collageSnapVEl.style.display = 'none'; }
+      if (hGuide != null) {
+        if (!collageSnapHEl) {
+          collageSnapHEl = document.createElement('div');
+          collageSnapHEl.style.cssText = 'position:absolute;left:0;height:1px;width:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
+          collageCanvasEl.appendChild(collageSnapHEl);
+        }
+        collageSnapHEl.style.top = Math.round(hGuide) + 'px';
+        collageSnapHEl.style.display = 'block';
+      } else if (collageSnapHEl) { collageSnapHEl.style.display = 'none'; }
+    }
+    function hideCollageSnapGuides() {
+      if (collageSnapVEl) collageSnapVEl.style.display = 'none';
+      if (collageSnapHEl) collageSnapHEl.style.display = 'none';
+    }
+
     function startItemDrag(it, e) {
       e.preventDefault();
       // v2.1 round 203 (Terry) — a locked tile can't be moved: select it (so its
@@ -6512,9 +6623,22 @@
         it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, sx + dx));
         it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, sy + dy));
         renderCollageItem(it);
+        // v2.1 round 206 (Terry) — Canva-style snapping. Render at the proposed
+        // position first (above) so the element rect is current, then nudge each
+        // axis onto the nearest alignment line within threshold. ALT = free drop
+        // (no snap, no guides). One undo step still: we only adjust xFrac/yFrac
+        // inside this existing begin/commit gesture — no extra snapshot.
+        if (ev.altKey) { hideCollageSnapGuides(); return; }
+        const cRect = collageCanvasEl.getBoundingClientRect();
+        const snap = computeDragSnap(it.el, collageCanvasEl, 6);
+        if (snap.dx) it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, it.xFrac + snap.dx / cRect.width));
+        if (snap.dy) it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, it.yFrac + snap.dy / cRect.height));
+        if (snap.dx || snap.dy) renderCollageItem(it);
+        showCollageSnapGuides(snap.vGuide, snap.hGuide);
       };
       const up = () => {
         it.el.classList.remove('dragging');
+        hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
@@ -7220,6 +7344,9 @@
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
       // text els; null them so renderAllTexts (end of this fn) recreates them.
       collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper
+      // v2.1 round 206 (Terry) — the innerHTML clear also removed the snap-guide
+      // overlay nodes; drop the cached refs so they're lazily recreated.
+      collageSnapVEl = null; collageSnapHEl = null;
       collageItems.length = 0;
       files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
@@ -7887,7 +8014,21 @@
       // first and selects the background too.)
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.target === collageCanvasEl) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
-        else if (e.target === collageStageEl) selectCollageItem(null);
+        // v2.1 round 206 (Terry) — a click on the dark margin AROUND the canvas
+        // (the stage padding / any non-canvas, non-tile target outside the paper)
+        // deselects everything (tile / text / background). Tiles, text layers and
+        // their handles live INSIDE #collage-canvas and stopPropagation on their
+        // own pointerdown, so reaching here with a target that isn't the canvas
+        // and isn't inside it means the empty dark area was clicked. Clicking the
+        // canvas BACKGROUND itself is handled above (selects the bg) — unchanged.
+        else if (!collageCanvasEl.contains(e.target)) { selectCollageItem(null); selectText(null); }
+      });
+      // v2.1 round 206 (Terry) — the stage is centred inside #collage-root with a
+      // dark background; if the click lands on that outer area (e.g. above/below
+      // the centred stage) deselect too. Same guard: only when the target is the
+      // root itself, never a child.
+      if (collageRootEl) collageRootEl.addEventListener('pointerdown', (e) => {
+        if (e.target === collageRootEl) { selectCollageItem(null); selectText(null); }
       });
       // v2.1 round 168 (Terry) — Ctrl+scroll zooms the SELECTED photo in to 2×;
       // it can't zoom out past its original (zoom clamps at 1). Done on the
@@ -11656,7 +11797,18 @@ function zoomTo(newZoom, centreX, centreY) {
       const eb = document.getElementById('enhance-expand-all');
       const cb = document.getElementById('enhance-collapse-all');
       if (eb) eb.addEventListener('click', () => setAll(true));
-      if (cb) cb.addEventListener('click', () => setAll(false));
+      if (cb) cb.addEventListener('click', () => {
+        setAll(false);
+        // v2.1 round 206 (Terry) — Collapse all also clears the current selection
+        // (tile / text / background) so no subcategory header stays gold and the
+        // Colour Palette hides. Otherwise a section stayed active after collapsing
+        // with a photo selected. Collage mode only — the deselect paths are no-ops
+        // anyway when nothing is selected, but gate on collage-mode to be safe.
+        if (document.body.classList.contains('collage-mode')) {
+          try { selectCollageItem(null); } catch (_) {}
+          try { selectText(null); } catch (_) {}
+        }
+      });
     })();
 
     // ─── v2.1 (Terry 2026-06-07) — JS tooltip manager for elements
