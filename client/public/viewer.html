@@ -1385,20 +1385,41 @@
     }
     .frame-add:hover { transform: scale(1.08); }
     .frame-saved { display: contents; }
-    /* v2.1 round 193 (Terry) — a named colour collection (e.g. "Neon") inside a
-       text colour palette: a full-width caption then its swatches, on their own
-       wrapping row. display:contents lets the swatches keep flowing in the
-       parent .frame-palette flex/wrap; the caption forces a line break. */
-    .frame-collection { display: contents; }
-    .frame-collection-label {
-      flex: 0 0 100%;
-      width: 100%;
-      margin-top: 2px;
-      font: 600 10px/1.3 system-ui, 'Segoe UI', sans-serif;
-      letter-spacing: 0.04em;
-      text-transform: uppercase;
-      color: #9aa0ad;
+    /* v2.1 round 194 (Terry) — ONE shared text-colour palette. The palette host
+       (.frame-palette) now stacks labelled rows vertically; each row
+       (.frame-row) wraps its swatches. Top row = Auto?/Custom; then the fixed
+       Core 7; then Favourites; then one collapsed <details> per collection. */
+    #collage-text-palette.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
+    #collage-text-palette .frame-row { margin: 0; }
+    #collage-text-palette .frame-favrow:empty { display: none; }
+    /* Faint hint shown only when Favourites is empty. */
+    .frame-fav-hint { font-size: 11px; color: #8f88b5; line-height: 1.3; margin-top: 2px; }
+    /* The "＋ add to favourites" badge — hidden until the swatch is hovered. */
+    .frame-swatch { position: relative; }
+    .frame-fav-add {
+      position: absolute; top: -5px; right: -5px;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: #2a2540; color: #fff; border: 1px solid rgba(169,156,255,0.6);
+      font: 700 12px/13px system-ui, sans-serif; text-align: center;
+      display: none; align-items: center; justify-content: center;
+      cursor: pointer; z-index: 2;
     }
+    .frame-swatch:hover .frame-fav-add { display: flex; }
+    .frame-fav-add:hover { background: #3a3358; transform: scale(1.12); }
+    /* Collection chevrons: smaller than the section chevrons + collapsed by
+       default so the panel stays short. */
+    .frame-coll-collapse { padding: 0; }
+    .frame-coll-collapse > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a8a93;
+      display: flex; align-items: center; gap: 6px; padding: 1px 0; user-select: none;
+    }
+    .frame-coll-collapse > summary::-webkit-details-marker { display: none; }
+    .frame-coll-collapse > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #a99cff; }
+    .frame-coll-collapse[open] > summary::before { transform: rotate(90deg); }
+    .frame-coll-collapse[open] { display: block; }
+    .frame-coll-grid { margin-top: 6px; }
+    .frame-coll-collapse::details-content { display: block; }
     /* Legacy alias kept so any stale reference doesn't break. */
     .frame-row {
       display: flex;
@@ -2166,6 +2187,9 @@
     }
     .ec-ctgl:hover { background: rgba(169,156,255,0.10); }
     .ec-ctgl.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 194 (Terry) — "Effect colour" target greyed until an effect is on. */
+    .ec-ctgl.is-disabled { opacity: 0.45; cursor: not-allowed; }
+    .ec-ctgl.is-disabled:hover { background: transparent; }
     .ec-frame-hint { font-size: 11px; color: #9a93c8; margin-top: 8px; line-height: 1.4; }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
@@ -2537,21 +2561,23 @@
               <div class="enhance-label-row"><label for="collage-text-strength" data-pdr-tooltip="How strong the effect is — mild to bold">Strength</label><span class="enhance-val" id="val-text-strength">50</span></div>
               <input class="enhance-slider" id="collage-text-strength" type="range" min="0" max="100" step="1" value="50">
             </div>
-            <!-- v2.1 round 193 (Terry) — text FILL colour. Swatches (bright
-                 defaults + Neon row + saved customs + the "+" custom button) are
-                 built by renderTextColorPalette() into this host; the static dull
-                 set was removed. -->
+            <!-- v2.1 round 194 (Terry) — ONE Colour section, no duplicated
+                 palette. A Text/Effect target toggle re-points the single
+                 palette below: "Text colour" edits the fill (layer.color via
+                 setTextColor); "Effect colour" edits the effect tint
+                 (layer.effectColor via setTextEffectColor) and is disabled until
+                 an effect is chosen. Auto chip, Custom +, fixed Core row,
+                 Favourites row, then collapsed collection chevrons are all built
+                 by renderTextColorPalette() into the single #collage-text-palette
+                 host, re-rendered/re-rung on every toggle. -->
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Text colour">Colour</label></div>
+              <div class="enhance-label-row"><label data-pdr-tooltip="Choose what the palette below colours">Colour</label></div>
+              <div class="ec-color-toggle" id="collage-text-colortarget" role="group" aria-label="Colour target">
+                <button class="ec-ctgl active" type="button" data-target="text" data-pdr-tooltip="Colour the text itself">Text colour</button>
+                <button class="ec-ctgl" type="button" data-target="effect" data-pdr-tooltip="Colour the chosen effect (outline / shadow / glow / 3D side)">Effect colour</button>
+              </div>
               <div class="frame-palette" id="collage-text-palette"></div>
-            </div>
-            <!-- v2.1 round 193 (Terry) — EFFECT colour. Shown only when an effect
-                 is active (same show/hide as Strength). Uses the SAME shared
-                 palette renderer + an "Auto" swatch that reverts to the derived
-                 per-effect colour. -->
-            <div class="enhance-control" id="collage-text-effcolor-row" style="margin-top:8px;display:none">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Colour of the chosen effect (outline / shadow / glow / 3D side). Auto matches the text.">Effect colour</label></div>
-              <div class="frame-palette" id="collage-text-effcolor-palette"></div>
+              <div class="frame-fav-hint" id="collage-text-fav-hint" style="display:none">Add favourites from the palettes below &#8595;</div>
             </div>
             <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px" data-pdr-tooltip="Delete this text layer">Delete text</button>
           </div>
@@ -5717,10 +5743,11 @@
     function setStrengthRowVisible(show) {
       const row = document.getElementById('collage-text-strength-row');
       if (row) row.style.display = show ? '' : 'none';
-      // v2.1 round 193 (Terry) — the Effect-colour control shares the SAME
-      // show/hide as Strength (both meaningless when the effect is None).
-      const ecRow = document.getElementById('collage-text-effcolor-row');
-      if (ecRow) ecRow.style.display = show ? '' : 'none';
+      // v2.1 round 194 (Terry) — there's no longer a separate effect-colour row
+      // (one shared palette now). The Effect-colour TARGET is instead what gets
+      // gated by the effect being on/off — keep the toggle's enabled state in
+      // sync here (mirrors the old row's show/hide trigger).
+      updateColorTargetToggle();
     }
     function syncTextControls() {
       const ctl = document.getElementById('collage-text-controls');
@@ -7110,85 +7137,149 @@
         renderTextLayer(selectedText);
         commitCollageChange();
       });
-      // v2.1 round 193 (Terry) — fill colour now uses the SHARED palette renderer
-      // (bright defaults + Neon row + saved customs). It builds its own +, custom
-      // input + swatch click handlers, so no manual palette/add wiring here.
-      renderTextColorPalette(
-        document.getElementById('collage-text-palette'),
-        () => (selectedText ? selectedText.color : ''),
-        (hex) => setTextColor(hex || '#ffffff'),
-      );
-      // v2.1 round 193 (Terry) — effect colour control: same shared palette, plus
-      // an "Auto" swatch ('') that reverts to the derived per-effect colour.
-      renderTextColorPalette(
-        document.getElementById('collage-text-effcolor-palette'),
-        () => (selectedText ? (selectedText.effectColor || '') : ''),
-        (hex) => setTextEffectColor(hex),
-        { auto: true },
-      );
+      // v2.1 round 194 (Terry) — ONE shared colour palette. The Text/Effect
+      // target toggle re-points it; we mount it once here and (re)render on each
+      // toggle. No duplicate effect-colour palette any more.
+      const colorTargetWrap = document.getElementById('collage-text-colortarget');
+      if (colorTargetWrap && !colorTargetWrap.dataset.wired) {
+        colorTargetWrap.dataset.wired = '1';
+        colorTargetWrap.addEventListener('click', (e) => {
+          const b = e.target.closest('.ec-ctgl');
+          if (!b || b.disabled) return;
+          const t = b.dataset.target === 'effect' ? 'effect' : 'text';
+          if (t === textColorTarget) return;
+          textColorTarget = t;
+          updateColorTargetToggle();
+          renderTextColorPaletteForTarget();   // re-point getCurrent/onPick + re-ring
+        });
+      }
+      updateColorTargetToggle();
+      renderTextColorPaletteForTarget();
       const delBtn = document.getElementById('collage-text-delete');
       if (delBtn) delBtn.addEventListener('click', () => deleteTextLayer(selectedText));
     }
-    // v2.1 round 193 (Terry) — SHARED text colour palette, used by BOTH the text
-    // fill-colour control AND the new effect-colour control. One renderer, one
-    // data source, so the bright defaults + the Neon row + future collections are
-    // defined once. renderTextColorPalette(hostEl, getCurrent, onPick, opts):
-    //   getCurrent() → the colour string to ring as active (lowercased compare)
-    //   onPick(hex)  → called with a swatch's data-color on click
-    //   opts.auto    → if true, prepend an "Auto" swatch (data-color '') for the
-    //                  effect-colour control (revert to derived). The '' swatch
-    //                  rings when getCurrent() is ''.
-    // Brighter default swatches (replace the old dull set).
+    // v2.1 round 194 (Terry) — ONE shared text colour palette (no duplicated
+    // fill/effect mounts). A Text/Effect TARGET toggle re-points the single
+    // palette: renderTextColorPaletteForTarget() swaps getCurrent/onPick + the
+    // Auto chip on/off, then re-rings. Data below: a fixed Core 7, persistent
+    // Favourites, and five collapsed collection chevrons.
+    // v2.1 round 194 (Terry) — FIXED core row. Exactly these 7, always shown,
+    // never re-ordered. (Was a 10-colour "defaults" list.)
     const TEXT_COLOR_DEFAULTS = [
-      ['#FFFFFF', 'White'], ['#111111', 'Black'], ['#FF3B30', 'Red'], ['#FF9500', 'Orange'],
-      ['#FFD60A', 'Yellow'], ['#34C759', 'Green'], ['#00C7BE', 'Teal'], ['#0A84FF', 'Blue'],
-      ['#AF52DE', 'Purple'], ['#FF2D55', 'Pink'],
+      ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FFD700', 'Yellow'], ['#FF0033', 'Red'],
+      ['#007AFF', 'Blue'], ['#34C759', 'Green'], ['#FF1493', 'Neon Pink'],
     ];
-    // Named collections — looped by the renderer, so adding Seasonal / Car /
-    // Nature later is a one-line data add here (Terry: next time). Only Neon now.
+    // v2.1 round 194 (Terry) — five named collections, each rendered as a
+    // collapsed chevron (<details>) of up to 20 swatches. Adding/removing a
+    // collection or swatch is a one-line data edit here. The Core 7 above is
+    // SEPARATE (not a collection).
     const COLOR_COLLECTIONS = [
-      // v2.1 round 193 (Terry) — curated full-spectrum selection from Terry's neon-hex chart.
       { name: 'Neon', colors: [
-        ['#FF67FE', 'Neon Pink'], ['#F130F2', 'Magenta'], ['#FF00A4', 'Hot Pink'], ['#ED0F81', 'Deep Pink'],
-        ['#FE0000', 'Neon Red'], ['#FF0249', 'Red'], ['#FF7300', 'Neon Orange'], ['#FCFD04', 'Neon Yellow'],
-        ['#E7FF00', 'Chartreuse'], ['#CEFA05', 'Lime'], ['#64FF00', 'Neon Green'], ['#0CD276', 'Emerald'],
-        ['#40BB56', 'Green'], ['#02E7E9', 'Cyan'], ['#09FBD3', 'Aqua'], ['#00B6C8', 'Teal'],
-        ['#035DFD', 'Blue'], ['#3E00FD', 'Electric Blue'], ['#8700F3', 'Violet'], ['#9F44D4', 'Purple'],
-        ['#C77BDE', 'Orchid'],
+        ['#FF67FE', 'Neon'], ['#F130F2', 'Neon'], ['#FF00A4', 'Neon'], ['#ED0F81', 'Neon'],
+        ['#FE0000', 'Neon'], ['#FF0249', 'Neon'], ['#FF7300', 'Neon'], ['#FCFD04', 'Neon'],
+        ['#E7FF00', 'Neon'], ['#CEFA05', 'Neon'], ['#64FF00', 'Neon'], ['#0CD276', 'Neon'],
+        ['#02E7E9', 'Neon'], ['#09FBD3', 'Neon'], ['#00B6C8', 'Neon'], ['#035DFD', 'Neon'],
+        ['#3E00FD', 'Neon'], ['#8700F3', 'Neon'], ['#9F44D4', 'Neon'], ['#C77BDE', 'Neon'],
+      ] },
+      { name: 'Neutral', colors: [
+        ['#C19565', 'Neutral'], ['#B87857', 'Neutral'], ['#664940', 'Neutral'], ['#8D4739', 'Neutral'],
+        ['#D67A41', 'Neutral'], ['#9F8575', 'Neutral'], ['#F3B594', 'Neutral'], ['#ECD3BC', 'Neutral'],
+        ['#A18E72', 'Neutral'], ['#CDCDCA', 'Neutral'], ['#CFBBAE', 'Neutral'], ['#C69764', 'Neutral'],
+        ['#4F625A', 'Neutral'], ['#978670', 'Neutral'], ['#433827', 'Neutral'], ['#544331', 'Neutral'],
+        ['#795537', 'Neutral'], ['#8B6D55', 'Neutral'], ['#75776B', 'Neutral'], ['#78654D', 'Neutral'],
+      ] },
+      { name: 'Seasonal', colors: [
+        ['#236E96', 'Summer'], ['#15B2D3', 'Summer'], ['#FFD700', 'Summer'], ['#F3872F', 'Summer'], ['#FF598F', 'Summer'],
+        ['#42687C', 'Winter'], ['#84A5B8', 'Winter'], ['#B3DAF1', 'Winter'], ['#CBCBCB', 'Winter'], ['#707571', 'Winter'],
+        ['#F3A8BC', 'Spring'], ['#F5AD94', 'Spring'], ['#FFF1A6', 'Spring'], ['#B4F9A5', 'Spring'], ['#9EE7F5', 'Spring'],
+        ['#603C14', 'Autumn'], ['#9C2706', 'Autumn'], ['#D45B12', 'Autumn'], ['#F3BC2E', 'Autumn'], ['#5F5426', 'Autumn'],
+      ] },
+      { name: 'Skin', colors: [
+        ['#3C2E28', 'Skin'], ['#4B3932', 'Skin'], ['#5C4033', 'Skin'], ['#6F4E37', 'Skin'],
+        ['#8D5524', 'Skin'], ['#87675A', 'Skin'], ['#967264', 'Skin'], ['#A1665E', 'Skin'],
+        ['#B48A78', 'Skin'], ['#C5845C', 'Skin'], ['#C68642', 'Skin'], ['#D2A18C', 'Skin'],
+        ['#E0AC69', 'Skin'], ['#E1AC96', 'Skin'], ['#F1C27D', 'Skin'], ['#FFE0BD', 'Skin'],
+      ] },
+      { name: 'Cars', colors: [
+        ['#FFFFFF', 'Solid White'], ['#000000', 'Absolute Black'], ['#C0C0C0', 'Metallic Silver'], ['#4A4A4A', 'Dark Charcoal Grey'],
+        ['#F3F2ED', 'Pearl White'], ['#8C9092', 'Audi Nardo Grey'], ['#525759', 'Porsche Agate Grey'], ['#0C0C0C', 'BMW Black Sapphire'],
+        ['#104E8B', 'BMW Estoril Blue'], ['#003399', 'Subaru WR Blue Mica'], ['#1D2A44', 'Deep Navy Blue'], ['#CC0000', 'Ferrari Rosso Corsa'],
+        ['#9B111E', 'Mazda Soul Red Crystal'], ['#DF2B26', 'Ford Race Red'], ['#FAC51C', 'Renault Liquid Yellow'], ['#062C17', 'British Racing Green'],
+        ['#2C3E2B', 'Porsche Oak Green Metallic'], ['#4B5320', 'Toyota Army Green'], ['#C5B358', 'Mercedes Desert Silver'], ['#FF6F00', 'Dodge Hugger Orange'],
       ] },
     ];
-    // Persistent custom colours for TEXT — a parallel key so the photo-frame /
-    // collage-background saved row (pdr-frame-saved-colors) stays separate. Same
-    // round-144 shape: most-recent first, capped at 8.
-    const TEXT_SAVED_KEY = 'pdr-text-saved-colors';
-    function textGetSaved() { try { const v = JSON.parse(localStorage.getItem(TEXT_SAVED_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, 8) : []; } catch (_) { return []; } }
-    function textSaveColor(c) {
+    // v2.1 round 194 (Terry) — which target the single palette edits: 'text'
+    // (fill colour → setTextColor) or 'effect' (effectColor → setTextEffectColor).
+    let textColorTarget = 'text';
+    // v2.1 round 194 (Terry) — persistent FAVOURITES (replaces the old 'saved'
+    // row). New key so the retired pdr-text-saved-colors can't leak in. FIFO,
+    // capped at 7, most-recent first.
+    const TEXT_FAV_KEY = 'pdr-text-fav-colors';
+    const TEXT_FAV_CAP = 7;
+    function textGetFavs() { try { const v = JSON.parse(localStorage.getItem(TEXT_FAV_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, TEXT_FAV_CAP) : []; } catch (_) { return []; } }
+    function textWriteFavs(cols) { try { localStorage.setItem(TEXT_FAV_KEY, JSON.stringify(cols.slice(0, TEXT_FAV_CAP))); } catch (_) {} }
+    // Add a colour to Favourites (most-recent first, dedup, drop oldest past 7).
+    // Does NOT apply it — callers decide whether to also pick it.
+    function textAddFav(c) {
       if (!c) return;
-      let cols = textGetSaved().filter((x) => x.toLowerCase() !== c.toLowerCase());
-      cols.unshift(c); cols = cols.slice(0, 8);
-      try { localStorage.setItem(TEXT_SAVED_KEY, JSON.stringify(cols)); } catch (_) {}
-      // Refresh every mounted text palette so a colour saved from one control
-      // (fill OR effect) shows in both immediately.
-      renderAllTextColorPalettes();
+      let cols = textGetFavs().filter((x) => x.toLowerCase() !== c.toLowerCase());
+      cols.unshift(c); cols = cols.slice(0, TEXT_FAV_CAP);
+      textWriteFavs(cols);
+      renderTextColorPaletteForTarget();   // reflect immediately
     }
-    // Track mounted palettes so a save / external change re-renders them all.
+    function textRemoveFav(c) {
+      if (!c) return;
+      const cols = textGetFavs().filter((x) => x.toLowerCase() !== c.toLowerCase());
+      textWriteFavs(cols);
+      renderTextColorPaletteForTarget();
+    }
+    // Track the single mounted palette so a fav change re-renders it.
     const textColorPalettes = [];   // { host, getCurrent, onPick, auto }
-    function makeTextSwatch(hex, tip) {
+    // v2.1 round 194 (Terry) — a single palette swatch. `addable` swatches (the
+    // Core row + every collection swatch) get a tiny "＋" badge that appears on
+    // hover; clicking the badge adds the colour to Favourites WITHOUT applying,
+    // clicking the body applies. Favourite swatches pass addable=false and instead
+    // remove on right-click.
+    function makeTextSwatch(hex, tip, onPick, opts) {
+      opts = opts || {};
       const b = document.createElement('button');
       b.type = 'button'; b.className = 'frame-swatch';
       b.style.background = hex; b.setAttribute('data-color', hex);
       b.setAttribute('data-pdr-tooltip', tip || hex);
+      b.addEventListener('click', () => { try { onPick(hex); } catch (_) {} });
+      if (opts.addable) {
+        const badge = document.createElement('span');
+        badge.className = 'frame-fav-add'; badge.textContent = '+';
+        badge.setAttribute('data-pdr-tooltip', 'Add to favourites');
+        badge.addEventListener('click', (e) => { e.stopPropagation(); textAddFav(hex); });
+        b.appendChild(badge);
+      }
+      if (opts.removable) {
+        b.addEventListener('contextmenu', (e) => { e.preventDefault(); textRemoveFav(hex); });
+      }
       return b;
     }
+    // v2.1 round 194 (Terry) — ONE shared palette. opts.getCurrent() → the colour
+    // to ring (lowercased; '' rings the Auto chip). opts.onPick(hex) applies to
+    // the current target. opts.auto adds the Auto chip (effect target only — sets
+    // ''/derived). Order: [Auto?] [Custom +] · Core 7 · Favourites · collections.
     function renderTextColorPalette(hostEl, getCurrent, onPick, opts) {
       if (!hostEl) return;
       opts = opts || {};
+      // v2.1 round 194 (Terry) — remember which collection chevrons were open so a
+      // rebuild (e.g. after adding a favourite) doesn't snap them shut.
+      const openColls = new Set();
+      hostEl.querySelectorAll('.frame-coll-collapse[open]').forEach((d) => { if (d.dataset.coll) openColls.add(d.dataset.coll); });
       hostEl.innerHTML = '';
       hostEl.classList.add('frame-palette');
-      // 1) Custom "+" button (opens a hidden colour input); a picked colour calls
-      //    onPick AND saves it to the persistent text-saved list.
+      // Top controls row (Auto + Custom) on their own line so the Core 7 below
+      // reads as a clean, fixed strip.
+      const top = document.createElement('div');
+      top.className = 'frame-row frame-toprow';
+      // Custom "+" — opens a hidden colour input; a picked colour applies to the
+      // target AND is added to Favourites (on commit).
       const add = document.createElement('button');
-      add.type = 'button'; add.className = 'frame-add'; add.setAttribute('data-pdr-tooltip', 'Pick a custom colour');
+      add.type = 'button'; add.className = 'frame-add'; add.setAttribute('data-pdr-tooltip', 'Pick a custom colour (added to favourites)');
       add.innerHTML = '<span class="frame-add-plus">+</span>';
       const custom = document.createElement('input');
       custom.type = 'color'; custom.value = '#ffffff';
@@ -7196,10 +7287,9 @@
       custom.setAttribute('aria-hidden', 'true');
       add.addEventListener('click', () => { try { custom.click(); } catch (_) {} });
       custom.addEventListener('input', () => { try { onPick(custom.value); } catch (_) {} });
-      custom.addEventListener('change', () => textSaveColor(custom.value));   // persist on commit
-      hostEl.appendChild(add); hostEl.appendChild(custom);
-      // 1b) Auto swatch (effect-colour control only) — reverts to the derived
-      //     colour. data-color '' so the active-ring logic rings it when current is ''.
+      custom.addEventListener('change', () => textAddFav(custom.value));   // favourite it on commit
+      // Auto chip (effect target only) — reverts to the derived colour. data-color
+      // '' so the active-ring logic rings it when current is ''.
       if (opts.auto) {
         const autoSw = document.createElement('button');
         autoSw.type = 'button'; autoSw.className = 'frame-swatch frame-none';
@@ -7207,40 +7297,93 @@
         autoSw.setAttribute('data-pdr-tooltip', 'Auto — match the text (the default effect colour)');
         autoSw.textContent = 'A';
         autoSw.addEventListener('click', () => { try { onPick(''); } catch (_) {} });
-        hostEl.appendChild(autoSw);
+        top.appendChild(autoSw);
       }
-      // 2) Saved custom colours (most-recent first; flat string list).
-      textGetSaved().forEach((c) => {
-        const sw = makeTextSwatch(c, c);
-        sw.addEventListener('click', () => { try { onPick(c); } catch (_) {} });
-        hostEl.appendChild(sw);
-      });
-      // 3) Brighter default swatches.
-      TEXT_COLOR_DEFAULTS.forEach(([hex, tip]) => {
-        const sw = makeTextSwatch(hex, tip);
-        sw.addEventListener('click', () => { try { onPick(hex); } catch (_) {} });
-        hostEl.appendChild(sw);
-      });
-      // 4) Named collections (Neon now; loop makes more a one-line data add).
+      top.appendChild(add); top.appendChild(custom);
+      hostEl.appendChild(top);
+      // Core row (fixed, always) — the 7 essentials, each addable to favourites.
+      const core = document.createElement('div');
+      core.className = 'frame-row frame-core';
+      TEXT_COLOR_DEFAULTS.forEach(([hex, tip]) => core.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
+      hostEl.appendChild(core);
+      // Favourites row — up to 7 user colours (right-click to remove). Faint hint
+      // when empty (the separate #collage-text-fav-hint element).
+      const favs = textGetFavs();
+      const favRow = document.createElement('div');
+      favRow.className = 'frame-row frame-favrow';
+      favs.forEach((c) => favRow.appendChild(makeTextSwatch(c, c + ' (right-click to remove)', onPick, { removable: true })));
+      hostEl.appendChild(favRow);
+      const favHint = document.getElementById('collage-text-fav-hint');
+      if (favHint) favHint.style.display = favs.length ? 'none' : '';
+      // Collections — each a collapsed <details> chevron of ≤20 swatches; each
+      // swatch is addable to favourites (＋ on hover) and applies on body click.
       COLOR_COLLECTIONS.forEach((coll) => {
-        const wrap = document.createElement('span');
-        wrap.className = 'frame-collection';
-        const label = document.createElement('span');
-        label.className = 'frame-collection-label'; label.textContent = coll.name;
-        wrap.appendChild(label);
-        coll.colors.forEach(([hex, tip]) => {
-          const sw = makeTextSwatch(hex, tip);
-          sw.addEventListener('click', () => { try { onPick(hex); } catch (_) {} });
-          wrap.appendChild(sw);
-        });
-        hostEl.appendChild(wrap);
+        const det = document.createElement('details');
+        det.className = 'enhance-collapse frame-coll-collapse';
+        det.dataset.coll = coll.name;
+        if (openColls.has(coll.name)) det.open = true;   // preserve user's expanded state across rebuilds
+        const sum = document.createElement('summary');
+        sum.textContent = coll.name + ' (' + coll.colors.length + ')';
+        det.appendChild(sum);
+        const grid = document.createElement('div');
+        grid.className = 'frame-row frame-coll-grid';
+        coll.colors.forEach(([hex, tip]) => grid.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
+        det.appendChild(grid);
+        hostEl.appendChild(det);
       });
       // Remember this palette + ring the active swatch.
       if (!textColorPalettes.some((p) => p.host === hostEl)) textColorPalettes.push({ host: hostEl, getCurrent, onPick, auto: !!opts.auto });
+      else { const p = textColorPalettes.find((p) => p.host === hostEl); p.getCurrent = getCurrent; p.onPick = onPick; p.auto = !!opts.auto; }
       markTextColorPaletteActive(hostEl, getCurrent);
     }
+    // v2.1 round 194 (Terry) — (re)render the single palette pointed at the
+    // CURRENT target. Text target → fill colour (no Auto chip); Effect target →
+    // effectColor with an Auto chip ('' = derived). One mount, two behaviours.
+    function renderTextColorPaletteForTarget() {
+      const host = document.getElementById('collage-text-palette');
+      if (!host) return;
+      if (textColorTarget === 'effect') {
+        renderTextColorPalette(
+          host,
+          () => (selectedText ? (selectedText.effectColor || '') : ''),
+          (hex) => setTextEffectColor(hex),
+          { auto: true },
+        );
+      } else {
+        renderTextColorPalette(
+          host,
+          () => (selectedText ? selectedText.color : ''),
+          (hex) => setTextColor(hex || '#ffffff'),
+          { auto: false },
+        );
+      }
+    }
+    // v2.1 round 194 (Terry) — keep the Text/Effect toggle in sync: mark the
+    // active button, and DISABLE "Effect colour" until an effect is chosen
+    // (tooltip nudges the user). If the effect is turned off while Effect was the
+    // selected target, fall back to Text so the palette never edits a dead target.
+    function updateColorTargetToggle() {
+      const wrap = document.getElementById('collage-text-colortarget');
+      if (!wrap) return;
+      const effectOn = !!(selectedText && (selectedText.effect || 'none') !== 'none');
+      if (!effectOn && textColorTarget === 'effect') {
+        textColorTarget = 'text';
+        renderTextColorPaletteForTarget();
+      }
+      wrap.querySelectorAll('.ec-ctgl').forEach((b) => {
+        const isEffect = b.dataset.target === 'effect';
+        b.classList.toggle('active', b.dataset.target === textColorTarget);
+        if (isEffect) {
+          b.disabled = !effectOn;
+          b.classList.toggle('is-disabled', !effectOn);
+          b.setAttribute('data-pdr-tooltip', effectOn
+            ? 'Colour the chosen effect (outline / shadow / glow / 3D side)'
+            : 'Pick an effect first');
+        }
+      });
+    }
     // Ring the swatch matching getCurrent() (lowercased; '' matches the Auto/none
-    // swatch). A custom colour not in any row rings nothing — same as before.
+    // swatch). A custom colour not in any row rings nothing.
     function markTextColorPaletteActive(hostEl, getCurrent) {
       if (!hostEl) return;
       let cur = '';
@@ -7249,11 +7392,8 @@
         s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
       });
     }
-    function renderAllTextColorPalettes() {
-      textColorPalettes.forEach((p) => renderTextColorPalette(p.host, p.getCurrent, p.onPick, { auto: p.auto }));
-    }
-    // Re-ring every mounted palette (cheap; no rebuild) — call after a colour
-    // change so both fill + effect controls stay in sync.
+    // Re-ring the single mounted palette (cheap; no rebuild) — call after a colour
+    // change so the active swatch tracks the new colour.
     function syncTextColorPaletteRings() {
       textColorPalettes.forEach((p) => markTextColorPaletteActive(p.host, p.getCurrent));
     }
@@ -7262,8 +7402,8 @@
       selectedText.color = hex || '#ffffff';
       lastTextColor = selectedText.color;   // v2.1 round 187 (Terry) — next text inherits this colour
       renderTextLayer(selectedText);
-      // v2.1 round 193 (Terry) — re-ring every mounted text palette (fill + effect)
-      // so the active swatch tracks the new colour. Custom colours match nothing.
+      // v2.1 round 194 (Terry) — re-ring the single palette so the active swatch
+      // tracks the new colour. Custom colours match nothing.
       syncTextColorPaletteRings();
     }
     // v2.1 round 193 (Terry) — set the selected layer's EFFECT colour ('' = AUTO,
