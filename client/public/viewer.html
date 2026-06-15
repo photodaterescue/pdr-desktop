@@ -2502,6 +2502,39 @@
     }
     .ec-tidy-btn:hover { background: rgba(169,156,255,0.18); }
     .ec-tidy-btn svg { width: 14px; height: 14px; }
+    /* v2.1 round 219 (Terry) — EMOJI picker. A search box + a scrollable grid of
+       native colour-emoji buttons grouped by category. Buttons render the glyph in
+       the SAME Segoe UI Emoji stack the canvas bakes with, so the picker matches
+       the collage. Gold accent (collage identity); reuses the dark navy field look
+       of the Font trigger. */
+    .emoji-search {
+      width: 100%; box-sizing: border-box; margin-top: 0;
+      background: #241f3a; border: 1px solid rgba(255,255,255,0.14); color: #eee;
+      border-radius: 7px; padding: 6px 9px; font-size: 13px; outline: none;
+    }
+    .emoji-search::placeholder { color: rgba(255,255,255,0.4); }
+    .emoji-search:focus { border-color: rgba(254,194,66,0.6); }
+    .emoji-grid-wrap {
+      margin-top: 8px; max-height: 232px; overflow-y: auto; overflow-x: hidden;
+      padding-right: 4px;
+    }
+    .emoji-cat-head {
+      font-size: 10.5px; letter-spacing: 0.04em; text-transform: uppercase;
+      color: rgba(255,255,255,0.45); margin: 8px 2px 4px; font-weight: 600;
+    }
+    .emoji-cat-head:first-child { margin-top: 0; }
+    .emoji-grid {
+      display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px;
+    }
+    .emoji-btn {
+      aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04); border: 1px solid transparent; border-radius: 7px;
+      font-size: 20px; line-height: 1; cursor: pointer; padding: 0;
+      font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+      transition: background 100ms, border-color 100ms;
+    }
+    .emoji-btn:hover { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.55); }
+    .emoji-empty { font-size: 12px; color: rgba(255,255,255,0.45); padding: 12px 2px; text-align: center; }
     /* The per-tile hint that shows when nothing is selected. */
     /* v2.1 round 143 (Terry) — dim ONLY the per-tile controls wrapper
        when no tile is selected. The Collage section (shape/background/
@@ -2902,6 +2935,17 @@
                  <details>) now appears DIRECTLY below Effect/Strength. Same id /
                  handler / round-204 red-hover, just moved in the DOM. -->
           </div>
+        </details>
+        <!-- v2.1 round 219 (Terry) — EMOJIS: a searchable picker that drops native
+             colour emoji onto the collage as objects (drag / resize / rotate / snap
+             / delete / bake) — reusing the text-layer engine with isEmoji:true. The
+             grid + category headers are built by buildEmojiPicker() from EMOJI_DATA;
+             the search box filters live. Clicking an emoji adds a centred layer,
+             selects it, one undo step. Sibling to the Text section, same gold look. -->
+        <details class="enhance-collapse" id="collage-emoji-collapse">
+          <summary>Emojis</summary>
+          <input type="text" class="emoji-search" id="collage-emoji-search" placeholder="Search emoji…" spellcheck="false" autocomplete="off" data-pdr-tooltip="Type to filter — name or keyword (e.g. heart, dog, party)">
+          <div class="emoji-grid-wrap" id="collage-emoji-grid"></div>
         </details>
         <!-- v2.1 round 195 (Terry) — ONE shared Colour control for the whole
              panel. A target-chip row at the top names what the palette colours,
@@ -5929,6 +5973,49 @@
       // of silently falling back to a system face. Only the family quoting changed.
       const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px "' + (layer.font || 'Impact') + '"';
       ctx.font = fontStr;
+      // v2.1 round 219 (Terry) — EMOJI layers are a single colour glyph, not
+      // styled text. Render the native OS emoji (Segoe UI Emoji on Windows; the
+      // Apple stack is a harmless fallback) with NO effects/stroke — color emoji
+      // are bitmaps, so plain fillText paints the full-colour glyph in Chromium.
+      // We size the canvas to the glyph's ACTUAL ink box (+ the SAME symmetric
+      // pad the text path uses) and stash the SAME _pad/_inkW/_inkH/_lineH/_fbAsc
+      // metadata, so renderTextLayer's box/handle math and the texts[] bake path
+      // (renderTextToCanvas(...).toDataURL) work unchanged. Returns early — none
+      // of the effect / underline / alignment / multi-line text logic applies.
+      if (layer.isEmoji) {
+        const ch = String(layer.text || '').trim() || '🙂';
+        // Symmetric pad on all 4 sides → the glyph centre stays at the canvas
+        // centre == the xFrac/yFrac bake anchor (same invariant as the text path).
+        // Emoji have no overshooting effects, so a small pad is plenty.
+        const ePad = Math.ceil(fontPx * 0.14);
+        const eFont = fontPx + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
+        ctx.font = eFont;
+        ctx.textBaseline = 'alphabetic';
+        const m = ctx.measureText(ch);
+        const glyphW = (typeof m.width === 'number' && m.width > 0) ? m.width : fontPx;
+        // Use the actual ink ascent/descent when available so the box hugs the
+        // glyph; fall back to a typical emoji box (most glyphs ≈ 1×fontPx tall).
+        const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : (fontPx * 0.82);
+        const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent : (fontPx * 0.16);
+        const inkW = Math.max(2, glyphW);
+        const inkH = Math.max(2, aAsc + aDesc);
+        canvas.width = Math.max(2, Math.ceil(inkW + ePad * 2));
+        canvas.height = Math.max(2, Math.ceil(inkH + ePad * 2));
+        // Resizing the canvas resets the 2D context — re-apply the font.
+        ctx.font = eFont;
+        ctx.textBaseline = 'alphabetic';
+        ctx.textAlign = 'center';
+        // Draw centred horizontally; baseline placed so the ink top lands at +ePad.
+        ctx.fillText(ch, canvas.width / 2, ePad + aAsc);
+        canvas._pad = ePad;
+        canvas._inkW = Math.max(1, canvas.width - 2 * ePad);
+        canvas._inkH = Math.max(1, canvas.height - 2 * ePad);
+        canvas._lineH = fontPx * 1.25;
+        canvas._fbAsc = aAsc;
+        canvas._fbDesc = aDesc;
+        canvas._aAscTop = aAsc;
+        return canvas;
+      }
       // Widest line decides the canvas width.
       let maxW = 0;
       for (const ln of lines) { const w = ctx.measureText(ln).width; if (w > maxW) maxW = w; }
@@ -6178,7 +6265,7 @@
         tRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); snapTextRot90(layer); });
         // v2.1 round 204 (Terry) — double-click the text on the canvas enters
         // IN-CANVAS edit mode (replaces the old "focus the side-panel textarea").
-        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line
+        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); if (layer.isEmoji) return; enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line; v2.1 round 219 (Terry) — emoji layers have no text to edit, so double-click just selects (no contentEditable)
         el.appendChild(tRot); el.appendChild(tRes);
         collageCanvasEl.appendChild(el);
         layer.el = el;
@@ -6336,6 +6423,7 @@
     // and on the placeholder). One undo step: snapshot on enter, push on exit.
     function enterTextEdit(layer, selectAll, atPoint) {
       if (!layer || !layer.el) return;
+      if (layer.isEmoji) return;   // v2.1 round 219 (Terry) — emoji layers never enter in-canvas text edit (no typing)
       // Already editing this one? just (re)focus.
       if (editingText === layer && layer.editEl) { try { layer.editEl.focus(); } catch (_) {} return; }
       // Switching from another layer's edit → commit that first.
@@ -6459,6 +6547,353 @@
       // freshly-focused editable. rAF moves the focus/select after that.
       const _newId = layer.id;
       requestAnimationFrame(() => { const l = collageTexts.find((t) => t.id === _newId); if (l) enterTextEdit(l, true); });
+    }
+    // ─── v2.1 round 219 (Terry) — EMOJI LAYERS ──────────────────────────────
+    // An emoji is a single colour-glyph text layer (isEmoji:true). It reuses the
+    // ENTIRE collageTexts engine — renderTextToCanvas (emoji branch), renderText-
+    // Layer's wrapper + .ch resize/rotate handles, startTextDrag + round-206
+    // snapping, the texts[] bake, snapshot/restore undo, z-order — for free. No
+    // font / style / effect / colour apply (the text-only controls are hidden for
+    // an emoji selection in syncTextControls + updateColorTargets), and it never
+    // enters in-canvas edit mode (enterTextEdit early-returns for isEmoji).
+    //
+    // Curated set: ~25-40 common glyphs per category. keywords aid search.
+    const EMOJI_DATA = [
+      // Smileys & Emotion
+      { char: '😀', name: 'grinning face', keywords: 'smile happy grin', cat: 'Smileys & Emotion' },
+      { char: '😃', name: 'smiley', keywords: 'smile happy joy', cat: 'Smileys & Emotion' },
+      { char: '😄', name: 'smile', keywords: 'happy laugh joy', cat: 'Smileys & Emotion' },
+      { char: '😁', name: 'beaming face', keywords: 'grin smile', cat: 'Smileys & Emotion' },
+      { char: '😆', name: 'laughing', keywords: 'haha lol laugh', cat: 'Smileys & Emotion' },
+      { char: '😅', name: 'sweat smile', keywords: 'phew relief laugh', cat: 'Smileys & Emotion' },
+      { char: '🤣', name: 'rolling on the floor laughing', keywords: 'rofl lol haha', cat: 'Smileys & Emotion' },
+      { char: '😂', name: 'tears of joy', keywords: 'lol cry laugh funny', cat: 'Smileys & Emotion' },
+      { char: '🙂', name: 'slightly smiling face', keywords: 'smile', cat: 'Smileys & Emotion' },
+      { char: '😉', name: 'winking face', keywords: 'wink flirt', cat: 'Smileys & Emotion' },
+      { char: '😊', name: 'blushing smile', keywords: 'happy blush smile', cat: 'Smileys & Emotion' },
+      { char: '😇', name: 'innocent', keywords: 'angel halo', cat: 'Smileys & Emotion' },
+      { char: '🥰', name: 'smiling face with hearts', keywords: 'love adore', cat: 'Smileys & Emotion' },
+      { char: '😍', name: 'heart eyes', keywords: 'love crush', cat: 'Smileys & Emotion' },
+      { char: '😘', name: 'blowing a kiss', keywords: 'kiss love', cat: 'Smileys & Emotion' },
+      { char: '😋', name: 'yum', keywords: 'tasty tongue delicious', cat: 'Smileys & Emotion' },
+      { char: '😎', name: 'cool sunglasses', keywords: 'cool sunglasses', cat: 'Smileys & Emotion' },
+      { char: '🤩', name: 'star struck', keywords: 'star wow amazed', cat: 'Smileys & Emotion' },
+      { char: '🥳', name: 'partying face', keywords: 'party celebrate birthday', cat: 'Smileys & Emotion' },
+      { char: '😜', name: 'winking tongue', keywords: 'silly tongue', cat: 'Smileys & Emotion' },
+      { char: '🤪', name: 'zany face', keywords: 'silly crazy', cat: 'Smileys & Emotion' },
+      { char: '🤗', name: 'hugging face', keywords: 'hug', cat: 'Smileys & Emotion' },
+      { char: '🤔', name: 'thinking face', keywords: 'hmm think', cat: 'Smileys & Emotion' },
+      { char: '😏', name: 'smirk', keywords: 'smug', cat: 'Smileys & Emotion' },
+      { char: '😴', name: 'sleeping', keywords: 'sleep zzz tired', cat: 'Smileys & Emotion' },
+      { char: '😢', name: 'crying', keywords: 'sad tear cry', cat: 'Smileys & Emotion' },
+      { char: '😭', name: 'loudly crying', keywords: 'sad sob cry', cat: 'Smileys & Emotion' },
+      { char: '😡', name: 'angry', keywords: 'mad rage angry', cat: 'Smileys & Emotion' },
+      { char: '🥺', name: 'pleading face', keywords: 'puppy eyes please', cat: 'Smileys & Emotion' },
+      { char: '😱', name: 'screaming', keywords: 'shock scared fear', cat: 'Smileys & Emotion' },
+      { char: '🤯', name: 'mind blown', keywords: 'shock wow explode', cat: 'Smileys & Emotion' },
+      { char: '🥶', name: 'cold face', keywords: 'freezing cold', cat: 'Smileys & Emotion' },
+      { char: '😷', name: 'mask', keywords: 'sick mask ill', cat: 'Smileys & Emotion' },
+      { char: '🤠', name: 'cowboy', keywords: 'cowboy hat', cat: 'Smileys & Emotion' },
+      { char: '👻', name: 'ghost', keywords: 'halloween boo spooky', cat: 'Smileys & Emotion' },
+      { char: '💀', name: 'skull', keywords: 'dead death', cat: 'Smileys & Emotion' },
+      { char: '🤖', name: 'robot', keywords: 'bot ai', cat: 'Smileys & Emotion' },
+      { char: '💩', name: 'poop', keywords: 'poo funny', cat: 'Smileys & Emotion' },
+      // Hearts & Love
+      { char: '❤️', name: 'red heart', keywords: 'love red heart', cat: 'Hearts & Love' },
+      { char: '🧡', name: 'orange heart', keywords: 'love orange', cat: 'Hearts & Love' },
+      { char: '💛', name: 'yellow heart', keywords: 'love yellow', cat: 'Hearts & Love' },
+      { char: '💚', name: 'green heart', keywords: 'love green', cat: 'Hearts & Love' },
+      { char: '💙', name: 'blue heart', keywords: 'love blue', cat: 'Hearts & Love' },
+      { char: '💜', name: 'purple heart', keywords: 'love purple', cat: 'Hearts & Love' },
+      { char: '🖤', name: 'black heart', keywords: 'love black', cat: 'Hearts & Love' },
+      { char: '🤍', name: 'white heart', keywords: 'love white', cat: 'Hearts & Love' },
+      { char: '🤎', name: 'brown heart', keywords: 'love brown', cat: 'Hearts & Love' },
+      { char: '💕', name: 'two hearts', keywords: 'love hearts', cat: 'Hearts & Love' },
+      { char: '💞', name: 'revolving hearts', keywords: 'love hearts', cat: 'Hearts & Love' },
+      { char: '💓', name: 'beating heart', keywords: 'love heartbeat', cat: 'Hearts & Love' },
+      { char: '💗', name: 'growing heart', keywords: 'love', cat: 'Hearts & Love' },
+      { char: '💖', name: 'sparkling heart', keywords: 'love sparkle', cat: 'Hearts & Love' },
+      { char: '💘', name: 'heart with arrow', keywords: 'love cupid valentine', cat: 'Hearts & Love' },
+      { char: '💝', name: 'heart with ribbon', keywords: 'love gift valentine', cat: 'Hearts & Love' },
+      { char: '💟', name: 'heart decoration', keywords: 'love', cat: 'Hearts & Love' },
+      { char: '💔', name: 'broken heart', keywords: 'sad breakup love', cat: 'Hearts & Love' },
+      { char: '❣️', name: 'heart exclamation', keywords: 'love', cat: 'Hearts & Love' },
+      { char: '💋', name: 'kiss mark', keywords: 'lips kiss love', cat: 'Hearts & Love' },
+      { char: '💌', name: 'love letter', keywords: 'love mail', cat: 'Hearts & Love' },
+      { char: '😻', name: 'cat heart eyes', keywords: 'cat love', cat: 'Hearts & Love' },
+      // Hands & Gestures
+      { char: '👍', name: 'thumbs up', keywords: 'like yes good approve', cat: 'Hands & Gestures' },
+      { char: '👎', name: 'thumbs down', keywords: 'dislike no bad', cat: 'Hands & Gestures' },
+      { char: '👌', name: 'ok hand', keywords: 'ok perfect', cat: 'Hands & Gestures' },
+      { char: '✌️', name: 'victory hand', keywords: 'peace two', cat: 'Hands & Gestures' },
+      { char: '🤞', name: 'crossed fingers', keywords: 'luck hope', cat: 'Hands & Gestures' },
+      { char: '🤟', name: 'love you gesture', keywords: 'love rock', cat: 'Hands & Gestures' },
+      { char: '🤘', name: 'rock on', keywords: 'rock horns metal', cat: 'Hands & Gestures' },
+      { char: '🤙', name: 'call me', keywords: 'shaka hang loose', cat: 'Hands & Gestures' },
+      { char: '👋', name: 'waving hand', keywords: 'wave hello hi bye', cat: 'Hands & Gestures' },
+      { char: '🤚', name: 'raised back of hand', keywords: 'hand', cat: 'Hands & Gestures' },
+      { char: '✋', name: 'raised hand', keywords: 'stop high five', cat: 'Hands & Gestures' },
+      { char: '🖐️', name: 'hand splayed', keywords: 'hand five', cat: 'Hands & Gestures' },
+      { char: '👏', name: 'clapping hands', keywords: 'clap applause bravo', cat: 'Hands & Gestures' },
+      { char: '🙌', name: 'raising hands', keywords: 'celebrate praise hooray', cat: 'Hands & Gestures' },
+      { char: '🙏', name: 'folded hands', keywords: 'pray thanks please', cat: 'Hands & Gestures' },
+      { char: '🤝', name: 'handshake', keywords: 'deal agree', cat: 'Hands & Gestures' },
+      { char: '💪', name: 'flexed biceps', keywords: 'strong muscle', cat: 'Hands & Gestures' },
+      { char: '👈', name: 'pointing left', keywords: 'point left', cat: 'Hands & Gestures' },
+      { char: '👉', name: 'pointing right', keywords: 'point right', cat: 'Hands & Gestures' },
+      { char: '👆', name: 'pointing up', keywords: 'point up', cat: 'Hands & Gestures' },
+      { char: '👇', name: 'pointing down', keywords: 'point down', cat: 'Hands & Gestures' },
+      { char: '☝️', name: 'index pointing up', keywords: 'point one', cat: 'Hands & Gestures' },
+      { char: '✍️', name: 'writing hand', keywords: 'write pen', cat: 'Hands & Gestures' },
+      // People
+      { char: '👶', name: 'baby', keywords: 'infant child', cat: 'People' },
+      { char: '👧', name: 'girl', keywords: 'child girl', cat: 'People' },
+      { char: '👦', name: 'boy', keywords: 'child boy', cat: 'People' },
+      { char: '👩', name: 'woman', keywords: 'woman lady', cat: 'People' },
+      { char: '👨', name: 'man', keywords: 'man', cat: 'People' },
+      { char: '👵', name: 'old woman', keywords: 'grandma elderly', cat: 'People' },
+      { char: '👴', name: 'old man', keywords: 'grandpa elderly', cat: 'People' },
+      { char: '👰', name: 'bride', keywords: 'wedding bride veil', cat: 'People' },
+      { char: '🤵', name: 'tuxedo', keywords: 'groom wedding suit', cat: 'People' },
+      { char: '👸', name: 'princess', keywords: 'princess crown', cat: 'People' },
+      { char: '🤴', name: 'prince', keywords: 'prince crown', cat: 'People' },
+      { char: '🎅', name: 'santa', keywords: 'christmas santa xmas', cat: 'People' },
+      { char: '🤶', name: 'mrs claus', keywords: 'christmas santa xmas', cat: 'People' },
+      { char: '👼', name: 'baby angel', keywords: 'angel cherub', cat: 'People' },
+      { char: '🦸', name: 'superhero', keywords: 'hero super', cat: 'People' },
+      { char: '🧙', name: 'mage', keywords: 'wizard magic', cat: 'People' },
+      { char: '👨‍👩‍👧‍👦', name: 'family', keywords: 'family parents kids', cat: 'People' },
+      { char: '👫', name: 'couple', keywords: 'couple holding hands', cat: 'People' },
+      { char: '🤰', name: 'pregnant woman', keywords: 'pregnant baby', cat: 'People' },
+      { char: '🕺', name: 'man dancing', keywords: 'dance disco', cat: 'People' },
+      { char: '💃', name: 'woman dancing', keywords: 'dance flamenco', cat: 'People' },
+      { char: '🙋', name: 'raising hand', keywords: 'question volunteer', cat: 'People' },
+      { char: '🤷', name: 'shrug', keywords: 'shrug dunno', cat: 'People' },
+      { char: '👮', name: 'police officer', keywords: 'cop police', cat: 'People' },
+      { char: '👽', name: 'alien', keywords: 'alien ufo space', cat: 'People' },
+      // Animals & Nature
+      { char: '🐶', name: 'dog', keywords: 'puppy dog pet', cat: 'Animals & Nature' },
+      { char: '🐱', name: 'cat', keywords: 'kitten cat pet', cat: 'Animals & Nature' },
+      { char: '🐭', name: 'mouse', keywords: 'mouse', cat: 'Animals & Nature' },
+      { char: '🐹', name: 'hamster', keywords: 'hamster pet', cat: 'Animals & Nature' },
+      { char: '🐰', name: 'rabbit', keywords: 'bunny rabbit', cat: 'Animals & Nature' },
+      { char: '🦊', name: 'fox', keywords: 'fox', cat: 'Animals & Nature' },
+      { char: '🐻', name: 'bear', keywords: 'bear', cat: 'Animals & Nature' },
+      { char: '🐼', name: 'panda', keywords: 'panda', cat: 'Animals & Nature' },
+      { char: '🐨', name: 'koala', keywords: 'koala', cat: 'Animals & Nature' },
+      { char: '🐯', name: 'tiger', keywords: 'tiger', cat: 'Animals & Nature' },
+      { char: '🦁', name: 'lion', keywords: 'lion', cat: 'Animals & Nature' },
+      { char: '🐮', name: 'cow', keywords: 'cow', cat: 'Animals & Nature' },
+      { char: '🐷', name: 'pig', keywords: 'pig', cat: 'Animals & Nature' },
+      { char: '🐸', name: 'frog', keywords: 'frog', cat: 'Animals & Nature' },
+      { char: '🐵', name: 'monkey', keywords: 'monkey', cat: 'Animals & Nature' },
+      { char: '🐔', name: 'chicken', keywords: 'chicken hen', cat: 'Animals & Nature' },
+      { char: '🐦', name: 'bird', keywords: 'bird', cat: 'Animals & Nature' },
+      { char: '🦄', name: 'unicorn', keywords: 'unicorn magic', cat: 'Animals & Nature' },
+      { char: '🐝', name: 'bee', keywords: 'bee honey', cat: 'Animals & Nature' },
+      { char: '🦋', name: 'butterfly', keywords: 'butterfly', cat: 'Animals & Nature' },
+      { char: '🐢', name: 'turtle', keywords: 'turtle tortoise', cat: 'Animals & Nature' },
+      { char: '🐠', name: 'tropical fish', keywords: 'fish', cat: 'Animals & Nature' },
+      { char: '🐬', name: 'dolphin', keywords: 'dolphin', cat: 'Animals & Nature' },
+      { char: '🌸', name: 'cherry blossom', keywords: 'flower blossom spring', cat: 'Animals & Nature' },
+      { char: '🌹', name: 'rose', keywords: 'flower rose love', cat: 'Animals & Nature' },
+      { char: '🌻', name: 'sunflower', keywords: 'flower sunflower', cat: 'Animals & Nature' },
+      { char: '🌳', name: 'tree', keywords: 'tree nature', cat: 'Animals & Nature' },
+      { char: '🌵', name: 'cactus', keywords: 'cactus desert', cat: 'Animals & Nature' },
+      { char: '🌟', name: 'glowing star', keywords: 'star sparkle', cat: 'Animals & Nature' },
+      { char: '⭐', name: 'star', keywords: 'star favourite', cat: 'Animals & Nature' },
+      { char: '🌈', name: 'rainbow', keywords: 'rainbow pride', cat: 'Animals & Nature' },
+      { char: '☀️', name: 'sun', keywords: 'sun sunny weather', cat: 'Animals & Nature' },
+      { char: '🌙', name: 'crescent moon', keywords: 'moon night', cat: 'Animals & Nature' },
+      { char: '⛄', name: 'snowman', keywords: 'snow winter christmas', cat: 'Animals & Nature' },
+      { char: '🔥', name: 'fire', keywords: 'fire hot lit flame', cat: 'Animals & Nature' },
+      { char: '⚡', name: 'lightning', keywords: 'lightning bolt power', cat: 'Animals & Nature' },
+      // Food & Drink
+      { char: '🍎', name: 'red apple', keywords: 'apple fruit', cat: 'Food & Drink' },
+      { char: '🍌', name: 'banana', keywords: 'banana fruit', cat: 'Food & Drink' },
+      { char: '🍓', name: 'strawberry', keywords: 'strawberry fruit berry', cat: 'Food & Drink' },
+      { char: '🍒', name: 'cherries', keywords: 'cherry fruit', cat: 'Food & Drink' },
+      { char: '🍉', name: 'watermelon', keywords: 'watermelon fruit', cat: 'Food & Drink' },
+      { char: '🍇', name: 'grapes', keywords: 'grapes fruit', cat: 'Food & Drink' },
+      { char: '🍑', name: 'peach', keywords: 'peach fruit', cat: 'Food & Drink' },
+      { char: '🍍', name: 'pineapple', keywords: 'pineapple fruit', cat: 'Food & Drink' },
+      { char: '🥑', name: 'avocado', keywords: 'avocado', cat: 'Food & Drink' },
+      { char: '🍔', name: 'hamburger', keywords: 'burger food', cat: 'Food & Drink' },
+      { char: '🍟', name: 'fries', keywords: 'chips fries food', cat: 'Food & Drink' },
+      { char: '🍕', name: 'pizza', keywords: 'pizza food', cat: 'Food & Drink' },
+      { char: '🌭', name: 'hot dog', keywords: 'hotdog food', cat: 'Food & Drink' },
+      { char: '🌮', name: 'taco', keywords: 'taco mexican food', cat: 'Food & Drink' },
+      { char: '🍿', name: 'popcorn', keywords: 'popcorn movie', cat: 'Food & Drink' },
+      { char: '🍩', name: 'doughnut', keywords: 'donut sweet', cat: 'Food & Drink' },
+      { char: '🍪', name: 'cookie', keywords: 'cookie biscuit sweet', cat: 'Food & Drink' },
+      { char: '🎂', name: 'birthday cake', keywords: 'cake birthday celebrate', cat: 'Food & Drink' },
+      { char: '🍰', name: 'shortcake', keywords: 'cake slice dessert', cat: 'Food & Drink' },
+      { char: '🧁', name: 'cupcake', keywords: 'cupcake sweet', cat: 'Food & Drink' },
+      { char: '🍦', name: 'ice cream', keywords: 'icecream dessert', cat: 'Food & Drink' },
+      { char: '🍫', name: 'chocolate', keywords: 'chocolate sweet', cat: 'Food & Drink' },
+      { char: '🍬', name: 'candy', keywords: 'sweet candy', cat: 'Food & Drink' },
+      { char: '☕', name: 'coffee', keywords: 'coffee tea hot drink', cat: 'Food & Drink' },
+      { char: '🍺', name: 'beer', keywords: 'beer drink', cat: 'Food & Drink' },
+      { char: '🍻', name: 'cheers', keywords: 'beer cheers drink toast', cat: 'Food & Drink' },
+      { char: '🍷', name: 'wine', keywords: 'wine drink', cat: 'Food & Drink' },
+      { char: '🥂', name: 'champagne toast', keywords: 'champagne cheers toast celebrate', cat: 'Food & Drink' },
+      { char: '🍾', name: 'champagne', keywords: 'champagne bottle celebrate', cat: 'Food & Drink' },
+      // Travel & Places
+      { char: '🚗', name: 'car', keywords: 'car auto', cat: 'Travel & Places' },
+      { char: '🚕', name: 'taxi', keywords: 'taxi cab', cat: 'Travel & Places' },
+      { char: '🚌', name: 'bus', keywords: 'bus', cat: 'Travel & Places' },
+      { char: '🏎️', name: 'race car', keywords: 'racing car fast', cat: 'Travel & Places' },
+      { char: '🚓', name: 'police car', keywords: 'police car', cat: 'Travel & Places' },
+      { char: '🚑', name: 'ambulance', keywords: 'ambulance', cat: 'Travel & Places' },
+      { char: '🚒', name: 'fire engine', keywords: 'fire truck', cat: 'Travel & Places' },
+      { char: '🚲', name: 'bicycle', keywords: 'bike cycle', cat: 'Travel & Places' },
+      { char: '🏍️', name: 'motorcycle', keywords: 'motorbike', cat: 'Travel & Places' },
+      { char: '✈️', name: 'airplane', keywords: 'plane fly travel', cat: 'Travel & Places' },
+      { char: '🚀', name: 'rocket', keywords: 'rocket space launch', cat: 'Travel & Places' },
+      { char: '🚁', name: 'helicopter', keywords: 'helicopter', cat: 'Travel & Places' },
+      { char: '⛵', name: 'sailboat', keywords: 'boat sail', cat: 'Travel & Places' },
+      { char: '🚢', name: 'ship', keywords: 'ship cruise boat', cat: 'Travel & Places' },
+      { char: '🚂', name: 'train', keywords: 'train locomotive', cat: 'Travel & Places' },
+      { char: '🏠', name: 'house', keywords: 'house home', cat: 'Travel & Places' },
+      { char: '🏡', name: 'house with garden', keywords: 'home house', cat: 'Travel & Places' },
+      { char: '🏰', name: 'castle', keywords: 'castle palace', cat: 'Travel & Places' },
+      { char: '🗼', name: 'tower', keywords: 'tower tokyo', cat: 'Travel & Places' },
+      { char: '🗽', name: 'statue of liberty', keywords: 'liberty new york', cat: 'Travel & Places' },
+      { char: '🏖️', name: 'beach', keywords: 'beach holiday vacation', cat: 'Travel & Places' },
+      { char: '🏔️', name: 'mountain', keywords: 'mountain snow', cat: 'Travel & Places' },
+      { char: '🌋', name: 'volcano', keywords: 'volcano', cat: 'Travel & Places' },
+      { char: '🏝️', name: 'desert island', keywords: 'island palm holiday', cat: 'Travel & Places' },
+      { char: '🌍', name: 'globe', keywords: 'earth world globe', cat: 'Travel & Places' },
+      { char: '📍', name: 'pin', keywords: 'location pin map', cat: 'Travel & Places' },
+      // Activities & Celebration
+      { char: '🎉', name: 'party popper', keywords: 'party celebrate congrats', cat: 'Activities & Celebration' },
+      { char: '🎊', name: 'confetti ball', keywords: 'party confetti celebrate', cat: 'Activities & Celebration' },
+      { char: '🎈', name: 'balloon', keywords: 'balloon party birthday', cat: 'Activities & Celebration' },
+      { char: '🎁', name: 'gift', keywords: 'present gift birthday', cat: 'Activities & Celebration' },
+      { char: '🎀', name: 'ribbon', keywords: 'bow ribbon', cat: 'Activities & Celebration' },
+      { char: '🎂', name: 'cake', keywords: 'birthday cake celebrate', cat: 'Activities & Celebration' },
+      { char: '🥳', name: 'celebrate face', keywords: 'party celebrate', cat: 'Activities & Celebration' },
+      { char: '🎄', name: 'christmas tree', keywords: 'christmas xmas tree', cat: 'Activities & Celebration' },
+      { char: '🎃', name: 'jack o lantern', keywords: 'halloween pumpkin', cat: 'Activities & Celebration' },
+      { char: '🎆', name: 'fireworks', keywords: 'fireworks celebrate new year', cat: 'Activities & Celebration' },
+      { char: '🎇', name: 'sparkler', keywords: 'sparkler fireworks', cat: 'Activities & Celebration' },
+      { char: '✨', name: 'sparkles', keywords: 'sparkle shine magic', cat: 'Activities & Celebration' },
+      { char: '🏆', name: 'trophy', keywords: 'trophy win award champion', cat: 'Activities & Celebration' },
+      { char: '🥇', name: 'gold medal', keywords: 'medal first win gold', cat: 'Activities & Celebration' },
+      { char: '🎖️', name: 'medal', keywords: 'medal award', cat: 'Activities & Celebration' },
+      { char: '⚽', name: 'soccer ball', keywords: 'football soccer sport', cat: 'Activities & Celebration' },
+      { char: '🏀', name: 'basketball', keywords: 'basketball sport', cat: 'Activities & Celebration' },
+      { char: '🏈', name: 'american football', keywords: 'football sport', cat: 'Activities & Celebration' },
+      { char: '⚾', name: 'baseball', keywords: 'baseball sport', cat: 'Activities & Celebration' },
+      { char: '🎾', name: 'tennis', keywords: 'tennis sport', cat: 'Activities & Celebration' },
+      { char: '🎸', name: 'guitar', keywords: 'guitar music', cat: 'Activities & Celebration' },
+      { char: '🎤', name: 'microphone', keywords: 'mic sing music karaoke', cat: 'Activities & Celebration' },
+      { char: '🎵', name: 'music note', keywords: 'music note song', cat: 'Activities & Celebration' },
+      { char: '🎶', name: 'music notes', keywords: 'music notes song', cat: 'Activities & Celebration' },
+      { char: '🎨', name: 'artist palette', keywords: 'art paint draw', cat: 'Activities & Celebration' },
+      { char: '📷', name: 'camera', keywords: 'camera photo picture', cat: 'Activities & Celebration' },
+      { char: '🎮', name: 'video game', keywords: 'game controller gaming', cat: 'Activities & Celebration' },
+      // Symbols
+      { char: '💯', name: 'hundred points', keywords: '100 perfect score', cat: 'Symbols' },
+      { char: '✔️', name: 'check mark', keywords: 'tick check done yes', cat: 'Symbols' },
+      { char: '✅', name: 'check button', keywords: 'tick check done green', cat: 'Symbols' },
+      { char: '❌', name: 'cross mark', keywords: 'x no wrong cross', cat: 'Symbols' },
+      { char: '❓', name: 'question mark', keywords: 'question', cat: 'Symbols' },
+      { char: '❗', name: 'exclamation', keywords: 'exclamation important', cat: 'Symbols' },
+      { char: '⚠️', name: 'warning', keywords: 'warning caution', cat: 'Symbols' },
+      { char: '💡', name: 'light bulb', keywords: 'idea bulb', cat: 'Symbols' },
+      { char: '💢', name: 'anger symbol', keywords: 'anger mad', cat: 'Symbols' },
+      { char: '💥', name: 'collision', keywords: 'boom explosion', cat: 'Symbols' },
+      { char: '💦', name: 'sweat droplets', keywords: 'water sweat splash', cat: 'Symbols' },
+      { char: '💤', name: 'zzz', keywords: 'sleep zzz', cat: 'Symbols' },
+      { char: '🔔', name: 'bell', keywords: 'bell notification', cat: 'Symbols' },
+      { char: '🔒', name: 'locked', keywords: 'lock secure', cat: 'Symbols' },
+      { char: '🔑', name: 'key', keywords: 'key', cat: 'Symbols' },
+      { char: '💰', name: 'money bag', keywords: 'money cash', cat: 'Symbols' },
+      { char: '💎', name: 'gem', keywords: 'diamond gem jewel', cat: 'Symbols' },
+      { char: '🎯', name: 'bullseye', keywords: 'target dart goal', cat: 'Symbols' },
+      { char: '🔮', name: 'crystal ball', keywords: 'fortune magic', cat: 'Symbols' },
+      { char: '♥️', name: 'heart suit', keywords: 'heart card', cat: 'Symbols' },
+      { char: '★', name: 'star outline', keywords: 'star', cat: 'Symbols' },
+      { char: '☑️', name: 'check box', keywords: 'checkbox tick', cat: 'Symbols' },
+      { char: '➡️', name: 'right arrow', keywords: 'arrow right', cat: 'Symbols' },
+      { char: '⬅️', name: 'left arrow', keywords: 'arrow left', cat: 'Symbols' },
+      { char: '⬆️', name: 'up arrow', keywords: 'arrow up', cat: 'Symbols' },
+      { char: '⬇️', name: 'down arrow', keywords: 'arrow down', cat: 'Symbols' },
+    ];
+    const EMOJI_CATEGORIES = ['Smileys & Emotion', 'Hearts & Love', 'Hands & Gestures', 'People', 'Animals & Nature', 'Food & Drink', 'Travel & Places', 'Activities & Celebration', 'Symbols'];
+    let emojiPickerBuilt = false;
+    // Build the grouped grid into #collage-emoji-grid (once). Each category gets a
+    // small header + a grid of buttons; clicking a button adds that emoji layer.
+    // Delegated click on the wrap handles every button (survives the filter rebuild).
+    function buildEmojiPicker() {
+      const wrap = document.getElementById('collage-emoji-grid');
+      if (!wrap) return;
+      renderEmojiPicker('');
+      const search = document.getElementById('collage-emoji-search');
+      if (search && !search.dataset.wired) {
+        search.dataset.wired = '1';
+        search.addEventListener('input', () => renderEmojiPicker(search.value || ''));
+        // Keep typing keys out of the collage key handler (mirrors the in-canvas
+        // editor + the round-feedback note about S&D's global Enter handler).
+        search.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); search.value = ''; renderEmojiPicker(''); search.blur(); }
+          e.stopPropagation();
+        });
+      }
+      if (!wrap.dataset.wired) {
+        wrap.dataset.wired = '1';
+        wrap.addEventListener('click', (e) => {
+          const b = e.target.closest ? e.target.closest('.emoji-btn') : null;
+          if (!b || !b.dataset.char) return;
+          addEmojiLayer(b.dataset.char);
+        });
+      }
+      emojiPickerBuilt = true;
+    }
+    // (Re)render the grid filtered by `q` (matches name OR keywords, case-insensitive).
+    function renderEmojiPicker(q) {
+      const wrap = document.getElementById('collage-emoji-grid');
+      if (!wrap) return;
+      const needle = String(q || '').trim().toLowerCase();
+      const match = (em) => !needle || (em.name + ' ' + em.keywords).toLowerCase().indexOf(needle) !== -1;
+      let html = '';
+      let any = false;
+      for (const cat of EMOJI_CATEGORIES) {
+        const items = EMOJI_DATA.filter((em) => em.cat === cat && match(em));
+        if (!items.length) continue;
+        any = true;
+        html += '<div class="emoji-cat-head">' + cat + '</div><div class="emoji-grid">';
+        for (const em of items) {
+          // data-char carries the glyph; the button label shows it too.
+          html += '<button type="button" class="emoji-btn" data-char="' + em.char + '" data-pdr-tooltip="' + em.name + '" aria-label="' + em.name + '">' + em.char + '</button>';
+        }
+        html += '</div>';
+      }
+      if (!any) html = '<div class="emoji-empty">No emoji match “' + (needle || '') + '”.</div>';
+      wrap.innerHTML = html;
+    }
+    // Add an emoji as a new layer in collageTexts (isEmoji), CENTRED on the canvas,
+    // selected, ONE undo step. Mirrors addTextLayer but with no font/style/effect
+    // and it does NOT enter edit mode (emoji aren't typed). Default sizeFrac 0.12.
+    function addEmojiLayer(ch) {
+      if (!ch) return;
+      if (editingText) exitTextEdit();   // commit any open text edit first (same as Add text)
+      beginCollageChange();
+      const layer = {
+        id: collageTextSeq++, isEmoji: true, text: ch,
+        xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.12, rot: 0,
+        z: collageTexts.length + 1,
+        // Carried for engine compatibility (snapshot/restore + renderTextToCanvas
+        // read these), but the emoji branch ignores them — colour emoji are bitmaps.
+        font: 'Segoe UI Emoji', color: '#ffffff', align: 'center',
+        bold: false, italic: false, underline: false,
+        effect: 'none', effectStrength: 50, effectColor: '', el: null, canvasEl: null,
+      };
+      collageTexts.push(layer);
+      renderTextLayer(layer);
+      selectText(layer);
+      commitCollageChange();   // the ADD is its own undo step
     }
     // Selecting a text deselects any tile/background (and vice-versa) — a
     // text and a tile are never co-selected. Reveals + binds the Text panel
@@ -6782,16 +7217,31 @@
     }
     // ========================================================================
     function syncTextControls() {
+      // v2.1 round 219 (Terry) — an EMOJI layer has no text styling (font / size
+      // slider / align / style / effect / strength / colour all moot), so hide the
+      // whole text-controls block for it: the on-canvas resize+rotate handles are
+      // the controls, plus the Delete button below. Only a real TEXT layer shows
+      // the styling controls.
+      const isEmojiSel = !!(selectedText && selectedText.isEmoji);
       const ctl = document.getElementById('collage-text-controls');
-      if (ctl) ctl.style.display = selectedText ? 'block' : 'none';
+      if (ctl) ctl.style.display = (selectedText && !isEmojiSel) ? 'block' : 'none';
       // v2.1 round 205 (Terry) — "Delete text" now lives OUTSIDE
       // #collage-text-controls (relocated to the very bottom, after the Colour
       // Palette), so it no longer inherits that wrapper's show/hide. Gate it on
       // the selection here, before the early-return below. (placeColorPalette
       // re-parks it right after the palette whenever text is the colour target.)
       const delBtnSync = document.getElementById('collage-text-delete');
-      if (delBtnSync) delBtnSync.style.display = selectedText ? 'block' : 'none';
-      if (!selectedText) return;
+      if (delBtnSync) {
+        delBtnSync.style.display = selectedText ? 'block' : 'none';
+        // v2.1 round 219 (Terry) — relabel + re-tip the shared Delete button for an
+        // emoji selection (same id/handler — deleteTextLayer works for emoji too).
+        delBtnSync.textContent = isEmojiSel ? 'Delete emoji' : 'Delete text';
+        delBtnSync.setAttribute('data-pdr-tooltip', isEmojiSel ? 'Delete this emoji' : 'Delete this text layer');
+      }
+      // v2.1 round 219 (Terry) — for an emoji selection the styling controls are
+      // hidden (above), so skip syncing them; the Delete button (shown above) is
+      // the only side-panel control. The on-canvas handles do resize/rotate.
+      if (!selectedText || isEmojiSel) return;
       // v2.1 round 204 (Terry) — the side-panel text field is gone; text is edited
       // in-canvas, so there's no field value to sync here any more.
       // v2.1 round 196 (Terry) — update the custom Font dropdown's TRIGGER label
@@ -7435,7 +7885,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '' })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '' })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo
         selTextId: selectedText ? selectedText.id : null,
       });
     }
@@ -7522,7 +7972,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -8535,6 +8985,9 @@
       kickFunFonts();
       const addBtn = document.getElementById('collage-text-add');
       if (addBtn) addBtn.addEventListener('click', () => addTextLayer());
+      // v2.1 round 219 (Terry) — build the EMOJIS picker (grid + search) once the
+      // collage panel wires up. Sibling feature to Text; reuses the same layer engine.
+      try { buildEmojiPicker(); } catch (_) {}
       // v2.1 round 196 (Terry) — custom Font dropdown. The trigger toggles a
       // popover that STAYS OPEN while the user clicks through fonts (each pick
       // applies live via applyTextFont, the menu re-marks its active row but does
@@ -9359,10 +9812,15 @@
       // Build the list of valid targets for the current selection.
       let chips = [];
       const effectOn = !!(selectedText && (selectedText.effect || 'none') !== 'none');
-      if (selectedText) {
+      // v2.1 round 219 (Terry) — an EMOJI layer is a fixed colour glyph: NO Text /
+      // Effect colour targets (the palette would do nothing), so it contributes no
+      // chips → the whole Colour Palette block hides for an emoji selection.
+      if (selectedText && !selectedText.isEmoji) {
         chips.push({ t: 'text', label: 'Text', tip: 'Colour the text itself' });
         chips.push({ t: 'effect', label: 'Effect', disabled: !effectOn,
           tip: effectOn ? 'Colour the chosen effect (outline / shadow / glow / 3D side)' : 'Pick an effect first' });
+      } else if (selectedText && selectedText.isEmoji) {
+        // No colourable target for an emoji — leave chips empty (palette hides).
       } else if (collageSelected && collageSelected.isBg) {
         chips.push({ t: 'background', label: 'Background', tip: 'Colour the collage background' });
       } else if (collageSelected) {
