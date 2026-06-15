@@ -2616,7 +2616,12 @@
              target, so the row is hidden and the GOLD subcategory header is the
              sole indicator. Label renamed "Colour" → "Colour Palette". -->
         <div class="enhance-control" id="collage-unified-color" style="display:none;margin-top:2px">
-          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour Palette</label></div>
+          <!-- v2.1 round 198 (Terry) — mini Expand all / Collapse all for the
+               palette's OWN collection chevrons (Neon/Neutral/Seasonal/Skin/
+               Cars) only. Styled like the panel-level round-157 links but
+               scoped strictly to the .frame-coll-collapse <details> inside
+               #collage-text-palette — it never touches the panel sections. -->
+          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour Palette</label><span class="enhance-collapse-all" id="collage-palette-coll-toggle"><button type="button" id="collage-palette-expand-all" data-pdr-tooltip="Open every colour collection below">Expand all</button><span>&middot;</span><button type="button" id="collage-palette-collapse-all" data-pdr-tooltip="Close every colour collection below">Collapse all</button></span></div>
           <div class="ec-color-toggle" id="collage-color-targets" role="group" aria-label="Colour target"></div>
           <div class="frame-palette" id="collage-text-palette"></div>
           <div class="frame-fav-hint" id="collage-text-fav-hint" style="display:none">Add favourites from the palettes below &#8595;</div>
@@ -7394,6 +7399,49 @@
             updateColorTargets();
           }
         });
+      }
+      // v2.1 round 198 (Terry) — mirror the round-197 Frame header click for the
+      // Background subcategory: clicking the Background <summary> selects the
+      // background as the colour target — EXACTLY like clicking the background on
+      // the canvas (renderCollageBgLayer's pointerdown → selectCollageItem(
+      // ensureCollageBgTile())). That sets collageSelected.isBg, so the following
+      // updateColorTargets() resolves colorTarget='background', golds the
+      // Background header, and relocates the palette beneath it. We do NOT
+      // preventDefault, so the chevron still toggles open/closed natively.
+      const bgSummary = document.querySelector('#collage-bg-collapse > summary');
+      if (bgSummary && !bgSummary.dataset.colorWired) {
+        bgSummary.dataset.colorWired = '1';
+        bgSummary.addEventListener('click', () => {
+          // Only when the background isn't already the selection — avoids a
+          // redundant reselect (and undo step) on every chevron toggle. If a
+          // text layer or photo tile is selected, this switches the target to
+          // the background, just like clicking the canvas background would.
+          if (!(collageSelected && collageSelected.isBg)) {
+            selectCollageItem(ensureCollageBgTile());
+          }
+        });
+      }
+      // v2.1 round 198 (Terry) — mini Expand all / Collapse all for the palette's
+      // OWN collection chevrons only. The 5 collections render as
+      // <details class="frame-coll-collapse"> inside #collage-text-palette and
+      // carry NO id, so the panel-level round-157 persistence (which filters to
+      // details.enhance-collapse WITH an id) never sees them — and this never
+      // touches the panel sections. Setting .open programmatically fires each
+      // collection's own 'toggle' listener (the scroll-into-view), which is fine.
+      const palExpand = document.getElementById('collage-palette-expand-all');
+      const palCollapse = document.getElementById('collage-palette-collapse-all');
+      const setAllCollections = (open) => {
+        const host = document.getElementById('collage-text-palette');
+        if (!host) return;
+        host.querySelectorAll('.frame-coll-collapse').forEach((d) => { d.open = open; });
+      };
+      if (palExpand && !palExpand.dataset.wired) {
+        palExpand.dataset.wired = '1';
+        palExpand.addEventListener('click', () => setAllCollections(true));
+      }
+      if (palCollapse && !palCollapse.dataset.wired) {
+        palCollapse.dataset.wired = '1';
+        palCollapse.addEventListener('click', () => setAllCollections(false));
       }
       updateColorTargets();
       const delBtn = document.getElementById('collage-text-delete');

@@ -11569,8 +11569,30 @@ ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: s
     }
   }
 });
-// Picker cancelled in the main window — just clear the requester.
-ipcMain.on('photoPick:cancel', () => { photoPickRequesterId = null; });
+// Picker cancelled in the main window — clear the requester and bring it
+// back to the front.
+// v2.1 round 198 (Terry) — refocus the requesting window on cancel/Escape.
+// Previously cancel only cleared the id, leaving the user stranded on the
+// MAIN window after dismissing the picker instead of returning to the
+// collage that asked for it. Resolve the requester exactly like the deliver
+// path (sender id → collage → viewer fallback) BEFORE clearing the id, then
+// focus it. (The successful-pick path already refocuses in photoPick:deliver.)
+ipcMain.on('photoPick:cancel', () => {
+  const requester = photoPickRequesterId != null
+    ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.id === photoPickRequesterId)
+    : (collageWindow && !collageWindow.isDestroyed() ? collageWindow : (viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : null));
+  photoPickRequesterId = null;
+  if (requester) {
+    try {
+      if (requester.isMinimized()) requester.restore();
+      requester.show();
+      requester.focus();
+      requester.moveTop();
+    } catch (err) {
+      log.warn(`[photoPick] cancel refocus failed: ${(err as Error).message}`);
+    }
+  }
+});
 
 // ═══ People Manager Window ═══════════════════════════════════════════════════
 //
