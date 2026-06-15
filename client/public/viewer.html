@@ -1963,7 +1963,28 @@
        the selection (the gold variant is set under body.collage-mode below). */
     .collage-text { position: absolute; cursor: move; user-select: none; line-height: 0; }
     .collage-text canvas { display: block; pointer-events: none; -webkit-user-drag: none; }
-    .collage-text.selected { outline: 1px dashed #a78bfa; outline-offset: 3px; }
+    /* v2.1 round 204 (Terry) — text selection ring 50% thicker (1px → 1.5px) so
+       it reads clearly without changing the tile (.collage-item) ring. */
+    .collage-text.selected { outline: 1.5px dashed #a78bfa; outline-offset: 3px; }
+    /* v2.1 round 204 (Terry) — IN-CANVAS text editing. While a text layer is in
+       edit mode its rendered <canvas> is hidden and this contentEditable box is
+       shown in its place. Font-family / px size / colour / text-align / line-
+       height are set INLINE per-layer (see enterTextEdit) to MATCH renderText-
+       ToCanvas exactly, so what you type looks like the baked render. Transparent
+       background, no outline, caret in the text colour. The wrapper keeps its
+       selection ring around it. */
+    .collage-text .collage-text-edit {
+      display: block;
+      margin: 0; padding: 0; border: 0; outline: none;
+      background: transparent;
+      box-sizing: border-box;
+      white-space: pre;            /* honour explicit newlines, no auto-wrap (matches the canvas) */
+      overflow: visible;
+      cursor: text;
+      min-width: 1ch;
+      -webkit-user-select: text; user-select: text;
+      -webkit-user-drag: none;
+    }
     /* ─── v2.1 round 158 (Terry) — COLLAGE IDENTITY = GOLD ───────────────
        The Viewer wears lavender; the Collage tool wears gold (same dark navy
        base, just the accent + a gold dot by the "Collage (N)" title), so the
@@ -2228,6 +2249,11 @@
     }
     .ec-shape-btn:hover { background: rgba(169,156,255,0.10); }
     .ec-shape-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 204 (Terry) — the "Delete text" button (an .ec-shape-btn) tints
+       light red on hover to signal deletion. Scoped by ID so the shape/aspect
+       buttons that share .ec-shape-btn keep their lavender hover. Normal state
+       unchanged (inherits .ec-shape-btn). */
+    #collage-text-delete:hover { background: rgba(255,60,60,0.18); border-color: rgba(255,90,90,0.7); color: #ffb4b4; }
     /* v2.1 round 188 (Terry) — compact square toggle for alignment icons +
        B/I/U. Same palette/active-ring as .ec-shape-btn but fixed ~28px so the
        icons read at a glance instead of stretching across the row. */
@@ -2611,15 +2637,19 @@
              primitives as Frame / Background. -->
         <details class="enhance-collapse" id="collage-text-collapse">
           <summary>Text</summary>
-          <button class="ec-tidy-btn" id="collage-text-add" type="button" style="width:100%" data-pdr-tooltip="Add a text layer — drag it on the collage, double-click to edit">
+          <button class="ec-tidy-btn" id="collage-text-add" type="button" style="width:100%" data-pdr-tooltip="Add a text layer — then just start typing. Drag it on the collage; double-click to edit again.">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
             Add text
           </button>
           <!-- Per-layer controls — revealed by syncTextControls() when a text
                layer is selected (click a text on the canvas to select it). -->
           <div id="collage-text-controls" style="display:none;margin-top:10px">
-            <textarea id="collage-text-input" rows="2" placeholder="Type your text…" style="width:100%;box-sizing:border-box;resize:vertical;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:7px;font-size:13px"></textarea>
-            <div class="enhance-control" style="margin-top:8px">
+            <!-- v2.1 round 204 (Terry) — the side-panel text <textarea> was
+                 removed: text is now edited IN PLACE on the canvas (double-click
+                 a text, or just start typing right after "Add text"). The font /
+                 size / colour / align / style / effect controls below still bind
+                 to the selected layer. -->
+            <div class="enhance-control" style="margin-top:0">
               <div class="enhance-label-row"><label for="collage-font-trigger">Font</label></div>
               <!-- v2.1 round 196 (Terry) — the native <select> closed on every
                    pick, but the user is "in selection mode" and wants to click
@@ -3329,6 +3359,13 @@
     let collageTexts = [];
     let selectedText = null;
     let collageTextSeq = 1;
+    // v2.1 round 204 (Terry) — the text layer currently in IN-CANVAS edit mode
+    // (its rendered canvas is hidden, a contentEditable box is shown in place),
+    // or null. One undo step per edit session: a dedicated pre-edit snapshot is
+    // captured on enter and pushed on exit if the text changed (NOT the shared
+    // begin/commit, which the panel wrapper would clobber mid-edit).
+    let editingText = null;
+    let textEditSnap = null;
     // v2.1 round 187 (Terry) — remember the last colour the user picked so the
     // next text added inherits it. Defaults BLACK (white text on the default
     // white background is invisible). First-ever add → black.
@@ -5605,6 +5642,35 @@
         // the preview matches the saved file.
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, innerW, innerH);
       }
+      // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
+      // clipping under the titlebar when the tile is near the top (Terry SS2).
+      refreshTileToolbar(it);
+    }
+    // v2.1 round 204 (Terry) — show/hide the tile's floating .ch-toolbar so it
+    // never crosses above the collage stage top (where it would slide under the
+    // titlebar). The toolbar sits above the tile (CSS bottom:100% + 8px margin);
+    // if its top edge would be above the stage's top, hide it (visibility, so the
+    // CSS display:inline-flex on selection still governs layout), else show it.
+    // Called from renderCollageItem (covers select-driven render, drag, resize,
+    // zoom) — the tile's geometry is already laid out by the time we measure.
+    function refreshTileToolbar(it) {
+      if (!it || !it.el || it.isBg) return;
+      const tbar = it.el.querySelector('.ch-toolbar');
+      if (!tbar) return;
+      // Only meaningful while this tile is the selection (otherwise the toolbar
+      // is display:none via CSS and has no box to measure).
+      if (!it.el.classList.contains('selected')) { tbar.style.visibility = ''; return; }
+      try {
+        const stageTop = (collageStageEl || collageCanvasEl).getBoundingClientRect().top;
+        // Measure the toolbar's OWN top edge: visibility:hidden keeps its layout
+        // box, so this stays accurate frame-to-frame (and handles a rotated tile,
+        // since the toolbar rotates with it). Fall back to estimating from the
+        // tile top − 8px margin − toolbar height if the box has no size yet.
+        let toolbarTop = tbar.getBoundingClientRect().top;
+        if (!tbar.offsetHeight) toolbarTop = it.el.getBoundingClientRect().top - 8 - 36;
+        // A small slack so it hides just before it actually crosses the edge.
+        tbar.style.visibility = (toolbarTop < stageTop + 2) ? 'hidden' : '';
+      } catch (_) { tbar.style.visibility = ''; }
     }
     function renderAllCollage() {
       for (const it of collageItems) renderCollageItem(it);
@@ -5802,11 +5868,21 @@
         // on a handle (mirror the tile guard) so resize/rotate don't also drag.
         el.addEventListener('pointerdown', (e) => {
           if (handles.indexOf(e.target) !== -1) return;
+          // v2.1 round 204 (Terry) — while THIS layer is in in-canvas edit mode,
+          // pointerdowns belong to the contentEditable (caret placement / text
+          // selection), not a drag. Let them through to the editable.
+          if (editingText === layer) { e.stopPropagation(); return; }
           startTextDrag(layer, e);
         });
         tRes.addEventListener('pointerdown', (e) => startTextResize(layer, e));
         tRot.addEventListener('pointerdown', (e) => startTextRotate(layer, e));
-        el.addEventListener('dblclick', (e) => { e.preventDefault(); selectText(layer); const ta = document.getElementById('collage-text-input'); if (ta) { try { ta.focus(); ta.select(); } catch (_) {} } });
+        // v2.1 round 204 (Terry) — double-click the rotate handle snaps the text
+        // to the nearest 90°. stopPropagation so it doesn't bubble to the wrapper's
+        // dblclick (which would enter edit mode). One undo step.
+        tRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); snapTextRot90(layer); });
+        // v2.1 round 204 (Terry) — double-click the text on the canvas enters
+        // IN-CANVAS edit mode (replaces the old "focus the side-panel textarea").
+        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); enterTextEdit(layer); });
         el.appendChild(tRot); el.appendChild(tRes);
         collageCanvasEl.appendChild(el);
         layer.el = el;
@@ -5817,9 +5893,22 @@
       // appended once above are preserved across re-renders.
       const canvas = renderTextToCanvas(layer, collageShortPx());
       canvas.style.display = 'block';   // v2.1 round 187 (Terry) — drop inline baseline gap so the wrapper hugs the canvas and the corner handles land on the text edges
-      if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
-      else el.insertBefore(canvas, el.firstChild);
-      layer.canvasEl = canvas;
+      // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
+      // contentEditable box stands in for the rendered text: keep the canvas in
+      // the DOM (so the swap bookkeeping stays valid) but HIDDEN, and re-sync the
+      // editable's inline styling so live font/size/colour/align changes from the
+      // side panel show in the editable too.
+      if (editingText === layer && layer.editEl) {
+        canvas.style.display = 'none';
+        if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
+        else el.insertBefore(canvas, el.firstChild);
+        layer.canvasEl = canvas;
+        styleTextEditable(layer);
+      } else {
+        if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
+        else el.insertBefore(canvas, el.firstChild);
+        layer.canvasEl = canvas;
+      }
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       el.style.left = (layer.xFrac * cw) + 'px';
       el.style.top = (layer.yFrac * ch) + 'px';
@@ -5830,18 +5919,151 @@
     function renderAllTexts() {
       for (const layer of collageTexts) renderTextLayer(layer);
     }
+    // ─── v2.1 round 204 (Terry) — IN-CANVAS TEXT EDITING ──────────────────
+    // Canva-style: double-click a text (or "Add text") swaps its rendered canvas
+    // for a focused contentEditable box styled to MATCH the render, so you type
+    // and see it in place. The canvas (which drives the bake) is re-rendered from
+    // layer.text on exit, so preview == saved.
+    //
+    // Style the editable to mirror renderTextToCanvas's font math EXACTLY:
+    //   px size  = max(8, sizeFrac * collageShortPx())   (same as fontPx there)
+    //   family   = layer.font   ·   weight/style = bold/italic
+    //   colour   = layer.color  ·   text-align = layer.align  ·  line-height 1.25
+    // so the in-place text reads like the baked output while you type.
+    function styleTextEditable(layer) {
+      const ed = layer && layer.editEl;
+      if (!ed) return;
+      const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
+      ed.style.fontFamily = '"' + (layer.font || 'Impact') + '"';
+      ed.style.fontSize = fontPx + 'px';
+      ed.style.fontWeight = layer.bold ? 'bold' : 'normal';
+      ed.style.fontStyle = layer.italic ? 'italic' : 'normal';
+      ed.style.textDecoration = layer.underline ? 'underline' : 'none';
+      ed.style.color = layer.color || '#ffffff';
+      ed.style.textAlign = layer.align || 'center';
+      ed.style.lineHeight = '1.25';
+      ed.style.caretColor = layer.color || '#ffffff';
+    }
+    // Read the editable's text back to a plain string with real newlines. Use
+    // innerText (it renders <div>/<br> line breaks as \n), then strip a single
+    // trailing newline some browsers append. This is what renderTextToCanvas
+    // splits on '\n', so the canvas matches what was typed.
+    function readTextEditable(layer) {
+      const ed = layer && layer.editEl;
+      if (!ed) return '';
+      let t = ed.innerText != null ? ed.innerText : (ed.textContent || '');
+      t = t.replace(/\r/g, '');
+      if (t.endsWith('\n')) t = t.slice(0, -1);
+      return t;
+    }
+    // Enter edit mode for a layer: build (once) a contentEditable box inside the
+    // wrapper, hide the rendered canvas, style + fill it, focus it. selectAll =
+    // true selects all the text so typing replaces it (used right after Add text
+    // and on the placeholder). One undo step: snapshot on enter, push on exit.
+    function enterTextEdit(layer, selectAll) {
+      if (!layer || !layer.el) return;
+      // Already editing this one? just (re)focus.
+      if (editingText === layer && layer.editEl) { try { layer.editEl.focus(); } catch (_) {} return; }
+      // Switching from another layer's edit → commit that first.
+      if (editingText && editingText !== layer) exitTextEdit();
+      editingText = layer;
+      // Capture a dedicated pre-edit snapshot for ONE undo step (pushed on exit
+      // if the text changed). Independent of collagePendingSnap so a side-panel
+      // click made while editing can't clobber it.
+      textEditSnap = (typeof snapshotCollage === 'function') ? snapshotCollage() : null;
+      const el = layer.el;
+      let ed = layer.editEl;
+      if (!ed || ed.parentNode !== el) {
+        ed = document.createElement('div');
+        ed.className = 'collage-text-edit';
+        ed.setAttribute('contenteditable', 'true');
+        ed.setAttribute('spellcheck', 'false');
+        // Live-update layer.text + re-render the (hidden) canvas so the wrapper
+        // box tracks the typed text — the handles/ring stay hugging the glyphs.
+        ed.addEventListener('input', () => {
+          if (editingText !== layer) return;
+          layer.text = readTextEditable(layer);
+          renderTextLayer(layer);   // canvas stays hidden (editingText === layer); resizes the wrapper to fit
+        });
+        // Enter commits; Shift+Enter inserts a newline. Escape commits too (and
+        // is stopped so it doesn't reach the collage shortcut handler).
+        ed.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); exitTextEdit(); }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitTextEdit(); }
+          else { e.stopPropagation(); }   // keep typing keys out of the collage key handler
+        });
+        // Clicks inside the editable place the caret — don't let them bubble to
+        // the stage (which would deselect the background) or start a drag.
+        ed.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        ed.addEventListener('dblclick', (e) => { e.stopPropagation(); });
+        ed.addEventListener('blur', () => { if (editingText === layer) exitTextEdit(); });
+        el.appendChild(ed);
+        layer.editEl = ed;
+      }
+      // Fill from the model, hide the canvas, style to match the render.
+      ed.textContent = String(layer.text == null ? '' : layer.text);
+      if (layer.canvasEl) layer.canvasEl.style.display = 'none';
+      ed.style.display = 'block';
+      styleTextEditable(layer);
+      el.classList.add('selected');
+      // Focus + optionally select all (so typing replaces "Your text").
+      try {
+        ed.focus();
+        const sel = window.getSelection();
+        const range = document.createRange();
+        if (selectAll) { range.selectNodeContents(ed); }
+        else { range.selectNodeContents(ed); range.collapse(false); }   // caret at end
+        sel.removeAllRanges(); sel.addRange(range);
+      } catch (_) {}
+    }
+    // Exit edit mode: read back layer.text, remove the editable, re-render the
+    // canvas (the bake-driving render → preview == saved), keep the layer
+    // selected, push the one undo step for the edit session.
+    function exitTextEdit() {
+      const layer = editingText;
+      if (!layer) return;
+      // v2.1 round 204 (Terry) — read the text + clear edit state FIRST, so the
+      // blur that .remove() synchronously fires sees editingText === null and the
+      // blur handler's guard no-ops (no re-entrant exit / text loss).
+      const ed = layer.editEl;
+      if (ed) layer.text = readTextEditable(layer);
+      editingText = null;
+      layer.editEl = null;
+      const preSnap = textEditSnap; textEditSnap = null;
+      if (ed) { try { ed.remove(); } catch (_) { if (ed.parentNode) ed.parentNode.removeChild(ed); } }
+      if (layer.canvasEl) layer.canvasEl.style.display = 'block';
+      renderTextLayer(layer);          // re-render the canvas that drives the bake
+      selectText(layer);               // keep it selected
+      pushCollageUndoIfChanged(preSnap);   // one undo step for the whole edit session (text changed)
+    }
     function addTextLayer() {
+      // v2.1 round 204 (Terry) — if a previous edit session is open (e.g. clicking
+      // Add text with another text still being edited), commit it first.
+      if (editingText) exitTextEdit();
       beginCollageChange();
       const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
-      commitCollageChange();
+      commitCollageChange();   // the ADD is its own undo step
+      // v2.1 round 204 (Terry) — immediately enter in-canvas edit with the
+      // placeholder "Your text" SELECTED, so the user can just start typing to
+      // replace it ("Add text → type"). The edit session is a separate undo step.
+      // Deferred one frame so the "Add text" BUTTON click fully settles first:
+      // the button takes focus on mousedown, and entering edit synchronously
+      // inside the click handler could let the button's trailing focus blur the
+      // freshly-focused editable. rAF moves the focus/select after that.
+      const _newId = layer.id;
+      requestAnimationFrame(() => { const l = collageTexts.find((t) => t.id === _newId); if (l) enterTextEdit(l, true); });
     }
     // Selecting a text deselects any tile/background (and vice-versa) — a
     // text and a tile are never co-selected. Reveals + binds the Text panel
     // controls to this layer.
     function selectText(layer) {
+      // v2.1 round 204 (Terry) — if a DIFFERENT layer (or nothing) is being
+      // selected while one is mid-edit, commit that edit first. exitTextEdit
+      // nulls editingText before it re-selects, so this never recurses.
+      if (editingText && editingText !== layer) exitTextEdit();
       if (layer) {
         if (collageSelected) selectCollageItem(null);   // drop tile/bg selection
       }
@@ -5857,6 +6079,9 @@
     }
     function deleteTextLayer(layer) {
       if (!layer) return;
+      // v2.1 round 204 (Terry) — if the layer is mid-edit, tear the edit session
+      // down WITHOUT committing it (we're about to remove the layer entirely).
+      if (editingText === layer) { editingText = null; textEditSnap = null; if (layer.editEl) { try { layer.editEl.remove(); } catch (_) {} layer.editEl = null; } }
       beginCollageChange();
       const i = collageTexts.indexOf(layer);
       if (i !== -1) collageTexts.splice(i, 1);
@@ -5956,6 +6181,18 @@
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
     }
+    // v2.1 round 204 (Terry) — double-click the text rotate handle snaps the
+    // layer's angle to the nearest 90° (normalised 0–359). One undo step.
+    function snapTextRot90(layer) {
+      if (!layer) return;
+      beginCollageChange();
+      selectText(layer);
+      let r = Math.round((layer.rot || 0) / 90) * 90;
+      r = ((r % 360) + 360) % 360;
+      layer.rot = r;
+      renderTextLayer(layer);
+      commitCollageChange();
+    }
     // Show/hide + populate the per-layer Text controls for the current
     // selection. Called on select / delete / restore.
     // v2.1 round 191 (Terry) — show/hide the effect Strength row (hidden for the
@@ -5977,6 +6214,11 @@
     // it. State is just whether it's open + the bound outside-click listener.
     let collageFontMenuOpen = false;
     let collageFontOutsideHandler = null;
+    // v2.1 round 204 (Terry) — grace-period timer: leaving the open font menu for
+    // >1s auto-closes it (re-entering cancels). Click-outside + Escape still close
+    // immediately; picking a font keeps it open.
+    let collageFontLeaveTimer = null;
+    function clearCollageFontLeaveTimer() { if (collageFontLeaveTimer) { clearTimeout(collageFontLeaveTimer); collageFontLeaveTimer = null; } }
     // Apply a font family to the selected text layer LIVE — the exact logic the
     // old change handler ran (set font, re-render, and force-load decorative
     // faces then re-render that layer). Wrapped in begin/commit for ONE undo step
@@ -6040,6 +6282,16 @@
           menu.appendChild(b);
         });
       });
+      // v2.1 round 204 (Terry) — 1-second grace-period close on mouse-leave:
+      // leaving the menu starts a 1000ms timer to close it; re-entering cancels.
+      // (Attached once here; click-outside + Escape closes are unchanged, and a
+      // font pick keeps the menu open.)
+      menu.addEventListener('mouseleave', () => {
+        if (!collageFontMenuOpen) return;
+        clearCollageFontLeaveTimer();
+        collageFontLeaveTimer = setTimeout(() => { collageFontLeaveTimer = null; closeCollageFontMenu(); }, 1000);
+      });
+      menu.addEventListener('mouseenter', () => { clearCollageFontLeaveTimer(); });
       document.body.appendChild(menu);
       return menu;
     }
@@ -6064,6 +6316,7 @@
       }
     }
     function closeCollageFontMenu() {
+      clearCollageFontLeaveTimer();   // v2.1 round 204 (Terry) — cancel any pending grace-close
       const menu = document.getElementById('collage-font-menu');
       const trig = document.getElementById('collage-font-trigger');
       if (menu) menu.style.display = 'none';
@@ -6107,8 +6360,8 @@
       const ctl = document.getElementById('collage-text-controls');
       if (ctl) ctl.style.display = selectedText ? 'block' : 'none';
       if (!selectedText) return;
-      const ta = document.getElementById('collage-text-input');
-      if (ta) ta.value = selectedText.text || '';
+      // v2.1 round 204 (Terry) — the side-panel text field is gone; text is edited
+      // in-canvas, so there's no field value to sync here any more.
       // v2.1 round 196 (Terry) — update the custom Font dropdown's TRIGGER label
       // (+ preview face) to the selected layer's font (replaces the old
       // <select>.value assignment). If the menu happens to be open, re-mark the
@@ -6190,6 +6443,10 @@
       // shows [Frame], the background shows [Background], nothing colourable hides
       // it. (Text selection is handled in selectText → syncTextControls.)
       try { updateColorTargets(); } catch (_) {}
+      // v2.1 round 204 (Terry) — on select, decide whether the floating toolbar
+      // fits above the tile or would clip into the titlebar (it isn't re-rendered
+      // here otherwise). The .selected class set above makes it measurable.
+      try { if (it && !it.isBg) refreshTileToolbar(it); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -6302,6 +6559,22 @@
       };
       window.addEventListener('pointermove', move);
       window.addEventListener('pointerup', up);
+    }
+    // v2.1 round 204 (Terry) — double-click the tile rotate handle snaps the tile
+    // to the nearest 90° (normalised 0–359). Locked tiles don't rotate. One undo
+    // step (explicit begin/commit — there's no pointer drag to ride the global
+    // pointerup→commit wrapper).
+    function snapItemRot90(it) {
+      if (!it || it.isBg) return;
+      if (it.locked) { selectCollageItem(it); return; }
+      beginCollageChange();
+      selectCollageItem(it);
+      let r = Math.round((it.rot || 0) / 90) * 90;
+      r = ((r % 360) + 360) % 360;
+      it.rot = r;
+      renderCollageItem(it);
+      updateAngleSlider();
+      commitCollageChange();
     }
 
     // v2.1 round 145 (Terry) — crop: drag an edge handle inward to trim
@@ -6579,6 +6852,20 @@
     const collageRedo = [];
     let collagePendingSnap = null;
     const COLLAGE_UNDO_CAP = 60;
+    // v2.1 round 204 (Terry) — push a pre-change snapshot onto the undo stack
+    // directly (used by the in-canvas text editor, which can't ride the panel's
+    // pointerdown→begin / pointerup→commit wrapper — that fires for side-panel
+    // clicks made WHILE editing and would clobber collagePendingSnap). Pushes
+    // only if the state actually changed since the snapshot.
+    function pushCollageUndoIfChanged(preSnap) {
+      if (!collageMode || preSnap == null) return;
+      if (snapshotCollage() !== preSnap) {
+        collageUndo.push(preSnap);
+        if (collageUndo.length > COLLAGE_UNDO_CAP) collageUndo.shift();
+        collageRedo.length = 0;
+        updateUndoButtons();
+      }
+    }
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
@@ -6607,6 +6894,10 @@
     }
     function restoreCollageSnapshot(snapStr) {
       let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
+      // v2.1 round 204 (Terry) — an undo/redo rebuilds all text layer objects
+      // fresh (below), so abandon any in-progress in-canvas edit first (its
+      // editEl is on an about-to-be-discarded layer).
+      editingText = null; textEditSnap = null;
       collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageAspectKey = s.aspectKey;
       collageTransparent = !!s.transparent;   // v2.1 round 177
       // v2.1 round 149 — restore the background's enh (fall back to the
@@ -6813,6 +7104,9 @@
       hResBL.addEventListener('pointerdown', (e) => startItemResize(it, e, 'bl'));
       hResBR.addEventListener('pointerdown', (e) => startItemResize(it, e, 'br'));
       hRot.addEventListener('pointerdown', (e) => startItemRotate(it, e));
+      // v2.1 round 204 (Terry) — double-click the rotate handle snaps the tile to
+      // the nearest 90°. One undo step (single drag still does free rotate).
+      hRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); snapItemRot90(it); });
       hRem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
       hCropL.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'l'));
       hCropR.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'r'));
@@ -7510,10 +7804,13 @@
       });
       window.addEventListener('keydown', (e) => {
         if (!collageMode) return;
-        // v2.1 round 185 (Text #1) — let the text <textarea> own Ctrl+Z/Y for
-        // native in-field undo; don't hijack it for the collage undo stack.
+        // v2.1 round 185 (Text #1) — let a focused field own Ctrl+Z/Y for native
+        // in-field undo; don't hijack it for the collage undo stack.
+        // v2.1 round 204 (Terry) — the in-canvas text editor is a contentEditable
+        // div (not a TEXTAREA), so exempt isContentEditable too. The old
+        // #collage-text-input id is gone (side-panel field removed).
         const t = e.target;
-        if (t && (t.id === 'collage-text-input' || t.tagName === 'TEXTAREA' || t.tagName === 'INPUT')) return;
+        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
         const k = (e.key || '').toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
@@ -7573,8 +7870,10 @@
 
     // v2.1 round 185 (Text #1) — wire the Text section. Most controls rely on
     // the panel's global pointerdown→begin / pointerup→commit wrapper for one
-    // undo step per interaction; the <textarea> (no pointer cycle while typing)
-    // snapshots on focus + commits on blur, giving one undo step per edit.
+    // undo step per interaction.
+    // v2.1 round 204 (Terry) — the side-panel text <textarea> was removed: text
+    // is edited IN-CANVAS now (see enterTextEdit / exitTextEdit), which manages
+    // its own begin/commit undo session. So there's no field to wire here.
     function wireCollageTextControls() {
       // v2.1 round 190 (Terry) — preload the 6 decorative fonts the moment the
       // Text feature is wired, so the canvas has the real glyphs ready (one-time,
@@ -7582,25 +7881,6 @@
       kickFunFonts();
       const addBtn = document.getElementById('collage-text-add');
       if (addBtn) addBtn.addEventListener('click', () => addTextLayer());
-      const ta = document.getElementById('collage-text-input');
-      if (ta) {
-        // The panel's global pointerdown→begin / pointerup→commit wrapper would
-        // commit (and clear the pending snapshot) on the click that focuses the
-        // field — BEFORE any typing — so a focus-time begin gets consumed with
-        // no change. Instead: snapshot lazily on the FIRST keystroke of a burst
-        // (when no snapshot is pending), capturing the pre-edit text, then
-        // commit on blur. One undo step per editing session.
-        ta.addEventListener('input', () => {
-          if (!selectedText) return;
-          if (collagePendingSnap == null) beginCollageChange();   // snapshot pre-edit
-          selectedText.text = ta.value;
-          renderTextLayer(selectedText);
-        });
-        ta.addEventListener('blur', () => commitCollageChange());
-        // Keep Escape from leaking to the collage key handler; Enter inserts a
-        // newline (multi-line text is supported by renderTextToCanvas).
-        ta.addEventListener('keydown', (e) => { if (e.key === 'Escape') { e.stopPropagation(); ta.blur(); } });
-      }
       // v2.1 round 196 (Terry) — custom Font dropdown. The trigger toggles a
       // popover that STAYS OPEN while the user clicks through fonts (each pick
       // applies live via applyTextFont, the menu re-marks its active row but does
