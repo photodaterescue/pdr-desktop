@@ -612,65 +612,64 @@
     }
     .pdrv-fs-close.show { display: flex; }
     .pdrv-fs-close:hover { background: rgba(255, 90, 90, 0.55); }
-    /* v2.1 round 207 (Terry) — YouTube-style top-center "Restore window"
-       pill. Window-level (appended to <body>), works for collage, still
-       photos AND video. Armed (allowed to appear) when the window is
-       MAXIMISED — moving the cursor to the top-middle reveals it and a
-       click un-maximises (restores) the window; Esc does the same. It
-       sits top-CENTRE and so never overlaps the native min/max/close
-       buttons (top-right), which stay exactly as they are. Also armed in
-       the rare Electron-fullscreen / HTML5-video-fullscreen states for
-       the same exit affordance. In normal (restored) windowed state it
-       never shows. Fades in on cursor-near-top-center, fades out ~1.5s
-       after the cursor leaves the zone/pill. */
+    /* v2.1 round 214 (Terry) — Netflix-style dwell-triggered EXIT X (replaces
+       the old "Restore" pill). Window-level (appended to <body>); works for
+       collage, still photos AND video. Armed (allowed to appear) when the
+       window is MAXIMISED (also in the rare Electron / HTML5-video fullscreen
+       states). It is REVEALED only after a deliberate ~250ms DWELL in the
+       top-CENTRE title-bar strip (not the instant the cursor nears the top —
+       that was the old, accidental-trigger pill). On reveal it SLIDES DOWN
+       from above and rests just below the 40px OS title-bar drag region so the
+       click lands (the drag region eats clicks above 40px). A click
+       un-maximises (restores) the window; Esc does the same. It sits
+       top-CENTRE so it never overlaps the native min/max/close buttons
+       (top-right). In normal (restored) windowed state it NEVER shows. */
     .pdrv-winfs-pill {
       position: fixed;
-      /* v2.1 round 212 (Terry) — moved DOWN from top:14px to top:48px so the
-         whole pill (y≈48–82) clears the 40px OS title-bar drag region
-         (#toolbar, y 0–40), which previously ate the pill's upper ~26px and
-         left only the lower sliver hoverable/clickable. */
-      /* v2.1 round 213 (Terry) — nudged up 48px → 46px: still clears the 40px
-         #toolbar OS drag region (pill y≈46–80), so hover/click stay fixed. */
-      top: 46px;
+      /* Rest top ≈ 50px so the whole 48px button (y≈50–98) clears the 40px OS
+         title-bar drag region (#toolbar, y 0–40) and stays fully clickable. */
+      top: 50px;
       left: 50%;
-      transform: translateX(-50%) translateY(-8px);
+      /* Hidden = parked 60px ABOVE the rest spot (behind/above the title bar)
+         so reveal slides it DOWN into place. translateX(-50%) keeps it centred. */
+      transform: translateX(-50%) translateY(-60px);
       display: none;
       align-items: center;
-      gap: 7px;
-      height: 34px;
-      padding: 0 14px;
+      justify-content: center;
+      width: 48px;
+      height: 48px;
+      padding: 0;
       background: rgba(0, 0, 0, 0.62);
-      border: 1px solid rgba(255, 255, 255, 0.18);
-      border-radius: 17px;
+      border: 1px solid rgba(255, 255, 255, 0.22);
+      border-radius: 50%;
       color: #fff;
-      font-size: 12.5px;
-      font-weight: 600;
-      letter-spacing: 0.2px;
       cursor: pointer;
       backdrop-filter: blur(4px);
       -webkit-backdrop-filter: blur(4px);
-      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
       opacity: 0;
       pointer-events: none;
-      transition: opacity 0.22s ease, transform 0.22s ease, background 0.12s;
+      transition: opacity 0.25s ease, transform 0.25s ease, background 0.12s, border-color 0.12s;
       z-index: 2147483646;   /* above the tooltip layer (99999) and everything else */
       user-select: none;
       -webkit-app-region: no-drag;
     }
-    /* .armed = chrome is hidden, so the pill is allowed to exist at all.
-       .visible = cursor is in the reveal zone (or on the pill), so fade in. */
+    /* .armed = chrome is hidden, so the X is allowed to exist at all.
+       .visible = the dwell completed (or the cursor is still on the X / strip),
+       so it slides down + fades in. */
     .pdrv-winfs-pill.armed { display: flex; }
     .pdrv-winfs-pill.armed.visible {
       opacity: 1;
       transform: translateX(-50%) translateY(0);
       pointer-events: auto;
     }
-    /* v2.1 round 207 (Terry) — neutral hover (this is a Restore action,
-       not a destructive close, so no red). */
-    .pdrv-winfs-pill:hover { background: rgba(0, 0, 0, 0.82); border-color: rgba(255, 255, 255, 0.4); }
+    /* v2.1 round 214 (Terry) — neutral hover (Restore action, not a destructive
+       close, so no red); the border + bg lift slightly on hover. */
+    .pdrv-winfs-pill:hover { background: rgba(0, 0, 0, 0.82); border-color: rgba(255, 255, 255, 0.5); }
     .pdrv-winfs-pill svg { display: block; flex-shrink: 0; }
-    /* Gold accent in the Collage window to match its branding. */
-    body.collage-mode .pdrv-winfs-pill:hover { background: rgba(0, 0, 0, 0.78); border-color: rgba(254, 194, 66, 0.7); color: #FEC242; }
+    /* Gold-tinted X + hover in the Collage window to match its branding. */
+    body.collage-mode .pdrv-winfs-pill { color: #FEC242; }
+    body.collage-mode .pdrv-winfs-pill:hover { background: rgba(0, 0, 0, 0.78); border-color: rgba(254, 194, 66, 0.85); color: #ffd778; }
     .pdrv-time {
       color: #fff;
       font-size: 13px;
@@ -1257,10 +1256,9 @@
        Click un-maximises (restores) the window; sits top-centre so it
        never overlaps the native min/max/close buttons. Wired at the
        bottom of this file. -->
-  <button class="pdrv-winfs-pill" id="winfs-pill" type="button" title="Restore window (Esc)" aria-label="Restore window">
-    <!-- Restore-down glyph: a back window peeking behind a front window. -->
-    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 8V5a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-3"/><rect x="4" y="8" width="12" height="12" rx="1"/></svg>
-    <span>Restore</span>
+  <button class="pdrv-winfs-pill" id="winfs-pill" type="button" title="Exit full window (Esc)" aria-label="Exit full window">
+    <!-- v2.1 round 214 (Terry) — bold X (cross), Netflix-style fullscreen-exit. -->
+    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
   </button>
   <!--
     v2.0.15 (Terry 2026-06-06) — Enhance side panel styles.
@@ -2086,11 +2084,19 @@
        positioned wrapper holding a transparent canvas (the rendered text);
        centred at its xFrac/yFrac via translate(-50%,-50%). A dashed ring marks
        the selection (the gold variant is set under body.collage-mode below). */
-    .collage-text { position: absolute; cursor: move; user-select: none; line-height: 0; }
+    /* v2.1 round 214 (Terry) — the wrapper box is now sized to the TEXT GLYPH
+       BOUNDS (see renderTextLayer); the padded canvas floats at -pad inside and
+       its glow/shadow/3D pad must spill OUT without enlarging the box, so
+       overflow:visible. box-sizing:border-box keeps the explicit width/height =
+       the glyph box exactly (the 1.5px dashed outline draws outside the box and
+       doesn't add to it). */
+    .collage-text { position: absolute; cursor: move; user-select: none; line-height: 0; overflow: visible; box-sizing: border-box; }
     .collage-text canvas { display: block; pointer-events: none; -webkit-user-drag: none; }
     /* v2.1 round 204 (Terry) — text selection ring 50% thicker (1px → 1.5px) so
-       it reads clearly without changing the tile (.collage-item) ring. */
-    .collage-text.selected { outline: 1.5px dashed #a78bfa; outline-offset: 3px; }
+       it reads clearly without changing the tile (.collage-item) ring.
+       v2.1 round 214 (Terry) — the box now hugs the glyphs (Canva-style), so the
+       offset drops 3px → 1.5px for a snug ring right around the text. */
+    .collage-text.selected { outline: 1.5px dashed #a78bfa; outline-offset: 1.5px; }
     /* v2.1 round 204 (Terry) — IN-CANVAS text editing. While a text layer is in
        edit mode its rendered <canvas> is hidden and this contentEditable box is
        shown in its place. Font-family / px size / colour / text-align / line-
@@ -2098,8 +2104,19 @@
        ToCanvas exactly, so what you type looks like the baked render. Transparent
        background, no outline, caret in the text colour. The wrapper keeps its
        selection ring around it. */
+    /* v2.1 round 214 (Terry) — the editable now exactly overlays the glyph box.
+       The wrapper carries an explicit width/height = the text glyph bounds (set
+       on every render, including live while typing), so position the editable
+       absolutely at the box origin and stretch it to 100% width. text-align
+       (from styleTextEditable) then centres/left/right-aligns the typed text in
+       the same box the baked canvas uses, so entering/leaving edit doesn't jump.
+       The canvas sits behind at left/top:-pad (also absolute); both share the
+       wrapper's top-left = the glyph box origin. */
     .collage-text .collage-text-edit {
       display: block;
+      position: absolute;
+      left: 0; top: 0;
+      width: 100%;
       margin: 0; padding: 0; border: 0; outline: none;
       background: transparent;
       box-sizing: border-box;
@@ -6025,6 +6042,14 @@
           ctx.restore();
         }
       });
+      // v2.1 round 214 (Terry) — stash the symmetric pad on the canvas so the
+      // layer render can size the .collage-text element to the TEXT GLYPH BOUNDS
+      // (canvas minus 2*pad on each axis) and offset the canvas by -pad, making
+      // the visible box / dashed outline / handles HUG the text (Canva-style),
+      // while the padded canvas (needed so glow/shadow/3D don't clip) still
+      // bakes unchanged. Returning the same canvas keeps the bake call
+      // (renderTextToCanvas(...).toDataURL(...)) and every existing caller valid.
+      canvas._pad = pad;
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -6081,6 +6106,26 @@
       // appended once above are preserved across re-renders.
       const canvas = renderTextToCanvas(layer, collageShortPx());
       canvas.style.display = 'block';   // v2.1 round 187 (Terry) — drop inline baseline gap so the wrapper hugs the canvas and the corner handles land on the text edges
+      // v2.1 round 214 (Terry) — Canva-style snug box: size the .collage-text
+      // wrapper to the TEXT GLYPH BOUNDS (the padded canvas MINUS the symmetric
+      // pad on every side) and float the (still-padded) canvas at -pad so the
+      // glyphs align to the wrapper's box and the pad/effects overflow invisibly
+      // (the canvas is pointer-events:none, overflow:visible on the wrapper). The
+      // canvas renders 1:1 on screen (no width/height CSS scale), so canvas px ==
+      // display px and the pad needs no scaling. The wrapper stays centre-anchored
+      // on xFrac/yFrac via translate(-50%,-50%); because pad is symmetric the text
+      // centre is unchanged. Result: the dashed outline + resize/rotate handles +
+      // the round-206 drag snapping (computeDragSnap reads el.getBoundingClientRect)
+      // all hug the actual text. The bake path (renderTextToCanvas → toDataURL) is
+      // untouched, so preview == saved.
+      const _pad = canvas._pad || 0;
+      const _boxW = Math.max(1, canvas.width - 2 * _pad);
+      const _boxH = Math.max(1, canvas.height - 2 * _pad);
+      el.style.width = _boxW + 'px';
+      el.style.height = _boxH + 'px';
+      canvas.style.position = 'absolute';
+      canvas.style.left = (-_pad) + 'px';
+      canvas.style.top = (-_pad) + 'px';
       // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
       // contentEditable box stands in for the rendered text: keep the canvas in
       // the DOM (so the swap bookkeeping stays valid) but HIDDEN, and re-sync the
@@ -12322,47 +12367,53 @@ function zoomTo(newZoom, centreX, centreY) {
       }, true);
     })();
 
-    // ─── v2.1 round 207 (Terry) — top-center "Restore window" pill.
-    // YouTube-style hover-reveal affordance. The title bar + native
-    // min/maximise/close buttons stay exactly as they are; this pill is
-    // an ADDITIONAL way to un-maximise from the top-middle (where the
-    // cursor naturally lands), plus it makes Esc restore instead of doing
-    // nothing.
+    // ─── v2.1 round 214 (Terry) — top-center Netflix-style EXIT X.
+    // (Was the round-207 "Restore" pill — renamed/reworked: the word
+    // "Restore" confused, and the pill popped the instant the cursor neared
+    // the top, which was intrusive/accidental.) A large circular X that
+    // appears only after a deliberate DWELL at the very top-centre and SLIDES
+    // DOWN from the top. The title bar + native min/maximise/close buttons
+    // stay exactly as they are; this X is an ADDITIONAL way to un-maximise
+    // from the top-middle, plus it makes Esc restore instead of doing nothing.
     //
-    // ARMED (the pill is allowed to appear at all) when the window is:
+    // ARMED (the X is allowed to appear at all) when the window is:
     //   • MAXIMISED — the primary case (Terry's final decision). Tracked
     //     via pdr.window.getState() on load + the 'window:state-changed'
-    //     broadcast (main forwards maximize/unmaximize). The pill sits
+    //     broadcast (main forwards maximize/unmaximize). The X sits
     //     top-CENTRE so it never overlaps the native buttons (top-right).
     //   • Electron fullscreen — tracked the same way (main forwards
     //     enter/leave-full-screen). Rare here, but kept so the affordance
     //     still works if the window is ever put in OS fullscreen.
     // It deliberately does NOT arm during HTML5 *video* fullscreen — the
-    // video's own top-right X (.pdrv-fs-close) owns that exit, so the pill
-    // and that X can never both appear at once. In the normal (restored)
-    // windowed state it is NEVER armed.
+    // video's own top-right X (.pdrv-fs-close) owns that exit, so the two
+    // can never both appear at once. In the normal (restored) windowed state
+    // it is NEVER armed.
     //
-    // VISIBLE (faded in) when armed AND the cursor is in the top-center
-    // reveal zone (top strip, centre third horizontally) or over the
-    // pill itself. Fades out ~1.5s after the cursor leaves both.
+    // VISIBLE (slides down + fades in) when armed AND the cursor has DWELLED
+    // ~250ms in the top-centre title-bar strip (or is hovering the X). It
+    // rests just below the 40px OS drag region so the click lands. Slides back
+    // up + fades out ~1s after the cursor leaves both the strip and the X.
     (function () {
       var pill = document.getElementById('winfs-pill');
       if (!pill) return;
 
-      // v2.1 round 212 (Terry) — raised 72→92 so the top-center reveal zone
-      // still comfortably covers the pill after it dropped to top:48px (pill
-      // now spans y≈48–82): moving up to it reveals it AND staying on it keeps it.
-      // v2.1 round 213 (Terry) — lowered 92→46: the reveal zone is now just the
-      // title-bar strip (≈ the 40px bar), so merely entering the upper canvas no
-      // longer reveals the pill — only reaching the very top does. Once shown, the
-      // pill (y≈46–80) + its own mouseenter keep it visible, and the 1.5s grace
-      // (FADE_OUT_MS) covers the tiny transit between the strip and the pill.
-      var REVEAL_Y = 46;             // top strip height that triggers the reveal
-      var FADE_OUT_MS = 1500;        // YouTube-style lingering fade after leaving
+      // v2.1 round 214 (Terry) — DWELL trigger (Netflix-style), replacing the
+      // old loose top-strip reveal-zone. The X only appears after the cursor
+      // rests in the top-CENTRE title-bar strip for STRIP_DWELL_MS — so merely
+      // sweeping the cursor near the top no longer pops the affordance.
+      //   • STRIP_Y      — strip height (the OS title-bar band, y 0..42).
+      //   • STRIP_HALF_W — horizontal half-width of the strip about screen centre
+      //                    (~±130px, i.e. the area above the "COLLAGE" title).
+      //   • STRIP_DWELL_MS — how long the cursor must stay in the strip to reveal.
+      var STRIP_Y = 42;              // top-strip height that begins the dwell timer
+      var STRIP_HALF_W = 130;        // ± half-width about screen centre
+      var STRIP_DWELL_MS = 250;      // dwell required before the X reveals
+      var FADE_OUT_MS = 1000;        // ~1s lingering fade after leaving X + strip
       var isElectronFs = false;      // from pdr.window state
       var isMaximized = false;       // v2.1 round 207 (Terry) — primary arm trigger
       var hideTimer = null;
-      var pointerInside = false;     // cursor in zone or on pill
+      var dwellTimer = null;         // v2.1 round 214 — pending 250ms dwell timer
+      var pointerInside = false;     // cursor in strip or on the X
 
       function htmlFs() { return !!document.fullscreenElement; }
       // v2.1 round 207 (Terry) — the pill arms when the window is
@@ -12382,6 +12433,7 @@ function zoomTo(newZoom, centreX, centreY) {
           pointerInside = false;
           pill.classList.remove('visible');
           if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }   // v2.1 round 214 — cancel any pending dwell
         }
       }
 
@@ -12398,26 +12450,53 @@ function zoomTo(newZoom, centreX, centreY) {
         }, FADE_OUT_MS);
       }
 
-      function inRevealZone(e) {
-        if (e.clientY > REVEAL_Y) return false;
-        var third = window.innerWidth / 3;
-        return e.clientX >= third && e.clientX <= third * 2;
+      // v2.1 round 214 (Terry) — the dwell strip: the top-CENTRE title-bar band.
+      // clientY within the strip height AND clientX within ±STRIP_HALF_W of the
+      // window's horizontal centre (the area above the "COLLAGE" title).
+      function inStrip(e) {
+        if (e.clientY > STRIP_Y) return false;
+        var cx = window.innerWidth / 2;
+        return Math.abs(e.clientX - cx) <= STRIP_HALF_W;
       }
 
+      // v2.1 round 214 (Terry) — DWELL, not a loose zone. While maximised
+      // (armed), entering the top-centre strip starts a 250ms timer; only if the
+      // cursor stays in the strip for the full 250ms does the X reveal (slide
+      // down + fade in). Leaving the strip before 250ms cancels the timer — so
+      // an accidental brush past the top never pops the X. Once shown, the X's
+      // own mouseenter (below) and re-entering the strip keep it up; the ~1s
+      // grace (FADE_OUT_MS) covers the short transit between the strip and the X.
       document.addEventListener('mousemove', function (e) {
         if (!shouldArm()) return;
-        if (inRevealZone(e)) {
+        if (inStrip(e)) {
+          // In the strip. If the X is already up (or a dwell is already
+          // counting), keep it; otherwise begin the dwell countdown.
           pointerInside = true;
-          reveal();
-        } else if (pointerInside) {
-          pointerInside = false;
-          scheduleHide();
+          if (hideTimer) { clearTimeout(hideTimer); hideTimer = null; }
+          if (pill.classList.contains('visible')) return;     // already revealed — nothing to start
+          if (dwellTimer) return;                             // dwell already running
+          dwellTimer = setTimeout(function () {
+            dwellTimer = null;
+            if (pointerInside && shouldArm()) reveal();        // stayed long enough → reveal
+          }, STRIP_DWELL_MS);
+        } else {
+          // Left the strip. Cancel a not-yet-fired dwell (no reveal). If the X
+          // is already showing and the cursor isn't on it, start the linger.
+          if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+          if (pointerInside) {
+            pointerInside = false;
+            if (pill.classList.contains('visible')) scheduleHide();
+          }
         }
       }, true);
 
-      // Keep it up while hovering the pill itself; re-arm the linger when
-      // the cursor leaves it.
-      pill.addEventListener('mouseenter', function () { pointerInside = true; reveal(); });
+      // Keep it up while hovering the X itself; re-arm the linger when the
+      // cursor leaves it. (Hovering the X needs no dwell — it's already shown.)
+      pill.addEventListener('mouseenter', function () {
+        pointerInside = true;
+        if (dwellTimer) { clearTimeout(dwellTimer); dwellTimer = null; }
+        reveal();
+      });
       pill.addEventListener('mouseleave', function () { pointerInside = false; scheduleHide(); });
 
       // v2.1 round 207 (Terry) — restore the window. HTML5 video
