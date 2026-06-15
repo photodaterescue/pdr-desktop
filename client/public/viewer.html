@@ -2002,6 +2002,14 @@
     body.collage-mode #enhance-pin { display: none !important; }   /* beats the inline display:flex on the button */
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
+    /* v2.1 round 203 (Terry) — collage wears gold: the corner resize dots,
+       the rotate ring, and the quick-action toolbar accent all go gold here
+       (lavender in the single-photo Viewer, from the base rules above). */
+    body.collage-mode .collage-item .ch-resize { background: #FEC242; }
+    body.collage-mode .collage-item .ch-rotate { border-color: #FEC242; }
+    body.collage-mode .collage-item .ch-rotate svg { stroke: #5a4a12; }
+    body.collage-mode .collage-item .ch-rotate::before { background: #FEC242; }
+    body.collage-mode .ch-tb-btn:hover { color: #FEC242; }
     body.collage-mode.collage-bg-selected #collage-canvas { outline-color: #FEC242; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(254,194,66,0.28), 0 0 22px 4px rgba(254,194,66,0.35); }
     /* Handles — only shown on the selected tile. */
     /* v2.1 round 187 (Terry) — text layers reuse the same .ch handles (resize +
@@ -2014,6 +2022,8 @@
     }
     .collage-item.selected .ch,
     .collage-text.selected .ch { display: block; }
+    /* Base resize handle — used as-is by TEXT layers (a single bottom-right
+       grab dot). Collage TILES override this below with four corner handles. */
     .ch-resize {
       width: 16px; height: 16px;
       right: -8px; bottom: -8px;
@@ -2022,6 +2032,22 @@
       border-radius: 50%;
       cursor: nwse-resize;
     }
+    /* v2.1 round 203 (Terry) — Canva-style FOUR corner resize handles on TILES
+       (was a single bottom-right handle pre-203). Each is a small round grab dot;
+       the cursor reflects the diagonal it scales along. The corner classes set
+       position + cursor; startItemResize anchors the OPPOSITE corner per corner.
+       Scoped to .collage-item so TEXT layers keep the single base handle above. */
+    .collage-item .ch-resize {
+      width: 14px; height: 14px;
+      right: auto; bottom: auto;       /* corner classes below set the real position */
+      box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+    .collage-item .ch-res-tl { left: -7px; top: -7px; right: auto; bottom: auto; cursor: nwse-resize; }
+    .collage-item .ch-res-tr { right: -7px; top: -7px; left: auto; bottom: auto; cursor: nesw-resize; }
+    .collage-item .ch-res-bl { left: -7px; bottom: -7px; right: auto; top: auto; cursor: nesw-resize; }
+    .collage-item .ch-res-br { right: -7px; bottom: -7px; left: auto; top: auto; cursor: nwse-resize; }
+    /* Base rotate handle — used as-is by TEXT layers (above the element, filled
+       single-arrow glyph). Collage TILES override position + glyph below. */
     .ch-rotate {
       width: 24px; height: 24px;
       left: 50%; top: -36px;
@@ -2043,6 +2069,21 @@
       width: 2px; height: 14px;
       margin-left: -1px;
       background: #a78bfa;
+    }
+    /* v2.1 round 203 (Terry) — on TILES the rotate handle moves from above the
+       tile to just OUTSIDE the right-middle edge (per Terry's SS2) and gets the
+       two-curved-arrows circular glyph (a stroked icon, so fill:none + stroke).
+       The connector tick points LEFT toward the tile edge instead of down. */
+    .collage-item .ch-rotate {
+      left: 100%; top: 50%;
+      margin-left: 14px; margin-top: -12px;
+    }
+    .collage-item .ch-rotate svg { width: 16px; height: 16px; fill: none; stroke: #2e2960; stroke-width: 1.6; }
+    .collage-item .ch-rotate::before {
+      left: auto; top: 50%;
+      right: 100%;
+      width: 14px; height: 2px;
+      margin-left: 0; margin-top: -1px;
     }
     .ch-remove {
       width: 20px; height: 20px;
@@ -2067,6 +2108,65 @@
     .ch-crop-t, .ch-crop-b { height: 7px; width: 28px; left: 50%; margin-left: -14px; border-radius: 3px; cursor: ns-resize; }
     .ch-crop-t { top: -4px; }
     .ch-crop-b { bottom: -4px; }
+    /* ─── v2.1 round 203 (Terry) — Canva-style floating quick-action toolbar
+       ────────────────────────────────────────────────────────────────────
+       A small dark pill that floats just ABOVE the selected tile with three
+       icon buttons: Lock / Duplicate / Remove. Like the .ch handles it's a
+       child of the tile, hidden by default and revealed by .selected. It is
+       added to the tile's `handles` array so a click on it never starts a
+       drag. Shown for photo tiles only (the background tile has no toolbar). */
+    .ch-toolbar {
+      position: absolute;
+      bottom: 100%; left: 50%;
+      transform: translateX(-50%);
+      margin-bottom: 8px;
+      display: none;
+      align-items: center;
+      gap: 4px;
+      padding: 4px;
+      background: rgba(28,26,46,0.96);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 9px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+      z-index: 7;
+      white-space: nowrap;
+    }
+    .collage-item.selected .ch-toolbar { display: inline-flex; }
+    .ch-tb-btn {
+      width: 28px; height: 28px;
+      display: inline-flex; align-items: center; justify-content: center;
+      background: transparent;
+      border: none;
+      border-radius: 6px;
+      color: #d8d8e6;
+      cursor: pointer;
+      padding: 0;
+      transition: background 120ms, color 120ms;
+    }
+    .ch-tb-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    .ch-tb-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    /* Lock button "active/locked" state — gold-filled padlock. */
+    .ch-tb-btn.ch-tb-lock.locked { color: #2e2960; background: #FEC242; }
+    .ch-tb-btn.ch-tb-lock.locked:hover { background: #ffd778; }
+    /* v2.1 round 203 (Terry) — a locked tile: hide the resize + rotate
+       handles (geometry frozen) and show a subtle locked affordance —
+       a faint gold dashed ring + a small padlock badge in the corner. The
+       Remove + Duplicate toolbar buttons stay usable. */
+    .collage-item.locked.selected .ch-resize,
+    .collage-item.locked.selected .ch-rotate,
+    .collage-item.locked.selected .ch-crop { display: none !important; }
+    .collage-item.locked.selected { outline-style: dashed !important; }
+    .collage-item.locked.selected::after {
+      content: '';
+      position: absolute;
+      right: 4px; top: 4px;
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      background: rgba(28,26,46,0.9) center / 12px 12px no-repeat;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FEC242' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 8;
+    }
     /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
        a + so the user knows clicking re-adds it. */
     .filmstrip .thumb.collage-off,
@@ -5432,6 +5532,18 @@
       if (!it || !it.el) return;
       if (!it.on) { it.el.style.display = 'none'; return; }
       it.el.style.display = '';
+      // v2.1 round 203 (Terry) — reflect the Lock state on the tile (CSS hides
+      // the resize/rotate/crop handles + shows the locked affordance) and on the
+      // toolbar's padlock button. Done here so it survives every re-render incl.
+      // undo/redo restore.
+      try {
+        it.el.classList.toggle('locked', !!it.locked);
+        const lockBtn = it.el.querySelector('.ch-tb-lock');
+        if (lockBtn) {
+          lockBtn.classList.toggle('locked', !!it.locked);
+          lockBtn.setAttribute('data-pdr-tooltip', it.locked ? 'Unlock' : 'Lock (freeze position / size / rotation)');
+        }
+      } catch (_) {}
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       const iwPx = it.wFrac * cw;
       const ihPx = iwPx / effectiveAspect(it);   // box matches the CROPPED shape
@@ -6083,6 +6195,9 @@
 
     function startItemDrag(it, e) {
       e.preventDefault();
+      // v2.1 round 203 (Terry) — a locked tile can't be moved: select it (so its
+      // toolbar/affordance show) but don't begin a drag gesture.
+      if (it && it.locked) { selectCollageItem(it); return; }
       beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
@@ -6107,30 +6222,47 @@
       window.addEventListener('pointerup', up);
     }
 
-    function startItemResize(it, e) {
+    // v2.1 round 203 (Terry) — resize from ANY of the four corners. `corner` is
+    // 'tl' | 'tr' | 'bl' | 'br' (defaults to 'br' = the pre-203 single handle).
+    // Aspect is kept (we scale wFrac; height follows). The OPPOSITE corner is the
+    // anchor: it stays pinned while the grabbed corner moves, so dragging feels
+    // like a real corner resize rather than a centre-scale. We measure the drag
+    // distance from the ANCHOR (opposite corner) — growing that distance grows
+    // the tile — then recompute xFrac/yFrac so the anchor's screen position is
+    // unchanged. One undo per drag (begin/commit), matching the other gestures.
+    function startItemResize(it, e, corner) {
       e.preventDefault(); e.stopPropagation();
+      // Locked tile: select but don't resize.
+      if (it && it.locked) { selectCollageItem(it); return; }
+      corner = corner || 'br';
       beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
       const rect = collageCanvasEl.getBoundingClientRect();
       const cw = rect.width, ch = rect.height;
       const ihFrac0 = itemHeightFrac(it);
-      const cxFrac = it.xFrac + it.wFrac / 2;
-      const cyFrac = it.yFrac + ihFrac0 / 2;
-      const centerX = rect.left + cxFrac * cw;
-      const centerY = rect.top + cyFrac * ch;
-      const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY) || 1;
+      // Anchor = the OPPOSITE corner's fractional position on the canvas. For a
+      // tl drag the anchor is the br corner, etc. Held fixed through the drag.
+      const left = it.xFrac, top = it.yFrac, right = it.xFrac + it.wFrac, bottom = it.yFrac + ihFrac0;
+      const anchorXFrac = (corner === 'tl' || corner === 'bl') ? right : left;   // x of the fixed corner
+      const anchorYFrac = (corner === 'tl' || corner === 'tr') ? bottom : top;   // y of the fixed corner
+      const anchorX = rect.left + anchorXFrac * cw;
+      const anchorY = rect.top + anchorYFrac * ch;
+      const startDist = Math.hypot(e.clientX - anchorX, e.clientY - anchorY) || 1;
       const startW = it.wFrac;
       const move = (ev) => {
-        const dist = Math.hypot(ev.clientX - centerX, ev.clientY - centerY);
+        const dist = Math.hypot(ev.clientX - anchorX, ev.clientY - anchorY);
         let nw = startW * (dist / startDist);
         nw = Math.max(0.05, Math.min(1.4, nw));
         it.wFrac = nw;
         const ihFrac = itemHeightFrac(it);
-        it.xFrac = cxFrac - nw / 2;
-        it.yFrac = cyFrac - ihFrac / 2;
+        // Re-pin the anchor corner: derive the new left/top from the fixed corner.
+        it.xFrac = (corner === 'tl' || corner === 'bl') ? (anchorXFrac - nw) : anchorXFrac;
+        it.yFrac = (corner === 'tl' || corner === 'tr') ? (anchorYFrac - ihFrac) : anchorYFrac;
         renderCollageItem(it);
       };
+      // commit is handled by the global collage pointerup listener (one undo per
+      // gesture) — same as startItemDrag / startItemRotate.
       const up = () => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
@@ -6141,6 +6273,8 @@
 
     function startItemRotate(it, e) {
       e.preventDefault(); e.stopPropagation();
+      // v2.1 round 203 (Terry) — locked tile: select but don't rotate.
+      if (it && it.locked) { selectCollageItem(it); return; }
       beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
@@ -6152,7 +6286,11 @@
       const centerY = rect.top + cyFrac * ch;
       const move = (ev) => {
         const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
-        let deg = ang + 90; // rotate handle sits at the top of the tile
+        // v2.1 round 203 (Terry) — the rotate handle moved to the RIGHT-middle
+        // edge, so its rest angle from the centre is 0° (was −90° at the top).
+        // Drop the +90 offset so the tile's angle tracks the handle 1:1 (at
+        // rest the handle points right ⇒ rot 0; pre-203 it pointed up ⇒ +90).
+        let deg = ang; // rotate handle sits at the right-middle edge of the tile
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         it.rot = deg;
         renderCollageItem(it);
@@ -6172,6 +6310,7 @@
     // region; the backend extracts the same rect on save.
     function startItemCrop(it, e, edge) {
       e.preventDefault(); e.stopPropagation();
+      if (it && it.locked) { selectCollageItem(it); return; }   // v2.1 round 203 — locked: no crop (handles are also hidden by CSS)
       beginCollageChange();
       selectCollageItem(it);
       const startX = e.clientX, startY = e.clientY;
@@ -6221,6 +6360,7 @@
     // can never reveal a blank edge. The bake applies the matching shift.
     function startItemPan(it, e) {
       e.preventDefault(); e.stopPropagation();
+      if (it && it.locked) { selectCollageItem(it); return; }   // v2.1 round 203 — locked: no Ctrl+drag pan
       beginCollageChange();
       selectCollageItem(it);
       const startX = e.clientX, startY = e.clientY;
@@ -6445,7 +6585,7 @@
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
-        items: collageItems.map((it) => ({ idx: it.idx, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50 })),
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals)
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -6475,15 +6615,16 @@
       if (s.bgEnh) collageBgTile.enh = Object.assign(defaultBgEnh(), s.bgEnh);
       else if (s.bgOpacity != null) collageBgTile.enh = Object.assign(defaultBgEnh(), { opacity: s.bgOpacity });
       let maxZ = 1;
-      s.items.forEach((si) => {
-        const it = collageItems[si.idx];
-        if (!it) return;
+      // Apply one snapshot item's geometry/enh/lock onto a live tile (shared by
+      // the per-file originals and the rebuilt duplicates below).
+      const applySnapItem = (it, si) => {
         it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         if (si.crop) it.crop = { l: si.crop.l, t: si.crop.t, r: si.crop.r, b: si.crop.b };
         it.zoom = (typeof si.zoom === 'number') ? si.zoom : 1;   // v2.1 round 168 — photo zoom
         it.panX = (typeof si.panX === 'number') ? si.panX : 0;   // v2.1 round 169 — zoom pan
         it.panY = (typeof si.panY === 'number') ? si.panY : 0;
         it.enh = Object.assign({}, si.enh);
+        it.locked = !!si.locked;   // v2.1 round 203 (Terry)
         // v2.1 round 173 — restore the background-removed cut-out (or the
         // original). Setting the same src is a no-op in Chromium, so this only
         // reloads when undo/redo actually flips the cut-out on or off.
@@ -6491,6 +6632,40 @@
         it.bgRemoveStrength = (typeof si.bgRemoveStrength === 'number') ? si.bgRemoveStrength : 50;
         if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
         if (si.z > maxZ) maxZ = si.z;
+      };
+      // v2.1 round 203 (Terry) — DUPLICATES make collageItems longer than the
+      // per-file set, so the old `collageItems[si.idx]` mapping (which assumed
+      // array position == file index) no longer round-trips. Restore in two
+      // passes: (1) the per-file ORIGINALS occupy positions 0..files.length-1
+      // (idx == position, built by buildCollageItems in file order) — restore
+      // each by index; (2) any snapshot entry BEYOND that is a clone — tear down
+      // the current clone els, then rebuild fresh clone models from the snapshot
+      // (path carried in the snapshot) so duplicate + its removal both undo.
+      const nOrig = files.length;
+      // Tear down + drop any existing clones (array position >= nOrig).
+      for (let k = collageItems.length - 1; k >= nOrig; k--) {
+        const ex = collageItems[k];
+        if (ex && ex.el && ex.el.parentNode) ex.el.parentNode.removeChild(ex.el);
+        collageItems.splice(k, 1);
+      }
+      s.items.forEach((si, p) => {
+        if (p < nOrig) {
+          // Original tile — match by array position (idx === position here).
+          const it = collageItems[si.idx != null ? si.idx : p];
+          if (it) applySnapItem(it, si);
+        } else {
+          // Clone — recreate the model + its el, then apply the snapshot props.
+          const clone = {
+            idx: si.idx, path: si.path, on: true,
+            xFrac: si.xFrac, yFrac: si.yFrac, wFrac: si.wFrac, aspect: si.aspect, rot: si.rot,
+            z: si.z, el: null, imgEl: null, clipEl: null, locked: !!si.locked,
+            crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+            bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
+          };
+          collageItems.push(clone);
+          buildCollageItemEl(clone);
+          applySnapItem(clone, si);
+        }
       });
       // v2.1 round 185 (Text #1) — rebuild text layers from the snapshot: tear
       // down the live els, recreate plain layer objects (renderAllTexts below
@@ -6516,7 +6691,12 @@
       syncTextControls();
       // Re-point the panel at the still-valid selection (a real tile that's
       // been turned off deselects; the background tile survives).
-      if (collageSelected && !collageSelected.isBg && !collageSelected.on) selectCollageItem(null);
+      // v2.1 round 203 (Terry) — a selected DUPLICATE may have been torn down +
+      // rebuilt as a fresh object by the clone-restore above, leaving
+      // collageSelected dangling (not in collageItems). Drop the selection in
+      // that case so the panel doesn't point at an orphaned tile.
+      if (collageSelected && !collageSelected.isBg && collageItems.indexOf(collageSelected) === -1) selectCollageItem(null);
+      else if (collageSelected && !collageSelected.isBg && !collageSelected.on) selectCollageItem(null);
       else if (collageSelected && window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected);
       // v2.1 round 200 (Terry) — BUG2: after an undo/redo, re-sync the unified
       // Colour control to the restored selection so the Background (or Frame/Text)
@@ -6550,6 +6730,154 @@
       if (r) r.disabled = collageRedo.length === 0;
     }
 
+    // v2.1 round 203 (Terry) — build the DOM (clip + img), all selection handles
+    // (rotate, 4-corner resize, remove, crop edges), and the Canva-style floating
+    // quick-action toolbar (Lock / Duplicate / Remove) for one tile model `it`,
+    // wire every gesture, and append it to the canvas. Sets it.el/imgEl/clipEl.
+    // Shared by buildCollageItems (initial build) and duplicateCollageItem (clone)
+    // so a duplicate is built identically — keyed off it.idx/it.path, not a
+    // forEach index, so it works for both. (Extracted from the old inline block.)
+    function buildCollageItemEl(it) {
+      const el = document.createElement('div');
+      el.className = 'collage-item';
+      el.dataset.idx = String(it.idx);
+      // v2.1 round 145 — image in a clip wrapper so crop can enlarge +
+      // offset it without spilling past the frame.
+      const clip = document.createElement('div');
+      clip.className = 'collage-clip';
+      const img = document.createElement('img');
+      img.alt = '';
+      let imgRetried = false;
+      img.onerror = () => { if (!imgRetried) { imgRetried = true; img.src = getFileSrcFallback(it.path); } };
+      img.onload = () => {
+        if (img.naturalWidth && img.naturalHeight) it.aspect = img.naturalWidth / img.naturalHeight;
+        renderCollageItem(it);
+      };
+      // v2.1 round 173 — show the background-removed cut-out if this tile has one
+      // (a clone inherits it), else the original. (Initial tiles have none yet.)
+      img.src = getFileSrc(it.bgRemovedPath || it.path);
+      clip.appendChild(img);
+      el.appendChild(clip);
+      const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
+      // v2.1 round 203 (Terry) — two-curved-arrows / circular refresh rotate
+      // glyph (per SS2). Replaces the round-141 single-arrow Bootstrap glyph;
+      // the handle now also sits at the right-middle edge (see .ch-rotate CSS).
+      // Feather "refresh-cw" twin-arc icon, stroked (matches .ch-rotate svg).
+      hRot.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+      // v2.1 round 203 (Terry) — FOUR corner resize handles (was a single
+      // bottom-right one). startItemResize(it, e, corner) anchors the OPPOSITE
+      // corner so the grabbed corner is the one that moves.
+      const hResTL = document.createElement('div'); hResTL.className = 'ch ch-resize ch-res-tl'; hResTL.setAttribute('data-pdr-tooltip', 'Resize');
+      const hResTR = document.createElement('div'); hResTR.className = 'ch ch-resize ch-res-tr'; hResTR.setAttribute('data-pdr-tooltip', 'Resize');
+      const hResBL = document.createElement('div'); hResBL.className = 'ch ch-resize ch-res-bl'; hResBL.setAttribute('data-pdr-tooltip', 'Resize');
+      const hResBR = document.createElement('div'); hResBR.className = 'ch ch-resize ch-res-br'; hResBR.setAttribute('data-pdr-tooltip', 'Resize');
+      const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
+      // v2.1 round 203 (Terry) — Canva-style floating quick-action toolbar
+      // (Lock / Duplicate / Remove) above the tile. It's a tile child like the
+      // handles; its buttons go in `handles` so a click doesn't start a drag.
+      const tbar = document.createElement('div'); tbar.className = 'ch ch-toolbar';
+      const tbLock = document.createElement('button'); tbLock.type = 'button'; tbLock.className = 'ch-tb-btn ch-tb-lock'; tbLock.setAttribute('data-pdr-tooltip', 'Lock (freeze position / size / rotation)');
+      tbLock.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn ch-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
+      tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn ch-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
+      tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
+      // v2.1 round 145 — crop edge handles (drag inward to trim a side).
+      const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
+      const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
+      const hCropT = document.createElement('div'); hCropT.className = 'ch ch-crop ch-crop-t'; hCropT.setAttribute('data-pdr-tooltip', 'Crop top edge');
+      const hCropB = document.createElement('div'); hCropB.className = 'ch ch-crop ch-crop-b'; hCropB.setAttribute('data-pdr-tooltip', 'Crop bottom edge');
+      el.appendChild(hRot);
+      el.appendChild(hResTL); el.appendChild(hResTR); el.appendChild(hResBL); el.appendChild(hResBR);
+      el.appendChild(hRem);
+      el.appendChild(hCropL); el.appendChild(hCropR); el.appendChild(hCropT); el.appendChild(hCropB);
+      el.appendChild(tbar);
+      // v2.1 round 203 (Terry) — every handle AND every toolbar button is in
+      // this list so a pointerdown on any of them is excluded from the tile
+      // drag (the guard below). tbar itself + its three buttons are included so
+      // clicking padlock/duplicate/trash never drags the tile.
+      const handles = [hRot, hResTL, hResTR, hResBL, hResBR, hRem, hCropL, hCropR, hCropT, hCropB, tbar, tbLock, tbDup, tbRem];
+      el.addEventListener('pointerdown', (e) => {
+        if (handles.indexOf(e.target) !== -1) return;
+        // v2.1 round 169 (Terry) — Ctrl+drag on a zoomed photo pans it within
+        // its frame (reposition the zoomed-in region); plain drag still moves
+        // the tile on the canvas.
+        if (e.ctrlKey && (it.zoom || 1) > 1) { startItemPan(it, e); return; }
+        startItemDrag(it, e);
+      });
+      // v2.1 round 203 (Terry) — each corner passes its name so startItemResize
+      // can anchor the OPPOSITE corner (tl↔br, tr↔bl).
+      hResTL.addEventListener('pointerdown', (e) => startItemResize(it, e, 'tl'));
+      hResTR.addEventListener('pointerdown', (e) => startItemResize(it, e, 'tr'));
+      hResBL.addEventListener('pointerdown', (e) => startItemResize(it, e, 'bl'));
+      hResBR.addEventListener('pointerdown', (e) => startItemResize(it, e, 'br'));
+      hRot.addEventListener('pointerdown', (e) => startItemRotate(it, e));
+      hRem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
+      hCropL.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'l'));
+      hCropR.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'r'));
+      hCropT.addEventListener('pointerdown', (e) => startItemCrop(it, e, 't'));
+      hCropB.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'b'));
+      // v2.1 round 203 (Terry) — toolbar actions. pointerdown stops the gesture
+      // from reaching the tile's drag listener (defensive; they're also in
+      // `handles`); the action fires on click. Lock toggles, Duplicate clones +
+      // selects the clone, Remove mirrors the × handle.
+      tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleItemLock(it); });
+      tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageItem(it); });
+      tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
+      it.el = el; it.imgEl = img; it.clipEl = clip;
+      collageCanvasEl.appendChild(el);
+    }
+
+    // v2.1 round 203 (Terry) — Lock toolbar button. Flips it.locked (undoable):
+    // when locked, startItemDrag/Resize/Rotate early-return, the resize/rotate/
+    // crop handles hide (CSS, via the .locked class set in renderCollageItem),
+    // and the Enhance apply path no-ops for this tile (see applyEnhanceFilter).
+    function toggleItemLock(it) {
+      if (!it || it.isBg) return;
+      beginCollageChange();
+      it.locked = !it.locked;
+      selectCollageItem(it);          // keep it selected so the new state shows
+      renderCollageItem(it);          // reflect .locked on the el + the padlock
+      commitCollageChange();
+    }
+
+    // v2.1 round 203 (Terry) — Duplicate toolbar button. Clone the tile model
+    // (same path/idx; deep-copy enh + crop; carry zoom/pan/rot/aspect/wFrac/
+    // bgRemovedPath; clone is unlocked), offset by ~+0.03 (clamped on-canvas),
+    // give it the top z, build its el, render + select it. One undo step.
+    function duplicateCollageItem(it) {
+      if (!it || it.isBg) return;
+      beginCollageChange();
+      const ih = itemHeightFrac(it);
+      const OFF = 0.03;
+      // Clamp the offset position so the clone stays on the canvas (same clamp
+      // rule the drag uses: the tile centre stays within [0,1]).
+      const nx = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, (it.xFrac || 0) + OFF));
+      const ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
+      const clone = {
+        idx: it.idx, path: it.path, on: true,
+        xFrac: nx, yFrac: ny, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
+        z: ++collageZTop, el: null, imgEl: null, clipEl: null,
+        locked: false,
+        crop: { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b },
+        zoom: it.zoom, panX: it.panX, panY: it.panY,
+        bgRemovedPath: it.bgRemovedPath || null,
+        bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50,
+        enh: Object.assign({}, it.enh, { corners: (Array.isArray(it.enh && it.enh.corners) ? it.enh.corners.slice() : [0, 0, 0, 0]) }),
+      };
+      collageItems.push(clone);
+      buildCollageItemEl(clone);
+      renderCollageItem(clone);
+      // Repaint the clone's <img> from its own enh so the duplicate looks like
+      // the original immediately (the shared apply path the rest of the app uses).
+      try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(clone); } catch (_) {}
+      selectCollageItem(clone);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+
     function buildCollageItems() {
       collageCanvasEl.innerHTML = '';
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
@@ -6561,6 +6889,10 @@
         // enh = this tile's own Enhance state (edited via the side panel
         // when the tile is selected; baked per-tile on save).
         const it = { idx: i, path: fp, on: !isVid, xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0, z: ++collageZTop, el: null, imgEl: null,
+          // v2.1 round 203 (Terry) — Lock toggle (Canva-style toolbar). When
+          // true, drag / resize / rotate early-return and the Enhance apply
+          // path no-ops for this tile; persisted in snapshotCollage.
+          locked: false,
           crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
           // v2.1 round 173 (Terry) — when the user removes the background, this
           // holds the temp transparent-PNG cut-out path. The tile's <img> shows
@@ -6569,56 +6901,11 @@
           // baked into the current cut-out (50 = neutral).
           bgRemovedPath: null, bgRemoveStrength: 50,
           enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] } };
-        const el = document.createElement('div');
-        el.className = 'collage-item';
-        el.dataset.idx = String(i);
-        // v2.1 round 145 — image in a clip wrapper so crop can enlarge +
-        // offset it without spilling past the frame.
-        const clip = document.createElement('div');
-        clip.className = 'collage-clip';
-        const img = document.createElement('img');
-        img.alt = '';
-        let imgRetried = false;
-        img.onerror = () => { if (!imgRetried) { imgRetried = true; img.src = getFileSrcFallback(fp); } };
-        img.onload = () => {
-          if (img.naturalWidth && img.naturalHeight) it.aspect = img.naturalWidth / img.naturalHeight;
-          renderCollageItem(it);
-        };
-        img.src = getFileSrc(fp);
-        clip.appendChild(img);
-        el.appendChild(clip);
-        const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
-        // v2.1 round 141 (Terry) — clean single circular-arrow rotate
-        // glyph (Bootstrap arrow-clockwise) — the Paint 3D shape. The
-        // round-140 Feather "refresh" glyph read as sync, not rotate.
-        hRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
-        const hRes = document.createElement('div'); hRes.className = 'ch ch-resize'; hRes.setAttribute('data-pdr-tooltip', 'Resize');
-        const hRem = document.createElement('div'); hRem.className = 'ch ch-remove'; hRem.textContent = '×'; hRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
-        // v2.1 round 145 — crop edge handles (drag inward to trim a side).
-        const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
-        const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
-        const hCropT = document.createElement('div'); hCropT.className = 'ch ch-crop ch-crop-t'; hCropT.setAttribute('data-pdr-tooltip', 'Crop top edge');
-        const hCropB = document.createElement('div'); hCropB.className = 'ch ch-crop ch-crop-b'; hCropB.setAttribute('data-pdr-tooltip', 'Crop bottom edge');
-        el.appendChild(hRot); el.appendChild(hRes); el.appendChild(hRem);
-        el.appendChild(hCropL); el.appendChild(hCropR); el.appendChild(hCropT); el.appendChild(hCropB);
-        const handles = [hRot, hRes, hRem, hCropL, hCropR, hCropT, hCropB];
-        el.addEventListener('pointerdown', (e) => {
-          if (handles.indexOf(e.target) !== -1) return;
-          // v2.1 round 169 (Terry) — Ctrl+drag on a zoomed photo pans it within
-          // its frame (reposition the zoomed-in region); plain drag still moves
-          // the tile on the canvas.
-          if (e.ctrlKey && (it.zoom || 1) > 1) { startItemPan(it, e); return; }
-          startItemDrag(it, e);
-        });
-        hRes.addEventListener('pointerdown', (e) => startItemResize(it, e));
-        hRot.addEventListener('pointerdown', (e) => startItemRotate(it, e));
-        hRem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
-        hCropL.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'l'));
-        hCropR.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'r'));
-        hCropT.addEventListener('pointerdown', (e) => startItemCrop(it, e, 't'));
-        hCropB.addEventListener('pointerdown', (e) => startItemCrop(it, e, 'b'));
-        it.el = el; it.imgEl = img; it.clipEl = clip;
-        collageCanvasEl.appendChild(el);
+        // v2.1 round 203 (Terry) — DOM + handle creation extracted to
+        // buildCollageItemEl(it) so a duplicated tile is built identically (it
+        // gets the same 4-corner resize handles, rotate handle + quick-action
+        // toolbar). It sets it.el/imgEl/clipEl and appends to the canvas.
+        buildCollageItemEl(it);
         collageItems.push(it);
       });
       // The innerHTML clear above removed any background-photo layer —
@@ -7054,6 +7341,7 @@
       if (bgBtn) bgBtn.addEventListener('click', async () => {
         const it = getBgTarget();
         if (!it || it.isBg || isVideoPath(it.path) || bgRemoveBusy) return;
+        if (collageMode && it.locked) return;   // v2.1 round 203 — appearance lock: a locked collage tile keeps its background as-is
         // Already cut out → restore the original photo.
         if (it.bgRemovedPath) {
           beginCollageChange();
@@ -7179,7 +7467,7 @@
       // background (its rotation is a separate item).
       const rotateBtn = document.getElementById('tile-rotate');
       if (rotateBtn) rotateBtn.addEventListener('click', () => {
-        if (!collageSelected || collageSelected.isBg) return;
+        if (!collageSelected || collageSelected.isBg || collageSelected.locked) return;   // v2.1 round 203 — locked: no Rotate 90°
         collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
         renderCollageItem(collageSelected);
         updateAngleSlider();
@@ -7194,7 +7482,9 @@
       const angleVal = document.getElementById('val-angle');
       if (angleSlider) {
         angleSlider.addEventListener('input', () => {
-          if (!collageSelected || collageSelected.isBg) return;
+          // v2.1 round 203 (Terry) — a locked tile ignores the Angle slider too
+          // (geometry lock). Re-sync the slider to the tile's frozen angle.
+          if (!collageSelected || collageSelected.isBg || collageSelected.locked) { updateAngleSlider(); return; }
           collageSelected.rot = parseInt(angleSlider.value, 10) || 0;
           if (angleVal) angleVal.textContent = (parseInt(angleSlider.value, 10) || 0) + '°';
           renderCollageItem(collageSelected);
@@ -7202,7 +7492,7 @@
         // double-click → upright (0°), matching the other sliders' reset.
         angleSlider.addEventListener('dblclick', (e) => {
           e.preventDefault();
-          if (!collageSelected || collageSelected.isBg) return;
+          if (!collageSelected || collageSelected.isBg || collageSelected.locked) return;   // v2.1 round 203 — locked: no reset-to-upright
           collageSelected.rot = 0;
           renderCollageItem(collageSelected);
           updateAngleSlider();
@@ -7268,7 +7558,7 @@
       collageStageEl.addEventListener('wheel', (e) => {
         if (!e.ctrlKey) return;
         const it = collageSelected;
-        if (!it || it.isBg) return;
+        if (!it || it.isBg || it.locked) return;   // v2.1 round 203 — locked tile: no Ctrl+scroll zoom
         e.preventDefault();
         if (!collageZoomGesture) { collageZoomGesture = true; beginCollageChange(); }
         it.zoom = Math.max(1, Math.min(2, (it.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)));
@@ -8684,6 +8974,18 @@ function zoomTo(newZoom, centreX, centreY) {
         // tile's own enhance object so it survives tile-switching, save,
         // and remove/re-add.
         if (collageActive) {
+          // v2.1 round 203 (Terry) — APPEARANCE LOCK: a locked photo tile won't
+          // accept Enhance edits. Re-apply the tile's OWN frozen enh to its <img>
+          // (so a slider the user nudged reverts on screen) and DON'T write the
+          // drifted `state` back into the tile — its enh stays exactly as it was.
+          // The background tile (isBg) is never lockable, so it's unaffected.
+          if (collageTile && !collageTile.isBg && collageTile.locked) {
+            if (collageTile.imgEl) {
+              applyFilterToEl(collageTile.imgEl, collageTile.enh || {}, composeFilterString(collageTile.enh || {}), collageTile.el);
+              renderCollageItem(collageTile);
+            }
+            return;
+          }
           if (collageTile && collageTile.imgEl) {
             applyFilterToEl(collageTile.imgEl, state, filterStr, collageTile.el);
             collageTile.enh = {
@@ -8746,6 +9048,13 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       function resetState() {
+        // v2.1 round 203 (Terry) — a locked photo tile ignores "Reset photo"
+        // (it resets geometry + look, both of which the lock freezes). Re-load
+        // the panel from the frozen tile so the sliders snap back.
+        if (collageActive && collageTile && !collageTile.isBg && collageTile.locked) {
+          try { loadStateFromTile(collageTile); } catch (_) {}
+          return;
+        }
         // v2.1 round 157 (Terry) — reset EVERY enh field from the single
         // defaults source (defaultBgEnh), so a newly-added field can never be
         // forgotten here again. Geometry (rotation/crop) is handled below.
@@ -9051,10 +9360,13 @@ function zoomTo(newZoom, centreX, centreY) {
       // they ride the same persist + bake path as the sliders. Undo is
       // handled by the panel's pointerdown/up begin/commit wrapper.
       if (tileMirror) tileMirror.addEventListener('click', function () {
+        // v2.1 round 203 (Terry) — appearance lock: a locked tile ignores Mirror.
+        if (collageActive && collageTile && !collageTile.isBg && collageTile.locked) return;
         state.flipH = !state.flipH; updateUI(); applyEnhanceFilter();
         try { updateSaveAvailability(); } catch (_) {}
       });
       if (tileFlip) tileFlip.addEventListener('click', function () {
+        if (collageActive && collageTile && !collageTile.isBg && collageTile.locked) return;   // v2.1 round 203 — appearance lock: no Flip
         state.flipV = !state.flipV; updateUI(); applyEnhanceFilter();
         try { updateSaveAvailability(); } catch (_) {}
       });
