@@ -1962,6 +1962,18 @@
       background: #FEC242; margin-right: 8px; box-shadow: 0 0 8px rgba(254,194,66,0.65);
     }
     body.collage-mode .enhance-collapse > summary::before { color: #FEC242; }
+    /* v2.1 round 197 (Terry) — the ONE shared Colour Palette now sits beneath
+       whichever subcategory (Background / Text / Frame) is the active colour
+       target, and that subcategory's header is GOLD to show where the palette is
+       pointed. Gold text + a gold left-border bar, matching the collage gold
+       accent (#FEC242). placeColorPalette() adds/removes this class. */
+    body.collage-mode .enhance-collapse > summary.color-subcat-active {
+      color: #FEC242;
+      border-left: 2px solid #FEC242;
+      padding-left: 7px;
+      margin-left: -9px;
+    }
+    body.collage-mode .enhance-collapse > summary.color-subcat-active::before { color: #FEC242; }
     body.collage-mode .enhance-collapse-all button { color: #FEC242; }
     body.collage-mode .enhance-collapse-all button:hover { color: #ffd778; }
     body.collage-mode .enhance-slider::-webkit-slider-thumb { background: #FEC242; box-shadow: 0 0 0 1px rgba(254,194,66,0.6); }
@@ -2595,8 +2607,16 @@
              prepended by the palette (Effect → Auto, Frame → None); Background's
              Transparent / bg-photo / Use-a-photo stay in the Background section
              (they're modes, not colours). -->
+        <!-- v2.1 round 197 (Terry) — this is the ONE palette element; it is now
+             MOVED (insertBefore, never cloned) by placeColorPalette() to sit
+             directly after the active subcategory's <details> (Background /
+             Text / Frame). It starts here in the markup but lives wherever the
+             current colour target is. The target-chip row is now Text-only: a
+             [Text | Effect] sub-toggle. For Background / Frame there is a single
+             target, so the row is hidden and the GOLD subcategory header is the
+             sole indicator. Label renamed "Colour" → "Colour Palette". -->
         <div class="enhance-control" id="collage-unified-color" style="display:none;margin-top:2px">
-          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour</label></div>
+          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour Palette</label></div>
           <div class="ec-color-toggle" id="collage-color-targets" role="group" aria-label="Colour target"></div>
           <div class="frame-palette" id="collage-text-palette"></div>
           <div class="frame-fav-hint" id="collage-text-fav-hint" style="display:none">Add favourites from the palettes below &#8595;</div>
@@ -7343,6 +7363,10 @@
       // (#collage-color-targets) names what the single palette colours; clicking a
       // chip switches colorTarget and re-points the palette. The chips themselves
       // are (re)built from the current selection by updateColorTargets().
+      // v2.1 round 197 (Terry) — the target-chip row is now Text-only: the
+      // [Text | Effect] sub-toggle. Clicking a chip switches colorTarget between
+      // those two and re-points/re-places the palette. (Background + Frame are
+      // single targets driven by the gold subcategory header, not chips.)
       const colorTargetWrap = document.getElementById('collage-color-targets');
       if (colorTargetWrap && !colorTargetWrap.dataset.wired) {
         colorTargetWrap.dataset.wired = '1';
@@ -7353,6 +7377,22 @@
           if (!t || t === colorTarget) return;
           colorTarget = t;
           updateColorTargets();   // re-mark the active chip + re-render the palette for the new target
+        });
+      }
+      // v2.1 round 197 (Terry) — make the Frame subcategory header CLICKABLE to set
+      // Frame as the active colour target (gold + palette beneath) when a photo
+      // tile is selected — in addition to it auto-activating on tile-select. The
+      // click still natively toggles the <details> open/closed (we don't
+      // preventDefault); we just also point the colour palette at Frame. Gated on a
+      // real photo tile being selected (not the background, which has no frame).
+      const frameSummary = document.querySelector('#enhance-frame-collapse > summary');
+      if (frameSummary && !frameSummary.dataset.colorWired) {
+        frameSummary.dataset.colorWired = '1';
+        frameSummary.addEventListener('click', () => {
+          if (collageSelected && !collageSelected.isBg) {
+            colorTarget = 'frame';
+            updateColorTargets();
+          }
         });
       }
       updateColorTargets();
@@ -7407,6 +7447,25 @@
         ['#062C17', 'British Racing Green'], ['#4B5320', 'Toyota Army Green'], ['#C5B358', 'Mercedes Desert Silver'], ['#FF6F00', 'Dodge Hugger Orange'],
       ] },
     ];
+    // v2.1 round 197 (Terry) — sort EVERY collection light→dark (lightest first)
+    // by perceived luminance, so each grid reads top-left bright → bottom-right
+    // dark. lum = 0.2126*R + 0.7152*G + 0.0722*B from the swatch hex; DESCENDING.
+    // Applied to all five collections (Neon, Neutral, Seasonal, Skin, Cars).
+    // Seasonal therefore loses its by-season grouping — intended ("sort them all
+    // light to dark"). The Core-7 row + Favourites are left untouched. Done once
+    // here, in place, so every render reflects the sorted order.
+    (function sortCollectionsLightToDark() {
+      const lum = (hex) => {
+        const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
+        if (!m) return 0;
+        const n = parseInt(m[1], 16);
+        const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+      };
+      COLOR_COLLECTIONS.forEach((coll) => {
+        if (coll && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));
+      });
+    })();
     // v2.1 round 195 (Terry) — which target the ONE shared palette edits:
     //   'text'       → fill colour       → setTextColor
     //   'effect'     → effect tint       → setTextEffectColor   (special: Auto)
@@ -7591,13 +7650,56 @@
         );
       }
     }
-    // v2.1 round 195 (Terry) — derive the target-chip row from the CURRENT
+    // v2.1 round 197 (Terry) — the ids of the three colour SUBCATEGORY chevrons
+    // that the ONE shared palette can sit beneath. The palette is moved to sit
+    // directly AFTER the active one (as its next sibling, so it shows even when
+    // the chevron is collapsed), and that chevron's <summary> goes GOLD.
+    const COLOR_SUBCAT_BY_TARGET = {
+      background: 'collage-bg-collapse',
+      text: 'collage-text-collapse',
+      effect: 'collage-text-collapse',   // Text + Effect share the Text section
+      frame: 'enhance-frame-collapse',
+    };
+    // v2.1 round 197 (Terry) — MOVE the single palette element so it sits directly
+    // after the active subcategory's <details> (insertBefore the next sibling — it
+    // is ONE node, moved not cloned), and paint that subcategory's <summary> gold
+    // (.color-subcat-active), clearing gold from the others. Pass a falsy target
+    // to hide the palette + clear all gold (nothing colourable selected).
+    function placeColorPalette(target) {
+      const block = document.getElementById('collage-unified-color');
+      if (!block) return;
+      // Clear gold from every colour subcategory header first.
+      Object.values(COLOR_SUBCAT_BY_TARGET).forEach((id) => {
+        const det = document.getElementById(id);
+        const sum = det && det.querySelector(':scope > summary');
+        if (sum) sum.classList.remove('color-subcat-active');
+      });
+      const anchorId = target && COLOR_SUBCAT_BY_TARGET[target];
+      const anchor = anchorId && document.getElementById(anchorId);
+      if (!anchor) { block.style.display = 'none'; return; }
+      // Move the one palette node to sit immediately after the active chevron
+      // (no clone — it's the same element, relocated). insertBefore(node, ref)
+      // with ref = anchor.nextSibling places it right after the whole <details>,
+      // within the anchor's parent — so it follows Frame inside the tile-controls
+      // wrapper too, not just the bg/text sections.
+      if (block.previousElementSibling !== anchor) {
+        anchor.parentNode.insertBefore(block, anchor.nextSibling);
+      }
+      // Gold the active subcategory header.
+      const sum = anchor.querySelector(':scope > summary');
+      if (sum) sum.classList.add('color-subcat-active');
+    }
+    // v2.1 round 195 (Terry) — derive the target indicator from the CURRENT
     // selection, show/hide the whole Colour control, and keep colorTarget valid:
-    //   • a text layer selected → [Text] [Effect]  (Effect disabled when effect=none)
-    //   • a photo tile selected → [Frame]
-    //   • the background selected→ [Background]
-    //   • nothing colourable     → hide the control
-    // Then (re)render the palette for the resolved target. Called from selectText,
+    //   • a text layer selected → Text section gold, [Text|Effect] sub-toggle
+    //                              (Effect disabled when effect=none)
+    //   • a photo tile selected → Frame section gold (single target, no toggle)
+    //   • the background selected→ Background section gold (single target)
+    //   • nothing colourable     → hide the control + clear gold
+    // v2.1 round 197 (Terry) — the subcategory HEADER is now the indicator (gold);
+    // the old all-targets chip row is reduced to a Text-only [Text|Effect] toggle.
+    // After resolving the target we (re)render the palette AND move it beneath the
+    // active subcategory via placeColorPalette(). Called from selectText,
     // selectCollageItem (tile + background paths), and the effect-chip change.
     function updateColorTargets() {
       const wrap = document.getElementById('collage-color-targets');
@@ -7615,8 +7717,8 @@
       } else if (collageSelected) {
         chips.push({ t: 'frame', label: 'Frame', tip: 'Colour the frame around this photo' });
       }
-      // Nothing colourable → hide the whole control and stop.
-      if (!chips.length) { block.style.display = 'none'; return; }
+      // Nothing colourable → hide the whole control, clear all gold, and stop.
+      if (!chips.length) { block.style.display = 'none'; placeColorPalette(null); return; }
       block.style.display = '';
       // Keep colorTarget valid for this selection: if the current target isn't an
       // available chip (or is a disabled one), fall back to the first enabled chip.
@@ -7633,10 +7735,16 @@
         if (c.t === colorTarget) b.classList.add('active');
         wrap.appendChild(b);
       });
-      // Hide the chip row entirely when there's only a single chip (nothing to
-      // switch between) — the "Colour" label already says what it does.
+      // v2.1 round 197 (Terry) — only Text shows the chip row now (the [Text|
+      // Effect] sub-toggle, chips.length === 2). Background + Frame are single
+      // targets, so the row is hidden and the GOLD subcategory header is the only
+      // indicator. (For a single chip the row was already hidden; the gold header
+      // is the round-197 addition.)
       wrap.style.display = (chips.length > 1) ? 'flex' : 'none';
       renderTextColorPaletteForTarget();
+      // v2.1 round 197 (Terry) — relocate the ONE palette beneath the active
+      // subcategory chevron and gold its header.
+      placeColorPalette(colorTarget);
     }
     // Ring the swatch matching getCurrent() (lowercased; '' matches the Auto/none
     // swatch). A custom colour not in any row rings nothing.
