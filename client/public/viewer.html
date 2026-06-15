@@ -1448,6 +1448,20 @@
       line-height: 22px;
       text-align: center;
     }
+    /* v2.1 round 199 (Terry) — the two LOCKED background specials in the shared
+       palette's Favourites area: Transparent (checkerboard) + the Use-a-photo
+       slot. Normal swatch size; never get the ＋/remove affordances. The photo
+       slot shows a centred image icon until a bg photo is set; once a thumbnail
+       is applied (.has-photo) the icon is hidden so the photo shows through. */
+    .frame-swatch.frame-locked-special { padding: 0; overflow: hidden; }
+    .frame-swatch.frame-bg-photo {
+      display: flex; align-items: center; justify-content: center;
+      background-color: rgba(255,255,255,0.06);
+      color: #c9c4e6;
+    }
+    .frame-swatch.frame-bg-photo .bg-photo-icon { display: flex; width: 14px; height: 14px; }
+    .frame-swatch.frame-bg-photo .bg-photo-icon svg { width: 14px; height: 14px; }
+    .frame-swatch.frame-bg-photo.has-photo .bg-photo-icon { display: none; }
     .frame-custom {
       flex: 0 0 auto;
       width: 28px;
@@ -2451,39 +2465,22 @@
         <!-- v2.1 round 149 (Terry 2026-06-13) — Background is its OWN
              control now, fully separate from Frame (Terry: "Colour isn't
              the right word, it should be Frame... then a separate one for
-             Background"). A colour palette + custom + saved, plus "Use a
-             photo…" for a photo backdrop, all grouped here. The background
-             photo's Fade / Look / levels are reached by clicking it on the
-             canvas — it shares the one Fade slider below. -->
+             Background"). -->
+        <!-- v2.1 round 199 (Terry) — "why is background split into 2 things?":
+             the old separate mini-row (None / Transparent / bg-photo swatches)
+             and the "Use a photo…" button were REMOVED. Background colours +
+             the two special modes now live entirely in the ONE shared Colour
+             Palette (select the background → its gold header + palette appear).
+             The unified palette renders two LOCKED specials at the start of its
+             Favourites area, but ONLY for the background target: Transparent
+             (checkerboard) and a Use-a-photo slot. White in the Core 7 is the
+             default base (None is gone). This section now keeps only its chevron
+             + the bg-photo Fade/Remove row (shown when a bg photo is set). The
+             underlying setters (onCollageColorPick / setCollageTransparent /
+             setCollageBgImage) + the round-178 "remember bg photo" behaviour are
+             unchanged — they're now driven from the locked palette swatches. -->
         <details class="enhance-collapse" id="collage-bg-collapse">
           <summary>Background</summary>
-          <!-- v2.1 round 195 (Terry) — the background COLOUR swatches moved to the
-               shared Colour control (select the background → [Background] chip).
-               Only the MODE controls stay here: None (plain white base),
-               Transparent (see-through PNG), and the "switch back to your bg
-               photo" swatch — these are not plain colours. markCollageColorActive
-               + onCollageColorPick still drive these exactly as before. -->
-          <div class="frame-palette" id="collage-color-palette">
-            <!-- v2.1 round 150 (Terry) — None = no base colour (plain white
-                 behind the photo); restores parity with the Frame palette. -->
-            <button class="frame-swatch frame-none" data-color="" id="collage-color-none" data-pdr-tooltip="None — plain white base">&#8709;</button>
-            <!-- v2.1 round 177 (Terry) — Transparent: the removed/empty areas stay
-                 see-through and the collage saves as a PNG. Checkerboard swatch =
-                 the universal "transparent" cue. Mutually exclusive with a bg photo. -->
-            <button class="frame-swatch frame-bg-transparent" data-color="__transparent__" id="collage-color-transparent" data-pdr-tooltip="Transparent — saves as a see-through PNG (removed/empty areas stay clear)" style="background:repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50%/10px 10px"></button>
-            <!-- v2.1 round 178 (Terry) — switch back to the chosen background PHOTO
-                 without re-picking it. Hidden until a bg photo is set; its
-                 thumbnail IS the photo. Going Transparent now keeps the photo
-                 remembered (this swatch restores it). -->
-            <button class="frame-swatch frame-bg-photo" data-color="__bgphoto__" id="collage-color-bgphoto" data-pdr-tooltip="Switch back to your background photo" style="display:none;background-size:cover;background-position:center"></button>
-          </div>
-          <!-- background from a library PHOTO; picker opens in the main
-               window (Memories/Albums/S&D). Screenshot tip covers the
-               "photo not in library yet" case. -->
-          <button class="ec-tidy-btn" id="collage-bg-photo" type="button" style="margin-top:8px" data-pdr-tooltip="Use one of your photos as the backdrop. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates, ready to pick.">
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg>
-            Use a photo…
-          </button>
           <div id="collage-bg-fade-row" style="display:none; margin-top:8px">
             <!-- v2.1 round 150 (Terry) — the photo now fills the background
                  fully by default; the chosen colour is kept underneath as a
@@ -6622,13 +6619,15 @@
     // v2.1 round 140 — background swatches live in the Enhance panel's
     // Collage section now, and reuse the Frame palette's swatch styling
     // (same look) so background + frame colours read as one system.
-    // v2.1 round 195 (Terry) — the Background palette is now MODE-only (None /
-    // Transparent / bg-photo). Plain background COLOURS + custom + saved moved to
-    // the ONE shared Colour control (select the background → [Background] chip;
-    // onPick routes to onCollageColorPick). The old per-bg saved-colours row
-    // (collageGetSaved/collageSaveColor/renderCollageSavedColors,
-    // COLLAGE_SAVED_KEY, collageColorTarget) was removed with the swatches —
-    // favourites are now the single shared list (TEXT_FAV_KEY).
+    // v2.1 round 199 (Terry) — the separate Background mini-row (None /
+    // Transparent / bg-photo swatches) + the "Use a photo…" button were removed
+    // ("why is background split into 2 things?"). Background colours AND the two
+    // special modes now live in the ONE shared Colour Palette: when the target is
+    // 'background' the palette renders two LOCKED specials at the start of its
+    // Favourites area — Transparent (checkerboard) + a Use-a-photo slot. White in
+    // the Core 7 is the default base; None is gone. The setters below are
+    // unchanged; they're driven from those locked swatches now instead of the old
+    // row. (The old per-bg saved-colours row was already removed in round 195.)
     let collageColorWired = false;
     // v2.1 round 149 (Terry 2026-06-13) — this palette is the BACKGROUND
     // colour ONLY now. The selected tile's frame is driven by the shared
@@ -6636,31 +6635,38 @@
     function applyCanvasBgVisual() {
       if (collageCanvasEl) collageCanvasEl.style.background = collageTransparent ? COLLAGE_CHECKER_BG : (collageBg || '#ffffff');
     }
-    // v2.1 round 178 (Terry) — the "switch back to your background photo" swatch:
-    // shown only when a bg photo is remembered; its thumbnail IS the photo.
-    function updateBgPhotoSwatch() {
-      const sw = document.getElementById('collage-color-bgphoto');
-      if (!sw) return;
-      if (collageBgImagePath) {
-        sw.style.display = '';
-        sw.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
-      } else {
-        sw.style.display = 'none';
-        sw.style.backgroundImage = '';
+    // v2.1 round 199 (Terry) — ring + refresh the two LOCKED background specials
+    // that the unified palette renders (only when colorTarget==='background').
+    // Replaces the old updateBgPhotoSwatch (the bg-photo thumbnail) +
+    // markCollageColorActive (which rang the now-deleted #collage-color-palette
+    // mode swatches). The Transparent swatch rings when collageTransparent; the
+    // photo slot shows the bg-photo thumbnail (or an icon when none) and rings
+    // when the photo is currently the active bg. Plain-colour ringing is handled
+    // by the shared syncTextColorPaletteRings(). Safe to call any time — it no-ops
+    // when the locked specials aren't mounted (non-background target).
+    function markBgLockedSpecialsActive() {
+      const photoShowing = !!collageBgImagePath && !collageTransparent;
+      const tSw = document.getElementById('collage-bg-locked-transparent');
+      if (tSw) tSw.classList.toggle('active', !!collageTransparent);
+      const pSw = document.getElementById('collage-bg-locked-photo');
+      if (pSw) {
+        pSw.classList.toggle('active', photoShowing);
+        // Thumbnail IS the photo once one is remembered; otherwise the image icon.
+        if (collageBgImagePath) {
+          pSw.classList.add('has-photo');
+          pSw.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
+        } else {
+          pSw.classList.remove('has-photo');
+          pSw.style.backgroundImage = '';
+        }
       }
     }
-    function markCollageColorActive() {
-      const cur = (collageBg || '').toLowerCase();
-      const photoShowing = !!collageBgImagePath && !collageTransparent;
-      document.querySelectorAll('#collage-color-palette .frame-swatch').forEach((s) => {
-        const dc = (s.getAttribute('data-color') || '').toLowerCase();
-        let active;
-        if (dc === '__transparent__') active = collageTransparent;
-        else if (dc === '__bgphoto__') active = photoShowing;
-        else active = !collageTransparent && !photoShowing && dc === cur;
-        s.classList.toggle('active', active);
-      });
-    }
+    // v2.1 round 199 (Terry) — kept as thin aliases so every existing call-site
+    // (undo/redo restore, the setters below) keeps working unchanged. Both now
+    // just refresh the locked background specials; plain-colour rings are handled
+    // by syncTextColorPaletteRings().
+    function updateBgPhotoSwatch() { markBgLockedSpecialsActive(); }
+    function markCollageColorActive() { markBgLockedSpecialsActive(); try { syncTextColorPaletteRings(); } catch (_) {} }
     // v2.1 round 178 (Terry) — Transparent now KEEPS the bg photo remembered
     // (renderCollageBgLayer hides the layer while transparent); the bg-photo
     // swatch switches straight back to it without re-picking.
@@ -6668,35 +6674,38 @@
       collageTransparent = !!on;
       applyCanvasBgVisual();
       renderCollageBgLayer();
-      updateBgPhotoSwatch();
-      markCollageColorActive();
+      markBgLockedSpecialsActive();
+      try { syncTextColorPaletteRings(); } catch (_) {}
     }
     function onCollageColorPick(hex) {
       // v2.1 round 177/178 — Transparent + bg-photo swatches use sentinel colours.
+      // (The unified locked specials call the setters directly now, but the
+      // sentinels are kept so any saved state / older callers still route right.)
       if (hex === '__transparent__') { setCollageTransparent(true); return; }
       if (hex === '__bgphoto__') { setCollageTransparent(false); return; }
-      // A real colour (incl. None '') exits transparent mode.
+      // A real colour (incl. '') exits transparent mode.
       collageTransparent = false;
       setCollageBg(hex || '');
       renderCollageBgLayer();   // re-show the photo if transparent had hidden it
-      updateBgPhotoSwatch();
+      markBgLockedSpecialsActive();
     }
     function setCollageBg(hex) {
       collageBg = hex || '';
-      // None ('') renders as plain white on screen and bakes to white on save
-      // (hexToRgb('') already falls back to white).
+      // White is the default base; '' also renders as plain white on screen and
+      // bakes to white on save (hexToRgb('') already falls back to white).
       applyCanvasBgVisual();
-      markCollageColorActive();
+      markBgLockedSpecialsActive();
+      try { syncTextColorPaletteRings(); } catch (_) {}
     }
     function initCollageColorPicker() {
       if (collageColorWired) return;
       collageColorWired = true;
-      // v2.1 round 195 (Terry) — Background palette is MODE-only now (None /
-      // Transparent / bg-photo); plain colours + custom live in the shared Colour
-      // control. The click delegation below still drives the mode swatches via
-      // the unchanged onCollageColorPick setter.
-      const pal = document.getElementById('collage-color-palette');
-      if (pal) pal.addEventListener('click', (e) => { const sw = e.target.closest ? e.target.closest('.frame-swatch') : null; if (sw && pal.contains(sw)) onCollageColorPick(sw.getAttribute('data-color') || ''); });
+      // v2.1 round 199 (Terry) — nothing to wire here any more: the old
+      // #collage-color-palette mode-swatch row was removed. Background colours +
+      // the Transparent / Use-a-photo specials now live in the shared Colour
+      // Palette, whose locked swatches attach their own click handlers when the
+      // palette renders for the background target (renderTextColorPaletteForTarget).
+      // Kept as a no-op so the enterCollageMode call-site is undisturbed.
     }
     // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles, over
     // the bg colour). Re-created after buildCollageItems clears the canvas.
@@ -6741,8 +6750,9 @@
     function updateBgFadeRow() {
       const row = document.getElementById('collage-bg-fade-row');
       if (row) row.style.display = collageBgImagePath ? 'block' : 'none';
-      const photoBtn = document.getElementById('collage-bg-photo');
-      if (photoBtn) photoBtn.lastChild.textContent = collageBgImagePath ? ' Change photo…' : ' Use a photo…';
+      // v2.1 round 199 (Terry) — the old "Use a photo… / Change photo…" button was
+      // removed; choosing/changing the bg photo is now the Use-a-photo locked slot
+      // in the shared palette, so there's no button label to keep in sync here.
     }
     function setCollageBgImage(path) {
       const fresh = path && path !== collageBgImagePath;
@@ -7208,20 +7218,18 @@
       window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
       // v2.1 round 149 — background COLOUR picker (background-only now).
       initCollageColorPicker();
-      // v2.1 round 142 — background PHOTO: open the shared picker in the
-      // main window. v2.1 round 149 — fade is the shared Fade slider now
-      // (select the background to use it), so no separate fade slider here.
-      const bgPhotoBtn = document.getElementById('collage-bg-photo');
-      if (bgPhotoBtn) bgPhotoBtn.addEventListener('click', () => {
-        try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
-      });
+      // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
+      // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
+      // shared Colour Palette (pickBackground, called inside the locked swatch's
+      // click handler). The fade row's "Remove background photo" stays here.
       const bgRemove = document.getElementById('collage-bg-remove');
       if (bgRemove) bgRemove.addEventListener('click', () => setCollageBgImage(''));
-      // The chosen background photo comes back from the main-window
-      // picker (async, not a pointer interaction) — snapshot explicitly.
+      // The chosen background photo comes back from the main-window picker (async,
+      // not a pointer interaction) — snapshot explicitly. setCollageBgImage() then
+      // refreshes the Use-a-photo slot's thumbnail (via markBgLockedSpecialsActive).
       try {
         if (window.pdr.collage.onBackgroundPicked) {
-          window.pdr.collage.onBackgroundPicked((fp) => { if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); } });
+          window.pdr.collage.onBackgroundPicked((fp) => { if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); } markBgLockedSpecialsActive(); });
         }
       } catch (_) {}
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
@@ -7620,12 +7628,21 @@
       hostEl.appendChild(core);
       // Favourites row — up to 7 user colours (right-click to remove). Faint hint
       // when empty (the separate #collage-text-fav-hint element).
+      // v2.1 round 199 (Terry) — for the BACKGROUND target only, two LOCKED
+      // specials are prepended HERE (before the user favourites): Transparent +
+      // the Use-a-photo slot. They're normal-sized swatches, never removable, and
+      // are NOT part of the persisted favourites list — opts.lockedSpecials carries
+      // the pre-built DOM nodes (built in renderTextColorPaletteForTarget so they
+      // can close over the bg setters / state). For Text/Frame/Effect this is
+      // empty, so they never appear there.
       const favs = textGetFavs();
       const favRow = document.createElement('div');
       favRow.className = 'frame-row frame-favrow';
+      (opts.lockedSpecials || []).forEach((node) => { if (node) favRow.appendChild(node); });
       favs.forEach((c) => favRow.appendChild(makeTextSwatch(c, c + ' (right-click to remove)', onPick, { removable: true })));
       hostEl.appendChild(favRow);
       const favHint = document.getElementById('collage-text-fav-hint');
+      // Hint reflects USER favourites only (the locked specials aren't favourites).
       if (favHint) favHint.style.display = favs.length ? 'none' : '';
       // Collections — each a collapsed <details> chevron of 16 swatches (2 rows of
       // 8); each swatch is addable to favourites (＋ on hover) and applies on body click.
@@ -7664,6 +7681,60 @@
     // reimplemented here — it forwards to setTextColor / setTextEffectColor /
     // bridge.setFrameColor / onCollageColorPick. Frame + Background setters don't
     // know about this palette, so their onPick re-rings via syncTextColorPaletteRings.
+    // v2.1 round 199 (Terry) — build the two LOCKED background specials that sit at
+    // the START of the Favourites area, ONLY for the background target. Each is a
+    // normal .frame-swatch (same size as the colour swatches) but is NEVER
+    // removable, NEVER addable, and is NOT in the persisted favourites list.
+    //   • Transparent — checkerboard swatch (COLLAGE_CHECKER_BG). Click →
+    //     setCollageTransparent(true). Rings active when collageTransparent.
+    //   • Use-a-photo slot — shows a small image icon until a bg photo is set,
+    //     then the bg-photo thumbnail (markBgLockedSpecialsActive keeps it fresh).
+    //     Click logic (the round-178 "remember bg photo" behaviour):
+    //       – a photo is remembered AND it is NOT the shown bg (i.e. we're in
+    //         Transparent or on a colour) → SWITCH BACK to it without re-picking;
+    //       – otherwise (no photo yet, OR the photo is already showing) → open the
+    //         picker to CHOOSE / CHANGE the photo.
+    //     It can never become a colour and can't be removed. Rings active when the
+    //     bg photo is currently showing.
+    function buildBgLockedSpecials() {
+      // Transparent.
+      const tSw = document.createElement('button');
+      tSw.type = 'button';
+      tSw.className = 'frame-swatch frame-bg-transparent frame-locked-special';
+      tSw.id = 'collage-bg-locked-transparent';
+      tSw.style.background = COLLAGE_CHECKER_BG;
+      tSw.setAttribute('data-pdr-tooltip', 'Transparent — saves as a see-through PNG (removed/empty areas stay clear)');
+      tSw.addEventListener('click', () => {
+        beginCollageChange();
+        setCollageTransparent(true);
+        commitCollageChange();
+      });
+      // Use-a-photo slot.
+      const pSw = document.createElement('button');
+      pSw.type = 'button';
+      pSw.className = 'frame-swatch frame-bg-photo frame-locked-special';
+      pSw.id = 'collage-bg-locked-photo';
+      pSw.style.backgroundSize = 'cover';
+      pSw.style.backgroundPosition = 'center';
+      pSw.setAttribute('data-pdr-tooltip', 'Background photo — pick one of your photos as the backdrop (click again to change it). Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates.');
+      // The image icon, shown only until a thumbnail is set (.has-photo hides it).
+      pSw.innerHTML = '<span class="bg-photo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>';
+      pSw.addEventListener('click', () => {
+        if (collageBgImagePath && collageTransparent) {
+          // A photo is remembered but Transparent is hiding it → switch back to it
+          // WITHOUT re-picking (the round-178 behaviour).
+          beginCollageChange();
+          setCollageTransparent(false);
+          setCollageBgImage(collageBgImagePath);
+          commitCollageChange();
+        } else {
+          // No photo yet, OR the photo is already the active bg → open the picker
+          // to choose / change the photo (result returns via onBackgroundPicked).
+          try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
+        }
+      });
+      return [tSw, pSw];
+    }
     function renderTextColorPaletteForTarget() {
       const host = document.getElementById('collage-text-palette');
       if (!host) return;
@@ -7687,8 +7758,14 @@
           host,
           () => (collageBg || ''),
           (hex) => { try { onCollageColorPick(hex || ''); } catch (_) {} syncTextColorPaletteRings(); },
-          {},   // background colour has no special chip here (Transparent/None/Photo live in the Background section)
+          // v2.1 round 199 (Terry) — Transparent + Use-a-photo now live HERE as
+          // two LOCKED specials at the start of Favourites (no separate Background
+          // mini-row any more). No '∅ None' special — White in the Core row is the
+          // default base.
+          { lockedSpecials: buildBgLockedSpecials() },
         );
+        // Freshly-built locked swatches: set their initial ring + photo thumbnail.
+        markBgLockedSpecialsActive();
       } else {
         renderTextColorPalette(
           host,
@@ -7796,11 +7873,15 @@
     }
     // Ring the swatch matching getCurrent() (lowercased; '' matches the Auto/none
     // swatch). A custom colour not in any row rings nothing.
+    // v2.1 round 199 (Terry) — SKIP the background locked specials (Transparent /
+    // Use-a-photo): they have no data-color and their ring is owned solely by
+    // markBgLockedSpecialsActive(), so a colour with hex '' must not stray-ring them.
     function markTextColorPaletteActive(hostEl, getCurrent) {
       if (!hostEl) return;
       let cur = '';
       try { cur = (getCurrent() || '').toLowerCase(); } catch (_) { cur = ''; }
       hostEl.querySelectorAll('.frame-swatch').forEach((s) => {
+        if (s.classList.contains('frame-locked-special')) return;
         s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
       });
     }
