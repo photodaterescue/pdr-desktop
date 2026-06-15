@@ -2174,6 +2174,27 @@
        in collage too (it frames the selected tile). Hide it only when the
        collage BACKGROUND is the selected element — a background has no frame. */
     body.collage-mode.collage-bg-selected #enhance-frame-collapse { display: none; }
+    /* v2.1 round 195 (Terry) — in COLLAGE mode the frame COLOUR swatches move to
+       the shared Colour control (select a photo → [Frame] chip), so hide the
+       in-section swatch palette here. The single-image VIEWER keeps its frame
+       swatches (this rule is collage-scoped). Frame thickness (#enhance-frame-
+       weight) + the chevron stay. The handlers behind #enhance-frames are left
+       intact — the viewer still uses them, and the bridge's setFrameColor reuses
+       the same applyFrameColor setter. */
+    body.collage-mode #enhance-frames { display: none; }
+    /* v2.1 round 195 (Terry) — the shared Colour control's target-chip row + the
+       chip buttons reuse the .ec-color-toggle / .ec-ctgl styling. Chips size to
+       content (not full-width like the old 2-way toggle) so 1–2 chips look right. */
+    #collage-color-targets .ec-ctgl { flex: 0 1 auto; min-width: 64px; }
+    /* v2.1 round 195 (Terry) — lock EVERY swatch row in the shared palette to
+       exactly 8 columns at any panel width, so rows are always full (no ragged
+       right-edge gaps). Applies to the Core row, Favourites, and each collection
+       grid. The top row (Auto/Custom) stays a flex row. */
+    #collage-text-palette .frame-core,
+    #collage-text-palette .frame-favrow,
+    #collage-text-palette .frame-coll-grid {
+      display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center;
+    }
     /* v2.1 round 155 — Rotate uses the tile's placement angle, which the
        background doesn't have (its own rotation is a separate item), so hide
        it when the background is selected. Mirror/Flip still apply. */
@@ -2388,9 +2409,13 @@
              canvas — it shares the one Fade slider below. -->
         <details class="enhance-collapse" id="collage-bg-collapse">
           <summary>Background</summary>
+          <!-- v2.1 round 195 (Terry) — the background COLOUR swatches moved to the
+               shared Colour control (select the background → [Background] chip).
+               Only the MODE controls stay here: None (plain white base),
+               Transparent (see-through PNG), and the "switch back to your bg
+               photo" swatch — these are not plain colours. markCollageColorActive
+               + onCollageColorPick still drive these exactly as before. -->
           <div class="frame-palette" id="collage-color-palette">
-            <button class="frame-add" id="collage-color-add" data-pdr-tooltip="Pick a custom colour"><span class="frame-add-plus">+</span></button>
-            <input type="color" id="collage-color-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
             <!-- v2.1 round 150 (Terry) — None = no base colour (plain white
                  behind the photo); restores parity with the Frame palette. -->
             <button class="frame-swatch frame-none" data-color="" id="collage-color-none" data-pdr-tooltip="None — plain white base">&#8709;</button>
@@ -2403,13 +2428,6 @@
                  thumbnail IS the photo. Going Transparent now keeps the photo
                  remembered (this swatch restores it). -->
             <button class="frame-swatch frame-bg-photo" data-color="__bgphoto__" id="collage-color-bgphoto" data-pdr-tooltip="Switch back to your background photo" style="display:none;background-size:cover;background-position:center"></button>
-            <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
-            <button class="frame-swatch" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
-            <button class="frame-swatch" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
-            <button class="frame-swatch" data-color="#c8a24b" style="background:#c8a24b" data-pdr-tooltip="Gold"></button>
-            <button class="frame-swatch" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
-            <button class="frame-swatch" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
-            <span class="frame-saved" id="collage-color-saved"></span>
           </div>
           <!-- background from a library PHOTO; picker opens in the main
                window (Memories/Albums/S&D). Screenshot tip covers the
@@ -2561,27 +2579,33 @@
               <div class="enhance-label-row"><label for="collage-text-strength" data-pdr-tooltip="How strong the effect is — mild to bold">Strength</label><span class="enhance-val" id="val-text-strength">50</span></div>
               <input class="enhance-slider" id="collage-text-strength" type="range" min="0" max="100" step="1" value="50">
             </div>
-            <!-- v2.1 round 194 (Terry) — ONE Colour section, no duplicated
-                 palette. A Text/Effect target toggle re-points the single
-                 palette below: "Text colour" edits the fill (layer.color via
-                 setTextColor); "Effect colour" edits the effect tint
-                 (layer.effectColor via setTextEffectColor) and is disabled until
-                 an effect is chosen. Auto chip, Custom +, fixed Core row,
-                 Favourites row, then collapsed collection chevrons are all built
-                 by renderTextColorPalette() into the single #collage-text-palette
-                 host, re-rendered/re-rung on every toggle. -->
-            <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Choose what the palette below colours">Colour</label></div>
-              <div class="ec-color-toggle" id="collage-text-colortarget" role="group" aria-label="Colour target">
-                <button class="ec-ctgl active" type="button" data-target="text" data-pdr-tooltip="Colour the text itself">Text colour</button>
-                <button class="ec-ctgl" type="button" data-target="effect" data-pdr-tooltip="Colour the chosen effect (outline / shadow / glow / 3D side)">Effect colour</button>
-              </div>
-              <div class="frame-palette" id="collage-text-palette"></div>
-              <div class="frame-fav-hint" id="collage-text-fav-hint" style="display:none">Add favourites from the palettes below &#8595;</div>
-            </div>
+            <!-- v2.1 round 195 (Terry) — the Text/Effect colour palette moved OUT
+                 of here into the ONE shared "Colour" block lower in the collage
+                 section (#collage-unified-color). It now colours whatever is
+                 selected (Text/Effect, Frame, or Background) via a target-chip
+                 row, so there is a single palette in the whole panel. -->
             <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px" data-pdr-tooltip="Delete this text layer">Delete text</button>
           </div>
         </details>
+        <!-- v2.1 round 195 (Terry) — ONE shared Colour control for the whole
+             panel. A target-chip row at the top names what the palette colours,
+             derived from the current selection by updateColorTargets():
+               • text selected   → [Text] [Effect]  (Effect disabled when effect=none)
+               • photo tile       → [Frame]
+               • background       → [Background]
+             onPick(hex) routes to the EXISTING setter for the active target
+             (setTextColor / setTextEffectColor / the frame setter via the
+             bridge / onCollageColorPick) — no setter logic is duplicated here.
+             Hidden when nothing colourable is selected. Per-target specials are
+             prepended by the palette (Effect → Auto, Frame → None); Background's
+             Transparent / bg-photo / Use-a-photo stay in the Background section
+             (they're modes, not colours). -->
+        <div class="enhance-control" id="collage-unified-color" style="display:none;margin-top:2px">
+          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour</label></div>
+          <div class="ec-color-toggle" id="collage-color-targets" role="group" aria-label="Colour target"></div>
+          <div class="frame-palette" id="collage-text-palette"></div>
+          <div class="frame-fav-hint" id="collage-text-fav-hint" style="display:none">Add favourites from the palettes below &#8595;</div>
+        </div>
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
              edit it" hint; the dimmed per-photo sections already signal it. -->
@@ -5633,6 +5657,10 @@
       if (prev && prev !== layer && prev.el) prev.el.classList.remove('selected');
       if (selectedText && selectedText.el) selectedText.el.classList.add('selected');
       syncTextControls();
+      // v2.1 round 195 (Terry) — syncTextControls early-returns when nothing is
+      // selected, so refresh the shared Colour control here too (covers deselect →
+      // hide the control). On select it's a harmless second call.
+      try { updateColorTargets(); } catch (_) {}
     }
     function deleteTextLayer(layer) {
       if (!layer) return;
@@ -5743,11 +5771,10 @@
     function setStrengthRowVisible(show) {
       const row = document.getElementById('collage-text-strength-row');
       if (row) row.style.display = show ? '' : 'none';
-      // v2.1 round 194 (Terry) — there's no longer a separate effect-colour row
-      // (one shared palette now). The Effect-colour TARGET is instead what gets
-      // gated by the effect being on/off — keep the toggle's enabled state in
-      // sync here (mirrors the old row's show/hide trigger).
-      updateColorTargetToggle();
+      // v2.1 round 195 (Terry) — re-derive the shared Colour control's target
+      // chips: the Effect chip enables/disables with the chosen effect. Called on
+      // text select (syncTextControls) and on the effect-chip change.
+      updateColorTargets();
     }
     function syncTextControls() {
       const ctl = document.getElementById('collage-text-controls');
@@ -5824,6 +5851,10 @@
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
       updateAngleSlider();
       try { syncBgRemoveBtn(); } catch (_) {}   // v2.1 round 173 — Remove/Restore label per selection
+      // v2.1 round 195 (Terry) — refresh the shared Colour control: a photo tile
+      // shows [Frame], the background shows [Background], nothing colourable hides
+      // it. (Text selection is handled in selectText → syncTextControls.)
+      try { updateColorTargets(); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -6369,32 +6400,14 @@
     // v2.1 round 140 — background swatches live in the Enhance panel's
     // Collage section now, and reuse the Frame palette's swatch styling
     // (same look) so background + frame colours read as one system.
-    // v2.1 round 144 (Terry) — ONE colour picker for the collage
-    // Background AND the selected photo's Frame, with a toggle + shared
-    // saved colours. Swatches are static in the HTML now.
-    let collageColorTarget = 'background';
+    // v2.1 round 195 (Terry) — the Background palette is now MODE-only (None /
+    // Transparent / bg-photo). Plain background COLOURS + custom + saved moved to
+    // the ONE shared Colour control (select the background → [Background] chip;
+    // onPick routes to onCollageColorPick). The old per-bg saved-colours row
+    // (collageGetSaved/collageSaveColor/renderCollageSavedColors,
+    // COLLAGE_SAVED_KEY, collageColorTarget) was removed with the swatches —
+    // favourites are now the single shared list (TEXT_FAV_KEY).
     let collageColorWired = false;
-    const COLLAGE_SAVED_KEY = 'pdr-frame-saved-colors'; // shared with the single-photo frame palette
-    function collageGetSaved() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_SAVED_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, 8) : []; } catch (_) { return []; } }
-    function collageSaveColor(c) {
-      if (!c) return;
-      let cols = collageGetSaved().filter((x) => x.toLowerCase() !== c.toLowerCase());
-      cols.unshift(c); cols = cols.slice(0, 8);
-      try { localStorage.setItem(COLLAGE_SAVED_KEY, JSON.stringify(cols)); } catch (_) {}
-      renderCollageSavedColors();
-    }
-    function renderCollageSavedColors() {
-      const host = document.getElementById('collage-color-saved');
-      if (!host) return;
-      host.innerHTML = '';
-      collageGetSaved().forEach((c) => {
-        const b = document.createElement('button');
-        b.className = 'frame-swatch'; b.type = 'button'; b.style.background = c; b.setAttribute('data-color', c); b.setAttribute('data-pdr-tooltip', c);
-        b.addEventListener('click', () => onCollageColorPick(c));
-        host.appendChild(b);
-      });
-      markCollageColorActive();
-    }
     // v2.1 round 149 (Terry 2026-06-13) — this palette is the BACKGROUND
     // colour ONLY now. The selected tile's frame is driven by the shared
     // Frame chevron (#enhance-frames), the same control the viewer uses.
@@ -6454,20 +6467,14 @@
       markCollageColorActive();
     }
     function initCollageColorPicker() {
-      renderCollageSavedColors();
       if (collageColorWired) return;
       collageColorWired = true;
-      // v2.1 round 149 — background colour only (no target toggle, no
-      // frame-weight here; the Frame chevron owns those now).
+      // v2.1 round 195 (Terry) — Background palette is MODE-only now (None /
+      // Transparent / bg-photo); plain colours + custom live in the shared Colour
+      // control. The click delegation below still drives the mode swatches via
+      // the unchanged onCollageColorPick setter.
       const pal = document.getElementById('collage-color-palette');
       if (pal) pal.addEventListener('click', (e) => { const sw = e.target.closest ? e.target.closest('.frame-swatch') : null; if (sw && pal.contains(sw)) onCollageColorPick(sw.getAttribute('data-color') || ''); });
-      const add = document.getElementById('collage-color-add');
-      const custom = document.getElementById('collage-color-custom');
-      if (add && custom) {
-        add.addEventListener('click', () => { try { custom.click(); } catch (_) {} });
-        custom.addEventListener('input', () => onCollageColorPick(custom.value));
-        custom.addEventListener('change', () => collageSaveColor(custom.value));
-      }
     }
     // v2.1 round 142 (Terry) — background PHOTO layer (behind tiles, over
     // the bg colour). Re-created after buildCollageItems clears the canvas.
@@ -7137,62 +7144,60 @@
         renderTextLayer(selectedText);
         commitCollageChange();
       });
-      // v2.1 round 194 (Terry) — ONE shared colour palette. The Text/Effect
-      // target toggle re-points it; we mount it once here and (re)render on each
-      // toggle. No duplicate effect-colour palette any more.
-      const colorTargetWrap = document.getElementById('collage-text-colortarget');
+      // v2.1 round 195 (Terry) — ONE shared Colour control. The target-chip row
+      // (#collage-color-targets) names what the single palette colours; clicking a
+      // chip switches colorTarget and re-points the palette. The chips themselves
+      // are (re)built from the current selection by updateColorTargets().
+      const colorTargetWrap = document.getElementById('collage-color-targets');
       if (colorTargetWrap && !colorTargetWrap.dataset.wired) {
         colorTargetWrap.dataset.wired = '1';
         colorTargetWrap.addEventListener('click', (e) => {
           const b = e.target.closest('.ec-ctgl');
           if (!b || b.disabled) return;
-          const t = b.dataset.target === 'effect' ? 'effect' : 'text';
-          if (t === textColorTarget) return;
-          textColorTarget = t;
-          updateColorTargetToggle();
-          renderTextColorPaletteForTarget();   // re-point getCurrent/onPick + re-ring
+          const t = b.dataset.target;
+          if (!t || t === colorTarget) return;
+          colorTarget = t;
+          updateColorTargets();   // re-mark the active chip + re-render the palette for the new target
         });
       }
-      updateColorTargetToggle();
-      renderTextColorPaletteForTarget();
+      updateColorTargets();
       const delBtn = document.getElementById('collage-text-delete');
       if (delBtn) delBtn.addEventListener('click', () => deleteTextLayer(selectedText));
     }
-    // v2.1 round 194 (Terry) — ONE shared text colour palette (no duplicated
-    // fill/effect mounts). A Text/Effect TARGET toggle re-points the single
-    // palette: renderTextColorPaletteForTarget() swaps getCurrent/onPick + the
-    // Auto chip on/off, then re-rings. Data below: a fixed Core 7, persistent
-    // Favourites, and five collapsed collection chevrons.
+    // v2.1 round 195 (Terry) — ONE shared colour palette for the whole panel (no
+    // duplicated mounts). The target-chip row re-points it: renderTextColorPalette-
+    // ForTarget() swaps getCurrent/onPick + the per-target special chip, then
+    // re-rings. Data below: a fixed Core 7, ONE shared persistent Favourites list,
+    // and the collapsed collection chevrons.
     // v2.1 round 194 (Terry) — FIXED core row. Exactly these 7, always shown,
     // never re-ordered. (Was a 10-colour "defaults" list.)
     const TEXT_COLOR_DEFAULTS = [
       ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FFD700', 'Yellow'], ['#FF0033', 'Red'],
       ['#007AFF', 'Blue'], ['#34C759', 'Green'], ['#FF1493', 'Neon Pink'],
     ];
-    // v2.1 round 194 (Terry) — five named collections, each rendered as a
-    // collapsed chevron (<details>) of up to 20 swatches. Adding/removing a
-    // collection or swatch is a one-line data edit here. The Core 7 above is
-    // SEPARATE (not a collection).
+    // v2.1 round 194 (Terry) — named collections, each rendered as a collapsed
+    // chevron (<details>). v2.1 round 195 (Terry) — trimmed to EXACTLY 16 each (2
+    // full rows of 8, no ragged gaps); the dropped entries were the least-distinct
+    // near-duplicates. Seasonal keeps exactly 4 per season. Skin was already 16.
+    // The Core 7 above is SEPARATE (not a collection).
     const COLOR_COLLECTIONS = [
       { name: 'Neon', colors: [
-        ['#FF67FE', 'Neon'], ['#F130F2', 'Neon'], ['#FF00A4', 'Neon'], ['#ED0F81', 'Neon'],
-        ['#FE0000', 'Neon'], ['#FF0249', 'Neon'], ['#FF7300', 'Neon'], ['#FCFD04', 'Neon'],
-        ['#E7FF00', 'Neon'], ['#CEFA05', 'Neon'], ['#64FF00', 'Neon'], ['#0CD276', 'Neon'],
-        ['#02E7E9', 'Neon'], ['#09FBD3', 'Neon'], ['#00B6C8', 'Neon'], ['#035DFD', 'Neon'],
-        ['#3E00FD', 'Neon'], ['#8700F3', 'Neon'], ['#9F44D4', 'Neon'], ['#C77BDE', 'Neon'],
+        ['#FF67FE', 'Neon'], ['#F130F2', 'Neon'], ['#FF00A4', 'Neon'], ['#FE0000', 'Neon'],
+        ['#FF7300', 'Neon'], ['#FCFD04', 'Neon'], ['#E7FF00', 'Neon'], ['#64FF00', 'Neon'],
+        ['#0CD276', 'Neon'], ['#02E7E9', 'Neon'], ['#09FBD3', 'Neon'], ['#00B6C8', 'Neon'],
+        ['#035DFD', 'Neon'], ['#3E00FD', 'Neon'], ['#8700F3', 'Neon'], ['#9F44D4', 'Neon'],
       ] },
       { name: 'Neutral', colors: [
         ['#C19565', 'Neutral'], ['#B87857', 'Neutral'], ['#664940', 'Neutral'], ['#8D4739', 'Neutral'],
         ['#D67A41', 'Neutral'], ['#9F8575', 'Neutral'], ['#F3B594', 'Neutral'], ['#ECD3BC', 'Neutral'],
         ['#A18E72', 'Neutral'], ['#CDCDCA', 'Neutral'], ['#CFBBAE', 'Neutral'], ['#C69764', 'Neutral'],
-        ['#4F625A', 'Neutral'], ['#978670', 'Neutral'], ['#433827', 'Neutral'], ['#544331', 'Neutral'],
-        ['#795537', 'Neutral'], ['#8B6D55', 'Neutral'], ['#75776B', 'Neutral'], ['#78654D', 'Neutral'],
+        ['#4F625A', 'Neutral'], ['#978670', 'Neutral'], ['#433827', 'Neutral'], ['#795537', 'Neutral'],
       ] },
       { name: 'Seasonal', colors: [
-        ['#236E96', 'Summer'], ['#15B2D3', 'Summer'], ['#FFD700', 'Summer'], ['#F3872F', 'Summer'], ['#FF598F', 'Summer'],
-        ['#42687C', 'Winter'], ['#84A5B8', 'Winter'], ['#B3DAF1', 'Winter'], ['#CBCBCB', 'Winter'], ['#707571', 'Winter'],
-        ['#F3A8BC', 'Spring'], ['#F5AD94', 'Spring'], ['#FFF1A6', 'Spring'], ['#B4F9A5', 'Spring'], ['#9EE7F5', 'Spring'],
-        ['#603C14', 'Autumn'], ['#9C2706', 'Autumn'], ['#D45B12', 'Autumn'], ['#F3BC2E', 'Autumn'], ['#5F5426', 'Autumn'],
+        ['#236E96', 'Summer'], ['#15B2D3', 'Summer'], ['#FFD700', 'Summer'], ['#FF598F', 'Summer'],
+        ['#42687C', 'Winter'], ['#84A5B8', 'Winter'], ['#B3DAF1', 'Winter'], ['#CBCBCB', 'Winter'],
+        ['#F3A8BC', 'Spring'], ['#FFF1A6', 'Spring'], ['#B4F9A5', 'Spring'], ['#9EE7F5', 'Spring'],
+        ['#603C14', 'Autumn'], ['#9C2706', 'Autumn'], ['#D45B12', 'Autumn'], ['#F3BC2E', 'Autumn'],
       ] },
       { name: 'Skin', colors: [
         ['#3C2E28', 'Skin'], ['#4B3932', 'Skin'], ['#5C4033', 'Skin'], ['#6F4E37', 'Skin'],
@@ -7202,15 +7207,19 @@
       ] },
       { name: 'Cars', colors: [
         ['#FFFFFF', 'Solid White'], ['#000000', 'Absolute Black'], ['#C0C0C0', 'Metallic Silver'], ['#4A4A4A', 'Dark Charcoal Grey'],
-        ['#F3F2ED', 'Pearl White'], ['#8C9092', 'Audi Nardo Grey'], ['#525759', 'Porsche Agate Grey'], ['#0C0C0C', 'BMW Black Sapphire'],
-        ['#104E8B', 'BMW Estoril Blue'], ['#003399', 'Subaru WR Blue Mica'], ['#1D2A44', 'Deep Navy Blue'], ['#CC0000', 'Ferrari Rosso Corsa'],
-        ['#9B111E', 'Mazda Soul Red Crystal'], ['#DF2B26', 'Ford Race Red'], ['#FAC51C', 'Renault Liquid Yellow'], ['#062C17', 'British Racing Green'],
-        ['#2C3E2B', 'Porsche Oak Green Metallic'], ['#4B5320', 'Toyota Army Green'], ['#C5B358', 'Mercedes Desert Silver'], ['#FF6F00', 'Dodge Hugger Orange'],
+        ['#8C9092', 'Audi Nardo Grey'], ['#104E8B', 'BMW Estoril Blue'], ['#003399', 'Subaru WR Blue Mica'], ['#1D2A44', 'Deep Navy Blue'],
+        ['#CC0000', 'Ferrari Rosso Corsa'], ['#9B111E', 'Mazda Soul Red Crystal'], ['#DF2B26', 'Ford Race Red'], ['#FAC51C', 'Renault Liquid Yellow'],
+        ['#062C17', 'British Racing Green'], ['#4B5320', 'Toyota Army Green'], ['#C5B358', 'Mercedes Desert Silver'], ['#FF6F00', 'Dodge Hugger Orange'],
       ] },
     ];
-    // v2.1 round 194 (Terry) — which target the single palette edits: 'text'
-    // (fill colour → setTextColor) or 'effect' (effectColor → setTextEffectColor).
-    let textColorTarget = 'text';
+    // v2.1 round 195 (Terry) — which target the ONE shared palette edits:
+    //   'text'       → fill colour       → setTextColor
+    //   'effect'     → effect tint       → setTextEffectColor   (special: Auto)
+    //   'frame'      → selected tile frame→ bridge.setFrameColor (special: None)
+    //   'background' → collage bg colour → onCollageColorPick
+    // updateColorTargets() derives the available chips from the current selection
+    // and sets a sensible default. (Was textColorTarget; renamed for the wider role.)
+    let colorTarget = 'text';
     // v2.1 round 194 (Terry) — persistent FAVOURITES (replaces the old 'saved'
     // row). New key so the retired pdr-text-saved-colors can't leak in. FIFO,
     // capped at 7, most-recent first.
@@ -7234,7 +7243,7 @@
       renderTextColorPaletteForTarget();
     }
     // Track the single mounted palette so a fav change re-renders it.
-    const textColorPalettes = [];   // { host, getCurrent, onPick, auto }
+    const textColorPalettes = [];   // { host, getCurrent, onPick }
     // v2.1 round 194 (Terry) — a single palette swatch. `addable` swatches (the
     // Core row + every collection swatch) get a tiny "＋" badge that appears on
     // hover; clicking the badge adds the colour to Favourites WITHOUT applying,
@@ -7259,10 +7268,11 @@
       }
       return b;
     }
-    // v2.1 round 194 (Terry) — ONE shared palette. opts.getCurrent() → the colour
-    // to ring (lowercased; '' rings the Auto chip). opts.onPick(hex) applies to
-    // the current target. opts.auto adds the Auto chip (effect target only — sets
-    // ''/derived). Order: [Auto?] [Custom +] · Core 7 · Favourites · collections.
+    // v2.1 round 194/195 (Terry) — ONE shared palette. opts.getCurrent() → the
+    // colour to ring (lowercased; '' rings the special chip). opts.onPick(hex)
+    // applies to the current target. opts.special = { label, tip } prepends a
+    // per-target special chip that sets '' (Effect → Auto/derived; Frame → None/
+    // no frame). Order: [Special?] [Custom +] · Core 7 · Favourites · collections.
     function renderTextColorPalette(hostEl, getCurrent, onPick, opts) {
       if (!hostEl) return;
       opts = opts || {};
@@ -7288,16 +7298,16 @@
       add.addEventListener('click', () => { try { custom.click(); } catch (_) {} });
       custom.addEventListener('input', () => { try { onPick(custom.value); } catch (_) {} });
       custom.addEventListener('change', () => textAddFav(custom.value));   // favourite it on commit
-      // Auto chip (effect target only) — reverts to the derived colour. data-color
-      // '' so the active-ring logic rings it when current is ''.
-      if (opts.auto) {
-        const autoSw = document.createElement('button');
-        autoSw.type = 'button'; autoSw.className = 'frame-swatch frame-none';
-        autoSw.setAttribute('data-color', '');
-        autoSw.setAttribute('data-pdr-tooltip', 'Auto — match the text (the default effect colour)');
-        autoSw.textContent = 'A';
-        autoSw.addEventListener('click', () => { try { onPick(''); } catch (_) {} });
-        top.appendChild(autoSw);
+      // Per-target special chip (Effect → Auto/derived; Frame → None/no frame).
+      // Sets ''; data-color '' so the active-ring logic rings it when current is ''.
+      if (opts.special) {
+        const spSw = document.createElement('button');
+        spSw.type = 'button'; spSw.className = 'frame-swatch frame-none';
+        spSw.setAttribute('data-color', '');
+        spSw.setAttribute('data-pdr-tooltip', opts.special.tip || '');
+        spSw.textContent = opts.special.label || '';
+        spSw.addEventListener('click', () => { try { onPick(''); } catch (_) {} });
+        top.appendChild(spSw);
       }
       top.appendChild(add); top.appendChild(custom);
       hostEl.appendChild(top);
@@ -7315,8 +7325,8 @@
       hostEl.appendChild(favRow);
       const favHint = document.getElementById('collage-text-fav-hint');
       if (favHint) favHint.style.display = favs.length ? 'none' : '';
-      // Collections — each a collapsed <details> chevron of ≤20 swatches; each
-      // swatch is addable to favourites (＋ on hover) and applies on body click.
+      // Collections — each a collapsed <details> chevron of 16 swatches (2 rows of
+      // 8); each swatch is addable to favourites (＋ on hover) and applies on body click.
       COLOR_COLLECTIONS.forEach((coll) => {
         const det = document.createElement('details');
         det.className = 'enhance-collapse frame-coll-collapse';
@@ -7329,58 +7339,109 @@
         grid.className = 'frame-row frame-coll-grid';
         coll.colors.forEach(([hex, tip]) => grid.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
         det.appendChild(grid);
+        // v2.1 round 195 (Terry) — scroll-on-expand: when a collection is opened,
+        // bring its swatches into view within the panel (this regressed — opening
+        // a collection low in the panel left it below the fold). The 'toggle' event
+        // fires AFTER the open state + layout settle, so scroll directly (NOT in
+        // requestAnimationFrame — rAF is paused when the window is unfocused, which
+        // silently killed the round-162 auto-scroll).
+        det.addEventListener('toggle', () => {
+          if (!det.open) return;
+          try { (det.querySelector('.frame-coll-grid') || det).scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
+        });
         hostEl.appendChild(det);
       });
       // Remember this palette + ring the active swatch.
-      if (!textColorPalettes.some((p) => p.host === hostEl)) textColorPalettes.push({ host: hostEl, getCurrent, onPick, auto: !!opts.auto });
-      else { const p = textColorPalettes.find((p) => p.host === hostEl); p.getCurrent = getCurrent; p.onPick = onPick; p.auto = !!opts.auto; }
+      if (!textColorPalettes.some((p) => p.host === hostEl)) textColorPalettes.push({ host: hostEl, getCurrent, onPick });
+      else { const p = textColorPalettes.find((p) => p.host === hostEl); p.getCurrent = getCurrent; p.onPick = onPick; }
       markTextColorPaletteActive(hostEl, getCurrent);
     }
-    // v2.1 round 194 (Terry) — (re)render the single palette pointed at the
-    // CURRENT target. Text target → fill colour (no Auto chip); Effect target →
-    // effectColor with an Auto chip ('' = derived). One mount, two behaviours.
+    // v2.1 round 195 (Terry) — (re)render the ONE shared palette pointed at the
+    // CURRENT target. Each branch supplies getCurrent (what to ring) + onPick
+    // (which EXISTING setter to call) + an optional special chip. onPick is never
+    // reimplemented here — it forwards to setTextColor / setTextEffectColor /
+    // bridge.setFrameColor / onCollageColorPick. Frame + Background setters don't
+    // know about this palette, so their onPick re-rings via syncTextColorPaletteRings.
     function renderTextColorPaletteForTarget() {
       const host = document.getElementById('collage-text-palette');
       if (!host) return;
-      if (textColorTarget === 'effect') {
+      const bridge = window.pdrEnhanceBridge;
+      if (colorTarget === 'effect') {
         renderTextColorPalette(
           host,
           () => (selectedText ? (selectedText.effectColor || '') : ''),
           (hex) => setTextEffectColor(hex),
-          { auto: true },
+          { special: { label: 'A', tip: 'Auto — match the text (the default effect colour)' } },
+        );
+      } else if (colorTarget === 'frame') {
+        renderTextColorPalette(
+          host,
+          () => (bridge && bridge.getFrameColor ? bridge.getFrameColor() : ''),
+          (hex) => { try { if (bridge && bridge.setFrameColor) bridge.setFrameColor(hex || ''); } catch (_) {} syncTextColorPaletteRings(); },
+          { special: { label: '∅', tip: 'None — no frame' } },   // ∅ = no frame (borderColor '')
+        );
+      } else if (colorTarget === 'background') {
+        renderTextColorPalette(
+          host,
+          () => (collageBg || ''),
+          (hex) => { try { onCollageColorPick(hex || ''); } catch (_) {} syncTextColorPaletteRings(); },
+          {},   // background colour has no special chip here (Transparent/None/Photo live in the Background section)
         );
       } else {
         renderTextColorPalette(
           host,
           () => (selectedText ? selectedText.color : ''),
           (hex) => setTextColor(hex || '#ffffff'),
-          { auto: false },
+          {},
         );
       }
     }
-    // v2.1 round 194 (Terry) — keep the Text/Effect toggle in sync: mark the
-    // active button, and DISABLE "Effect colour" until an effect is chosen
-    // (tooltip nudges the user). If the effect is turned off while Effect was the
-    // selected target, fall back to Text so the palette never edits a dead target.
-    function updateColorTargetToggle() {
-      const wrap = document.getElementById('collage-text-colortarget');
-      if (!wrap) return;
+    // v2.1 round 195 (Terry) — derive the target-chip row from the CURRENT
+    // selection, show/hide the whole Colour control, and keep colorTarget valid:
+    //   • a text layer selected → [Text] [Effect]  (Effect disabled when effect=none)
+    //   • a photo tile selected → [Frame]
+    //   • the background selected→ [Background]
+    //   • nothing colourable     → hide the control
+    // Then (re)render the palette for the resolved target. Called from selectText,
+    // selectCollageItem (tile + background paths), and the effect-chip change.
+    function updateColorTargets() {
+      const wrap = document.getElementById('collage-color-targets');
+      const block = document.getElementById('collage-unified-color');
+      if (!wrap || !block) return;
+      // Build the list of valid targets for the current selection.
+      let chips = [];
       const effectOn = !!(selectedText && (selectedText.effect || 'none') !== 'none');
-      if (!effectOn && textColorTarget === 'effect') {
-        textColorTarget = 'text';
-        renderTextColorPaletteForTarget();
+      if (selectedText) {
+        chips.push({ t: 'text', label: 'Text', tip: 'Colour the text itself' });
+        chips.push({ t: 'effect', label: 'Effect', disabled: !effectOn,
+          tip: effectOn ? 'Colour the chosen effect (outline / shadow / glow / 3D side)' : 'Pick an effect first' });
+      } else if (collageSelected && collageSelected.isBg) {
+        chips.push({ t: 'background', label: 'Background', tip: 'Colour the collage background' });
+      } else if (collageSelected) {
+        chips.push({ t: 'frame', label: 'Frame', tip: 'Colour the frame around this photo' });
       }
-      wrap.querySelectorAll('.ec-ctgl').forEach((b) => {
-        const isEffect = b.dataset.target === 'effect';
-        b.classList.toggle('active', b.dataset.target === textColorTarget);
-        if (isEffect) {
-          b.disabled = !effectOn;
-          b.classList.toggle('is-disabled', !effectOn);
-          b.setAttribute('data-pdr-tooltip', effectOn
-            ? 'Colour the chosen effect (outline / shadow / glow / 3D side)'
-            : 'Pick an effect first');
-        }
+      // Nothing colourable → hide the whole control and stop.
+      if (!chips.length) { block.style.display = 'none'; return; }
+      block.style.display = '';
+      // Keep colorTarget valid for this selection: if the current target isn't an
+      // available chip (or is a disabled one), fall back to the first enabled chip.
+      const valid = chips.find((c) => c.t === colorTarget && !c.disabled);
+      if (!valid) { const first = chips.find((c) => !c.disabled) || chips[0]; colorTarget = first.t; }
+      // (Re)build the chip buttons (reuse the .ec-ctgl toggle styling).
+      wrap.innerHTML = '';
+      chips.forEach((c) => {
+        const b = document.createElement('button');
+        b.type = 'button'; b.className = 'ec-ctgl'; b.dataset.target = c.t;
+        b.textContent = c.label;
+        b.setAttribute('data-pdr-tooltip', c.tip || '');
+        if (c.disabled) { b.disabled = true; b.classList.add('is-disabled'); }
+        if (c.t === colorTarget) b.classList.add('active');
+        wrap.appendChild(b);
       });
+      // Hide the chip row entirely when there's only a single chip (nothing to
+      // switch between) — the "Colour" label already says what it does.
+      wrap.style.display = (chips.length > 1) ? 'flex' : 'none';
+      renderTextColorPaletteForTarget();
     }
     // Ring the swatch matching getCurrent() (lowercased; '' matches the Auto/none
     // swatch). A custom colour not in any row rings nothing.
@@ -10344,6 +10405,14 @@ function zoomTo(newZoom, centreX, centreY) {
           if (!tile || !tile.imgEl) return;
           applyFilterToEl(tile.imgEl, tile.enh || {}, composeFilterString(tile.enh || {}), tile.el);
         },
+        // v2.1 round 195 (Terry) — the shared Colour control routes a Frame
+        // colour here. This calls the EXISTING frame setter (applyFrameColor),
+        // unchanged: it sets state.borderColor + applyEnhanceFilter() persists it
+        // to the selected tile's enh. No new undo behaviour (matches a frame
+        // swatch click exactly). getFrameColor lets the unified palette ring the
+        // active swatch.
+        setFrameColor: function (color) { try { applyFrameColor(color || ''); } catch (_) {} },
+        getFrameColor: function () { return state.borderColor || ''; },
       };
 
       // Initial state.
