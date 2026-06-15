@@ -2107,25 +2107,24 @@
        ToCanvas exactly, so what you type looks like the baked render. Transparent
        background, no outline, caret in the text colour. The wrapper keeps its
        selection ring around it. */
-    /* v2.1 round 216 (Terry) — the editable must MATCH the rendered canvas EXACTLY
-       so double-clicking to edit doesn't make the text jump (the rounds 214/215
-       bug). The wrapper box = the CENTRED ink block + a uniform gap, and the canvas
-       draws the ink CENTRED in it. So the editable fills the SAME box (100% × 100%)
-       and CENTRES its text both ways: a column flexbox with justify-content:center
-       puts the line-box stack on the vertical centre (where the canvas centred the
-       ink), and text-align (from styleTextEditable, default align-items:stretch
-       makes each line full-width) centres/left/right-aligns horizontally in the
-       same box the canvas uses. line-height 1.25 (set inline) reproduces the canvas
-       line spacing. Net: the text's screen position is identical canvas-shown vs.
-       edit-shown → no jump. The canvas sits behind at left/top:(g−pad), absolute. */
+    /* v2.1 round 217 (Terry) — the editable must MATCH the rendered canvas EXACTLY
+       so double-clicking to edit doesn't make the text JUMP (the rounds 214/215/216
+       bug). The round-216 attempt used display:flex + justify-content:center to
+       vertical-centre the line stack, but enterTextEdit forces an inline display:block
+       on the contentEditable (flex is unreliable for caret placement / selection), so
+       that flex CSS NEVER applied — the editable was a top-aligned block with no
+       vertical compensation and the glyphs sat ~2px off the canvas ink. This rule is
+       now display:BLOCK to match reality; the vertical alignment is done in
+       styleTextEditable, which sets line-height = the canvas spacing (lineH px) and a
+       computed margin-top so the editable's FIRST-LINE INK lands on the SAME box-y
+       the canvas pinned its ink to (box-top + g). Net: glyph N in edit == glyph N on
+       canvas → no jump. The canvas sits behind at left/top:(g−pad), absolute. */
     .collage-text .collage-text-edit {
-      display: flex;
-      flex-direction: column;
-      justify-content: center;     /* vertical-centre the line stack → matches the canvas's centred ink */
+      display: block;              /* NOT flex — flex breaks caret/selection on a contentEditable */
       position: absolute;
-      left: 0; top: 0;
-      width: 100%; height: 100%;
-      margin: 0; padding: 0; border: 0; outline: none;
+      left: 0; top: 0;             /* vertical placement is via margin-top (styleTextEditable) */
+      width: 100%;
+      padding: 0; border: 0; outline: none;   /* margin-top is set inline per-layer */
       background: transparent;
       box-sizing: border-box;
       white-space: pre;            /* honour explicit newlines, no auto-wrap (matches the canvas) */
@@ -5959,6 +5958,14 @@
       // RELATIVE to the line-0 draw-y; inkH = their span. Fallbacks keep older
       // engines (no actual* metrics) on the previous lines*lineH block height.
       let inkTopRel = Infinity, inkBottomRel = -Infinity, gotInk = false;
+      // v2.1 round 217 (Terry) — also capture the FONT metrics (A = fontBoundingBox-
+      // Ascent, D = fontBoundingBoxDescent; font-constant) and the ACTUAL ascent of
+      // the topmost-ink line (aAscTop = the line whose ink set inkTopRel). These let
+      // the contentEditable place its FIRST-LINE GLYPHS on the SAME box-y the canvas
+      // pinned the ink to (box-y g), with NO display↔edit jump. Electron is Chromium,
+      // so these canvas measureText() metrics equal the DOM's CSS line-box metrics →
+      // the analytic margin-top in styleTextEditable is exact (see there).
+      let fbAscTop = (fontPx * 1.0), fbDescTop = (fontPx * 0.25), aAscTop = (fontPx * 0.7), gotMetrics = false;
       for (let i = 0; i < lines.length; i++) {
         const m = ctx.measureText(lines[i] || '');
         const baseAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : (fontPx * 1.0);
@@ -5967,7 +5974,17 @@
         const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent
                      : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : fontPx * 0.25);
         const top = baseline - aAsc, bot = baseline + aDesc;
-        if (isFinite(top) && isFinite(bot)) { gotInk = true; if (top < inkTopRel) inkTopRel = top; if (bot > inkBottomRel) inkBottomRel = bot; }
+        // Font metrics are line-independent; take them from the first line we see.
+        if (!gotMetrics && typeof m.fontBoundingBoxAscent === 'number' && typeof m.fontBoundingBoxDescent === 'number') {
+          fbAscTop = m.fontBoundingBoxAscent; fbDescTop = m.fontBoundingBoxDescent; gotMetrics = true;
+        }
+        if (isFinite(top) && isFinite(bot)) {
+          gotInk = true;
+          // The line that owns the topmost ink is the one whose glyph metrics the
+          // editable must match for its first visible row → remember its actual ascent.
+          if (top < inkTopRel) { inkTopRel = top; aAscTop = aAsc; }
+          if (bot > inkBottomRel) inkBottomRel = bot;
+        }
       }
       // inkH = the measured ink block height; inkW = the widest line (no L/R ink
       // trim — keeps the existing horizontal hug from round 214). y0 = the line-0
@@ -6107,6 +6124,15 @@
       canvas._pad = pad;
       canvas._inkW = Math.max(1, canvas.width - 2 * pad);
       canvas._inkH = Math.max(1, canvas.height - 2 * pad);
+      // v2.1 round 217 (Terry) — stash the metrics styleTextEditable needs to align
+      // the contentEditable's FIRST-LINE GLYPHS with the canvas ink (which the canvas
+      // pinned to box-y g). _lineH = the canvas line spacing (also the px line-height
+      // the editable must use); _fbAsc/_fbDesc = font ascent/descent; _aAscTop = the
+      // actual ascent of the topmost-ink line. See styleTextEditable for the formula.
+      canvas._lineH = lineH;
+      canvas._fbAsc = fbAscTop;
+      canvas._fbDesc = fbDescTop;
+      canvas._aAscTop = aAscTop;
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -6242,8 +6268,48 @@
       ed.style.textDecoration = layer.underline ? 'underline' : 'none';
       ed.style.color = layer.color || '#ffffff';
       ed.style.textAlign = layer.align || 'center';
-      ed.style.lineHeight = '1.25';
       ed.style.caretColor = layer.color || '#ffffff';
+      // ── v2.1 round 217 (Terry) — KILL the display↔edit glyph JUMP ────────────
+      // The canvas pins its TOPMOST-LINE INK to box-y g (renderTextToCanvas draws
+      // from y0 = pad − inkTopRel so ink-top = pad in the canvas, then renderText-
+      // Layer floats the canvas at top:(g − pad) → ink-top = g in the BOX). The
+      // editable is a plain BLOCK at box (0,0) (NO flex — flex breaks caret/selection;
+      // the old round-216 flex CSS is dead, overridden by display:block in enterText-
+      // Edit). To make its first-line glyphs land on the SAME box-y, set:
+      //   • line-height = EXACTLY the canvas spacing lineH (= fontPx*1.25), in px, so
+      //     line N in the editable is lineH below line N−1 — identical to the canvas →
+      //     every subsequent line + the descenders coincide once line 0 coincides.
+      //   • margin-top = the analytic offset that puts the editable's first-line INK
+      //     top at box-y g.
+      // Editable first-line ink-top (box) = marginTop + halfLeading + A − aAscTop,
+      //   where halfLeading = (lineH − A − D)/2  (CSS splits leading equally; baseline
+      //   = lineBoxTop + halfLeading + A), A = fontBoundingBoxAscent, D = fontBounding-
+      //   BoxDescent, aAscTop = actualBoundingBoxAscent of the topmost-ink line.
+      // Set that == g and solve:
+      //   marginTop = g − halfLeading − A + aAscTop = g − lineH/2 + aAscTop + (D − A)/2.
+      // Electron is Chromium, so the canvas measureText() metrics (A/D/aAscTop, stashed
+      // on the canvas) EQUAL the DOM's CSS line-box metrics → this is exact, not a
+      // guess. ink-top is content-pinned to g on BOTH sides (the aAscTop term carries
+      // the topmost line's true cap height), so it holds for any glyphs and any font
+      // size (everything scales with fontPx). Re-applied on every input re-render
+      // (renderTextLayer → styleTextEditable) so it stays stable across keystrokes.
+      const cv = layer.canvasEl;
+      const lineH   = (cv && typeof cv._lineH   === 'number') ? cv._lineH   : (fontPx * 1.25);
+      const A       = (cv && typeof cv._fbAsc   === 'number') ? cv._fbAsc   : (fontPx * 1.0);
+      const D       = (cv && typeof cv._fbDesc  === 'number') ? cv._fbDesc  : (fontPx * 0.25);
+      const aAscTop = (cv && typeof cv._aAscTop === 'number') ? cv._aAscTop : (fontPx * 0.7);
+      const g = Math.round(fontPx * 0.16);   // SAME uniform gap renderTextLayer uses for the box
+      const marginTop = g - (lineH / 2) + aAscTop + ((D - A) / 2);
+      ed.style.display = 'block';            // never flex on a contentEditable (caret/selection)
+      ed.style.lineHeight = lineH + 'px';    // EXACT canvas spacing (px), not unitless 1.25
+      ed.style.marginTop = marginTop + 'px';
+      // Keep the editable box the SAME snug size as the wrapper (ink + 2g); the line-
+      // box bottom leading may overflow below — fine (overflow:visible) and invisible,
+      // the GLYPHS are what must coincide. Width/height tie to the wrapper so the box
+      // never grows on edit.
+      ed.style.boxSizing = 'border-box';
+      ed.style.width = '100%';
+      ed.style.height = (Math.max(1, (cv && typeof cv._inkH === 'number') ? cv._inkH : fontPx) + 2 * g) + 'px';
     }
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
@@ -6316,7 +6382,7 @@
       // Fill from the model, hide the canvas, style to match the render.
       ed.textContent = String(layer.text == null ? '' : layer.text);
       if (layer.canvasEl) layer.canvasEl.style.display = 'none';
-      ed.style.display = 'block';
+      ed.style.display = 'block';   // v2.1 round 217 (Terry) — stays BLOCK (no flex); styleTextEditable does the glyph-exact vertical alignment via line-height + margin-top
       styleTextEditable(layer);
       el.classList.add('selected');
       // Focus + place the caret. selectAll → select everything (new "Your text",
