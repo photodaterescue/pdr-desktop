@@ -625,7 +625,11 @@
        after the cursor leaves the zone/pill. */
     .pdrv-winfs-pill {
       position: fixed;
-      top: 14px;
+      /* v2.1 round 212 (Terry) — moved DOWN from top:14px to top:48px so the
+         whole pill (y≈48–82) clears the 40px OS title-bar drag region
+         (#toolbar, y 0–40), which previously ate the pill's upper ~26px and
+         left only the lower sliver hoverable/clickable. */
+      top: 48px;
       left: 50%;
       transform: translateX(-50%) translateY(-8px);
       display: none;
@@ -8500,62 +8504,112 @@
     // v2.1 round 195 (Terry) — ONE shared colour palette for the whole panel (no
     // duplicated mounts). The target-chip row re-points it: renderTextColorPalette-
     // ForTarget() swaps getCurrent/onPick + the per-target special chip, then
-    // re-rings. Data below: a fixed Core 7, ONE shared persistent Favourites list,
-    // and the collapsed collection chevrons.
+    // re-rings. Data below: a fixed quick row, ONE shared persistent Favourites
+    // list, and the collapsed collection chevrons.
     // v2.1 round 194 (Terry) — FIXED quick-colour set, always shown, never
-    // re-ordered. v2.1 round 200 (Terry) — trimmed from 7 to EXACTLY 5 essentials
-    // (Green + Neon Pink dropped from the quick set — they're still reachable in
-    // the collections below) and these now share ROW 1 with the custom "+" and the
-    // background locked specials (no separate Core row). Order is fixed:
-    // White, Black, Red, Yellow, Blue.
+    // re-ordered; shares ROW 1 with the custom "+" and (background only) the
+    // locked specials, with no separate Core row. (History: round 200 trimmed the
+    // set to 5; round 212 below restored it to the spec's 7.)
+    // v2.1 round 212 (Terry) — quick row replaced from the Colour Palette spec:
+    // EXACTLY 7 quick-access colours (was 5). Order fixed:
+    // White, Black, Red, Yellow, Blue, Green, Orange. (Background's Row 1 also
+    // carries 2 locked specials, so it caps the quick set at 5 — Green + Orange
+    // drop there; see the row-1 cap in renderTextColorPalette.)
     const TEXT_COLOR_DEFAULTS = [
-      ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FF0033', 'Red'],
-      ['#FFD700', 'Yellow'], ['#007AFF', 'Blue'],
+      ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FF2D2D', 'Red'],
+      ['#FFD43B', 'Yellow'], ['#2D7FFF', 'Blue'], ['#36C96B', 'Green'],
+      ['#FF8A1F', 'Orange'],
     ];
-    // v2.1 round 194 (Terry) — named collections, each rendered as a collapsed
-    // chevron (<details>). v2.1 round 195 (Terry) — trimmed to EXACTLY 16 each (2
-    // full rows of 8, no ragged gaps); the dropped entries were the least-distinct
-    // near-duplicates. Seasonal keeps exactly 4 per season. Skin was already 16.
-    // The Core 7 above is SEPARATE (not a collection).
+    // v2.1 round 212 (Terry) — collections REPLACED from the Colour Palette spec
+    // (PDR_Colour_Palette_Specification.pdf). 12 categories in popularity order:
+    // Pastel, Neon, Neutral, Seasonal, Sunset, Nature, Ocean, Luxury, Cars, Skin,
+    // Retro, Monochrome. EXACTLY 16 colours each (192 total), transcribed verbatim
+    // from the spec. Each tooltip is the spec's colour NAME (better than the old
+    // generic 'Neon'/'Skin' labels). Each renders as a collapsed chevron
+    // (<details>) of 16 = 2 rows of 8. Order here is the spec's lightest→darkest
+    // listing; the load-time sortCollectionsLightToDark() below re-sorts every grid
+    // by luminance anyway, so DO NOT pre-sort.
     const COLOR_COLLECTIONS = [
+      { name: 'Pastel', colors: [
+        ['#FFD1DC', 'Baby Pink'], ['#FFC8E2', 'Cotton Candy'], ['#FFDAB9', 'Peach'], ['#FFF4B5', 'Buttercream'],
+        ['#CFFFE5', 'Mint'], ['#D9F7BE', 'Pistachio'], ['#CBE7FF', 'Sky'], ['#D6ECFF', 'Powder Blue'],
+        ['#E6D6FF', 'Lavender'], ['#DCC6FF', 'Lilac'], ['#FFCCC2', 'Soft Coral'], ['#FFF8B5', 'Lemon'],
+        ['#D4FFF5', 'Aqua'], ['#C9D0FF', 'Periwinkle'], ['#F8D8D8', 'Blush'], ['#F4F4F4', 'Cloud'],
+      ] },
       { name: 'Neon', colors: [
-        ['#FF67FE', 'Neon'], ['#F130F2', 'Neon'], ['#FF00A4', 'Neon'], ['#FE0000', 'Neon'],
-        ['#FF7300', 'Neon'], ['#FCFD04', 'Neon'], ['#E7FF00', 'Neon'], ['#64FF00', 'Neon'],
-        ['#0CD276', 'Neon'], ['#02E7E9', 'Neon'], ['#09FBD3', 'Neon'], ['#00B6C8', 'Neon'],
-        ['#035DFD', 'Neon'], ['#3E00FD', 'Neon'], ['#8700F3', 'Neon'], ['#9F44D4', 'Neon'],
+        ['#F6FF33', 'Electric Yellow'], ['#D8FF3A', 'Neon Lime'], ['#73FF4D', 'Toxic Green'], ['#4FFFD5', 'Neon Mint'],
+        ['#42F5E6', 'Aqua Glow'], ['#36D97F', 'Cyber Green'], ['#F06AFF', 'Neon Pink'], ['#38D9E6', 'Neon Cyan'],
+        ['#FF841F', 'Neon Orange'], ['#FF4DF0', 'Hot Pink'], ['#B35CFF', 'Ultraviolet'], ['#3D7FFF', 'Electric Blue'],
+        ['#FF2FAE', 'Cyber Magenta'], ['#FF2222', 'Laser Red'], ['#8A3DFF', 'Neon Purple'], ['#4D3DFF', 'Plasma Blue'],
       ] },
       { name: 'Neutral', colors: [
-        ['#C19565', 'Neutral'], ['#B87857', 'Neutral'], ['#664940', 'Neutral'], ['#8D4739', 'Neutral'],
-        ['#D67A41', 'Neutral'], ['#9F8575', 'Neutral'], ['#F3B594', 'Neutral'], ['#ECD3BC', 'Neutral'],
-        ['#A18E72', 'Neutral'], ['#CDCDCA', 'Neutral'], ['#CFBBAE', 'Neutral'], ['#C69764', 'Neutral'],
-        ['#4F625A', 'Neutral'], ['#978670', 'Neutral'], ['#433827', 'Neutral'], ['#795537', 'Neutral'],
+        ['#F4E9D8', 'Ivory'], ['#ECEAE4', 'Soft White'], ['#F1D0B6', 'Cream'], ['#DCD3C8', 'Linen'],
+        ['#D3B18A', 'Sand'], ['#C6A376', 'Camel'], ['#B0A086', 'Taupe'], ['#D68B4F', 'Terracotta'],
+        ['#B9A58E', 'Stone'], ['#B6A894', 'Mushroom'], ['#C5926A', 'Clay'], ['#66776B', 'Sage Grey'],
+        ['#8A6745', 'Walnut'], ['#9D5C42', 'Chestnut'], ['#755B4A', 'Cocoa'], ['#4D3F2F', 'Espresso'],
       ] },
       { name: 'Seasonal', colors: [
-        ['#236E96', 'Summer'], ['#15B2D3', 'Summer'], ['#FFD700', 'Summer'], ['#FF598F', 'Summer'],
-        ['#42687C', 'Winter'], ['#84A5B8', 'Winter'], ['#B3DAF1', 'Winter'], ['#CBCBCB', 'Winter'],
-        ['#F3A8BC', 'Spring'], ['#FFF1A6', 'Spring'], ['#B4F9A5', 'Spring'], ['#9EE7F5', 'Spring'],
-        ['#603C14', 'Autumn'], ['#9C2706', 'Autumn'], ['#D45B12', 'Autumn'], ['#F3BC2E', 'Autumn'],
+        ['#F8F0B0', 'Easter Cream'], ['#C7F5B3', 'Spring Green'], ['#B6EAF7', 'Sky Blossom'], ['#BFD9EC', 'Winter Mist'],
+        ['#F6D530', 'Summer Sun'], ['#D8D8D8', 'Frost White'], ['#F0C04A', 'Harvest Gold'], ['#E8A8B8', 'Valentine Pink'],
+        ['#A9C1D4', 'Winter Blue'], ['#42B9D6', 'Tropical Aqua'], ['#F56AA2', 'Summer Rose'], ['#D86A21', 'Pumpkin'],
+        ['#527A8B', 'Evergreen'], ['#34789A', 'Christmas Blue'], ['#7B541F', 'Autumn Brown'], ['#B23A0D', 'Halloween Orange'],
       ] },
-      { name: 'Skin', colors: [
-        ['#3C2E28', 'Skin'], ['#4B3932', 'Skin'], ['#5C4033', 'Skin'], ['#6F4E37', 'Skin'],
-        ['#8D5524', 'Skin'], ['#87675A', 'Skin'], ['#967264', 'Skin'], ['#A1665E', 'Skin'],
-        ['#B48A78', 'Skin'], ['#C5845C', 'Skin'], ['#C68642', 'Skin'], ['#D2A18C', 'Skin'],
-        ['#E0AC69', 'Skin'], ['#E1AC96', 'Skin'], ['#F1C27D', 'Skin'], ['#FFE0BD', 'Skin'],
+      { name: 'Sunset', colors: [
+        ['#FFD166', 'Golden Hour'], ['#FFC07A', 'Apricot'], ['#FFB88A', 'Peach Glow'], ['#FF7F6B', 'Coral'],
+        ['#FF9F45', 'Tangerine'], ['#FFBF36', 'Amber'], ['#E7A58E', 'Rose Gold'], ['#F97AA3', 'Flamingo'],
+        ['#C27BA0', 'Mauve'], ['#B497D6', 'Lavender'], ['#8661C1', 'Twilight Purple'], ['#6D8CC3', 'Dusky Blue'],
+        ['#4F5D95', 'Indigo Sky'], ['#D74B4B', 'Sunset Red'], ['#FF6BB5', 'Tropical Pink'], ['#1E2D59', 'Midnight Navy'],
+      ] },
+      { name: 'Nature', colors: [
+        ['#7A8C5D', 'Moss'], ['#628C4F', 'Fern'], ['#355E3B', 'Forest'], ['#1F4D3A', 'Pine'],
+        ['#9CAF88', 'Sage'], ['#708238', 'Olive'], ['#A4C639', 'Bamboo'], ['#4C9A2A', 'Leaf'],
+        ['#7A5A3A', 'Bark'], ['#8C6A43', 'Earth'], ['#A67B5B', 'Clay Soil'], ['#7D7D72', 'Stone'],
+        ['#5C8DAA', 'River Blue'], ['#7DB7E8', 'Sky Blue'], ['#76B947', 'Meadow'], ['#B68BCF', 'Wildflower'],
+      ] },
+      { name: 'Ocean', colors: [
+        ['#DDF6FF', 'Arctic Ice'], ['#B9F3E4', 'Sea Foam'], ['#6DE5E8', 'Lagoon'], ['#27D3E0', 'Caribbean'],
+        ['#00B8D4', 'Tropical Sea'], ['#00E5FF', 'Aqua'], ['#2196F3', 'Ocean Blue'], ['#1565C0', 'Deep Ocean'],
+        ['#0D47A1', 'Navy'], ['#082567', 'Midnight Sea'], ['#FF6F61', 'Coral Reef'], ['#E8D3A1', 'Sand'],
+        ['#B49A7B', 'Driftwood'], ['#2E8B57', 'Seaweed'], ['#708090', 'Storm Grey'], ['#3A5F8A', 'Whale Blue'],
+      ] },
+      { name: 'Luxury', colors: [
+        ['#D4AF37', 'Gold'], ['#B76E79', 'Rose Gold'], ['#C0C0C0', 'Silver'], ['#E5E4E2', 'Platinum'],
+        ['#F7E7CE', 'Champagne'], ['#111111', 'Black Tie'], ['#50C878', 'Emerald'], ['#0F52BA', 'Sapphire'],
+        ['#9B111E', 'Ruby'], ['#9966CC', 'Amethyst'], ['#F8F6F0', 'Pearl'], ['#CD7F32', 'Bronze'],
+        ['#B87333', 'Copper'], ['#FFFFF0', 'Ivory'], ['#36454F', 'Charcoal'], ['#FDFDFD', 'Diamond White'],
       ] },
       { name: 'Cars', colors: [
-        ['#FFFFFF', 'Solid White'], ['#000000', 'Absolute Black'], ['#C0C0C0', 'Metallic Silver'], ['#4A4A4A', 'Dark Charcoal Grey'],
-        ['#8C9092', 'Audi Nardo Grey'], ['#104E8B', 'BMW Estoril Blue'], ['#003399', 'Subaru WR Blue Mica'], ['#1D2A44', 'Deep Navy Blue'],
-        ['#CC0000', 'Ferrari Rosso Corsa'], ['#9B111E', 'Mazda Soul Red Crystal'], ['#DF2B26', 'Ford Race Red'], ['#FAC51C', 'Renault Liquid Yellow'],
-        ['#062C17', 'British Racing Green'], ['#4B5320', 'Toyota Army Green'], ['#C5B358', 'Mercedes Desert Silver'], ['#FF6F00', 'Dodge Hugger Orange'],
+        ['#F7F7F7', 'Pearl White'], ['#FFD43B', 'Lamborghini Yellow'], ['#C2C2C2', 'Nardo Grey'], ['#CDBE67', 'Champagne Gold'],
+        ['#A8ADB0', 'Silver Metallic'], ['#FF7A18', 'McLaren Orange'], ['#E63B2E', 'Ferrari Red'], ['#4A5721', 'British Racing Green'],
+        ['#5A5A5A', 'Graphite Grey'], ['#1F6BC5', 'Subaru WR Blue'], ['#2D6BC9', 'Gulf Blue'], ['#A0111A', 'Mazda Soul Red'],
+        ['#D50000', 'Racing Red'], ['#2D3E5B', 'Slate Blue'], ['#0F4720', 'Aston Green'], ['#1E1E22', 'RX8 Kuro Black'],
+      ] },
+      { name: 'Skin', colors: [
+        ['#F8E4C6', 'Porcelain'], ['#F2D29C', 'Fair'], ['#E7C0A8', 'Peach'], ['#E0B26D', 'Honey'],
+        ['#D7B198', 'Beige'], ['#C7A289', 'Warm Beige'], ['#C79167', 'Tan'], ['#C88E49', 'Golden Tan'],
+        ['#A67E62', 'Cocoa Tan'], ['#B48679', 'Rose Brown'], ['#9A7A69', 'Bronze'], ['#9D6933', 'Cinnamon'],
+        ['#7D5A3C', 'Walnut'], ['#674A36', 'Deep Cocoa'], ['#4F3A2D', 'Espresso'], ['#382B24', 'Ebony'],
+      ] },
+      { name: 'Retro', colors: [
+        ['#D4A017', 'Mustard'], ['#7E8F3A', 'Avocado'], ['#CC5500', 'Burnt Orange'], ['#C28E0E', 'Harvest Gold'],
+        ['#2E8B8B', 'Teal'], ['#40A8A8', 'Turquoise'], ['#6B8BA4', 'Dusty Blue'], ['#4F6D8A', 'Denim'],
+        ['#A84C32', 'Rust'], ['#B65A3C', 'Terracotta'], ['#F2E3C6', 'Cream'], ['#D8C3A5', 'Beige'],
+        ['#6F4E37', 'Chocolate'], ['#7A1F3D', 'Burgundy'], ['#708238', 'Olive'], ['#C88A91', 'Vintage Pink'],
+      ] },
+      { name: 'Monochrome', colors: [
+        ['#FFFFFF', 'Pure White'], ['#F7F7F7', 'Snow'], ['#EEEEEE', 'Cloud'], ['#E0E0E0', 'Silver Mist'],
+        ['#D0D0D0', 'Light Grey'], ['#B8B8B8', 'Grey'], ['#A0A0A0', 'Steel'], ['#888888', 'Slate'],
+        ['#707070', 'Ash'], ['#585858', 'Charcoal'], ['#404040', 'Gunmetal'], ['#303030', 'Graphite'],
+        ['#202020', 'Jet'], ['#151515', 'Onyx'], ['#0A0A0A', 'Rich Black'], ['#000000', 'Pure Black'],
       ] },
     ];
     // v2.1 round 197 (Terry) — sort EVERY collection light→dark (lightest first)
     // by perceived luminance, so each grid reads top-left bright → bottom-right
     // dark. lum = 0.2126*R + 0.7152*G + 0.0722*B from the swatch hex; DESCENDING.
-    // Applied to all five collections (Neon, Neutral, Seasonal, Skin, Cars).
-    // Seasonal therefore loses its by-season grouping — intended ("sort them all
-    // light to dark"). The Core-7 row + Favourites are left untouched. Done once
-    // here, in place, so every render reflects the sorted order.
+    // v2.1 round 212 (Terry) — now applied to all TWELVE spec collections (Pastel,
+    // Neon, Neutral, Seasonal, Sunset, Nature, Ocean, Luxury, Cars, Skin, Retro,
+    // Monochrome). The quick row + Favourites are left untouched. Done once here,
+    // in place, so every render reflects the sorted order.
     (function sortCollectionsLightToDark() {
       const lum = (hex) => {
         const m = /^#?([0-9a-f]{6})$/i.exec(String(hex || '').trim());
@@ -8691,9 +8745,20 @@
       // opts.lockedSpecials carries the pre-built nodes (built in
       // renderTextColorPaletteForTarget so they close over the bg setters/state).
       // For Text/Frame/Effect lockedSpecials is empty, so they never appear there.
-      (opts.lockedSpecials || []).forEach((node) => { if (node) top.appendChild(node); });
-      // Quick colours — the fixed 5 essentials, each addable to favourites.
-      TEXT_COLOR_DEFAULTS.forEach(([hex, tip]) => top.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
+      const lockedSpecials = opts.lockedSpecials || [];
+      lockedSpecials.forEach((node) => { if (node) top.appendChild(node); });
+      // Quick colours — the fixed 7 from the spec, each addable to favourites.
+      // v2.1 round 212 (Terry) — Row 1 is a hard 8-column grid (.frame-toprow,
+      // grid-template-columns: repeat(8,1fr)), so a 9th cell would wrap to a
+      // ragged 2nd row. Cap the quick colours so the row totals exactly 8 cells:
+      //   8 − (special chip? 1 : 0) − 1 (custom +) − lockedSpecials.length
+      // • Text:       0 + 1 + 0 → 7 quick (all fit)
+      // • Frame/Effect: 1 + 1 + 0 → 6 quick (Orange drops; ∅/Auto chip takes a cell)
+      // • Background:   0 + 1 + 2 → 5 quick (Green + Orange drop; Photo + Transparent
+      //   locked specials take two cells). The dropped colours stay reachable in the
+      //   collections below — they're only trimmed from this fixed quick strip.
+      const quickCap = Math.max(0, 8 - (opts.special ? 1 : 0) - 1 - lockedSpecials.length);
+      TEXT_COLOR_DEFAULTS.slice(0, quickCap).forEach(([hex, tip]) => top.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
       hostEl.appendChild(top);
       // Favourites row (Row 2) — up to 7 USER colours only (right-click to remove);
       // EMPTY by default. v2.1 round 200 (Terry) — the locked specials no longer
@@ -12158,7 +12223,10 @@ function zoomTo(newZoom, centreX, centreY) {
       var pill = document.getElementById('winfs-pill');
       if (!pill) return;
 
-      var REVEAL_Y = 72;             // top strip height that triggers the reveal
+      // v2.1 round 212 (Terry) — raised 72→92 so the top-center reveal zone
+      // still comfortably covers the pill after it dropped to top:48px (pill
+      // now spans y≈48–82): moving up to it reveals it AND staying on it keeps it.
+      var REVEAL_Y = 92;             // top strip height that triggers the reveal
       var FADE_OUT_MS = 1500;        // YouTube-style lingering fade after leaving
       var isElectronFs = false;      // from pdr.window state
       var isMaximized = false;       // v2.1 round 207 (Terry) — primary arm trigger
