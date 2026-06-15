@@ -533,7 +533,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('photoPick:start', handler);
       return () => ipcRenderer.removeListener('photoPick:start', handler);
     },
-    deliver: (purpose: string, filePath: string) => ipcRenderer.send('photoPick:deliver', { purpose, filePath }),
+    // v2.1 round 210 (Terry) — optional keepOpen: a CTRL-held multi-add delivery.
+    // When true, main delivers the photo but does NOT refocus the requester (so
+    // the user stays in the picker to keep CTRL-clicking). Default false = finish.
+    deliver: (purpose: string, filePath: string, keepOpen?: boolean) => ipcRenderer.send('photoPick:deliver', { purpose, filePath, keepOpen: !!keepOpen }),
     cancel: () => ipcRenderer.send('photoPick:cancel'),
   },
 

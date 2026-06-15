@@ -891,12 +891,16 @@ useEffect(() => {
       if (!path) return;
       e.preventDefault();
       e.stopPropagation();
-      try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path); } catch { /* noop */ }
-      // v2.1 round 209 (Terry) — stay-open multi-add: in a multi session a click
-      // with CTRL (or ⌘ on Mac) held delivers this photo but KEEPS the picker
-      // open so more can be added; a plain click delivers and finishes. The
-      // background pick (collageBgPickMulti false) always exits on the first click.
-      if (collageBgPickMulti && (e.ctrlKey || e.metaKey)) {
+      // v2.1 round 209/210 (Terry) — stay-open multi-add: in a multi session a
+      // click with CTRL (or ⌘ on Mac) held delivers this photo but KEEPS the
+      // picker open so more can be added; a plain click delivers and finishes.
+      // The background pick (collageBgPickMulti false) always exits on the first
+      // click. v2.1 round 210 — pass the multi flag as `keepOpen` so the main
+      // process does NOT refocus the collage after each add (the focus-bounce
+      // that made round-209 deliver "just one at a time").
+      const isMultiAdd = collageBgPickMulti && (e.ctrlKey || e.metaKey);
+      try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, isMultiAdd); } catch { /* noop */ }
+      if (isMultiAdd) {
         flashPickedTile(el);   // visual confirmation; picker stays open
         return;
       }

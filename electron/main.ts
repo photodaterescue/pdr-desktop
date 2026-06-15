@@ -11593,19 +11593,32 @@ ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: strin
 });
 // Main window (React) delivers the chosen photo → route it back to the
 // requesting window (the collage viewer) and bring that window forward.
-ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string }) => {
+ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string; keepOpen?: boolean }) => {
+  // v2.1 round 210 (Terry) — keepOpen = a stay-open CTRL multi-add delivery
+  // (the user is adding several photos in one session). For those we send the
+  // picked photo but do NOT refocus the requester or clear the requester id —
+  // otherwise focus jumps back to the collage after the FIRST pick and the user
+  // is bounced out of the picker (the round-209 multi-add bug Terry hit: it
+  // "sends just one back at a time"). Only the FINAL (plain-click) delivery
+  // clears the id and refocuses the collage, exactly as before.
+  const keepOpen = !!payload?.keepOpen;
   const requester = photoPickRequesterId != null
     ? BrowserWindow.getAllWindows().find((w) => !w.isDestroyed() && w.webContents.id === photoPickRequesterId)
     // v2.1 round 159 — the background pick comes from the collage window, so
     // fall back to it (then the viewer) if the requester id is missing.
     : (collageWindow && !collageWindow.isDestroyed() ? collageWindow : (viewerWindow && !viewerWindow.isDestroyed() ? viewerWindow : null));
-  photoPickRequesterId = null;
+  if (!keepOpen) photoPickRequesterId = null;
   if (requester) {
     try {
       requester.webContents.send('photoPick:picked', { purpose: payload?.purpose, filePath: payload?.filePath });
-      requester.show();
-      requester.focus();
-      requester.moveTop();
+      // Only the finishing delivery pulls the collage back to the front; a
+      // keepOpen delivery leaves focus on the picker window so CTRL-clicking
+      // can continue.
+      if (!keepOpen) {
+        requester.show();
+        requester.focus();
+        requester.moveTop();
+      }
     } catch (err) {
       log.warn(`[photoPick] deliver failed: ${(err as Error).message}`);
     }
