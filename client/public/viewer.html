@@ -8229,7 +8229,9 @@
           // v2.1 round 209 (Terry) — pass multi:true so the main-window picker
           // stays open while CTRL is held, letting several photos be added in one
           // session. Each delivery routes here via onBackgroundPicked → addPhotoToCollage.
-          try { window.pdr.collage.pickBackground('a photo to add', true); } catch (_) { collagePickMode = 'bg'; }
+          // v2.1 round 211 (Terry) — label is the TARGET name shown in the banner
+          // ("Adding photos to <label>"), so it must read as the collage, not "a photo".
+          try { window.pdr.collage.pickBackground('your collage', true); } catch (_) { collagePickMode = 'bg'; }
         });
       }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
