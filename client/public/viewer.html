@@ -2250,12 +2250,16 @@
     #collage-color-targets .ec-ctgl { flex: 0 1 auto; min-width: 64px; }
     /* v2.1 round 195 (Terry) — lock EVERY swatch row in the shared palette to
        exactly 8 columns at any panel width, so rows are always full (no ragged
-       right-edge gaps). Applies to the Core row, Favourites, and each collection
-       grid. The top row (Auto/Custom) stays a flex row. */
-    #collage-text-palette .frame-core,
+       right-edge gaps). Applies to Favourites and each collection grid.
+       v2.1 round 200 (Terry) — Row 1 (.frame-toprow) is now the combined
+       [Special?] [Custom +] [bg specials] [quick 5] strip and joins the 8-col
+       grid too (background fills all 8; other targets leave trailing cells empty).
+       The separate .frame-core row was removed. align-items:center keeps the
+       slightly-taller custom "+" centred in its cell beside the round swatches. */
+    #collage-text-palette .frame-toprow,
     #collage-text-palette .frame-favrow,
     #collage-text-palette .frame-coll-grid {
-      display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center;
+      display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center; align-items: center;
     }
     /* v2.1 round 155 — Rotate uses the tile's placement angle, which the
        background doesn't have (its own rotation is a separate item), so hide
@@ -6514,6 +6518,13 @@
       // been turned off deselects; the background tile survives).
       if (collageSelected && !collageSelected.isBg && !collageSelected.on) selectCollageItem(null);
       else if (collageSelected && window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected);
+      // v2.1 round 200 (Terry) — BUG2: after an undo/redo, re-sync the unified
+      // Colour control to the restored selection so the Background (or Frame/Text)
+      // subcategory header stays GOLD and the palette stays mounted beneath it with
+      // the correct active ring. setTile alone doesn't touch the colour-target UI,
+      // so undoing a background colour pick would otherwise leave a stale/hidden
+      // palette even though the bg is still the selection.
+      try { updateColorTargets(); } catch (_) {}
     }
     function undoCollage() {
       if (!collageUndo.length) return;
@@ -6717,9 +6728,16 @@
       let layer = document.getElementById('collage-bg-layer');
       // v2.1 round 178 (Terry) — hide the photo layer when there's no photo OR
       // when transparent mode is on (the photo is remembered, just not shown).
+      // v2.1 round 200 (Terry) — do NOT deselect the background just because it's
+      // a plain colour / transparent (no photo layer). A coloured/transparent
+      // background is still a valid, editable selection — you're editing its
+      // colour — so picking a colour must KEEP it selected (gold header + palette
+      // stay). The round-178 auto-`selectCollageItem(null)` that used to live here
+      // was BUG1: it dropped the selection on every colour pick. The only place
+      // that legitimately deselects on photo-removal is setCollageBgImage('')
+      // (its own explicit deselect), which is untouched.
       if (!collageBgImagePath || collageTransparent) {
         if (layer) layer.style.display = 'none';
-        if (collageSelected && collageSelected.isBg) selectCollageItem(null);
         updateBgFadeRow();
         return;
       }
@@ -7460,11 +7478,15 @@
     // ForTarget() swaps getCurrent/onPick + the per-target special chip, then
     // re-rings. Data below: a fixed Core 7, ONE shared persistent Favourites list,
     // and the collapsed collection chevrons.
-    // v2.1 round 194 (Terry) — FIXED core row. Exactly these 7, always shown,
-    // never re-ordered. (Was a 10-colour "defaults" list.)
+    // v2.1 round 194 (Terry) — FIXED quick-colour set, always shown, never
+    // re-ordered. v2.1 round 200 (Terry) — trimmed from 7 to EXACTLY 5 essentials
+    // (Green + Neon Pink dropped from the quick set — they're still reachable in
+    // the collections below) and these now share ROW 1 with the custom "+" and the
+    // background locked specials (no separate Core row). Order is fixed:
+    // White, Black, Red, Yellow, Blue.
     const TEXT_COLOR_DEFAULTS = [
-      ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FFD700', 'Yellow'], ['#FF0033', 'Red'],
-      ['#007AFF', 'Blue'], ['#34C759', 'Green'], ['#FF1493', 'Neon Pink'],
+      ['#FFFFFF', 'White'], ['#000000', 'Black'], ['#FF0033', 'Red'],
+      ['#FFD700', 'Yellow'], ['#007AFF', 'Blue'],
     ];
     // v2.1 round 194 (Terry) — named collections, each rendered as a collapsed
     // chevron (<details>). v2.1 round 195 (Terry) — trimmed to EXACTLY 16 each (2
@@ -7580,9 +7602,14 @@
     }
     // v2.1 round 194/195 (Terry) — ONE shared palette. opts.getCurrent() → the
     // colour to ring (lowercased; '' rings the special chip). opts.onPick(hex)
-    // applies to the current target. opts.special = { label, tip } prepends a
+    // applies to the current target. opts.special = { label, tip } adds a
     // per-target special chip that sets '' (Effect → Auto/derived; Frame → None/
-    // no frame). Order: [Special?] [Custom +] · Core 7 · Favourites · collections.
+    // no frame). opts.lockedSpecials = [nodes] (background only) are the Photo +
+    // Transparent swatches.
+    // v2.1 round 200 (Terry) — layout: ROW 1 = [Special?] [Custom +]
+    // [lockedSpecials] [quick 5] · ROW 2 = Favourites (user colours only) ·
+    // then the collapsed collections. (Was: a [Special?][Custom+] top row, a
+    // separate Core-7 row, then Favourites with the specials prepended.)
     function renderTextColorPalette(hostEl, getCurrent, onPick, opts) {
       if (!hostEl) return;
       opts = opts || {};
@@ -7592,10 +7619,27 @@
       hostEl.querySelectorAll('.frame-coll-collapse[open]').forEach((d) => { if (d.dataset.coll) openColls.add(d.dataset.coll); });
       hostEl.innerHTML = '';
       hostEl.classList.add('frame-palette');
-      // Top controls row (Auto + Custom) on their own line so the Core 7 below
-      // reads as a clean, fixed strip.
+      // v2.1 round 200 (Terry) — ROW 1 is now ONE combined 8-col strip:
+      //   [special?] [custom +] [bg locked specials: Photo, Transparent] [quick 5]
+      // The old separate Core row is gone — the 5 quick colours live here with the
+      // custom "+", and (background target only) the two LOCKED specials sit right
+      // after the "+". For Text/Frame/Effect lockedSpecials is empty, so Row 1 is
+      // just [special?] [custom +] White Black Red Yellow Blue. Favourites (Row 2)
+      // is user colours ONLY now (empty by default).
       const top = document.createElement('div');
       top.className = 'frame-row frame-toprow';
+      // Per-target special chip (Effect → Auto/derived; Frame → None/no frame).
+      // Sets ''; data-color '' so the active-ring logic rings it when current is ''.
+      // First in Row 1 so it reads as the "no colour" option at the start.
+      if (opts.special) {
+        const spSw = document.createElement('button');
+        spSw.type = 'button'; spSw.className = 'frame-swatch frame-none';
+        spSw.setAttribute('data-color', '');
+        spSw.setAttribute('data-pdr-tooltip', opts.special.tip || '');
+        spSw.textContent = opts.special.label || '';
+        spSw.addEventListener('click', () => { try { onPick(''); } catch (_) {} });
+        top.appendChild(spSw);
+      }
       // Custom "+" — opens a hidden colour input; a picked colour applies to the
       // target AND is added to Favourites (on commit).
       const add = document.createElement('button');
@@ -7608,37 +7652,25 @@
       add.addEventListener('click', () => { try { custom.click(); } catch (_) {} });
       custom.addEventListener('input', () => { try { onPick(custom.value); } catch (_) {} });
       custom.addEventListener('change', () => textAddFav(custom.value));   // favourite it on commit
-      // Per-target special chip (Effect → Auto/derived; Frame → None/no frame).
-      // Sets ''; data-color '' so the active-ring logic rings it when current is ''.
-      if (opts.special) {
-        const spSw = document.createElement('button');
-        spSw.type = 'button'; spSw.className = 'frame-swatch frame-none';
-        spSw.setAttribute('data-color', '');
-        spSw.setAttribute('data-pdr-tooltip', opts.special.tip || '');
-        spSw.textContent = opts.special.label || '';
-        spSw.addEventListener('click', () => { try { onPick(''); } catch (_) {} });
-        top.appendChild(spSw);
-      }
       top.appendChild(add); top.appendChild(custom);
+      // v2.1 round 200 (Terry) — the two LOCKED background specials (Photo,
+      // Transparent) sit in Row 1 directly after the custom "+", BEFORE the quick
+      // colours — background target only. They're normal-sized swatches, never
+      // removable/addable, and NOT in the persisted favourites list;
+      // opts.lockedSpecials carries the pre-built nodes (built in
+      // renderTextColorPaletteForTarget so they close over the bg setters/state).
+      // For Text/Frame/Effect lockedSpecials is empty, so they never appear there.
+      (opts.lockedSpecials || []).forEach((node) => { if (node) top.appendChild(node); });
+      // Quick colours — the fixed 5 essentials, each addable to favourites.
+      TEXT_COLOR_DEFAULTS.forEach(([hex, tip]) => top.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
       hostEl.appendChild(top);
-      // Core row (fixed, always) — the 7 essentials, each addable to favourites.
-      const core = document.createElement('div');
-      core.className = 'frame-row frame-core';
-      TEXT_COLOR_DEFAULTS.forEach(([hex, tip]) => core.appendChild(makeTextSwatch(hex, tip, onPick, { addable: true })));
-      hostEl.appendChild(core);
-      // Favourites row — up to 7 user colours (right-click to remove). Faint hint
-      // when empty (the separate #collage-text-fav-hint element).
-      // v2.1 round 199 (Terry) — for the BACKGROUND target only, two LOCKED
-      // specials are prepended HERE (before the user favourites): Transparent +
-      // the Use-a-photo slot. They're normal-sized swatches, never removable, and
-      // are NOT part of the persisted favourites list — opts.lockedSpecials carries
-      // the pre-built DOM nodes (built in renderTextColorPaletteForTarget so they
-      // can close over the bg setters / state). For Text/Frame/Effect this is
-      // empty, so they never appear there.
+      // Favourites row (Row 2) — up to 7 USER colours only (right-click to remove);
+      // EMPTY by default. v2.1 round 200 (Terry) — the locked specials no longer
+      // live here (moved to Row 1), so Favourites is clean until the user adds via
+      // the ＋ badges. Faint hint shown when empty (the #collage-text-fav-hint el).
       const favs = textGetFavs();
       const favRow = document.createElement('div');
       favRow.className = 'frame-row frame-favrow';
-      (opts.lockedSpecials || []).forEach((node) => { if (node) favRow.appendChild(node); });
       favs.forEach((c) => favRow.appendChild(makeTextSwatch(c, c + ' (right-click to remove)', onPick, { removable: true })));
       hostEl.appendChild(favRow);
       const favHint = document.getElementById('collage-text-fav-hint');
@@ -7733,7 +7765,10 @@
           try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
         }
       });
-      return [tSw, pSw];
+      // v2.1 round 200 (Terry) — Row-1 order is [custom +] [Photo] [Transparent]
+      // [quick colours], so return Photo BEFORE Transparent. (Lookup is by id in
+      // markBgLockedSpecialsActive, so order here only sets the on-screen sequence.)
+      return [pSw, tSw];
     }
     function renderTextColorPaletteForTarget() {
       const host = document.getElementById('collage-text-palette');
@@ -7757,11 +7792,20 @@
         renderTextColorPalette(
           host,
           () => (collageBg || ''),
-          (hex) => { try { onCollageColorPick(hex || ''); } catch (_) {} syncTextColorPaletteRings(); },
-          // v2.1 round 199 (Terry) — Transparent + Use-a-photo now live HERE as
-          // two LOCKED specials at the start of Favourites (no separate Background
-          // mini-row any more). No '∅ None' special — White in the Core row is the
-          // default base.
+          // v2.1 round 200 (Terry) — BUG2: make each background colour pick exactly
+          // ONE clean undo step. beginCollageChange()/commitCollageChange() wrap the
+          // change; because commit nulls collagePendingSnap after pushing, the
+          // panel-wide pointerdown→begin / pointerup→commit wrapper that also fires
+          // for this click no-ops on its trailing commit (no double entry). The
+          // leading begin here just re-snapshots the identical pre-pick state, so it
+          // can't churn. Net: white→red→blue gives a stack of [white, red]; undo→red,
+          // undo→white. Paired with the BUG1 fix (bg stays selected), no spurious
+          // deselect/reselect churn slips between picks.
+          (hex) => { beginCollageChange(); try { onCollageColorPick(hex || ''); } catch (_) {} commitCollageChange(); syncTextColorPaletteRings(); },
+          // v2.1 round 199 (Terry) — Transparent + Use-a-photo now live in ROW 1 as
+          // two LOCKED specials (round 200 moved them out of Favourites — see
+          // buildBgLockedSpecials / the row-1 assembly). No '∅ None' special — White
+          // in Row 1 is the default base.
           { lockedSpecials: buildBgLockedSpecials() },
         );
         // Freshly-built locked swatches: set their initial ring + photo thumbnail.
