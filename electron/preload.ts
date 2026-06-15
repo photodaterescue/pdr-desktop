@@ -182,6 +182,23 @@ flashTaskbar: () => ipcRenderer.invoke('window:flashFrame'),
 // focus-click first. See the main-process 'window:focus-self' handler.
 focusSelf: () => ipcRenderer.send('window:focus-self'),
 
+// v2.1 round 207 (Terry) — window-state bridge for the viewer/collage
+// top-center "Restore window" pill. getState seeds the renderer's cached
+// isMaximized (primary) + isFullScreen flags on load; exitFullOrRestore
+// is the pill's (and Esc's) click target (leaves Electron fullscreen,
+// else un-maximizes); onStateChange fires on maximize/unmaximize +
+// enter/leave-full-screen (forwarded from main) so the pill's gate stays
+// live. Returns an unsubscribe fn, matching the other on* bridges here.
+window: {
+  getState: () => ipcRenderer.invoke('window:getState') as Promise<{ isFullScreen: boolean; isMaximized: boolean }>,
+  exitFullOrRestore: () => ipcRenderer.invoke('window:exitFullOrRestore'),
+  onStateChange: (cb: () => void) => {
+    const handler = () => cb();
+    ipcRenderer.on('window:state-changed', handler);
+    return () => ipcRenderer.removeListener('window:state-changed', handler);
+  },
+},
+
 openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   settings: {

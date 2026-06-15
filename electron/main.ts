@@ -3490,6 +3490,30 @@ ipcMain.on('window:focus-self', (event) => {
   }
 });
 
+// v2.1 round 207 (Terry) — window-state bridge for the viewer/collage
+// top-center "Restore window" pill. Terry's final decision: the title
+// bar + native min/maximise/close buttons stay as they are; when the
+// window is MAXIMISED, the pill (and Esc) un-maximise it. getState
+// returns BOTH isMaximized (the primary arm trigger) and isFullScreen so
+// the renderer can cache them on load; exitFullOrRestore is the pill's
+// click target (leaves Electron fullscreen if full screen, else
+// un-maximizes). state-changed broadcasts (wired where the viewer/
+// collage window is created — maximize/unmaximize + enter/leave-full-
+// screen) keep the cached flags live without polling.
+ipcMain.handle('window:getState', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  return {
+    isFullScreen: !!w && !w.isDestroyed() && w.isFullScreen(),
+    isMaximized: !!w && !w.isDestroyed() && w.isMaximized(),
+  };
+});
+ipcMain.handle('window:exitFullOrRestore', (event) => {
+  const w = BrowserWindow.fromWebContents(event.sender);
+  if (!w || w.isDestroyed()) return;
+  if (w.isFullScreen()) w.setFullScreen(false);
+  else if (w.isMaximized()) w.unmaximize();
+});
+
 ipcMain.handle('disk:getSpace', async (_event, directoryPath: string) => {
   try {
     // ── Path 1: fs.statfsSync (Node 18.15+) ──────────────────────────
@@ -11499,6 +11523,22 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     win.webContents.on('render-process-gone', (_e, details) => {
       console.error(`[${isCollage ? 'collage' : 'viewer'}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
     });
+
+    // v2.1 round 207 (Terry) — forward window-state changes to the
+    // renderer so the top-center "Restore window" pill can show/hide
+    // itself the moment the window is maximised / un-maximised (and on
+    // enter/leave-full-screen). The renderer also reads window:getState on
+    // load and listens for HTML5 fullscreenchange; these maximize +
+    // fullscreen transitions can't be observed from inside the page.
+    const sendWinState = () => {
+      if (!win.isDestroyed()) {
+        try { win.webContents.send('window:state-changed'); } catch {}
+      }
+    };
+    win.on('enter-full-screen', sendWinState);
+    win.on('leave-full-screen', sendWinState);
+    win.on('maximize', sendWinState);
+    win.on('unmaximize', sendWinState);
 
     win.on('closed', () => {
       pendingByWc.delete(wcId);
