@@ -629,7 +629,9 @@
          whole pill (y≈48–82) clears the 40px OS title-bar drag region
          (#toolbar, y 0–40), which previously ate the pill's upper ~26px and
          left only the lower sliver hoverable/clickable. */
-      top: 48px;
+      /* v2.1 round 213 (Terry) — nudged up 48px → 46px: still clears the 40px
+         #toolbar OS drag region (pill y≈46–80), so hover/click stay fixed. */
+      top: 46px;
       left: 50%;
       transform: translateX(-50%) translateY(-8px);
       display: none;
@@ -1522,6 +1524,27 @@
     .frame-coll-collapse > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #a99cff; }
     .frame-coll-collapse[open] > summary::before { transform: rotate(90deg); }
     .frame-coll-collapse[open] { display: block; }
+    /* v2.1 round 213 (Terry) — collection header bits: the name span, a flex
+       spacer that pushes the ▲/▼ reorder controls to the right edge, and the
+       reorder buttons themselves. The buttons are deliberately light — no border
+       or fill at rest, just a muted glyph that brightens to brand gold on hover —
+       so they don't compete with the swatches. They sit INSIDE the <summary>; the
+       JS stops their click from toggling the <details>. */
+    .frame-coll-name { flex: 0 0 auto; }
+    .frame-coll-spacer { flex: 1 1 auto; }
+    .frame-coll-move {
+      flex: 0 0 auto;
+      width: 16px; height: 16px; padding: 0;
+      border: none; background: transparent; cursor: pointer;
+      color: #6f6f78;                       /* muted at rest */
+      font-size: 9px; line-height: 16px; text-align: center;
+      border-radius: 3px;
+      transition: color 120ms, background 120ms, transform 120ms;
+      -webkit-app-region: no-drag;          /* never let the title-bar drag region eat the click */
+    }
+    .frame-coll-move:hover { color: #FEC242; background: rgba(254, 194, 66, 0.12); transform: scale(1.12); }
+    .frame-coll-move.is-disabled,
+    .frame-coll-move:disabled { opacity: 0.28; cursor: default; pointer-events: none; }
     .frame-coll-grid { margin-top: 6px; }
     .frame-coll-collapse::details-content { display: block; }
     /* Legacy alias kept so any stale reference doesn't break. */
@@ -8521,26 +8544,32 @@
       ['#FF8A1F', 'Orange'],
     ];
     // v2.1 round 212 (Terry) — collections REPLACED from the Colour Palette spec
-    // (PDR_Colour_Palette_Specification.pdf). 12 categories in popularity order:
-    // Pastel, Neon, Neutral, Seasonal, Sunset, Nature, Ocean, Luxury, Cars, Skin,
-    // Retro, Monochrome. EXACTLY 16 colours each (192 total), transcribed verbatim
-    // from the spec. Each tooltip is the spec's colour NAME (better than the old
-    // generic 'Neon'/'Skin' labels). Each renders as a collapsed chevron
-    // (<details>) of 16 = 2 rows of 8. Order here is the spec's lightest→darkest
-    // listing; the load-time sortCollectionsLightToDark() below re-sorts every grid
-    // by luminance anyway, so DO NOT pre-sort.
+    // (PDR_Colour_Palette_Specification.pdf). 12 categories, EXACTLY 16 colours
+    // each (192 total), transcribed verbatim from the spec. Each tooltip is the
+    // spec's colour NAME (better than the old generic 'Neon'/'Skin' labels). Each
+    // renders as a collapsed chevron (<details>) of 16 = 2 rows of 8. Order here
+    // is the spec's lightest→darkest listing; the load-time
+    // sortCollectionsLightToDark() below re-sorts every grid by luminance anyway,
+    // so DO NOT pre-sort.
+    // v2.1 round 213 (Terry) — DEFAULT order changed so Neon is FIRST, then the
+    // rest unchanged: Neon, Pastel, Neutral, Seasonal, Sunset, Nature, Ocean,
+    // Luxury, Cars, Skin, Retro, Monochrome. This is only the DEFAULT; the user
+    // can reorder collections via the ▲/▼ header controls, persisted to the
+    // localStorage key 'pdr-color-collection-order' and applied at render time
+    // (see applyCollectionOrder / renderTextColorPalette). Data for all 12 is
+    // unchanged; this is purely the array's starting sequence.
     const COLOR_COLLECTIONS = [
-      { name: 'Pastel', colors: [
-        ['#FFD1DC', 'Baby Pink'], ['#FFC8E2', 'Cotton Candy'], ['#FFDAB9', 'Peach'], ['#FFF4B5', 'Buttercream'],
-        ['#CFFFE5', 'Mint'], ['#D9F7BE', 'Pistachio'], ['#CBE7FF', 'Sky'], ['#D6ECFF', 'Powder Blue'],
-        ['#E6D6FF', 'Lavender'], ['#DCC6FF', 'Lilac'], ['#FFCCC2', 'Soft Coral'], ['#FFF8B5', 'Lemon'],
-        ['#D4FFF5', 'Aqua'], ['#C9D0FF', 'Periwinkle'], ['#F8D8D8', 'Blush'], ['#F4F4F4', 'Cloud'],
-      ] },
       { name: 'Neon', colors: [
         ['#F6FF33', 'Electric Yellow'], ['#D8FF3A', 'Neon Lime'], ['#73FF4D', 'Toxic Green'], ['#4FFFD5', 'Neon Mint'],
         ['#42F5E6', 'Aqua Glow'], ['#36D97F', 'Cyber Green'], ['#F06AFF', 'Neon Pink'], ['#38D9E6', 'Neon Cyan'],
         ['#FF841F', 'Neon Orange'], ['#FF4DF0', 'Hot Pink'], ['#B35CFF', 'Ultraviolet'], ['#3D7FFF', 'Electric Blue'],
         ['#FF2FAE', 'Cyber Magenta'], ['#FF2222', 'Laser Red'], ['#8A3DFF', 'Neon Purple'], ['#4D3DFF', 'Plasma Blue'],
+      ] },
+      { name: 'Pastel', colors: [
+        ['#FFD1DC', 'Baby Pink'], ['#FFC8E2', 'Cotton Candy'], ['#FFDAB9', 'Peach'], ['#FFF4B5', 'Buttercream'],
+        ['#CFFFE5', 'Mint'], ['#D9F7BE', 'Pistachio'], ['#CBE7FF', 'Sky'], ['#D6ECFF', 'Powder Blue'],
+        ['#E6D6FF', 'Lavender'], ['#DCC6FF', 'Lilac'], ['#FFCCC2', 'Soft Coral'], ['#FFF8B5', 'Lemon'],
+        ['#D4FFF5', 'Aqua'], ['#C9D0FF', 'Periwinkle'], ['#F8D8D8', 'Blush'], ['#F4F4F4', 'Cloud'],
       ] },
       { name: 'Neutral', colors: [
         ['#F4E9D8', 'Ivory'], ['#ECEAE4', 'Soft White'], ['#F1D0B6', 'Cream'], ['#DCD3C8', 'Linen'],
@@ -8559,6 +8588,10 @@
         ['#FF9F45', 'Tangerine'], ['#FFBF36', 'Amber'], ['#E7A58E', 'Rose Gold'], ['#F97AA3', 'Flamingo'],
         ['#C27BA0', 'Mauve'], ['#B497D6', 'Lavender'], ['#8661C1', 'Twilight Purple'], ['#6D8CC3', 'Dusky Blue'],
         ['#4F5D95', 'Indigo Sky'], ['#D74B4B', 'Sunset Red'], ['#FF6BB5', 'Tropical Pink'], ['#1E2D59', 'Midnight Navy'],
+        // v2.1 round 213 (Terry) — PDR brand colours added to Sunset (now 18). The
+        // count label is gone, so the extra two just wrap to a short 3rd row; the
+        // light→dark sort places them by luminance like every other swatch.
+        ['#A99CFF', 'PDR Lavender'], ['#FEC242', 'PDR Gold'],
       ] },
       { name: 'Nature', colors: [
         ['#7A8C5D', 'Moss'], ['#628C4F', 'Fern'], ['#355E3B', 'Forest'], ['#1F4D3A', 'Pine'],
@@ -8622,6 +8655,59 @@
         if (coll && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));
       });
     })();
+    // v2.1 round 213 (Terry) — user-reorderable COLLECTIONS. The ▲/▼ controls in
+    // each collection header move that category up/down the list; the chosen order
+    // persists to localStorage and is applied at render time. This reorders the
+    // COLLECTIONS only — it is orthogonal to the per-colour light→dark sort above
+    // (which orders swatches WITHIN a collection) and leaves COLOR_COLLECTIONS (the
+    // default order, Neon-first) untouched as the fallback.
+    const COLOR_COLLECTION_ORDER_KEY = 'pdr-color-collection-order';
+    // Load the saved order, hardened against an empty/corrupt value: must parse to
+    // an array; non-string / unknown / duplicate names are dropped. Returns [] when
+    // there's nothing usable, so callers fall back to the default order.
+    function loadCollectionOrder() {
+      try {
+        const raw = localStorage.getItem(COLOR_COLLECTION_ORDER_KEY);
+        if (!raw) return [];
+        const arr = JSON.parse(raw);
+        if (!Array.isArray(arr)) return [];
+        const known = new Set(COLOR_COLLECTIONS.map((c) => c.name));
+        const seen = new Set();
+        const out = [];
+        arr.forEach((n) => {
+          if (typeof n === 'string' && known.has(n) && !seen.has(n)) { seen.add(n); out.push(n); }
+        });
+        return out;
+      } catch (_) { return []; }
+    }
+    function saveCollectionOrder(names) {
+      try { localStorage.setItem(COLOR_COLLECTION_ORDER_KEY, JSON.stringify(names)); } catch (_) {}
+    }
+    // The collections in the order to render: saved order first (validated names),
+    // then any collection not in the saved list appended in COLOR_COLLECTIONS'
+    // default order — so brand-new collections (or a partial saved list) always
+    // appear, never vanish. Returns the actual collection objects.
+    function getOrderedCollections() {
+      const saved = loadCollectionOrder();
+      const byName = new Map(COLOR_COLLECTIONS.map((c) => [c.name, c]));
+      const ordered = [];
+      const used = new Set();
+      saved.forEach((n) => { if (byName.has(n) && !used.has(n)) { used.add(n); ordered.push(byName.get(n)); } });
+      COLOR_COLLECTIONS.forEach((c) => { if (!used.has(c.name)) { used.add(c.name); ordered.push(c); } });
+      return ordered;
+    }
+    // Move a collection one slot up (dir=-1) or down (dir=+1) in the current
+    // effective order, persist the new full ordering, and re-render the palette.
+    function moveCollection(name, dir) {
+      const order = getOrderedCollections().map((c) => c.name);
+      const i = order.indexOf(name);
+      if (i < 0) return;
+      const j = i + dir;
+      if (j < 0 || j >= order.length) return;   // already at an end → no-op
+      const tmp = order[i]; order[i] = order[j]; order[j] = tmp;
+      saveCollectionOrder(order);
+      renderTextColorPaletteForTarget();   // rebuild reflects the new order + re-rings
+    }
     // v2.1 round 195 (Terry) — which target the ONE shared palette edits:
     //   'text'       → fill colour       → setTextColor
     //   'effect'     → effect tint       → setTextEffectColor   (special: Auto)
@@ -8787,13 +8873,53 @@
       }
       // Collections — each a collapsed <details> chevron of 16 swatches (2 rows of
       // 8); each swatch is addable to favourites (＋ on hover) and applies on body click.
-      COLOR_COLLECTIONS.forEach((coll) => {
+      // v2.1 round 213 (Terry) — render in the user's saved order (getOrderedCollections),
+      // not the raw default array. The header now shows ONLY the name (the "(16)"
+      // count was dropped — every collection is 16-ish, so it was noise) plus small
+      // ▲/▼ reorder controls. Index/last are tracked so ▲ is disabled on the first
+      // item and ▼ on the last.
+      const orderedColls = getOrderedCollections();
+      const lastCollIdx = orderedColls.length - 1;
+      orderedColls.forEach((coll, collIdx) => {
         const det = document.createElement('details');
         det.className = 'enhance-collapse frame-coll-collapse';
         det.dataset.coll = coll.name;
         if (openColls.has(coll.name)) det.open = true;   // preserve user's expanded state across rebuilds
         const sum = document.createElement('summary');
-        sum.textContent = coll.name + ' (' + coll.colors.length + ')';
+        // Name label (count removed). A flex spacer pushes the ▲/▼ controls to the
+        // right edge of the header; the summary keeps its own ▸ chevron (::before).
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'frame-coll-name';
+        nameSpan.textContent = coll.name;
+        sum.appendChild(nameSpan);
+        const spacer = document.createElement('span');
+        spacer.className = 'frame-coll-spacer';
+        sum.appendChild(spacer);
+        // ▲/▼ reorder controls. CRITICAL: clicking a <summary> toggles its <details>;
+        // these buttons live INSIDE the summary, so each handler stopPropagation()s
+        // AND preventDefault()s to cancel that default open/close on click (and on
+        // pointerdown, so the press itself never starts a toggle). Disabled at the
+        // ends. Styled subtly via .frame-coll-move (gold on hover) to match.
+        const mkMove = (dir, glyph, label, disabled) => {
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = 'frame-coll-move';
+          btn.textContent = glyph;
+          btn.setAttribute('data-pdr-tooltip', label);
+          btn.setAttribute('aria-label', label);
+          if (disabled) { btn.disabled = true; btn.classList.add('is-disabled'); }
+          // Swallow the press so the summary never toggles from these controls.
+          btn.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); });
+          btn.addEventListener('mousedown', (e) => { e.stopPropagation(); e.preventDefault(); });
+          btn.addEventListener('click', (e) => {
+            e.stopPropagation(); e.preventDefault();
+            if (btn.disabled) return;
+            moveCollection(coll.name, dir);
+          });
+          return btn;
+        };
+        sum.appendChild(mkMove(-1, '▲', 'Move up', collIdx === 0));
+        sum.appendChild(mkMove(1, '▼', 'Move down', collIdx === lastCollIdx));
         det.appendChild(sum);
         const grid = document.createElement('div');
         grid.className = 'frame-row frame-coll-grid';
@@ -12226,7 +12352,12 @@ function zoomTo(newZoom, centreX, centreY) {
       // v2.1 round 212 (Terry) — raised 72→92 so the top-center reveal zone
       // still comfortably covers the pill after it dropped to top:48px (pill
       // now spans y≈48–82): moving up to it reveals it AND staying on it keeps it.
-      var REVEAL_Y = 92;             // top strip height that triggers the reveal
+      // v2.1 round 213 (Terry) — lowered 92→46: the reveal zone is now just the
+      // title-bar strip (≈ the 40px bar), so merely entering the upper canvas no
+      // longer reveals the pill — only reaching the very top does. Once shown, the
+      // pill (y≈46–80) + its own mouseenter keep it visible, and the 1.5s grace
+      // (FADE_OUT_MS) covers the tiny transit between the strip and the pill.
+      var REVEAL_Y = 46;             // top strip height that triggers the reveal
       var FADE_OUT_MS = 1500;        // YouTube-style lingering fade after leaving
       var isElectronFs = false;      // from pdr.window state
       var isMaximized = false;       // v2.1 round 207 (Terry) — primary arm trigger
