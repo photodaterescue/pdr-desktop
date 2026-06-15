@@ -8932,6 +8932,16 @@
       // shows the selection ring; click OUTSIDE the canvas (stage padding) →
       // deselect. (With a bg photo, the photo layer's own pointerdown fires
       // first and selects the background too.)
+      // v2.1 round 220 (Terry) — clicking the empty dark area deselects AND tidies
+      // the Enhance menu: nothing is selected, so the half-open subcategories are
+      // just noise. Reuse the Collapse-all button (it collapses every subcategory
+      // chevron AND clears the selection) so an idle canvas means a calm panel.
+      function collapseAllSubcatsOnDeselect() {
+        const _cb = document.getElementById('enhance-collapse-all');
+        if (_cb) { _cb.click(); return; }
+        try { selectCollageItem(null); } catch (_) {}
+        try { selectText(null); } catch (_) {}
+      }
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.target === collageCanvasEl) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
         // v2.1 round 206 (Terry) — a click on the dark margin AROUND the canvas
@@ -8941,14 +8951,14 @@
         // own pointerdown, so reaching here with a target that isn't the canvas
         // and isn't inside it means the empty dark area was clicked. Clicking the
         // canvas BACKGROUND itself is handled above (selects the bg) — unchanged.
-        else if (!collageCanvasEl.contains(e.target)) { selectCollageItem(null); selectText(null); }
+        else if (!collageCanvasEl.contains(e.target)) { collapseAllSubcatsOnDeselect(); }
       });
       // v2.1 round 206 (Terry) — the stage is centred inside #collage-root with a
       // dark background; if the click lands on that outer area (e.g. above/below
       // the centred stage) deselect too. Same guard: only when the target is the
       // root itself, never a child.
       if (collageRootEl) collageRootEl.addEventListener('pointerdown', (e) => {
-        if (e.target === collageRootEl) { selectCollageItem(null); selectText(null); }
+        if (e.target === collageRootEl) { collapseAllSubcatsOnDeselect(); }
       });
       // v2.1 round 168 (Terry) — Ctrl+scroll zooms the SELECTED photo in to 2×;
       // it can't zoom out past its original (zoom clamps at 1). Done on the
