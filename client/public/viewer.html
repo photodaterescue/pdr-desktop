@@ -6220,7 +6220,11 @@
       // editable's inline styling so live font/size/colour/align changes from the
       // side panel show in the editable too.
       if (editingText === layer && layer.editEl) {
-        canvas.style.display = 'none';
+        // v2.1 round 218 (Terry) — keep the rendered canvas VISIBLE during edit
+        // (the editable's text is transparent and overlays it). The visible text
+        // is ALWAYS the canvas, so it can't shift when you double-click to edit —
+        // the rounds 214-217 glyph-jump is structurally impossible now.
+        canvas.style.display = 'block';
         if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
         else el.insertBefore(canvas, el.firstChild);
         layer.canvasEl = canvas;
@@ -6266,7 +6270,10 @@
       ed.style.fontWeight = layer.bold ? 'bold' : 'normal';
       ed.style.fontStyle = layer.italic ? 'italic' : 'normal';
       ed.style.textDecoration = layer.underline ? 'underline' : 'none';
-      ed.style.color = layer.color || '#ffffff';
+      // v2.1 round 218 (Terry) — the editable's TEXT is transparent: the visible
+      // text is the rendered canvas sitting directly behind it, so editing can
+      // never shift the text. Only the caret (real colour) + selection show.
+      ed.style.color = 'transparent';
       ed.style.textAlign = layer.align || 'center';
       ed.style.caretColor = layer.color || '#ffffff';
       // ── v2.1 round 217 (Terry) — KILL the display↔edit glyph JUMP ────────────
@@ -6381,7 +6388,9 @@
       }
       // Fill from the model, hide the canvas, style to match the render.
       ed.textContent = String(layer.text == null ? '' : layer.text);
-      if (layer.canvasEl) layer.canvasEl.style.display = 'none';
+      // v2.1 round 218 (Terry) — keep the canvas visible; the editable overlays it
+      // with transparent text (the canvas is the visible text → no edit-jump).
+      if (layer.canvasEl) layer.canvasEl.style.display = 'block';
       ed.style.display = 'block';   // v2.1 round 217 (Terry) — stays BLOCK (no flex); styleTextEditable does the glyph-exact vertical alignment via line-height + margin-top
       styleTextEditable(layer);
       el.classList.add('selected');
