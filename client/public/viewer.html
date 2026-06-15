@@ -6050,6 +6050,37 @@
       // bakes unchanged. Returning the same canvas keeps the bake call
       // (renderTextToCanvas(...).toDataURL(...)) and every existing caller valid.
       canvas._pad = pad;
+      // v2.1 round 215 (Terry) — Canva-style VERTICAL hug: measure the actual
+      // glyph-ink top/bottom of the whole block (in canvas px) so renderTextLayer
+      // can size the .collage-text box to the ink height (lines*lineH carries
+      // line-height LEADING below the last line → a gap to the box bottom; this
+      // removes it). textBaseline is 'top', so each line's draw-y maps to the
+      // baseline via fontBoundingBoxAscent; glyph ink top = baseline −
+      // actualBoundingBoxAscent, glyph ink bottom = baseline + actualBoundingBoxDescent.
+      // inkTop = min over lines (first line), inkBottom = max over lines (last line,
+      // descenders included). Pixels/canvas dims are UNCHANGED → bake byte-identical.
+      try {
+        let inkTop = Infinity, inkBottom = -Infinity, gotMetrics = false;
+        for (let i = 0; i < lines.length; i++) {
+          const drawY = pad + i * lineH;            // textBaseline='top' draw y
+          const m = ctx.measureText(lines[i] || '');
+          // fontBoundingBoxAscent maps the 'top' draw-y to the baseline; fall back
+          // to the line-height ascent ratio if the metric is unavailable.
+          const baseAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : (fontPx * 1.0);
+          const baseline = drawY + baseAsc;
+          const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : baseAsc;
+          const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent
+                       : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : fontPx * 0.25);
+          const top = baseline - aAsc;
+          const bot = baseline + aDesc;
+          if (isFinite(top) && isFinite(bot)) { gotMetrics = true; if (top < inkTop) inkTop = top; if (bot > inkBottom) inkBottom = bot; }
+        }
+        if (gotMetrics && isFinite(inkTop) && isFinite(inkBottom) && inkBottom > inkTop) {
+          // Clamp into the canvas so the offset/height can never go negative.
+          canvas._inkTop = Math.max(0, inkTop);
+          canvas._inkBottom = Math.min(canvas.height, inkBottom);
+        }
+      } catch (_) { /* metrics unsupported → renderTextLayer falls back to the pad box */ }
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -6095,7 +6126,7 @@
         tRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); snapTextRot90(layer); });
         // v2.1 round 204 (Terry) — double-click the text on the canvas enters
         // IN-CANVAS edit mode (replaces the old "focus the side-panel textarea").
-        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); enterTextEdit(layer); });
+        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line
         el.appendChild(tRot); el.appendChild(tRes);
         collageCanvasEl.appendChild(el);
         layer.el = el;
@@ -6120,12 +6151,34 @@
       // untouched, so preview == saved.
       const _pad = canvas._pad || 0;
       const _boxW = Math.max(1, canvas.width - 2 * _pad);
-      const _boxH = Math.max(1, canvas.height - 2 * _pad);
       el.style.width = _boxW + 'px';
-      el.style.height = _boxH + 'px';
       canvas.style.position = 'absolute';
+      // WIDTH stays snug (maxW) with the canvas floated at -pad horizontally
+      // (round 214 — already hugs L/R). v2.1 round 215 (Terry) — VERTICAL hug:
+      // size the box HEIGHT to the glyph INK (inkBottom-inkTop) and float the
+      // canvas at -inkTop so the ink-top sits at the box top and the box bottom
+      // hugs the descenders — removing the line-height leading gap below the last
+      // line (round 214 used canvas.height-2*pad = lines*lineH, which carried that
+      // gap). Falls back to the round-214 symmetric pad box if ink metrics are
+      // unavailable for this font.
       canvas.style.left = (-_pad) + 'px';
-      canvas.style.top = (-_pad) + 'px';
+      let _vCenterShift = 0;   // px to shift the wrapper's translate so the CANVAS centre (what the bake composites on xFrac/yFrac) stays anchored, even though the box is now the asymmetric ink box
+      if (typeof canvas._inkTop === 'number' && typeof canvas._inkBottom === 'number' && canvas._inkBottom > canvas._inkTop) {
+        const _inkTop = canvas._inkTop, _inkBottom = canvas._inkBottom;
+        const _boxH = Math.max(1, _inkBottom - _inkTop);
+        el.style.height = _boxH + 'px';
+        canvas.style.top = (-_inkTop) + 'px';
+        // The wrapper is centred on xFrac/yFrac via translate(-50%,-50%) on its
+        // OWN (ink) box. The canvas centre sits at (canvas.height/2 - inkTop) from
+        // the box top; the box centre at _boxH/2. Shift the wrapper down by their
+        // delta so the CANVAS centre — not the ink-box centre — lands on xFrac/yFrac,
+        // keeping preview aligned with the (unchanged) baked composite position.
+        _vCenterShift = (canvas.height / 2 - _inkTop) - (_boxH / 2);
+      } else {
+        const _boxH = Math.max(1, canvas.height - 2 * _pad);
+        el.style.height = _boxH + 'px';
+        canvas.style.top = (-_pad) + 'px';   // round-214 fallback: symmetric pad box, no shift needed
+      }
       // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
       // contentEditable box stands in for the rendered text: keep the canvas in
       // the DOM (so the swap bookkeeping stays valid) but HIDDEN, and re-sync the
@@ -6145,7 +6198,12 @@
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       el.style.left = (layer.xFrac * cw) + 'px';
       el.style.top = (layer.yFrac * ch) + 'px';
-      el.style.transform = 'translate(-50%,-50%) rotate(' + (layer.rot || 0) + 'deg)';
+      // v2.1 round 215 (Terry) — translate(-50%,-50%) centres the wrapper's own
+      // (now ink-tight) box on xFrac/yFrac; the extra +_vCenterShift px nudge keeps
+      // the CANVAS centre (what the bake composites at xFrac/yFrac) on the anchor,
+      // so the on-screen text doesn't drift vs. the saved file. Applied INSIDE the
+      // translate (pre-rotation frame) so it rotates with the layer like the box.
+      el.style.transform = 'translate(-50%, calc(-50% + ' + _vCenterShift + 'px)) rotate(' + (layer.rot || 0) + 'deg)';
       el.style.zIndex = String(COLLAGE_TEXT_Z + (layer.z || 0));
       el.classList.toggle('selected', selectedText === layer);
     }
@@ -6193,7 +6251,7 @@
     // wrapper, hide the rendered canvas, style + fill it, focus it. selectAll =
     // true selects all the text so typing replaces it (used right after Add text
     // and on the placeholder). One undo step: snapshot on enter, push on exit.
-    function enterTextEdit(layer, selectAll) {
+    function enterTextEdit(layer, selectAll, atPoint) {
       if (!layer || !layer.el) return;
       // Already editing this one? just (re)focus.
       if (editingText === layer && layer.editEl) { try { layer.editEl.focus(); } catch (_) {} return; }
@@ -6218,10 +6276,22 @@
           layer.text = readTextEditable(layer);
           renderTextLayer(layer);   // canvas stays hidden (editingText === layer); resizes the wrapper to fit
         });
-        // Enter commits; Shift+Enter inserts a newline. Escape commits too (and
-        // is stopped so it doesn't reach the collage shortcut handler).
+        // v2.1 round 215 (Terry) — Enter now INSERTS A NEWLINE (Terry: "Pressing
+        // return should just move the cursor to the next row"), matching what
+        // Shift+Enter already did. Edit is left ONLY via Escape or click-away
+        // (blur) — never Enter. Both plain Enter and Shift+Enter run the same
+        // insertLineBreak so a real line break lands in the editable; readTextEditable
+        // reads innerText, which renders that break as a '\n' → round-trips into
+        // layer.text (renderTextToCanvas splits on '\n') and bakes identically.
+        // We handle the insert ourselves (preventDefault) so contentEditable can't
+        // emit a font/style-carrying wrapper that would diverge from the bake.
         ed.addEventListener('keydown', (e) => {
-          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); e.stopPropagation(); exitTextEdit(); }
+          if (e.key === 'Enter') {
+            e.preventDefault(); e.stopPropagation();
+            try { document.execCommand('insertLineBreak'); }
+            catch (_) { try { document.execCommand('insertHTML', false, '<br>'); } catch (__) {} }
+            // execCommand fires 'input' on its own → layer.text + re-render update.
+          }
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitTextEdit(); }
           else { e.stopPropagation(); }   // keep typing keys out of the collage key handler
         });
@@ -6239,14 +6309,30 @@
       ed.style.display = 'block';
       styleTextEditable(layer);
       el.classList.add('selected');
-      // Focus + optionally select all (so typing replaces "Your text").
+      // Focus + place the caret. selectAll → select everything (new "Your text",
+      // so typing replaces it). v2.1 round 215 (Terry) — when atPoint is supplied
+      // (double-click into existing text) and we're NOT selecting all, drop the
+      // caret AT THE CLICK POINT via caretRangeFromPoint instead of collapsing to
+      // end-of-line. The editable overlays the same snug box (round 214), so the
+      // screen coords map to the right glyph. Fall back to caret-at-end if the
+      // API is missing or returns a range outside this editable. No-arg case
+      // (no atPoint, no selectAll) keeps caret-at-end.
       try {
         ed.focus();
         const sel = window.getSelection();
-        const range = document.createRange();
-        if (selectAll) { range.selectNodeContents(ed); }
-        else { range.selectNodeContents(ed); range.collapse(false); }   // caret at end
-        sel.removeAllRanges(); sel.addRange(range);
+        let placed = false;
+        if (!selectAll && atPoint && typeof document.caretRangeFromPoint === 'function') {
+          const r = document.caretRangeFromPoint(atPoint.x, atPoint.y);
+          if (r && (ed === r.startContainer || ed.contains(r.startContainer))) {
+            sel.removeAllRanges(); sel.addRange(r); placed = true;
+          }
+        }
+        if (!placed) {
+          const range = document.createRange();
+          if (selectAll) { range.selectNodeContents(ed); }
+          else { range.selectNodeContents(ed); range.collapse(false); }   // caret at end
+          sel.removeAllRanges(); sel.addRange(range);
+        }
       } catch (_) {}
     }
     // Exit edit mode: read back layer.text, remove the editable, re-render the
