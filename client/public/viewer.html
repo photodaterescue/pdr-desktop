@@ -2095,8 +2095,11 @@
     /* v2.1 round 204 (Terry) — text selection ring 50% thicker (1px → 1.5px) so
        it reads clearly without changing the tile (.collage-item) ring.
        v2.1 round 214 (Terry) — the box now hugs the glyphs (Canva-style), so the
-       offset drops 3px → 1.5px for a snug ring right around the text. */
-    .collage-text.selected { outline: 1.5px dashed #a78bfa; outline-offset: 1.5px; }
+       offset drops 3px → 1.5px for a snug ring right around the text.
+       v2.1 round 216 (Terry) — outline thickness +100% (1.5px → 3px) so the
+       selection ring reads clearly; dashed + the gold/lavender colours kept,
+       offset stays snug at 1.5px around the ink+gap box. */
+    .collage-text.selected { outline: 3px dashed #a78bfa; outline-offset: 1.5px; }
     /* v2.1 round 204 (Terry) — IN-CANVAS text editing. While a text layer is in
        edit mode its rendered <canvas> is hidden and this contentEditable box is
        shown in its place. Font-family / px size / colour / text-align / line-
@@ -2104,19 +2107,24 @@
        ToCanvas exactly, so what you type looks like the baked render. Transparent
        background, no outline, caret in the text colour. The wrapper keeps its
        selection ring around it. */
-    /* v2.1 round 214 (Terry) — the editable now exactly overlays the glyph box.
-       The wrapper carries an explicit width/height = the text glyph bounds (set
-       on every render, including live while typing), so position the editable
-       absolutely at the box origin and stretch it to 100% width. text-align
-       (from styleTextEditable) then centres/left/right-aligns the typed text in
-       the same box the baked canvas uses, so entering/leaving edit doesn't jump.
-       The canvas sits behind at left/top:-pad (also absolute); both share the
-       wrapper's top-left = the glyph box origin. */
+    /* v2.1 round 216 (Terry) — the editable must MATCH the rendered canvas EXACTLY
+       so double-clicking to edit doesn't make the text jump (the rounds 214/215
+       bug). The wrapper box = the CENTRED ink block + a uniform gap, and the canvas
+       draws the ink CENTRED in it. So the editable fills the SAME box (100% × 100%)
+       and CENTRES its text both ways: a column flexbox with justify-content:center
+       puts the line-box stack on the vertical centre (where the canvas centred the
+       ink), and text-align (from styleTextEditable, default align-items:stretch
+       makes each line full-width) centres/left/right-aligns horizontally in the
+       same box the canvas uses. line-height 1.25 (set inline) reproduces the canvas
+       line spacing. Net: the text's screen position is identical canvas-shown vs.
+       edit-shown → no jump. The canvas sits behind at left/top:(g−pad), absolute. */
     .collage-text .collage-text-edit {
-      display: block;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;     /* vertical-centre the line stack → matches the canvas's centred ink */
       position: absolute;
       left: 0; top: 0;
-      width: 100%;
+      width: 100%; height: 100%;
       margin: 0; padding: 0; border: 0; outline: none;
       background: transparent;
       box-sizing: border-box;
@@ -5935,8 +5943,47 @@
       // so centre-anchor (preview==bake) holds; at low k it's just clear margin.
       const pad = Math.ceil(fontPx * 0.95);
       const lineH = fontPx * 1.25;
-      canvas.width = Math.max(2, Math.ceil(maxW + pad * 2));
-      canvas.height = Math.max(2, Math.ceil(lines.length * lineH + pad * 2));
+      // v2.1 round 216 (Terry) — CENTRE the glyph INK BLOCK in the canvas (was
+      // top-aligned: textBaseline='top', y=pad+i*lineH, so the ink sat high with
+      // line-height leading dangling below → the box bottom-gap rounds 214/215
+      // chased). New model: measure the ink block FIRST (its top/bottom over all
+      // lines), size the canvas to inkH + 2*pad, and draw so the ink occupies
+      // [pad, canvas-pad] on BOTH axes → ink centre == canvas centre == the
+      // xFrac/yFrac anchor the bake composites on. Symmetric, so NO _vCenterShift.
+      //
+      // Measure (font is already set from above; measureText is independent of
+      // canvas size, so this is valid pre-resize). With textBaseline='top' a line
+      // drawn at relative y `i*lineH` has baseline = i*lineH + fontBoundingBoxAscent,
+      // ink top = baseline − actualBoundingBoxAscent, ink bottom = baseline +
+      // actualBoundingBoxDescent. inkTopRel/inkBottomRel are the block extents
+      // RELATIVE to the line-0 draw-y; inkH = their span. Fallbacks keep older
+      // engines (no actual* metrics) on the previous lines*lineH block height.
+      let inkTopRel = Infinity, inkBottomRel = -Infinity, gotInk = false;
+      for (let i = 0; i < lines.length; i++) {
+        const m = ctx.measureText(lines[i] || '');
+        const baseAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : (fontPx * 1.0);
+        const baseline = i * lineH + baseAsc;
+        const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : baseAsc;
+        const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent
+                     : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : fontPx * 0.25);
+        const top = baseline - aAsc, bot = baseline + aDesc;
+        if (isFinite(top) && isFinite(bot)) { gotInk = true; if (top < inkTopRel) inkTopRel = top; if (bot > inkBottomRel) inkBottomRel = bot; }
+      }
+      // inkH = the measured ink block height; inkW = the widest line (no L/R ink
+      // trim — keeps the existing horizontal hug from round 214). y0 = the line-0
+      // draw-y that places the ink top at canvas-y `pad` → ink bottom at pad+inkH.
+      let inkH, y0;
+      if (gotInk && isFinite(inkTopRel) && isFinite(inkBottomRel) && inkBottomRel > inkTopRel) {
+        inkH = inkBottomRel - inkTopRel;
+        y0 = pad - inkTopRel;
+      } else {
+        // Fallback: previous block model (whole line-box), still symmetric.
+        inkH = lines.length * lineH;
+        y0 = pad;
+      }
+      const inkW = maxW;
+      canvas.width = Math.max(2, Math.ceil(inkW + pad * 2));
+      canvas.height = Math.max(2, Math.ceil(inkH + pad * 2));
       // Re-set the font (resizing the canvas resets the 2D context state).
       ctx.font = fontStr;
       ctx.textBaseline = 'top';
@@ -5949,7 +5996,9 @@
       // Left edge of the content box (for the underline rule, which spans the
       // measured glyph width regardless of alignment).
       lines.forEach((ln, i) => {
-        const y = pad + i * lineH;
+        // v2.1 round 216 (Terry) — draw from y0 (not pad) so the centred ink block
+        // lands at [pad, canvas-pad]; line spacing (lineH) is unchanged.
+        const y = y0 + i * lineH;
         const lineW = ctx.measureText(ln).width;
         let lineLeft = pad;
         if (align === 'center') lineLeft = (canvas.width - lineW) / 2;
@@ -6042,45 +6091,22 @@
           ctx.restore();
         }
       });
-      // v2.1 round 214 (Terry) — stash the symmetric pad on the canvas so the
-      // layer render can size the .collage-text element to the TEXT GLYPH BOUNDS
-      // (canvas minus 2*pad on each axis) and offset the canvas by -pad, making
-      // the visible box / dashed outline / handles HUG the text (Canva-style),
-      // while the padded canvas (needed so glow/shadow/3D don't clip) still
-      // bakes unchanged. Returning the same canvas keeps the bake call
-      // (renderTextToCanvas(...).toDataURL(...)) and every existing caller valid.
+      // v2.1 round 216 (Terry) — stash the symmetric pad + the centred ink block
+      // size so renderTextLayer can size the .collage-text box to ink + a uniform
+      // gap and float the (still-padded) canvas so the gap sits inside the box and
+      // the effect pad overflows. The ink is now CENTRED in the canvas (drawn from
+      // y0 above), so the ink occupies exactly [pad, canvas-pad] on both axes:
+      //   _inkW = canvas.width  − 2*pad      _inkH = canvas.height − 2*pad
+      // (these equal the inkW/inkH computed above, modulo the ceil() on the canvas
+      // dims — derive from the actual canvas so the box math is pixel-exact). No
+      // _inkTop/_inkBottom and NO _vCenterShift: symmetry means the ink centre, the
+      // canvas centre, and the xFrac/yFrac bake anchor are one and the same point.
+      // The bake path (renderTextToCanvas(...).toDataURL(...)) is unchanged in
+      // mechanism — the only difference vs. round 215 is the baked text now centres
+      // on xFrac/yFrac instead of sitting slightly high (the intended fix).
       canvas._pad = pad;
-      // v2.1 round 215 (Terry) — Canva-style VERTICAL hug: measure the actual
-      // glyph-ink top/bottom of the whole block (in canvas px) so renderTextLayer
-      // can size the .collage-text box to the ink height (lines*lineH carries
-      // line-height LEADING below the last line → a gap to the box bottom; this
-      // removes it). textBaseline is 'top', so each line's draw-y maps to the
-      // baseline via fontBoundingBoxAscent; glyph ink top = baseline −
-      // actualBoundingBoxAscent, glyph ink bottom = baseline + actualBoundingBoxDescent.
-      // inkTop = min over lines (first line), inkBottom = max over lines (last line,
-      // descenders included). Pixels/canvas dims are UNCHANGED → bake byte-identical.
-      try {
-        let inkTop = Infinity, inkBottom = -Infinity, gotMetrics = false;
-        for (let i = 0; i < lines.length; i++) {
-          const drawY = pad + i * lineH;            // textBaseline='top' draw y
-          const m = ctx.measureText(lines[i] || '');
-          // fontBoundingBoxAscent maps the 'top' draw-y to the baseline; fall back
-          // to the line-height ascent ratio if the metric is unavailable.
-          const baseAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : (fontPx * 1.0);
-          const baseline = drawY + baseAsc;
-          const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : baseAsc;
-          const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent
-                       : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : fontPx * 0.25);
-          const top = baseline - aAsc;
-          const bot = baseline + aDesc;
-          if (isFinite(top) && isFinite(bot)) { gotMetrics = true; if (top < inkTop) inkTop = top; if (bot > inkBottom) inkBottom = bot; }
-        }
-        if (gotMetrics && isFinite(inkTop) && isFinite(inkBottom) && inkBottom > inkTop) {
-          // Clamp into the canvas so the offset/height can never go negative.
-          canvas._inkTop = Math.max(0, inkTop);
-          canvas._inkBottom = Math.min(canvas.height, inkBottom);
-        }
-      } catch (_) { /* metrics unsupported → renderTextLayer falls back to the pad box */ }
+      canvas._inkW = Math.max(1, canvas.width - 2 * pad);
+      canvas._inkH = Math.max(1, canvas.height - 2 * pad);
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -6137,48 +6163,31 @@
       // appended once above are preserved across re-renders.
       const canvas = renderTextToCanvas(layer, collageShortPx());
       canvas.style.display = 'block';   // v2.1 round 187 (Terry) — drop inline baseline gap so the wrapper hugs the canvas and the corner handles land on the text edges
-      // v2.1 round 214 (Terry) — Canva-style snug box: size the .collage-text
-      // wrapper to the TEXT GLYPH BOUNDS (the padded canvas MINUS the symmetric
-      // pad on every side) and float the (still-padded) canvas at -pad so the
-      // glyphs align to the wrapper's box and the pad/effects overflow invisibly
-      // (the canvas is pointer-events:none, overflow:visible on the wrapper). The
-      // canvas renders 1:1 on screen (no width/height CSS scale), so canvas px ==
-      // display px and the pad needs no scaling. The wrapper stays centre-anchored
-      // on xFrac/yFrac via translate(-50%,-50%); because pad is symmetric the text
-      // centre is unchanged. Result: the dashed outline + resize/rotate handles +
-      // the round-206 drag snapping (computeDragSnap reads el.getBoundingClientRect)
-      // all hug the actual text. The bake path (renderTextToCanvas → toDataURL) is
-      // untouched, so preview == saved.
+      // v2.1 round 216 (Terry) — Canva-style box = the CENTRED ink block + a small
+      // UNIFORM gap on all four sides (rounds 214/215 hugged the ink asymmetrically
+      // and folded in a _vCenterShift, which moved the box top down and made the
+      // edit caret jump vs. the canvas — both gone now). The canvas draws the ink
+      // CENTRED (round 216 in renderTextToCanvas), occupying [pad, canvas-pad] on
+      // both axes. We size the wrapper to ink + 2*g and float the (still-padded)
+      // canvas so the ink sits with gap g inside the box and the effect pad spills
+      // out (overflow:visible, canvas pointer-events:none). Everything is symmetric
+      // about the centre → the box hugs the text uniformly with NO drift, and the
+      // wrapper's translate stays a plain -50%,-50% (NO _vCenterShift). Canvas is
+      // 1:1 on screen (no CSS scale) so canvas px == display px; g needs no scaling.
       const _pad = canvas._pad || 0;
-      const _boxW = Math.max(1, canvas.width - 2 * _pad);
-      el.style.width = _boxW + 'px';
+      const _inkW = (typeof canvas._inkW === 'number') ? canvas._inkW : Math.max(1, canvas.width - 2 * _pad);
+      const _inkH = (typeof canvas._inkH === 'number') ? canvas._inkH : Math.max(1, canvas.height - 2 * _pad);
+      const _fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
+      const _g = Math.round(_fontPx * 0.16);   // uniform gap (Canva SS3): snug, clearly not touching the letters, same on all 4 sides
+      el.style.width = (_inkW + 2 * _g) + 'px';
+      el.style.height = (_inkH + 2 * _g) + 'px';
       canvas.style.position = 'absolute';
-      // WIDTH stays snug (maxW) with the canvas floated at -pad horizontally
-      // (round 214 — already hugs L/R). v2.1 round 215 (Terry) — VERTICAL hug:
-      // size the box HEIGHT to the glyph INK (inkBottom-inkTop) and float the
-      // canvas at -inkTop so the ink-top sits at the box top and the box bottom
-      // hugs the descenders — removing the line-height leading gap below the last
-      // line (round 214 used canvas.height-2*pad = lines*lineH, which carried that
-      // gap). Falls back to the round-214 symmetric pad box if ink metrics are
-      // unavailable for this font.
-      canvas.style.left = (-_pad) + 'px';
-      let _vCenterShift = 0;   // px to shift the wrapper's translate so the CANVAS centre (what the bake composites on xFrac/yFrac) stays anchored, even though the box is now the asymmetric ink box
-      if (typeof canvas._inkTop === 'number' && typeof canvas._inkBottom === 'number' && canvas._inkBottom > canvas._inkTop) {
-        const _inkTop = canvas._inkTop, _inkBottom = canvas._inkBottom;
-        const _boxH = Math.max(1, _inkBottom - _inkTop);
-        el.style.height = _boxH + 'px';
-        canvas.style.top = (-_inkTop) + 'px';
-        // The wrapper is centred on xFrac/yFrac via translate(-50%,-50%) on its
-        // OWN (ink) box. The canvas centre sits at (canvas.height/2 - inkTop) from
-        // the box top; the box centre at _boxH/2. Shift the wrapper down by their
-        // delta so the CANVAS centre — not the ink-box centre — lands on xFrac/yFrac,
-        // keeping preview aligned with the (unchanged) baked composite position.
-        _vCenterShift = (canvas.height / 2 - _inkTop) - (_boxH / 2);
-      } else {
-        const _boxH = Math.max(1, canvas.height - 2 * _pad);
-        el.style.height = _boxH + 'px';
-        canvas.style.top = (-_pad) + 'px';   // round-214 fallback: symmetric pad box, no shift needed
-      }
+      // Float the canvas so its ink area (which starts at +pad inside the canvas)
+      // lands at +g inside the box → offset = g - pad = -(pad - g), SAME on both
+      // axes. With the box = ink+2g and the canvas centred on the ink, the canvas
+      // centre coincides with the box centre, so the box wraps the text uniformly.
+      canvas.style.left = (_g - _pad) + 'px';
+      canvas.style.top = (_g - _pad) + 'px';
       // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
       // contentEditable box stands in for the rendered text: keep the canvas in
       // the DOM (so the swap bookkeeping stays valid) but HIDDEN, and re-sync the
@@ -6198,12 +6207,13 @@
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       el.style.left = (layer.xFrac * cw) + 'px';
       el.style.top = (layer.yFrac * ch) + 'px';
-      // v2.1 round 215 (Terry) — translate(-50%,-50%) centres the wrapper's own
-      // (now ink-tight) box on xFrac/yFrac; the extra +_vCenterShift px nudge keeps
-      // the CANVAS centre (what the bake composites at xFrac/yFrac) on the anchor,
-      // so the on-screen text doesn't drift vs. the saved file. Applied INSIDE the
-      // translate (pre-rotation frame) so it rotates with the layer like the box.
-      el.style.transform = 'translate(-50%, calc(-50% + ' + _vCenterShift + 'px)) rotate(' + (layer.rot || 0) + 'deg)';
+      // v2.1 round 216 (Terry) — plain translate(-50%,-50%) centres the wrapper's
+      // box on xFrac/yFrac. Because the box = ink+uniform-gap is symmetric and the
+      // canvas (with the ink centred) is centred in that box, the ink centre lands
+      // exactly on xFrac/yFrac — the SAME point the bake composites the canvas on.
+      // The _vCenterShift nudge (rounds 215) is GONE: there's no asymmetry left to
+      // correct, so preview, box, and saved file all share one centre with no drift.
+      el.style.transform = 'translate(-50%, -50%) rotate(' + (layer.rot || 0) + 'deg)';
       el.style.zIndex = String(COLLAGE_TEXT_Z + (layer.z || 0));
       el.classList.toggle('selected', selectedText === layer);
     }
