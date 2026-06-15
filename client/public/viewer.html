@@ -1201,6 +1201,40 @@
       z-index: 30;
     }
     .filmstrip-date-pill.visible { opacity: 1; }
+    /* v2.1 round 208 (Terry) — "Add photos" button on the collage filmstrip.
+       Hidden in the single-photo viewer; shown only in collage mode. Sticky to
+       the left edge so it stays put while the pool scrolls. Gold accent to match
+       the collage chrome (the strip/title gold from round 179). */
+    #collage-add-photos { display: none; }
+    body.collage-mode #collage-add-photos {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
+      position: sticky;
+      left: 0;
+      z-index: 12;
+      align-self: stretch;
+      min-height: 64px;
+      padding: 0 14px;
+      margin-right: 6px;
+      border: 1.25px dashed rgba(254, 194, 66, 0.55);
+      border-radius: 8px;
+      background: #12122a;       /* opaque so scrolling thumbs don't show through */
+      color: #FEC242;
+      font-size: 12px;
+      font-weight: 600;
+      letter-spacing: 0.01em;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms, color 120ms;
+    }
+    body.collage-mode #collage-add-photos:hover {
+      background: #1b1b3a;
+      border-color: rgba(254, 194, 66, 0.9);
+      color: #ffd778;
+    }
+    body.collage-mode #collage-add-photos svg { width: 16px; height: 16px; flex: 0 0 auto; }
   </style>
 </head>
 <body>
@@ -2613,7 +2647,12 @@
        layout impact) so the strip itself behaves exactly as before. -->
   <div class="filmstrip-wrap" id="filmstrip-wrap" style="display:none">
     <div id="filmstrip-date-pill" class="filmstrip-date-pill" aria-hidden="true"></div>
-    <div id="filmstrip" class="filmstrip"></div>
+    <div id="filmstrip" class="filmstrip"><!-- v2.1 round 208 (Terry) — "Add photos"
+      affordance on the collage filmstrip (the photo pool). Sticky-pinned to the
+      left so it stays visible while the strip scrolls; collage-mode only (hidden in
+      the single-photo viewer via CSS). Opens the shared library photo picker and
+      drops the chosen photo onto the canvas as a new tile. Carries no data-idx so
+      the strip's index logic ignores it. --><button type="button" id="collage-add-photos" data-pdr-tooltip="Add another photo to this collage" data-pdr-tooltip-side="top" aria-label="Add photos to collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add photos</span></button></div>
   </div>
 
 
@@ -4842,7 +4881,10 @@
       // Slideshow only makes sense for images (auto-advance), and only
       // when we have more than one file in the queue. The interval
       // picker tracks the same visibility.
-      const slideshowable = show && files.length > 1;
+      // v2.1 round 208 (Terry) — a collage is NOT a slideshow: the bottom
+      // filmstrip is the photo POOL there, so never expose the slideshow
+      // control (or its interval picker) in collage mode.
+      const slideshowable = show && files.length > 1 && !collageMode;
       btnSlideshow.hidden = !slideshowable;
       slideshowWrap.hidden = !slideshowable;
     }
@@ -6206,11 +6248,18 @@
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
       const startX = e.clientX, startY = e.clientY;
       const sx = layer.xFrac, sy = layer.yFrac;
+      // v2.1 round 208 (Terry) — Shift = horizontal-only path, same as the tile
+      // drag: freeze yFrac at the value it held when Shift was pressed; X keeps
+      // following (and snapping). Release Shift to resume free movement.
+      let yLock = null;
       const move = (ev) => {
+        if (ev.shiftKey) { if (yLock === null) yLock = layer.yFrac; }
+        else { yLock = null; }
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         layer.xFrac = Math.max(0, Math.min(1, sx + dx));
         layer.yFrac = Math.max(0, Math.min(1, sy + dy));
+        if (yLock !== null) layer.yFrac = yLock;   // freeze Y while Shift held
         renderTextLayer(layer);
         // v2.1 round 206 (Terry) — Canva-style snapping (same helper as tiles).
         // Text is centre-anchored, but xFrac/yFrac still move linearly with the
@@ -6220,9 +6269,11 @@
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(layer.el, collageCanvasEl, 6);
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
-        if (snap.dy) layer.yFrac = Math.max(0, Math.min(1, layer.yFrac + snap.dy / cRect.height));
-        if (snap.dx || snap.dy) renderTextLayer(layer);
-        showCollageSnapGuides(snap.vGuide, snap.hGuide);
+        // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
+        // Shift locks the vertical position (same composition as the tile drag).
+        if (snap.dy && yLock === null) layer.yFrac = Math.max(0, Math.min(1, layer.yFrac + snap.dy / cRect.height));
+        if (snap.dx || (snap.dy && yLock === null)) renderTextLayer(layer);
+        showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
       };
       const up = () => {
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
@@ -6561,6 +6612,12 @@
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
       updateAngleSlider();
       try { syncBgRemoveBtn(); } catch (_) {}   // v2.1 round 173 — Remove/Restore label per selection
+      // v2.1 round 208 (Terry) — every fresh tile/background selection starts with
+      // Frame UN-armed: a photo tile then defaults to the LOOKS subcategory (gold +
+      // expanded) and the unified Colour Palette stays hidden until the user opens
+      // the Frame chevron. (Reset before updateColorTargets so it reads the cleared
+      // flag.) Background selection also clears it — armed-Frame is tile-only.
+      frameColorArmed = false;
       // v2.1 round 195 (Terry) — refresh the shared Colour control: a photo tile
       // shows [Frame], the background shows [Background], nothing colourable hides
       // it. (Text selection is handled in selectText → syncTextControls.)
@@ -6680,12 +6737,21 @@
       const startX = e.clientX, startY = e.clientY;
       const sx = it.xFrac, sy = it.yFrac;
       it.el.classList.add('dragging');
+      // v2.1 round 208 (Terry) — Shift = constrain to a HORIZONTAL path. While
+      // Shift is held the tile's vertical position is frozen at whatever yFrac it
+      // had the MOMENT Shift was pressed; X keeps following the cursor (and may
+      // still snap). Releasing Shift clears the lock and resumes free movement.
+      let yLock = null;
       const move = (ev) => {
+        // Capture / release the Y lock on the Shift up→down / down→up transitions.
+        if (ev.shiftKey) { if (yLock === null) yLock = it.yFrac; }
+        else { yLock = null; }
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         const ihFrac = itemHeightFrac(it);
         it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, sx + dx));
         it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, sy + dy));
+        if (yLock !== null) it.yFrac = yLock;   // freeze Y while Shift held
         renderCollageItem(it);
         // v2.1 round 206 (Terry) — Canva-style snapping. Render at the proposed
         // position first (above) so the element rect is current, then nudge each
@@ -6696,9 +6762,12 @@
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 6);
         if (snap.dx) it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, it.xFrac + snap.dx / cRect.width));
-        if (snap.dy) it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, it.yFrac + snap.dy / cRect.height));
-        if (snap.dx || snap.dy) renderCollageItem(it);
-        showCollageSnapGuides(snap.vGuide, snap.hGuide);
+        // v2.1 round 208 (Terry) — composes with round-206 snapping: X still snaps,
+        // but while Shift locks Y we skip the Y snap AND suppress its guide line so
+        // the tile can't drift vertically off the locked path.
+        if (snap.dy && yLock === null) it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, it.yFrac + snap.dy / cRect.height));
+        if (snap.dx || (snap.dy && yLock === null)) renderCollageItem(it);
+        showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
       };
       const up = () => {
         it.el.classList.remove('dragging');
@@ -7403,6 +7472,47 @@
       commitCollageChange();
     }
 
+    // v2.1 round 208 (Terry) — "Add photos" flow. The shared library picker is
+    // opened from the filmstrip button (collagePickMode='add'); the chosen photo
+    // comes back via onBackgroundPicked, which branches on this flag so it routes
+    // here instead of becoming the background. We DELIBERATELY do NOT append the
+    // new photo to files[]: the undo/snapshot machinery treats collageItems beyond
+    // files.length as "clones" (rebuilt from their stored .path on restore — see
+    // restoreCollageSnapshot's nOrig split), so adding the photo as an extra
+    // collageItem (exactly like Duplicate does) makes the add a clean single undo
+    // step and bakes correctly (saveCollage reads collageItems, not files). The
+    // trade-off: the added photo is on the CANVAS but not in the bottom pool strip,
+    // so it can't be toggled out via a thumb — it's removed via the tile's own ×.
+    // (Same as a duplicated tile, which has lived without a strip thumb since r203.)
+    let collagePickMode = 'bg';   // 'bg' = background pick (default) | 'add' = add-a-tile
+    function addPhotoToCollage(fp) {
+      if (!fp || !collageMode) return;
+      if (isVideoPath(fp)) { try { window.alert('Only photos can be added to a collage.'); } catch (_) {} return; }
+      beginCollageChange();
+      // Build a fresh tile model with the same defaults buildCollageItems() uses
+      // for a per-file tile, but with the picked path and a centred placement.
+      const it = {
+        idx: -1, path: fp, on: true,
+        xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
+        z: ++collageZTop, el: null, imgEl: null, clipEl: null,
+        locked: false,
+        crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+        bgRemovedPath: null, bgRemoveStrength: 50,
+        enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
+      };
+      placeCenter(it);   // sensible default size + centred, like a normal tile
+      collageItems.push(it);
+      buildCollageItemEl(it);
+      renderCollageItem(it);
+      // Paint via the shared apply path so the new tile shows immediately + its
+      // <img> loads the picked file (renderCollageItem already set the src, but
+      // applyTileEnh keeps it consistent with the rest of the app's pipeline).
+      try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
+      selectCollageItem(it);
+      updateCollageFilmstrip();   // harmless no-op for the new tile (no thumb); matches duplicateCollageItem
+      commitCollageChange();
+    }
+
     function buildCollageItems() {
       collageCanvasEl.innerHTML = '';
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
@@ -8066,11 +8176,36 @@
       // The chosen background photo comes back from the main-window picker (async,
       // not a pointer interaction) — snapshot explicitly. setCollageBgImage() then
       // refreshes the Use-a-photo slot's thumbnail (via markBgLockedSpecialsActive).
+      // v2.1 round 208 (Terry) — the SAME picker channel now serves two purposes
+      // (background vs add-a-tile). The preload echoes one purpose ('collage-bg'),
+      // so we branch on the renderer-side collagePickMode flag set just before the
+      // pick was launched. Only one pick is ever in flight (the picker is modal in
+      // the main window), so there's no race. 'add' routes to addPhotoToCollage and
+      // resets the mode; anything else keeps the original background behaviour.
       try {
         if (window.pdr.collage.onBackgroundPicked) {
-          window.pdr.collage.onBackgroundPicked((fp) => { if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); } markBgLockedSpecialsActive(); });
+          window.pdr.collage.onBackgroundPicked((fp) => {
+            const mode = collagePickMode;
+            collagePickMode = 'bg';   // always reset to the default after a delivery
+            if (mode === 'add') { if (fp) addPhotoToCollage(fp); return; }
+            if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); }
+            markBgLockedSpecialsActive();
+          });
         }
       } catch (_) {}
+      // v2.1 round 208 (Terry) — "+ Add photos" button on the filmstrip pool. Arms
+      // add-mode, then opens the shared library picker (same bridge the background
+      // uses; the round-198 cancel→refocus is handled main-side, so a cancel just
+      // returns focus to this window and leaves collagePickMode reset on the next
+      // pick). The picked photo lands via onBackgroundPicked above → addPhotoToCollage.
+      const addPhotosBtn = document.getElementById('collage-add-photos');
+      if (addPhotosBtn && !addPhotosBtn.dataset.wired) {
+        addPhotosBtn.dataset.wired = '1';
+        addPhotosBtn.addEventListener('click', () => {
+          collagePickMode = 'add';
+          try { window.pdr.collage.pickBackground('a photo to add'); } catch (_) { collagePickMode = 'bg'; }
+        });
+      }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
       // layer over it) → select the BACKGROUND so it can be reset/edited and
       // shows the selection ring; click OUTSIDE the canvas (stage padding) →
@@ -8276,6 +8411,12 @@
         frameSummary.dataset.colorWired = '1';
         frameSummary.addEventListener('click', () => {
           if (collageSelected && !collageSelected.isBg) {
+            // v2.1 round 208 (Terry) — opening Frame ARMS the Frame colour target,
+            // so the unified Colour Palette appears beneath it (gold) and the Looks
+            // default gives way. This is the explicit user action that overrides the
+            // round-208 Looks-on-select default. (Same point-at-Frame behaviour as
+            // before; it's just no longer automatic on tile-select.)
+            frameColorArmed = true;
             colorTarget = 'frame';
             updateColorTargets();
           }
@@ -8407,6 +8548,13 @@
     // updateColorTargets() derives the available chips from the current selection
     // and sets a sensible default. (Was textColorTarget; renamed for the wider role.)
     let colorTarget = 'text';
+    // v2.1 round 208 (Terry) — selecting a photo TILE now defaults the panel to
+    // the LOOKS section (the presets strip), NOT Frame. The unified Colour Palette
+    // therefore does NOT auto-point at Frame on tile-select. This flag arms the
+    // Frame colour target ONLY when the user explicitly opens the Frame chevron;
+    // it is reset to false on every fresh tile selection. (Background / Text still
+    // auto-point at their own sections as before — they ARE colour targets.)
+    let frameColorArmed = false;
     // v2.1 round 194 (Terry) — persistent FAVOURITES (replaces the old 'saved'
     // row). New key so the retired pdr-text-saved-colors can't leak in. FIFO,
     // capped at 7, most-recent first.
@@ -8630,7 +8778,11 @@
         } else {
           // No photo yet, OR the photo is already the active bg → open the picker
           // to choose / change the photo (result returns via onBackgroundPicked).
-          try { window.pdr.collage.pickBackground('your collage'); } catch (_) {}
+          // v2.1 round 208 (Terry) — re-arm 'bg' before launching so a previously
+          // CANCELLED "+ Add photos" pick (which leaves collagePickMode='add', since
+          // only a delivery resets it) can't misroute this background pick into
+          // addPhotoToCollage. Each launch site now declares its own purpose.
+          try { collagePickMode = 'bg'; window.pdr.collage.pickBackground('your collage'); } catch (_) {}
         }
       });
       // v2.1 round 200 (Terry) — Row-1 order is [custom +] [Photo] [Transparent]
@@ -8697,6 +8849,18 @@
       effect: 'collage-text-collapse',   // Text + Effect share the Text section
       frame: 'enhance-frame-collapse',
     };
+    // v2.1 round 208 (Terry) — Looks is the DEFAULT subcategory when a photo tile
+    // is selected. It is NOT a colour target (no swatches), so it reuses the same
+    // gold .color-subcat-active treatment as the colour subcats but is driven here
+    // rather than by placeColorPalette. setLooksSubcatActive(true) golds + expands
+    // the Looks chevron; (false) just clears the gold (leaves open/closed alone).
+    function setLooksSubcatActive(on) {
+      const det = document.getElementById('enhance-looks-collapse');
+      if (!det) return;
+      const sum = det.querySelector(':scope > summary');
+      if (sum) sum.classList.toggle('color-subcat-active', !!on);
+      if (on) det.open = true;   // make sure the presets are visible on select
+    }
     // v2.1 round 197 (Terry) — MOVE the single palette element so it sits directly
     // after the active subcategory's <details> (insertBefore the next sibling — it
     // is ONE node, moved not cloned), and paint that subcategory's <summary> gold
@@ -8714,6 +8878,9 @@
       const anchorId = target && COLOR_SUBCAT_BY_TARGET[target];
       const anchor = anchorId && document.getElementById(anchorId);
       if (!anchor) { block.style.display = 'none'; return; }
+      // v2.1 round 208 (Terry) — a real colour target is now active (Frame /
+      // Background / Text), so it owns the gold highlight — drop it from Looks.
+      try { setLooksSubcatActive(false); } catch (_) {}
       // Move the one palette node to sit immediately after the active chevron
       // (no clone — it's the same element, relocated). insertBefore(node, ref)
       // with ref = anchor.nextSibling places it right after the whole <details>,
@@ -8764,8 +8931,20 @@
       } else if (collageSelected && collageSelected.isBg) {
         chips.push({ t: 'background', label: 'Background', tip: 'Colour the collage background' });
       } else if (collageSelected) {
-        chips.push({ t: 'frame', label: 'Frame', tip: 'Colour the frame around this photo' });
+        // v2.1 round 208 (Terry) — a photo tile no longer AUTO-points the Colour
+        // Palette at Frame on select (Looks is the default subcategory now). Only
+        // surface the Frame colour target once the user explicitly opens the Frame
+        // chevron (which sets frameColorArmed). Until then there's no colourable
+        // chip, so the palette hides + Looks stays the gold/expanded section.
+        if (frameColorArmed) chips.push({ t: 'frame', label: 'Frame', tip: 'Colour the frame around this photo' });
       }
+      // v2.1 round 208 (Terry) — gold + expand the LOOKS section whenever a plain
+      // photo tile is selected and the user hasn't explicitly armed Frame. This is
+      // the new tile-selection default subcategory. For text / background / armed-
+      // Frame selections the gold belongs to the colour subcat (placeColorPalette
+      // clears Looks), and for an empty selection we clear it here.
+      const looksDefault = !!(collageSelected && !collageSelected.isBg && !selectedText && !frameColorArmed);
+      try { setLooksSubcatActive(looksDefault); } catch (_) {}
       // Nothing colourable → hide the whole control, clear all gold, and stop.
       if (!chips.length) { block.style.display = 'none'; placeColorPalette(null); return; }
       block.style.display = '';
@@ -8842,6 +9021,11 @@
 
     function enterCollageMode() {
       collageMode = true;
+      // v2.1 round 208 (Terry) — kill any slideshow timer the moment we enter
+      // collage mode so a cycling .thumb.active can't keep advancing through the
+      // filmstrip pool. Guarded by typeof since stopSlideshow is declared later
+      // in this scope (hoisted, but defensive).
+      try { if (typeof stopSlideshow === 'function') stopSlideshow(); } catch (_) {}
       // v2.1 round 140 (Terry) — collage is a MODE within PDRV, not a
       // separate chrome: keep the toolbar, hide only the single-image
       // area, and hand the Enhance panel the collage role (per-tile
@@ -9159,6 +9343,9 @@ function zoomTo(newZoom, centreX, centreY) {
       }
     }
     function startSlideshow() {
+      // v2.1 round 208 (Terry) — hard stop: no slideshow ever runs in collage
+      // mode, regardless of how startSlideshow is reached.
+      if (collageMode) return;
       if (isSlideshowRunning()) return;
       if (files.length <= 1) return;
       slideshowTimerId = setInterval(advanceSlideshow, slideshowIntervalSec * 1000);
@@ -9269,7 +9456,9 @@ function zoomTo(newZoom, centreX, centreY) {
       }
       // Space toggles the slideshow on images. Doesn't fire when the
       // current media is a video — that branch above takes precedence.
-      if (!isVideo && (e.key === ' ' || e.code === 'Space') && files.length > 1) {
+      // v2.1 round 208 (Terry) — Space never starts a slideshow in a collage
+      // (the filmstrip is the photo pool there, not a slideshow queue).
+      if (!isVideo && (e.key === ' ' || e.code === 'Space') && files.length > 1 && !collageMode) {
         e.preventDefault();
         if (isSlideshowRunning()) stopSlideshow(); else startSlideshow();
         return;
