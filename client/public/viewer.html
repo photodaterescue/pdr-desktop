@@ -2280,6 +2280,23 @@
       width: 14px; height: 2px;
       margin-left: 0; margin-top: -1px;
     }
+    /* v2.1 round 224 (Terry) — TEXT + EMOJI rotate handle now matches a PHOTO's:
+       moved from ABOVE the layer (where the floating .ch-toolbar covered it) to just
+       OUTSIDE the right-middle edge, with the connector tick pointing LEFT and the
+       same stroked twin-arc "refresh-cw" glyph (swapped in renderTextLayer). Mirrors
+       .collage-item .ch-rotate / ::before / svg exactly. Rotate DRAG logic unchanged.
+       Locked text still hides rotate via .collage-text.locked.selected .ch-rotate. */
+    .collage-text .ch-rotate {
+      left: 100%; top: 50%;
+      margin-left: 14px; margin-top: -12px;
+    }
+    .collage-text .ch-rotate svg { width: 16px; height: 16px; fill: none; stroke: #2e2960; stroke-width: 1.6; }
+    .collage-text .ch-rotate::before {
+      left: auto; top: 50%;
+      right: 100%;
+      width: 14px; height: 2px;
+      margin-left: 0; margin-top: -1px;
+    }
     .ch-remove {
       width: 20px; height: 20px;
       right: -10px; top: -10px;
@@ -2413,12 +2430,14 @@
       pointer-events: none;
       z-index: 8;
     }
-    /* Gold accent in collage mode, matching the tile handles (round 203). The
-       text rotate keeps its round-187 base look (filled glyph, above the box);
-       only the ring/connector/glyph colours go gold to match the tile dots. */
+    /* Gold accent in collage mode, matching the tile handles (round 203).
+       v2.1 round 224 (Terry) — the text rotate glyph is now the STROKED twin-arc
+       icon (was a filled single arrow), and the handle sits at the right-middle edge
+       like a photo's. So the gold override colours the STROKE, not the fill — mirrors
+       body.collage-mode .collage-item .ch-rotate svg { stroke: #5a4a12 }. */
     body.collage-mode .collage-text .ch-resize { background: #FEC242; }
     body.collage-mode .collage-text .ch-rotate { border-color: #FEC242; }
-    body.collage-mode .collage-text .ch-rotate svg { fill: #5a4a12; }
+    body.collage-mode .collage-text .ch-rotate svg { stroke: #5a4a12; }
     body.collage-mode .collage-text .ch-rotate::before { background: #FEC242; }
     /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
        a + so the user knows clicking re-adds it. */
@@ -2484,8 +2503,13 @@
     /* v2.1 round 204 (Terry) — the "Delete text" button (an .ec-shape-btn) tints
        light red on hover to signal deletion. Scoped by ID so the shape/aspect
        buttons that share .ec-shape-btn keep their lavender hover. Normal state
-       unchanged (inherits .ec-shape-btn). */
-    #collage-text-delete:hover { background: rgba(255,60,60,0.18); border-color: rgba(255,90,90,0.7); color: #ffb4b4; }
+       unchanged (inherits .ec-shape-btn).
+       v2.1 round 224 (Terry) — the single shared delete button was split into two
+       contextual buttons (#collage-text-delete, re-parked below the Colour Palette for
+       a text selection, and #collage-emoji-delete below the Emojis picker); both keep
+       the red delete-hover. Scoped by ID so position in the DOM doesn't matter. */
+    #collage-text-delete:hover,
+    #collage-emoji-delete:hover { background: rgba(255,60,60,0.18); border-color: rgba(255,90,90,0.7); color: #ffb4b4; }
     /* v2.1 round 188 (Terry) — compact square toggle for alignment icons +
        B/I/U. Same palette/active-ring as .ec-shape-btn but fixed ~28px so the
        icons read at a glance instead of stretching across the row. */
@@ -3009,16 +3033,25 @@
                  section (#collage-unified-color). It now colours whatever is
                  selected (Text/Effect, Frame, or Background) via a target-chip
                  row, so there is a single palette in the whole panel. -->
-            <!-- v2.1 round 205 (Terry) — "Delete text" RELOCATED to the very
-                 bottom of the text controls (now a sibling AFTER
-                 #collage-unified-color, below the Colour Palette + its collection
-                 chevrons). With Delete gone, the Effect chips + Strength row are
-                 the LAST controls inside #collage-text-controls, so the relocated
-                 palette (placeColorPalette moves it to sit right after this
-                 <details>) now appears DIRECTLY below Effect/Strength. Same id /
-                 handler / round-204 red-hover, just moved in the DOM. -->
+            <!-- v2.1 round 224 (Terry) — Effect chips + Strength row are the LAST
+                 controls inside #collage-text-controls, so placeColorPalette (which
+                 parks #collage-unified-color right after this <details>) puts the
+                 Colour Palette DIRECTLY below Effect/Strength. "Delete text" is a
+                 sibling declared below the Emojis section and re-parked by
+                 placeColorPalette to sit AFTER the palette — see that button's note. -->
           </div>
         </details>
+        <!-- v2.1 round 224 (Terry) — "Delete text" is a SIBLING right after the Text
+             section (was the last child INSIDE #collage-text-collapse). It must sit
+             BELOW the unified Colour Palette + its Palettes group, but placeColorPalette
+             parks #collage-unified-color as a sibling AFTER #collage-text-collapse — so
+             a child of that <details> can never end up below the palette. As a sibling,
+             placeColorPalette() re-parks THIS button directly after the parked palette
+             on every text selection, giving the order: Text controls → Colour Palette →
+             Palettes → Delete text → Emojis. Hidden by default; syncTextControls shows it
+             ONLY for a non-emoji text selection (round-223 contextual gate). EMOJI
+             selections use the separate #collage-emoji-delete button below the picker. -->
+        <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px;display:none" data-pdr-tooltip="Delete this text layer">Delete text</button>
         <!-- v2.1 round 219 (Terry) — EMOJIS: a searchable picker that drops native
              colour emoji onto the collage as objects (drag / resize / rotate / snap
              / delete / bake) — reusing the text-layer engine with isEmoji:true. The
@@ -3030,14 +3063,14 @@
           <input type="text" class="emoji-search" id="collage-emoji-search" placeholder="Search emoji…" spellcheck="false" autocomplete="off" data-pdr-tooltip="Type to filter — name or keyword (e.g. heart, dog, party)">
           <div class="emoji-grid-wrap" id="collage-emoji-grid"></div>
         </details>
-        <!-- v2.1 round 221 (Terry) — Delete button RELOCATED here: directly BELOW
-             the EMOJIS picker grid (#collage-emoji-collapse) and ABOVE the Looks
-             section (#enhance-looks-collapse). It serves BOTH text + emoji (relabels
-             "Delete text" / "Delete emoji" via syncTextControls) and is shown/hidden
-             by syncTextControls (a text OR emoji layer selected). The round-205
-             "follow the colour palette" relocation in placeColorPalette() is gone, so
-             it stays pinned in this one spot. Same id / click handler / red-hover. -->
-        <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px;display:none" data-pdr-tooltip="Delete this text layer">Delete text</button>
+        <!-- v2.1 round 224 (Terry) — "Delete emoji" is its OWN button (was the single
+             shared #collage-text-delete that relabelled itself). It stays in its
+             round-221 spot: directly BELOW the EMOJIS picker grid
+             (#collage-emoji-collapse) and ABOVE the Looks section. Shown ONLY for an
+             EMOJI selection; the text equivalent (#collage-text-delete) now lives
+             inside the Text section above. syncTextControls gates which one shows;
+             both call deleteTextLayer on the active layer. -->
+        <button class="ec-shape-btn" id="collage-emoji-delete" type="button" style="width:100%;margin-top:10px;display:none" data-pdr-tooltip="Delete this emoji">Delete emoji</button>
         <!-- v2.1 round 195 (Terry) — ONE shared Colour control for the whole
              panel. A target-chip row at the top names what the palette colours,
              derived from the current selection by updateColorTargets():
@@ -3075,10 +3108,11 @@
                Favourites row and BEFORE the collections, so "↓" correctly points
                down at them, and reworded to "Tap ＋ on any colour below…". -->
         </div>
-        <!-- v2.1 round 221 (Terry) — the Delete button used to sit HERE (after the
-             Colour Palette, re-parked by placeColorPalette). It moved UP to just
-             below the EMOJIS picker (see above) and is now pinned there for both
-             text + emoji. -->
+        <!-- v2.1 round 224 (Terry) — for a TEXT selection the "Delete text" button
+             (#collage-text-delete, declared above the Emojis section) is re-parked by
+             placeColorPalette to sit right HERE — directly after the Colour Palette +
+             Palettes group — so it is the last text control above the Emojis section.
+             The Delete-EMOJI button stays pinned below the Emojis picker (see above). -->
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
              edit it" hint; the dimmed per-photo sections already signal it. -->
@@ -6332,7 +6366,12 @@
         // text is .selected). Created once with the wrapper so they survive the
         // per-render canvas swap below.
         const tRot = document.createElement('div'); tRot.className = 'ch ch-rotate'; tRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
-        tRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
+        // v2.1 round 224 (Terry) — text/emoji rotate now uses the SAME stroked twin-arc
+        // "refresh-cw" glyph as the PHOTO rotate (was a filled single-arrow), to go with
+        // the new right-middle-edge position (.collage-text .ch-rotate CSS). Identical
+        // markup to the tile's hRot at the photo handle build; stroked via CSS
+        // (.collage-text .ch-rotate svg { fill:none; stroke:... }).
+        tRot.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
         // v2.1 round 221 (Terry) — PHOTO PARITY: the bounding box now shows the
         // full 8-handle set — 4 CORNERS (reusing the tile .ch-res-* corner CSS)
         // + 4 SIDE mid-edges (.ch-res-l/r/t/b, new for text/emoji). v2.1 round 222
@@ -7552,19 +7591,22 @@
       const isEmojiSel = !!(selectedText && selectedText.isEmoji);
       const ctl = document.getElementById('collage-text-controls');
       if (ctl) ctl.style.display = (selectedText && !isEmojiSel) ? 'block' : 'none';
-      // v2.1 round 221 (Terry) — the Delete button lives OUTSIDE
-      // #collage-text-controls (pinned just below the EMOJIS picker, above Looks),
-      // so it doesn't inherit that wrapper's show/hide. Gate it on the selection
-      // here (text OR emoji), before the early-return below. It is no longer
-      // re-parked by placeColorPalette — it stays in that one spot.
-      const delBtnSync = document.getElementById('collage-text-delete');
-      if (delBtnSync) {
-        delBtnSync.style.display = selectedText ? 'block' : 'none';
-        // v2.1 round 219 (Terry) — relabel + re-tip the shared Delete button for an
-        // emoji selection (same id/handler — deleteTextLayer works for emoji too).
-        delBtnSync.textContent = isEmojiSel ? 'Delete emoji' : 'Delete text';
-        delBtnSync.setAttribute('data-pdr-tooltip', isEmojiSel ? 'Delete this emoji' : 'Delete this text layer');
-      }
+      // v2.1 round 224 (Terry) — TWO contextual Delete buttons now (was one shared
+      // #collage-text-delete that relabelled itself + sat wrongly below Emojis for a
+      // text selection). #collage-text-delete is a SIBLING after the Text section,
+      // re-parked by placeColorPalette to sit directly below the Colour Palette on a
+      // text selection; #collage-emoji-delete sits below the Emojis picker. Gate by type:
+      //   text layer selected  → show Delete-text, hide Delete-emoji
+      //   emoji layer selected → show Delete-emoji, hide Delete-text
+      //   nothing selected      → hide both.
+      // Both buttons' click handlers call deleteTextLayer(selectedText) (works for
+      // emoji too). #collage-text-delete is NOT inside any wrapper that hides per
+      // selection (it's a section-level sibling), so this explicit display toggle is
+      // its ONLY visibility gate — every selection-change path calls syncTextControls.
+      const delTextBtn = document.getElementById('collage-text-delete');
+      if (delTextBtn) delTextBtn.style.display = (selectedText && !isEmojiSel) ? 'block' : 'none';
+      const delEmojiBtn = document.getElementById('collage-emoji-delete');
+      if (delEmojiBtn) delEmojiBtn.style.display = (selectedText && isEmojiSel) ? 'block' : 'none';
       // v2.1 round 219 (Terry) — for an emoji selection the styling controls are
       // hidden (above), so skip syncing them; the Delete button (shown above) is
       // the only side-panel control. The on-canvas handles do resize/rotate.
@@ -9577,8 +9619,13 @@
         palCollapse.addEventListener('click', () => setAllCollections(false));
       }
       updateColorTargets();
+      // v2.1 round 224 (Terry) — wire BOTH contextual Delete buttons (text one inside
+      // the Text section, emoji one below the Emojis picker). Both delete the active
+      // layer; syncTextControls decides which is visible per selection type.
       const delBtn = document.getElementById('collage-text-delete');
       if (delBtn) delBtn.addEventListener('click', () => deleteTextLayer(selectedText));
+      const delEmojiBtn = document.getElementById('collage-emoji-delete');
+      if (delEmojiBtn) delEmojiBtn.addEventListener('click', () => deleteTextLayer(selectedText));
     }
     // v2.1 round 195 (Terry) — ONE shared colour palette for the whole panel (no
     // duplicated mounts). The target-chip row re-points it: renderTextColorPalette-
@@ -10242,13 +10289,22 @@
       // Gold the active subcategory header.
       const sum = anchor.querySelector(':scope > summary');
       if (sum) sum.classList.add('color-subcat-active');
-      // v2.1 round 221 (Terry) — the round-205 "follow the palette" relocation of
-      // #collage-text-delete is REMOVED. The Delete button now stays pinned in its
-      // markup spot — directly BELOW the EMOJIS picker (#collage-emoji-collapse) and
-      // ABOVE the Looks section (#enhance-looks-collapse) — for BOTH text + emoji
-      // selections (it relabels via syncTextControls). It no longer chases the
-      // colour palette around the panel. (Show/hide is still handled by
-      // syncTextControls; this function only positions the palette + golds headers.)
+      // v2.1 round 224 (Terry) — for a TEXT/Effect selection the palette is parked
+      // immediately after #collage-text-collapse (just above), so the "Delete text"
+      // button must follow the palette to stay the LAST text control. Re-anchor it
+      // here directly AFTER the parked palette (block.nextSibling), which lands it
+      // above #collage-emoji-collapse. This re-runs on every text selection (incl.
+      // switching between two text layers via selectText → updateColorTargets), so
+      // the order Text controls → Colour Palette → Palettes → Delete text → Emojis
+      // holds every time. For non-text targets (frame/background) the palette parks
+      // elsewhere; we leave the hidden Delete-text button where it is — syncTextControls
+      // keeps it display:none unless a non-emoji text layer is selected.
+      if (target === 'text' || target === 'effect') {
+        const delTextBtn = document.getElementById('collage-text-delete');
+        if (delTextBtn && delTextBtn.previousElementSibling !== block) {
+          block.parentNode.insertBefore(delTextBtn, block.nextSibling);
+        }
+      }
     }
     // v2.1 round 195 (Terry) — derive the target indicator from the CURRENT
     // selection, show/hide the whole Colour control, and keep colorTarget valid:
