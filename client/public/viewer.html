@@ -2499,6 +2499,22 @@
        controls; the obscure sizes hide behind a More… <details>; Custom… reveals two
        px inputs + Apply. */
     .ec-size-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    /* v2.1 round 229 (Terry) — VISUAL NESTING for the Canvas Size tree, mirroring
+       Text → Palettes → Neon. CANVAS SIZE (the .enhance-collapse header) is level 0;
+       every deeper body indents ONE level via the shared Palettes indent (margin-left
+       + faint gold left rule), so the parent→child hierarchy reads at a glance:
+         • Social Media / Prints / Paper / More / Custom… — indented ONE level under the
+           section header (the whole #ec-canvas-size-list body is pushed in).
+         • Platforms (Instagram / Facebook / …) — indented ANOTHER level under Social
+           Media (the .ec-size-subgrp-host carries the indent).
+         • Size rows — indented ANOTHER level under each group/platform (.ec-size-grp-body
+           carries the indent).
+       Three visible levels under Canvas Size on the Social branch, exactly like Palettes. */
+    .ec-size-list {
+      margin-left: 14px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
     /* v2.1 round 228 (Terry) — Canvas Size is now a NESTED collapsible hierarchy that
        mirrors the round-223 Palettes look: top-level groups (Social Media / Prints /
        Paper / More / Custom…) are .ec-size-grp <details>; within Social Media each
@@ -2520,14 +2536,25 @@
     .ec-size-grp[open] > summary::before { transform: rotate(90deg); }
     .ec-size-grp[open] { display: block; }
     .ec-size-grp::details-content { display: block; }
-    /* Direct rows under a top-level group (Prints / Paper / More) get a little top gap. */
-    .ec-size-grp > .ec-size-grp-body { display: flex; flex-direction: column; gap: 3px; margin: 5px 0 2px; }
-    /* The host that wraps the indented platform sub-groups under Social Media. */
-    .ec-size-subgrp-host { display: flex; flex-direction: column; gap: 4px; margin: 5px 0 2px; }
-    /* Platform sub-group — indented under Social Media, mirroring how the colour
-       categories indent under "Palettes" (round 223): ~14px indent + a faint gold
-       left rule. Its own ▸ chevron is a touch dimmer than the parent group's. */
-    .ec-size-subgrp { padding: 0; margin-left: 14px; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); }
+    /* Direct rows under a top-level group (Prints / Paper / More) get a little top gap.
+       v2.1 round 229 (Terry) — and indent ONE level (with the faint gold rule) so the
+       rows read as children of their group, not siblings of it. */
+    .ec-size-grp > .ec-size-grp-body {
+      display: flex; flex-direction: column; gap: 3px; margin: 5px 0 2px;
+      margin-left: 14px; padding-left: 8px; border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
+    /* The host that wraps the platform sub-groups under Social Media.
+       v2.1 round 229 (Terry) — the indent (margin + gold rule) now lives HERE, on the
+       host, so the platforms sit ONE level under Social Media. It was previously on each
+       .ec-size-subgrp; moved up a level so the new per-level nesting (section → group →
+       platform → rows) stays a single clean indent step per tier, not a double-up. */
+    .ec-size-subgrp-host {
+      display: flex; flex-direction: column; gap: 4px; margin: 5px 0 2px;
+      margin-left: 14px; padding-left: 8px; border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
+    /* Platform sub-group — its CHILDREN (the size rows) indent via .ec-size-grp-body
+       below; the platform header itself is flush within the indented host (round 229). */
+    .ec-size-subgrp { padding: 0; }
     .ec-size-subgrp > summary {
       list-style: none; cursor: pointer; outline: none;
       font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a8a93;
@@ -2538,7 +2565,12 @@
     .ec-size-subgrp[open] > summary::before { transform: rotate(90deg); }
     .ec-size-subgrp[open] { display: block; }
     .ec-size-subgrp::details-content { display: block; }
-    .ec-size-subgrp > .ec-size-grp-body { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; }
+    /* v2.1 round 229 (Terry) — rows under a platform indent ONE more level (gold rule)
+       so they read as children of the platform: Social → platform → rows = three levels. */
+    .ec-size-subgrp > .ec-size-grp-body {
+      display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px;
+      margin-left: 14px; padding-left: 8px; border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
     .ec-size-row {
       display: flex; align-items: center; gap: 8px; width: 100%;
       background: transparent;
@@ -10631,28 +10663,52 @@
       'enhance-looks-collapse', 'tile-transform-row', 'tile-bgremove-section',
       'enhance-frame-collapse', 'enhance-levels', 'enhance-fx',
     ];
+    // v2.1 round 229 (Terry) — TOP-LEVEL SUBCATEGORY ACCORDION + gold-follows-open.
+    // focusSubcat(detailsEl) is the ONE authority for "this subcategory is the open one":
+    // it closes every OTHER top-level .enhance-collapse subcategory (Canvas Size /
+    // Background / Arrange / Text / Emojis / Looks / Flip / Remove-bg / Frame / Tone /
+    // Effects), opens the target, and moves the gold line (.color-subcat-active) onto the
+    // target's summary — clearing it from every other one. Pass null to close+ungold all
+    // (the 'emoji' / 'none' / deselect case).
+    //   • GENERALISED gold: the gold left-rule now marks WHATEVER subcategory is open, not
+    //     just the colour/Looks subcats — Canvas Size, Background, Arrange etc. gold too.
+    //   • SCOPE: only the top-level .enhance-collapse <details>. The INNER groups (Canvas
+    //     Size's platform/More/Custom .ec-size-grp/.ec-size-subgrp and the Palettes
+    //     .frame-coll-* categories) carry NEITHER .enhance-collapse NOR a managed id, so
+    //     querySelectorAll('.enhance-collapse') never touches them → they keep INDEPENDENT
+    //     open/close, exactly as before.
+    //   • RECURSION GUARD: setting .open here fires each section's native 'toggle' event,
+    //     and the round-157 toggle listener (setupCollapsePersistence) also runs the
+    //     accordion on open — so _subcatBusy gates BOTH our sweep here AND that listener's
+    //     re-entry. Each .open write while busy fires toggle → listener sees _subcatBusy →
+    //     no-op. No infinite loop.
+    let _subcatBusy = false;
+    function focusSubcat(detailsEl) {
+      if (_subcatBusy) return;   // our own .open writes re-fire toggle → ignore
+      _subcatBusy = true;
+      try {
+        document.querySelectorAll('.enhance-collapse').forEach((det) => {
+          const isTarget = (det === detailsEl);
+          const sum = det.querySelector(':scope > summary');
+          if (sum) sum.classList.toggle('color-subcat-active', isTarget);
+          if (isTarget) { if (!det.open) det.open = true; }
+          else if (det.open) { det.open = false; }
+        });
+      } finally { _subcatBusy = false; }
+    }
+    // v2.1 round 223 (Terry) — CONTEXTUAL open: pick the single subcategory for the
+    // selection type and route through focusSubcat (accordion + gold). v2.1 round 229
+    // (Terry) — rewritten onto focusSubcat: 'background' now opens its section directly
+    // (focusSubcat is idempotent, so it no longer fights the Background <summary>'s native
+    // toggle — the old skipId hack is gone), and the gold is moved by the same helper that
+    // drives the accordion, so manual + selection paths can never disagree on which header
+    // is gold. emoji/none close + ungold everything.
     function applyContextualSections(mode) {
-      // Which single section (if any) we FORCE OPEN for this selection type.
-      //   photo → Looks (round-208 default), text → Text. Both are reached only via
-      //   on-canvas selection (never a summary click), so force-opening can't fight a
-      //   native <details> toggle.
-      const openId = (mode === 'photo') ? 'enhance-looks-collapse'
-        : (mode === 'text') ? 'collage-text-collapse'
-        : null;   // 'emoji' / 'none' open nothing
-      // skipId: a section we must NOT touch this pass. The BACKGROUND case is reached
-      // BOTH from a canvas click AND from the Background <summary> click (round 198):
-      // forcing collage-bg-collapse.open here would invert the summary's own native
-      // toggle (set true → the default action flips it back to false → section won't
-      // open). So for 'background' we collapse only the OTHER sections and leave the
-      // bg section's open state to the native toggle. Its colour palette still shows
-      // via updateColorTargets/placeColorPalette, so no bg control is hidden.
-      const skipId = (mode === 'background') ? 'collage-bg-collapse' : null;
-      CONTEXTUAL_SECTION_IDS.forEach((id) => {
-        const det = document.getElementById(id);
-        if (!det) return;
-        if (id === skipId) return;
-        if (id === openId) det.open = true; else det.open = false;
-      });
+      const byId = (id) => document.getElementById(id);
+      if (mode === 'photo') focusSubcat(byId('enhance-looks-collapse'));
+      else if (mode === 'text') focusSubcat(byId('collage-text-collapse'));
+      else if (mode === 'background') focusSubcat(byId('collage-bg-collapse'));
+      else focusSubcat(null);   // 'emoji' / 'none' → close + ungold all
     }
     // v2.1 round 208 (Terry) — Looks is the DEFAULT subcategory when a photo tile
     // is selected. It is NOT a colour target (no swatches), so it reuses the same
@@ -10662,9 +10718,14 @@
     function setLooksSubcatActive(on) {
       const det = document.getElementById('enhance-looks-collapse');
       if (!det) return;
+      // v2.1 round 229 (Terry) — on=true routes through focusSubcat so Looks becomes the
+      // SOLE open + gold subcategory (accordion), robust even when Looks was already open
+      // (a bare det.open=true fires no toggle, so the listener-driven accordion wouldn't
+      // run — focusSubcat enforces it directly). on=false just clears Looks' gold and
+      // leaves open state alone (a colour target is taking the gold via placeColorPalette).
+      if (on) { focusSubcat(det); return; }
       const sum = det.querySelector(':scope > summary');
-      if (sum) sum.classList.toggle('color-subcat-active', !!on);
-      if (on) det.open = true;   // make sure the presets are visible on select
+      if (sum) sum.classList.remove('color-subcat-active');
     }
     // v2.1 round 197 (Terry) — MOVE the single palette element so it sits directly
     // after the active subcategory's <details> (insertBefore the next sibling — it
@@ -10694,9 +10755,17 @@
       if (block.previousElementSibling !== anchor) {
         anchor.parentNode.insertBefore(block, anchor.nextSibling);
       }
-      // Gold the active subcategory header.
-      const sum = anchor.querySelector(':scope > summary');
-      if (sum) sum.classList.add('color-subcat-active');
+      // Gold the active subcategory header. v2.1 round 229 (Terry) — route through
+      // focusSubcat so the colour-target section becomes the SOLE open + gold subcategory
+      // (accordion: closes Looks and any other open section, clears their gold). This makes
+      // colour-only entry points that DON'T re-run applyContextualSections — clicking the
+      // Frame header (frameColorArmed) or the [Text|Effect] toggle — still leave exactly
+      // one section open with the gold on it. Idempotent when the section is already the
+      // open one (text/background selections).
+      try { focusSubcat(anchor); } catch (_) {
+        const sum = anchor.querySelector(':scope > summary');
+        if (sum) sum.classList.add('color-subcat-active');
+      }
       // v2.1 round 224 (Terry) — for a TEXT/Effect selection the palette is parked
       // immediately after #collage-text-collapse (just above), so the "Delete text"
       // button must follow the palette to stay the LAST text control. Re-anchor it
@@ -13858,6 +13927,23 @@ function zoomTo(newZoom, centreX, centreY) {
         d.addEventListener('toggle', () => {
           const s = load(); s[d.id] = d.open; save(s);
           if (d.open && !bulkToggling) autoScrollOpened(d);
+          // v2.1 round 229 (Terry) — ACCORDION + gold-follows-open. Exactly one top-level
+          // subcategory stays open; the gold line marks it. When the user (or the native
+          // <summary> click) OPENS a section, focusSubcat closes the rest and golds this
+          // one. When they close the open one, no section is open → clear its gold.
+          //   • _subcatBusy: focusSubcat is mid-sweep (its own .open writes re-fire this
+          //     toggle) → no-op, prevents recursion.
+          //   • bulkToggling: Expand-all / Collapse-all is running → leave the bulk state
+          //     alone so those buttons still expand/collapse EVERYTHING (round-157).
+          //   • Inner groups (.ec-size-grp / .frame-coll-* ) aren't .enhance-collapse with
+          //     an id, so they're not in `chevrons` and never reach here — they keep their
+          //     own independent open/close.
+          if (_subcatBusy || bulkToggling) return;
+          if (d.open) { try { focusSubcat(d); } catch (_) {} }
+          else {
+            const sm = d.querySelector(':scope > summary');
+            if (sm) sm.classList.remove('color-subcat-active');
+          }
         });
       });
       function setAll(open) {
