@@ -2337,6 +2337,63 @@
       pointer-events: none;
       z-index: 8;
     }
+    /* ─── v2.1 round 221 (Terry) — TEXT + EMOJI layers get full PHOTO parity
+       ────────────────────────────────────────────────────────────────────
+       Photo tiles have a floating Lock/Duplicate/Remove toolbar + FOUR corner
+       resize dots. Text/emoji had only a single bottom-right dot + rotate. Give
+       them: (a) the same 8-handle bounding box (4 corners + 4 side mid-edges),
+       (b) the floating toolbar, (c) a Lock state. The .ch-toolbar / .ch-tb-btn
+       base styles above are unscoped, so they already apply to .collage-text;
+       we only add the .selected reveal + the corner/side handle geometry here.
+       Resize stays PROPORTIONAL (uniform sizeFrac) from every handle — the side
+       handles are grab-point parity, NOT non-uniform stretch (text/emoji must
+       never distort or the bake aspect changes). */
+    .collage-text .ch-resize {
+      width: 14px; height: 14px;
+      right: auto; bottom: auto;       /* corner/side classes below set position */
+      box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+    /* 4 CORNERS — same offsets + diagonal cursors as the tile corners. */
+    .collage-text .ch-res-tl { left: -7px; top: -7px; right: auto; bottom: auto; cursor: nwse-resize; }
+    .collage-text .ch-res-tr { right: -7px; top: -7px; left: auto; bottom: auto; cursor: nesw-resize; }
+    .collage-text .ch-res-bl { left: -7px; bottom: -7px; right: auto; top: auto; cursor: nesw-resize; }
+    .collage-text .ch-res-br { right: -7px; bottom: -7px; left: auto; top: auto; cursor: nwse-resize; }
+    /* 4 SIDE mid-edges — Terry explicitly asked for "corners AND sides". Photos
+       have corners only (the tile's edge bars are CROP, not resize), so these are
+       NEW to the bounding box. Centred on each edge; ew/ns cursors. Resize is
+       still proportional (see startTextResize) — these are grab-point parity. */
+    .collage-text .ch-res-l { left: -7px; top: 50%; margin-top: -7px; right: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-r { right: -7px; top: 50%; margin-top: -7px; left: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-t { top: -7px; left: 50%; margin-left: -7px; right: auto; bottom: auto; cursor: ns-resize; }
+    .collage-text .ch-res-b { bottom: -7px; left: 50%; margin-left: -7px; right: auto; top: auto; cursor: ns-resize; }
+    /* Floating quick-action toolbar reveal for text/emoji (mirrors the tile rule
+       at .collage-item.selected .ch-toolbar — the .ch-toolbar box style is shared
+       from the unscoped rule above). */
+    .collage-text.selected .ch-toolbar { display: inline-flex; }
+    /* Locked text/emoji: freeze geometry → hide the resize + rotate handles
+       (mirror .collage-item.locked.selected), dashed outline + a corner padlock
+       badge. The Lock + Duplicate + Remove toolbar buttons stay usable. */
+    .collage-text.locked.selected .ch-resize,
+    .collage-text.locked.selected .ch-rotate { display: none !important; }
+    .collage-text.locked.selected { outline-style: dashed !important; }
+    .collage-text.locked.selected::after {
+      content: '';
+      position: absolute;
+      right: 4px; top: 4px;
+      width: 18px; height: 18px;
+      border-radius: 5px;
+      background: rgba(28,26,46,0.9) center / 12px 12px no-repeat;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FEC242' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E");
+      pointer-events: none;
+      z-index: 8;
+    }
+    /* Gold accent in collage mode, matching the tile handles (round 203). The
+       text rotate keeps its round-187 base look (filled glyph, above the box);
+       only the ring/connector/glyph colours go gold to match the tile dots. */
+    body.collage-mode .collage-text .ch-resize { background: #FEC242; }
+    body.collage-mode .collage-text .ch-rotate { border-color: #FEC242; }
+    body.collage-mode .collage-text .ch-rotate svg { fill: #5a4a12; }
+    body.collage-mode .collage-text .ch-rotate::before { background: #FEC242; }
     /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
        a + so the user knows clicking re-adds it. */
     .filmstrip .thumb.collage-off,
@@ -2947,6 +3004,14 @@
           <input type="text" class="emoji-search" id="collage-emoji-search" placeholder="Search emoji…" spellcheck="false" autocomplete="off" data-pdr-tooltip="Type to filter — name or keyword (e.g. heart, dog, party)">
           <div class="emoji-grid-wrap" id="collage-emoji-grid"></div>
         </details>
+        <!-- v2.1 round 221 (Terry) — Delete button RELOCATED here: directly BELOW
+             the EMOJIS picker grid (#collage-emoji-collapse) and ABOVE the Looks
+             section (#enhance-looks-collapse). It serves BOTH text + emoji (relabels
+             "Delete text" / "Delete emoji" via syncTextControls) and is shown/hidden
+             by syncTextControls (a text OR emoji layer selected). The round-205
+             "follow the colour palette" relocation in placeColorPalette() is gone, so
+             it stays pinned in this one spot. Same id / click handler / red-hover. -->
+        <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px;display:none" data-pdr-tooltip="Delete this text layer">Delete text</button>
         <!-- v2.1 round 195 (Terry) — ONE shared Colour control for the whole
              panel. A target-chip row at the top names what the palette colours,
              derived from the current selection by updateColorTargets():
@@ -2984,13 +3049,10 @@
                Favourites row and BEFORE the collections, so "↓" correctly points
                down at them, and reworded to "Tap ＋ on any colour below…". -->
         </div>
-        <!-- v2.1 round 205 (Terry) — "Delete text" lives at the very BOTTOM of the
-             text controls: a sibling AFTER the Colour Palette (#collage-unified-
-             color), below the palette's collection chevrons. Shown/hidden by
-             syncTextControls() (text selected only) and re-parked right after the
-             palette by placeColorPalette() so it always trails the palette wherever
-             that relocates. Same id / click handler / round-204 red-hover. -->
-        <button class="ec-shape-btn" id="collage-text-delete" type="button" style="width:100%;margin-top:10px;display:none" data-pdr-tooltip="Delete this text layer">Delete text</button>
+        <!-- v2.1 round 221 (Terry) — the Delete button used to sit HERE (after the
+             Colour Palette, re-parked by placeColorPalette). It moved UP to just
+             below the EMOJIS picker (see above) and is now pinned there for both
+             text + emoji. -->
         <div style="margin:0;border-top:1px solid rgba(169,156,255,0.15)"></div>
         <!-- v2.1 round 158 (Terry) — removed the verbose "click a photo to
              edit it" hint; the dimmed per-photo sections already signal it. -->
@@ -6245,8 +6307,32 @@
         // per-render canvas swap below.
         const tRot = document.createElement('div'); tRot.className = 'ch ch-rotate'; tRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
         tRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
-        const tRes = document.createElement('div'); tRes.className = 'ch ch-resize'; tRes.setAttribute('data-pdr-tooltip', 'Resize');
-        const handles = [tRot, tRes];
+        // v2.1 round 221 (Terry) — PHOTO PARITY: the bounding box now shows the
+        // full 8-handle set — 4 CORNERS (reusing the tile .ch-res-* corner CSS)
+        // + 4 SIDE mid-edges (.ch-res-l/r/t/b, new for text/emoji). Every handle
+        // resizes PROPORTIONALLY (uniform sizeFrac scale from the centre) so text/
+        // emoji never distort and the bake aspect is unchanged — the side handles
+        // are grab-point parity, NOT non-uniform stretch. The grabbed handle's
+        // name is passed to startTextResize so it anchors the OPPOSITE point.
+        const mkRes = (cls, tip) => { const d = document.createElement('div'); d.className = 'ch ch-resize ' + cls; d.setAttribute('data-pdr-tooltip', tip); return d; };
+        const tResTL = mkRes('ch-res-tl', 'Resize'); const tResTR = mkRes('ch-res-tr', 'Resize');
+        const tResBL = mkRes('ch-res-bl', 'Resize'); const tResBR = mkRes('ch-res-br', 'Resize');
+        const tResL = mkRes('ch-res-l', 'Resize'); const tResR = mkRes('ch-res-r', 'Resize');
+        const tResT = mkRes('ch-res-t', 'Resize'); const tResB = mkRes('ch-res-b', 'Resize');
+        // v2.1 round 221 (Terry) — floating Lock / Duplicate / Remove toolbar,
+        // identical to the photo tile's (same .ch-toolbar / .ch-tb-btn CSS + the
+        // same Feather glyphs). Shown when this layer is .selected. Its buttons go
+        // in `handles` so a click never starts a drag.
+        const tbar = document.createElement('div'); tbar.className = 'ch ch-toolbar';
+        const tbLock = document.createElement('button'); tbLock.type = 'button'; tbLock.className = 'ch-tb-btn ch-tb-lock'; tbLock.setAttribute('data-pdr-tooltip', 'Lock (freeze position / size / rotation)');
+        tbLock.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+        const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn ch-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
+        tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+        const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn ch-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Delete');
+        tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+        tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
+        // Every handle + the toolbar (and its buttons) are excluded from the drag.
+        const handles = [tRot, tResTL, tResTR, tResBL, tResBR, tResL, tResR, tResT, tResB, tbar, tbLock, tbDup, tbRem];
         // Drag the wrapper to move the text — but IGNORE pointerdowns that land
         // on a handle (mirror the tile guard) so resize/rotate don't also drag.
         el.addEventListener('pointerdown', (e) => {
@@ -6257,16 +6343,38 @@
           if (editingText === layer) { e.stopPropagation(); return; }
           startTextDrag(layer, e);
         });
-        tRes.addEventListener('pointerdown', (e) => startTextResize(layer, e));
+        // v2.1 round 221 (Terry) — every resize handle (corners + sides) drives the
+        // SAME proportional resize; the grabbed handle name anchors the opposite.
+        tResTL.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'tl'));
+        tResTR.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'tr'));
+        tResBL.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'bl'));
+        tResBR.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'br'));
+        tResL.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'l'));
+        tResR.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'r'));
+        tResT.addEventListener('pointerdown', (e) => startTextResize(layer, e, 't'));
+        tResB.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'b'));
         tRot.addEventListener('pointerdown', (e) => startTextRotate(layer, e));
+        // v2.1 round 221 (Terry) — toolbar actions mirror the tile's (lines ~8128):
+        // pointerdown stops the gesture reaching the wrapper drag; the action fires
+        // on click. Lock toggles the layer's locked flag; Duplicate clones + selects
+        // the clone (one undo); Remove deletes the layer (one undo).
+        tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleTextLock(layer); });
+        tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateTextLayer(layer); });
+        tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); deleteTextLayer(layer); });
         // v2.1 round 204 (Terry) — double-click the rotate handle snaps the text
         // to the nearest 90°. stopPropagation so it doesn't bubble to the wrapper's
         // dblclick (which would enter edit mode). One undo step.
-        tRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); snapTextRot90(layer); });
+        tRot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); if (layer.locked) return; snapTextRot90(layer); });
         // v2.1 round 204 (Terry) — double-click the text on the canvas enters
         // IN-CANVAS edit mode (replaces the old "focus the side-panel textarea").
-        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); if (layer.isEmoji) return; enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line; v2.1 round 219 (Terry) — emoji layers have no text to edit, so double-click just selects (no contentEditable)
-        el.appendChild(tRot); el.appendChild(tRes);
+        el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); if (layer.isEmoji || layer.locked) return; enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line; v2.1 round 219 (Terry) — emoji layers have no text to edit, so double-click just selects (no contentEditable); v2.1 round 221 (Terry) — a LOCKED text layer is frozen, so double-click just selects (no edit)
+        // v2.1 round 221 (Terry) — append the rotate + the full 8-handle resize set
+        // + the floating toolbar (was just tRot + a single tRes pre-221).
+        el.appendChild(tRot);
+        el.appendChild(tResTL); el.appendChild(tResTR); el.appendChild(tResBL); el.appendChild(tResBR);
+        el.appendChild(tResL); el.appendChild(tResR); el.appendChild(tResT); el.appendChild(tResB);
+        el.appendChild(tbar);
         collageCanvasEl.appendChild(el);
         layer.el = el;
       }
@@ -6333,6 +6441,16 @@
       el.style.transform = 'translate(-50%, -50%) rotate(' + (layer.rot || 0) + 'deg)';
       el.style.zIndex = String(COLLAGE_TEXT_Z + (layer.z || 0));
       el.classList.toggle('selected', selectedText === layer);
+      // v2.1 round 221 (Terry) — reflect the lock state on the wrapper (mirrors the
+      // tile's .locked class): the CSS hides the resize/rotate handles + shows the
+      // padlock badge + dashed outline. Also sync the toolbar lock button's gold
+      // "active" look (same as the tile lockBtn sync in renderCollageItem).
+      el.classList.toggle('locked', !!layer.locked);
+      const lockBtn = el.querySelector('.ch-tb-lock');
+      if (lockBtn) {
+        lockBtn.classList.toggle('locked', !!layer.locked);
+        lockBtn.setAttribute('data-pdr-tooltip', layer.locked ? 'Unlock' : 'Lock (freeze position / size / rotation)');
+      }
     }
     function renderAllTexts() {
       for (const layer of collageTexts) renderTextLayer(layer);
@@ -6929,12 +7047,59 @@
       syncTextControls();
       commitCollageChange();
     }
+    // v2.1 round 221 (Terry) — Lock toolbar button for a text/emoji layer. Mirrors
+    // the tile's toggleItemLock: flips layer.locked (undoable — `locked` is now in
+    // the snapshot), keeps the layer selected so the new state shows, and re-renders
+    // so the wrapper's .locked class (hides resize/rotate handles + shows the padlock
+    // badge) and the gold lock-button state update. Drag/resize/rotate early-return
+    // while locked (see their guards).
+    function toggleTextLock(layer) {
+      if (!layer) return;
+      beginCollageChange();
+      layer.locked = !layer.locked;
+      selectText(layer);
+      renderTextLayer(layer);
+      commitCollageChange();
+    }
+    // v2.1 round 221 (Terry) — Duplicate toolbar button for a text/emoji layer.
+    // Mirrors duplicateCollageItem: clone the layer model (new id, all style/effect/
+    // emoji fields copied — the SAME field set the snapshot serializes), offset by
+    // ~+0.03 (clamped so the centre stays on-canvas, like the drag clamp), give it
+    // the top z, the clone is UNLOCKED, then render + select it. One undo step. Does
+    // NOT enter edit mode (matches emoji + keeps the round-218 edit flow untouched).
+    function duplicateTextLayer(layer) {
+      if (!layer) return;
+      if (editingText) exitTextEdit();   // commit any open in-canvas edit first
+      beginCollageChange();
+      const OFF = 0.03;
+      const nx = Math.max(0, Math.min(1, (layer.xFrac || 0) + OFF));
+      const ny = Math.max(0, Math.min(1, (layer.yFrac || 0) + OFF));
+      const topZ = collageTexts.reduce((m, t) => Math.max(m, t.z || 0), 0) + 1;
+      const clone = {
+        id: collageTextSeq++, isEmoji: !!layer.isEmoji, text: layer.text,
+        xFrac: nx, yFrac: ny, sizeFrac: layer.sizeFrac, font: layer.font,
+        color: layer.color, align: layer.align, rot: layer.rot, z: topZ,
+        bold: !!layer.bold, italic: !!layer.italic, underline: !!layer.underline,
+        effect: layer.effect || 'none',
+        effectStrength: (typeof layer.effectStrength === 'number') ? layer.effectStrength : 50,
+        effectColor: layer.effectColor || '',
+        locked: false,   // the clone starts unlocked
+        el: null, canvasEl: null,
+      };
+      collageTexts.push(clone);
+      renderTextLayer(clone);
+      selectText(clone);
+      commitCollageChange();
+    }
     // Drag a text layer: mirrors the tile drag math (delta in fractions of the
     // canvas, clamp 0..1) but the layer is CENTER-anchored, so xFrac/yFrac are
     // the centre. One undo step per drag via begin/commitCollageChange.
     function startTextDrag(layer, e) {
       e.preventDefault();
       e.stopPropagation();   // don't let the canvas pointerdown deselect / select bg
+      // v2.1 round 221 (Terry) — locked layer: select but don't drag (mirror the
+      // tile lock in startItemDrag). The Lock/Dup/Remove toolbar stays clickable.
+      if (layer && layer.locked) { selectText(layer); return; }
       beginCollageChange();
       selectText(layer);
       // Bring this layer to the front of the text stack.
@@ -6983,8 +7148,19 @@
     // (start dist), applied to the size. Text is CENTRE-anchored (xFrac/yFrac
     // is the centre), so the centre is fixed and only sizeFrac changes. One
     // undo step per gesture.
-    function startTextResize(layer, e) {
+    // v2.1 round 221 (Terry) — now reachable from ALL 8 handles (4 corners + 4
+    // sides). `handle` is 'tl'|'tr'|'bl'|'br'|'l'|'r'|'t'|'b' (defaults to 'br').
+    // Resize is PROPORTIONAL from EVERY handle: text/emoji are centre-anchored and
+    // scaled uniformly via sizeFrac (height follows the ink, aspect preserved), so
+    // the side handles behave exactly like the corners — they are grab-point parity,
+    // never a non-uniform stretch (the bake aspect must not change). Distance-from-
+    // centre drives the scale, same as before; the extra `handle` arg is accepted so
+    // every handle can call in, but the math is intentionally handle-agnostic.
+    function startTextResize(layer, e, handle) {
       e.preventDefault(); e.stopPropagation();
+      // v2.1 round 221 (Terry) — locked: select but don't resize (handles are also
+      // hidden by CSS while locked, so this is a belt-and-braces guard).
+      if (layer && layer.locked) { selectText(layer); return; }
       beginCollageChange();
       selectText(layer);
       const rect = collageCanvasEl.getBoundingClientRect();
@@ -7021,6 +7197,8 @@
     // 15°. One undo step per gesture.
     function startTextRotate(layer, e) {
       e.preventDefault(); e.stopPropagation();
+      // v2.1 round 221 (Terry) — locked: select but don't rotate (mirror the tile).
+      if (layer && layer.locked) { selectText(layer); return; }
       beginCollageChange();
       selectText(layer);
       const rect = collageCanvasEl.getBoundingClientRect();
@@ -7045,6 +7223,7 @@
     // layer's angle to the nearest 90° (normalised 0–359). One undo step.
     function snapTextRot90(layer) {
       if (!layer) return;
+      if (layer.locked) { selectText(layer); return; }   // v2.1 round 221 (Terry) — locked: no snap-rotate (mirror snapItemRot90)
       beginCollageChange();
       selectText(layer);
       let r = Math.round((layer.rot || 0) / 90) * 90;
@@ -7225,11 +7404,11 @@
       const isEmojiSel = !!(selectedText && selectedText.isEmoji);
       const ctl = document.getElementById('collage-text-controls');
       if (ctl) ctl.style.display = (selectedText && !isEmojiSel) ? 'block' : 'none';
-      // v2.1 round 205 (Terry) — "Delete text" now lives OUTSIDE
-      // #collage-text-controls (relocated to the very bottom, after the Colour
-      // Palette), so it no longer inherits that wrapper's show/hide. Gate it on
-      // the selection here, before the early-return below. (placeColorPalette
-      // re-parks it right after the palette whenever text is the colour target.)
+      // v2.1 round 221 (Terry) — the Delete button lives OUTSIDE
+      // #collage-text-controls (pinned just below the EMOJIS picker, above Looks),
+      // so it doesn't inherit that wrapper's show/hide. Gate it on the selection
+      // here (text OR emoji), before the early-return below. It is no longer
+      // re-parked by placeColorPalette — it stays in that one spot.
       const delBtnSync = document.getElementById('collage-text-delete');
       if (delBtnSync) {
         delBtnSync.style.display = selectedText ? 'block' : 'none';
@@ -7885,7 +8064,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '' })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips
         selTextId: selectedText ? selectedText.id : null,
       });
     }
@@ -7972,7 +8151,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -9790,18 +9969,13 @@
       // Gold the active subcategory header.
       const sum = anchor.querySelector(':scope > summary');
       if (sum) sum.classList.add('color-subcat-active');
-      // v2.1 round 205 (Terry) — keep "Delete text" at the very BOTTOM of the
-      // text controls: when the palette is parked for a TEXT target, move the
-      // Delete button to sit immediately AFTER the palette (so it trails the
-      // palette + its collection chevrons wherever the palette relocated). For
-      // Frame / Background targets Delete is hidden by syncTextControls, so its
-      // position is irrelevant — leave it.
-      if (target === 'text' || target === 'effect') {
-        const delBtn = document.getElementById('collage-text-delete');
-        if (delBtn && block.nextElementSibling !== delBtn) {
-          block.parentNode.insertBefore(delBtn, block.nextSibling);
-        }
-      }
+      // v2.1 round 221 (Terry) — the round-205 "follow the palette" relocation of
+      // #collage-text-delete is REMOVED. The Delete button now stays pinned in its
+      // markup spot — directly BELOW the EMOJIS picker (#collage-emoji-collapse) and
+      // ABOVE the Looks section (#enhance-looks-collapse) — for BOTH text + emoji
+      // selections (it relabels via syncTextControls). It no longer chases the
+      // colour palette around the panel. (Show/hide is still handled by
+      // syncTextControls; this function only positions the palette + golds headers.)
     }
     // v2.1 round 195 (Terry) — derive the target indicator from the CURRENT
     // selection, show/hide the whole Colour control, and keep colorTarget valid:
