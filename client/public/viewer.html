@@ -3008,10 +3008,13 @@
       <span class="enhance-title">Enhance</span>
       <!-- v2.1 round 189 (Terry) — Expand all / Collapse all moved up onto the
            header row (was a dedicated row below, wasting vertical space). -->
+      <!-- v2.1 round 233 (Terry) — "Expand all" removed: round 231 made the panel
+           strictly one-subcategory-open-at-a-time, so it could no longer expand all.
+           The collapse control stays (collapse the open subcategory + deselect the
+           canvas — round 206/220) and is relabeled "Collapse". The separator dot is
+           gone with it. -->
       <div class="enhance-collapse-all">
-        <button type="button" id="enhance-expand-all">Expand all</button>
-        <span aria-hidden="true">·</span>
-        <button type="button" id="enhance-collapse-all">Collapse all</button>
+        <button type="button" id="enhance-collapse-all">Collapse</button>
       </div>
       <!-- v2.1 (Terry 2026-06-07 round 2) — X close button removed
            per Terry: "I would like the X to go when it's open, it's
@@ -3305,6 +3308,96 @@
         <button class="strip-arrow" data-strip="enhance-looks-strip" data-dir="1" aria-label="Scroll looks right">&#8250;</button>
       </div>
       </details>
+      <!-- v2.1 round 233 (Terry) — appearance cluster reordered. Effects + Tone &
+           colour MOVED UP here to sit directly under Looks (was: Looks → Flip&rotate →
+           Background remover → Frame → Tone&colour → Effects). New order:
+           Looks → Effects → Tone & colour → Flip & rotate → Background remover → Frame.
+           The <details> blocks are moved verbatim — ids/classes/contents unchanged. -->
+      <!-- v2.1 round 154 (Terry) — Fade + Blend grouped under an "Effects"
+           chevron, parallel to the "Tone & colour" chevron above (same
+           .enhance-collapse styling → identical heading look + internal
+           spacing, fixing the spacing inconsistency Terry flagged). These
+           are finishing effects, not tonal levels, so they read as their
+           own group. Collage-only (no backdrop to blend into in the single-
+           photo viewer); default open since they're commonly used. -->
+      <details class="enhance-collapse" id="enhance-fx" open>
+        <summary>Effects</summary>
+        <!-- ONE Fade slider for the whole collage — fades whatever's
+             selected (a photo OR the background). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Fade</label>
+            <span class="enhance-val" id="val-opacity">100</span>
+          </div>
+          <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
+        </div>
+        <!-- Blend: feather the photo's EDGES so it melts into whatever's
+             behind it (CSS-mask preview; feathered-alpha bake on save). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-blend" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">Blend edges</label>
+            <span class="enhance-val" id="val-blend">0</span>
+          </div>
+          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0">
+        </div>
+        <!-- v2.1 round 164 (Terry) — Curved corners: round all four together
+             with this slider (per-corner dragging on the photo comes next). -->
+        <div class="enhance-control">
+          <div class="enhance-label-row">
+            <label for="slider-corners" data-pdr-tooltip="Round the photo's corners — drag up to round all four">Curved corners</label>
+            <span class="enhance-val" id="val-corners">0</span>
+          </div>
+          <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0">
+        </div>
+      </details>
+      <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
+           chevron to declutter ("largely pre-chosen by Looks; if someone
+           wants to manually do it, then they can"). Open by default in
+           single-photo mode; enterCollageMode() collapses it for the
+           busier collage panel. -->
+      <details class="enhance-collapse" id="enhance-levels" open>
+        <summary>Tone &amp; colour</summary>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-brightness" data-pdr-tooltip="How light or dark the photo is">Brightness</label>
+          <span class="enhance-val" id="val-brightness">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-contrast" data-pdr-tooltip="The punch between lights and darks">Contrast</label>
+          <span class="enhance-val" id="val-contrast">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-saturation" data-pdr-tooltip="How rich the colours are">Saturation</label>
+          <span class="enhance-val" id="val-saturation">100</span>
+        </div>
+        <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100">
+      </div>
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-temperature" data-pdr-tooltip="Negative = cooler, positive = warmer">Temperature</label>
+          <span class="enhance-val" id="val-temperature">0</span>
+        </div>
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0">
+      </div>
+      <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
+           (Terry: "was meant to be on a slider"). v2.1 round 153 — the
+           MIDPOINT (50) is normal/default; slide down toward 0 for black &
+           white, up toward 100 for extra-vivid colour. Bipolar like the
+           other levels so every slider's default sits in the middle. -->
+      <div class="enhance-control">
+        <div class="enhance-label-row">
+          <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Colour</label>
+          <span class="enhance-val" id="val-colour">50</span>
+        </div>
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50">
+      </div>
+      </details>
       <!-- v2.1 round 155 (Terry) — Mirror / Flip / Rotate the selected photo
            (or background). Mirror = left↔right, Flip = top↕bottom (both baked
            via sharp flop/flip); Rotate = +90° using the tile's free rotation.
@@ -3406,91 +3499,9 @@
         <input class="enhance-slider" id="slider-framewidth" type="range" min="1" max="15" step="0.5" value="3.5">
       </div>
       </details>
-      <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
-           chevron to declutter ("largely pre-chosen by Looks; if someone
-           wants to manually do it, then they can"). Open by default in
-           single-photo mode; enterCollageMode() collapses it for the
-           busier collage panel. -->
-      <details class="enhance-collapse" id="enhance-levels" open>
-        <summary>Tone &amp; colour</summary>
-      <div class="enhance-control">
-        <div class="enhance-label-row">
-          <label for="slider-brightness" data-pdr-tooltip="How light or dark the photo is">Brightness</label>
-          <span class="enhance-val" id="val-brightness">100</span>
-        </div>
-        <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100">
-      </div>
-      <div class="enhance-control">
-        <div class="enhance-label-row">
-          <label for="slider-contrast" data-pdr-tooltip="The punch between lights and darks">Contrast</label>
-          <span class="enhance-val" id="val-contrast">100</span>
-        </div>
-        <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100">
-      </div>
-      <div class="enhance-control">
-        <div class="enhance-label-row">
-          <label for="slider-saturation" data-pdr-tooltip="How rich the colours are">Saturation</label>
-          <span class="enhance-val" id="val-saturation">100</span>
-        </div>
-        <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100">
-      </div>
-      <div class="enhance-control">
-        <div class="enhance-label-row">
-          <label for="slider-temperature" data-pdr-tooltip="Negative = cooler, positive = warmer">Temperature</label>
-          <span class="enhance-val" id="val-temperature">0</span>
-        </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0">
-      </div>
-      <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
-           (Terry: "was meant to be on a slider"). v2.1 round 153 — the
-           MIDPOINT (50) is normal/default; slide down toward 0 for black &
-           white, up toward 100 for extra-vivid colour. Bipolar like the
-           other levels so every slider's default sits in the middle. -->
-      <div class="enhance-control">
-        <div class="enhance-label-row">
-          <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Colour</label>
-          <span class="enhance-val" id="val-colour">50</span>
-        </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50">
-      </div>
-      </details>
-      <!-- v2.1 round 154 (Terry) — Fade + Blend grouped under an "Effects"
-           chevron, parallel to the "Tone & colour" chevron above (same
-           .enhance-collapse styling → identical heading look + internal
-           spacing, fixing the spacing inconsistency Terry flagged). These
-           are finishing effects, not tonal levels, so they read as their
-           own group. Collage-only (no backdrop to blend into in the single-
-           photo viewer); default open since they're commonly used. -->
-      <details class="enhance-collapse" id="enhance-fx" open>
-        <summary>Effects</summary>
-        <!-- ONE Fade slider for the whole collage — fades whatever's
-             selected (a photo OR the background). -->
-        <div class="enhance-control">
-          <div class="enhance-label-row">
-            <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Fade</label>
-            <span class="enhance-val" id="val-opacity">100</span>
-          </div>
-          <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
-        </div>
-        <!-- Blend: feather the photo's EDGES so it melts into whatever's
-             behind it (CSS-mask preview; feathered-alpha bake on save). -->
-        <div class="enhance-control">
-          <div class="enhance-label-row">
-            <label for="slider-blend" data-pdr-tooltip="Soften the photo's edges so it melts into the background — drag up to widen the blend">Blend edges</label>
-            <span class="enhance-val" id="val-blend">0</span>
-          </div>
-          <input class="enhance-slider" id="slider-blend" type="range" min="0" max="100" step="1" value="0">
-        </div>
-        <!-- v2.1 round 164 (Terry) — Curved corners: round all four together
-             with this slider (per-corner dragging on the photo comes next). -->
-        <div class="enhance-control">
-          <div class="enhance-label-row">
-            <label for="slider-corners" data-pdr-tooltip="Round the photo's corners — drag up to round all four">Curved corners</label>
-            <span class="enhance-val" id="val-corners">0</span>
-          </div>
-          <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0">
-        </div>
-      </details>
+      <!-- v2.1 round 233 (Terry) — Tone & colour + Effects were here; moved up to
+           directly follow Looks (see the appearance-cluster note above). Frame is now
+           the last per-photo section. -->
       </div>
 
       <!-- v2.1 round 8 (Terry 2026-06-07) — AI ENHANCEMENT section
@@ -14141,9 +14152,11 @@ function zoomTo(newZoom, centreX, centreY) {
         // toggle events fire as queued tasks; clear the flag after they've run.
         setTimeout(() => { bulkToggling = false; }, 80);
       }
-      const eb = document.getElementById('enhance-expand-all');
+      // v2.1 round 233 (Terry) — "Expand all" control removed (round 231 made the
+      // panel one-open-at-a-time, so expanding all is meaningless). The collapse
+      // control (now labeled "Collapse") still uses setAll(false). setAll(true) has
+      // no caller anymore but the function is kept since setAll(false) shares it.
       const cb = document.getElementById('enhance-collapse-all');
-      if (eb) eb.addEventListener('click', () => setAll(true));
       if (cb) cb.addEventListener('click', () => {
         setAll(false);
         // v2.1 round 206 (Terry) — Collapse all also clears the current selection
