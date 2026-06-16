@@ -637,7 +637,35 @@ async function removeBackground(msg: RemoveBackgroundMessage): Promise<void> {
   // Full-resolution source (auto-oriented, alpha stripped). The mask is scaled
   // back up to THIS size, so the cut-out keeps the photo's original detail.
   post({ type: 'progress', requestId: msg.requestId, phase: 'Reading the photo…', percent: 15 });
-  const src = await readImageRaw(msg.sourcePath);
+  let src = await readImageRaw(msg.sourcePath);
+
+  // v2.1 round 234 (Terry) — CAP the source decode. readImageRaw does a full-
+  // resolution .raw() decode = W*H*3 bytes, which is UNBOUNDED: a 48 MP phone
+  // photo is ~144 MB, and that buffer is then cached in bgMaskCache.srcData AND
+  // re-resized for the composite. Under memory pressure (the app had just built
+  // a 74k-row sidecar snapshot + pre-warmed People Manager) a full-res bg-remove
+  // OOM-crashed the whole collage renderer with nothing logged. round 174 capped
+  // only the OUTPUT (OUT_CAP=2000) — the giant raw SOURCE buffer was the real
+  // spike. Cap it here, BEFORE the big buffer is built/cached. The model only
+  // ever sees BR_SIZE (1024²) and the output is hard-capped at 2000px, so a
+  // source above 2000px long-edge can't improve either the mask or the cut-out
+  // quality — this never degrades a normal photo (its output was already going
+  // to be downscaled to ≤2000 from whatever the source size was).
+  const SRC_CAP = 2000;
+  const srcLong = Math.max(src.width, src.height);
+  if (srcLong > SRC_CAP) {
+    const ds = SRC_CAP / srcLong;
+    const dw = Math.max(1, Math.round(src.width * ds));
+    const dh = Math.max(1, Math.round(src.height * ds));
+    const dsData = await sharp(src.data, {
+      raw: { width: src.width, height: src.height, channels: src.channels as 1 | 2 | 3 | 4 },
+    })
+      .resize(dw, dh, { fit: 'fill' })
+      .raw()
+      .toBuffer();
+    log(`removeBackground source capped ${src.width}x${src.height} -> ${dw}x${dh} (cap ${SRC_CAP})`);
+    src = { data: dsData, width: dw, height: dh, channels: src.channels };
+  }
 
   // Letterbox a copy into the model's square input — preserve aspect ratio and
   // pad with black, NOT a plain squash. Squashing a non-square photo to 1024²

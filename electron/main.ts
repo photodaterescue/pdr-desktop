@@ -11440,6 +11440,44 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       setTimeout(release, 5000);
     };
 
+    // v2.1 round 234 (Terry) — crash safety net for BOTH viewer kinds. The
+    // collage Background Remover hard-crashed the renderer (process gone, the
+    // window vanished, nothing logged) on a large full-res photo under memory
+    // pressure. round 174 added a log-only handler on the create-new branch,
+    // but it (a) didn't recover the dead window and (b) wasn't wired on the
+    // reuse branch. This shared helper LOGS the exact reason (so the next
+    // recurrence is captured) and RECOVERS instead of leaving a dead/blank
+    // window: on a crash/oom/kill/launch-failure it reloads the window so a
+    // fresh collage/viewer is usable again, and nulls the module-level ref if
+    // the window is gone so the next open spawns cleanly. (The in-memory
+    // collage CONTENT is not persisted, so a reload yields a FRESH, empty
+    // collage — persisting + restoring the collage across a crash is a
+    // separate future task; a surviving window still beats a vanished one.)
+    const wireCrashRecovery = (win: BrowserWindow) => {
+      win.webContents.on('render-process-gone', (_e, details) => {
+        console.error('[render-process-gone]', {
+          kind: isCollage ? 'collage' : 'viewer',
+          reason: details.reason,
+          exitCode: details.exitCode,
+        });
+        const fatal = details.reason === 'crashed' || details.reason === 'oom'
+          || details.reason === 'killed' || details.reason === 'launch-failed';
+        if (!fatal) return;
+        if (win.isDestroyed()) {
+          // Window already gone — drop the stale ref so a fresh open works.
+          if (isCollage) collageWindow = null; else viewerWindow = null;
+          return;
+        }
+        try {
+          win.webContents.reload();
+        } catch (reloadErr) {
+          console.error('[render-process-gone] reload failed', reloadErr);
+          // Couldn't revive it — null the ref so the next open spawns fresh.
+          if (isCollage) collageWindow = null; else viewerWindow = null;
+        }
+      });
+    };
+
     // v2.0.9 — __dirname-relative resolves inside app.asar in packaged
     // builds (process.resourcesPath/dist/public sits OUTSIDE asar).
     const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
@@ -11448,6 +11486,9 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     if (existing && !existing.isDestroyed()) {
       pendingByWc.set(existing.webContents.id, payload);
       releaseOn(existing);
+      // v2.1 round 234 (Terry) — crash recovery (wireCrashRecovery) is attached
+      // once at window creation below and persists across reloads on the same
+      // webContents, so a reused window already has it; nothing to wire here.
       existing.loadFile(viewerHtml);
       existing.setTitle(title);
       // v2.1 round 153 — on Windows .focus() alone often just flashes the
@@ -11516,13 +11557,10 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     win.webContents.on('console-message', (_e, _level, message, line, sourceId) => {
       console.log(`[${isCollage ? 'collage' : 'viewer'}] ${sourceId}:${line} ${message}`);
     });
-    // v2.1 round 174 (Terry) — log renderer crashes (the "navy screen"). reason
-    // = 'oom' / 'crashed' / 'killed' etc. tells us WHY if it recurs (the
-    // background-remover cut-outs are now resolution-capped to avoid the OOM
-    // that crashed the collage on the 2nd/3rd cut-out).
-    win.webContents.on('render-process-gone', (_e, details) => {
-      console.error(`[${isCollage ? 'collage' : 'viewer'}] render-process-gone reason=${details.reason} exitCode=${details.exitCode}`);
-    });
+    // v2.1 round 234 (Terry) — was a round-174 log-only handler; now logs the
+    // full crash details AND recovers the window (reload on crash/oom/kill,
+    // null the ref if it's gone) via the shared helper. See wireCrashRecovery.
+    wireCrashRecovery(win);
 
     // v2.1 round 207 (Terry) — forward window-state changes to the
     // renderer so the top-center "Restore window" pill can show/hide
