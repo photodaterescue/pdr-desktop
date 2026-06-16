@@ -2498,12 +2498,47 @@
        The active row wears the collage gold (#FEC242), like the other active
        controls; the obscure sizes hide behind a More… <details>; Custom… reveals two
        px inputs + Apply. */
-    .ec-size-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
-    .ec-size-group { display: flex; flex-direction: column; gap: 3px; }
-    .ec-size-group-label {
-      font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
-      color: #8a8a93; margin: 2px 0 1px;
+    .ec-size-list { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+    /* v2.1 round 228 (Terry) — Canvas Size is now a NESTED collapsible hierarchy that
+       mirrors the round-223 Palettes look: top-level groups (Social Media / Prints /
+       Paper / More / Custom…) are .ec-size-grp <details>; within Social Media each
+       platform is an indented .ec-size-subgrp <details>. The summary uses the same
+       uppercase label + gold ▸ chevron as Palettes; the platform sub-groups indent
+       under Social Media with a subtle gold left rule, exactly like the colour
+       categories indent under "Palettes". DEFAULT COLLAPSED; each remembers its own
+       open state in localStorage (set in JS). These carry NEITHER .enhance-collapse NOR
+       a managed id, so the contextual sweep / collapse-all / round-157 persistence never
+       touch them. */
+    .ec-size-grp { padding: 0; }
+    .ec-size-grp > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: #9a93c8;
+      display: flex; align-items: center; gap: 6px; padding: 3px 0; user-select: none;
     }
+    .ec-size-grp > summary::-webkit-details-marker { display: none; }
+    .ec-size-grp > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #FEC242; }
+    .ec-size-grp[open] > summary::before { transform: rotate(90deg); }
+    .ec-size-grp[open] { display: block; }
+    .ec-size-grp::details-content { display: block; }
+    /* Direct rows under a top-level group (Prints / Paper / More) get a little top gap. */
+    .ec-size-grp > .ec-size-grp-body { display: flex; flex-direction: column; gap: 3px; margin: 5px 0 2px; }
+    /* The host that wraps the indented platform sub-groups under Social Media. */
+    .ec-size-subgrp-host { display: flex; flex-direction: column; gap: 4px; margin: 5px 0 2px; }
+    /* Platform sub-group — indented under Social Media, mirroring how the colour
+       categories indent under "Palettes" (round 223): ~14px indent + a faint gold
+       left rule. Its own ▸ chevron is a touch dimmer than the parent group's. */
+    .ec-size-subgrp { padding: 0; margin-left: 14px; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); }
+    .ec-size-subgrp > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a8a93;
+      display: flex; align-items: center; gap: 6px; padding: 2px 0; user-select: none;
+    }
+    .ec-size-subgrp > summary::-webkit-details-marker { display: none; }
+    .ec-size-subgrp > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #a99cff; }
+    .ec-size-subgrp[open] > summary::before { transform: rotate(90deg); }
+    .ec-size-subgrp[open] { display: block; }
+    .ec-size-subgrp::details-content { display: block; }
+    .ec-size-subgrp > .ec-size-grp-body { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 2px; }
     .ec-size-row {
       display: flex; align-items: center; gap: 8px; width: 100%;
       background: transparent;
@@ -2537,21 +2572,10 @@
     .ec-size-row.active .ec-size-sub,
     .ec-size-row.active .ec-size-ratio { color: rgba(254,194,66,0.92); }
     .ec-size-row.active .ec-size-cue i { border-color: #FEC242; background: rgba(254,194,66,0.14); }
-    /* More… + Custom… — nested <details> reusing the round-213 frame-coll-group
-       chevron look, but NOT given the .enhance-collapse class so they stay out of the
-       contextual sweep / collapse-all / per-section persistence (More… keeps its own
-       sticky key). */
-    .ec-size-more { padding: 0; }
-    .ec-size-more > summary {
-      list-style: none; cursor: pointer; outline: none;
-      font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: #9a93c8;
-      display: flex; align-items: center; gap: 6px; padding: 3px 0; user-select: none;
-    }
-    .ec-size-more > summary::-webkit-details-marker { display: none; }
-    .ec-size-more > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #FEC242; }
-    .ec-size-more[open] > summary::before { transform: rotate(90deg); }
-    .ec-size-more > .ec-size-more-body { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 0; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); }
-    .ec-size-custom-fields { display: flex; gap: 6px; align-items: center; margin: 4px 0 0; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); flex-wrap: wrap; }
+    /* v2.1 round 228 (Terry) — the Custom… fields sit inside a top-level .ec-size-grp
+       <details> at the very bottom (was the old .ec-size-more). Keep the same indented,
+       gold-ruled field row look. */
+    .ec-size-custom-fields { display: flex; gap: 6px; align-items: center; margin: 5px 0 2px; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); flex-wrap: wrap; }
     .ec-size-custom-fields input {
       width: 58px; flex: 0 0 58px; background: rgba(0,0,0,0.25);
       border: 1px solid rgba(169,156,255,0.3); border-radius: 6px;
@@ -2964,11 +2988,19 @@
              header label + inner content changed. The Social / Prints / Paper
              groups, the More… toggle and the Custom… block are all populated by
              buildCanvasSizeMenu(); selecting a row reshapes the live canvas to
-             that aspect (and stores its export px). -->
+             that aspect (and stores its export px).
+             v2.1 round 228 (Terry) — the inner content is now a NESTED collapsible
+             hierarchy: Social Media / Prints / Paper / More are each a collapsible
+             group, and within Social Media each PLATFORM (Instagram / Facebook /
+             YouTube / TikTok / X / LinkedIn / Pinterest / Snapchat) is its own
+             collapsible sub-group, mirroring the round-223 Palettes look. Those
+             nested <details> carry NEITHER .enhance-collapse NOR a managed id, so ONLY
+             this #ec-shape-collapse remains the managed section — the contextual
+             sweep / collapse-all / round-157 persistence ignore the inner groups. -->
         <details class="enhance-collapse" id="ec-shape-collapse" open>
           <summary>Canvas size</summary>
           <div id="ec-canvas-size-list" class="ec-size-list">
-            <!-- groups + rows injected by buildCanvasSizeMenu() -->
+            <!-- nested groups + platform sub-groups + rows injected by buildCanvasSizeMenu() -->
           </div>
         </details>
         <!-- v2.1 round 149 (Terry 2026-06-13) — Background is its OWN
@@ -3935,17 +3967,46 @@
     // keep obscure sizes off the main display).
     const DPI = 300;
     const inPx = (inch) => Math.round(inch * DPI);
+    // v2.1 round 228 (Terry) — Canvas Size restructured into a NESTED, collapsible
+    // hierarchy grouped by social PLATFORM (Terry: the old generic "Landscape Post"
+    // names were confusing — the row should say which platform it's for). Each social
+    // preset now carries a `platform` field; buildCanvasSizeMenu groups Social Media
+    // into a collapsible sub-group PER platform (Instagram, Facebook, YouTube…), and
+    // every top-level group (Social Media / Prints / Paper / More) is itself a
+    // collapsible <details>. Shared sizes (e.g. 1080×1920 Story) appear under EVERY
+    // platform that uses it as a DISTINCT row with its own unique id (ig-story,
+    // fb-story, tiktok-video, snap-story…) — picking any one sets aspect 9:16 +
+    // export 1080×1920 identically. The LinkedIn/X banners moved into their platforms,
+    // so they're dropped from "More". Print/Paper sets are unchanged from round 226.
     const COLLAGE_PRESETS = [
-      // ---- SOCIAL MEDIA (literal pixels) ----
-      { id: 'sq-post',    group: 'social', name: 'Square Post',           sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
-      { id: 'pt-post',    group: 'social', name: 'Portrait Post',         sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
-      { id: 'story',      group: 'social', name: 'Story / Reel / TikTok', sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
-      { id: 'ls-post',    group: 'social', name: 'Landscape Post',        sub: '1920 × 1080 px', px: { w: 1920, h: 1080 }, ratio: '16:9' },
-      { id: 'fb-link',    group: 'social', name: 'Facebook Link Post',    sub: '1200 × 630 px',  px: { w: 1200, h: 630 },  ratio: '1.91:1' },
-      { id: 'pin',        group: 'social', name: 'Pinterest Pin',         sub: '1000 × 1500 px', px: { w: 1000, h: 1500 }, ratio: '2:3' },
-      { id: 'yt-thumb',   group: 'social', name: 'YouTube Thumbnail',     sub: '1280 × 720 px',  px: { w: 1280, h: 720 },  ratio: '16:9' },
-      { id: 'yt-banner',  group: 'social', name: 'YouTube Banner',        sub: '2560 × 1440 px', px: { w: 2560, h: 1440 }, ratio: '16:9' },
-      { id: 'fb-cover',   group: 'social', name: 'Facebook Cover',        sub: '1640 × 624 px',  px: { w: 1640, h: 624 },  ratio: '2.63:1' },
+      // ---- SOCIAL MEDIA (literal export pixels; grouped per platform) ----
+      // Instagram
+      { id: 'ig-square',  group: 'social', platform: 'Instagram', name: 'Square Post',      sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
+      { id: 'ig-portrait',group: 'social', platform: 'Instagram', name: 'Portrait Post',    sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
+      { id: 'ig-story',   group: 'social', platform: 'Instagram', name: 'Story / Reel',     sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      // Facebook
+      { id: 'fb-square',  group: 'social', platform: 'Facebook',  name: 'Feed (Square)',    sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
+      { id: 'fb-portrait',group: 'social', platform: 'Facebook',  name: 'Feed (Portrait)',  sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
+      { id: 'fb-link',    group: 'social', platform: 'Facebook',  name: 'Shared Link',      sub: '1200 × 630 px',  px: { w: 1200, h: 630 },  ratio: '1.91:1' },
+      { id: 'fb-story',   group: 'social', platform: 'Facebook',  name: 'Story',            sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      { id: 'fb-cover',   group: 'social', platform: 'Facebook',  name: 'Cover Photo',      sub: '1640 × 624 px',  px: { w: 1640, h: 624 },  ratio: '2.63:1' },
+      // YouTube
+      { id: 'yt-thumb',   group: 'social', platform: 'YouTube',   name: 'Thumbnail',        sub: '1280 × 720 px',  px: { w: 1280, h: 720 },  ratio: '16:9' },
+      { id: 'yt-video',   group: 'social', platform: 'YouTube',   name: 'Video',            sub: '1920 × 1080 px', px: { w: 1920, h: 1080 }, ratio: '16:9' },
+      { id: 'yt-banner',  group: 'social', platform: 'YouTube',   name: 'Channel Banner',   sub: '2560 × 1440 px', px: { w: 2560, h: 1440 }, ratio: '16:9' },
+      { id: 'yt-short',   group: 'social', platform: 'YouTube',   name: 'Short',            sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      // TikTok
+      { id: 'tiktok-video', group: 'social', platform: 'TikTok',  name: 'Video',            sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      // X / Twitter
+      { id: 'x-post',     group: 'social', platform: 'X / Twitter', name: 'Post',           sub: '1600 × 900 px',  px: { w: 1600, h: 900 },  ratio: '16:9' },
+      { id: 'x-header',   group: 'social', platform: 'X / Twitter', name: 'Header',         sub: '1500 × 500 px',  px: { w: 1500, h: 500 },  ratio: '3:1' },
+      // LinkedIn
+      { id: 'li-post',    group: 'social', platform: 'LinkedIn',  name: 'Post',             sub: '1200 × 627 px',  px: { w: 1200, h: 627 },  ratio: '1.91:1' },
+      { id: 'li-banner',  group: 'social', platform: 'LinkedIn',  name: 'Banner',           sub: '1584 × 396 px',  px: { w: 1584, h: 396 },  ratio: '4:1' },
+      // Pinterest
+      { id: 'pin',        group: 'social', platform: 'Pinterest', name: 'Pin',              sub: '1000 × 1500 px', px: { w: 1000, h: 1500 }, ratio: '2:3' },
+      // Snapchat
+      { id: 'snap-story', group: 'social', platform: 'Snapchat',  name: 'Story / Spotlight',sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
       // ---- PRINTS (portrait orientation as listed; px at 300 DPI from inches) ----
       { id: 'p-4x6',   group: 'print', name: '4×6 Print',   sub: '4 × 6"',   px: { w: inPx(4),  h: inPx(6) },  ratio: '2:3' },
       { id: 'p-5x7',   group: 'print', name: '5×7 Print',   sub: '5 × 7"',   px: { w: inPx(5),  h: inPx(7) },  ratio: '5:7' },
@@ -3961,14 +4022,15 @@
       { id: 'a4', group: 'paper', name: 'A4', sub: '8.3 × 11.7"',  px: { w: inPx(8.3),  h: inPx(11.7) }, ratio: 'A' },
       { id: 'a3', group: 'paper', name: 'A3', sub: '11.7 × 16.5"', px: { w: inPx(11.7), h: inPx(16.5) }, ratio: 'A' },
       { id: 'a2', group: 'paper', name: 'A2', sub: '16.5 × 23.4"', px: { w: inPx(16.5), h: inPx(23.4) }, ratio: 'A' },
-      // ---- MORE (obscure sizes — collapsed by default) ----
-      { id: 'sq-8',   group: 'more', name: 'Square 8×8',       sub: '8 × 8"',     px: { w: inPx(8),  h: inPx(8) },  ratio: '1:1' },
-      { id: 'sq-12',  group: 'more', name: 'Square 12×12',     sub: '12 × 12"',   px: { w: inPx(12), h: inPx(12) }, ratio: '1:1' },
-      { id: 'a1',     group: 'more', name: 'A1',               sub: '23.4 × 33.1"', px: { w: inPx(23.4), h: inPx(33.1) }, ratio: 'A' },
-      { id: 'a0',     group: 'more', name: 'A0',               sub: '33.1 × 46.8"', px: { w: inPx(33.1), h: inPx(46.8) }, ratio: 'A' },
-      { id: 'li-ban', group: 'more', name: 'LinkedIn Banner',  sub: '1584 × 396 px',  px: { w: 1584, h: 396 }, ratio: '4:1' },
-      { id: 'x-head', group: 'more', name: 'X / Twitter Header', sub: '1500 × 500 px', px: { w: 1500, h: 500 }, ratio: '3:1' },
+      // ---- MORE (obscure sizes — collapsed by default; LinkedIn/X banners moved into
+      //      their platforms above, so they're no longer here) ----
+      { id: 'sq-8',   group: 'more', name: 'Square 8×8',   sub: '8 × 8"',       px: { w: inPx(8),  h: inPx(8) },  ratio: '1:1' },
+      { id: 'sq-12',  group: 'more', name: 'Square 12×12', sub: '12 × 12"',     px: { w: inPx(12), h: inPx(12) }, ratio: '1:1' },
+      { id: 'a1',     group: 'more', name: 'A1',           sub: '23.4 × 33.1"', px: { w: inPx(23.4), h: inPx(33.1) }, ratio: 'A' },
+      { id: 'a0',     group: 'more', name: 'A0',           sub: '33.1 × 46.8"', px: { w: inPx(33.1), h: inPx(46.8) }, ratio: 'A' },
     ];
+    // The order platforms appear under "Social Media" (matches Terry's spec).
+    const SOCIAL_PLATFORM_ORDER = ['Instagram', 'Facebook', 'YouTube', 'TikTok', 'X / Twitter', 'LinkedIn', 'Pinterest', 'Snapchat'];
     const presetAspect = (p) => p.px.w / p.px.h;
     // The collage's current canvas aspect — used to default-select the matching
     // preset row when the panel opens. Numbers compared with a small epsilon.
@@ -8368,8 +8430,36 @@
     // preset row reshapes the live canvas on click (selectCanvasPreset → reshapeCollage),
     // and the panel-wide pointerdown/up wrapper makes that one undo step. The picker is
     // rebuilt fresh each time wireCollageControls runs (once per window).
-    const CANVAS_SIZE_MORE_KEY = 'pdr-canvas-size-more-open';   // sticky More… state
+    // v2.1 round 228 (Terry) — the four top-level groups (Social Media / Prints / Paper /
+    // More) are now collapsible <details>, and within Social Media each PLATFORM is its
+    // own nested collapsible sub-group. Every group/sub-group is DEFAULT COLLAPSED and
+    // its open state is STICKY in its own localStorage key (the round-223 Palettes
+    // pattern). These nested <details> deliberately carry NEITHER the .enhance-collapse
+    // class NOR an id in CONTEXTUAL_SECTION_IDS, so the round-157 section persistence,
+    // the contextual selection sweep, and Expand/Collapse-all never touch them — only
+    // the parent #ec-shape-collapse stays the one managed section.
+    const CANVAS_SIZE_MORE_KEY = 'pdr-canvas-size-more-open';   // sticky More… state (legacy key kept for the More group)
     const CANVAS_SIZE_LAST_KEY = 'pdr-canvas-size-last';        // last-picked preset id (not auto-applied; just remembered)
+    // Sticky open-state key for any Canvas Size group / platform sub-group. Slugified
+    // so platform names with slashes/spaces (e.g. "X / Twitter") make a safe key.
+    const canvasGroupKey = (kind, label) => 'pdr-canvas-size-grp-' + kind + '-' + String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const canvasGroupOpen = (key) => { try { return localStorage.getItem(key) === '1'; } catch (_) { return false; } };
+    // Build a collapsible <details> group with the Palettes-style chevron. `cls` selects
+    // the visual tier: 'ec-size-grp' = top-level group, 'ec-size-subgrp' = indented
+    // platform sub-group. NOT .enhance-collapse and NO id → exempt from the managed
+    // section machinery (see CONTEXTUAL_SECTION_IDS / round-157 persistence). Open state
+    // is sticky under `storageKey`; default collapsed.
+    function makeCanvasGroup(label, cls, storageKey, tip) {
+      const det = document.createElement('details');
+      det.className = cls;
+      if (canvasGroupOpen(storageKey)) det.open = true;
+      const sum = document.createElement('summary');
+      sum.textContent = label;
+      if (tip) sum.setAttribute('data-pdr-tooltip', tip);
+      det.appendChild(sum);
+      det.addEventListener('toggle', () => { try { localStorage.setItem(storageKey, det.open ? '1' : '0'); } catch (_) {} });
+      return det;
+    }
     function makeSizeRow(p) {
       const row = document.createElement('button');
       row.type = 'button';
@@ -8392,40 +8482,53 @@
       row.addEventListener('click', () => selectCanvasPreset(p));
       return row;
     }
-    function makeSizeGroup(label, presets) {
-      const wrap = document.createElement('div');
-      wrap.className = 'ec-size-group';
-      const lab = document.createElement('div'); lab.className = 'ec-size-group-label'; lab.textContent = label;
-      wrap.appendChild(lab);
-      presets.forEach((p) => wrap.appendChild(makeSizeRow(p)));
-      return wrap;
+    // Append a flat list of size rows into `parent` (used for the leaf bodies of each
+    // group / platform sub-group).
+    function appendSizeRows(parent, presets) {
+      const body = document.createElement('div');
+      body.className = 'ec-size-grp-body';
+      presets.forEach((p) => body.appendChild(makeSizeRow(p)));
+      parent.appendChild(body);
     }
     function buildCanvasSizeMenu() {
       const host = document.getElementById('ec-canvas-size-list');
       if (!host) return;
       host.innerHTML = '';
       const by = (g) => COLLAGE_PRESETS.filter((p) => p.group === g);
-      // Always-visible groups.
-      host.appendChild(makeSizeGroup('Social Media', by('social')));
-      host.appendChild(makeSizeGroup('Prints', by('print')));
-      host.appendChild(makeSizeGroup('Paper', by('paper')));
-      // More… — collapsed by default, sticky in localStorage. NOT an .enhance-collapse,
-      // so the contextual sweep / collapse-all / per-section persistence don't touch it.
-      const more = document.createElement('details');
-      more.className = 'ec-size-more';
-      let moreOpen = false; try { moreOpen = localStorage.getItem(CANVAS_SIZE_MORE_KEY) === '1'; } catch (_) {}
-      if (moreOpen) more.open = true;
-      const moreSum = document.createElement('summary'); moreSum.textContent = 'More…';
-      moreSum.setAttribute('data-pdr-tooltip', 'Less common sizes (large prints, A0/A1, LinkedIn / X headers)');
-      more.appendChild(moreSum);
-      const moreBody = document.createElement('div'); moreBody.className = 'ec-size-more-body';
-      by('more').forEach((p) => moreBody.appendChild(makeSizeRow(p)));
-      more.appendChild(moreBody);
-      more.addEventListener('toggle', () => { try { localStorage.setItem(CANVAS_SIZE_MORE_KEY, more.open ? '1' : '0'); } catch (_) {} });
+      // ── Social Media — a collapsible top-level group containing one collapsible
+      //    sub-group PER platform (round 228). Platforms in the spec order; each lists
+      //    only its own named canvas styles. Shared sizes are distinct rows per platform.
+      const social = makeCanvasGroup('Social Media', 'ec-size-grp', canvasGroupKey('grp', 'social'), 'Sizes for social platforms (Instagram, Facebook, YouTube…)');
+      const socialBody = document.createElement('div');
+      socialBody.className = 'ec-size-subgrp-host';   // holds the indented platform sub-groups
+      SOCIAL_PLATFORM_ORDER.forEach((platform) => {
+        const presets = by('social').filter((p) => p.platform === platform);
+        if (!presets.length) return;
+        const sub = makeCanvasGroup(platform, 'ec-size-subgrp', canvasGroupKey('plat', platform), platform + ' canvas sizes');
+        appendSizeRows(sub, presets);
+        socialBody.appendChild(sub);
+      });
+      social.appendChild(socialBody);
+      host.appendChild(social);
+      // ── Prints — collapsible top-level group (unchanged set).
+      const prints = makeCanvasGroup('Prints', 'ec-size-grp', canvasGroupKey('grp', 'print'), 'Photo print sizes (inches, exported at 300 DPI)');
+      appendSizeRows(prints, by('print'));
+      host.appendChild(prints);
+      // ── Paper — collapsible top-level group (A-series).
+      const paper = makeCanvasGroup('Paper', 'ec-size-grp', canvasGroupKey('grp', 'paper'), 'A-series paper sizes (exported at 300 DPI)');
+      appendSizeRows(paper, by('paper'));
+      host.appendChild(paper);
+      // ── More — collapsible top-level group of less-common sizes. Kept on its own
+      //    legacy sticky key for continuity; still NOT .enhance-collapse / no managed id.
+      const more = makeCanvasGroup('More', 'ec-size-grp', CANVAS_SIZE_MORE_KEY, 'Less common sizes (square frames, A0/A1)');
+      appendSizeRows(more, by('more'));
       host.appendChild(more);
       // Custom… — reveals Width × Height (px) + Apply. Guarded against 0/empty.
+      // v2.1 round 228 (Terry) — sits at the very bottom as a top-level group, sharing
+      // the same chevron tier as Social Media / Prints / Paper / More. Not sticky (no
+      // open state to remember) and never managed by the section machinery.
       const custom = document.createElement('details');
-      custom.className = 'ec-size-more';   // same chevron look
+      custom.className = 'ec-size-grp';   // same chevron look as the top-level groups
       const custSum = document.createElement('summary'); custSum.textContent = 'Custom…';
       custSum.setAttribute('data-pdr-tooltip', 'Enter an exact canvas size in pixels');
       custom.appendChild(custSum);
