@@ -910,6 +910,54 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
 }
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
 
+// v2.1 round 237 (Terry) — CSS colour-HINT (midpoint) sampling. A bare percentage
+// token between two colour stops in a CSS gradient — `c0 0%, H%, c1 100%` — is NOT
+// the linear midpoint: it's the point where the two colours mix 50/50, with a
+// NON-LINEAR power ease either side of it. A 2-stop SVG <linearGradient> can't
+// reproduce that curve, so the bake must SAMPLE the eased colour at many positions
+// and emit them as explicit stops. This returns an array of { off:0..1, color } for
+// ONE hinted segment between (a, posA) and (b, posB) with the hint at absolute
+// position `hintPos` (all positions on the SAME 0..1 scale as the segment ends).
+//
+// CSS midpoint formula (per the spec / every browser): within the segment, let the
+// hint's fractional position be H = (hintPos − posA)/(posB − posA), clamped to
+// (0,1). For a sample at segment-fraction x∈[0,1], the colour-mix weight is
+//   t = x ^ (ln 0.5 / ln H)
+// so that at x = H, t = 0.5 (the colours are exactly half-mixed at the hint), and
+// the ease is faster on one side than the other. We mix in sRGB (what CSS does for
+// these legacy hex gradients), matching the on-screen preview.
+function sampleCssHintSegment(
+  a: { r: number; g: number; b: number }, posA: number,
+  b: { r: number; g: number; b: number }, posB: number,
+  hintPos: number,
+  samples: number,
+): Array<{ off: number; color: string }> {
+  const span = posB - posA;
+  // Degenerate segment → just the two endpoints.
+  if (!(Math.abs(span) > 1e-6)) {
+    return [{ off: posA, color: rgbToHex(a) }, { off: posB, color: rgbToHex(b) }];
+  }
+  let H = (hintPos - posA) / span;
+  H = Math.max(0.001, Math.min(0.999, H));
+  // Exponent so that x^exp == 0.5 at x == H.
+  const exp = Math.log(0.5) / Math.log(H);
+  const out: Array<{ off: number; color: string }> = [];
+  const N = Math.max(2, samples);
+  for (let i = 0; i < N; i++) {
+    const x = i / (N - 1);                 // 0..1 across the segment
+    const t = Math.pow(x, exp);            // eased mix weight
+    const r = Math.round(a.r + (b.r - a.r) * t);
+    const g = Math.round(a.g + (b.g - a.g) * t);
+    const bl = Math.round(a.b + (b.b - a.b) * t);
+    out.push({ off: posA + span * x, color: rgbToHex({ r, g, b: bl }) });
+  }
+  return out;
+}
+function rgbToHex(c: { r: number; g: number; b: number }): string {
+  const h = (v: number) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0');
+  return '#' + h(c.r) + h(c.g) + h(c.b);
+}
+
 // v2.1 round 235 (Terry) — build an SVG that reproduces the editor's CSS gradient
 // at the OUTPUT resolution, so the baked background matches the preview exactly.
 //

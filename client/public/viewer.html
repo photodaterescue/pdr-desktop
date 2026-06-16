@@ -2879,10 +2879,11 @@
     .ec-grad-stop:hover { border-color: rgba(169,156,255,0.6); }
     .ec-grad-stop.armed { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.5); }
     .ec-grad-stop-sw { display: block; width: 20px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
-    /* v2.1 round 236 (Terry) — DIRECTION quick-pick row: Radial + 4 linear
-       directions (L→R / T→B / two diagonals). 5 equal cells; each reuses the
-       .ec-ctgl active look. The icon sits above a tiny label so the direction
-       reads at a glance. Active highlight matches the panel's other toggles. */
+    /* v2.1 round 236 (Terry) — quick-pick row. v2.1 round 237 (Terry) — now hosts
+       the Linear / Radial TYPE selector (2 equal cells) instead of the 5 fixed-angle
+       directions (those duplicated the angle slider). The icon sits above a tiny
+       label so the type reads at a glance; active highlight matches the panel's
+       other toggles. */
     .ec-grad-dirs { display: flex; gap: 6px; }
     .ec-grad-dir {
       flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
@@ -2893,6 +2894,23 @@
     .ec-grad-dir svg { width: 18px; height: 18px; display: block; }
     .ec-grad-dir:hover { background: rgba(169,156,255,0.10); }
     .ec-grad-dir.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 237 (Terry) — small helper line under the radial controls. */
+    .ec-grad-hint { font-size: 11px; color: #9a93c8; margin-top: 6px; line-height: 1.35; }
+    /* v2.1 round 237 (Terry) — the draggable RADIAL epicentre dot. A ringed target
+       that sits over the canvas (positioned by JS within the stage); grabbable on its
+       whole face. z-index above the canvas + tiles so it's always catchable while
+       editing the background. Hidden (display:none) unless radial + bg-focused. */
+    #collage-grad-epicentre {
+      position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
+      border-radius: 50%; cursor: grab; z-index: 60; touch-action: none;
+      background: radial-gradient(circle, rgba(255,255,255,0.95) 0 35%, rgba(255,255,255,0) 38%);
+      box-shadow: 0 0 0 2px rgba(0,0,0,0.55), 0 0 0 4px rgba(254,194,66,0.95), 0 1px 6px rgba(0,0,0,0.5);
+    }
+    #collage-grad-epicentre:active { cursor: grabbing; }
+    #collage-grad-epicentre::after {
+      content: ''; position: absolute; inset: 7px; border-radius: 50%;
+      background: #FEC242; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
+    }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
     .enhance-collapse { padding: 0; }
@@ -3015,6 +3033,13 @@
   <div id="collage-root">
     <div id="collage-stage">
       <div id="collage-canvas"></div>
+      <!-- v2.1 round 237 (Terry) — RADIAL epicentre handle. Lives in the STAGE (not
+           the canvas, which is overflow:hidden) so it can be dragged INTO the dark
+           margin around the paper — the stored cx/cy fractions may go <0 or >1.
+           Shown only when the gradient is radial AND the Background is the focused
+           element; positioned over the canvas by JS. pointer-events toggle with
+           visibility so it never blocks tile/canvas clicks when hidden. -->
+      <div id="collage-grad-epicentre" aria-hidden="true" style="display:none"></div>
     </div>
   </div>
 
@@ -3149,36 +3174,37 @@
             <div id="collage-gradient-presets" class="ec-grad-presets"></div>
             <!-- Custom controls -->
             <div id="collage-gradient-custom" style="margin-top:10px">
-              <!-- v2.1 round 236 (Terry) — DIRECTION quick-picks replace the old
-                 Linear/Radial toggle. Each sets the gradient's kind+angle while
-                 KEEPING the current colours, so any colour works in any direction.
-                 The angle slider below stays for fine linear control. -->
-              <div class="ec-grad-dirs" id="collage-gradient-dirs" role="group" aria-label="Gradient direction">
-                <button type="button" class="ec-grad-dir" data-dir="radial" data-kind="radial" data-pdr-tooltip="Radial — a soft circle spreading from the centre out">
+              <!-- v2.1 round 237 (Terry) — TYPE selector replaces the round-236
+                 fixed-angle DIRECTION quick-picks (those duplicated the angle slider:
+                 each was just a preset angle). Two buttons — Linear / Radial — KEEP
+                 the current colours; the controls shown below depend on the type:
+                 Linear → Angle + Blend sliders; Radial → a draggable epicentre on the
+                 canvas + a Strength slider. -->
+              <div class="ec-grad-dirs" id="collage-gradient-types" role="group" aria-label="Gradient type">
+                <button type="button" class="ec-grad-dir" data-kind="linear" data-pdr-tooltip="Linear — a straight sweep at any angle">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-lin" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-lin)"/></svg>
+                  Linear
+                </button>
+                <button type="button" class="ec-grad-dir" data-kind="radial" data-pdr-tooltip="Radial — a soft circle spreading out from a movable centre">
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-rad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></radialGradient></defs><circle cx="12" cy="12" r="9" fill="url(#grad-ico-rad)"/></svg>
                   Radial
                 </button>
-                <button type="button" class="ec-grad-dir" data-dir="lr" data-kind="linear" data-angle="90" data-pdr-tooltip="Left → Right — a straight sweep across">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-lr" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="3" y="6" width="18" height="12" rx="2" fill="url(#grad-ico-lr)"/></svg>
-                  L→R
-                </button>
-                <button type="button" class="ec-grad-dir" data-dir="tb" data-kind="linear" data-angle="180" data-pdr-tooltip="Top → Bottom — a straight sweep down">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-tb" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="6" y="3" width="12" height="18" rx="2" fill="url(#grad-ico-tb)"/></svg>
-                  T→B
-                </button>
-                <button type="button" class="ec-grad-dir" data-dir="dr" data-kind="linear" data-angle="135" data-pdr-tooltip="Diagonal ↘ — sweeps to the lower-right">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-dr" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-dr)"/></svg>
-                  ↘
-                </button>
-                <button type="button" class="ec-grad-dir" data-dir="ur" data-kind="linear" data-angle="45" data-pdr-tooltip="Diagonal ↗ — sweeps to the upper-right">
-                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-ur" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-ur)"/></svg>
-                  ↗
-                </button>
               </div>
+              <!-- LINEAR-only: Angle + Blend -->
               <div class="enhance-control" id="collage-gradient-angle-row" style="margin-top:8px">
                 <div class="enhance-label-row"><label for="collage-gradient-angle">Angle</label><span class="enhance-val" id="collage-gradient-angle-val">135°</span></div>
                 <input type="range" id="collage-gradient-angle" min="0" max="360" step="1" value="135">
               </div>
+              <div class="enhance-control" id="collage-gradient-blend-row" style="margin-top:8px">
+                <div class="enhance-label-row"><label for="collage-gradient-blend" data-pdr-tooltip="Where the two colours meet 50/50 along the sweep — lower lets the END colour fill more of the canvas, higher the start colour">Blend</label><span class="enhance-val" id="collage-gradient-blend-val">50</span></div>
+                <input type="range" id="collage-gradient-blend" min="0" max="100" step="1" value="50">
+              </div>
+              <!-- RADIAL-only: Strength (the epicentre is the draggable handle on the canvas) -->
+              <div class="enhance-control" id="collage-gradient-strength-row" style="margin-top:8px;display:none">
+                <div class="enhance-label-row"><label for="collage-gradient-strength" data-pdr-tooltip="How far the centre colour spreads before meeting the edge colour — low = a tight bright centre, high = the centre colour fills most of the canvas">Strength</label><span class="enhance-val" id="collage-gradient-strength-val">50</span></div>
+                <input type="range" id="collage-gradient-strength" min="0" max="100" step="1" value="50">
+              </div>
+              <div class="ec-grad-hint" id="collage-gradient-epi-hint" style="display:none">Drag the dot on the canvas to move the centre — it can go past the edges.</div>
               <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
                 <span class="ec-grad-stops-label">Colours</span>
                 <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
@@ -3973,6 +3999,20 @@
     // Picking a colour / photo / transparent clears it (each bg setter nulls it),
     // exactly like those three already swap each other today. collageBg is kept
     // underneath as the legacy base so clearing the gradient restores the colour.
+    // v2.1 round 237 (Terry) — the model now also carries the per-type shaping
+    // controls (the round-235/236 fixed-angle direction buttons were duplication of
+    // the angle slider, so they're gone — replaced by a Linear/Radial type selector
+    // + a Blend (linear midpoint) and an epicentre + Strength (radial)):
+    //   blend    — 0..100, LINEAR only. The CSS colour-hint MIDPOINT: where the two
+    //              colours sit 50/50 along the axis. 50 = even; <50 pushes the 50/50
+    //              toward the start so the END colour dominates more of the canvas;
+    //              >50 the reverse. Emitted as `linear-gradient(<a>deg, c1, <blend>%, c2)`.
+    //   cx, cy   — 0..1 (MAY be <0 or >1), RADIAL only. The radial epicentre as a
+    //              fraction of the canvas, so the draggable handle can sit OUTSIDE the
+    //              paper. Preview: `radial-gradient(circle at <cx*100>% <cy*100>%, …)`.
+    //   strength — 0..100, RADIAL only. The radial spread: the % radius at which the
+    //              centre colour reaches 50/50 with the edge colour (the radial twin of
+    //              blend). Low = tight bright centre (weak); high = centre fills most.
     let collageBgGradient = null;
     // The 12 curated presets shown as swatches in the Background section. Each:
     //   id    — stable key (selection highlight + sticky last-pick if wanted)
@@ -4001,16 +4041,16 @@
     // section (colorTarget stays 'background'), so the round-232 floating-palette
     // gating is untouched.
     let collageGradStopEdit = null;
-    // v2.1 round 236 (Terry) — DIRECTION is now chosen INDEPENDENTLY of colour.
-    // This holds the currently-selected direction { kind, angle } so that picking
-    // a colour preset keeps the current direction (instead of forcing the preset's
-    // own embedded direction), and so a freshly-seeded gradient inherits the last
-    // direction the user chose. Seeded to a friendly diagonal ↘ (CSS 135deg). When
-    // a LINEAR gradient is showing, this tracks the live angle (incl. custom slider
-    // angles); for radial the angle is ignored. The five quick-pick presets:
-    //   radial → kind:'radial'         L→R → linear/90    T→B → linear/180
-    //   ↘ → linear/135                 ↗ → linear/45
-    let collageGradDir = { kind: 'linear', angle: 135 };
+    // v2.1 round 236 (Terry) — DIRECTION/SHAPE is chosen INDEPENDENTLY of colour.
+    // This holds the currently-selected SHAPE so that picking a colour PRESET keeps
+    // the current type/angle/blend/centre/strength (instead of forcing the preset's
+    // own embedded shape), and so a freshly-seeded gradient inherits the last shape
+    // the user chose. v2.1 round 237 (Terry) — widened from { kind, angle } to the
+    // full per-type shaping set (the round-236 fixed-angle direction buttons are
+    // gone; a Linear/Radial selector + the Angle/Blend/Strength sliders + the
+    // draggable epicentre drive it now). For LINEAR this tracks the live angle +
+    // blend (incl. custom slider values); for RADIAL it tracks cx/cy + strength.
+    let collageGradDir = { kind: 'linear', angle: 135, blend: 50, cx: 0.5, cy: 0.5, strength: 50 };
     let collageAspectKey = 'landscape';
     // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
     // driven by collageAspectKey (a named key OR a numeric aspect for presets/custom).
@@ -8151,6 +8191,10 @@
       // fits above the tile or would clip into the titlebar (it isn't re-rendered
       // here otherwise). The .selected class set above makes it measurable.
       try { if (it && !it.isBg) refreshTileToolbar(it); } catch (_) {}
+      // v2.1 round 237 (Terry) — the radial epicentre dot is a Background control:
+      // show it only when the Background is now focused (and the gradient is radial);
+      // any other selection hides it. Also keep the per-type controls/highlight fresh.
+      try { syncCollageGradientUi(); } catch (_) {}
     }
     function bringFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
 
@@ -8870,7 +8914,14 @@
         // v2.1 round 235 (Terry) — the gradient bg kind (null when the bg is
         // colour/photo/transparent). Plain JSON, so deep-cloned through stringify;
         // restore re-applies it as the active bg.
-        gradient: collageBgGradient ? { kind: collageBgGradient.kind, angle: collageBgGradient.angle, stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })) } : null,
+        // v2.1 round 237 (Terry) — carry the per-type shaping fields too (blend for
+        // linear; cx/cy + strength for radial) so the new controls are undoable +
+        // round-trip; restore fills defaults for old snapshots that lack them.
+        gradient: collageBgGradient ? {
+          kind: collageBgGradient.kind, angle: collageBgGradient.angle,
+          blend: collageBgGradient.blend, cx: collageBgGradient.cx, cy: collageBgGradient.cy, strength: collageBgGradient.strength,
+          stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })),
+        } : null,
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
@@ -8908,7 +8959,18 @@
       // no gradient, i.e. the colour/photo/transparent kind from this snapshot wins).
       // Deep-copy so the live object isn't shared with the (immutable) snapshot JSON.
       collageBgGradient = (s.gradient && Array.isArray(s.gradient.stops) && s.gradient.stops.length >= 2)
-        ? { kind: s.gradient.kind === 'radial' ? 'radial' : 'linear', angle: Number.isFinite(s.gradient.angle) ? s.gradient.angle : 135, stops: s.gradient.stops.map((st) => ({ color: st.color, pos: st.pos })) }
+        ? {
+            kind: s.gradient.kind === 'radial' ? 'radial' : 'linear',
+            angle: Number.isFinite(s.gradient.angle) ? s.gradient.angle : 135,
+            // v2.1 round 237 (Terry) — restore the per-type shaping; old snapshots
+            // predate these, so default blend 50 / cx,cy 0.5 / strength 50 (which
+            // reproduce the pre-237 even/centred look exactly).
+            blend: Number.isFinite(s.gradient.blend) ? s.gradient.blend : 50,
+            cx: Number.isFinite(s.gradient.cx) ? s.gradient.cx : 0.5,
+            cy: Number.isFinite(s.gradient.cy) ? s.gradient.cy : 0.5,
+            strength: Number.isFinite(s.gradient.strength) ? s.gradient.strength : 50,
+            stops: s.gradient.stops.map((st) => ({ color: st.color, pos: st.pos })),
+          }
         : null;
       collageGradStopEdit = null;
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
@@ -9297,9 +9359,38 @@
       const stops = g.stops
         .map((s) => ({ color: /^#[0-9a-fA-F]{3,6}$/.test(String(s.color || '')) ? s.color : '#ffffff', pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) }))
         .sort((a, b) => a.pos - b.pos);
-      const list = stops.map((s) => s.color + ' ' + s.pos + '%').join(', ');
-      if (g.kind === 'radial') return 'radial-gradient(circle at center, ' + list + ')';
+      // v2.1 round 237 (Terry) — RADIAL: epicentre via `circle at cx% cy%` (CSS
+      // accepts out-of-range %, so an off-canvas centre works), and Strength maps to
+      // the centre colour's stop RADIUS. Strength is the % radius at which the centre
+      // colour reaches 50/50 with the edge — i.e. the position of the FIRST stop's
+      // outer reach. We model it as a 2-anchor ramp: centre colour pinned at 0%, then
+      // the 50/50 hint sits at `strength`%, then the edge colour at 100%. Using the
+      // CSS colour-hint exactly like the linear blend keeps preview == bake.
+      if (g.kind === 'radial') {
+        const cx = Number.isFinite(g.cx) ? g.cx : 0.5;
+        const cy = Number.isFinite(g.cy) ? g.cy : 0.5;
+        const at = 'at ' + (cx * 100) + '% ' + (cy * 100) + '%';
+        const strength = Number.isFinite(g.strength) ? Math.max(0, Math.min(100, g.strength)) : 50;
+        // Inner = first stop colour, Outer = last stop colour; any middle stops keep
+        // their own positions (presets are 2-stop, so this is the common path). The
+        // hint % between inner and outer is `strength`, clamped away from 0/100 so the
+        // CSS midpoint formula stays well-defined.
+        const inner = stops[0], outer = stops[stops.length - 1];
+        const mids = stops.slice(1, -1).map((s) => s.color + ' ' + s.pos + '%');
+        const hint = Math.max(1, Math.min(99, strength));
+        const list = [inner.color + ' 0%', ...mids, hint + '%', outer.color + ' 100%'].join(', ');
+        return 'radial-gradient(circle ' + at + ', ' + list + ')';
+      }
+      // v2.1 round 237 (Terry) — LINEAR: Blend is the CSS colour-HINT midpoint — the
+      // bare `<blend>%` token BETWEEN the two colours marks where they sit 50/50 along
+      // the axis. 50 = even; <50 pushes the 50/50 toward the start (END colour fills
+      // more); >50 the reverse. Multi-stop presets keep their stops verbatim and the
+      // hint sits between the first two (2-stop is the common path). Clamp the hint off
+      // 0/100 so the midpoint easing is well-defined (and matches the bake's guard).
       const angle = Number.isFinite(g.angle) ? g.angle : 135;
+      const blend = Number.isFinite(g.blend) ? Math.max(1, Math.min(99, g.blend)) : 50;
+      const first = stops[0], rest = stops.slice(1).map((s) => s.color + ' ' + s.pos + '%');
+      const list = [first.color + ' ' + first.pos + '%', blend + '%', ...rest].join(', ');
       return 'linear-gradient(' + angle + 'deg, ' + list + ')';
     }
     function applyCanvasBgVisual() {
@@ -9308,6 +9399,10 @@
       // base colour stays underneath as a fallback (drawn first, then the gradient
       // layered over it — but gradients here are opaque so it's effectively the
       // gradient). Transparent still wins over everything (the checkerboard cue).
+      // v2.1 round 237 (Terry) — keep the radial epicentre dot in sync with every
+      // bg repaint (covers canvas resize, gradient kind/stop changes, transparent
+      // toggles). It self-hides when not radial / not bg-focused.
+      try { updateGradEpicentreVisibility(); } catch (_) {}
       if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
       if (collageBgGradient) {
         const css = collageGradientCss(collageBgGradient);
@@ -9401,9 +9496,17 @@
     // stop swatches, angle/kind controls).
     function setCollageGradient(grad) {
       if (!grad || !Array.isArray(grad.stops) || grad.stops.length < 2) return;
+      // v2.1 round 237 (Terry) — carry the per-type shaping fields with sensible
+      // defaults (blend 50 = even; cx/cy 0.5 = centred; strength 50). Callers that
+      // only pass kind/angle/stops (e.g. a colour preset) inherit these defaults or,
+      // when wired to keep the current shape, pass the live values in explicitly.
       collageBgGradient = {
         kind: grad.kind === 'radial' ? 'radial' : 'linear',
         angle: Number.isFinite(grad.angle) ? grad.angle : 135,
+        blend: Number.isFinite(grad.blend) ? Math.max(0, Math.min(100, grad.blend)) : 50,
+        cx: Number.isFinite(grad.cx) ? grad.cx : 0.5,
+        cy: Number.isFinite(grad.cy) ? grad.cy : 0.5,
+        strength: Number.isFinite(grad.strength) ? Math.max(0, Math.min(100, grad.strength)) : 50,
         stops: grad.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
       };
       // Swap away from the other bg kinds (transparent hides the gradient; a photo
@@ -9435,7 +9538,19 @@
       const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
       const dk = (v) => Math.max(0, Math.round(v * 0.65)).toString(16).padStart(2, '0');
       const end = '#' + dk(r) + dk(g) + dk(b);
-      return { kind: 'linear', angle: 135, stops: [{ color: base, pos: 0 }, { color: end, pos: 100 }] };
+      // v2.1 round 237 (Terry) — inherit the remembered SHAPE (type/angle/blend/
+      // centre/strength) from collageGradDir so a cold-seeded gradient matches the
+      // last shape the user set; fall back to the friendly defaults on first use.
+      const d = collageGradDir || {};
+      return {
+        kind: d.kind === 'radial' ? 'radial' : 'linear',
+        angle: Number.isFinite(d.angle) ? d.angle : 135,
+        blend: Number.isFinite(d.blend) ? d.blend : 50,
+        cx: Number.isFinite(d.cx) ? d.cx : 0.5,
+        cy: Number.isFinite(d.cy) ? d.cy : 0.5,
+        strength: Number.isFinite(d.strength) ? d.strength : 50,
+        stops: [{ color: base, pos: 0 }, { color: end, pos: 100 }],
+      };
     }
     // Arm a gradient stop so the shared Background palette writes to it. Seeds a
     // default gradient first if there isn't one (so the custom controls work even
@@ -9463,33 +9578,36 @@
           b.style.background = collageGradientCss(p.grad);
           b.setAttribute('data-pdr-tooltip', p.name);
           b.setAttribute('aria-label', p.name);
-          // v2.1 round 236 (Terry) — a preset now sets COLOURS only and KEEPS the
-          // currently-selected direction (collageGradDir). So with Radial chosen,
-          // any preset shows radial; with L→R chosen, it shows L→R. On the very
-          // first gradient (no direction touched yet) collageGradDir is the seeded
-          // ↘ default, so a cold click still looks right. Stops are taken verbatim
-          // from the preset; kind/angle come from the current direction.
+          // v2.1 round 236/237 (Terry) — a preset sets COLOURS only and KEEPS the
+          // currently-selected SHAPE (collageGradDir: type/angle/blend/centre/
+          // strength). So with Radial chosen, any preset shows radial at the current
+          // epicentre + strength; with Linear chosen it keeps the angle + blend. On
+          // the very first gradient (nothing touched yet) collageGradDir holds the
+          // seeded defaults, so a cold click still looks right. Stops are taken
+          // verbatim from the preset; the shape comes from the current direction.
           b.addEventListener('click', () => {
             collageGradStopEdit = null;
-            setCollageGradient({ kind: collageGradDir.kind, angle: collageGradDir.angle, stops: p.grad.stops });
+            const d = collageGradDir || {};
+            setCollageGradient({ kind: d.kind, angle: d.angle, blend: d.blend, cx: d.cx, cy: d.cy, strength: d.strength, stops: p.grad.stops });
           });
           presetWrap.appendChild(b);
         });
       }
-      // v2.1 round 236 (Terry) — DIRECTION quick-picks. Each sets the gradient's
-      // kind+angle while KEEPING the current stops/colours (so every colour is
-      // available in every direction). If no gradient exists yet, seed a sensible
-      // default (current base colour → darker partner) and then point it in the
-      // chosen direction. Records the choice in collageGradDir so presets follow it.
-      document.querySelectorAll('#collage-gradient-dirs .ec-grad-dir').forEach((btn) => {
+      // v2.1 round 237 (Terry) — TYPE selector (Linear / Radial). Switches the
+      // gradient's kind while KEEPING the current stops/colours + the other type's
+      // remembered shape (so flipping back and forth doesn't lose the angle/blend or
+      // the epicentre/strength). If no gradient exists yet, seed a sensible default
+      // first. Records the choice in collageGradDir so presets follow it.
+      document.querySelectorAll('#collage-gradient-types .ec-grad-dir').forEach((btn) => {
         btn.addEventListener('click', () => {
+          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
           const kind = btn.dataset.kind === 'radial' ? 'radial' : 'linear';
-          const angle = parseInt(btn.dataset.angle, 10);
-          collageGradDir = { kind, angle: Number.isFinite(angle) ? angle : 135 };
-          const stops = (collageBgGradient && collageBgGradient.stops.length >= 2)
-            ? collageBgGradient.stops
-            : defaultCollageGradient().stops;
-          setCollageGradient({ kind: collageGradDir.kind, angle: collageGradDir.angle, stops });
+          collageBgGradient.kind = kind;
+          collageGradDir = Object.assign({}, collageGradDir, { kind });
+          applyCanvasBgVisual();
+          // Re-render so the per-type rows (angle/blend vs strength) + the epicentre
+          // handle show/hide for the new type, and the type highlight updates.
+          syncCollageGradientUi();
         });
       });
       // Angle slider (linear only). Drag is one undo step via the panel wrapper.
@@ -9497,22 +9615,52 @@
       if (angle) {
         angle.addEventListener('input', () => {
           if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
-          // v2.1 round 236 (Terry) — the slider gives fine linear control. Dragging
-          // forces the gradient linear (radial has no angle) and records the custom
-          // angle into collageGradDir so presets follow this exact angle. The
-          // direction quick-picks de-highlight unless the angle lands on a preset
-          // direction (handled by refreshGradDirHighlight via the match check).
+          // The slider gives fine linear control. Dragging forces the gradient linear
+          // (radial has no angle) and records the custom angle into collageGradDir so
+          // presets follow this exact angle.
           collageBgGradient.kind = 'linear';
           collageBgGradient.angle = parseInt(angle.value, 10) || 0;
-          collageGradDir = { kind: 'linear', angle: collageBgGradient.angle };
+          collageGradDir = Object.assign({}, collageGradDir, { kind: 'linear', angle: collageBgGradient.angle });
           const v = document.getElementById('collage-gradient-angle-val');
           if (v) v.textContent = collageBgGradient.angle + '°';
           applyCanvasBgVisual();
           // Don't re-render the whole UI mid-drag (would rebuild swatches); just
-          // refresh the live preview, the value label, and the direction highlight.
+          // refresh the live preview, the value label, and the type highlight.
           refreshGradDirHighlight();
         });
       }
+      // v2.1 round 237 (Terry) — BLEND slider (linear only): the gradient MIDPOINT,
+      // i.e. the CSS colour-hint position where the two colours sit 50/50 along the
+      // axis. Mirrors the angle slider's undo handling (one step via the panel wrapper).
+      const blend = document.getElementById('collage-gradient-blend');
+      if (blend) {
+        blend.addEventListener('input', () => {
+          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+          collageBgGradient.kind = 'linear';
+          collageBgGradient.blend = Math.max(0, Math.min(100, parseInt(blend.value, 10) || 0));
+          collageGradDir = Object.assign({}, collageGradDir, { kind: 'linear', blend: collageBgGradient.blend });
+          const v = document.getElementById('collage-gradient-blend-val');
+          if (v) v.textContent = String(collageBgGradient.blend);
+          applyCanvasBgVisual();
+        });
+      }
+      // v2.1 round 237 (Terry) — STRENGTH slider (radial only): the radial spread —
+      // the % radius at which the centre colour reaches 50/50 with the edge colour.
+      const strength = document.getElementById('collage-gradient-strength');
+      if (strength) {
+        strength.addEventListener('input', () => {
+          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+          collageBgGradient.kind = 'radial';
+          collageBgGradient.strength = Math.max(0, Math.min(100, parseInt(strength.value, 10) || 0));
+          collageGradDir = Object.assign({}, collageGradDir, { kind: 'radial', strength: collageBgGradient.strength });
+          const v = document.getElementById('collage-gradient-strength-val');
+          if (v) v.textContent = String(collageBgGradient.strength);
+          applyCanvasBgVisual();
+          positionGradEpicentre();   // strength doesn't move it, but keep it pinned during a radial-only redraw
+        });
+      }
+      // v2.1 round 237 (Terry) — the draggable RADIAL epicentre handle.
+      wireGradEpicentre();
       // Stop colour chips — arm the shared palette to write that stop.
       document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
         chip.addEventListener('click', () => armCollageGradientStop(parseInt(chip.dataset.stop, 10) || 0));
@@ -9526,28 +9674,52 @@
       const block = document.getElementById('collage-gradient-block');
       if (!block) return;
       const g = collageBgGradient;
-      // v2.1 round 236 (Terry) — keep the remembered DIRECTION tracking the live
+      // v2.1 round 236/237 (Terry) — keep the remembered SHAPE tracking the live
       // gradient (covers undo/redo restore + any path that mutates it directly), so
-      // the next colour-preset click keeps whatever direction is actually showing.
-      if (g) collageGradDir = { kind: (g.kind || 'linear'), angle: Number.isFinite(g.angle) ? g.angle : 135 };
+      // the next colour-preset click keeps whatever type/angle/blend/centre/strength
+      // is actually showing.
+      if (g) collageGradDir = {
+        kind: (g.kind || 'linear'),
+        angle: Number.isFinite(g.angle) ? g.angle : 135,
+        blend: Number.isFinite(g.blend) ? g.blend : 50,
+        cx: Number.isFinite(g.cx) ? g.cx : 0.5,
+        cy: Number.isFinite(g.cy) ? g.cy : 0.5,
+        strength: Number.isFinite(g.strength) ? g.strength : 50,
+      };
       // Active preset: ring the one whose spec matches the live gradient exactly.
       document.querySelectorAll('#collage-gradient-presets .ec-grad-swatch').forEach((sw) => {
         const p = COLLAGE_GRADIENT_PRESETS.find((x) => x.id === sw.dataset.gradId);
         const match = !!(g && p && gradientsEqual(g, p.grad));
         sw.classList.toggle('active', match);
       });
-      // v2.1 round 236 (Terry) — Direction quick-picks: highlight the one that
-      // matches the live gradient (radial, or the linear angle landing on a
-      // preset direction). A custom slider angle highlights none.
+      // v2.1 round 237 (Terry) — TYPE selector: highlight Linear or Radial.
       refreshGradDirHighlight();
-      // Angle row — only meaningful for linear.
+      const isLinear = !g || (g.kind || 'linear') === 'linear';
+      const isRadial = !!g && (g.kind || 'linear') === 'radial';
+      // Angle + Blend rows — LINEAR only.
       const angleRow = document.getElementById('collage-gradient-angle-row');
       const angle = document.getElementById('collage-gradient-angle');
       const angleVal = document.getElementById('collage-gradient-angle-val');
-      const isLinear = !g || (g.kind || 'linear') === 'linear';
       if (angleRow) angleRow.style.display = isLinear ? '' : 'none';
       if (angle && g) angle.value = String(Number.isFinite(g.angle) ? g.angle : 135);
       if (angleVal && g) angleVal.textContent = (Number.isFinite(g.angle) ? g.angle : 135) + '°';
+      const blendRow = document.getElementById('collage-gradient-blend-row');
+      const blend = document.getElementById('collage-gradient-blend');
+      const blendVal = document.getElementById('collage-gradient-blend-val');
+      if (blendRow) blendRow.style.display = isLinear ? '' : 'none';
+      if (blend && g) blend.value = String(Number.isFinite(g.blend) ? g.blend : 50);
+      if (blendVal && g) blendVal.textContent = String(Number.isFinite(g.blend) ? g.blend : 50);
+      // Strength row + epicentre hint — RADIAL only.
+      const strengthRow = document.getElementById('collage-gradient-strength-row');
+      const strength = document.getElementById('collage-gradient-strength');
+      const strengthVal = document.getElementById('collage-gradient-strength-val');
+      if (strengthRow) strengthRow.style.display = isRadial ? '' : 'none';
+      if (strength && g) strength.value = String(Number.isFinite(g.strength) ? g.strength : 50);
+      if (strengthVal && g) strengthVal.textContent = String(Number.isFinite(g.strength) ? g.strength : 50);
+      const epiHint = document.getElementById('collage-gradient-epi-hint');
+      if (epiHint) epiHint.style.display = isRadial ? '' : 'none';
+      // v2.1 round 237 (Terry) — show/position the draggable epicentre handle.
+      updateGradEpicentreVisibility();
       // Stop chips.
       document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
         const idx = parseInt(chip.dataset.stop, 10) || 0;
@@ -9560,38 +9732,124 @@
       const hint = document.getElementById('collage-gradient-stop-hint');
       if (hint) hint.textContent = (g && collageGradStopEdit != null) ? 'pick a colour →' : '';
     }
-    // v2.1 round 236 (Terry) — highlight the Direction quick-pick that matches the
-    // LIVE gradient: the radial button when radial, or the linear button whose
-    // angle equals the current angle (±0.5°). A custom slider angle (one that
-    // doesn't land on 45/90/135/180) highlights NONE — the user is in a free
-    // custom angle, shown by the slider. Light enough to call mid-drag.
+    // v2.1 round 237 (Terry) — highlight the TYPE button (Linear / Radial) matching
+    // the live gradient. Light enough to call mid-drag.
     function refreshGradDirHighlight() {
       const g = collageBgGradient;
-      document.querySelectorAll('#collage-gradient-dirs .ec-grad-dir').forEach((btn) => {
-        let on = false;
-        if (g) {
-          if (btn.dataset.kind === 'radial') {
-            on = (g.kind || 'linear') === 'radial';
-          } else if ((g.kind || 'linear') === 'linear') {
-            const a = parseInt(btn.dataset.angle, 10);
-            on = Number.isFinite(a) && Math.abs((g.angle || 0) - a) <= 0.5;
-          }
-        }
-        btn.classList.toggle('active', on);
+      const kind = g ? (g.kind || 'linear') : null;
+      document.querySelectorAll('#collage-gradient-types .ec-grad-dir').forEach((btn) => {
+        btn.classList.toggle('active', !!kind && btn.dataset.kind === kind);
       });
     }
     // Compare two gradient specs for preset-highlight purposes (kind, angle for
     // linear, and each stop's colour+pos). Tolerant of minor numeric drift.
     function gradientsEqual(a, b) {
       if (!a || !b) return false;
-      if ((a.kind || 'linear') !== (b.kind || 'linear')) return false;
-      if ((a.kind || 'linear') === 'linear' && Math.abs((a.angle || 0) - (b.angle || 0)) > 0.5) return false;
+      const ak = a.kind || 'linear', bk = b.kind || 'linear';
+      if (ak !== bk) return false;
+      // v2.1 round 237 (Terry) — compare the per-type SHAPE too, so a preset only
+      // rings when the live gradient matches its colours AND its shape. A preset
+      // carries no blend/cx/cy/strength, so treat a missing field as its default
+      // (blend 50, cx/cy 0.5, strength 50) on both sides.
+      const num = (v, d) => (Number.isFinite(v) ? v : d);
+      if (ak === 'linear') {
+        if (Math.abs(num(a.angle, 135) - num(b.angle, 135)) > 0.5) return false;
+        if (Math.abs(num(a.blend, 50) - num(b.blend, 50)) > 0.5) return false;
+      } else {
+        if (Math.abs(num(a.cx, 0.5) - num(b.cx, 0.5)) > 0.005) return false;
+        if (Math.abs(num(a.cy, 0.5) - num(b.cy, 0.5)) > 0.005) return false;
+        if (Math.abs(num(a.strength, 50) - num(b.strength, 50)) > 0.5) return false;
+      }
       if (!Array.isArray(a.stops) || !Array.isArray(b.stops) || a.stops.length !== b.stops.length) return false;
       for (let i = 0; i < a.stops.length; i++) {
         if (String(a.stops[i].color || '').toLowerCase() !== String(b.stops[i].color || '').toLowerCase()) return false;
         if (Math.abs((a.stops[i].pos || 0) - (b.stops[i].pos || 0)) > 0.5) return false;
       }
       return true;
+    }
+    // ─── v2.1 round 237 (Terry) — RADIAL epicentre handle ──────────────────────
+    // A draggable dot showing the radial gradient's centre. It lives in #collage-
+    // stage (NOT the canvas, which is overflow:hidden) so it can be dragged INTO the
+    // dark margin around the paper; the stored cx/cy fractions then go <0 or >1. It
+    // is a Background control, so it shows ONLY when the gradient is radial AND the
+    // Background pseudo-tile is the focused element — never fighting tile drag or the
+    // canvas deselect (those targets are inside #collage-canvas and stopPropagation;
+    // this handle stopPropagations its own pointerdown so it can't trigger them).
+    let collageGradEpiWired = false;
+    function gradEpicentreShouldShow() {
+      const g = collageBgGradient;
+      return !!(g && (g.kind || 'linear') === 'radial' && !collageTransparent
+        && collageSelected && collageSelected.isBg);
+    }
+    // Place the dot over the canvas at the current cx/cy (canvas fractions),
+    // expressed relative to the STAGE so it can sit outside the paper. The stage is
+    // overflow:hidden with 22px padding, so a far-off-canvas centre is clamped at the
+    // stage edge visually — the gradient preview still reflects the true off-canvas
+    // value, which is what matters.
+    function positionGradEpicentre() {
+      const dot = document.getElementById('collage-grad-epicentre');
+      if (!dot || dot.style.display === 'none') return;
+      if (!collageCanvasEl || !collageStageEl) return;
+      const g = collageBgGradient; if (!g) return;
+      const cRect = collageCanvasEl.getBoundingClientRect();
+      const sRect = collageStageEl.getBoundingClientRect();
+      const cx = Number.isFinite(g.cx) ? g.cx : 0.5;
+      const cy = Number.isFinite(g.cy) ? g.cy : 0.5;
+      // Canvas point in stage-local px (account for the stage's own scroll origin).
+      const x = (cRect.left - sRect.left) + collageStageEl.scrollLeft + cx * cRect.width;
+      const y = (cRect.top - sRect.top) + collageStageEl.scrollTop + cy * cRect.height;
+      dot.style.left = x + 'px';
+      dot.style.top = y + 'px';
+    }
+    function updateGradEpicentreVisibility() {
+      const dot = document.getElementById('collage-grad-epicentre');
+      if (!dot) return;
+      const show = gradEpicentreShouldShow();
+      dot.style.display = show ? 'block' : 'none';
+      dot.style.pointerEvents = show ? 'auto' : 'none';
+      if (show) positionGradEpicentre();
+    }
+    function wireGradEpicentre() {
+      if (collageGradEpiWired) return;
+      const dot = document.getElementById('collage-grad-epicentre');
+      if (!dot) return;
+      collageGradEpiWired = true;
+      let dragging = false, preSnap = null;
+      const onMove = (e) => {
+        if (!dragging || !collageBgGradient || !collageCanvasEl) return;
+        const cRect = collageCanvasEl.getBoundingClientRect();
+        if (!cRect.width || !cRect.height) return;
+        // Fractions MAY go <0 or >1 (centre can leave the paper). Clamp only to a
+        // generous range so the handle stays catchable on the stage; the gradient
+        // itself is happy with any value.
+        const fx = (e.clientX - cRect.left) / cRect.width;
+        const fy = (e.clientY - cRect.top) / cRect.height;
+        collageBgGradient.cx = Math.max(-1, Math.min(2, fx));
+        collageBgGradient.cy = Math.max(-1, Math.min(2, fy));
+        collageGradDir = Object.assign({}, collageGradDir, { kind: 'radial', cx: collageBgGradient.cx, cy: collageBgGradient.cy });
+        applyCanvasBgVisual();
+        positionGradEpicentre();
+      };
+      const onUp = () => {
+        if (!dragging) return;
+        dragging = false;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        try { document.body.style.userSelect = ''; } catch (_) {}
+        pushCollageUndoIfChanged(preSnap);   // one undo step for the whole drag
+        preSnap = null;
+      };
+      dot.addEventListener('pointerdown', (e) => {
+        // Only act when this is a live radial-bg control; otherwise ignore.
+        if (!gradEpicentreShouldShow()) return;
+        e.preventDefault();
+        e.stopPropagation();   // never let the stage/canvas deselect or select-bg fire
+        dragging = true;
+        preSnap = snapshotCollage();   // snapshot before the move (begin one undo step)
+        try { document.body.style.userSelect = 'none'; } catch (_) {}
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
     }
     function initCollageColorPicker() {
       if (collageColorWired) return;
@@ -9784,9 +10042,17 @@
         // clear those when a gradient is chosen), so it can't double up. When the bg
         // is colour/photo/transparent this is omitted and the legacy paths run.
         if (collageBgGradient && !collageTransparent) {
+          // v2.1 round 237 (Terry) — send the per-type shaping too: blend (linear
+          // midpoint) and cx/cy + strength (radial epicentre + spread). The bake
+          // (buildCollageGradientSvg) samples the CSS colour-hint for linear and uses
+          // userSpaceOnUse cx/cy/r for radial so the saved PNG matches the preview.
           canvas.gradient = {
             kind: collageBgGradient.kind === 'radial' ? 'radial' : 'linear',
             angle: Number.isFinite(collageBgGradient.angle) ? collageBgGradient.angle : 135,
+            blend: Number.isFinite(collageBgGradient.blend) ? Math.max(0, Math.min(100, collageBgGradient.blend)) : 50,
+            cx: Number.isFinite(collageBgGradient.cx) ? collageBgGradient.cx : 0.5,
+            cy: Number.isFinite(collageBgGradient.cy) ? collageBgGradient.cy : 0.5,
+            strength: Number.isFinite(collageBgGradient.strength) ? Math.max(0, Math.min(100, collageBgGradient.strength)) : 50,
             stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
           };
         }
