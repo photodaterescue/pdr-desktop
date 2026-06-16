@@ -889,14 +889,19 @@ interface CollageLayout {
   // "Background textures"). Mutually exclusive with transparent + bgImage (the
   // editor clears those when a gradient is chosen). Rasterized to an SVG at W×H and
   // composited as the BOTTOM layer, matching the editor's CSS gradient preview.
-  //   kind  — 'linear' | 'radial'
+  //   kind  — 'linear' | 'radial' | 'mesh'
   //   angle — CSS linear-gradient angle in degrees (0 = to top, 90 = to right); linear only
-  //   stops — [{ color:'#rrggbb', pos:0..100 }, ...]
+  //   stops — [{ color:'#rrggbb', pos:0..100 }, ...]  (linear/radial)
+  // v2.1 round 239 (Terry) — MESH: a base colour + several soft colour "blobs"
+  //   (radial-gradient circles fading to transparent), the standard CSS mesh look.
+  //   base  — '#rrggbb' painted first; blobs — [{ color, x, y, r }] with x/y the blob
+  //   centre and r the falloff radius, all in % of the canvas. Baked by
+  //   buildCollageMeshSvg (base rect + one radial per blob, same stacking as the CSS).
   // v2.1 round 238 (Terry) — vignette/grain: WHOLE-COLLAGE finishing treatments
   // (0..100; absent/0 = off), composited as the TOP layer over the finished collage
   // (tiles + bg + text), independent of the bg kind. See buildCollageVignetteSvg /
   // buildCollageGrainSvg + the composite block in collage:saveLayout.
-  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial'; angle?: number; stops: Array<{ color: string; pos: number }> }; vignette?: number; grain?: number };
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; vignette?: number; grain?: number };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
@@ -1016,6 +1021,66 @@ function buildCollageGradientSvg(
     defs = `<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stopTags}</linearGradient>`;
   }
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs><rect width="${W}" height="${H}" fill="url(#g)"/></svg>`;
+}
+
+// v2.1 round 239 (Terry) — MESH gradient bake. Reproduces the editor's CSS mesh
+// (collageMeshCss): a base-colour rect, then one radial per "blob" stacked over it.
+// Two things must match the browser exactly:
+//  • STACKING ORDER. The CSS stacks blobs as background-image layers with the FIRST
+//    blob ON TOP (CSS paints the first layer topmost), base underneath. SVG paint
+//    order is the reverse (later elements draw on top), so we paint the base rect
+//    first, then the blobs in REVERSE array order — last blob first … first blob last
+//    → the first blob lands on top, matching the CSS.
+//  • RADIUS SEMANTICS. Each blob is `radial-gradient(circle at x% y%, color 0%,
+//    transparent r%)`. There, `r%` is a COLOUR-STOP position, not the gradient size:
+//    the gradient defaults to `circle farthest-corner` (radius = distance from the
+//    centre to the FARTHEST canvas corner), the colour sits at 0%, and it fades to
+//    transparent at r% of that radius, staying transparent beyond (last-stop hold).
+//    So the SVG radialGradient uses r = farthest-corner distance (userSpaceOnUse px),
+//    with the opaque stop at 0% and the transparent stop at r% — SVG's default pad
+//    spread holds it transparent past r%, exactly like the CSS. The centre (x%,y%) is
+//    taken against W×H. Blobs use normal source-over alpha, like the browser layers.
+function buildCollageMeshSvg(
+  W: number,
+  H: number,
+  mesh: { base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> },
+): string {
+  const okHex = (c: string) => /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(c || ''));
+  const base = okHex(mesh.base || '') ? String(mesh.base) : '#1a1a2e';
+  const blobs = (Array.isArray(mesh.blobs) ? mesh.blobs : [])
+    .map((bl) => ({
+      color: okHex(bl.color) ? String(bl.color) : '#ffffff',
+      x: Math.max(-50, Math.min(150, Number(bl.x) || 0)),
+      y: Math.max(-50, Math.min(150, Number(bl.y) || 0)),
+      r: Math.max(5, Math.min(150, Number(bl.r) || 60)),
+    }));
+  // REVERSE so the first blob (CSS-topmost) is painted last (SVG-topmost).
+  const ordered = blobs.slice().reverse();
+  let defs = '';
+  let rects = '';
+  ordered.forEach((bl, i) => {
+    const cx = (bl.x / 100) * W;
+    const cy = (bl.y / 100) * H;
+    // farthest-corner extent: max distance from the centre to any of the 4 corners.
+    const far = Math.max(
+      Math.hypot(cx - 0, cy - 0),
+      Math.hypot(cx - W, cy - 0),
+      Math.hypot(cx - 0, cy - H),
+      Math.hypot(cx - W, cy - H),
+    );
+    // Transparent colour-stop offset within that radius (CSS `transparent r%`),
+    // clamped just under 100% so the gradient is well-defined.
+    const stopPct = Math.max(1, Math.min(100, bl.r));
+    const id = `m${i}`;
+    defs +=
+      `<radialGradient id="${id}" gradientUnits="userSpaceOnUse" cx="${cx}" cy="${cy}" r="${far}">` +
+      `<stop offset="0%" stop-color="${bl.color}" stop-opacity="1"/>` +
+      `<stop offset="${stopPct}%" stop-color="${bl.color}" stop-opacity="0"/>` +
+      `</radialGradient>`;
+    rects += `<rect width="${W}" height="${H}" fill="url(#${id})"/>`;
+  });
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs>` +
+    `<rect width="${W}" height="${H}" fill="${base}"/>${rects}</svg>`;
 }
 
 // v2.1 round 238 (Terry) — VIGNETTE finishing layer. Reproduces the editor's CSS
@@ -1282,9 +1347,22 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     // Mutually exclusive with transparent + a bg photo (the editor clears those when
     // a gradient is chosen), so it can't double-composite with the bg-photo below.
     const gradient = transparent ? undefined : layout.canvas.gradient;
-    if (gradient && Array.isArray(gradient.stops) && gradient.stops.length >= 1) {
+    // v2.1 round 239 (Terry) — MESH is base+blobs (no stops); route it to the mesh
+    // bake. Linear/radial still use buildCollageGradientSvg (stops-based). Either way
+    // the rasterized SVG is prepended as the BOTTOM layer (under the tiles).
+    if (gradient && gradient.kind === 'mesh' && Array.isArray(gradient.blobs) && gradient.blobs.length >= 1) {
       try {
-        const svg = buildCollageGradientSvg(W, H, gradient);
+        const svg = buildCollageMeshSvg(W, H, gradient);
+        const gradBuf = await sharp(Buffer.from(svg)).png().toBuffer();
+        composites.unshift({ input: gradBuf, left: PAD, top: PAD });
+      } catch (gradErr) {
+        log.warn(`[collage] mesh background skipped (non-fatal): ${(gradErr as Error).message}`);
+      }
+    } else if (gradient && Array.isArray(gradient.stops) && gradient.stops.length >= 1) {
+      try {
+        // buildCollageGradientSvg takes the stops-based shape; the wider union's
+        // optional stops are guaranteed present in this branch.
+        const svg = buildCollageGradientSvg(W, H, { kind: gradient.kind === 'radial' ? 'radial' : 'linear', angle: gradient.angle, stops: gradient.stops });
         const gradBuf = await sharp(Buffer.from(svg)).png().toBuffer();
         composites.unshift({ input: gradBuf, left: PAD, top: PAD });
       } catch (gradErr) {

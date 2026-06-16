@@ -3189,7 +3189,18 @@
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-rad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></radialGradient></defs><circle cx="12" cy="12" r="9" fill="url(#grad-ico-rad)"/></svg>
                   Radial
                 </button>
+                <!-- v2.1 round 239 (Terry) — MESH: a base colour with several soft
+                   colour blobs blended across the canvas. Preset-driven this round, so
+                   choosing Mesh hides the linear/radial controls + their preset grid and
+                   shows the curated mesh swatches below. -->
+                <button type="button" class="ec-grad-dir" data-kind="mesh" data-pdr-tooltip="Mesh — a base colour with several soft colour blobs blended across the canvas">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-mesh-a" cx="30%" cy="30%" r="60%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></radialGradient><radialGradient id="grad-ico-mesh-b" cx="78%" cy="72%" r="55%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.6"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></radialGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" fill-opacity="0.14"/><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-mesh-a)"/><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-mesh-b)"/></svg>
+                  Mesh
+                </button>
               </div>
+              <!-- v2.1 round 239 (Terry) — MESH preset grid (shown only when Mesh is the
+                 selected type; the buildCollageGradientUi wiring populates + toggles it). -->
+              <div id="collage-gradient-mesh-presets" class="ec-grad-presets" style="display:none;margin-top:8px"></div>
               <!-- LINEAR-only: Angle + Blend -->
               <div class="enhance-control" id="collage-gradient-angle-row" style="margin-top:8px">
                 <div class="enhance-label-row"><label for="collage-gradient-angle">Angle</label><span class="enhance-val" id="collage-gradient-angle-val">135°</span></div>
@@ -4051,6 +4062,44 @@
       { id: 'rose',     name: 'Rose',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffafbd', pos: 0 }, { color: '#ffc3a0', pos: 100 }] } },
       { id: 'mono',     name: 'Mono grey', grad: { kind: 'linear', angle: 135, stops: [{ color: '#e0e0e0', pos: 0 }, { color: '#9a9a9a', pos: 100 }] } },
       { id: 'glow',     name: 'Soft glow', grad: { kind: 'radial', angle: 0,   stops: [{ color: '#ffffff', pos: 0 }, { color: '#cfd9e8', pos: 100 }] } },
+    ];
+    // v2.1 round 239 (Terry) — MESH gradient presets. A mesh = a base colour + a few
+    // soft colour "blobs" (radial-gradient circles fading to transparent) at varied
+    // positions, blended over the base. Preset-driven only this round (no custom
+    // editing). Each blob: { color, x, y, r } with x/y the centre and r the falloff
+    // radius, all in % of the canvas. Tasteful 3–4 colour blends. Rendered identically
+    // in preview (collageMeshCss) and bake (buildCollageMeshSvg).
+    const COLLAGE_MESH_PRESETS = [
+      { id: 'm-sunset',   name: 'Sunset mesh',   grad: { kind: 'mesh', base: '#2b1055', blobs: [
+        { color: '#ff8a5c', x: 15, y: 20, r: 70 }, { color: '#ff5e62', x: 85, y: 30, r: 65 },
+        { color: '#7028e4', x: 50, y: 95, r: 75 }, { color: '#ffd86f', x: 90, y: 90, r: 55 } ] } },
+      { id: 'm-ocean',    name: 'Ocean mesh',    grad: { kind: 'mesh', base: '#0b1d3a', blobs: [
+        { color: '#36d1dc', x: 20, y: 25, r: 70 }, { color: '#5b86e5', x: 80, y: 20, r: 70 },
+        { color: '#2193b0', x: 70, y: 90, r: 70 }, { color: '#43e97b', x: 10, y: 95, r: 55 } ] } },
+      { id: 'm-lavender', name: 'Lavender mesh', grad: { kind: 'mesh', base: '#3a2e5c', blobs: [
+        { color: '#a18cd1', x: 20, y: 20, r: 70 }, { color: '#fbc2eb', x: 85, y: 35, r: 65 },
+        { color: '#8ec5fc', x: 60, y: 95, r: 70 }, { color: '#e0c3fc', x: 5, y: 85, r: 55 } ] } },
+      { id: 'm-candy',    name: 'Candy mesh',    grad: { kind: 'mesh', base: '#2d0b3a', blobs: [
+        { color: '#ff6ec4', x: 18, y: 22, r: 68 }, { color: '#7873f5', x: 82, y: 25, r: 68 },
+        { color: '#ffd86f', x: 75, y: 92, r: 60 }, { color: '#ff9a9e', x: 12, y: 90, r: 60 } ] } },
+      { id: 'm-aurora',   name: 'Aurora mesh',   grad: { kind: 'mesh', base: '#05203c', blobs: [
+        { color: '#43e97b', x: 22, y: 30, r: 75 }, { color: '#38f9d7', x: 78, y: 22, r: 70 },
+        { color: '#6a82fb', x: 60, y: 92, r: 72 }, { color: '#a8ff78', x: 8, y: 95, r: 50 } ] } },
+      { id: 'm-flamingo', name: 'Flamingo mesh', grad: { kind: 'mesh', base: '#3a0d2a', blobs: [
+        { color: '#ff6a88', x: 20, y: 22, r: 70 }, { color: '#ff99ac', x: 85, y: 30, r: 62 },
+        { color: '#ffba6b', x: 55, y: 92, r: 68 } ] } },
+      { id: 'm-citrus',   name: 'Citrus mesh',   grad: { kind: 'mesh', base: '#1f3d0c', blobs: [
+        { color: '#f9d423', x: 22, y: 25, r: 70 }, { color: '#ff8008', x: 82, y: 28, r: 65 },
+        { color: '#a8e063', x: 60, y: 92, r: 70 }, { color: '#56ab2f', x: 8, y: 90, r: 55 } ] } },
+      { id: 'm-twilight', name: 'Twilight mesh', grad: { kind: 'mesh', base: '#0f0c29', blobs: [
+        { color: '#7028e4', x: 20, y: 25, r: 72 }, { color: '#e5b2ca', x: 82, y: 30, r: 60 },
+        { color: '#24c6dc', x: 65, y: 92, r: 68 }, { color: '#514a9d', x: 6, y: 90, r: 60 } ] } },
+      { id: 'm-emerald',  name: 'Emerald mesh',  grad: { kind: 'mesh', base: '#04261f', blobs: [
+        { color: '#11998e', x: 22, y: 25, r: 72 }, { color: '#38ef7d', x: 80, y: 28, r: 66 },
+        { color: '#0ba360', x: 60, y: 92, r: 70 } ] } },
+      { id: 'm-mono',     name: 'Mono mesh',     grad: { kind: 'mesh', base: '#1c1c1c', blobs: [
+        { color: '#6b6b6b', x: 20, y: 22, r: 72 }, { color: '#9a9a9a', x: 82, y: 30, r: 62 },
+        { color: '#4a4a4a', x: 60, y: 92, r: 70 }, { color: '#bdbdbd', x: 8, y: 90, r: 48 } ] } },
     ];
     // v2.1 round 235 (Terry) — when editing a custom gradient, which STOP index the
     // shared Background colour palette currently writes to (0 or 1), or null when no
@@ -8949,11 +8998,22 @@
         // v2.1 round 237 (Terry) — carry the per-type shaping fields too (blend for
         // linear; cx/cy + strength for radial) so the new controls are undoable +
         // round-trip; restore fills defaults for old snapshots that lack them.
-        gradient: collageBgGradient ? {
-          kind: collageBgGradient.kind, angle: collageBgGradient.angle,
-          blend: collageBgGradient.blend, cx: collageBgGradient.cx, cy: collageBgGradient.cy, strength: collageBgGradient.strength,
-          stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })),
-        } : null,
+        // v2.1 round 239 (Terry) — MESH carries base+blobs (no stops/shape); the
+        // linear/radial kinds carry shape+stops as before. restore reads whichever
+        // shape the `kind` implies.
+        gradient: collageBgGradient ? (
+          collageBgGradient.kind === 'mesh'
+            ? {
+                kind: 'mesh',
+                base: collageBgGradient.base,
+                blobs: (collageBgGradient.blobs || []).map((bl) => ({ color: bl.color, x: bl.x, y: bl.y, r: bl.r })),
+              }
+            : {
+                kind: collageBgGradient.kind, angle: collageBgGradient.angle,
+                blend: collageBgGradient.blend, cx: collageBgGradient.cx, cy: collageBgGradient.cy, strength: collageBgGradient.strength,
+                stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })),
+              }
+        ) : null,
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
@@ -8990,7 +9050,20 @@
       // v2.1 round 235 (Terry) — restore the gradient bg (null on old snapshots →
       // no gradient, i.e. the colour/photo/transparent kind from this snapshot wins).
       // Deep-copy so the live object isn't shared with the (immutable) snapshot JSON.
-      collageBgGradient = (s.gradient && Array.isArray(s.gradient.stops) && s.gradient.stops.length >= 2)
+      // v2.1 round 239 (Terry) — MESH snapshots carry base+blobs (no stops); restore
+      // them to the mesh model. Linear/radial snapshots restore via the stops path.
+      collageBgGradient = (s.gradient && s.gradient.kind === 'mesh' && Array.isArray(s.gradient.blobs) && s.gradient.blobs.length >= 1)
+        ? {
+            kind: 'mesh',
+            base: /^#[0-9a-fA-F]{3,6}$/.test(String(s.gradient.base || '')) ? s.gradient.base : '#1a1a2e',
+            blobs: s.gradient.blobs.map((bl) => ({
+              color: /^#[0-9a-fA-F]{3,6}$/.test(String(bl.color || '')) ? bl.color : '#ffffff',
+              x: Math.max(-50, Math.min(150, Number(bl.x) || 0)),
+              y: Math.max(-50, Math.min(150, Number(bl.y) || 0)),
+              r: Math.max(5, Math.min(150, Number(bl.r) || 60)),
+            })),
+          }
+        : (s.gradient && Array.isArray(s.gradient.stops) && s.gradient.stops.length >= 2)
         ? {
             kind: s.gradient.kind === 'radial' ? 'radial' : 'linear',
             angle: Number.isFinite(s.gradient.angle) ? s.gradient.angle : 135,
@@ -9395,7 +9468,33 @@
     // convention (0deg = to top, growing clockwise) is the SAME one the bake maps
     // to an SVG vector (see capture-manager), so preview == saved. Stops sorted by
     // pos; safe defaults if a stop is malformed.
+    // v2.1 round 239 (Terry) — MESH gradient → a CSS string usable BOTH as the
+    // canvas `background` shorthand (preview) AND as a swatch fill. A mesh is a base
+    // colour + several radial-gradient "blobs": each blob is the blob colour at its
+    // (x%,y%) centre fading to transparent by radius r%. Stacked comma-separated in
+    // background-image order (first blob on top), with the base colour painted last
+    // via a trailing flat layer so the shorthand carries the base too (a swatch has
+    // no background-color of its own). The bake (buildCollageMeshSvg) emits the SAME
+    // stacking — base rect first, then a radial per blob in this order — so preview
+    // == saved.
+    function collageMeshCss(g) {
+      const base = /^#[0-9a-fA-F]{3,6}$/.test(String(g.base || '')) ? g.base : '#1a1a2e';
+      const blobs = Array.isArray(g.blobs) ? g.blobs : [];
+      const layers = blobs.map((bl) => {
+        const c = /^#[0-9a-fA-F]{3,6}$/.test(String(bl.color || '')) ? bl.color : '#ffffff';
+        const x = Math.max(-50, Math.min(150, Number(bl.x) || 0)); const y = Math.max(-50, Math.min(150, Number(bl.y) || 0));
+        const r = Math.max(5, Math.min(150, Number(bl.r) || 60));
+        return 'radial-gradient(circle at ' + x + '% ' + y + '%, ' + c + ' 0%, transparent ' + r + '%)';
+      });
+      // Trailing flat layer carries the base colour inside the shorthand so it works
+      // as a standalone swatch background; the canvas preview also sets background-
+      // color:base separately (harmless, same colour).
+      layers.push('linear-gradient(' + base + ', ' + base + ')');
+      return layers.join(', ');
+    }
     function collageGradientCss(g) {
+      // v2.1 round 239 (Terry) — mesh is base+blobs, not stops; handle it first.
+      if (g && g.kind === 'mesh') return collageMeshCss(g);
       if (!g || !Array.isArray(g.stops) || g.stops.length < 2) return '';
       const stops = g.stops
         .map((s) => ({ color: /^#[0-9a-fA-F]{3,6}$/.test(String(s.color || '')) ? s.color : '#ffffff', pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) }))
@@ -9445,6 +9544,18 @@
       // toggles). It self-hides when not radial / not bg-focused.
       try { updateGradEpicentreVisibility(); } catch (_) {}
       if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
+      // v2.1 round 239 (Terry) — MESH: set background-color:base + a stacked
+      // background-image of the radial blobs (the standard mesh technique). Done as
+      // two explicit properties (not the shorthand) so the base shows through the
+      // blobs' transparent falloff, matching the SVG bake (base rect + radials).
+      if (collageBgGradient && collageBgGradient.kind === 'mesh') {
+        const base = /^#[0-9a-fA-F]{3,6}$/.test(String(collageBgGradient.base || '')) ? collageBgGradient.base : '#1a1a2e';
+        collageCanvasEl.style.background = '';   // clear any prior shorthand
+        collageCanvasEl.style.backgroundColor = base;
+        collageCanvasEl.style.backgroundImage = collageMeshCss(collageBgGradient);
+        return;
+      }
+      // Non-mesh paths set the shorthand, which resets backgroundImage too.
       if (collageBgGradient) {
         const css = collageGradientCss(collageBgGradient);
         if (css) { collageCanvasEl.style.background = css; return; }
@@ -9645,6 +9756,33 @@
       try { syncTextColorPaletteRings(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
     }
+    // v2.1 round 239 (Terry) — set a MESH gradient as the bg (preset-driven this
+    // round; no custom stop editing). Same swap semantics as setCollageGradient:
+    // clears transparent + bg-photo so the mesh truly becomes the bg, keeps collageBg
+    // underneath as the fallback base, and repaints preview + UI. Model:
+    //   { kind:'mesh', base:'#rrggbb', blobs:[{ color, x, y, r }] }  (x,y,r in %)
+    function setCollageMeshGradient(spec) {
+      if (!spec || !Array.isArray(spec.blobs) || spec.blobs.length < 1) return;
+      collageBgGradient = {
+        kind: 'mesh',
+        base: /^#[0-9a-fA-F]{3,6}$/.test(String(spec.base || '')) ? spec.base : '#1a1a2e',
+        blobs: spec.blobs.map((bl) => ({
+          color: /^#[0-9a-fA-F]{3,6}$/.test(String(bl.color || '')) ? bl.color : '#ffffff',
+          x: Math.max(-50, Math.min(150, Number(bl.x) || 0)),
+          y: Math.max(-50, Math.min(150, Number(bl.y) || 0)),
+          r: Math.max(5, Math.min(150, Number(bl.r) || 60)),
+        })),
+      };
+      collageGradStopEdit = null;
+      // Swap away from the other bg kinds (mirrors setCollageGradient).
+      collageTransparent = false;
+      if (collageBgImagePath) collageBgImagePath = '';
+      applyCanvasBgVisual();
+      renderCollageBgLayer();   // tears down the (now-cleared) photo layer
+      markBgLockedSpecialsActive();
+      try { syncTextColorPaletteRings(); } catch (_) {}
+      try { syncCollageGradientUi(); } catch (_) {}
+    }
     // Update one stop's colour in the active gradient + repaint (preview + UI).
     function setCollageGradientStopColor(idx, hex) {
       if (!collageBgGradient || !collageBgGradient.stops[idx]) return;
@@ -9719,6 +9857,23 @@
           presetWrap.appendChild(b);
         });
       }
+      // v2.1 round 239 (Terry) — MESH preset swatches. Each swatch previews the mesh
+      // via collageMeshCss (the shorthand carries the base + blobs), and clicking it
+      // applies that mesh as the bg (swapping away colour/photo/transparent + any
+      // linear/radial gradient). No stop editing this round.
+      const meshWrap = document.getElementById('collage-gradient-mesh-presets');
+      if (meshWrap) {
+        meshWrap.innerHTML = '';
+        COLLAGE_MESH_PRESETS.forEach((p) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ec-grad-swatch'; b.dataset.meshId = p.id;
+          b.style.background = collageMeshCss(p.grad);
+          b.setAttribute('data-pdr-tooltip', p.name);
+          b.setAttribute('aria-label', p.name);
+          b.addEventListener('click', () => { setCollageMeshGradient(p.grad); });
+          meshWrap.appendChild(b);
+        });
+      }
       // v2.1 round 237 (Terry) — TYPE selector (Linear / Radial). Switches the
       // gradient's kind while KEEPING the current stops/colours + the other type's
       // remembered shape (so flipping back and forth doesn't lose the angle/blend or
@@ -9726,10 +9881,24 @@
       // first. Records the choice in collageGradDir so presets follow it.
       document.querySelectorAll('#collage-gradient-types .ec-grad-dir').forEach((btn) => {
         btn.addEventListener('click', () => {
-          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
-          const kind = btn.dataset.kind === 'radial' ? 'radial' : 'linear';
-          collageBgGradient.kind = kind;
-          collageGradDir = Object.assign({}, collageGradDir, { kind });
+          const kind = btn.dataset.kind;
+          // v2.1 round 239 (Terry) — MESH is a different model (base+blobs, no stops),
+          // so clicking Mesh seeds the FIRST mesh preset (or keeps the current mesh if
+          // one is already active). It does NOT carry the linear/radial collageGradDir.
+          if (kind === 'mesh') {
+            collageGradStopEdit = null;
+            if (!collageBgGradient || collageBgGradient.kind !== 'mesh') {
+              setCollageMeshGradient(COLLAGE_MESH_PRESETS[0].grad);
+            }
+            syncCollageGradientUi();
+            return;
+          }
+          // Linear/Radial: if there's no gradient OR we're leaving mesh, seed a normal
+          // stops gradient first; then flip its kind (keeping the stops + shape).
+          if (!collageBgGradient || collageBgGradient.kind === 'mesh') setCollageGradient(defaultCollageGradient());
+          const k = kind === 'radial' ? 'radial' : 'linear';
+          collageBgGradient.kind = k;
+          collageGradDir = Object.assign({}, collageGradDir, { kind: k });
           applyCanvasBgVisual();
           // Re-render so the per-type rows (angle/blend vs strength) + the epicentre
           // handle show/hide for the new type, and the type highlight updates.
@@ -9841,7 +10010,10 @@
       // gradient (covers undo/redo restore + any path that mutates it directly), so
       // the next colour-preset click keeps whatever type/angle/blend/centre/strength
       // is actually showing.
-      if (g) collageGradDir = {
+      // v2.1 round 239 (Terry) — but NOT for mesh: mesh has its own model (base+blobs)
+      // and must not overwrite the remembered linear/radial shape, so a later
+      // linear/radial preset click still keeps the user's last angle/centre/strength.
+      if (g && g.kind !== 'mesh') collageGradDir = {
         kind: (g.kind || 'linear'),
         angle: Number.isFinite(g.angle) ? g.angle : 135,
         blend: Number.isFinite(g.blend) ? g.blend : 50,
@@ -9849,16 +10021,31 @@
         cy: Number.isFinite(g.cy) ? g.cy : 0.5,
         strength: Number.isFinite(g.strength) ? g.strength : 50,
       };
+      // v2.1 round 239 (Terry) — MESH is preset-driven (base+blobs, no stops/angle/
+      // shape). When mesh is active we hide the linear/radial preset grid + all the
+      // per-type sliders + the stops row, and show the mesh preset grid instead.
+      const isMesh = !!g && g.kind === 'mesh';
       // Active preset: ring the one whose spec matches the live gradient exactly.
+      // (Linear/radial swatches — never match a mesh, so they all clear when mesh.)
       document.querySelectorAll('#collage-gradient-presets .ec-grad-swatch').forEach((sw) => {
         const p = COLLAGE_GRADIENT_PRESETS.find((x) => x.id === sw.dataset.gradId);
         const match = !!(g && p && gradientsEqual(g, p.grad));
         sw.classList.toggle('active', match);
       });
-      // v2.1 round 237 (Terry) — TYPE selector: highlight Linear or Radial.
+      // Mesh preset grid: show only when mesh; ring the matching mesh preset.
+      const meshPresetsEl = document.getElementById('collage-gradient-mesh-presets');
+      if (meshPresetsEl) meshPresetsEl.style.display = isMesh ? '' : 'none';
+      const lrPresetsEl = document.getElementById('collage-gradient-presets');
+      if (lrPresetsEl) lrPresetsEl.style.display = isMesh ? 'none' : '';
+      document.querySelectorAll('#collage-gradient-mesh-presets .ec-grad-swatch').forEach((sw) => {
+        const p = COLLAGE_MESH_PRESETS.find((x) => x.id === sw.dataset.meshId);
+        const match = !!(g && isMesh && p && meshGradientsEqual(g, p.grad));
+        sw.classList.toggle('active', match);
+      });
+      // v2.1 round 237 (Terry) — TYPE selector: highlight Linear / Radial / Mesh.
       refreshGradDirHighlight();
-      const isLinear = !g || (g.kind || 'linear') === 'linear';
-      const isRadial = !!g && (g.kind || 'linear') === 'radial';
+      const isLinear = !isMesh && (!g || (g.kind || 'linear') === 'linear');
+      const isRadial = !isMesh && !!g && (g.kind || 'linear') === 'radial';
       // Angle + Blend rows — LINEAR only.
       const angleRow = document.getElementById('collage-gradient-angle-row');
       const angle = document.getElementById('collage-gradient-angle');
@@ -9883,17 +10070,21 @@
       if (epiHint) epiHint.style.display = isRadial ? '' : 'none';
       // v2.1 round 237 (Terry) — show/position the draggable epicentre handle.
       updateGradEpicentreVisibility();
-      // Stop chips.
+      // v2.1 round 239 (Terry) — Colours (stops) row — LINEAR/RADIAL only; mesh has no
+      // editable stops this round, so hide the whole row.
+      const stopsRow = document.getElementById('collage-gradient-stops');
+      if (stopsRow) stopsRow.style.display = isMesh ? 'none' : '';
+      // Stop chips (guard g.stops — a mesh has none).
       document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
         const idx = parseInt(chip.dataset.stop, 10) || 0;
         const sw = chip.querySelector('.ec-grad-stop-sw');
-        const col = (g && g.stops[idx]) ? g.stops[idx].color : '';
+        const col = (g && Array.isArray(g.stops) && g.stops[idx]) ? g.stops[idx].color : '';
         if (sw) sw.style.background = col || 'transparent';
-        chip.classList.toggle('armed', collageGradStopEdit === idx && !!g);
+        chip.classList.toggle('armed', collageGradStopEdit === idx && !!g && !isMesh);
       });
       // Hint.
       const hint = document.getElementById('collage-gradient-stop-hint');
-      if (hint) hint.textContent = (g && collageGradStopEdit != null) ? 'pick a colour →' : '';
+      if (hint) hint.textContent = (g && !isMesh && collageGradStopEdit != null) ? 'pick a colour →' : '';
     }
     // v2.1 round 237 (Terry) — highlight the TYPE button (Linear / Radial) matching
     // the live gradient. Light enough to call mid-drag.
@@ -9927,6 +10118,21 @@
       for (let i = 0; i < a.stops.length; i++) {
         if (String(a.stops[i].color || '').toLowerCase() !== String(b.stops[i].color || '').toLowerCase()) return false;
         if (Math.abs((a.stops[i].pos || 0) - (b.stops[i].pos || 0)) > 0.5) return false;
+      }
+      return true;
+    }
+    // v2.1 round 239 (Terry) — compare two MESH specs for the preset-highlight ring:
+    // same base + same ordered blobs (colour + x/y/r). Tolerant of tiny numeric drift.
+    function meshGradientsEqual(a, b) {
+      if (!a || !b || a.kind !== 'mesh' || b.kind !== 'mesh') return false;
+      if (String(a.base || '').toLowerCase() !== String(b.base || '').toLowerCase()) return false;
+      const ab = Array.isArray(a.blobs) ? a.blobs : [], bb = Array.isArray(b.blobs) ? b.blobs : [];
+      if (ab.length !== bb.length) return false;
+      for (let i = 0; i < ab.length; i++) {
+        if (String(ab[i].color || '').toLowerCase() !== String(bb[i].color || '').toLowerCase()) return false;
+        if (Math.abs((ab[i].x || 0) - (bb[i].x || 0)) > 0.5) return false;
+        if (Math.abs((ab[i].y || 0) - (bb[i].y || 0)) > 0.5) return false;
+        if (Math.abs((ab[i].r || 0) - (bb[i].r || 0)) > 0.5) return false;
       }
       return true;
     }
@@ -10210,19 +10416,35 @@
         // clear those when a gradient is chosen), so it can't double up. When the bg
         // is colour/photo/transparent this is omitted and the legacy paths run.
         if (collageBgGradient && !collageTransparent) {
-          // v2.1 round 237 (Terry) — send the per-type shaping too: blend (linear
-          // midpoint) and cx/cy + strength (radial epicentre + spread). The bake
-          // (buildCollageGradientSvg) samples the CSS colour-hint for linear and uses
-          // userSpaceOnUse cx/cy/r for radial so the saved PNG matches the preview.
-          canvas.gradient = {
-            kind: collageBgGradient.kind === 'radial' ? 'radial' : 'linear',
-            angle: Number.isFinite(collageBgGradient.angle) ? collageBgGradient.angle : 135,
-            blend: Number.isFinite(collageBgGradient.blend) ? Math.max(0, Math.min(100, collageBgGradient.blend)) : 50,
-            cx: Number.isFinite(collageBgGradient.cx) ? collageBgGradient.cx : 0.5,
-            cy: Number.isFinite(collageBgGradient.cy) ? collageBgGradient.cy : 0.5,
-            strength: Number.isFinite(collageBgGradient.strength) ? Math.max(0, Math.min(100, collageBgGradient.strength)) : 50,
-            stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
-          };
+          // v2.1 round 239 (Terry) — MESH bg: send base + blobs (x/y/r in %). The bake
+          // (buildCollageMeshSvg) emits a base rect + one radial per blob, in the SAME
+          // stacking order as the preview's background-image, so the saved PNG matches.
+          if (collageBgGradient.kind === 'mesh') {
+            canvas.gradient = {
+              kind: 'mesh',
+              base: /^#[0-9a-fA-F]{3,6}$/.test(String(collageBgGradient.base || '')) ? collageBgGradient.base : '#1a1a2e',
+              blobs: (collageBgGradient.blobs || []).map((bl) => ({
+                color: /^#[0-9a-fA-F]{3,6}$/.test(String(bl.color || '')) ? bl.color : '#ffffff',
+                x: Math.max(-50, Math.min(150, Number(bl.x) || 0)),
+                y: Math.max(-50, Math.min(150, Number(bl.y) || 0)),
+                r: Math.max(5, Math.min(150, Number(bl.r) || 60)),
+              })),
+            };
+          } else {
+            // v2.1 round 237 (Terry) — send the per-type shaping too: blend (linear
+            // midpoint) and cx/cy + strength (radial epicentre + spread). The bake
+            // (buildCollageGradientSvg) samples the CSS colour-hint for linear and uses
+            // userSpaceOnUse cx/cy/r for radial so the saved PNG matches the preview.
+            canvas.gradient = {
+              kind: collageBgGradient.kind === 'radial' ? 'radial' : 'linear',
+              angle: Number.isFinite(collageBgGradient.angle) ? collageBgGradient.angle : 135,
+              blend: Number.isFinite(collageBgGradient.blend) ? Math.max(0, Math.min(100, collageBgGradient.blend)) : 50,
+              cx: Number.isFinite(collageBgGradient.cx) ? collageBgGradient.cx : 0.5,
+              cy: Number.isFinite(collageBgGradient.cy) ? collageBgGradient.cy : 0.5,
+              strength: Number.isFinite(collageBgGradient.strength) ? Math.max(0, Math.min(100, collageBgGradient.strength)) : 50,
+              stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
+            };
+          }
         }
         // v2.1 round 142 — background photo baked under the tiles.
         // v2.1 round 149 — with its own enh (Look/levels) + Fade opacity.
