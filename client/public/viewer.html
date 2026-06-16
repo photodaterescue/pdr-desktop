@@ -1366,6 +1366,11 @@
          overlapped. min-height:0 lets the body scroll properly. */
       min-height: 0;
       overflow-y: auto;
+      /* v2.1 round 231 (Terry) — reserve the vertical scrollbar gutter at all times so
+         content (notably the Canvas Size Expand-all/Collapse-all icons now pinned to the
+         right of the summary row) does NOT jerk sideways when the scrollbar appears or
+         disappears — e.g. when Expand-all adds enough rows to start scrolling. */
+      scrollbar-gutter: stable;
       /* v2.1 (Terry 2026-06-07) — explicit overflow-x: hidden so
          the implicit-auto behavior (when only overflow-y is set)
          doesn't paint a horizontal scrollbar when content is close
@@ -2515,11 +2520,28 @@
       padding-left: 8px;
       border-left: 1px solid rgba(254, 194, 66, 0.18);
     }
-    /* v2.1 round 230 (Terry) — Canvas Size Expand-all / Collapse-all icon row. Sits
-       directly under the Canvas Size summary, right-aligned like the Palettes pair, with
-       a tiny gap so it tucks against the summary and above the indented size tree. Inherits
-       the gold icon button styling from .enhance-collapse-all (round-198/202). */
-    .ec-size-bulk { margin-top: 2px; margin-bottom: 0; gap: 8px; }
+    /* v2.1 round 231 (Terry) — Canvas Size Expand-all / Collapse-all icons relocated ONTO
+       the Canvas Size <summary> row (was the round-230 .ec-size-bulk row under the summary).
+       margin-left:auto pushes the pair to the right edge of the summary; a fixed right
+       offset (~12px ≈ the panel scrollbar width) keeps them clear of the .enhance-body
+       scrollbar, and with scrollbar-gutter:stable on .enhance-body the gutter is always
+       reserved — so the icons DON'T jerk sideways when the vertical scrollbar appears or
+       disappears (e.g. after Expand-all adds rows). Visible ONLY when Canvas Size is open. */
+    .ec-size-summary-bulk {
+      display: none;
+      margin-left: auto;
+      margin-right: 12px;
+      align-items: center;
+      gap: 8px;
+    }
+    #ec-shape-collapse[open] > summary > .ec-size-summary-bulk { display: inline-flex; }
+    /* The icons reuse the round-198/202 gold icon-button look. They live inside the
+       summary, so neutralise the summary's text styling and give them a button reset. */
+    .ec-size-summary-bulk button {
+      background: none; border: none; padding: 0; cursor: pointer;
+      display: inline-flex; align-items: center; line-height: 0;
+    }
+    .ec-size-summary-bulk button:hover { opacity: 1 !important; }
     /* v2.1 round 228 (Terry) — Canvas Size is now a NESTED collapsible hierarchy that
        mirrors the round-223 Palettes look: top-level groups (Social Media / Prints /
        Paper / More / Custom…) are .ec-size-grp <details>; within Social Media each
@@ -3035,13 +3057,15 @@
              this #ec-shape-collapse remains the managed section — the contextual
              sweep / collapse-all / round-157 persistence ignore the inner groups. -->
         <details class="enhance-collapse" id="ec-shape-collapse" open>
-          <summary>Canvas size</summary>
-          <!-- v2.1 round 230 (Terry) — compact Expand-all / Collapse-all for the Canvas
-               Size sub-groups ONLY, mirroring the round-223 Palettes ⌄≡ / ›≡ icons. These
-               open/close every group + platform + Custom inside #ec-canvas-size-list and
-               are scoped strictly to those descendants — they never toggle the top-level
-               subcategory accordion or any other subcategory's inner groups. -->
-          <div class="enhance-collapse-all ec-size-bulk"><button type="button" id="ec-size-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all canvas size groups" aria-label="Expand all canvas size groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="ec-size-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all canvas size groups" aria-label="Collapse all canvas size groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></div>
+          <!-- v2.1 round 231 (Terry) — the Canvas Size Expand-all / Collapse-all icons
+               (round 230) moved OFF the dedicated .ec-size-bulk row and ONTO this summary
+               row, right-aligned via .ec-size-summary-bulk (margin-left:auto). They show
+               ONLY when Canvas Size is open (CSS gates on #ec-shape-collapse[open]) and are
+               scrollbar-stable (see .enhance-body scrollbar-gutter + the fixed right offset
+               on .ec-size-summary-bulk). Their click handlers preventDefault +
+               stopPropagation so pressing an icon never toggles the Canvas Size section —
+               they still operate ONLY on #ec-canvas-size-list descendants. -->
+          <summary>Canvas size<span class="ec-size-summary-bulk"><button type="button" id="ec-size-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all canvas size groups" aria-label="Expand all canvas size groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="ec-size-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all canvas size groups" aria-label="Collapse all canvas size groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></summary>
           <div id="ec-canvas-size-list" class="ec-size-list">
             <!-- nested groups + platform sub-groups + rows injected by buildCanvasSizeMenu() -->
           </div>
@@ -10092,15 +10116,21 @@
       // They operate ONLY on the inner groups inside #ec-canvas-size-list
       // (expandCanvasSizeGroups / resetCanvasSizeGroups), never the top-level accordion.
       // Once-per-window guard mirrors the Palettes pair above.
+      // v2.1 round 231 (Terry) — these icons now live INSIDE the Canvas Size <summary>, so
+      // a click on them would bubble to the summary's round-230 click handler and toggle
+      // the whole Canvas Size section. preventDefault + stopPropagation keep the click on
+      // the icon only — it runs the inner expand/collapse and never opens/closes the
+      // section. (stopPropagation blocks the summary handler; preventDefault blocks the
+      // native <details> toggle as a belt-and-braces guard.)
       const sizeExpand = document.getElementById('ec-size-expand-all');
       const sizeCollapse = document.getElementById('ec-size-collapse-all');
       if (sizeExpand && !sizeExpand.dataset.wired) {
         sizeExpand.dataset.wired = '1';
-        sizeExpand.addEventListener('click', () => { try { expandCanvasSizeGroups(); } catch (_) {} });
+        sizeExpand.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); try { expandCanvasSizeGroups(); } catch (_) {} });
       }
       if (sizeCollapse && !sizeCollapse.dataset.wired) {
         sizeCollapse.dataset.wired = '1';
-        sizeCollapse.addEventListener('click', () => { try { resetCanvasSizeGroups(); } catch (_) {} });
+        sizeCollapse.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); try { resetCanvasSizeGroups(); } catch (_) {} });
       }
       updateColorTargets();
       // v2.1 round 224 (Terry) — wire BOTH contextual Delete buttons (text one inside
@@ -14046,6 +14076,77 @@ function zoomTo(newZoom, centreX, centreY) {
           try { selectText(null); } catch (_) {}
         }
       });
+
+      // v2.1 round 231 (Terry) — HARD INVARIANT: at most ONE top-level
+      // .enhance-collapse subcategory open at any time, enforced at the DOM level by a
+      // MutationObserver on the `open` attribute. Rounds 229/230 only enforced the
+      // accordion on paths that reached focusSubcat (summary CLICK + canvas selection);
+      // ANY other open path leaked multiples — a direct `.open = true`, or a native
+      // <details> toggle that never hit the click handler (real clicks on the Background
+      // / Frame colour subcats did exactly this). Per-path patching failed twice, so the
+      // invariant now lives here and holds REGARDLESS of how a section was opened.
+      //
+      // The observer is the AUTHORITY for "exactly one open + gold". focusSubcat and the
+      // click/selection paths still run (they open the right section); this just
+      // guarantees the result. It picks the focused section = the LAST one to open in the
+      // mutation batch (so the most recent open wins), then synchronously closes every
+      // OTHER section and moves the gold (.color-subcat-active) onto only that summary. If
+      // the batch only CLOSED sections and none remain open, it clears all gold (the
+      // 'emoji' / 'none' / Collapse-all → zero-open case; zero open is allowed).
+      //
+      // SCOPE: only the 11 top-level .enhance-collapse <details> are observed, each with
+      // subtree:false — so the Canvas Size INNER groups (.ec-size-grp / .ec-size-subgrp)
+      // and the Palettes categories (.frame-coll-*) NEVER reach this callback and keep
+      // INDEPENDENT open/close (Instagram + Facebook can both be open).
+      //
+      // It deliberately IGNORES bulkToggling: "Expand all" sets open on all 11 in one
+      // synchronous loop → one coalesced batch → the observer keeps the LAST and collapses
+      // the rest to ONE (intended per Terry's "NEVER more than one"). "Collapse all" only
+      // closes, so it settles at zero open — fine.
+      //
+      // RE-ENTRANCY: closing the other sections fires more `open` mutations; the
+      // _accordionEnforcing guard makes the callback no-op while our own sweep runs, and
+      // because we only ever ACT on sections that are now OPEN (never on closes), there is
+      // no cascade or loop.
+      (function setupAccordionInvariant() {
+        const panel = document.getElementById('enhance-panel');
+        if (!panel || typeof MutationObserver === 'undefined') return;
+        const sections = Array.from(panel.querySelectorAll('.enhance-collapse'));
+        if (!sections.length) return;
+        let _accordionEnforcing = false;
+        const setGold = (det, on) => {
+          const sum = det.querySelector(':scope > summary');
+          if (sum) sum.classList.toggle('color-subcat-active', on);
+        };
+        const obs = new MutationObserver((records) => {
+          if (_accordionEnforcing) return;
+          // Walk the batch in order; the LAST section seen newly-open is the focused one.
+          let focused = null;
+          let sawOpen = false;
+          for (const r of records) {
+            if (r.attributeName !== 'open') continue;
+            const t = r.target;
+            if (sections.indexOf(t) === -1) continue;   // ignore anything not a managed section
+            if (t.open) { focused = t; sawOpen = true; }
+          }
+          _accordionEnforcing = true;
+          try {
+            if (sawOpen && focused) {
+              // Exactly one open + gold: close every other section, gold only the focused.
+              sections.forEach((det) => {
+                const isFocus = (det === focused);
+                if (!isFocus && det.open) det.open = false;
+                setGold(det, isFocus);
+              });
+            } else {
+              // Batch only closed sections. If none remain open, clear all gold.
+              const anyOpen = sections.some((det) => det.open);
+              if (!anyOpen) sections.forEach((det) => setGold(det, false));
+            }
+          } finally { _accordionEnforcing = false; }
+        });
+        sections.forEach((det) => obs.observe(det, { attributes: true, attributeFilter: ['open'], subtree: false }));
+      })();
     })();
 
     // ─── v2.1 (Terry 2026-06-07) — JS tooltip manager for elements
