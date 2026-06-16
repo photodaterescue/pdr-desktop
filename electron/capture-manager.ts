@@ -885,7 +885,14 @@ interface CollageLayout {
   // v2.1 round 142 (Terry) — bgImage: an optional library photo used as
   // the canvas backdrop, faded over the solid bg colour at `opacity`
   // (same idea as the Trees canvas background).
-  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance } };
+  // v2.1 round 235 (Terry) — gradient: an optional GRADIENT backdrop (phase 1 of
+  // "Background textures"). Mutually exclusive with transparent + bgImage (the
+  // editor clears those when a gradient is chosen). Rasterized to an SVG at W×H and
+  // composited as the BOTTOM layer, matching the editor's CSS gradient preview.
+  //   kind  — 'linear' | 'radial'
+  //   angle — CSS linear-gradient angle in degrees (0 = to top, 90 = to right); linear only
+  //   stops — [{ color:'#rrggbb', pos:0..100 }, ...]
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial'; angle?: number; stops: Array<{ color: string; pos: number }> } };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
@@ -902,6 +909,62 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
+
+// v2.1 round 235 (Terry) — build an SVG that reproduces the editor's CSS gradient
+// at the OUTPUT resolution, so the baked background matches the preview exactly.
+//
+// CSS-angle ↔ SVG-vector mapping (the tricky bit — they differ):
+//   • CSS `linear-gradient(Adeg, …)`: 0deg points to the TOP, increasing CLOCKWISE
+//     (90deg = right, 180deg = bottom). The gradient line passes through the box
+//     centre; CSS sizes it so the 0% / 100% stops sit on the lines through the two
+//     corners the gradient line is perpendicular to (the "magic" gradient-line
+//     length L = |W·sinθ| + |H·cosθ|). To match this on a NON-SQUARE canvas we must
+//     work in pixel space (gradientUnits="userSpaceOnUse"), NOT objectBoundingBox
+//     (which would skew the visual angle by the aspect ratio).
+//     Direction unit vector for CSS angle θ: dir = (sinθ, −cosθ) — note the −cos,
+//     because SVG/CSS y grows DOWNWARD while CSS angle 0deg points up. Endpoints:
+//       start(0%) = centre − dir·(L/2),  end(100%) = centre + dir·(L/2).
+//   • CSS `radial-gradient(circle at center, …)` defaults to farthest-corner: a
+//     circle centred on the box with radius = distance centre→farthest corner =
+//     hypot(W/2, H/2). SVG radialGradient with userSpaceOnUse cx/cy/r does the same.
+function buildCollageGradientSvg(
+  W: number,
+  H: number,
+  gradient: { kind: 'linear' | 'radial'; angle?: number; stops: Array<{ color: string; pos: number }> },
+): string {
+  // Sanitize stops (valid hex + clamped pos), sorted by position.
+  const stops = (gradient.stops || [])
+    .map((s) => ({
+      color: /^#([0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(String(s.color || '')) ? String(s.color) : '#ffffff',
+      pos: Math.max(0, Math.min(100, Number(s.pos) || 0)),
+    }))
+    .sort((a, b) => a.pos - b.pos);
+  if (stops.length < 2) {
+    const only = stops[0] ? stops[0].color : '#ffffff';
+    stops.length = 0;
+    stops.push({ color: only, pos: 0 }, { color: only, pos: 100 });
+  }
+  const stopTags = stops
+    .map((s) => `<stop offset="${s.pos}%" stop-color="${s.color}"/>`)
+    .join('');
+
+  let defs: string;
+  if (gradient.kind === 'radial') {
+    const cx = W / 2, cy = H / 2;
+    const r = Math.hypot(W / 2, H / 2);   // farthest-corner radius
+    defs = `<radialGradient id="g" gradientUnits="userSpaceOnUse" cx="${cx}" cy="${cy}" r="${r}">${stopTags}</radialGradient>`;
+  } else {
+    const theta = ((Number.isFinite(gradient.angle) ? (gradient.angle as number) : 135) * Math.PI) / 180;
+    const dx = Math.sin(theta);
+    const dy = -Math.cos(theta);   // CSS 0deg = up; SVG y grows down → negate cos
+    const L = Math.abs(W * Math.sin(theta)) + Math.abs(H * Math.cos(theta));
+    const cx = W / 2, cy = H / 2;
+    const x1 = cx - (dx * L) / 2, y1 = cy - (dy * L) / 2;
+    const x2 = cx + (dx * L) / 2, y2 = cy + (dy * L) / 2;
+    defs = `<linearGradient id="g" gradientUnits="userSpaceOnUse" x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}">${stopTags}</linearGradient>`;
+  }
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs><rect width="${W}" height="${H}" fill="url(#g)"/></svg>`;
+}
 
 // Build a sharp pipeline for ONE collage tile: source → EXIF-rotate →
 // resize to the tile box → the photo's own Enhance bake (mirrors
@@ -1109,6 +1172,23 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
       }
     }
     if (composites.length === 0) return { success: false, error: 'None of the photos could be read.' };
+
+    // v2.1 round 235 (Terry) — optional GRADIENT background (phase 1 of "Background
+    // textures"). Rasterize the gradient SVG at the OUTPUT W×H via sharp and prepend
+    // it as the BOTTOM layer (under the tiles), matching the editor's CSS gradient
+    // preview (see buildCollageGradientSvg for the CSS-angle↔SVG-vector mapping).
+    // Mutually exclusive with transparent + a bg photo (the editor clears those when
+    // a gradient is chosen), so it can't double-composite with the bg-photo below.
+    const gradient = transparent ? undefined : layout.canvas.gradient;
+    if (gradient && Array.isArray(gradient.stops) && gradient.stops.length >= 1) {
+      try {
+        const svg = buildCollageGradientSvg(W, H, gradient);
+        const gradBuf = await sharp(Buffer.from(svg)).png().toBuffer();
+        composites.unshift({ input: gradBuf, left: PAD, top: PAD });
+      } catch (gradErr) {
+        log.warn(`[collage] gradient background skipped (non-fatal): ${(gradErr as Error).message}`);
+      }
+    }
 
     // v2.1 round 142 (Terry) — optional background PHOTO, faded over the
     // solid colour at `opacity`. Prepended (bottom layer) so the tiles

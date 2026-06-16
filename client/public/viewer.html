@@ -2855,6 +2855,30 @@
     .ec-ctgl.is-disabled { opacity: 0.45; cursor: not-allowed; }
     .ec-ctgl.is-disabled:hover { background: transparent; }
     .ec-frame-hint { font-size: 11px; color: #9a93c8; margin-top: 8px; line-height: 1.4; }
+    /* v2.1 round 235 (Terry) — GRADIENT background controls. Preset swatches read
+       as a calm grid (6 per row); the custom panel reuses the .ec-ctgl toggle look
+       for Linear/Radial and small colour-stop chips that arm the shared palette. */
+    .ec-grad-presets { display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; }
+    .ec-grad-swatch {
+      position: relative; height: 26px; border-radius: 7px; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.16); padding: 0; overflow: hidden;
+      transition: transform 100ms, box-shadow 120ms, border-color 120ms;
+    }
+    .ec-grad-swatch:hover { transform: translateY(-1px); border-color: rgba(169,156,255,0.6); }
+    .ec-grad-swatch.active { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.45); }
+    .ec-ctgl-group { display: flex; gap: 6px; }
+    .ec-grad-row { display: flex; align-items: center; gap: 8px; }
+    .ec-grad-stops-label, .ec-grad-stop-hint { font-size: 11px; color: #9a93c8; }
+    .ec-grad-stop-hint { margin-left: auto; }
+    .ec-grad-stop {
+      width: 30px; height: 24px; border-radius: 7px; padding: 0; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.18); background: transparent;
+      display: inline-flex; align-items: center; justify-content: center;
+      transition: box-shadow 120ms, border-color 120ms;
+    }
+    .ec-grad-stop:hover { border-color: rgba(169,156,255,0.6); }
+    .ec-grad-stop.armed { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.5); }
+    .ec-grad-stop-sw { display: block; width: 20px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
     .enhance-collapse { padding: 0; }
@@ -3098,6 +3122,36 @@
                  base, and lowering the photo's Fade blends it back through. -->
             <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The colour above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
             <button id="collage-bg-remove" type="button" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
+          </div>
+          <!-- v2.1 round 235 (Terry) — GRADIENT backgrounds (phase 1 of "Background
+               textures"). A curated preset strip + a small custom panel. Built +
+               wired by buildCollageGradientUi(); the preset swatches and custom
+               controls live here so they sit inside the Background section (which
+               already owns the shared colour palette when Background is focused —
+               round 232). Choosing a preset or a custom change makes the gradient
+               the bg, swapping away colour/photo/transparent. -->
+          <div id="collage-gradient-block" style="margin-top:12px">
+            <div class="enhance-label-row" style="margin-bottom:6px"><label>Gradient</label></div>
+            <div id="collage-gradient-presets" class="ec-grad-presets"></div>
+            <!-- Custom controls -->
+            <div id="collage-gradient-custom" style="margin-top:10px">
+              <div class="ec-grad-row">
+                <div class="ec-ctgl-group" id="collage-gradient-kind" role="group" aria-label="Gradient type">
+                  <button type="button" class="ec-ctgl" data-kind="linear" data-pdr-tooltip="Linear gradient — a straight sweep at the chosen angle">Linear</button>
+                  <button type="button" class="ec-ctgl" data-kind="radial" data-pdr-tooltip="Radial gradient — a soft circle from the centre out">Radial</button>
+                </div>
+              </div>
+              <div class="enhance-control" id="collage-gradient-angle-row" style="margin-top:8px">
+                <div class="enhance-label-row"><label for="collage-gradient-angle">Angle</label><span class="enhance-val" id="collage-gradient-angle-val">135°</span></div>
+                <input type="range" id="collage-gradient-angle" min="0" max="360" step="1" value="135">
+              </div>
+              <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
+                <span class="ec-grad-stops-label">Colours</span>
+                <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <span class="ec-grad-stop-hint" id="collage-gradient-stop-hint"></span>
+              </div>
+            </div>
           </div>
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
@@ -3875,6 +3929,44 @@
     // PNG). Mutually exclusive with a background colour/photo.
     let collageTransparent = false;
     const COLLAGE_CHECKER_BG = 'repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50% / 16px 16px';
+    // v2.1 round 235 (Terry) — GRADIENT background (phase 1 of "Background
+    // textures"). One more mutually-exclusive bg KIND alongside colour / photo /
+    // transparent: when collageBgGradient is non-null it WINS over the others for
+    // both the live preview and the bake. Structured so later phases (radial-glow,
+    // vignette, grain, mesh/duotone) can add sibling kinds without reworking this:
+    //   { kind:'linear'|'radial', angle:<deg, linear only>, stops:[{color:'#rrggbb', pos:0..100}, ...] }
+    // angle is the CSS linear-gradient angle (0deg = to top, 90deg = to right).
+    // Picking a colour / photo / transparent clears it (each bg setter nulls it),
+    // exactly like those three already swap each other today. collageBg is kept
+    // underneath as the legacy base so clearing the gradient restores the colour.
+    let collageBgGradient = null;
+    // The 12 curated presets shown as swatches in the Background section. Each:
+    //   id    — stable key (selection highlight + sticky last-pick if wanted)
+    //   name  — tooltip label
+    //   grad  — a gradient spec (kind/angle/stops) applied verbatim on click
+    // Tasteful 2–3 stop combos; angles use the CSS convention (135deg = down-right).
+    const COLLAGE_GRADIENT_PRESETS = [
+      { id: 'sunset',   name: 'Sunset',    grad: { kind: 'linear', angle: 135, stops: [{ color: '#ff9966', pos: 0 }, { color: '#ff5e62', pos: 100 }] } },
+      { id: 'peach',    name: 'Peach',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffecd2', pos: 0 }, { color: '#fcb69f', pos: 100 }] } },
+      { id: 'gold',     name: 'Gold',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#f6d365', pos: 0 }, { color: '#fda085', pos: 100 }] } },
+      { id: 'ocean',    name: 'Ocean',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#2193b0', pos: 0 }, { color: '#6dd5ed', pos: 100 }] } },
+      { id: 'mint',     name: 'Mint',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#a8edea', pos: 0 }, { color: '#84fab0', pos: 100 }] } },
+      { id: 'forest',   name: 'Forest',    grad: { kind: 'linear', angle: 135, stops: [{ color: '#5a9367', pos: 0 }, { color: '#2c5364', pos: 100 }] } },
+      { id: 'lavender', name: 'Lavender',  grad: { kind: 'linear', angle: 135, stops: [{ color: '#a18cd1', pos: 0 }, { color: '#fbc2eb', pos: 100 }] } },
+      { id: 'dusk',     name: 'Dusk',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#4e54c8', pos: 0 }, { color: '#8f94fb', pos: 100 }] } },
+      { id: 'berry',    name: 'Berry',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#cc2b5e', pos: 0 }, { color: '#753a88', pos: 100 }] } },
+      { id: 'rose',     name: 'Rose',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffafbd', pos: 0 }, { color: '#ffc3a0', pos: 100 }] } },
+      { id: 'mono',     name: 'Mono grey', grad: { kind: 'linear', angle: 135, stops: [{ color: '#e0e0e0', pos: 0 }, { color: '#9a9a9a', pos: 100 }] } },
+      { id: 'glow',     name: 'Soft glow', grad: { kind: 'radial', angle: 0,   stops: [{ color: '#ffffff', pos: 0 }, { color: '#cfd9e8', pos: 100 }] } },
+    ];
+    // v2.1 round 235 (Terry) — when editing a custom gradient, which STOP index the
+    // shared Background colour palette currently writes to (0 or 1), or null when no
+    // stop is armed (a palette pick then sets collageBg as it always has). This lets
+    // the gradient reuse the ONE shared palette: arming a stop re-points
+    // onCollageColorPick at that stop; the palette stays owned by the Background
+    // section (colorTarget stays 'background'), so the round-232 floating-palette
+    // gating is untouched.
+    let collageGradStopEdit = null;
     let collageAspectKey = 'landscape';
     // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
     // driven by collageAspectKey (a named key OR a numeric aspect for presets/custom).
@@ -8731,6 +8823,10 @@
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
+        // v2.1 round 235 (Terry) — the gradient bg kind (null when the bg is
+        // colour/photo/transparent). Plain JSON, so deep-cloned through stringify;
+        // restore re-applies it as the active bg.
+        gradient: collageBgGradient ? { kind: collageBgGradient.kind, angle: collageBgGradient.angle, stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })) } : null,
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
@@ -8764,6 +8860,13 @@
       // editEl is on an about-to-be-discarded layer).
       editingText = null; textEditSnap = null;
       collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageAspectKey = s.aspectKey;
+      // v2.1 round 235 (Terry) — restore the gradient bg (null on old snapshots →
+      // no gradient, i.e. the colour/photo/transparent kind from this snapshot wins).
+      // Deep-copy so the live object isn't shared with the (immutable) snapshot JSON.
+      collageBgGradient = (s.gradient && Array.isArray(s.gradient.stops) && s.gradient.stops.length >= 2)
+        ? { kind: s.gradient.kind === 'radial' ? 'radial' : 'linear', angle: Number.isFinite(s.gradient.angle) ? s.gradient.angle : 135, stops: s.gradient.stops.map((st) => ({ color: st.color, pos: st.pos })) }
+        : null;
+      collageGradStopEdit = null;
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
       // snapshots predate these: sizeId '' = no highlight, exportPx null = legacy 2000px).
       collageSizeId = s.sizeId || '';
@@ -8837,7 +8940,11 @@
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
       collageZTop = maxZ;
-      setCollageBg(collageBg);
+      // v2.1 round 235 (Terry) — repaint the canvas bg directly (NOT via
+      // setCollageBg, which now nulls collageBgGradient as a "colour swaps away
+      // from gradient" guard — that would wipe the gradient we just restored).
+      applyCanvasBgVisual();
+      try { syncCollageGradientUi(); } catch (_) {}
       syncCanvasSizeSelection();   // v2.1 round 226 (Terry) — repaint the selected Canvas Size row on undo/redo
       renderCollageBgLayer();
       updateBgPhotoSwatch();        // v2.1 round 178 — keep the bg-photo swatch in sync on undo/redo
@@ -9137,8 +9244,32 @@
     // v2.1 round 149 (Terry 2026-06-13) — this palette is the BACKGROUND
     // colour ONLY now. The selected tile's frame is driven by the shared
     // Frame chevron (#enhance-frames), the same control the viewer uses.
+    // v2.1 round 235 (Terry) — build the CSS for a gradient spec. The CSS angle
+    // convention (0deg = to top, growing clockwise) is the SAME one the bake maps
+    // to an SVG vector (see capture-manager), so preview == saved. Stops sorted by
+    // pos; safe defaults if a stop is malformed.
+    function collageGradientCss(g) {
+      if (!g || !Array.isArray(g.stops) || g.stops.length < 2) return '';
+      const stops = g.stops
+        .map((s) => ({ color: /^#[0-9a-fA-F]{3,6}$/.test(String(s.color || '')) ? s.color : '#ffffff', pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) }))
+        .sort((a, b) => a.pos - b.pos);
+      const list = stops.map((s) => s.color + ' ' + s.pos + '%').join(', ');
+      if (g.kind === 'radial') return 'radial-gradient(circle at center, ' + list + ')';
+      const angle = Number.isFinite(g.angle) ? g.angle : 135;
+      return 'linear-gradient(' + angle + 'deg, ' + list + ')';
+    }
     function applyCanvasBgVisual() {
-      if (collageCanvasEl) collageCanvasEl.style.background = collageTransparent ? COLLAGE_CHECKER_BG : (collageBg || '#ffffff');
+      if (!collageCanvasEl) return;
+      // v2.1 round 235 (Terry) — a gradient WINS over colour while it's set; the
+      // base colour stays underneath as a fallback (drawn first, then the gradient
+      // layered over it — but gradients here are opaque so it's effectively the
+      // gradient). Transparent still wins over everything (the checkerboard cue).
+      if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
+      if (collageBgGradient) {
+        const css = collageGradientCss(collageBgGradient);
+        if (css) { collageCanvasEl.style.background = css; return; }
+      }
+      collageCanvasEl.style.background = collageBg || '#ffffff';
     }
     // v2.1 round 199 (Terry) — ring + refresh the two LOCKED background specials
     // that the unified palette renders (only when colorTarget==='background').
@@ -9177,6 +9308,10 @@
     // swatch switches straight back to it without re-picking.
     function setCollageTransparent(on) {
       collageTransparent = !!on;
+      // v2.1 round 235 (Terry) — transparent + gradient are mutually exclusive bg
+      // kinds; turning Transparent ON clears any gradient (it would otherwise hide
+      // under the checkerboard and silently come back when Transparent is toggled off).
+      if (collageTransparent) { collageBgGradient = null; collageGradStopEdit = null; }
       applyCanvasBgVisual();
       renderCollageBgLayer();
       markBgLockedSpecialsActive();
@@ -9188,7 +9323,14 @@
       // sentinels are kept so any saved state / older callers still route right.)
       if (hex === '__transparent__') { setCollageTransparent(true); return; }
       if (hex === '__bgphoto__') { setCollageTransparent(false); return; }
-      // A real colour (incl. '') exits transparent mode.
+      // v2.1 round 235 (Terry) — when a gradient STOP is armed, the shared palette
+      // writes to THAT stop's colour instead of the base colour (the gradient stays
+      // the active bg). Empty hex ('' from the no-colour chip) is ignored for a stop.
+      if (collageGradStopEdit != null && collageBgGradient && hex) {
+        setCollageGradientStopColor(collageGradStopEdit, hex);
+        return;
+      }
+      // A real colour (incl. '') exits transparent mode AND the gradient.
       collageTransparent = false;
       setCollageBg(hex || '');
       renderCollageBgLayer();   // re-show the photo if transparent had hidden it
@@ -9196,11 +9338,169 @@
     }
     function setCollageBg(hex) {
       collageBg = hex || '';
+      // v2.1 round 235 (Terry) — picking a plain base colour swaps AWAY from a
+      // gradient (mutually exclusive bg kinds), mirroring how colour/photo/
+      // transparent already swap each other. The stop-edit path bypasses this fn,
+      // so editing a stop's colour never trips this clear.
+      collageBgGradient = null; collageGradStopEdit = null;
       // White is the default base; '' also renders as plain white on screen and
       // bakes to white on save (hexToRgb('') already falls back to white).
       applyCanvasBgVisual();
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
+      try { syncCollageGradientUi(); } catch (_) {}
+    }
+    // v2.1 round 235 (Terry) — set the WHOLE gradient as the bg (from a preset or a
+    // custom-control change). Clears the other mutually-exclusive kinds (transparent
+    // + photo) so it truly swaps in, like picking a colour does. Keeps collageBg as
+    // the underneath base. Repaints preview + the gradient UI (preset highlight,
+    // stop swatches, angle/kind controls).
+    function setCollageGradient(grad) {
+      if (!grad || !Array.isArray(grad.stops) || grad.stops.length < 2) return;
+      collageBgGradient = {
+        kind: grad.kind === 'radial' ? 'radial' : 'linear',
+        angle: Number.isFinite(grad.angle) ? grad.angle : 135,
+        stops: grad.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
+      };
+      // Swap away from the other bg kinds (transparent hides the gradient; a photo
+      // sits on top of the canvas bg, so clear both to make the gradient the bg).
+      collageTransparent = false;
+      if (collageBgImagePath) collageBgImagePath = '';
+      applyCanvasBgVisual();
+      renderCollageBgLayer();   // tears down the (now-cleared) photo layer
+      markBgLockedSpecialsActive();
+      try { syncTextColorPaletteRings(); } catch (_) {}
+      try { syncCollageGradientUi(); } catch (_) {}
+    }
+    // Update one stop's colour in the active gradient + repaint (preview + UI).
+    function setCollageGradientStopColor(idx, hex) {
+      if (!collageBgGradient || !collageBgGradient.stops[idx]) return;
+      collageBgGradient.stops[idx].color = hex || '#ffffff';
+      applyCanvasBgVisual();
+      try { syncCollageGradientUi(); } catch (_) {}
+      try { syncTextColorPaletteRings(); } catch (_) {}
+    }
+    // v2.1 round 235 (Terry) — a sensible default gradient seeded when the user
+    // starts customizing (clicks a stop / flips kind / drags angle) with no gradient
+    // yet. Uses the current base colour → a slightly darker partner so it reads as a
+    // gradient immediately; angle 135° (down-right) is the friendliest default.
+    function defaultCollageGradient() {
+      const base = /^#[0-9a-fA-F]{6}$/.test(collageBg || '') ? collageBg : '#a18cd1';
+      // Darken the base ~35% for the end stop (simple per-channel scale).
+      const n = base.replace('#', '');
+      const r = parseInt(n.slice(0, 2), 16), g = parseInt(n.slice(2, 4), 16), b = parseInt(n.slice(4, 6), 16);
+      const dk = (v) => Math.max(0, Math.round(v * 0.65)).toString(16).padStart(2, '0');
+      const end = '#' + dk(r) + dk(g) + dk(b);
+      return { kind: 'linear', angle: 135, stops: [{ color: base, pos: 0 }, { color: end, pos: 100 }] };
+    }
+    // Arm a gradient stop so the shared Background palette writes to it. Seeds a
+    // default gradient first if there isn't one (so the custom controls work even
+    // before a preset is picked). Re-renders the palette so its active ring tracks
+    // the armed stop's colour, and repaints the stop chips.
+    function armCollageGradientStop(idx) {
+      if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+      collageGradStopEdit = idx;
+      try { renderTextColorPaletteForTarget(); } catch (_) {}
+      try { syncCollageGradientUi(); } catch (_) {}
+    }
+    let collageGradientWired = false;
+    function buildCollageGradientUi() {
+      if (collageGradientWired) return;
+      const block = document.getElementById('collage-gradient-block');
+      if (!block) return;
+      collageGradientWired = true;
+      // Preset swatches.
+      const presetWrap = document.getElementById('collage-gradient-presets');
+      if (presetWrap) {
+        presetWrap.innerHTML = '';
+        COLLAGE_GRADIENT_PRESETS.forEach((p) => {
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ec-grad-swatch'; b.dataset.gradId = p.id;
+          b.style.background = collageGradientCss(p.grad);
+          b.setAttribute('data-pdr-tooltip', p.name);
+          b.setAttribute('aria-label', p.name);
+          // Click → make this preset the bg (panel wrapper makes it one undo step).
+          b.addEventListener('click', () => { collageGradStopEdit = null; setCollageGradient(p.grad); });
+          presetWrap.appendChild(b);
+        });
+      }
+      // Linear / Radial toggle.
+      document.querySelectorAll('#collage-gradient-kind .ec-ctgl').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+          collageBgGradient.kind = btn.dataset.kind === 'radial' ? 'radial' : 'linear';
+          applyCanvasBgVisual();
+          syncCollageGradientUi();
+        });
+      });
+      // Angle slider (linear only). Drag is one undo step via the panel wrapper.
+      const angle = document.getElementById('collage-gradient-angle');
+      if (angle) {
+        angle.addEventListener('input', () => {
+          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+          collageBgGradient.angle = parseInt(angle.value, 10) || 0;
+          const v = document.getElementById('collage-gradient-angle-val');
+          if (v) v.textContent = collageBgGradient.angle + '°';
+          applyCanvasBgVisual();
+          // Don't re-render the whole UI mid-drag (would rebuild swatches); just
+          // refresh the live preview + the value label above.
+        });
+      }
+      // Stop colour chips — arm the shared palette to write that stop.
+      document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
+        chip.addEventListener('click', () => armCollageGradientStop(parseInt(chip.dataset.stop, 10) || 0));
+      });
+      syncCollageGradientUi();
+    }
+    // Reflect the current gradient state into the Background gradient controls:
+    // active preset highlight, stop swatch colours + armed ring, kind toggle,
+    // angle value + show/hide (radial has no angle), and the arm hint.
+    function syncCollageGradientUi() {
+      const block = document.getElementById('collage-gradient-block');
+      if (!block) return;
+      const g = collageBgGradient;
+      // Active preset: ring the one whose spec matches the live gradient exactly.
+      document.querySelectorAll('#collage-gradient-presets .ec-grad-swatch').forEach((sw) => {
+        const p = COLLAGE_GRADIENT_PRESETS.find((x) => x.id === sw.dataset.gradId);
+        const match = !!(g && p && gradientsEqual(g, p.grad));
+        sw.classList.toggle('active', match);
+      });
+      // Kind toggle.
+      document.querySelectorAll('#collage-gradient-kind .ec-ctgl').forEach((btn) => {
+        btn.classList.toggle('active', !!g && (g.kind || 'linear') === btn.dataset.kind);
+      });
+      // Angle row — only meaningful for linear.
+      const angleRow = document.getElementById('collage-gradient-angle-row');
+      const angle = document.getElementById('collage-gradient-angle');
+      const angleVal = document.getElementById('collage-gradient-angle-val');
+      const isLinear = !g || (g.kind || 'linear') === 'linear';
+      if (angleRow) angleRow.style.display = isLinear ? '' : 'none';
+      if (angle && g) angle.value = String(Number.isFinite(g.angle) ? g.angle : 135);
+      if (angleVal && g) angleVal.textContent = (Number.isFinite(g.angle) ? g.angle : 135) + '°';
+      // Stop chips.
+      document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
+        const idx = parseInt(chip.dataset.stop, 10) || 0;
+        const sw = chip.querySelector('.ec-grad-stop-sw');
+        const col = (g && g.stops[idx]) ? g.stops[idx].color : '';
+        if (sw) sw.style.background = col || 'transparent';
+        chip.classList.toggle('armed', collageGradStopEdit === idx && !!g);
+      });
+      // Hint.
+      const hint = document.getElementById('collage-gradient-stop-hint');
+      if (hint) hint.textContent = (g && collageGradStopEdit != null) ? 'pick a colour →' : '';
+    }
+    // Compare two gradient specs for preset-highlight purposes (kind, angle for
+    // linear, and each stop's colour+pos). Tolerant of minor numeric drift.
+    function gradientsEqual(a, b) {
+      if (!a || !b) return false;
+      if ((a.kind || 'linear') !== (b.kind || 'linear')) return false;
+      if ((a.kind || 'linear') === 'linear' && Math.abs((a.angle || 0) - (b.angle || 0)) > 0.5) return false;
+      if (!Array.isArray(a.stops) || !Array.isArray(b.stops) || a.stops.length !== b.stops.length) return false;
+      for (let i = 0; i < a.stops.length; i++) {
+        if (String(a.stops[i].color || '').toLowerCase() !== String(b.stops[i].color || '').toLowerCase()) return false;
+        if (Math.abs((a.stops[i].pos || 0) - (b.stops[i].pos || 0)) > 0.5) return false;
+      }
+      return true;
     }
     function initCollageColorPicker() {
       if (collageColorWired) return;
@@ -9270,6 +9570,10 @@
       const fresh = path && path !== collageBgImagePath;
       // v2.1 round 177 — a background photo and transparent are mutually exclusive.
       if (path && collageTransparent) { collageTransparent = false; applyCanvasBgVisual(); markCollageColorActive(); }
+      // v2.1 round 235 (Terry) — a background photo and a gradient are mutually
+      // exclusive too; choosing a photo clears the gradient so it doesn't linger
+      // under the photo layer + reappear when the photo is removed.
+      if (path && collageBgGradient) { collageBgGradient = null; collageGradStopEdit = null; applyCanvasBgVisual(); try { syncCollageGradientUi(); } catch (_) {} }
       collageBgImagePath = path || '';
       // A brand-new background photo starts with clean enh (a previous
       // photo's Look shouldn't carry over); undo/restore set enh directly.
@@ -9336,7 +9640,11 @@
       w = Math.max(120, w); h = Math.max(120, h);
       collageCanvasEl.style.width = w + 'px';
       collageCanvasEl.style.height = h + 'px';
-      collageCanvasEl.style.background = collageBg;
+      // v2.1 round 235 (Terry) — route through applyCanvasBgVisual so a resize keeps
+      // the correct bg KIND (gradient / transparent / colour). The old direct
+      // `= collageBg` assignment ignored transparent + the new gradient, wiping them
+      // on any canvas relayout.
+      applyCanvasBgVisual();
       renderAllCollage();
       renderAllTexts();   // v2.1 round 185 (Text #1) — reposition/resize text on canvas resize
     }
@@ -9379,6 +9687,18 @@
           enh: it.enh,
         }));
         const canvas = { w: W, h: H, bg: collageBg, transparent: collageTransparent };
+        // v2.1 round 235 (Terry) — GRADIENT bg: send the spec (kind/angle/stops) so
+        // the bake builds a matching SVG gradient at W×H and composites it as the
+        // bottom layer. Mutually exclusive with transparent + a bg photo (the setters
+        // clear those when a gradient is chosen), so it can't double up. When the bg
+        // is colour/photo/transparent this is omitted and the legacy paths run.
+        if (collageBgGradient && !collageTransparent) {
+          canvas.gradient = {
+            kind: collageBgGradient.kind === 'radial' ? 'radial' : 'linear',
+            angle: Number.isFinite(collageBgGradient.angle) ? collageBgGradient.angle : 135,
+            stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
+          };
+        }
         // v2.1 round 142 — background photo baked under the tiles.
         // v2.1 round 149 — with its own enh (Look/levels) + Fade opacity.
         if (collageBgImagePath) {
@@ -9795,6 +10115,9 @@
       window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
       // v2.1 round 149 — background COLOUR picker (background-only now).
       initCollageColorPicker();
+      // v2.1 round 235 (Terry) — build the gradient preset strip + custom controls
+      // (idempotent; wires the presets, Linear/Radial toggle, angle slider, stop chips).
+      buildCollageGradientUi();
       // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
       // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
       // shared Colour Palette (pickBackground, called inside the locked swatch's
@@ -10697,7 +11020,10 @@
       } else if (colorTarget === 'background') {
         renderTextColorPalette(
           host,
-          () => (collageBg || ''),
+          // v2.1 round 235 (Terry) — when a gradient STOP is armed, ring the stop's
+          // colour (so the palette reflects what the next pick edits); otherwise ring
+          // the base colour as before.
+          () => ((collageGradStopEdit != null && collageBgGradient && collageBgGradient.stops[collageGradStopEdit]) ? (collageBgGradient.stops[collageGradStopEdit].color || '') : (collageBg || '')),
           // v2.1 round 200 (Terry) — BUG2: make each background colour pick exactly
           // ONE clean undo step. beginCollageChange()/commitCollageChange() wrap the
           // change; because commit nulls collagePendingSnap after pushing, the
@@ -10994,6 +11320,11 @@
       // available chip (or is a disabled one), fall back to the first enabled chip.
       const valid = chips.find((c) => c.t === colorTarget && !c.disabled);
       if (!valid) { const first = chips.find((c) => !c.disabled) || chips[0]; colorTarget = first.t; }
+      // v2.1 round 235 (Terry) — leaving the Background target disarms any armed
+      // gradient stop, so a later plain colour pick (Text/Frame/Effect) never gets
+      // misrouted into a stop. Refresh the gradient controls for the live state too.
+      if (colorTarget !== 'background') collageGradStopEdit = null;
+      try { syncCollageGradientUi(); } catch (_) {}
       // (Re)build the chip buttons (reuse the .ec-ctgl toggle styling).
       wrap.innerHTML = '';
       chips.forEach((c) => {
