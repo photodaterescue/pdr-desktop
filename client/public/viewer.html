@@ -2345,9 +2345,10 @@
        (b) the floating toolbar, (c) a Lock state. The .ch-toolbar / .ch-tb-btn
        base styles above are unscoped, so they already apply to .collage-text;
        we only add the .selected reveal + the corner/side handle geometry here.
-       Resize stays PROPORTIONAL (uniform sizeFrac) from every handle — the side
-       handles are grab-point parity, NOT non-uniform stretch (text/emoji must
-       never distort or the bake aspect changes). */
+       v2.1 round 222 (Terry) — CORNERS resize PROPORTIONALLY (uniform sizeFrac);
+       the SIDE handles now NON-UNIFORMLY STRETCH (scaleX/scaleY) like a photo can
+       be stretched (see startTextResize). Handle geometry is unchanged — the sides
+       sit on the mid-edges of the stretched bounding box. */
     .collage-text .ch-resize {
       width: 14px; height: 14px;
       right: auto; bottom: auto;       /* corner/side classes below set position */
@@ -2360,8 +2361,8 @@
     .collage-text .ch-res-br { right: -7px; bottom: -7px; left: auto; top: auto; cursor: nwse-resize; }
     /* 4 SIDE mid-edges — Terry explicitly asked for "corners AND sides". Photos
        have corners only (the tile's edge bars are CROP, not resize), so these are
-       NEW to the bounding box. Centred on each edge; ew/ns cursors. Resize is
-       still proportional (see startTextResize) — these are grab-point parity. */
+       NEW to the bounding box. Centred on each edge; ew/ns cursors. v2.1 round 222
+       (Terry) — the sides NON-UNIFORMLY STRETCH (scaleX/scaleY; see startTextResize). */
     .collage-text .ch-res-l { left: -7px; top: 50%; margin-top: -7px; right: auto; bottom: auto; cursor: ew-resize; }
     .collage-text .ch-res-r { right: -7px; top: 50%; margin-top: -7px; left: auto; bottom: auto; cursor: ew-resize; }
     .collage-text .ch-res-t { top: -7px; left: 50%; margin-left: -7px; right: auto; bottom: auto; cursor: ns-resize; }
@@ -6309,11 +6310,11 @@
         tRot.innerHTML = '<svg viewBox="0 0 16 16" fill="currentColor"><path fill-rule="evenodd" d="M8 3a5 5 0 1 0 4.546 2.914.5.5 0 0 1 .908-.417A6 6 0 1 1 8 2z"/><path d="M8 4.466V.534a.25.25 0 0 1 .41-.192l2.36 1.966c.12.1.12.284 0 .384L8.41 4.658A.25.25 0 0 1 8 4.466"/></svg>';
         // v2.1 round 221 (Terry) — PHOTO PARITY: the bounding box now shows the
         // full 8-handle set — 4 CORNERS (reusing the tile .ch-res-* corner CSS)
-        // + 4 SIDE mid-edges (.ch-res-l/r/t/b, new for text/emoji). Every handle
-        // resizes PROPORTIONALLY (uniform sizeFrac scale from the centre) so text/
-        // emoji never distort and the bake aspect is unchanged — the side handles
-        // are grab-point parity, NOT non-uniform stretch. The grabbed handle's
-        // name is passed to startTextResize so it anchors the OPPOSITE point.
+        // + 4 SIDE mid-edges (.ch-res-l/r/t/b, new for text/emoji). v2.1 round 222
+        // (Terry) — CORNERS resize PROPORTIONALLY (uniform sizeFrac from the centre);
+        // the SIDE handles NON-UNIFORMLY STRETCH (scaleX/scaleY), like stretching a
+        // photo. The grabbed handle's name is passed to startTextResize, which anchors
+        // the OPPOSITE edge for the side stretch.
         const mkRes = (cls, tip) => { const d = document.createElement('div'); d.className = 'ch ch-resize ' + cls; d.setAttribute('data-pdr-tooltip', tip); return d; };
         const tResTL = mkRes('ch-res-tl', 'Resize'); const tResTR = mkRes('ch-res-tr', 'Resize');
         const tResBL = mkRes('ch-res-bl', 'Resize'); const tResBR = mkRes('ch-res-br', 'Resize');
@@ -6343,8 +6344,9 @@
           if (editingText === layer) { e.stopPropagation(); return; }
           startTextDrag(layer, e);
         });
-        // v2.1 round 221 (Terry) — every resize handle (corners + sides) drives the
-        // SAME proportional resize; the grabbed handle name anchors the opposite.
+        // v2.1 round 221 (Terry) — all 8 handles call startTextResize with their name.
+        // v2.1 round 222 (Terry) — corners → proportional (sizeFrac); sides → stretch
+        // (scaleX/scaleY). The grabbed handle name selects the path + anchors the side.
         tResTL.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'tl'));
         tResTR.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'tr'));
         tResBL.addEventListener('pointerdown', (e) => startTextResize(layer, e, 'bl'));
@@ -6400,15 +6402,35 @@
       const _inkH = (typeof canvas._inkH === 'number') ? canvas._inkH : Math.max(1, canvas.height - 2 * _pad);
       const _fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
       const _g = Math.round(_fontPx * 0.16);   // uniform gap (Canva SS3): snug, clearly not touching the letters, same on all 4 sides
-      el.style.width = (_inkW + 2 * _g) + 'px';
-      el.style.height = (_inkH + 2 * _g) + 'px';
+      // v2.1 round 222 (Terry) — NON-UNIFORM STRETCH via the SIDE handles. scaleX/
+      // scaleY (default 1) stretch the ink one axis WITHOUT touching renderTextToCanvas
+      // (the base canvas is always rendered at sizeFrac, i.e. unstretched) — the stretch
+      // is a pure CSS scale applied to the canvas AND, while editing, to the transparent
+      // contentEditable overlay, with the SAME factors about the SAME wrapper point, so
+      // the round-218 no-jump / caret-alignment holds for a stretched layer too.
+      //   • BASE box  = ink + 2g (the round-216 snug box, unstretched).
+      //   • STRETCHED box (the WRAPPER) = ink*scale + 2g → the handles + toolbar (which
+      //     live on the wrapper, NOT scaled) land on the VISIBLE stretched edges and
+      //     round-206 snapping uses the real stretched bounds.
+      // At scaleX=scaleY=1 every value below reduces to the round-221 layout byte-for-
+      // byte (canvas at g−pad, overlay at 0/0, scale(1,1) inert), so unstretched layers
+      // are completely unchanged.
+      const _sX = (typeof layer.scaleX === 'number' && layer.scaleX > 0) ? layer.scaleX : 1;
+      const _sY = (typeof layer.scaleY === 'number' && layer.scaleY > 0) ? layer.scaleY : 1;
+      const _Wb = _inkW + 2 * _g, _Hb = _inkH + 2 * _g;            // base (unstretched) box
+      const _W = _inkW * _sX + 2 * _g, _H = _inkH * _sY + 2 * _g;  // stretched box = the wrapper
+      el.style.width = _W + 'px';
+      el.style.height = _H + 'px';
       canvas.style.position = 'absolute';
-      // Float the canvas so its ink area (which starts at +pad inside the canvas)
-      // lands at +g inside the box → offset = g - pad = -(pad - g), SAME on both
-      // axes. With the box = ink+2g and the canvas centred on the ink, the canvas
-      // centre coincides with the box centre, so the box wraps the text uniformly.
-      canvas.style.left = (_g - _pad) + 'px';
-      canvas.style.top = (_g - _pad) + 'px';
+      // Centre the (unscaled) base canvas in the STRETCHED wrapper so its centre ==
+      // the ink centre == the wrapper centre; then transform-origin:center + scale()
+      // grows the ink symmetrically about that centre (== the xFrac/yFrac bake anchor).
+      // (W−canvas.width)/2 reduces to g−pad when unstretched, so this is the round-216
+      // float offset in that case.
+      canvas.style.left = ((_W - canvas.width) / 2) + 'px';
+      canvas.style.top = ((_H - canvas.height) / 2) + 'px';
+      canvas.style.transformOrigin = 'center center';
+      canvas.style.transform = 'scale(' + _sX + ',' + _sY + ')';
       // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
       // contentEditable box stands in for the rendered text: keep the canvas in
       // the DOM (so the swap bookkeeping stays valid) but HIDDEN, and re-sync the
@@ -6424,6 +6446,24 @@
         else el.insertBefore(canvas, el.firstChild);
         layer.canvasEl = canvas;
         styleTextEditable(layer);
+        // v2.1 round 222 (Terry) — carry the IDENTICAL stretch on the overlay so it
+        // stays pixel-aligned with the canvas while editing a stretched layer (no-jump
+        // preserved). styleTextEditable (untouched) leaves the overlay at the BASE box
+        // with its glyph-exact margin-top; we (a) pin the overlay width to the BASE box
+        // _Wb (its CSS width:100% would otherwise be the STRETCHED wrapper width), and
+        // (b) shift the overlay box by the SAME (dx,dy) the canvas moved so its ink
+        // coincides with the canvas ink PRE-scale, then (c) scale about the SAME wrapper
+        // centre. transform-origin is the wrapper centre expressed in the overlay's own
+        // border-box coords: x = _Wb/2; y = _Hb/2 − marginTop (the abspos margin-top
+        // shifts the border box down by marginTop, so we subtract it to hit the centre).
+        // All of (a)-(c) are no-ops at scale 1 → round-218 layout is byte-identical.
+        const ed = layer.editEl;
+        const _mt = parseFloat(ed.style.marginTop) || 0;
+        ed.style.width = _Wb + 'px';
+        ed.style.left = ((_W - _Wb) / 2) + 'px';
+        ed.style.top = ((_H - _Hb) / 2) + 'px';
+        ed.style.transformOrigin = (_Wb / 2) + 'px ' + ((_Hb / 2) - _mt) + 'px';
+        ed.style.transform = 'scale(' + _sX + ',' + _sY + ')';
       } else {
         if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
         else el.insertBefore(canvas, el.firstChild);
@@ -6651,7 +6691,7 @@
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, scaleX: 1, scaleY: 1, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -7000,7 +7040,7 @@
       beginCollageChange();
       const layer = {
         id: collageTextSeq++, isEmoji: true, text: ch,
-        xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.12, rot: 0,
+        xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.12, scaleX: 1, scaleY: 1, rot: 0,   // v2.1 round 222 (Terry) — scaleX/scaleY: SIDE handles stretch an emoji one axis (1 = unstretched)
         z: collageTexts.length + 1,
         // Carried for engine compatibility (snapshot/restore + renderTextToCanvas
         // read these), but the emoji branch ignores them — colour emoji are bitmaps.
@@ -7077,7 +7117,9 @@
       const topZ = collageTexts.reduce((m, t) => Math.max(m, t.z || 0), 0) + 1;
       const clone = {
         id: collageTextSeq++, isEmoji: !!layer.isEmoji, text: layer.text,
-        xFrac: nx, yFrac: ny, sizeFrac: layer.sizeFrac, font: layer.font,
+        xFrac: nx, yFrac: ny, sizeFrac: layer.sizeFrac,
+        scaleX: (typeof layer.scaleX === 'number') ? layer.scaleX : 1, scaleY: (typeof layer.scaleY === 'number') ? layer.scaleY : 1,   // v2.1 round 222 (Terry) — the clone copies the non-uniform stretch
+        font: layer.font,
         color: layer.color, align: layer.align, rot: layer.rot, z: topZ,
         bold: !!layer.bold, italic: !!layer.italic, underline: !!layer.underline,
         effect: layer.effect || 'none',
@@ -7148,21 +7190,92 @@
     // (start dist), applied to the size. Text is CENTRE-anchored (xFrac/yFrac
     // is the centre), so the centre is fixed and only sizeFrac changes. One
     // undo step per gesture.
-    // v2.1 round 221 (Terry) — now reachable from ALL 8 handles (4 corners + 4
-    // sides). `handle` is 'tl'|'tr'|'bl'|'br'|'l'|'r'|'t'|'b' (defaults to 'br').
-    // Resize is PROPORTIONAL from EVERY handle: text/emoji are centre-anchored and
-    // scaled uniformly via sizeFrac (height follows the ink, aspect preserved), so
-    // the side handles behave exactly like the corners — they are grab-point parity,
-    // never a non-uniform stretch (the bake aspect must not change). Distance-from-
-    // centre drives the scale, same as before; the extra `handle` arg is accepted so
-    // every handle can call in, but the math is intentionally handle-agnostic.
+    // v2.1 round 221 (Terry) — reachable from ALL 8 handles (4 corners + 4 sides).
+    // `handle` is 'tl'|'tr'|'bl'|'br'|'l'|'r'|'t'|'b' (defaults to 'br').
+    // v2.1 round 222 (Terry) — CORNERS stay PROPORTIONAL (uniform sizeFrac scale
+    // from the centre, exactly as round 221 — branch below). The SIDE handles now do
+    // a NON-UNIFORM STRETCH (like stretching a photo): left/right set scaleX, top/
+    // bottom set scaleY, anchoring the OPPOSITE edge so dragging the right edge
+    // widens to the right with the left edge fixed (etc.). scaleX/scaleY feed the CSS
+    // transform in renderTextLayer + the bake; sizeFrac is untouched by the sides.
     function startTextResize(layer, e, handle) {
       e.preventDefault(); e.stopPropagation();
       // v2.1 round 221 (Terry) — locked: select but don't resize (handles are also
       // hidden by CSS while locked, so this is a belt-and-braces guard).
       if (layer && layer.locked) { selectText(layer); return; }
+      const h = handle || 'br';
+      const isSide = (h === 'l' || h === 'r' || h === 't' || h === 'b');
       beginCollageChange();
       selectText(layer);
+      // ── SIDE handle → NON-UNIFORM STRETCH (v2.1 round 222) ───────────────────
+      if (isSide) {
+        const rect = collageCanvasEl.getBoundingClientRect();
+        const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+        // content-px per screen-px (collage canvas preserves aspect → one factor).
+        const sPx = (rect.width > 0) ? (cw / rect.width) : 1;
+        const th = (layer.rot || 0) * Math.PI / 180;
+        const cos = Math.cos(th), sin = Math.sin(th);
+        // Base (UNSTRETCHED) ink size in content px + the snug gap, read off the live
+        // canvas (same metrics renderTextLayer/renderTextToCanvas use). The stretch
+        // only scales the ink; the gap g is a constant margin on each side.
+        const cnv = layer.canvasEl;
+        const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
+        const g = Math.round(fontPx * 0.16);
+        const bInkW = (cnv && typeof cnv._inkW === 'number') ? cnv._inkW : Math.max(1, fontPx);
+        const bInkH = (cnv && typeof cnv._inkH === 'number') ? cnv._inkH : Math.max(1, fontPx);
+        const sX0 = (typeof layer.scaleX === 'number' && layer.scaleX > 0) ? layer.scaleX : 1;
+        const sY0 = (typeof layer.scaleY === 'number' && layer.scaleY > 0) ? layer.scaleY : 1;
+        const W0 = bInkW * sX0 + 2 * g, H0 = bInkH * sY0 + 2 * g;   // start box (content px)
+        const cx0 = (layer.xFrac || 0) * cw, cy0 = (layer.yFrac || 0) * ch;   // start centre (content px)
+        // The OPPOSITE edge (the one we anchor) in the start-centred LOCAL frame.
+        const horiz = (h === 'l' || h === 'r');
+        const fixed = horiz ? ((h === 'r') ? -W0 / 2 : W0 / 2)
+                            : ((h === 'b') ? -H0 / 2 : H0 / 2);
+        // Screen position of the start centre (projection origin for the pointer).
+        const csx = rect.left + (layer.xFrac || 0) * rect.width;
+        const csy = rect.top + (layer.yFrac || 0) * rect.height;
+        const STRETCH_MIN = 0.2, STRETCH_MAX = 6;   // sane clamp (photo-like range)
+        const move = (ev) => {
+          const rx = ev.clientX - csx, ry = ev.clientY - csy;
+          // pointer in the box's LOCAL frame (un-rotate), content px.
+          const lx = (rx * cos + ry * sin) * sPx;
+          const ly = (-rx * sin + ry * cos) * sPx;
+          if (horiz) {
+            const dragged = lx;                       // dragged edge local-x
+            const newSize = Math.max(1, Math.abs(dragged - fixed));
+            let ns = (newSize - 2 * g) / bInkW;
+            ns = Math.max(STRETCH_MIN, Math.min(STRETCH_MAX, ns));
+            const newW = bInkW * ns + 2 * g;
+            // Move the centre so the opposite edge stays put (anchored).
+            const relCx = fixed - Math.sign(fixed) * (newW / 2);   // new centre rel. start centre, local-x
+            const dxC = relCx * cos, dyC = relCx * sin;            // local→canvas
+            layer.scaleX = ns;
+            layer.xFrac = Math.max(0, Math.min(1, (cx0 + dxC) / cw));
+            layer.yFrac = Math.max(0, Math.min(1, (cy0 + dyC) / ch));
+          } else {
+            const dragged = ly;                       // dragged edge local-y
+            const newSize = Math.max(1, Math.abs(dragged - fixed));
+            let ns = (newSize - 2 * g) / bInkH;
+            ns = Math.max(STRETCH_MIN, Math.min(STRETCH_MAX, ns));
+            const newH = bInkH * ns + 2 * g;
+            const relCy = fixed - Math.sign(fixed) * (newH / 2);   // new centre rel. start centre, local-y
+            const dxC = -relCy * sin, dyC = relCy * cos;           // local→canvas
+            layer.scaleY = ns;
+            layer.xFrac = Math.max(0, Math.min(1, (cx0 + dxC) / cw));
+            layer.yFrac = Math.max(0, Math.min(1, (cy0 + dyC) / ch));
+          }
+          renderTextLayer(layer);
+        };
+        const up = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          commitCollageChange();
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        return;
+      }
+      // ── CORNER handle → PROPORTIONAL resize (round 221, unchanged) ────────────
       const rect = collageCanvasEl.getBoundingClientRect();
       const centerX = rect.left + (layer.xFrac || 0) * rect.width;
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
@@ -8064,7 +8177,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips
         selTextId: selectedText ? selectedText.id : null,
       });
     }
@@ -8151,7 +8264,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -8673,8 +8786,30 @@
         // composites the bitmap ON TOP of the tiles (no font dependency in
         // sharp). xFrac/yFrac are the layer CENTRE; rot in degrees.
         const outputShortPx = Math.min(W, H);
+        // v2.1 round 222 (Terry) — bake the NON-UNIFORM STRETCH into the PNG so the
+        // saved collage matches the preview. renderTextToCanvas always renders the
+        // base (unstretched) glyph canvas; here we draw it onto a canvas scaled by
+        // (scaleX × scaleY) — the whole canvas (ink + symmetric pad) scales, so the
+        // ink stays CENTRED in the PNG. capture-manager composites the PNG centred on
+        // xFrac/yFrac unchanged, and the preview centres the stretched ink on the same
+        // point, so preview == saved. scaleX/scaleY default 1 → 1:1 draw == today's
+        // output byte-for-byte for unstretched layers.
+        const stretchTextPng = (t) => {
+          const base = renderTextToCanvas(t, outputShortPx);
+          const sx = (typeof t.scaleX === 'number' && t.scaleX > 0) ? t.scaleX : 1;
+          const sy = (typeof t.scaleY === 'number' && t.scaleY > 0) ? t.scaleY : 1;
+          if (sx === 1 && sy === 1) return base.toDataURL('image/png');
+          const out = document.createElement('canvas');
+          out.width = Math.max(1, Math.round(base.width * sx));
+          out.height = Math.max(1, Math.round(base.height * sy));
+          const octx = out.getContext('2d');
+          octx.imageSmoothingEnabled = true;
+          octx.imageSmoothingQuality = 'high';
+          octx.drawImage(base, 0, 0, base.width, base.height, 0, 0, out.width, out.height);
+          return out.toDataURL('image/png');
+        };
         const texts = collageTexts.map((t) => ({
-          pngBase64: renderTextToCanvas(t, outputShortPx).toDataURL('image/png'),
+          pngBase64: stretchTextPng(t),
           xFrac: t.xFrac, yFrac: t.yFrac, rot: t.rot || 0,
         }));
         const layout = { canvas, items, texts };
