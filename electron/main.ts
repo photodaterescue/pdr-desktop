@@ -11421,7 +11421,8 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     // viewer:getPendingFileList; keeps the 6k-path list out of the URL).
     const payload = { files: filePaths, startIndex: start, collage: isCollage };
     const title = isCollage
-      ? `Collage (${filePaths.length}) — PDR Collage`
+      // v2.1 round 241 (Terry) — user-facing feature rename Collage → Collages.
+      ? `Collages (${filePaths.length}) — PDR Collages`
       : filePaths.length === 1
         ? fileNames[0] + ' — PDR Viewer'
         : `${start + 1} of ${filePaths.length} — PDR Viewer`;

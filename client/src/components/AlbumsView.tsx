@@ -3697,6 +3697,18 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 <FolderPlus className="w-3.5 h-3.5" />
                 New album
               </Button>
+              {/* v2.1 round 241 (Terry) — standalone "New collage" workspace
+                  entry point, sitting with New folder / New album because a
+                  collage is a creative artefact that lives alongside albums
+                  (saved collages even gather into the "PDR Collages" album,
+                  round 162). Opens a FRESH, empty collage window; the user
+                  populates it via the in-collage "Add photos". Same
+                  openCollageComposer helper the selection "Create collage"
+                  actions use — passing no paths opens it empty. */}
+              <Button variant="secondary" size="sm" onClick={() => { void openCollageComposer(); }} className="gap-1 px-3 py-1 h-auto text-xs" data-testid="button-create-collage">
+                <LayoutGrid className="w-3.5 h-3.5" />
+                New collage
+              </Button>
             </div>
           )}
         </div>

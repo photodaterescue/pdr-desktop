@@ -94,6 +94,7 @@ import {
   formatBytesToGB,
   PreScanResult,
   openPeopleWindow,
+  openCollageComposer,
   resetTagAnalysis,
   listBackups,
   restoreFromBackup,
@@ -1298,6 +1299,16 @@ const handleActivateLicense = () => {
   // cluster data is already cached, face crops are already loaded.
   const handleOpenPeople = () => {
     openPeopleWindow();
+  };
+
+  // v2.1 round 241 (Terry) — standalone "Collages" entry. Opens a FRESH,
+  // empty collage in the dedicated collage window (no preselected photos);
+  // the user populates it via the in-collage "Add photos" (round 208). The
+  // existing photo→collage flow (select 2+ photos in S&D/Memories/Albums →
+  // "Create collage") is untouched — it still calls openCollageComposer with
+  // the chosen paths. Passing no arg uses the helper's [] default.
+  const handleOpenCollages = () => {
+    void openCollageComposer();
   };
 
   // Listen for open-settings events from other windows (e.g., People window)
@@ -3190,6 +3201,7 @@ return (
 		  onNavigateToBestPractices={() => setActivePanel('best-practices')}
 		  searchResultsActive={searchResultsActive}
 		  onOpenPeople={handleOpenPeople}
+		  onOpenCollages={handleOpenCollages}
 		  burgerPulseDisabled={burgerPulseDisabled}
 		  analysisActive={isScanning}
 		/>
@@ -3922,7 +3934,7 @@ return (
 
 type ActiveView = 'dashboard' | 'search' | 'memories' | 'familytree' | 'recycle';
 
-function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, burgerPulseDisabled = false, highlightedSourceId = null, analysisActive = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null, analysisActive?: boolean }) {
+function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource, onRemoveSource, activePanel, onPanelChange, onDashboardClick, onSettingsClick, onStartTour, isLicensed, onLicenseRequired, onFeatureLocked, onNavigateToBestPractices, searchResultsActive, activeView, onViewChange, onOpenPeople, onOpenCollages, burgerPulseDisabled = false, highlightedSourceId = null, analysisActive = false }: { sources: Source[], onSourceClick: (id: string, shiftKey: boolean) => void, onSelectAll: (checked: boolean) => void, isComplete: boolean, onAddSource: () => void, onRemoveSource: () => void, activePanel: string | null, onPanelChange: (panel: string | null) => void, onDashboardClick: () => void, onSettingsClick: () => void, onStartTour: () => void, isLicensed: boolean, onLicenseRequired: () => void, onFeatureLocked: (feature: TeaserFeature) => void, onNavigateToBestPractices?: () => void, searchResultsActive?: boolean, activeView?: ActiveView, onViewChange?: (view: ActiveView) => void, onOpenPeople: () => void, onOpenCollages: () => void, burgerPulseDisabled?: boolean, highlightedSourceId?: string | null, analysisActive?: boolean }) {
   const allSelected = sources.length > 0 && sources.every(s => s.selected);
   const someSelected = sources.some(s => s.selected) && !allSelected;
   const hasSelectedSources = sources.some(s => s.selected);
@@ -4476,6 +4488,19 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           false,
           'pink',
         )}
+        {/* v2.1 round 241 (Terry) — collapsed-rail "Collages" entry,
+            mirroring the expanded Tools row so the icon position stays
+            stable across collapse/expand. Opens a fresh empty collage in
+            its own window (no active-highlight state, like People
+            Manager). LayoutGrid = the shared collage icon. */}
+        {iconBtn(
+          'Collages',
+          <LayoutGrid className="w-4 h-4" />,
+          () => onOpenCollages(),
+          false,
+          false,
+          'amber',
+        )}
         {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor entry
             removed. The standalone Date Editor window is replaced by
             the inline date-editing panel inside Memories — Needs
@@ -4899,6 +4924,21 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                 }}
                 selectable={false}
                 locked={!isLicensed}
+              />
+              {/* v2.1 round 241 (Terry) — standalone "Collages" entry.
+                  Opens a fresh, EMPTY collage in the dedicated collage
+                  window; the user adds photos via the in-collage "Add
+                  photos" pool. Sits in Tools alongside People Manager
+                  because it opens its own window (a creative tool), not a
+                  main-view switch. Gold dot in the window matches the
+                  collage chrome; LayoutGrid is the same icon the S&D /
+                  Memories / Albums "Create collage" actions already use. */}
+              <SidebarItem
+                icon={<LayoutGrid className="w-4 h-4 opacity-70" />}
+                label="Collages"
+                accent="amber"
+                onClick={() => { onOpenCollages(); }}
+                selectable={false}
               />
               {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor
                   sidebar entry removed. Inline date editing now

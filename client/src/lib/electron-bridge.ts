@@ -2976,7 +2976,10 @@ export function onCaptureRecordError(callback: (info: { message: string }) => vo
 // (round 139 — Terry: build on PDRV, not a separate window). The
 // `collage` flag on openViewer routes the viewer into collage mode,
 // where the photos become the filmstrip pool + the freeform stage.
-export async function openCollageComposer(filePaths: string[]): Promise<{ success: boolean; error?: string }> {
+// v2.1 round 241 (Terry) — filePaths defaults to [] so the standalone
+// "Collages" side-menu + workspace entries can open an EMPTY collage
+// (empty canvas; the user populates it via the in-collage "Add photos").
+export async function openCollageComposer(filePaths: string[] = []): Promise<{ success: boolean; error?: string }> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
   try {
     const names = filePaths.map(p => p.split(/[\\/]/).pop() || 'photo');

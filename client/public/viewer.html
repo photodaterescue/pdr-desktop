@@ -97,7 +97,8 @@
     }
     .window-kind::after { content: 'Viewer'; }
     body.collage-mode .window-kind { color: rgba(254, 194, 66, 0.92); }   /* gold = Collage */
-    body.collage-mode .window-kind::after { content: 'Collage'; }
+    /* v2.1 round 241 (Terry) — user-facing feature rename Collage → Collages. */
+    body.collage-mode .window-kind::after { content: 'Collages'; }
     /* Interactive bits in the title bar must opt out of the drag region
        or they swallow clicks. */
     .toolbar button, .toolbar input, .toolbar .speed-wrap, .toolbar [role="button"] { -webkit-app-region: no-drag; }
@@ -4441,7 +4442,13 @@
             if (typeof parsed === 'number' && parsed >= 0 && parsed < files.length) startIndex = parsed;
             // v2.1 round 139 — open straight into the freeform collage
             // editor when the multi-select surfaces requested a collage.
-            if (payload.collage === true && files.length >= 2) collageMode = true;
+            // v2.1 round 241 (Terry) — was `&& files.length >= 2`, which
+            // silently fell back to the single-photo viewer for an EMPTY
+            // collage. The standalone "Collages" side-menu + workspace
+            // entries open with NO preselected photos, so honour the
+            // collage flag regardless of count — an empty array opens a
+            // blank canvas the user fills via the in-collage "Add photos".
+            if (payload.collage === true) collageMode = true;
           }
         } catch (e) {
           console.warn('[viewer] getPendingFileList failed:', e && e.message ? e.message : e);
@@ -12333,11 +12340,25 @@
       // editing + Save collage). The panel is forced open + pinned.
       if (container) container.style.display = 'none';
       if (collageRootEl) collageRootEl.classList.add('active');
-      document.title = 'Collage (' + files.length + ') — PDR Collage';
-      // v2.1 round 161 (Terry) — the window is now named "Collage" centred in
+      // v2.1 round 241 (Terry) — user-facing rename Collage → Collages.
+      document.title = 'Collages (' + files.length + ') — PDR Collages';
+      // v2.1 round 161 (Terry) — the window is now named "Collages" centred in
       // the title bar, so the left label just carries the photo count (no
       // redundant "Collage" word).
-      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = files.length + (files.length === 1 ? ' photo' : ' photos'); } catch (_) {}
+      // v2.1 round 241 (Terry) — empty-collage launch: with 0 preselected
+      // photos the count label would read "0 photos"; show "Empty collage"
+      // instead so a freshly-opened standalone collage reads naturally.
+      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = files.length === 0 ? 'Empty collage' : (files.length + (files.length === 1 ? ' photo' : ' photos')); } catch (_) {}
+      // v2.1 round 241 (Terry) — make the filmstrip pool (which hosts the
+      // sticky "Add photos" button) visible in EVERY collage, including an
+      // empty / single-photo one. The chunked filmstrip build below only
+      // runs for files.length > 1, so without this an empty standalone
+      // collage opened with the pool hidden and no way to add photos.
+      try {
+        const fsWrap = document.getElementById('filmstrip-wrap');
+        if (fsWrap) fsWrap.style.display = 'block';
+        if (filmstripEl) filmstripEl.style.display = 'flex';
+      } catch (_) {}
       buildCollageItems();
       // v2.1 round 157 (Terry) — section open/closed state is now persisted
       // per-user (setupCollapsePersistence), so we no longer force-collapse
