@@ -2203,7 +2203,7 @@
     body.collage-mode .collage-item .ch-resize { background: #FEC242; }
     body.collage-mode .collage-item .ch-rotate { border-color: #FEC242; }
     body.collage-mode .collage-item .ch-rotate svg { stroke: #5a4a12; }
-    body.collage-mode .collage-item .ch-rotate::before { background: #FEC242; }
+    /* v2.1 round 227 (Terry) — connector ::before removed; its gold override is gone too. */
     body.collage-mode .ch-tb-btn:hover { color: #FEC242; }
     body.collage-mode.collage-bg-selected #collage-canvas { outline-color: #FEC242; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(254,194,66,0.28), 0 0 22px 4px rgba(254,194,66,0.35); }
     /* Handles — only shown on the selected tile. */
@@ -2241,8 +2241,11 @@
     .collage-item .ch-res-tr { right: -7px; top: -7px; left: auto; bottom: auto; cursor: nesw-resize; }
     .collage-item .ch-res-bl { left: -7px; bottom: -7px; right: auto; top: auto; cursor: nesw-resize; }
     .collage-item .ch-res-br { right: -7px; bottom: -7px; left: auto; top: auto; cursor: nwse-resize; }
-    /* Base rotate handle — used as-is by TEXT layers (above the element, filled
-       single-arrow glyph). Collage TILES override position + glyph below. */
+    /* Base rotate handle — the small white circular grab. v2.1 round 227 (Terry) —
+       glyph is now a single clean CENTRED circular-arrow (stroked, so it inherits
+       the stroke colour overrides below), and the connector tick (::before) is GONE
+       on every variant — Terry disliked it. Positions are set per-context below
+       (text → below-centre, emoji + tile → right-middle edge). */
     .ch-rotate {
       width: 24px; height: 24px;
       left: 50%; top: -36px;
@@ -2256,47 +2259,37 @@
       justify-content: center;
       box-shadow: 0 1px 4px rgba(0,0,0,0.3);
     }
-    .ch-rotate svg { width: 17px; height: 17px; fill: #2e2960; pointer-events: none; }
-    .ch-rotate::before {
-      content: '';
-      position: absolute;
-      left: 50%; top: 22px;
-      width: 2px; height: 14px;
-      margin-left: -1px;
-      background: #a78bfa;
-    }
-    /* v2.1 round 203 (Terry) — on TILES the rotate handle moves from above the
-       tile to just OUTSIDE the right-middle edge (per Terry's SS2) and gets the
-       two-curved-arrows circular glyph (a stroked icon, so fill:none + stroke).
-       The connector tick points LEFT toward the tile edge instead of down. */
+    /* v2.1 round 227 (Terry) — stroked single circular-arrow (was a filled glyph);
+       fill:none + stroke so the gold collage-mode stroke override keeps it visible. */
+    .ch-rotate svg { width: 16px; height: 16px; fill: none; stroke: #2e2960; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    /* v2.1 round 227 (Terry) — connector tick removed entirely. */
+    .ch-rotate::before { content: none; }
+    /* v2.1 round 203 (Terry) — on TILES the rotate handle sits just OUTSIDE the
+       right-middle edge (rest angle 0° ⇒ startItemRotate keeps deg = ang).
+       v2.1 round 227 (Terry) — connector tick removed; glyph inherits the base
+       single circular-arrow + stroke. */
     .collage-item .ch-rotate {
       left: 100%; top: 50%;
       margin-left: 14px; margin-top: -12px;
     }
-    .collage-item .ch-rotate svg { width: 16px; height: 16px; fill: none; stroke: #2e2960; stroke-width: 1.6; }
-    .collage-item .ch-rotate::before {
-      left: auto; top: 50%;
-      right: 100%;
-      width: 14px; height: 2px;
-      margin-left: 0; margin-top: -1px;
-    }
-    /* v2.1 round 224 (Terry) — TEXT + EMOJI rotate handle now matches a PHOTO's:
-       moved from ABOVE the layer (where the floating .ch-toolbar covered it) to just
-       OUTSIDE the right-middle edge, with the connector tick pointing LEFT and the
-       same stroked twin-arc "refresh-cw" glyph (swapped in renderTextLayer). Mirrors
-       .collage-item .ch-rotate / ::before / svg exactly. Rotate DRAG logic unchanged.
-       Locked text still hides rotate via .collage-text.locked.selected .ch-rotate. */
-    .collage-text .ch-rotate {
+    .collage-item .ch-rotate::before { content: none; }
+    /* v2.1 round 227 (Terry) — EMOJI keeps the right-middle edge (round 224
+       position; rest angle 0° ⇒ startTextRotate uses deg = ang for emoji). TEXT
+       (below) moves to below-centre to match Canva. The is-emoji class is toggled
+       on the wrapper in renderTextLayer. Connector tick removed on both. */
+    .collage-text.is-emoji .ch-rotate {
       left: 100%; top: 50%;
       margin-left: 14px; margin-top: -12px;
     }
-    .collage-text .ch-rotate svg { width: 16px; height: 16px; fill: none; stroke: #2e2960; stroke-width: 1.6; }
-    .collage-text .ch-rotate::before {
-      left: auto; top: 50%;
-      right: 100%;
-      width: 14px; height: 2px;
-      margin-left: 0; margin-top: -1px;
+    /* v2.1 round 227 (Terry) — a TEXT box (NOT an emoji) floats its rotate handle
+       BELOW the bottom edge, horizontally centred, with a gap clearing the bottom
+       side/stretch handle (Canva). Rest angle is 90° (6 o'clock) ⇒ startTextRotate
+       maps it with deg = ang − 90 so there's no grab-jump. No connector tick. */
+    .collage-text:not(.is-emoji) .ch-rotate {
+      left: 50%; top: 100%;
+      margin-left: -12px; margin-top: 16px;
     }
+    .collage-text .ch-rotate::before { content: none; }
     .ch-remove {
       width: 20px; height: 20px;
       right: -10px; top: -10px;
@@ -2431,14 +2424,14 @@
       z-index: 8;
     }
     /* Gold accent in collage mode, matching the tile handles (round 203).
-       v2.1 round 224 (Terry) — the text rotate glyph is now the STROKED twin-arc
-       icon (was a filled single arrow), and the handle sits at the right-middle edge
-       like a photo's. So the gold override colours the STROKE, not the fill — mirrors
-       body.collage-mode .collage-item .ch-rotate svg { stroke: #5a4a12 }. */
+       v2.1 round 227 (Terry) — the rotate glyph is the STROKED single circular-arrow,
+       so the gold override colours the STROKE (mirrors the tile's #5a4a12). Position
+       differs by kind now (text → below-centre, emoji → right-middle), but the colour
+       override applies to both via .collage-text. */
     body.collage-mode .collage-text .ch-resize { background: #FEC242; }
     body.collage-mode .collage-text .ch-rotate { border-color: #FEC242; }
     body.collage-mode .collage-text .ch-rotate svg { stroke: #5a4a12; }
-    body.collage-mode .collage-text .ch-rotate::before { background: #FEC242; }
+    /* v2.1 round 227 (Terry) — connector ::before removed; its gold override is gone too. */
     /* Filmstrip-as-pool: a tile dropped from the canvas dims + shows
        a + so the user knows clicking re-adds it. */
     .filmstrip .thumb.collage-off,
@@ -2500,6 +2493,78 @@
     }
     .ec-shape-btn:hover { background: rgba(169,156,255,0.10); }
     .ec-shape-btn.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
+    /* v2.1 round 226 (Terry) — CANVAS SIZE picker. Compact selectable rows grouped
+       under small uppercase labels, matching the calm collage palette (round 223).
+       The active row wears the collage gold (#FEC242), like the other active
+       controls; the obscure sizes hide behind a More… <details>; Custom… reveals two
+       px inputs + Apply. */
+    .ec-size-list { display: flex; flex-direction: column; gap: 10px; margin-top: 8px; }
+    .ec-size-group { display: flex; flex-direction: column; gap: 3px; }
+    .ec-size-group-label {
+      font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase;
+      color: #8a8a93; margin: 2px 0 1px;
+    }
+    .ec-size-row {
+      display: flex; align-items: center; gap: 8px; width: 100%;
+      background: transparent;
+      border: 1px solid rgba(169,156,255,0.22);
+      border-radius: 7px; padding: 5px 8px; cursor: pointer; text-align: left;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-size-row:hover { background: rgba(169,156,255,0.08); }
+    /* The aspect-ratio cue — a tiny proportional rectangle whose box-ratio is set
+       inline per row (--ar). Sits in a fixed 22×22 slot so rows stay aligned. */
+    .ec-size-cue { flex: 0 0 22px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; }
+    /* The proportional rectangle: aspect-ratio drives the shape; height seeds the
+       size and max-width/height clamp it into the 18px box. NO fixed width/height
+       (those would override aspect-ratio and force a square). For landscape (ar>1)
+       max-width:18px caps width and the height shrinks to keep the ratio; for
+       portrait (ar<1) height:18px seeds and width stays under 18px. */
+    .ec-size-cue i {
+      display: block; height: 18px;
+      max-width: 18px; max-height: 18px;
+      aspect-ratio: var(--ar, 1);
+      border: 1.25px solid rgba(207,200,255,0.55); border-radius: 2px; background: rgba(207,200,255,0.06);
+    }
+    .ec-size-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+    .ec-size-name { font-size: 11.5px; color: #d7d2f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ec-size-sub { font-size: 10px; color: #8f8aa6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ec-size-ratio { flex: 0 0 auto; font-size: 9.5px; color: #8f8aa6; letter-spacing: 0.02em; }
+    .ec-size-row.active {
+      background: rgba(254,194,66,0.16); border-color: #FEC242;
+    }
+    .ec-size-row.active .ec-size-name { color: #fff; }
+    .ec-size-row.active .ec-size-sub,
+    .ec-size-row.active .ec-size-ratio { color: rgba(254,194,66,0.92); }
+    .ec-size-row.active .ec-size-cue i { border-color: #FEC242; background: rgba(254,194,66,0.14); }
+    /* More… + Custom… — nested <details> reusing the round-213 frame-coll-group
+       chevron look, but NOT given the .enhance-collapse class so they stay out of the
+       contextual sweep / collapse-all / per-section persistence (More… keeps its own
+       sticky key). */
+    .ec-size-more { padding: 0; }
+    .ec-size-more > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; color: #9a93c8;
+      display: flex; align-items: center; gap: 6px; padding: 3px 0; user-select: none;
+    }
+    .ec-size-more > summary::-webkit-details-marker { display: none; }
+    .ec-size-more > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #FEC242; }
+    .ec-size-more[open] > summary::before { transform: rotate(90deg); }
+    .ec-size-more > .ec-size-more-body { display: flex; flex-direction: column; gap: 3px; margin: 4px 0 0; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); }
+    .ec-size-custom-fields { display: flex; gap: 6px; align-items: center; margin: 4px 0 0; padding-left: 8px; border-left: 1px solid rgba(254,194,66,0.18); flex-wrap: wrap; }
+    .ec-size-custom-fields input {
+      width: 58px; flex: 0 0 58px; background: rgba(0,0,0,0.25);
+      border: 1px solid rgba(169,156,255,0.3); border-radius: 6px;
+      color: #e8e4ff; font-size: 11px; padding: 5px 6px; outline: none;
+    }
+    .ec-size-custom-fields input:focus { border-color: #FEC242; }
+    .ec-size-custom-fields .ec-size-x { color: #8f8aa6; font-size: 11px; flex: 0 0 auto; }
+    .ec-size-custom-apply {
+      flex: 1 1 auto; background: transparent; border: 1px solid rgba(254,194,66,0.4);
+      color: #FEC242; font-size: 11px; padding: 5px 8px; border-radius: 6px; cursor: pointer;
+      transition: background 120ms;
+    }
+    .ec-size-custom-apply:hover { background: rgba(254,194,66,0.12); }
     /* v2.1 round 204 (Terry) — the "Delete text" button (an .ec-shape-btn) tints
        light red on hover to signal deletion. Scoped by ID so the shape/aspect
        buttons that share .ec-shape-btn keep their lavender hover. Normal state
@@ -2892,12 +2957,18 @@
              free panel space; they're #tb-collage-undo / -redo now. -->
         <!-- v2.1 round 156 (Terry) — every panel section is now a chevron
              for a consistent, tidy, premium look. -->
+        <!-- v2.1 round 226 (Terry) — CANVAS SIZE picker, replacing the old
+             Landscape/Square/Portrait shape buttons. Same <details> + id
+             (ec-shape-collapse) so the round-223 contextual-collapse logic,
+             CONTEXTUAL_SECTION_IDS and setAll keep working unchanged — only the
+             header label + inner content changed. The Social / Prints / Paper
+             groups, the More… toggle and the Custom… block are all populated by
+             buildCanvasSizeMenu(); selecting a row reshapes the live canvas to
+             that aspect (and stores its export px). -->
         <details class="enhance-collapse" id="ec-shape-collapse" open>
-          <summary>Collage shape</summary>
-          <div class="ec-row">
-            <button class="ec-shape-btn active" data-aspect="landscape" type="button">Landscape</button>
-            <button class="ec-shape-btn" data-aspect="square" type="button">Square</button>
-            <button class="ec-shape-btn" data-aspect="portrait" type="button">Portrait</button>
+          <summary>Canvas size</summary>
+          <div id="ec-canvas-size-list" class="ec-size-list">
+            <!-- groups + rows injected by buildCanvasSizeMenu() -->
           </div>
         </details>
         <!-- v2.1 round 149 (Terry 2026-06-13) — Background is its OWN
@@ -3695,6 +3766,14 @@
     let collageTransparent = false;
     const COLLAGE_CHECKER_BG = 'repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50% / 16px 16px';
     let collageAspectKey = 'landscape';
+    // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
+    // driven by collageAspectKey (a named key OR a numeric aspect for presets/custom).
+    // collageSizeId remembers WHICH preset row is selected (for the gold highlight);
+    // '' = a custom/legacy shape with no matching preset. collageExportPx is the
+    // TARGET EXPORT pixel size from the chosen preset (null = use the legacy 2000px
+    // long-edge default, preserving old-collage behaviour).
+    let collageSizeId = '';
+    let collageExportPx = null;   // { w, h } | null
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
     // v2.1 round 142 (Terry) — optional background PHOTO behind the tiles,
@@ -3840,6 +3919,60 @@
       return collageBgTile;
     }
     const COLLAGE_ASPECTS = { landscape: 3 / 2, square: 1, portrait: 2 / 3 };
+    // v2.1 round 226 (Terry) — CANVAS SIZE presets, replacing the old
+    // Landscape/Square/Portrait shape buttons. Each preset carries:
+    //   id     — stable key (used for selection state + sticky last-pick)
+    //   name   — label shown in the row
+    //   sub    — the size shown under the name (px for social, inches for print/paper)
+    //   px     — { w, h } TARGET EXPORT size in pixels. Social/Digital use the
+    //            literal pixels from Terry's PDF; Print/Paper are computed at 300 DPI
+    //            from the inch dimensions (in × 300, rounded). The ASPECT the live
+    //            canvas reshapes to is derived from px.w / px.h, so portrait presets
+    //            go tall and landscape go wide automatically.
+    //   ratio  — short ratio cue text (a plus per the brief); '' = none shown.
+    // Groups: 'social' / 'print' / 'paper' are the always-visible groups; 'more'
+    // holds the obscure sizes behind the collapsed "More…" toggle (Terry's PDF note:
+    // keep obscure sizes off the main display).
+    const DPI = 300;
+    const inPx = (inch) => Math.round(inch * DPI);
+    const COLLAGE_PRESETS = [
+      // ---- SOCIAL MEDIA (literal pixels) ----
+      { id: 'sq-post',    group: 'social', name: 'Square Post',           sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
+      { id: 'pt-post',    group: 'social', name: 'Portrait Post',         sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
+      { id: 'story',      group: 'social', name: 'Story / Reel / TikTok', sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      { id: 'ls-post',    group: 'social', name: 'Landscape Post',        sub: '1920 × 1080 px', px: { w: 1920, h: 1080 }, ratio: '16:9' },
+      { id: 'fb-link',    group: 'social', name: 'Facebook Link Post',    sub: '1200 × 630 px',  px: { w: 1200, h: 630 },  ratio: '1.91:1' },
+      { id: 'pin',        group: 'social', name: 'Pinterest Pin',         sub: '1000 × 1500 px', px: { w: 1000, h: 1500 }, ratio: '2:3' },
+      { id: 'yt-thumb',   group: 'social', name: 'YouTube Thumbnail',     sub: '1280 × 720 px',  px: { w: 1280, h: 720 },  ratio: '16:9' },
+      { id: 'yt-banner',  group: 'social', name: 'YouTube Banner',        sub: '2560 × 1440 px', px: { w: 2560, h: 1440 }, ratio: '16:9' },
+      { id: 'fb-cover',   group: 'social', name: 'Facebook Cover',        sub: '1640 × 624 px',  px: { w: 1640, h: 624 },  ratio: '2.63:1' },
+      // ---- PRINTS (portrait orientation as listed; px at 300 DPI from inches) ----
+      { id: 'p-4x6',   group: 'print', name: '4×6 Print',   sub: '4 × 6"',   px: { w: inPx(4),  h: inPx(6) },  ratio: '2:3' },
+      { id: 'p-5x7',   group: 'print', name: '5×7 Print',   sub: '5 × 7"',   px: { w: inPx(5),  h: inPx(7) },  ratio: '5:7' },
+      { id: 'p-6x8',   group: 'print', name: '6×8 Print',   sub: '6 × 8"',   px: { w: inPx(6),  h: inPx(8) },  ratio: '3:4' },
+      { id: 'p-8x10',  group: 'print', name: '8×10 Print',  sub: '8 × 10"',  px: { w: inPx(8),  h: inPx(10) }, ratio: '4:5' },
+      { id: 'p-8x12',  group: 'print', name: '8×12 Print',  sub: '8 × 12"',  px: { w: inPx(8),  h: inPx(12) }, ratio: '2:3' },
+      { id: 'p-11x14', group: 'print', name: '11×14 Print', sub: '11 × 14"', px: { w: inPx(11), h: inPx(14) }, ratio: '11:14' },
+      { id: 'p-12x18', group: 'print', name: '12×18 Print', sub: '12 × 18"', px: { w: inPx(12), h: inPx(18) }, ratio: '2:3' },
+      { id: 'p-16x20', group: 'print', name: '16×20 Print', sub: '16 × 20"', px: { w: inPx(16), h: inPx(20) }, ratio: '4:5' },
+      { id: 'p-20x30', group: 'print', name: '20×30 Print', sub: '20 × 30"', px: { w: inPx(20), h: inPx(30) }, ratio: '2:3' },
+      // ---- PAPER (A-series; px at 300 DPI from inches) ----
+      { id: 'a5', group: 'paper', name: 'A5', sub: '5.8 × 8.3"',   px: { w: inPx(5.8),  h: inPx(8.3) },  ratio: 'A' },
+      { id: 'a4', group: 'paper', name: 'A4', sub: '8.3 × 11.7"',  px: { w: inPx(8.3),  h: inPx(11.7) }, ratio: 'A' },
+      { id: 'a3', group: 'paper', name: 'A3', sub: '11.7 × 16.5"', px: { w: inPx(11.7), h: inPx(16.5) }, ratio: 'A' },
+      { id: 'a2', group: 'paper', name: 'A2', sub: '16.5 × 23.4"', px: { w: inPx(16.5), h: inPx(23.4) }, ratio: 'A' },
+      // ---- MORE (obscure sizes — collapsed by default) ----
+      { id: 'sq-8',   group: 'more', name: 'Square 8×8',       sub: '8 × 8"',     px: { w: inPx(8),  h: inPx(8) },  ratio: '1:1' },
+      { id: 'sq-12',  group: 'more', name: 'Square 12×12',     sub: '12 × 12"',   px: { w: inPx(12), h: inPx(12) }, ratio: '1:1' },
+      { id: 'a1',     group: 'more', name: 'A1',               sub: '23.4 × 33.1"', px: { w: inPx(23.4), h: inPx(33.1) }, ratio: 'A' },
+      { id: 'a0',     group: 'more', name: 'A0',               sub: '33.1 × 46.8"', px: { w: inPx(33.1), h: inPx(46.8) }, ratio: 'A' },
+      { id: 'li-ban', group: 'more', name: 'LinkedIn Banner',  sub: '1584 × 396 px',  px: { w: 1584, h: 396 }, ratio: '4:1' },
+      { id: 'x-head', group: 'more', name: 'X / Twitter Header', sub: '1500 × 500 px', px: { w: 1500, h: 500 }, ratio: '3:1' },
+    ];
+    const presetAspect = (p) => p.px.w / p.px.h;
+    // The collage's current canvas aspect — used to default-select the matching
+    // preset row when the panel opens. Numbers compared with a small epsilon.
+    const aspectsClose = (a, b) => Math.abs(a - b) < 0.012;
     // v2.1 round 140 (Terry) — background palette mirrors the Frame
     // colour palette exactly (White/Black/Cream/Gold/Navy/Blush) so the
     // two surfaces share one visual vocabulary; "+" adds a custom one.
@@ -5870,7 +6003,14 @@
     const collageStageEl = document.getElementById('collage-stage');
     const collageCanvasEl = document.getElementById('collage-canvas');
 
-    function getCanvasAspect() { return COLLAGE_ASPECTS[collageAspectKey] || (3 / 2); }
+    // v2.1 round 226 (Terry) — collageAspectKey is now either a named legacy key
+    // (landscape/square/portrait) OR a numeric aspect (from a Canvas Size preset or
+    // a Custom size). Resolve both; fall back to 3:2.
+    function getCanvasAspect() {
+      const k = collageAspectKey;
+      if (typeof k === 'number' && isFinite(k) && k > 0) return k;
+      return COLLAGE_ASPECTS[k] || (3 / 2);
+    }
     // v2.1 round 145 (Terry) — effective aspect accounts for the crop
     // rect (cropping changes the visible region's shape). crop defaults
     // to the whole photo {l:0,t:0,r:1,b:1}.
@@ -6366,12 +6506,12 @@
         // text is .selected). Created once with the wrapper so they survive the
         // per-render canvas swap below.
         const tRot = document.createElement('div'); tRot.className = 'ch ch-rotate'; tRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
-        // v2.1 round 224 (Terry) — text/emoji rotate now uses the SAME stroked twin-arc
-        // "refresh-cw" glyph as the PHOTO rotate (was a filled single-arrow), to go with
-        // the new right-middle-edge position (.collage-text .ch-rotate CSS). Identical
-        // markup to the tile's hRot at the photo handle build; stroked via CSS
-        // (.collage-text .ch-rotate svg { fill:none; stroke:... }).
-        tRot.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+        // v2.1 round 227 (Terry) — single clean CENTRED circular-arrow glyph (was the
+        // twin-arc "refresh-cw"). A 300° arc about (12,12) r=7 with the gap + a small
+        // arrowhead at the top → reads symmetric. Stroked via CSS (.ch-rotate svg
+        // { fill:none; stroke:... }) so the gold collage-mode stroke override keeps it
+        // visible. Same markup for text + emoji (position differs by the is-emoji class).
+        tRot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8.5 5.94A7 7 0 1 0 15.5 5.94"/><polyline points="15.5 2.5 15.5 5.94 12.1 5.94"/></svg>';
         // v2.1 round 221 (Terry) — PHOTO PARITY: the bounding box now shows the
         // full 8-handle set — 4 CORNERS (reusing the tile .ch-res-* corner CSS)
         // + 4 SIDE mid-edges (.ch-res-l/r/t/b, new for text/emoji). v2.1 round 222
@@ -6445,6 +6585,10 @@
         layer.el = el;
       }
       const el = layer.el;
+      // v2.1 round 227 (Terry) — tag the wrapper so CSS can place the rotate handle
+      // by KIND: an EMOJI keeps the right-middle edge (round 224), a TEXT box floats
+      // it below-centre (Canva). Drives .collage-text.is-emoji vs :not(.is-emoji).
+      el.classList.toggle('is-emoji', !!layer.isEmoji);
       // Replace the child canvas with a freshly-rendered one. v2.1 round 187 —
       // swap ONLY the tracked canvas (not innerHTML='') so the .ch handles
       // appended once above are preserved across re-renders.
@@ -7393,7 +7537,11 @@
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
       const move = (ev) => {
         const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
-        let deg = ang; // v2.1 round 225 (Terry) — handle now at the right-middle edge (like tiles): drop the +90 top-offset so the text tracks the handle 1:1 (was flipping 90° on grab)
+        // v2.1 round 227 (Terry) — handle rest position differs by KIND, so the offset
+        // that maps "rest" → 0° differs: EMOJI handle is at the right-middle edge
+        // (rest ang≈0 ⇒ deg = ang, as round 225), TEXT handle is at the bottom-centre
+        // (rest ang≈90 ⇒ deg = ang − 90). This keeps the grab 1:1 with no jump for both.
+        let deg = ang - (layer.isEmoji ? 0 : 90);
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         layer.rot = deg;
         renderTextLayer(layer);
@@ -8215,6 +8363,119 @@
       const r = cells.map((c) => { const x = pad + c.x * iw, y = pad + c.y * ih, w = Math.max(3, c.w * iw - 2), h = Math.max(3, c.h * ih - 2); return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5"/>'; }).join('');
       return '<svg viewBox="0 0 ' + W + ' ' + H + '" xmlns="http://www.w3.org/2000/svg">' + r + '</svg>';
     }
+    // v2.1 round 226 (Terry) — CANVAS SIZE picker. Build the Social / Prints / Paper
+    // groups + the More… toggle + the Custom… block into #ec-canvas-size-list. Each
+    // preset row reshapes the live canvas on click (selectCanvasPreset → reshapeCollage),
+    // and the panel-wide pointerdown/up wrapper makes that one undo step. The picker is
+    // rebuilt fresh each time wireCollageControls runs (once per window).
+    const CANVAS_SIZE_MORE_KEY = 'pdr-canvas-size-more-open';   // sticky More… state
+    const CANVAS_SIZE_LAST_KEY = 'pdr-canvas-size-last';        // last-picked preset id (not auto-applied; just remembered)
+    function makeSizeRow(p) {
+      const row = document.createElement('button');
+      row.type = 'button';
+      row.className = 'ec-size-row';
+      row.dataset.sizeId = p.id;
+      row.setAttribute('data-pdr-tooltip', p.name + ' — ' + p.sub);
+      // aspect-ratio cue (tiny proportional rectangle)
+      const cue = document.createElement('span');
+      cue.className = 'ec-size-cue';
+      const box = document.createElement('i');
+      box.style.setProperty('--ar', String(presetAspect(p)));
+      cue.appendChild(box);
+      const txt = document.createElement('span');
+      txt.className = 'ec-size-text';
+      const nm = document.createElement('span'); nm.className = 'ec-size-name'; nm.textContent = p.name;
+      const sb = document.createElement('span'); sb.className = 'ec-size-sub'; sb.textContent = p.sub;
+      txt.appendChild(nm); txt.appendChild(sb);
+      row.appendChild(cue); row.appendChild(txt);
+      if (p.ratio) { const rt = document.createElement('span'); rt.className = 'ec-size-ratio'; rt.textContent = p.ratio; row.appendChild(rt); }
+      row.addEventListener('click', () => selectCanvasPreset(p));
+      return row;
+    }
+    function makeSizeGroup(label, presets) {
+      const wrap = document.createElement('div');
+      wrap.className = 'ec-size-group';
+      const lab = document.createElement('div'); lab.className = 'ec-size-group-label'; lab.textContent = label;
+      wrap.appendChild(lab);
+      presets.forEach((p) => wrap.appendChild(makeSizeRow(p)));
+      return wrap;
+    }
+    function buildCanvasSizeMenu() {
+      const host = document.getElementById('ec-canvas-size-list');
+      if (!host) return;
+      host.innerHTML = '';
+      const by = (g) => COLLAGE_PRESETS.filter((p) => p.group === g);
+      // Always-visible groups.
+      host.appendChild(makeSizeGroup('Social Media', by('social')));
+      host.appendChild(makeSizeGroup('Prints', by('print')));
+      host.appendChild(makeSizeGroup('Paper', by('paper')));
+      // More… — collapsed by default, sticky in localStorage. NOT an .enhance-collapse,
+      // so the contextual sweep / collapse-all / per-section persistence don't touch it.
+      const more = document.createElement('details');
+      more.className = 'ec-size-more';
+      let moreOpen = false; try { moreOpen = localStorage.getItem(CANVAS_SIZE_MORE_KEY) === '1'; } catch (_) {}
+      if (moreOpen) more.open = true;
+      const moreSum = document.createElement('summary'); moreSum.textContent = 'More…';
+      moreSum.setAttribute('data-pdr-tooltip', 'Less common sizes (large prints, A0/A1, LinkedIn / X headers)');
+      more.appendChild(moreSum);
+      const moreBody = document.createElement('div'); moreBody.className = 'ec-size-more-body';
+      by('more').forEach((p) => moreBody.appendChild(makeSizeRow(p)));
+      more.appendChild(moreBody);
+      more.addEventListener('toggle', () => { try { localStorage.setItem(CANVAS_SIZE_MORE_KEY, more.open ? '1' : '0'); } catch (_) {} });
+      host.appendChild(more);
+      // Custom… — reveals Width × Height (px) + Apply. Guarded against 0/empty.
+      const custom = document.createElement('details');
+      custom.className = 'ec-size-more';   // same chevron look
+      const custSum = document.createElement('summary'); custSum.textContent = 'Custom…';
+      custSum.setAttribute('data-pdr-tooltip', 'Enter an exact canvas size in pixels');
+      custom.appendChild(custSum);
+      const fields = document.createElement('div'); fields.className = 'ec-size-custom-fields';
+      const wIn = document.createElement('input');
+      wIn.type = 'number'; wIn.min = '1'; wIn.step = '1'; wIn.placeholder = 'W'; wIn.setAttribute('aria-label', 'Custom width in pixels'); wIn.inputMode = 'numeric';
+      const xSpan = document.createElement('span'); xSpan.className = 'ec-size-x'; xSpan.textContent = '×';
+      const hIn = document.createElement('input');
+      hIn.type = 'number'; hIn.min = '1'; hIn.step = '1'; hIn.placeholder = 'H'; hIn.setAttribute('aria-label', 'Custom height in pixels'); hIn.inputMode = 'numeric';
+      const applyBtn = document.createElement('button');
+      applyBtn.type = 'button'; applyBtn.className = 'ec-size-custom-apply'; applyBtn.textContent = 'Apply';
+      // Apply a custom size. wrapUndo=true when triggered by the keyboard (Enter): the
+      // panel pointerdown/up wrapper only fires for pointer clicks, so wrap explicitly
+      // so a keyboard apply is also one undo step.
+      const applyCustom = (wrapUndo) => {
+        const w = Math.round(parseFloat(wIn.value)), h = Math.round(parseFloat(hIn.value));
+        if (!(w > 0) || !(h > 0)) {   // guard 0 / empty / NaN
+          (w > 0 ? hIn : wIn).focus();
+          return;
+        }
+        if (wrapUndo) beginCollageChange();
+        reshapeCollage(w / h, '', { w: w, h: h });   // custom → no preset highlight; export at the exact px
+        if (wrapUndo) commitCollageChange();
+      };
+      applyBtn.addEventListener('click', () => applyCustom(false));   // pointer click → wrapper handles undo
+      // Inputs sit inside an S&D-mounted surface family: stopPropagation on Enter +
+      // Escape so the keystroke doesn't leak to the global collage / viewer handlers.
+      [wIn, hIn].forEach((inp) => {
+        inp.addEventListener('keydown', (e) => {
+          if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); applyCustom(true); }
+          else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); inp.blur(); }
+          else { e.stopPropagation(); }
+        });
+      });
+      fields.appendChild(wIn); fields.appendChild(xSpan); fields.appendChild(hIn); fields.appendChild(applyBtn);
+      custom.appendChild(fields);
+      host.appendChild(custom);
+      // Default selection reflects the collage's current shape/aspect on open.
+      syncDefaultCanvasSize();
+    }
+    // Pick the preset whose aspect matches the live canvas aspect (if any) and gold it.
+    // Custom/legacy shapes with no matching preset leave nothing highlighted.
+    function syncDefaultCanvasSize() {
+      if (!collageSizeId) {
+        const cur = getCanvasAspect();
+        const match = COLLAGE_PRESETS.find((p) => aspectsClose(presetAspect(p), cur));
+        if (match) collageSizeId = match.id;
+      }
+      syncCanvasSizeSelection();
+    }
     function buildArrangeMenu() {
       const host = document.getElementById('ec-arrange-grid');
       if (!host) return;
@@ -8260,6 +8521,9 @@
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
+        // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
+        // target export px so a size change is a single undoable step and round-trips.
+        sizeId: collageSizeId, exportPx: collageExportPx,
         items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals)
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
@@ -8287,6 +8551,10 @@
       // editEl is on an about-to-be-discarded layer).
       editingText = null; textEditSnap = null;
       collageBg = s.bg; collageBgImagePath = s.bgImagePath; collageAspectKey = s.aspectKey;
+      // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
+      // snapshots predate these: sizeId '' = no highlight, exportPx null = legacy 2000px).
+      collageSizeId = s.sizeId || '';
+      collageExportPx = s.exportPx || null;
       collageTransparent = !!s.transparent;   // v2.1 round 177
       // v2.1 round 149 — restore the background's enh (fall back to the
       // pre-149 single fade value for old snapshots in the undo stack).
@@ -8357,7 +8625,7 @@
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
       collageZTop = maxZ;
       setCollageBg(collageBg);
-      document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
+      syncCanvasSizeSelection();   // v2.1 round 226 (Terry) — repaint the selected Canvas Size row on undo/redo
       renderCollageBgLayer();
       updateBgPhotoSwatch();        // v2.1 round 178 — keep the bg-photo swatch in sync on undo/redo
       markCollageColorActive();
@@ -8438,11 +8706,11 @@
       clip.appendChild(img);
       el.appendChild(clip);
       const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
-      // v2.1 round 203 (Terry) — two-curved-arrows / circular refresh rotate
-      // glyph (per SS2). Replaces the round-141 single-arrow Bootstrap glyph;
-      // the handle now also sits at the right-middle edge (see .ch-rotate CSS).
-      // Feather "refresh-cw" twin-arc icon, stroked (matches .ch-rotate svg).
-      hRot.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>';
+      // v2.1 round 227 (Terry) — single clean CENTRED circular-arrow glyph (was the
+      // twin-arc "refresh-cw"); matches the text/emoji handle. 300° arc about (12,12)
+      // r=7 with the gap + arrowhead at the top, stroked (matches .ch-rotate svg).
+      // Handle stays at the right-middle edge (rest angle 0° ⇒ startItemRotate unchanged).
+      hRot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8.5 5.94A7 7 0 1 0 15.5 5.94"/><polyline points="15.5 2.5 15.5 5.94 12.1 5.94"/></svg>';
       // v2.1 round 203 (Terry) — FOUR corner resize handles (was a single
       // bottom-right one). startItemResize(it, e, corner) anchors the OPPOSITE
       // corner so the grabbed corner is the one that moves.
@@ -8803,12 +9071,41 @@
         else selectCollageItem(null);
       }
     }
+    // v2.1 round 226 (Terry) — legacy named-shape setter kept for any old callers /
+    // restore paths; routes through the generalized reshape with no preset id and the
+    // legacy export size (null → 2000px long edge). New UI uses selectCanvasPreset.
     function setCollageAspect(key) {
       if (!COLLAGE_ASPECTS[key]) return;
-      collageAspectKey = key;
-      document.querySelectorAll('.ec-shape-btn').forEach((b) => b.classList.toggle('active', b.dataset.aspect === key));
+      reshapeCollage(COLLAGE_ASPECTS[key], '', null);
+    }
+    // v2.1 round 226 (Terry) — the single reshape integration point. aspect = w/h
+    // number; sizeId = the selected preset id ('' for custom/legacy); exportPx =
+    // { w, h } target export size (null = legacy 2000px long-edge default). Mirrors
+    // the old setCollageAspect body (set state → sync highlight → relayout → re-tidy);
+    // one undo step is provided by the panel-wide pointerdown/up wrapper for clicks.
+    function reshapeCollage(aspect, sizeId, exportPx) {
+      if (!(typeof aspect === 'number' && isFinite(aspect) && aspect > 0)) return;
+      collageAspectKey = aspect;
+      collageSizeId = sizeId || '';
+      collageExportPx = exportPx || null;
+      syncCanvasSizeSelection();
       layoutCanvasSize();
       gridArrange();
+    }
+    // Apply a Canvas Size preset object.
+    function selectCanvasPreset(p) {
+      if (!p) return;
+      reshapeCollage(presetAspect(p), p.id, { w: p.px.w, h: p.px.h });
+      try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p.id); } catch (_) {}
+    }
+    // Paint the gold highlight on whichever preset row matches collageSizeId, and
+    // clear it from the rest. Also keep the legacy .ec-shape-btn active sync as a
+    // no-op-safe fallback (those buttons no longer exist after round 226).
+    function syncCanvasSizeSelection() {
+      document.querySelectorAll('#ec-canvas-size-list .ec-size-row').forEach((row) => {
+        row.classList.toggle('active', !!collageSizeId && row.dataset.sizeId === collageSizeId);
+      });
+      document.querySelectorAll('.ec-shape-btn[data-aspect]').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
     }
     function layoutCanvasSize() {
       if (!collageStageEl) return;
@@ -8839,9 +9136,18 @@
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
       try {
         const a = getCanvasAspect();
-        const LONG = 2000;
+        // v2.1 round 226 (Terry) — Canvas Size export resolution. If a preset (or
+        // Custom) set a target export size, save AT that exact pixel size so the file
+        // matches the real-world dimensions (Social = the given px; Print/Paper = px
+        // at 300 DPI; Digital-Only = the noted px). With no preset (legacy collages),
+        // fall back to the original 2000px long-edge default, derived from the aspect.
         let W, H;
-        if (a >= 1) { W = LONG; H = Math.round(LONG / a); } else { H = LONG; W = Math.round(LONG * a); }
+        if (collageExportPx && collageExportPx.w > 0 && collageExportPx.h > 0) {
+          W = Math.round(collageExportPx.w); H = Math.round(collageExportPx.h);
+        } else {
+          const LONG = 2000;
+          if (a >= 1) { W = LONG; H = Math.round(LONG / a); } else { H = LONG; W = Math.round(LONG * a); }
+        }
         // Composite back-to-front: ascending z so the front-most tile
         // is drawn last.
         const ordered = on.slice().sort((p, q) => p.z - q.z);
@@ -9202,9 +9508,8 @@
     function wireCollageControls() {
       if (collageControlsWired) return;
       collageControlsWired = true;
-      document.querySelectorAll('.ec-shape-btn').forEach((b) => {
-        b.addEventListener('click', () => setCollageAspect(b.dataset.aspect));
-      });
+      // v2.1 round 226 (Terry) — Canvas Size picker (replaces the old shape buttons).
+      buildCanvasSizeMenu();
       // v2.1 round 165 (Terry) — Arrange is now a grid of ~10 layout
       // thumbnails (Grid / Row / Column / 2-col / 3-col / Left / Top / Stack /
       // Cascade / Scatter). Grid reuses gridArrange, Scatter reuses jumble.
