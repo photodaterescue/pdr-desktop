@@ -1545,6 +1545,31 @@
     .frame-coll-move:disabled { opacity: 0.28; cursor: default; pointer-events: none; }
     .frame-coll-grid { margin-top: 6px; }
     .frame-coll-collapse::details-content { display: block; }
+    /* v2.1 round 223 (Terry) — the ONE collapsed "Palettes" wrapper that holds all
+       12 colour categories. Default closed (set in JS). Its summary mirrors the
+       collection-chevron look (uppercase, gold ▸) but a touch brighter since it is
+       the PARENT of the categories. The body INDENTS the 12 categories ~14px so they
+       read as CHILDREN of the Colour Palette (which lives under TEXT), not siblings
+       of the EMOJIS section below. The EMOJIS section is a separate top-level
+       <details> outside #collage-text-palette, so it is NOT indented. */
+    .frame-coll-group { padding: 0; margin-top: 4px; }
+    .frame-coll-group > summary {
+      list-style: none; cursor: pointer; outline: none;
+      font-size: 10px; letter-spacing: 0.04em; text-transform: uppercase; color: #9a93c8;
+      display: flex; align-items: center; gap: 6px; padding: 2px 0; user-select: none;
+    }
+    .frame-coll-group > summary::-webkit-details-marker { display: none; }
+    .frame-coll-group > summary::before { content: '\25B8'; font-size: 9px; transition: transform 120ms; color: #a99cff; }
+    .frame-coll-group[open] > summary::before { transform: rotate(90deg); }
+    .frame-coll-group[open] { display: block; }
+    /* Indent the 12 categories under the group header. A subtle gold rule on the
+       left edge reinforces the nesting without shouting. */
+    .frame-coll-group > .frame-coll-collapse {
+      margin-left: 14px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
+    .frame-coll-group::details-content { display: block; }
     /* Legacy alias kept so any stale reference doesn't break. */
     .frame-row {
       display: flex;
@@ -7073,6 +7098,16 @@
       // selected, so refresh the shared Colour control here too (covers deselect →
       // hide the control). On select it's a harmless second call.
       try { updateColorTargets(); } catch (_) {}
+      // v2.1 round 223 (Terry) — CONTEXTUAL PANEL: selecting a TEXT layer opens ONLY
+      // the Text section; selecting an EMOJI opens NOTHING (its on-canvas handles +
+      // the relabelled Delete-emoji button are the controls, and updateColorTargets
+      // already hides the colour palette for an emoji). Either way every photo /
+      // collage-level / the other text-type section collapses, so no cross-type
+      // controls show. The null/deselect case is handled by selectCollageItem(null)
+      // / the round-220 deselect path — NOT here — to avoid double application.
+      if (selectedText) {
+        try { applyContextualSections(selectedText.isEmoji ? 'emoji' : 'text'); } catch (_) {}
+      }
     }
     function deleteTextLayer(layer) {
       if (!layer) return;
@@ -7623,6 +7658,16 @@
       // shows [Frame], the background shows [Background], nothing colourable hides
       // it. (Text selection is handled in selectText → syncTextControls.)
       try { updateColorTargets(); } catch (_) {}
+      // v2.1 round 223 (Terry) — CONTEXTUAL PANEL: a PHOTO tile opens ONLY Looks
+      // (the round-208 default; Frame/Tone/Effects/Flip/bg-remove stay collapsed),
+      // the BACKGROUND opens ONLY its Background section, and a null selection
+      // collapses everything. Runs AFTER updateColorTargets so the full collapse
+      // wins over setLooksSubcatActive's bare open. (selectText handles text/emoji.)
+      try {
+        if (it && it.isBg) applyContextualSections('background');
+        else if (it) applyContextualSections('photo');
+        else applyContextualSections('none');
+      } catch (_) {}
       // v2.1 round 204 (Terry) — on select, decide whether the floating toolbar
       // fits above the tile or would clip into the titlebar (it isn't re-rendered
       // here otherwise). The .selected class set above makes it measurable.
@@ -9250,9 +9295,21 @@
       // the Enhance menu: nothing is selected, so the half-open subcategories are
       // just noise. Reuse the Collapse-all button (it collapses every subcategory
       // chevron AND clears the selection) so an idle canvas means a calm panel.
+      // v2.1 round 223 (Terry) — deselect now FULLY collapses every section (collage-
+      // level + text + emoji + all photo sections) to bare headers via the shared
+      // applyContextualSections('none'), then clears the selection so no header stays
+      // gold and the colour palette hides. The old path delegated to the Collapse-all
+      // button (which collapses the same chevron set); we keep that click for its
+      // localStorage persistence + selection-clear, then assert the contextual
+      // collapse explicitly so it holds even if that button is ever absent.
       function collapseAllSubcatsOnDeselect() {
         const _cb = document.getElementById('enhance-collapse-all');
-        if (_cb) { _cb.click(); return; }
+        if (_cb) {
+          _cb.click();
+          try { applyContextualSections('none'); } catch (_) {}
+          return;
+        }
+        try { applyContextualSections('none'); } catch (_) {}
         try { selectCollageItem(null); } catch (_) {}
         try { selectText(null); } catch (_) {}
       }
@@ -9503,6 +9560,12 @@
       const setAllCollections = (open) => {
         const host = document.getElementById('collage-text-palette');
         if (!host) return;
+        // v2.1 round 223 (Terry) — the 12 categories now sit inside the collapsed
+        // "Palettes" group; expanding them while the group is shut would show
+        // nothing, so EXPAND-all also opens the group (and persists it). Collapse-all
+        // leaves the group as-is — it just shuts the 12 inner chevrons.
+        const grp = host.querySelector('.frame-coll-group');
+        if (open && grp) { grp.open = true; try { localStorage.setItem('pdr-color-palettes-group-open', '1'); } catch (_) {} }
         host.querySelectorAll('.frame-coll-collapse').forEach((d) => { d.open = open; });
       };
       if (palExpand && !palExpand.dataset.wired) {
@@ -9864,6 +9927,29 @@
         hint.textContent = 'Tap ＋ on any colour below to save a favourite ↓';
         hostEl.appendChild(hint);
       }
+      // v2.1 round 223 (Terry) — the 12 colour CATEGORIES now live behind ONE
+      // collapsed, INDENTED "Palettes" toggle (default CLOSED) so the colour panel
+      // opens calm: just the 7 quick swatches + Favourites, with the categories one
+      // click away. The group is a plain <details class="frame-coll-group"> (NOT
+      // .enhance-collapse + id, so the panel-level round-157 section persistence
+      // never sweeps it in). Its own open state persists under a dedicated key.
+      // CSS indents the group (~14px) so the 12 categories read as CHILDREN of the
+      // Colour Palette, not siblings of EMOJIS below. The round-202 header
+      // expand/collapse-all icons still target the .frame-coll-collapse inside, and
+      // expand-all also opens THIS group (see setAllCollections) so the result shows.
+      const PALETTES_GROUP_OPEN_KEY = 'pdr-color-palettes-group-open';
+      const palettesGroupOpen = (() => { try { return localStorage.getItem(PALETTES_GROUP_OPEN_KEY) === '1'; } catch (_) { return false; } })();
+      const collGroup = document.createElement('details');
+      collGroup.className = 'frame-coll-group';
+      if (palettesGroupOpen) collGroup.open = true;
+      const collGroupSum = document.createElement('summary');
+      collGroupSum.className = 'frame-coll-group-summary';
+      collGroupSum.textContent = 'Palettes';
+      collGroupSum.setAttribute('data-pdr-tooltip', 'Browse the colour collections (Neon, Pastel, Skin, Cars…)');
+      collGroup.appendChild(collGroupSum);
+      collGroup.addEventListener('toggle', () => {
+        try { localStorage.setItem(PALETTES_GROUP_OPEN_KEY, collGroup.open ? '1' : '0'); } catch (_) {}
+      });
       // Collections — each a collapsed <details> chevron of 16 swatches (2 rows of
       // 8); each swatch is addable to favourites (＋ on hover) and applies on body click.
       // v2.1 round 213 (Terry) — render in the user's saved order (getOrderedCollections),
@@ -9871,6 +9957,8 @@
       // count was dropped — every collection is 16-ish, so it was noise) plus small
       // ▲/▼ reorder controls. Index/last are tracked so ▲ is disabled on the first
       // item and ▼ on the last.
+      // v2.1 round 223 (Terry) — appended into collGroup (the indented "Palettes"
+      // wrapper) instead of straight onto hostEl.
       const orderedColls = getOrderedCollections();
       const lastCollIdx = orderedColls.length - 1;
       orderedColls.forEach((coll, collIdx) => {
@@ -9928,8 +10016,9 @@
           if (!det.open) return;
           try { (det.querySelector('.frame-coll-grid') || det).scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
         });
-        hostEl.appendChild(det);
+        collGroup.appendChild(det);   // v2.1 round 223 (Terry) — into the indented "Palettes" group, not hostEl directly
       });
+      hostEl.appendChild(collGroup);   // v2.1 round 223 (Terry) — mount the one indented group holding all 12 categories
       // Remember this palette + ring the active swatch.
       if (!textColorPalettes.some((p) => p.host === hostEl)) textColorPalettes.push({ host: hostEl, getCurrent, onPick });
       else { const p = textColorPalettes.find((p) => p.host === hostEl); p.getCurrent = getCurrent; p.onPick = onPick; }
@@ -10061,6 +10150,55 @@
       effect: 'collage-text-collapse',   // Text + Effect share the Text section
       frame: 'enhance-frame-collapse',
     };
+    // v2.1 round 223 (Terry) — CONTEXTUAL PANEL. The Enhance panel now follows the
+    // canvas selection: exactly ONE section is open, matching the selected object's
+    // TYPE, and every unrelated section collapses to its bare header. No cross-type
+    // controls are ever visible (a photo never shows the Text/Emoji controls, text
+    // never shows Looks, etc.). applyContextualSections(mode) is the single source of
+    // truth, called from selectCollageItem (photo / background), selectText (text /
+    // emoji), and the deselect path. modes:
+    //   'photo'  → open ONLY Looks (the round-208 default); other photo sections
+    //              (Flip/Frame/Tone/Effects/bg-remove) stay collapsed (user opens).
+    //   'text'   → open ONLY Text (alignment/style/effect/colour palette).
+    //   'emoji'  → open NOTHING (the on-canvas handles + the Delete-emoji button are
+    //              the controls; the colour palette already hides via updateColorTargets).
+    //   'background' → open ONLY Background (its colour palette section).
+    //   'none'   → collapse EVERY section (bare headers only).
+    // It sets the <details>.open attribute directly (mirrors round-208's
+    // setLooksSubcatActive det.open=true). Collapsing fires no auto-scroll; the one
+    // opened section auto-scrolls into view, which is the desired behaviour.
+    const CONTEXTUAL_SECTION_IDS = [
+      // collage-level
+      'ec-shape-collapse', 'collage-bg-collapse', 'ec-arrange-collapse',
+      // text + emoji
+      'collage-text-collapse', 'collage-emoji-collapse',
+      // photo
+      'enhance-looks-collapse', 'tile-transform-row', 'tile-bgremove-section',
+      'enhance-frame-collapse', 'enhance-levels', 'enhance-fx',
+    ];
+    function applyContextualSections(mode) {
+      // Which single section (if any) we FORCE OPEN for this selection type.
+      //   photo → Looks (round-208 default), text → Text. Both are reached only via
+      //   on-canvas selection (never a summary click), so force-opening can't fight a
+      //   native <details> toggle.
+      const openId = (mode === 'photo') ? 'enhance-looks-collapse'
+        : (mode === 'text') ? 'collage-text-collapse'
+        : null;   // 'emoji' / 'none' open nothing
+      // skipId: a section we must NOT touch this pass. The BACKGROUND case is reached
+      // BOTH from a canvas click AND from the Background <summary> click (round 198):
+      // forcing collage-bg-collapse.open here would invert the summary's own native
+      // toggle (set true → the default action flips it back to false → section won't
+      // open). So for 'background' we collapse only the OTHER sections and leave the
+      // bg section's open state to the native toggle. Its colour palette still shows
+      // via updateColorTargets/placeColorPalette, so no bg control is hidden.
+      const skipId = (mode === 'background') ? 'collage-bg-collapse' : null;
+      CONTEXTUAL_SECTION_IDS.forEach((id) => {
+        const det = document.getElementById(id);
+        if (!det) return;
+        if (id === skipId) return;
+        if (id === openId) det.open = true; else det.open = false;
+      });
+    }
     // v2.1 round 208 (Terry) — Looks is the DEFAULT subcategory when a photo tile
     // is selected. It is NOT a colour target (no swatches), so it reuses the same
     // gold .color-subcat-active treatment as the colour subcats but is driven here
