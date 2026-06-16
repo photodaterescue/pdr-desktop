@@ -2879,6 +2879,20 @@
     .ec-grad-stop:hover { border-color: rgba(169,156,255,0.6); }
     .ec-grad-stop.armed { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.5); }
     .ec-grad-stop-sw { display: block; width: 20px; height: 14px; border-radius: 4px; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
+    /* v2.1 round 236 (Terry) — DIRECTION quick-pick row: Radial + 4 linear
+       directions (L→R / T→B / two diagonals). 5 equal cells; each reuses the
+       .ec-ctgl active look. The icon sits above a tiny label so the direction
+       reads at a glance. Active highlight matches the panel's other toggles. */
+    .ec-grad-dirs { display: flex; gap: 6px; }
+    .ec-grad-dir {
+      flex: 1; display: flex; flex-direction: column; align-items: center; gap: 3px;
+      background: transparent; border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff; font-size: 10px; padding: 5px 2px 4px; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-grad-dir svg { width: 18px; height: 18px; display: block; }
+    .ec-grad-dir:hover { background: rgba(169,156,255,0.10); }
+    .ec-grad-dir.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
     .enhance-collapse { padding: 0; }
@@ -3135,11 +3149,31 @@
             <div id="collage-gradient-presets" class="ec-grad-presets"></div>
             <!-- Custom controls -->
             <div id="collage-gradient-custom" style="margin-top:10px">
-              <div class="ec-grad-row">
-                <div class="ec-ctgl-group" id="collage-gradient-kind" role="group" aria-label="Gradient type">
-                  <button type="button" class="ec-ctgl" data-kind="linear" data-pdr-tooltip="Linear gradient — a straight sweep at the chosen angle">Linear</button>
-                  <button type="button" class="ec-ctgl" data-kind="radial" data-pdr-tooltip="Radial gradient — a soft circle from the centre out">Radial</button>
-                </div>
+              <!-- v2.1 round 236 (Terry) — DIRECTION quick-picks replace the old
+                 Linear/Radial toggle. Each sets the gradient's kind+angle while
+                 KEEPING the current colours, so any colour works in any direction.
+                 The angle slider below stays for fine linear control. -->
+              <div class="ec-grad-dirs" id="collage-gradient-dirs" role="group" aria-label="Gradient direction">
+                <button type="button" class="ec-grad-dir" data-dir="radial" data-kind="radial" data-pdr-tooltip="Radial — a soft circle spreading from the centre out">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-rad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></radialGradient></defs><circle cx="12" cy="12" r="9" fill="url(#grad-ico-rad)"/></svg>
+                  Radial
+                </button>
+                <button type="button" class="ec-grad-dir" data-dir="lr" data-kind="linear" data-angle="90" data-pdr-tooltip="Left → Right — a straight sweep across">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-lr" x1="0%" y1="0%" x2="100%" y2="0%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="3" y="6" width="18" height="12" rx="2" fill="url(#grad-ico-lr)"/></svg>
+                  L→R
+                </button>
+                <button type="button" class="ec-grad-dir" data-dir="tb" data-kind="linear" data-angle="180" data-pdr-tooltip="Top → Bottom — a straight sweep down">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-tb" x1="0%" y1="0%" x2="0%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="6" y="3" width="12" height="18" rx="2" fill="url(#grad-ico-tb)"/></svg>
+                  T→B
+                </button>
+                <button type="button" class="ec-grad-dir" data-dir="dr" data-kind="linear" data-angle="135" data-pdr-tooltip="Diagonal ↘ — sweeps to the lower-right">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-dr" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-dr)"/></svg>
+                  ↘
+                </button>
+                <button type="button" class="ec-grad-dir" data-dir="ur" data-kind="linear" data-angle="45" data-pdr-tooltip="Diagonal ↗ — sweeps to the upper-right">
+                  <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-ur" x1="0%" y1="100%" x2="100%" y2="0%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-ur)"/></svg>
+                  ↗
+                </button>
               </div>
               <div class="enhance-control" id="collage-gradient-angle-row" style="margin-top:8px">
                 <div class="enhance-label-row"><label for="collage-gradient-angle">Angle</label><span class="enhance-val" id="collage-gradient-angle-val">135°</span></div>
@@ -3967,6 +4001,16 @@
     // section (colorTarget stays 'background'), so the round-232 floating-palette
     // gating is untouched.
     let collageGradStopEdit = null;
+    // v2.1 round 236 (Terry) — DIRECTION is now chosen INDEPENDENTLY of colour.
+    // This holds the currently-selected direction { kind, angle } so that picking
+    // a colour preset keeps the current direction (instead of forcing the preset's
+    // own embedded direction), and so a freshly-seeded gradient inherits the last
+    // direction the user chose. Seeded to a friendly diagonal ↘ (CSS 135deg). When
+    // a LINEAR gradient is showing, this tracks the live angle (incl. custom slider
+    // angles); for radial the angle is ignored. The five quick-pick presets:
+    //   radial → kind:'radial'         L→R → linear/90    T→B → linear/180
+    //   ↘ → linear/135                 ↗ → linear/45
+    let collageGradDir = { kind: 'linear', angle: 135 };
     let collageAspectKey = 'landscape';
     // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
     // driven by collageAspectKey (a named key OR a numeric aspect for presets/custom).
@@ -9419,18 +9463,33 @@
           b.style.background = collageGradientCss(p.grad);
           b.setAttribute('data-pdr-tooltip', p.name);
           b.setAttribute('aria-label', p.name);
-          // Click → make this preset the bg (panel wrapper makes it one undo step).
-          b.addEventListener('click', () => { collageGradStopEdit = null; setCollageGradient(p.grad); });
+          // v2.1 round 236 (Terry) — a preset now sets COLOURS only and KEEPS the
+          // currently-selected direction (collageGradDir). So with Radial chosen,
+          // any preset shows radial; with L→R chosen, it shows L→R. On the very
+          // first gradient (no direction touched yet) collageGradDir is the seeded
+          // ↘ default, so a cold click still looks right. Stops are taken verbatim
+          // from the preset; kind/angle come from the current direction.
+          b.addEventListener('click', () => {
+            collageGradStopEdit = null;
+            setCollageGradient({ kind: collageGradDir.kind, angle: collageGradDir.angle, stops: p.grad.stops });
+          });
           presetWrap.appendChild(b);
         });
       }
-      // Linear / Radial toggle.
-      document.querySelectorAll('#collage-gradient-kind .ec-ctgl').forEach((btn) => {
+      // v2.1 round 236 (Terry) — DIRECTION quick-picks. Each sets the gradient's
+      // kind+angle while KEEPING the current stops/colours (so every colour is
+      // available in every direction). If no gradient exists yet, seed a sensible
+      // default (current base colour → darker partner) and then point it in the
+      // chosen direction. Records the choice in collageGradDir so presets follow it.
+      document.querySelectorAll('#collage-gradient-dirs .ec-grad-dir').forEach((btn) => {
         btn.addEventListener('click', () => {
-          if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
-          collageBgGradient.kind = btn.dataset.kind === 'radial' ? 'radial' : 'linear';
-          applyCanvasBgVisual();
-          syncCollageGradientUi();
+          const kind = btn.dataset.kind === 'radial' ? 'radial' : 'linear';
+          const angle = parseInt(btn.dataset.angle, 10);
+          collageGradDir = { kind, angle: Number.isFinite(angle) ? angle : 135 };
+          const stops = (collageBgGradient && collageBgGradient.stops.length >= 2)
+            ? collageBgGradient.stops
+            : defaultCollageGradient().stops;
+          setCollageGradient({ kind: collageGradDir.kind, angle: collageGradDir.angle, stops });
         });
       });
       // Angle slider (linear only). Drag is one undo step via the panel wrapper.
@@ -9438,12 +9497,20 @@
       if (angle) {
         angle.addEventListener('input', () => {
           if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
+          // v2.1 round 236 (Terry) — the slider gives fine linear control. Dragging
+          // forces the gradient linear (radial has no angle) and records the custom
+          // angle into collageGradDir so presets follow this exact angle. The
+          // direction quick-picks de-highlight unless the angle lands on a preset
+          // direction (handled by refreshGradDirHighlight via the match check).
+          collageBgGradient.kind = 'linear';
           collageBgGradient.angle = parseInt(angle.value, 10) || 0;
+          collageGradDir = { kind: 'linear', angle: collageBgGradient.angle };
           const v = document.getElementById('collage-gradient-angle-val');
           if (v) v.textContent = collageBgGradient.angle + '°';
           applyCanvasBgVisual();
           // Don't re-render the whole UI mid-drag (would rebuild swatches); just
-          // refresh the live preview + the value label above.
+          // refresh the live preview, the value label, and the direction highlight.
+          refreshGradDirHighlight();
         });
       }
       // Stop colour chips — arm the shared palette to write that stop.
@@ -9459,16 +9526,20 @@
       const block = document.getElementById('collage-gradient-block');
       if (!block) return;
       const g = collageBgGradient;
+      // v2.1 round 236 (Terry) — keep the remembered DIRECTION tracking the live
+      // gradient (covers undo/redo restore + any path that mutates it directly), so
+      // the next colour-preset click keeps whatever direction is actually showing.
+      if (g) collageGradDir = { kind: (g.kind || 'linear'), angle: Number.isFinite(g.angle) ? g.angle : 135 };
       // Active preset: ring the one whose spec matches the live gradient exactly.
       document.querySelectorAll('#collage-gradient-presets .ec-grad-swatch').forEach((sw) => {
         const p = COLLAGE_GRADIENT_PRESETS.find((x) => x.id === sw.dataset.gradId);
         const match = !!(g && p && gradientsEqual(g, p.grad));
         sw.classList.toggle('active', match);
       });
-      // Kind toggle.
-      document.querySelectorAll('#collage-gradient-kind .ec-ctgl').forEach((btn) => {
-        btn.classList.toggle('active', !!g && (g.kind || 'linear') === btn.dataset.kind);
-      });
+      // v2.1 round 236 (Terry) — Direction quick-picks: highlight the one that
+      // matches the live gradient (radial, or the linear angle landing on a
+      // preset direction). A custom slider angle highlights none.
+      refreshGradDirHighlight();
       // Angle row — only meaningful for linear.
       const angleRow = document.getElementById('collage-gradient-angle-row');
       const angle = document.getElementById('collage-gradient-angle');
@@ -9488,6 +9559,26 @@
       // Hint.
       const hint = document.getElementById('collage-gradient-stop-hint');
       if (hint) hint.textContent = (g && collageGradStopEdit != null) ? 'pick a colour →' : '';
+    }
+    // v2.1 round 236 (Terry) — highlight the Direction quick-pick that matches the
+    // LIVE gradient: the radial button when radial, or the linear button whose
+    // angle equals the current angle (±0.5°). A custom slider angle (one that
+    // doesn't land on 45/90/135/180) highlights NONE — the user is in a free
+    // custom angle, shown by the slider. Light enough to call mid-drag.
+    function refreshGradDirHighlight() {
+      const g = collageBgGradient;
+      document.querySelectorAll('#collage-gradient-dirs .ec-grad-dir').forEach((btn) => {
+        let on = false;
+        if (g) {
+          if (btn.dataset.kind === 'radial') {
+            on = (g.kind || 'linear') === 'radial';
+          } else if ((g.kind || 'linear') === 'linear') {
+            const a = parseInt(btn.dataset.angle, 10);
+            on = Number.isFinite(a) && Math.abs((g.angle || 0) - a) <= 0.5;
+          }
+        }
+        btn.classList.toggle('active', on);
+      });
     }
     // Compare two gradient specs for preset-highlight purposes (kind, angle for
     // linear, and each stop's colour+pos). Tolerant of minor numeric drift.
