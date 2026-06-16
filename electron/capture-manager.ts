@@ -901,7 +901,12 @@ interface CollageLayout {
   // (0..100; absent/0 = off), composited as the TOP layer over the finished collage
   // (tiles + bg + text), independent of the bg kind. See buildCollageVignetteSvg /
   // buildCollageGrainSvg + the composite block in collage:saveLayout.
-  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; vignette?: number; vignetteShape?: string; grain?: number };
+  // v2.1 round 242 (Terry) — `texture`: an optional procedural SURFACE TEXTURE backdrop
+  // (brick / wood / woodchip / etc.). Mutually exclusive with gradient + transparent +
+  // bgImage (the editor clears those when a texture is chosen). Baked from the SAME
+  // tileable SVG <pattern> the editor previews (buildCollageTextureSvg, mirroring the
+  // renderer's COLLAGE_TEXTURES) at W×H and composited as the BOTTOM layer.
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; texture?: { id: string }; vignette?: number; vignetteShape?: string; grain?: number };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
@@ -1081,6 +1086,165 @@ function buildCollageMeshSvg(
   });
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs>` +
     `<rect width="${W}" height="${H}" fill="${base}"/>${rects}</svg>`;
+}
+
+// v2.1 round 242 (Terry) — PROCEDURAL SURFACE TEXTURE bake. This table + the tile()
+// functions are a VERBATIM mirror of the renderer's COLLAGE_TEXTURES (viewer.html):
+// each tile() returns the inner markup of ONE seamless square tile `p` px wide. The
+// bake wraps the chosen tile in an SVG <pattern> (patternUnits="userSpaceOnUse",
+// width=height=tilePx) and fills a W×H rect, so the saved PNG reproduces the editor's
+// repeating preview exactly. tilePx = round(tileFrac · min(W,H)) — the SAME fraction
+// of the short side the preview uses (background-size), so the scale matches. fg/bg are
+// the fixed default colour pair per texture (no tint this round). Any change to a tile
+// here MUST be mirrored in viewer.html's COLLAGE_TEXTURES and vice-versa.
+type CollageTextureEntry = { id: string; fg: string; bg: string; tileFrac: number; tile: (p: number, fg: string, bg: string) => string };
+const COLLAGE_TEXTURES: CollageTextureEntry[] = [
+  { id: 'brick', fg: '#b15a40', bg: '#caa98f', tileFrac: 0.16, tile: function (p, fg, bg) {
+    const g = Math.max(1, p / 18);
+    const ch = p / 2;
+    const rh = ch - g;
+    function brick(x: number, y: number, w: number) { return '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + rh.toFixed(2) + '" rx="' + (g * 0.5).toFixed(2) + '" fill="' + fg + '"/>'; }
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    out += brick(g / 2, 0, p - g);
+    out += brick(g / 2, ch, p / 2 - g);
+    out += brick(p / 2 + g / 2, ch, p / 2 - g);
+    return out;
+  } },
+  { id: 'woodchip', fg: '#b9a07c', bg: '#e8ddc7', tileFrac: 0.10, tile: function (p, fg, bg) {
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    let seed = 1234567;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    const n = 26;
+    for (let i = 0; i < n; i++) {
+      const cx = rnd() * p, cy = rnd() * p;
+      const w = (0.6 + rnd() * 1.1) * (p / 22), h = (0.5 + rnd() * 0.9) * (p / 22);
+      const rot = Math.round(rnd() * 180);
+      const op = (0.35 + rnd() * 0.5).toFixed(2);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const x = cx + dx * p, y = cy + dy * p;
+        if (x < -3 || x > p + 3 || y < -3 || y > p + 3) continue;
+        out += '<ellipse cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" rx="' + w.toFixed(2) + '" ry="' + h.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '" transform="rotate(' + rot + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ')"/>';
+      }
+    }
+    return out;
+  } },
+  { id: 'linen', fg: '#9fb0c3', bg: '#eef2f6', tileFrac: 0.05, tile: function (p, fg, bg) {
+    const n = 4, sw = p / 22;
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    out += '<g stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '" stroke-opacity="0.5">';
+    for (let i = 0; i < n; i++) {
+      const t = (i + 0.5) * (p / n);
+      out += '<line x1="' + t.toFixed(2) + '" y1="0" x2="' + t.toFixed(2) + '" y2="' + p + '" stroke-opacity="0.55"/>';
+      out += '<line x1="0" y1="' + t.toFixed(2) + '" x2="' + p + '" y2="' + t.toFixed(2) + '" stroke-opacity="0.28"/>';
+    }
+    return out + '</g>';
+  } },
+  { id: 'paper', fg: '#c9c4b6', bg: '#f7f4ec', tileFrac: 0.12, tile: function (p, fg, bg) {
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    let seed = 987654;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    const n = 38;
+    for (let i = 0; i < n; i++) {
+      const cx = rnd() * p, cy = rnd() * p;
+      const r = (0.3 + rnd() * 0.7) * (p / 40);
+      const op = (0.15 + rnd() * 0.3).toFixed(2);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const x = cx + dx * p, y = cy + dy * p;
+        if (x < -2 || x > p + 2 || y < -2 || y > p + 2) continue;
+        out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '"/>';
+      }
+    }
+    return out;
+  } },
+  { id: 'grid', fg: '#b8c4d0', bg: '#fbfcfe', tileFrac: 0.07, tile: function (p, fg, bg) {
+    const sw = Math.max(1, p / 28);
+    return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+      '<path d="M0 ' + (p - sw / 2).toFixed(2) + ' H' + p + ' M' + (p - sw / 2).toFixed(2) + ' 0 V' + p + '" stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '"/>';
+  } },
+  { id: 'dots', fg: '#7f8cd6', bg: '#eef0fb', tileFrac: 0.06, tile: function (p, fg, bg) {
+    const r = p * 0.16;
+    return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+      '<g fill="' + fg + '">' +
+      '<circle cx="' + (p / 2) + '" cy="' + (p / 2) + '" r="' + r.toFixed(2) + '"/>' +
+      '<circle cx="0" cy="0" r="' + r.toFixed(2) + '"/>' +
+      '<circle cx="' + p + '" cy="0" r="' + r.toFixed(2) + '"/>' +
+      '<circle cx="0" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
+      '<circle cx="' + p + '" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
+      '</g>';
+  } },
+  { id: 'diagonal', fg: '#d7b86a', bg: '#f4ead0', tileFrac: 0.07, tile: function (p, fg, bg) {
+    const w = p / 2;
+    function band(off: number) {
+      return '<polygon points="' + (off) + ',0 ' + (off + w) + ',0 ' + (off + w - p) + ',' + p + ' ' + (off - p) + ',' + p + '" fill="' + fg + '"/>';
+    }
+    return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+      band(0) + band(w) + band(-p) + band(p);
+  } },
+  { id: 'carbon', fg: '#3a3a3a', bg: '#1a1a1a', tileFrac: 0.05, tile: function (p, fg, bg) {
+    const h = p / 2;
+    function cell(x: number, y: number, dir: number) {
+      return '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + bg + '"/>' +
+        '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + fg + '" fill-opacity="0.5"/>' +
+        '<line x1="' + (dir > 0 ? x : x + h) + '" y1="' + y + '" x2="' + (dir > 0 ? x + h : x) + '" y2="' + (y + h) + '" stroke="#555" stroke-width="' + (h * 0.12).toFixed(2) + '" stroke-opacity="0.6"/>';
+    }
+    return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+      cell(0, 0, 1) + cell(h, 0, -1) + cell(0, h, -1) + cell(h, h, 1);
+  } },
+  { id: 'woodgrain', fg: '#9c6b3f', bg: '#c79865', tileFrac: 0.42, tile: function (p, fg, bg) {
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    let seed = 24680;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    const lines = 7, segs = 16;
+    out += '<g stroke="' + fg + '" fill="none" stroke-opacity="0.45" stroke-linecap="round">';
+    for (let i = 0; i < lines; i++) {
+      const baseX = (i + 0.5) * (p / lines);
+      const amp = (0.3 + rnd() * 0.9) * (p / lines) * 0.6;
+      const phase = rnd() * Math.PI * 2;
+      const sw = (0.4 + rnd() * 0.8) * (p / 60);
+      for (let wrap = -1; wrap <= 0; wrap++) {
+        let d = '';
+        for (let s = 0; s <= segs; s++) {
+          const y = (s / segs) * p;
+          const x = baseX + amp * Math.sin((2 * Math.PI * y) / p + phase) + wrap * p;
+          d += (s === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
+        }
+        out += '<path d="' + d.trim() + '" stroke-width="' + sw.toFixed(2) + '"/>';
+      }
+    }
+    return out + '</g>';
+  } },
+  { id: 'concrete', fg: '#8c8c8c', bg: '#a8a8a8', tileFrac: 0.5, tile: function (p, fg, bg) {
+    let out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+    let seed = 555111;
+    function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+    const n = 40;
+    for (let i = 0; i < n; i++) {
+      const cx = rnd() * p, cy = rnd() * p;
+      const r = (2 + rnd() * 6) * (p / 100);
+      const light = rnd() > 0.5;
+      const col = light ? '#bdbdbd' : '#7a7a7a';
+      const op = (0.18 + rnd() * 0.3).toFixed(2);
+      for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+        const x = cx + dx * p, y = cy + dy * p;
+        if (x < -r - 2 || x > p + r + 2 || y < -r - 2 || y > p + r + 2) continue;
+        out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + col + '" fill-opacity="' + op + '"/>';
+      }
+    }
+    return out;
+  } },
+];
+// v2.1 round 242 (Terry) — build the full-canvas texture SVG: a <pattern> wrapping the
+// entry's tile() at tilePx, filling a W×H rect. tilePx is the SAME short-side fraction
+// the preview uses, so the baked tile scale matches the on-screen tile. Returns '' for
+// an unknown id (caller skips the layer).
+function buildCollageTextureSvg(W: number, H: number, id: string): string {
+  const entry = COLLAGE_TEXTURES.find((t) => t.id === id);
+  if (!entry) return '';
+  const tilePx = Math.max(8, Math.round(entry.tileFrac * Math.min(W, H)));
+  const inner = entry.tile(tilePx, entry.fg, entry.bg);
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+    `<defs><pattern id="tex" patternUnits="userSpaceOnUse" width="${tilePx}" height="${tilePx}">${inner}</pattern></defs>` +
+    `<rect width="${W}" height="${H}" fill="url(#tex)"/></svg>`;
 }
 
 // v2.1 round 238 (Terry) — VIGNETTE finishing layer. Reproduces the editor's CSS
@@ -1425,6 +1589,25 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         composites.unshift({ input: gradBuf, left: PAD, top: PAD });
       } catch (gradErr) {
         log.warn(`[collage] gradient background skipped (non-fatal): ${(gradErr as Error).message}`);
+      }
+    }
+
+    // v2.1 round 242 (Terry) — optional procedural TEXTURE background. Rasterize the
+    // tileable-pattern SVG at the OUTPUT W×H via sharp and prepend it as the BOTTOM
+    // layer (under the tiles), matching the editor's repeating CSS preview. Mutually
+    // exclusive with gradient + transparent + a bg photo (the editor clears those when
+    // a texture is chosen), so it can't double-composite. The texture rect is opaque,
+    // so it fully covers the base bg colour underneath.
+    const texture = transparent ? undefined : layout.canvas.texture;
+    if (texture && texture.id) {
+      try {
+        const svg = buildCollageTextureSvg(W, H, texture.id);
+        if (svg) {
+          const texBuf = await sharp(Buffer.from(svg)).png().toBuffer();
+          composites.unshift({ input: texBuf, left: PAD, top: PAD });
+        }
+      } catch (texErr) {
+        log.warn(`[collage] texture background skipped (non-fatal): ${(texErr as Error).message}`);
       }
     }
 

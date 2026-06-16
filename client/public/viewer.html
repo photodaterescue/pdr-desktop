@@ -3238,6 +3238,17 @@
               </div>
             </div>
           </div>
+          <!-- v2.1 round 242 (Terry) — PROCEDURAL SURFACE TEXTURES (brick / wood /
+               woodchip / etc.). A new bg KIND alongside colour / gradient / photo /
+               transparent. A grid of ~10 swatches, each previewing its tileable SVG
+               pattern; clicking applies it (swapping away the other bg kinds). Fixed
+               default colour pair per texture this round (no tint). Built + wired by
+               buildCollageTextureUi(); lives inside the Background section so it's gated
+               by the section being open (round-232 focus model) like the gradient block. -->
+          <div id="collage-texture-block" style="margin-top:14px">
+            <div class="enhance-label-row" style="margin-bottom:6px"><label data-pdr-tooltip="Procedural surface textures — brick, wood, linen and more. Click a swatch to apply it as the background.">Texture</label></div>
+            <div id="collage-texture-swatches" class="ec-grad-presets"></div>
+          </div>
           <!-- v2.1 round 238 (Terry) — VIGNETTE + GRAIN finishing treatments. Unlike the
                gradient (which is a bg KIND), these apply over the WHOLE collage — over the
                photos AND the background — the classic film look. They work with any bg type
@@ -4082,6 +4093,17 @@
     //              centre colour reaches 50/50 with the edge colour (the radial twin of
     //              blend). Low = tight bright centre (weak); high = centre fills most.
     let collageBgGradient = null;
+    // v2.1 round 242 (Terry) — procedural surface TEXTURE background (brick / wood /
+    // woodchip / etc.). One more mutually-exclusive bg KIND alongside colour / gradient /
+    // photo / transparent: when collageBgTexture is non-null it WINS over the others for
+    // both the live preview and the bake. Model: { id } — the pattern id from
+    // COLLAGE_TEXTURES (each entry carries its own fixed default colour pair this round;
+    // no per-texture tint UI). Picking a colour / gradient / photo / transparent clears
+    // it (each bg setter nulls it), exactly like those kinds already swap each other.
+    // Preview + bake both build the SAME tileable SVG <pattern> from the table entry, so
+    // they match; the tile size is a FRACTION of the canvas short side (entry.tileFrac)
+    // so the visual scale is identical on screen and in the saved PNG.
+    let collageBgTexture = null;
     // The 12 curated presets shown as swatches in the Background section. Each:
     //   id    — stable key (selection highlight + sticky last-pick if wanted)
     //   name  — tooltip label
@@ -4139,6 +4161,211 @@
         { color: '#6b6b6b', x: 20, y: 22, r: 72 }, { color: '#9a9a9a', x: 82, y: 30, r: 62 },
         { color: '#4a4a4a', x: 60, y: 92, r: 70 }, { color: '#bdbdbd', x: 8, y: 90, r: 48 } ] } },
     ];
+    // v2.1 round 242 (Terry) — PROCEDURAL SURFACE TEXTURES (brick / wood / woodchip /
+    // etc.) as a Texture background KIND. Each entry is a SEAMLESS, tileable SVG
+    // <pattern>: `tile(p, fg, bg)` returns the INNER markup of ONE square tile `p` px
+    // wide; the pattern repeats it on a `p × p` grid (patternUnits="userSpaceOnUse").
+    // EVERY tile is authored to repeat with no visible seam — features that touch an
+    // edge are mirrored/wrapped to the opposite edge (e.g. the running-bond brick draws
+    // the mortar courses + a half-offset row, and bricks that run off the right re-enter
+    // on the left). `fg`/`bg` are the entry's fixed default colour PAIR (no per-texture
+    // tint UI this round). `tileFrac` sizes the tile as a fraction of the canvas SHORT
+    // side, so preview (background-size px) and bake (pattern width px) share one scale.
+    //
+    // collageTextureTileSvg(entry, p) wraps tile() into a tiny standalone SVG sized to a
+    // single tile — used BOTH for the swatch preview and (via a data-URI + background-
+    // size) for the canvas preview; collageTextureFullSvg(entry, W, H, tilePx) wraps the
+    // SAME tile() into a W×H <pattern>-filled rect for the bake. The bake builder is
+    // mirrored verbatim in capture-manager.ts (buildCollageTextureSvg) so saved == preview.
+    const COLLAGE_TEXTURES = [
+      // BRICK — running-bond courses, designed to tile with NO seam. The tile holds
+      // exactly TWO courses (period p vertically): course A at the top, course B
+      // (offset by half a brick) below. Mortar (bg) shows through a uniform gap `g` on
+      // every joint — the vertical rhythm is course-height + g so the gap at the tile's
+      // bottom edge meets course A of the tile below at the same `g`, and the horizontal
+      // joints are placed at the tile EDGE (course A) and tile CENTRE (course B), each
+      // shared with the neighbour, so the half-brick offset is continuous across tiles.
+      { id: 'brick', name: 'Brick', fg: '#b15a40', bg: '#caa98f', tileFrac: 0.16, tile: function (p, fg, bg) {
+        var g = Math.max(1, p / 18);    // uniform mortar gap
+        var ch = p / 2;                 // course pitch (two courses per tile)
+        var rh = ch - g;                // brick height within a course
+        function brick(x, y, w) { return '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + rh.toFixed(2) + '" rx="' + (g * 0.5).toFixed(2) + '" fill="' + fg + '"/>'; }
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        // Course A (top): vertical joint at the tile edges → one full brick across the
+        // width, inset by half a joint each side so the seam joint reads as width g.
+        out += brick(g / 2, 0, p - g);
+        // Course B (lower): joint at the CENTRE → two bricks meeting mid-tile, each
+        // running to the tile edge (the edge halves join the neighbour → continuous).
+        out += brick(g / 2, ch, p / 2 - g);
+        out += brick(p / 2 + g / 2, ch, p / 2 - g);
+        return out;
+      } },
+      // WOODCHIP — fine random stipple over a warm beige (the classic painted-woodchip
+      // wall). A scatter of small fg flecks; positions are mirrored across both axes so
+      // the density is even and the tile wraps without a seam band.
+      { id: 'woodchip', name: 'Woodchip', fg: '#b9a07c', bg: '#e8ddc7', tileFrac: 0.10, tile: function (p, fg, bg) {
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        // deterministic pseudo-random flecks (no Math.random → preview==bake byte-stable)
+        var seed = 1234567;
+        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+        var n = 26;
+        for (var i = 0; i < n; i++) {
+          var cx = rnd() * p, cy = rnd() * p;
+          var w = (0.6 + rnd() * 1.1) * (p / 22), h = (0.5 + rnd() * 0.9) * (p / 22);
+          var rot = Math.round(rnd() * 180);
+          var op = (0.35 + rnd() * 0.5).toFixed(2);
+          // draw the fleck and its wraps (±p on each axis) so edge flecks tile seamlessly
+          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+            var x = cx + dx * p, y = cy + dy * p;
+            if (x < -3 || x > p + 3 || y < -3 || y > p + 3) continue;
+            out += '<ellipse cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" rx="' + w.toFixed(2) + '" ry="' + h.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '" transform="rotate(' + rot + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ')"/>';
+          }
+        }
+        return out;
+      } },
+      // LINEN — woven crosshatch: evenly spaced vertical + horizontal threads at low
+      // opacity. Strokes run full edge-to-edge so they meet across tiles → seamless.
+      { id: 'linen', name: 'Linen', fg: '#9fb0c3', bg: '#eef2f6', tileFrac: 0.05, tile: function (p, fg, bg) {
+        var n = 4, sw = p / 22;
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        out += '<g stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '" stroke-opacity="0.5">';
+        for (var i = 0; i < n; i++) {
+          var t = (i + 0.5) * (p / n);
+          out += '<line x1="' + t.toFixed(2) + '" y1="0" x2="' + t.toFixed(2) + '" y2="' + p + '" stroke-opacity="0.55"/>';
+          out += '<line x1="0" y1="' + t.toFixed(2) + '" x2="' + p + '" y2="' + t.toFixed(2) + '" stroke-opacity="0.28"/>';
+        }
+        return out + '</g>';
+      } },
+      // PAPER — subtle fibre flecks (very low contrast) over off-white, like cotton-rag
+      // paper. Same wrapped-scatter technique as woodchip but fainter + finer.
+      { id: 'paper', name: 'Paper', fg: '#c9c4b6', bg: '#f7f4ec', tileFrac: 0.12, tile: function (p, fg, bg) {
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        var seed = 987654;
+        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+        var n = 38;
+        for (var i = 0; i < n; i++) {
+          var cx = rnd() * p, cy = rnd() * p;
+          var r = (0.3 + rnd() * 0.7) * (p / 40);
+          var op = (0.15 + rnd() * 0.3).toFixed(2);
+          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+            var x = cx + dx * p, y = cy + dy * p;
+            if (x < -2 || x > p + 2 || y < -2 || y > p + 2) continue;
+            out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '"/>';
+          }
+        }
+        return out;
+      } },
+      // GRID — clean blueprint-style grid: thin fg lines on the right + bottom edges so
+      // adjacent tiles share a single line (no doubled seam).
+      { id: 'grid', name: 'Grid', fg: '#b8c4d0', bg: '#fbfcfe', tileFrac: 0.07, tile: function (p, fg, bg) {
+        var sw = Math.max(1, p / 28);
+        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+          '<path d="M0 ' + (p - sw / 2).toFixed(2) + ' H' + p + ' M' + (p - sw / 2).toFixed(2) + ' 0 V' + p + '" stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '"/>';
+      } },
+      // DOTS — polka dots in a centred grid. A dot at the tile centre + quarter dots at
+      // the 4 corners (each corner dot is shared by 4 tiles) → seamless half-drop look.
+      { id: 'dots', name: 'Dots', fg: '#7f8cd6', bg: '#eef0fb', tileFrac: 0.06, tile: function (p, fg, bg) {
+        var r = p * 0.16;
+        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+          '<g fill="' + fg + '">' +
+          '<circle cx="' + (p / 2) + '" cy="' + (p / 2) + '" r="' + r.toFixed(2) + '"/>' +
+          '<circle cx="0" cy="0" r="' + r.toFixed(2) + '"/>' +
+          '<circle cx="' + p + '" cy="0" r="' + r.toFixed(2) + '"/>' +
+          '<circle cx="0" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
+          '<circle cx="' + p + '" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
+          '</g>';
+      } },
+      // DIAGONAL STRIPES — 45° bands. Drawn as a parallelogram band repeated so the
+      // diagonal continues unbroken into the next tile (the band exits a corner and the
+      // wrap copy re-enters the opposite corner).
+      { id: 'diagonal', name: 'Diagonal', fg: '#d7b86a', bg: '#f4ead0', tileFrac: 0.07, tile: function (p, fg, bg) {
+        var w = p / 2;   // stripe width along the tile → two full stripes per tile, wraps cleanly
+        // Two diagonal bands via a polygon that the −p/+p copies complete across edges.
+        function band(off) {
+          return '<polygon points="' + (off) + ',0 ' + (off + w) + ',0 ' + (off + w - p) + ',' + p + ' ' + (off - p) + ',' + p + '" fill="' + fg + '"/>';
+        }
+        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+          band(0) + band(w) + band(-p) + band(p);
+      } },
+      // CARBON FIBRE — near-black woven 2×2 twill: four cells, each a subtle diagonal
+      // highlight, alternating direction like real carbon weave. Tiles seamlessly because
+      // the 2×2 cell block fills the tile exactly.
+      { id: 'carbon', name: 'Carbon', fg: '#3a3a3a', bg: '#1a1a1a', tileFrac: 0.05, tile: function (p, fg, bg) {
+        var h = p / 2;
+        // Each of the 2×2 cells: a near-black square with a soft fg overlay + a thin
+        // diagonal sheen line; dir alternates the sheen direction (the carbon weave).
+        function cell(x, y, dir) {
+          return '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + bg + '"/>' +
+            '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + fg + '" fill-opacity="0.5"/>' +
+            '<line x1="' + (dir > 0 ? x : x + h) + '" y1="' + y + '" x2="' + (dir > 0 ? x + h : x) + '" y2="' + (y + h) + '" stroke="#555" stroke-width="' + (h * 0.12).toFixed(2) + '" stroke-opacity="0.6"/>';
+        }
+        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
+          cell(0, 0, 1) + cell(h, 0, -1) + cell(0, h, -1) + cell(h, h, 1);
+      } },
+      // WOODGRAIN — stylised wavy grain: warm wood base with several gently waving
+      // darker grain lines running top→bottom. Each line is a smooth sine path whose
+      // value at y=0 equals its value at y=p, so it continues seamlessly into the tile
+      // below; lines that exit the right re-enter on the left (wrapped copy).
+      { id: 'woodgrain', name: 'Woodgrain', fg: '#9c6b3f', bg: '#c79865', tileFrac: 0.42, tile: function (p, fg, bg) {
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        var seed = 24680;
+        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+        var lines = 7, segs = 16;
+        out += '<g stroke="' + fg + '" fill="none" stroke-opacity="0.45" stroke-linecap="round">';
+        for (var i = 0; i < lines; i++) {
+          var baseX = (i + 0.5) * (p / lines);
+          var amp = (0.3 + rnd() * 0.9) * (p / lines) * 0.6;
+          var phase = rnd() * Math.PI * 2;
+          var sw = (0.4 + rnd() * 0.8) * (p / 60);
+          // build a path sampling x(y) = baseX + amp*sin(2π·y/p + phase); periodic in p.
+          for (var wrap = -1; wrap <= 0; wrap++) {
+            var d = '';
+            for (var s = 0; s <= segs; s++) {
+              var y = (s / segs) * p;
+              var x = baseX + amp * Math.sin((2 * Math.PI * y) / p + phase) + wrap * p;
+              d += (s === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
+            }
+            out += '<path d="' + d.trim() + '" stroke-width="' + sw.toFixed(2) + '"/>';
+          }
+        }
+        return out + '</g>';
+      } },
+      // CONCRETE — mottled grey: a mid-grey base scattered with soft lighter + darker
+      // blotches (wrapped on both axes) for an even, seamless poured-concrete look.
+      { id: 'concrete', name: 'Concrete', fg: '#8c8c8c', bg: '#a8a8a8', tileFrac: 0.5, tile: function (p, fg, bg) {
+        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
+        var seed = 555111;
+        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
+        var n = 40;
+        for (var i = 0; i < n; i++) {
+          var cx = rnd() * p, cy = rnd() * p;
+          var r = (2 + rnd() * 6) * (p / 100);
+          var light = rnd() > 0.5;
+          var col = light ? '#bdbdbd' : '#7a7a7a';
+          var op = (0.18 + rnd() * 0.3).toFixed(2);
+          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
+            var x = cx + dx * p, y = cy + dy * p;
+            if (x < -r - 2 || x > p + r + 2 || y < -r - 2 || y > p + r + 2) continue;
+            out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + col + '" fill-opacity="' + op + '"/>';
+          }
+        }
+        return out;
+      } },
+    ];
+    // v2.1 round 242 (Terry) — look up a texture entry by id (null when none/unknown).
+    function collageTextureById(id) { return COLLAGE_TEXTURES.find(function (t) { return t.id === id; }) || null; }
+    // v2.1 round 242 (Terry) — build a STANDALONE single-tile SVG string for an entry
+    // (used by the swatch + canvas-preview data-URI). `p` is the tile size in px.
+    function collageTextureTileSvg(entry, p) {
+      if (!entry) return '';
+      var inner = entry.tile(p, entry.fg, entry.bg);
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + p + '" height="' + p + '" viewBox="0 0 ' + p + ' ' + p + '">' + inner + '</svg>';
+    }
+    // v2.1 round 242 (Terry) — data-URI for the single tile (canvas-preview background-
+    // image). URL-encoded (not base64) so the markup stays inspectable + small.
+    function collageTextureDataUri(entry, p) {
+      return 'data:image/svg+xml,' + encodeURIComponent(collageTextureTileSvg(entry, p));
+    }
     // v2.1 round 235 (Terry) — when editing a custom gradient, which STOP index the
     // shared Background colour palette currently writes to (0 or 1), or null when no
     // stop is armed (a palette pick then sets collageBg as it always has). This lets
@@ -9065,6 +9292,10 @@
                 stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: s.pos })),
               }
         ) : null,
+        // v2.1 round 242 (Terry) — the procedural TEXTURE bg kind (null when the bg is
+        // colour/gradient/photo/transparent). Just the id; the colour pair lives in the
+        // table. restore re-applies it as the active bg; old snapshots lack it → none.
+        texture: collageBgTexture ? { id: collageBgTexture.id } : null,
         // v2.1 round 149 — the background's whole enh (Look/levels/Fade),
         // not just the old single fade value.
         bgEnh: collageBgTile ? collageBgTile.enh : null, aspectKey: collageAspectKey,
@@ -9129,6 +9360,10 @@
           }
         : null;
       collageGradStopEdit = null;
+      // v2.1 round 242 (Terry) — restore the procedural TEXTURE bg (null on old
+      // snapshots, or when the snapshot's bg was a different kind). Validate the id
+      // against the table so a stale/unknown id falls back to no texture.
+      collageBgTexture = (s.texture && collageTextureById(s.texture.id)) ? { id: s.texture.id } : null;
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
       // snapshots predate these: sizeId '' = no highlight, exportPx null = legacy 2000px).
       collageSizeId = s.sizeId || '';
@@ -9214,6 +9449,7 @@
       // from gradient" guard — that would wipe the gradient we just restored).
       applyCanvasBgVisual();
       try { syncCollageGradientUi(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}   // v2.1 round 242 (Terry) — repaint the texture swatch ring on undo/redo
       syncCanvasSizeSelection();   // v2.1 round 226 (Terry) — repaint the selected Canvas Size row on undo/redo
       renderCollageBgLayer();
       updateBgPhotoSwatch();        // v2.1 round 178 — keep the bg-photo swatch in sync on undo/redo
@@ -9597,6 +9833,29 @@
       // toggles). It self-hides when not radial / not bg-focused.
       try { updateGradEpicentreVisibility(); } catch (_) {}
       if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
+      // v2.1 round 242 (Terry) — TEXTURE: paint the entry's bg colour + a repeating
+      // tile image. The tile is built from the SAME tile() markup the bake uses; its
+      // on-screen size is tileFrac × the canvas SHORT side (px), and background-size
+      // pins that, so the visual scale matches the bake (which sizes the <pattern> the
+      // same fraction of the output short side). Done as explicit properties (not the
+      // shorthand) so background-color shows behind any tile transparency.
+      if (collageBgTexture) {
+        var tex = collageTextureById(collageBgTexture.id);
+        if (tex) {
+          var rect = collageCanvasEl.getBoundingClientRect();
+          var shortPx = Math.max(1, Math.min(rect.width || 0, rect.height || 0));
+          // build the tile at a crisp, scale-independent resolution (200px) — the SVG is
+          // vector so it stays sharp; background-size then scales it to the on-screen tile.
+          var tilePx = Math.max(8, Math.round(tex.tileFrac * shortPx));
+          collageCanvasEl.style.background = '';
+          collageCanvasEl.style.backgroundColor = tex.bg;
+          collageCanvasEl.style.backgroundImage = 'url("' + collageTextureDataUri(tex, 200) + '")';
+          collageCanvasEl.style.backgroundRepeat = 'repeat';
+          collageCanvasEl.style.backgroundSize = tilePx + 'px ' + tilePx + 'px';
+          collageCanvasEl.style.backgroundPosition = '0 0';
+          return;
+        }
+      }
       // v2.1 round 239 (Terry) — MESH: set background-color:base + a stacked
       // background-image of the radial blobs (the standard mesh technique). Done as
       // two explicit properties (not the shorthand) so the base shows through the
@@ -9818,11 +10077,13 @@
       // v2.1 round 235 (Terry) — transparent + gradient are mutually exclusive bg
       // kinds; turning Transparent ON clears any gradient (it would otherwise hide
       // under the checkerboard and silently come back when Transparent is toggled off).
-      if (collageTransparent) { collageBgGradient = null; collageGradStopEdit = null; }
+      // v2.1 round 242 (Terry) — same for a texture: clear it on Transparent.
+      if (collageTransparent) { collageBgGradient = null; collageGradStopEdit = null; collageBgTexture = null; }
       applyCanvasBgVisual();
       renderCollageBgLayer();
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}   // v2.1 round 242 (Terry) — clear the texture ring when Transparent is chosen
     }
     function onCollageColorPick(hex) {
       // v2.1 round 177/178 — Transparent + bg-photo swatches use sentinel colours.
@@ -9849,13 +10110,15 @@
       // gradient (mutually exclusive bg kinds), mirroring how colour/photo/
       // transparent already swap each other. The stop-edit path bypasses this fn,
       // so editing a stop's colour never trips this clear.
-      collageBgGradient = null; collageGradStopEdit = null;
+      // v2.1 round 242 (Terry) — a plain colour also clears any texture.
+      collageBgGradient = null; collageGradStopEdit = null; collageBgTexture = null;
       // White is the default base; '' also renders as plain white on screen and
       // bakes to white on save (hexToRgb('') already falls back to white).
       applyCanvasBgVisual();
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}
     }
     // v2.1 round 235 (Terry) — set the WHOLE gradient as the bg (from a preset or a
     // custom-control change). Clears the other mutually-exclusive kinds (transparent
@@ -9879,13 +10142,15 @@
       };
       // Swap away from the other bg kinds (transparent hides the gradient; a photo
       // sits on top of the canvas bg, so clear both to make the gradient the bg).
-      collageTransparent = false;
+      // v2.1 round 242 (Terry) — also clear any texture.
+      collageTransparent = false; collageBgTexture = null;
       if (collageBgImagePath) collageBgImagePath = '';
       applyCanvasBgVisual();
       renderCollageBgLayer();   // tears down the (now-cleared) photo layer
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}
     }
     // v2.1 round 239 (Terry) — set a MESH gradient as the bg (preset-driven this
     // round; no custom stop editing). Same swap semantics as setCollageGradient:
@@ -9906,6 +10171,26 @@
       };
       collageGradStopEdit = null;
       // Swap away from the other bg kinds (mirrors setCollageGradient).
+      // v2.1 round 242 (Terry) — also clear any texture.
+      collageTransparent = false; collageBgTexture = null;
+      if (collageBgImagePath) collageBgImagePath = '';
+      applyCanvasBgVisual();
+      renderCollageBgLayer();   // tears down the (now-cleared) photo layer
+      markBgLockedSpecialsActive();
+      try { syncTextColorPaletteRings(); } catch (_) {}
+      try { syncCollageGradientUi(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}
+    }
+    // v2.1 round 242 (Terry) — set a procedural TEXTURE as the bg. Same swap semantics
+    // as the gradient setters: clears colour-only state's competitors (transparent +
+    // bg-photo + gradient) so the texture truly becomes the bg, keeps collageBg
+    // underneath as the fallback base, and repaints preview + UI. Model: { id }.
+    function setCollageTexture(id) {
+      var entry = collageTextureById(id);
+      if (!entry) return;
+      collageBgTexture = { id: entry.id };
+      // Swap away from every other bg kind.
+      collageBgGradient = null; collageGradStopEdit = null;
       collageTransparent = false;
       if (collageBgImagePath) collageBgImagePath = '';
       applyCanvasBgVisual();
@@ -9913,6 +10198,7 @@
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
+      try { syncCollageTextureUi(); } catch (_) {}
     }
     // Update one stop's colour in the active gradient + repaint (preview + UI).
     function setCollageGradientStopColor(idx, hex) {
@@ -10130,6 +10416,41 @@
       }
       syncCollageGradientUi();
       syncCollageTreatmentsUi();
+    }
+    // v2.1 round 242 (Terry) — build the procedural TEXTURE swatch grid (idempotent).
+    // Each swatch previews its pattern via the SAME tile() markup used by the canvas +
+    // bake (a tile data-URI tiled small inside the swatch), and clicking applies it.
+    var collageTextureWired = false;
+    function buildCollageTextureUi() {
+      if (collageTextureWired) return;
+      var wrap = document.getElementById('collage-texture-swatches');
+      if (!wrap) return;
+      collageTextureWired = true;
+      wrap.innerHTML = '';
+      COLLAGE_TEXTURES.forEach(function (t) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'ec-grad-swatch'; b.dataset.texId = t.id;
+        // Preview: fill with the bg colour + a small repeat of the tile so the pattern
+        // reads inside the ~28px swatch. The tile SVG is built at 200px (vector → crisp);
+        // background-size pins it small. ~10px tiles show 2–3 repeats per swatch.
+        b.style.backgroundColor = t.bg;
+        b.style.backgroundImage = 'url("' + collageTextureDataUri(t, 200) + '")';
+        b.style.backgroundSize = '14px 14px';
+        b.style.backgroundRepeat = 'repeat';
+        b.setAttribute('data-pdr-tooltip', t.name);
+        b.setAttribute('aria-label', t.name);
+        b.addEventListener('click', function () { setCollageTexture(t.id); });
+        wrap.appendChild(b);
+      });
+      syncCollageTextureUi();
+    }
+    // v2.1 round 242 (Terry) — ring the active texture swatch (clears all when no
+    // texture is the active bg). Called on build, undo/redo, and any bg swap.
+    function syncCollageTextureUi() {
+      var activeId = collageBgTexture ? collageBgTexture.id : null;
+      document.querySelectorAll('#collage-texture-swatches .ec-grad-swatch').forEach(function (sw) {
+        sw.classList.toggle('active', !!activeId && sw.dataset.texId === activeId);
+      });
     }
     // v2.1 round 238 (Terry) — reflect the current Vignette/Grain state into their
     // sliders + readouts + the live overlays (called on build, undo/redo, and enter).
@@ -10447,6 +10768,8 @@
       // exclusive too; choosing a photo clears the gradient so it doesn't linger
       // under the photo layer + reappear when the photo is removed.
       if (path && collageBgGradient) { collageBgGradient = null; collageGradStopEdit = null; applyCanvasBgVisual(); try { syncCollageGradientUi(); } catch (_) {} }
+      // v2.1 round 242 (Terry) — a background photo and a texture are mutually exclusive.
+      if (path && collageBgTexture) { collageBgTexture = null; applyCanvasBgVisual(); try { syncCollageTextureUi(); } catch (_) {} }
       collageBgImagePath = path || '';
       // A brand-new background photo starts with clean enh (a previous
       // photo's Look shouldn't carry over); undo/restore set enh directly.
@@ -10603,6 +10926,13 @@
               stops: collageBgGradient.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
             };
           }
+        }
+        // v2.1 round 242 (Terry) — TEXTURE bg: send the id so the bake builds the SAME
+        // tileable SVG (buildCollageTextureSvg, mirroring COLLAGE_TEXTURES) at W×H and
+        // composites it as the bottom layer. Mutually exclusive with gradient/photo/
+        // transparent (the setters clear those), so it can't double up; omitted otherwise.
+        if (collageBgTexture && !collageTransparent && !collageBgGradient) {
+          canvas.texture = { id: collageBgTexture.id };
         }
         // v2.1 round 142 — background photo baked under the tiles.
         // v2.1 round 149 — with its own enh (Look/levels) + Fade opacity.
@@ -11046,6 +11376,8 @@
       // v2.1 round 235 (Terry) — build the gradient preset strip + custom controls
       // (idempotent; wires the presets, Linear/Radial toggle, angle slider, stop chips).
       buildCollageGradientUi();
+      // v2.1 round 242 (Terry) — build the procedural Texture swatch grid (idempotent).
+      buildCollageTextureUi();
       // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
       // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
       // shared Colour Palette (pickBackground, called inside the locked swatch's
