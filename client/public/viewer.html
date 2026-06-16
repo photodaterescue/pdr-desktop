@@ -3213,6 +3213,25 @@
               </div>
             </div>
           </div>
+          <!-- v2.1 round 238 (Terry) — VIGNETTE + GRAIN finishing treatments. Unlike the
+               gradient (which is a bg KIND), these apply over the WHOLE collage — over the
+               photos AND the background — the classic film look. They work with any bg type
+               (colour / gradient / photo / transparent) and are independent of it, so they
+               live at the foot of the Background section ("background textures"). 0 = off.
+               Live preview = two pointer-events:none overlays on the canvas stage (above the
+               tiles); the bake composites matching layers as the TOP layer over the finished
+               collage. Both ride the panel's pointerdown/up undo wrapper like the gradient
+               sliders, and double-click resets each to 0 via the generic dbl-click handler. -->
+          <div id="collage-treatments-block" style="margin-top:14px">
+            <div class="enhance-control">
+              <div class="enhance-label-row"><label for="collage-vignette" data-pdr-tooltip="Darken the collage edges inward for a classic vignetted look. Double-click to reset.">Vignette</label><span class="enhance-val" id="collage-vignette-val">0</span></div>
+              <input class="enhance-slider" type="range" id="collage-vignette" min="0" max="100" step="1" value="0">
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-grain" data-pdr-tooltip="Add a subtle film-grain texture over the whole collage. Double-click to reset.">Grain</label><span class="enhance-val" id="collage-grain-val">0</span></div>
+              <input class="enhance-slider" type="range" id="collage-grain" min="0" max="100" step="1" value="0">
+            </div>
+          </div>
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
@@ -3476,28 +3495,28 @@
           <label for="slider-brightness" data-pdr-tooltip="How light or dark the photo is">Brightness</label>
           <span class="enhance-val" id="val-brightness">100</span>
         </div>
-        <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100">
+        <input class="enhance-slider" id="slider-brightness" type="range" min="0" max="200" step="1" value="100" data-dblreset-self>
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-contrast" data-pdr-tooltip="The punch between lights and darks">Contrast</label>
           <span class="enhance-val" id="val-contrast">100</span>
         </div>
-        <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100">
+        <input class="enhance-slider" id="slider-contrast" type="range" min="0" max="200" step="1" value="100" data-dblreset-self>
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-saturation" data-pdr-tooltip="How rich the colours are">Saturation</label>
           <span class="enhance-val" id="val-saturation">100</span>
         </div>
-        <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100">
+        <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100" data-dblreset-self>
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-temperature" data-pdr-tooltip="Negative = cooler, positive = warmer">Temperature</label>
           <span class="enhance-val" id="val-temperature">0</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-temperature" type="range" min="-75" max="75" step="1" value="0" data-dblreset-self>
       </div>
       <!-- v2.1 round 152 (Terry) — Black & white is a SLIDER, not presets
            (Terry: "was meant to be on a slider"). v2.1 round 153 — the
@@ -3509,7 +3528,7 @@
           <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Colour</label>
           <span class="enhance-val" id="val-colour">50</span>
         </div>
-        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50">
+        <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" data-dblreset-self>
       </div>
       </details>
       <!-- v2.1 round 155 (Terry) — Mirror / Flip / Rotate the selected photo
@@ -3530,7 +3549,7 @@
              for the background. -->
         <div class="enhance-control" id="tile-angle-control">
           <div class="enhance-label-row"><label for="slider-angle" data-pdr-tooltip="Fine-tune the angle (double-click to reset to upright)">Angle</label><span class="enhance-val" id="val-angle">0&deg;</span></div>
-          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0">
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-angle" type="range" min="-180" max="180" step="1" value="0" data-dblreset-self>
         </div>
       </details>
       <!-- v2.1 round 173 (Terry) — Remove background: AI subject cut-out for the
@@ -3548,7 +3567,7 @@
         <button class="ec-shape-btn" id="tile-bgremove" type="button" style="width:100%" data-pdr-tooltip="Cut out the subject and drop the background (runs on your device)">Remove background</button>
         <div class="enhance-control" id="tile-bgstrength-control" style="display:none">
           <div class="enhance-label-row"><label for="slider-bgstrength" data-pdr-tooltip="Tune the cut-out — right cuts harder (removes faint edges); left keeps more (brings back bits the AI dropped). Double-click to reset.">Cut-out strength</label><span class="enhance-val" id="val-bgstrength">50</span></div>
-          <input class="enhance-slider enhance-slider-bipolar" id="slider-bgstrength" type="range" min="0" max="100" step="1" value="50">
+          <input class="enhance-slider enhance-slider-bipolar" id="slider-bgstrength" type="range" min="0" max="100" step="1" value="50" data-dblreset-self>
         </div>
         <!-- v2.1 round 184 (Terry) — Viewer background palette. Mirrors the
              collage Background palette (same frame-palette / frame-swatch
@@ -3610,7 +3629,7 @@
       </div>
       <div class="enhance-control" id="enhance-frame-weight" style="margin-top:8px">
         <div class="enhance-label-row"><label for="slider-framewidth" data-pdr-tooltip="How thick the frame is, as a percentage of the photo's shorter side. Double-click to reset.">Frame thickness</label><span class="enhance-val" id="val-framewidth">3.5%</span></div>
-        <input class="enhance-slider" id="slider-framewidth" type="range" min="1" max="15" step="0.5" value="3.5">
+        <input class="enhance-slider" id="slider-framewidth" type="range" min="1" max="15" step="0.5" value="3.5" data-dblreset-self>
       </div>
       </details>
       <!-- v2.1 round 233 (Terry) — Tone & colour + Effects were here; moved up to
@@ -4051,6 +4070,16 @@
     // draggable epicentre drive it now). For LINEAR this tracks the live angle +
     // blend (incl. custom slider values); for RADIAL it tracks cx/cy + strength.
     let collageGradDir = { kind: 'linear', angle: 135, blend: 50, cx: 0.5, cy: 0.5, strength: 50 };
+    // v2.1 round 238 (Terry) — WHOLE-COLLAGE finishing treatments ("background
+    // textures"), independent of the bg KIND (colour/gradient/photo/transparent).
+    // Both 0..100; 0 = off. Applied over EVERYTHING (tiles + bg) as the top layer
+    // in both the live preview (two pointer-events:none canvas overlays) and the
+    // bake (composited last). Serialized in the snapshot so they're undoable +
+    // round-trip; old snapshots lack them → default 0 (no effect).
+    //   collageVignette — darkens the EDGES inward (soft radial corner→centre).
+    //   collageGrain    — subtle monochrome film grain over the whole image.
+    let collageVignette = 0;
+    let collageGrain = 0;
     let collageAspectKey = 'landscape';
     // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
     // driven by collageAspectKey (a named key OR a numeric aspect for presets/custom).
@@ -8911,6 +8940,9 @@
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
+        // v2.1 round 238 (Terry) — whole-collage finishing treatments (independent of
+        // the bg kind). Plain numbers 0..100; restore defaults old snapshots to 0.
+        vignette: collageVignette || 0, grain: collageGrain || 0,
         // v2.1 round 235 (Terry) — the gradient bg kind (null when the bg is
         // colour/photo/transparent). Plain JSON, so deep-cloned through stringify;
         // restore re-applies it as the active bg.
@@ -8978,6 +9010,11 @@
       collageSizeId = s.sizeId || '';
       collageExportPx = s.exportPx || null;
       collageTransparent = !!s.transparent;   // v2.1 round 177
+      // v2.1 round 238 (Terry) — restore the whole-collage treatments (old snapshots
+      // predate these → default 0 = off). syncCollageTreatmentsUi() below repaints the
+      // sliders + overlays after the canvas has been re-laid-out.
+      collageVignette = Number.isFinite(s.vignette) ? Math.max(0, Math.min(100, s.vignette)) : 0;
+      collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(100, s.grain)) : 0;
       // v2.1 round 149 — restore the background's enh (fall back to the
       // pre-149 single fade value for old snapshots in the undo stack).
       ensureCollageBgTile();
@@ -9078,6 +9115,10 @@
       // so undoing a background colour pick would otherwise leave a stale/hidden
       // palette even though the bg is still the selection.
       try { updateColorTargets(); } catch (_) {}
+      // v2.1 round 238 (Terry) — repaint the Vignette/Grain sliders + overlays last,
+      // so the overlays re-append as the canvas's top children (above any tiles/text
+      // rebuilt above) and reflect the restored values.
+      try { syncCollageTreatmentsUi(); } catch (_) {}
     }
     function undoCollage() {
       if (!collageUndo.length) return;
@@ -9410,6 +9451,91 @@
       }
       collageCanvasEl.style.background = collageBg || '#ffffff';
     }
+    // v2.1 round 238 (Terry) — WHOLE-COLLAGE finishing treatments (Vignette + Grain).
+    // Two absolutely-positioned overlays inside #collage-canvas, ABOVE the tiles + text
+    // (z above COLLAGE_TEXT_Z=100000, below the snap guides), pointer-events:none so
+    // they never block canvas/tile interaction. Created once, then just shown/scaled.
+    // They sit inside the (overflow:hidden) canvas so they clip to the paper exactly
+    // like the bake's W×H top layer. 0 = the overlay is hidden entirely (no effect),
+    // matching the bake which skips the layer at 0.
+    //   Vignette: radial-gradient(ellipse at centre, transparent ~55%, rgba(0,0,0,a) 100%)
+    //             — a soft edge darkening; `a` scales 0..0.85 with the slider.
+    //   Grain:    a tiled SVG feTurbulence noise PNG (monochrome), mix-blend-mode:overlay
+    //             for a filmic look; opacity scales 0..~0.5 with the slider. The SAME
+    //             feTurbulence params are used in the bake so preview ≈ saved.
+    // The grain noise tile is a small data-URI built once. overlay blend keeps mid-greys
+    // neutral so only the texture shows, darkening shadows + lightening highlights subtly.
+    // NB: the preview tiles a 160px noise tile (baseFreq below) whereas the bake renders
+    // full-frame at its own frequency — grain is fine texture, not registration-critical,
+    // so the two are tuned for an equivalent SUBTLE look rather than pixel-exact match.
+    var COLLAGE_GRAIN_TILE_PX = 160;
+    var COLLAGE_GRAIN_BASE_FREQ = 0.9;   // higher = finer grain (preview tile)
+    var _collageGrainDataUri = null;
+    function collageGrainDataUri() {
+      if (_collageGrainDataUri) return _collageGrainDataUri;
+      // A monochrome noise tile: feTurbulence (fractalNoise) collapsed to GREY centred
+      // on ~0.5 (average the noise channels into R=G=B) with FULL alpha — so under the
+      // overlay's mix-blend-mode:overlay, mid-grey is a no-op and the noise pushes both
+      // lighter AND darker (proper filmic grain). Matches buildCollageGrainSvg in the
+      // bake. Tiled by background-repeat in the preview.
+      var n = COLLAGE_GRAIN_TILE_PX;
+      var svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="' + n + '" height="' + n + '">' +
+        '<filter id="n" x="0" y="0" width="100%" height="100%">' +
+        '<feTurbulence type="fractalNoise" baseFrequency="' + COLLAGE_GRAIN_BASE_FREQ + '" numOctaves="2" stitchTiles="stitch" result="t"/>' +
+        '<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1"/>' +
+        '</filter>' +
+        '<rect width="100%" height="100%" filter="url(#n)"/></svg>';
+      _collageGrainDataUri = 'data:image/svg+xml;base64,' + btoa(svg);
+      return _collageGrainDataUri;
+    }
+    function ensureCollageTreatmentOverlays() {
+      if (!collageCanvasEl) return {};
+      var vig = document.getElementById('collage-vignette-overlay');
+      if (!vig) {
+        vig = document.createElement('div');
+        vig.id = 'collage-vignette-overlay';
+        vig.setAttribute('aria-hidden', 'true');
+        vig.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:none;z-index:2000000;';
+        collageCanvasEl.appendChild(vig);
+      }
+      var grain = document.getElementById('collage-grain-overlay');
+      if (!grain) {
+        grain = document.createElement('div');
+        grain.id = 'collage-grain-overlay';
+        grain.setAttribute('aria-hidden', 'true');
+        grain.style.cssText = 'position:absolute;inset:0;pointer-events:none;display:none;z-index:2000001;mix-blend-mode:overlay;background-repeat:repeat;background-size:' + COLLAGE_GRAIN_TILE_PX + 'px ' + COLLAGE_GRAIN_TILE_PX + 'px;';
+        collageCanvasEl.appendChild(grain);
+      }
+      // The high z-index (2000000/2000001) already paints them above every tile (z≈1+)
+      // and text/emoji (COLLAGE_TEXT_Z=100000+) within the canvas's stacking context,
+      // regardless of DOM order — so a tile/text added later still sits BELOW them
+      // without us having to re-append on every change.
+      return { vig: vig, grain: grain };
+    }
+    function applyCollageTreatments() {
+      if (!collageCanvasEl) return;
+      var els = ensureCollageTreatmentOverlays();
+      var v = Math.max(0, Math.min(100, collageVignette || 0));
+      var g = Math.max(0, Math.min(100, collageGrain || 0));
+      if (els.vig) {
+        if (v <= 0) { els.vig.style.display = 'none'; }
+        else {
+          // Edge darkness scales to a max of 0.85 alpha; transparent core to ~55%.
+          var a = (v / 100) * 0.85;
+          els.vig.style.display = 'block';
+          els.vig.style.background = 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,' + a.toFixed(3) + ') 100%)';
+        }
+      }
+      if (els.grain) {
+        if (g <= 0) { els.grain.style.display = 'none'; }
+        else {
+          els.grain.style.display = 'block';
+          els.grain.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+          els.grain.style.opacity = ((g / 100) * 0.5).toFixed(3);
+        }
+      }
+    }
     // v2.1 round 199 (Terry) — ring + refresh the two LOCKED background specials
     // that the unified palette renders (only when colorTarget==='background').
     // Replaces the old updateBgPhotoSwatch (the bg-photo thumbnail) +
@@ -9665,7 +9791,44 @@
       document.querySelectorAll('#collage-gradient-stops .ec-grad-stop').forEach((chip) => {
         chip.addEventListener('click', () => armCollageGradientStop(parseInt(chip.dataset.stop, 10) || 0));
       });
+      // v2.1 round 238 (Terry) — WHOLE-COLLAGE treatments: Vignette + Grain sliders.
+      // They live in the Background section but apply over everything (independent of
+      // the bg kind). Each updates its state var + readout + the live overlay; undo is
+      // one step via the panel's pointerdown/up begin/commit wrapper (like the gradient
+      // sliders). Double-click reset is handled by the generic dbl-click delegate.
+      var vigSlider = document.getElementById('collage-vignette');
+      var vigVal = document.getElementById('collage-vignette-val');
+      if (vigSlider) {
+        vigSlider.addEventListener('input', function () {
+          collageVignette = Math.max(0, Math.min(100, parseInt(vigSlider.value, 10) || 0));
+          if (vigVal) vigVal.textContent = String(collageVignette);
+          applyCollageTreatments();
+        });
+      }
+      var grainSlider = document.getElementById('collage-grain');
+      var grainVal = document.getElementById('collage-grain-val');
+      if (grainSlider) {
+        grainSlider.addEventListener('input', function () {
+          collageGrain = Math.max(0, Math.min(100, parseInt(grainSlider.value, 10) || 0));
+          if (grainVal) grainVal.textContent = String(collageGrain);
+          applyCollageTreatments();
+        });
+      }
       syncCollageGradientUi();
+      syncCollageTreatmentsUi();
+    }
+    // v2.1 round 238 (Terry) — reflect the current Vignette/Grain state into their
+    // sliders + readouts + the live overlays (called on build, undo/redo, and enter).
+    function syncCollageTreatmentsUi() {
+      var vs = document.getElementById('collage-vignette');
+      var vv = document.getElementById('collage-vignette-val');
+      if (vs) vs.value = String(collageVignette || 0);
+      if (vv) vv.textContent = String(collageVignette || 0);
+      var gs = document.getElementById('collage-grain');
+      var gv = document.getElementById('collage-grain-val');
+      if (gs) gs.value = String(collageGrain || 0);
+      if (gv) gv.textContent = String(collageGrain || 0);
+      applyCollageTreatments();
     }
     // Reflect the current gradient state into the Background gradient controls:
     // active preset highlight, stop swatch colours + armed ring, kind toggle,
@@ -10036,6 +10199,11 @@
           enh: it.enh,
         }));
         const canvas = { w: W, h: H, bg: collageBg, transparent: collageTransparent };
+        // v2.1 round 238 (Terry) — whole-collage finishing treatments. Sent on the
+        // canvas so the bake composites matching Vignette + Grain layers as the TOP
+        // layer over the finished collage (tiles + bg + text). 0 = omitted/skip.
+        if (collageVignette > 0) canvas.vignette = Math.max(0, Math.min(100, collageVignette));
+        if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(100, collageGrain));
         // v2.1 round 235 (Terry) — GRADIENT bg: send the spec (kind/angle/stops) so
         // the bake builds a matching SVG gradient at W×H and composites it as the
         // bottom layer. Mutually exclusive with transparent + a bg photo (the setters
@@ -10470,6 +10638,29 @@
       const panelEl = document.getElementById('enhance-panel');
       if (panelEl) panelEl.addEventListener('pointerdown', () => beginCollageChange(), true);
       window.addEventListener('pointerup', () => { if (collageMode) setTimeout(commitCollageChange, 0); }, true);
+      // v2.1 round 238 (Terry) — DOUBLE-CLICK A SLIDER TO RESET IT. One delegated
+      // handler on the Enhance panel: double-clicking any range slider sets it back to
+      // its HTML-declared default (el.defaultValue) and dispatches a bubbling 'input'
+      // event so the slider's OWN handler applies the change (state + readout + preview).
+      // Using defaultValue (not a hard-coded 50) satisfies BOTH cases Terry called out:
+      //   • symmetric sliders (gradient Blend/Strength=50, Tone brightness/contrast/
+      //     saturation=100, etc.) snap to their midpoint;
+      //   • the Fade slider (default 100) and Blend edges / Curved corners (default 0)
+      //     snap to THEIR own sensible default, not a meaningless 50.
+      // Sliders that already carry a BESPOKE dblclick handler (Tone & colour, Angle,
+      // Cut-out strength, Frame thickness) are tagged data-dblreset-self and skipped
+      // here so they don't double-fire. Undo is one step via the panel wrapper above.
+      // Normal single-click drags are untouched (this is dblclick only).
+      if (panelEl) {
+        panelEl.addEventListener('dblclick', function (e) {
+          var el = e.target && e.target.closest ? e.target.closest('input[type=range]') : null;
+          if (!el || !panelEl.contains(el)) return;
+          if (el.hasAttribute('data-dblreset-self')) return;   // its own handler does the reset
+          e.preventDefault();
+          el.value = el.defaultValue;                          // HTML-declared default
+          el.dispatchEvent(new Event('input', { bubbles: true }));
+        });
+      }
       // v2.1 round 149 — background COLOUR picker (background-only now).
       initCollageColorPicker();
       // v2.1 round 235 (Terry) — build the gradient preset strip + custom controls

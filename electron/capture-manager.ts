@@ -892,7 +892,11 @@ interface CollageLayout {
   //   kind  — 'linear' | 'radial'
   //   angle — CSS linear-gradient angle in degrees (0 = to top, 90 = to right); linear only
   //   stops — [{ color:'#rrggbb', pos:0..100 }, ...]
-  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial'; angle?: number; stops: Array<{ color: string; pos: number }> } };
+  // v2.1 round 238 (Terry) — vignette/grain: WHOLE-COLLAGE finishing treatments
+  // (0..100; absent/0 = off), composited as the TOP layer over the finished collage
+  // (tiles + bg + text), independent of the bg kind. See buildCollageVignetteSvg /
+  // buildCollageGrainSvg + the composite block in collage:saveLayout.
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial'; angle?: number; stops: Array<{ color: string; pos: number }> }; vignette?: number; grain?: number };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
@@ -1014,6 +1018,52 @@ function buildCollageGradientSvg(
   return `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}"><defs>${defs}</defs><rect width="${W}" height="${H}" fill="url(#g)"/></svg>`;
 }
 
+// v2.1 round 238 (Terry) — VIGNETTE finishing layer. Reproduces the editor's CSS
+// `radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,a) 100%)` at the
+// output W×H so the baked edge-darkening matches the preview. The CSS ellipse uses
+// the default `farthest-corner` extent: an ellipse keeping the box aspect, sized so
+// it passes through the corners. In objectBoundingBox units (each axis scaled to the
+// box) that ellipse has radius 1/√2 ≈ 0.7071 on both axes from the centre — so
+// cx/cy 0.5, r 0.7071 gives exactly the farthest-corner ellipse on any aspect. The
+// 55% transparent core + the slider-scaled edge alpha mirror applyCollageTreatments.
+function buildCollageVignetteSvg(W: number, H: number, intensity: number): string {
+  const v = Math.max(0, Math.min(100, intensity || 0));
+  const a = ((v / 100) * 0.85).toFixed(3);   // matches the preview's 0..0.85 edge alpha
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+    `<defs><radialGradient id="v" cx="0.5" cy="0.5" r="0.7071">` +
+    `<stop offset="55%" stop-color="#000000" stop-opacity="0"/>` +
+    `<stop offset="100%" stop-color="#000000" stop-opacity="${a}"/>` +
+    `</radialGradient></defs>` +
+    `<rect width="${W}" height="${H}" fill="url(#v)"/></svg>`
+  );
+}
+
+// v2.1 round 238 (Terry) — GRAIN finishing layer. A monochrome film-grain texture via
+// SVG feTurbulence (fractalNoise), rasterized by sharp at the output W×H and composited
+// with blend 'overlay' (matching the preview's mix-blend-mode:overlay) so it darkens
+// shadows + lightens highlights subtly, leaving mid-greys neutral — only the texture
+// shows. baseFrequency is kept close to the preview's grain feel (the preview tiles a
+// 160px noise tile at 0.9; here we render full-frame at a fine frequency for an
+// equivalent subtle grain at print sizes — grain is texture, not registration-critical).
+// The whole layer's opacity scales 0..0.5 with the slider, exactly like the preview.
+function buildCollageGrainSvg(W: number, H: number, intensity: number): string {
+  const g = Math.max(0, Math.min(100, intensity || 0));
+  const op = ((g / 100) * 0.5).toFixed(3);
+  // fractalNoise → collapse to GREY centred on ~0.5 (average the noise channels into
+  // R=G=B) with FULL alpha. Mid-grey 0.5 under 'overlay' is a no-op, so lighter noise
+  // LIGHTENS and darker noise DARKENS — proper filmic grain that pushes both ways
+  // (not just a brighten). The rect's opacity carries the slider-scaled strength.
+  return (
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+    `<filter id="n" x="0" y="0" width="100%" height="100%">` +
+    `<feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" stitchTiles="stitch" result="t"/>` +
+    `<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1"/>` +
+    `</filter>` +
+    `<rect width="${W}" height="${H}" filter="url(#n)" opacity="${op}"/></svg>`
+  );
+}
+
 // Build a sharp pipeline for ONE collage tile: source → EXIF-rotate →
 // resize to the tile box → the photo's own Enhance bake (mirrors
 // viewer:saveEnhanced exactly) → optional frame. Returned un-toBuffer'd
@@ -1110,7 +1160,11 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     const baseW = W + PAD * 2;
     const baseH = H + PAD * 2;
 
-    const composites: Array<{ input: Buffer; left: number; top: number }> = [];
+    // v2.1 round 238 (Terry) — `blend` is optional (default 'over'); the grain
+    // finishing layer uses 'overlay' to match the preview's mix-blend-mode. The
+    // literals are all members of sharp's Blend union, so this stays assignable to
+    // .composite()'s OverlayOptions[].
+    const composites: Array<{ input: Buffer; left: number; top: number; blend?: 'over' | 'overlay' | 'soft-light' }> = [];
     for (const item of layout.items) {
       if (!item || !item.path || !fs.existsSync(toLongPath(item.path))) continue;
       try {
@@ -1311,6 +1365,32 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         } catch (txtErr) {
           log.warn(`[collage] text layer skipped (non-fatal): ${(txtErr as Error).message}`);
         }
+      }
+    }
+
+    // v2.1 round 238 (Terry) — WHOLE-COLLAGE finishing treatments (Vignette + Grain),
+    // composited as the TOP layer over the finished collage (tiles + bg + text), AFTER
+    // everything else, so they're whole-image finishes independent of the bg kind —
+    // matching the editor's canvas overlays (z above the tiles + text). Both span the
+    // visible W×H at +PAD so they register exactly with the extracted output. 0 = skip.
+    const vignette = Math.max(0, Math.min(100, Number(layout.canvas.vignette) || 0));
+    if (vignette > 0) {
+      try {
+        const vigBuf = await sharp(Buffer.from(buildCollageVignetteSvg(W, H, vignette))).png().toBuffer();
+        composites.push({ input: vigBuf, left: PAD, top: PAD });
+      } catch (vigErr) {
+        log.warn(`[collage] vignette skipped (non-fatal): ${(vigErr as Error).message}`);
+      }
+    }
+    const grain = Math.max(0, Math.min(100, Number(layout.canvas.grain) || 0));
+    if (grain > 0) {
+      try {
+        const grainBuf = await sharp(Buffer.from(buildCollageGrainSvg(W, H, grain))).png().toBuffer();
+        // 'overlay' blend matches the preview's mix-blend-mode:overlay (the SVG already
+        // carries the slider-scaled opacity on its rect).
+        composites.push({ input: grainBuf, left: PAD, top: PAD, blend: 'overlay' });
+      } catch (grainErr) {
+        log.warn(`[collage] grain skipped (non-fatal): ${(grainErr as Error).message}`);
       }
     }
 
