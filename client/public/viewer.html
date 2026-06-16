@@ -7380,7 +7380,7 @@
     }
     // v2.1 round 187 (Terry) — drag the top handle to rotate a text layer
     // around its CENTRE. Mirrors startItemRotate's angle math (atan2 from the
-    // centre, +90 because the handle sits above the text) and Shift = snap to
+    // centre; the handle sits at the right-middle edge so no +90 offset) and Shift = snap to
     // 15°. One undo step per gesture.
     function startTextRotate(layer, e) {
       e.preventDefault(); e.stopPropagation();
@@ -7393,7 +7393,7 @@
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
       const move = (ev) => {
         const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
-        let deg = ang + 90; // rotate handle sits at the top of the text
+        let deg = ang; // v2.1 round 225 (Terry) — handle now at the right-middle edge (like tiles): drop the +90 top-offset so the text tracks the handle 1:1 (was flipping 90° on grab)
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         layer.rot = deg;
         renderTextLayer(layer);
