@@ -7887,7 +7887,13 @@
       // v2.1 round 219 (Terry) — for an emoji selection the styling controls are
       // hidden (above), so skip syncing them; the Delete button (shown above) is
       // the only side-panel control. The on-canvas handles do resize/rotate.
-      if (!selectedText || isEmojiSel) return;
+      // v2.1 round 232 (Terry) — before bailing for emoji/no-selection, re-gate the
+      // floating elements to the focused-open section: an emoji's Delete button must
+      // disappear the moment any subcategory is open (and stay hidden when one is),
+      // and the Colour Palette must hide whenever its owning section isn't the focused
+      // one. syncFloatingForFocus has the final, focus-aware say over the plain
+      // selection-type display set just above.
+      if (!selectedText || isEmojiSel) { try { syncFloatingForFocus(); } catch (_) {} return; }
       // v2.1 round 204 (Terry) — the side-panel text field is gone; text is edited
       // in-canvas, so there's no field value to sync here any more.
       // v2.1 round 196 (Terry) — update the custom Font dropdown's TRIGGER label
@@ -7933,6 +7939,13 @@
       // and effect-colour palettes (each against its own getCurrent: fill =
       // layer.color, effect = layer.effectColor where '' rings the Auto swatch).
       syncTextColorPaletteRings();
+      // v2.1 round 232 (Terry) — focus-aware final gate for the floating elements on a
+      // text selection (Delete-text shows only when the Text section is the focused-open
+      // one; the Colour Palette only when its owner is focused). On the selectText path
+      // the following updateColorTargets opens the Text section and re-gates too; this
+      // also covers syncTextControls callers that DON'T follow with updateColorTargets
+      // (e.g. deleteTextLayer of a non-selected layer).
+      try { syncFloatingForFocus(); } catch (_) {}
     }
 
     // v2.1 round 156 (Terry) — sync the fine-rotation slider to the selected
@@ -10770,6 +10783,65 @@
         });
       } finally { _subcatBusy = false; }
     }
+    // v2.1 round 232 (Terry) — GATE the floating subcategory-level elements to the ONE
+    // focused-open section, so the panel truly shows a single subcategory at a time.
+    // Three elements inside #enhance-collage-section live at the SUBCATEGORY level (not
+    // as .enhance-collapse accordion sections) and were previously shown by canvas
+    // SELECTION alone — so they LINGERED when the user opened a DIFFERENT subcategory
+    // (the round-231 accordion closed the colour <details>, but these stayed). This is
+    // the companion to focusSubcat / the round-231 MutationObserver: every time the
+    // focused section changes (open OR all-closed) — and on every selection change — it
+    // recomputes their visibility against the focused-open section.
+    //   • #collage-unified-color (Colour Palette): visible ONLY when there IS a
+    //     colourable selection AND the focused-open section is the one that owns the
+    //     current colour target (Background↔collage-bg-collapse, Frame↔
+    //     enhance-frame-collapse, Text/Effect↔collage-text-collapse via
+    //     COLOR_SUBCAT_BY_TARGET). It only flips display: showing/parking/golding stays
+    //     owned by placeColorPalette + updateColorTargets (the node is already parked +
+    //     rendered at the owner; navigating away only hid it, so returning just un-hides).
+    //   • #collage-text-delete: visible ONLY when the focused-open section is the Text
+    //     section AND a non-emoji text layer is selected.
+    //   • #collage-emoji-delete: visible ONLY when an emoji layer is selected AND NO
+    //     subcategory is focused-open (selecting an emoji opens nothing → it shows; the
+    //     moment any subcategory opens, the focused section is non-null → it hides).
+    // focusedDetailsEl is the focused-open section (the observer passes the one it kept,
+    // or null when all closed). When omitted, we read the single open section from the
+    // DOM (the round-231 observer guarantees at most one). This NEVER writes .open, so it
+    // cannot re-enter the observer or focusSubcat.
+    function syncFloatingForFocus(focusedDetailsEl) {
+      let focused = focusedDetailsEl || null;
+      if (!focused) focused = document.querySelector('#enhance-panel details.enhance-collapse[open]') || null;
+      const focusedId = (focused && focused.id) ? focused.id : null;
+      // Is there a colourable selection at all? Mirrors updateColorTargets' chip test:
+      // non-emoji text → Text/Effect; background → Background; photo tile with Frame
+      // armed → Frame. Emoji / unarmed tile / nothing → no target (palette stays hidden).
+      const colourTargetActive = !!(
+        (selectedText && !selectedText.isEmoji) ||
+        (collageSelected && collageSelected.isBg) ||
+        (collageSelected && !collageSelected.isBg && frameColorArmed)
+      );
+      // (1) Colour Palette — show ONLY when its owning section is the focused one AND a
+      // colourable selection exists. We only flip display (don't re-park/re-render):
+      // placeColorPalette already parked + golded the owner, so returning just un-hides.
+      const block = document.getElementById('collage-unified-color');
+      if (block) {
+        const ownerId = colorTarget && COLOR_SUBCAT_BY_TARGET[colorTarget];
+        const showPalette = colourTargetActive && !!ownerId && ownerId === focusedId;
+        block.style.display = showPalette ? '' : 'none';
+      }
+      // (2) Delete text — focused section is Text AND a non-emoji text layer selected.
+      const delTextBtn = document.getElementById('collage-text-delete');
+      if (delTextBtn) {
+        const showDelText = !!(selectedText && !selectedText.isEmoji && focusedId === 'collage-text-collapse');
+        delTextBtn.style.display = showDelText ? 'block' : 'none';
+      }
+      // (3) Delete emoji — emoji selected AND no subcategory focused-open.
+      const delEmojiBtn = document.getElementById('collage-emoji-delete');
+      if (delEmojiBtn) {
+        const showDelEmoji = !!(selectedText && selectedText.isEmoji && !focusedId);
+        delEmojiBtn.style.display = showDelEmoji ? 'block' : 'none';
+      }
+    }
     // v2.1 round 223 (Terry) — CONTEXTUAL open: pick the single subcategory for the
     // selection type and route through focusSubcat (accordion + gold). v2.1 round 229
     // (Terry) — rewritten onto focusSubcat: 'background' now opens its section directly
@@ -10903,7 +10975,9 @@
       const looksDefault = !!(collageSelected && !collageSelected.isBg && !selectedText && !frameColorArmed);
       try { setLooksSubcatActive(looksDefault); } catch (_) {}
       // Nothing colourable → hide the whole control, clear all gold, and stop.
-      if (!chips.length) { block.style.display = 'none'; placeColorPalette(null); return; }
+      // v2.1 round 232 (Terry) — also re-gate the floating elements (Colour Palette +
+      // Delete buttons) for this selection's now-focused section before bailing.
+      if (!chips.length) { block.style.display = 'none'; placeColorPalette(null); try { syncFloatingForFocus(); } catch (_) {} return; }
       block.style.display = '';
       // Keep colorTarget valid for this selection: if the current target isn't an
       // available chip (or is a disabled one), fall back to the first enabled chip.
@@ -10935,6 +11009,12 @@
       // v2.1 round 197 (Terry) — relocate the ONE palette beneath the active
       // subcategory chevron and gold its header.
       placeColorPalette(colorTarget);
+      // v2.1 round 232 (Terry) — placeColorPalette has just opened + golded the colour
+      // target's owning section (via focusSubcat, synchronously), so the focused section
+      // is now that owner. Re-gate the floating elements against it so the palette shows
+      // for this selection and any stale Delete button is hidden. The round-231 observer
+      // will fire async and re-assert the same result.
+      try { syncFloatingForFocus(); } catch (_) {}
     }
     // Ring the swatch matching getCurrent() (lowercased; '' matches the Auto/none
     // swatch). A custom colour not in any row rings nothing.
@@ -14144,6 +14224,15 @@ function zoomTo(newZoom, centreX, centreY) {
               if (!anyOpen) sections.forEach((det) => setGold(det, false));
             }
           } finally { _accordionEnforcing = false; }
+          // v2.1 round 232 (Terry) — the observer is the authority for "exactly one open
+          // + gold"; it is therefore also the authority for the SUBCATEGORY-LEVEL floating
+          // elements (Colour Palette + the two Delete buttons). Re-gate them to whatever
+          // section is now the focused-open one (or none) so they can't linger beside a
+          // different open subcategory. Computed from the settled DOM (post-sweep there is
+          // ≤1 open); syncFloatingForFocus only writes display, never .open, so it cannot
+          // re-trigger this observer.
+          const settled = sections.find((det) => det.open) || null;
+          try { syncFloatingForFocus(settled); } catch (_) {}
         });
         sections.forEach((det) => obs.observe(det, { attributes: true, attributeFilter: ['open'], subtree: false }));
       })();
