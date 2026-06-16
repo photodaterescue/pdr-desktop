@@ -2896,6 +2896,19 @@
     .ec-grad-dir.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
     /* v2.1 round 237 (Terry) — small helper line under the radial controls. */
     .ec-grad-hint { font-size: 11px; color: #9a93c8; margin-top: 6px; line-height: 1.35; }
+    /* v2.1 round 240 (Terry) — VIGNETTE SHAPE selector: compact icon-only toggles
+       (the lit/clear region of the vignette). Same active highlight as the gradient
+       type toggles; shown only when Vignette > 0. */
+    .ec-vig-shapes { display: flex; gap: 6px; margin-top: 8px; }
+    .ec-vig-shape {
+      flex: 1; display: flex; align-items: center; justify-content: center;
+      background: transparent; border: 1px solid rgba(169,156,255,0.3);
+      color: #cfc8ff; padding: 5px 2px; border-radius: 7px; cursor: pointer;
+      transition: background 120ms, border-color 120ms;
+    }
+    .ec-vig-shape svg { width: 18px; height: 18px; display: block; }
+    .ec-vig-shape:hover { background: rgba(169,156,255,0.10); }
+    .ec-vig-shape.active { background: rgba(169,156,255,0.20); border-color: #a78bfa; color: #fff; }
     /* v2.1 round 237 (Terry) — the draggable RADIAL epicentre dot. A ringed target
        that sits over the canvas (positioned by JS within the stage); grabbable on its
        whole face. z-index above the canvas + tiles so it's always catchable while
@@ -3237,6 +3250,30 @@
             <div class="enhance-control">
               <div class="enhance-label-row"><label for="collage-vignette" data-pdr-tooltip="Darken the collage edges inward for a classic vignetted look. Double-click to reset.">Vignette</label><span class="enhance-val" id="collage-vignette-val">0</span></div>
               <input class="enhance-slider" type="range" id="collage-vignette" min="0" max="100" step="1" value="0">
+              <!-- v2.1 round 240 (Terry) — VIGNETTE SHAPE selector. The vignette's clear
+                   (lit) region can be a shape; outside it darkens with a soft feathered
+                   edge by the vignette intensity. Ellipse = the original look (unchanged).
+                   Shown only when Vignette > 0 (toggled in syncCollageTreatmentsUi). -->
+              <div class="ec-vig-shapes" id="collage-vignette-shapes" role="group" aria-label="Vignette shape" style="display:none">
+                <button type="button" class="ec-vig-shape" data-shape="ellipse" data-pdr-tooltip="Ellipse — the classic oval vignette (default)">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="6.5"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="circle" data-pdr-tooltip="Circle — a round lit area">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="heart" data-pdr-tooltip="Heart — a single heart-shaped lit area">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.9-10-9.5C.6 8.9 1.9 5.5 5 5.5c1.9 0 3.2 1.1 4 2.3 0.8-1.2 2.1-2.3 4-2.3 3.1 0 4.4 3.4 3 6C19.5 16.1 12 21 12 21z"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="hearts" data-pdr-tooltip="Hearts — a cluster of hearts">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 19s-5-3.3-6.6-6.3C.5 10.6 1.4 8.3 3.5 8.3c1.2 0 2.1.7 2.5 1.5.4-.8 1.3-1.5 2.5-1.5 2.1 0 3 2.3 2.1 4.4C9 15.7 8 19 8 19z"/><path d="M17 16s-4-2.6-5.3-5C10.8 9.3 11.5 7.4 13.2 7.4c1 0 1.7.6 2 1.2.3-.6 1-1.2 2-1.2 1.7 0 2.4 1.9 1.7 3.6C17.6 13.4 17 16 17 16z" fill-opacity="0.92"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="balloon" data-pdr-tooltip="Balloon — a rounded balloon shape">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c3.6 0 6.2 3 6.2 6.7 0 4.2-3.6 7.6-5.4 9.1l1.2 1.7c.3.4 0 1-.5 1h-3c-.5 0-.8-.6-.5-1l1.2-1.7C9.4 16.3 5.8 12.9 5.8 8.7 5.8 5 8.4 2 12 2z"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="star" data-pdr-tooltip="Star — a five-pointed star">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18.9 6.2 21l1.1-6.5L2.6 9.9l6.5-.9z"/></svg>
+                </button>
+              </div>
             </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="collage-grain" data-pdr-tooltip="Add a subtle film-grain texture over the whole collage. Double-click to reset.">Grain</label><span class="enhance-val" id="collage-grain-val">0</span></div>
@@ -4128,6 +4165,11 @@
     //   collageVignette — darkens the EDGES inward (soft radial corner→centre).
     //   collageGrain    — subtle monochrome film grain over the whole image.
     let collageVignette = 0;
+    // v2.1 round 240 (Terry) — the SHAPE of the vignette's clear (lit) region.
+    // 'ellipse' (default) keeps the original radial-gradient look exactly; the other
+    // shapes mask a solid dark layer so the dark shows OUTSIDE the shape with a soft
+    // feathered edge. Serialized in the snapshot; old snapshots → 'ellipse'.
+    let collageVignetteShape = 'ellipse';
     let collageGrain = 0;
     let collageAspectKey = 'landscape';
     // v2.1 round 226 (Terry) — Canvas Size picker. The live canvas aspect is still
@@ -8992,6 +9034,8 @@
         // v2.1 round 238 (Terry) — whole-collage finishing treatments (independent of
         // the bg kind). Plain numbers 0..100; restore defaults old snapshots to 0.
         vignette: collageVignette || 0, grain: collageGrain || 0,
+        // v2.1 round 240 (Terry) — vignette shape; old snapshots lack it → 'ellipse'.
+        vignetteShape: collageVignetteShape || 'ellipse',
         // v2.1 round 235 (Terry) — the gradient bg kind (null when the bg is
         // colour/photo/transparent). Plain JSON, so deep-cloned through stringify;
         // restore re-applies it as the active bg.
@@ -9088,6 +9132,8 @@
       // sliders + overlays after the canvas has been re-laid-out.
       collageVignette = Number.isFinite(s.vignette) ? Math.max(0, Math.min(100, s.vignette)) : 0;
       collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(100, s.grain)) : 0;
+      // v2.1 round 240 (Terry) — restore vignette shape (old snapshots → 'ellipse').
+      collageVignetteShape = ['ellipse','circle','heart','hearts','balloon','star'].indexOf(s.vignetteShape) >= 0 ? s.vignetteShape : 'ellipse';
       // v2.1 round 149 — restore the background's enh (fall back to the
       // pre-149 single fade value for old snapshots in the undo stack).
       ensureCollageBgTile();
@@ -9600,6 +9646,67 @@
       _collageGrainDataUri = 'data:image/svg+xml;base64,' + btoa(svg);
       return _collageGrainDataUri;
     }
+    // v2.1 round 240 (Terry) — VIGNETTE SHAPE geometry. Each shape is normalized into a
+    // 100×100 box, centred, sized to clear a similar portion of the canvas as the classic
+    // ellipse (~the old 55% radius). The mask SVG below is rendered with
+    // preserveAspectRatio="none" so the box stretches to the canvas aspect — exactly like
+    // the radial-gradient ellipse did. 'ellipse'/'circle' are primitives; the rest are
+    // clean <path>s. This same table is mirrored in capture-manager.ts (buildCollageVignetteSvg)
+    // so the bake reproduces the preview shape-for-shape.
+    function collageVignetteShapeMarkup(shape, fill) {
+      var f = 'fill="' + fill + '"';
+      switch (shape) {
+        case 'circle':
+          return '<circle cx="50" cy="50" r="39" ' + f + '/>';
+        case 'heart':
+          return '<path ' + f + ' d="M50 88 C18 66 8 48 8 33 C8 20 18 13 28 13 C37 13 45 19 50 28 C55 19 63 13 72 13 C82 13 92 20 92 33 C92 48 82 66 50 88 Z"/>';
+        case 'hearts': {
+          // Two overlapping hearts (a clean pair) filling the box.
+          var heart = function (cx, cy, s) {
+            // unit heart centred at (cx,cy), scaled by s (half-width ~ s)
+            return '<path ' + f + ' d="' +
+              'M' + cx + ' ' + (cy + 0.78 * s) +
+              ' C' + (cx - 0.92 * s) + ' ' + (cy + 0.18 * s) + ' ' + (cx - 1.0 * s) + ' ' + (cy - 0.30 * s) + ' ' + (cx - 1.0 * s) + ' ' + (cy - 0.52 * s) +
+              ' C' + (cx - 1.0 * s) + ' ' + (cy - 0.86 * s) + ' ' + (cx - 0.55 * s) + ' ' + (cy - 1.0 * s) + ' ' + (cx - 0.28 * s) + ' ' + (cy - 0.78 * s) +
+              ' C' + (cx - 0.12 * s) + ' ' + (cy - 0.64 * s) + ' ' + cx + ' ' + (cy - 0.46 * s) + ' ' + cx + ' ' + (cy - 0.40 * s) +
+              ' C' + cx + ' ' + (cy - 0.46 * s) + ' ' + (cx + 0.12 * s) + ' ' + (cy - 0.64 * s) + ' ' + (cx + 0.28 * s) + ' ' + (cy - 0.78 * s) +
+              ' C' + (cx + 0.55 * s) + ' ' + (cy - 1.0 * s) + ' ' + (cx + 1.0 * s) + ' ' + (cy - 0.86 * s) + ' ' + (cx + 1.0 * s) + ' ' + (cy - 0.52 * s) +
+              ' C' + (cx + 1.0 * s) + ' ' + (cy - 0.30 * s) + ' ' + (cx + 0.92 * s) + ' ' + (cy + 0.18 * s) + ' ' + cx + ' ' + (cy + 0.78 * s) +
+              ' Z"/>';
+          };
+          return heart(35, 42, 26) + heart(65, 56, 26);
+        }
+        case 'balloon':
+          // Rounded balloon body + a little knot/tail at the bottom.
+          return '<path ' + f + ' d="M50 8 C71 8 84 25 84 43 C84 64 64 79 54 88 L57 95 C58 97 56 99 53 99 L47 99 C44 99 42 97 43 95 L46 88 C36 79 16 64 16 43 C16 25 29 8 50 8 Z"/>';
+        case 'star':
+          return '<path ' + f + ' d="M50 6 L61.8 36.6 L94.5 38.8 L69 59.4 L77.3 91.5 L50 73.5 L22.7 91.5 L31 59.4 L5.5 38.8 L38.2 36.6 Z"/>';
+        case 'ellipse':
+        default:
+          return '<ellipse cx="50" cy="50" rx="45" ry="45" ' + f + '/>';
+      }
+    }
+    // Build the CSS mask data-URI for a non-ellipse vignette shape. CSS `mask-image:url()`
+    // masks on the image's ALPHA channel, so we render a white rect whose own alpha is the
+    // field we want: an inner luminance <mask> (white field minus a BLURRED black shape)
+    // punches the shape OUT of the white rect → resulting alpha is 1 OUTSIDE the shape and
+    // 0 inside, feathered at the edge. The dark overlay therefore shows outside the shape
+    // and clears softly inside. preserveAspectRatio="none" stretches the 100×100 box to the
+    // canvas aspect (like the original ellipse); stdDev controls the soft edge. This is the
+    // same structure the bake uses (capture-manager buildCollageVignetteSvg).
+    function collageVignetteMaskUri(shape) {
+      var hole = collageVignetteShapeMarkup(shape, '#000');
+      var svg =
+        '<svg xmlns="http://www.w3.org/2000/svg" width="100" height="100" viewBox="0 0 100 100" preserveAspectRatio="none">' +
+        '<defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>' +
+        '<mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">' +
+        '<rect width="100" height="100" fill="#fff"/>' +
+        '<g filter="url(#b)">' + hole + '</g>' +
+        '</mask></defs>' +
+        '<rect width="100" height="100" fill="#fff" mask="url(#m)"/>' +
+        '</svg>';
+      return 'data:image/svg+xml;base64,' + btoa(svg);
+    }
     function ensureCollageTreatmentOverlays() {
       if (!collageCanvasEl) return {};
       var vig = document.getElementById('collage-vignette-overlay');
@@ -9635,7 +9742,24 @@
           // Edge darkness scales to a max of 0.85 alpha; transparent core to ~55%.
           var a = (v / 100) * 0.85;
           els.vig.style.display = 'block';
-          els.vig.style.background = 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,' + a.toFixed(3) + ') 100%)';
+          // v2.1 round 240 (Terry) — ELLIPSE keeps the exact original radial-gradient look
+          // (no mask). Any other shape paints a solid dark layer masked by a blurred shape
+          // so the dark shows OUTSIDE the shape and feathers softly to clear inside.
+          var shape = collageVignetteShape || 'ellipse';
+          if (shape === 'ellipse') {
+            els.vig.style.webkitMaskImage = 'none';
+            els.vig.style.maskImage = 'none';
+            els.vig.style.background = 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,' + a.toFixed(3) + ') 100%)';
+          } else {
+            els.vig.style.background = 'rgba(0,0,0,' + a.toFixed(3) + ')';
+            var maskUri = 'url("' + collageVignetteMaskUri(shape) + '")';
+            els.vig.style.webkitMaskImage = maskUri;
+            els.vig.style.maskImage = maskUri;
+            els.vig.style.webkitMaskSize = '100% 100%';
+            els.vig.style.maskSize = '100% 100%';
+            els.vig.style.webkitMaskRepeat = 'no-repeat';
+            els.vig.style.maskRepeat = 'no-repeat';
+          }
         }
       }
       if (els.grain) {
@@ -9972,8 +10096,22 @@
           collageVignette = Math.max(0, Math.min(100, parseInt(vigSlider.value, 10) || 0));
           if (vigVal) vigVal.textContent = String(collageVignette);
           applyCollageTreatments();
+          // v2.1 round 240 (Terry) — reveal/hide the shape selector as it crosses 0.
+          var shapesRow = document.getElementById('collage-vignette-shapes');
+          if (shapesRow) shapesRow.style.display = collageVignette > 0 ? 'flex' : 'none';
         });
       }
+      // v2.1 round 240 (Terry) — VIGNETTE SHAPE selector buttons. Each click sets the
+      // shape, repaints the overlay, and re-rings. The whole panel's pointerdown/up
+      // begin/commit wrapper captures one undo step (same as the sliders + gradient
+      // type toggles), so no per-button snapshot here.
+      document.querySelectorAll('#collage-vignette-shapes .ec-vig-shape').forEach(function (btn) {
+        btn.addEventListener('click', function () {
+          collageVignetteShape = btn.getAttribute('data-shape') || 'ellipse';
+          applyCollageTreatments();
+          syncCollageTreatmentsUi();
+        });
+      });
       var grainSlider = document.getElementById('collage-grain');
       var grainVal = document.getElementById('collage-grain-val');
       if (grainSlider) {
@@ -9993,6 +10131,16 @@
       var vv = document.getElementById('collage-vignette-val');
       if (vs) vs.value = String(collageVignette || 0);
       if (vv) vv.textContent = String(collageVignette || 0);
+      // v2.1 round 240 (Terry) — show the SHAPE selector only when Vignette > 0, and
+      // ring the active shape. Defaults to 'ellipse' so the original look is selected.
+      var shapesRow = document.getElementById('collage-vignette-shapes');
+      if (shapesRow) {
+        shapesRow.style.display = (collageVignette || 0) > 0 ? 'flex' : 'none';
+        var curShape = collageVignetteShape || 'ellipse';
+        shapesRow.querySelectorAll('.ec-vig-shape').forEach(function (b) {
+          b.classList.toggle('active', (b.getAttribute('data-shape') || '') === curShape);
+        });
+      }
       var gs = document.getElementById('collage-grain');
       var gv = document.getElementById('collage-grain-val');
       if (gs) gs.value = String(collageGrain || 0);
@@ -10409,6 +10557,9 @@
         // canvas so the bake composites matching Vignette + Grain layers as the TOP
         // layer over the finished collage (tiles + bg + text). 0 = omitted/skip.
         if (collageVignette > 0) canvas.vignette = Math.max(0, Math.min(100, collageVignette));
+        // v2.1 round 240 (Terry) — send the vignette SHAPE so the bake masks the dark
+        // layer to the same shape (ellipse = the original radial-gradient look).
+        if (collageVignette > 0) canvas.vignetteShape = collageVignetteShape || 'ellipse';
         if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(100, collageGrain));
         // v2.1 round 235 (Terry) — GRADIENT bg: send the spec (kind/angle/stops) so
         // the bake builds a matching SVG gradient at W×H and composites it as the

@@ -901,7 +901,7 @@ interface CollageLayout {
   // (0..100; absent/0 = off), composited as the TOP layer over the finished collage
   // (tiles + bg + text), independent of the bg kind. See buildCollageVignetteSvg /
   // buildCollageGrainSvg + the composite block in collage:saveLayout.
-  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; vignette?: number; grain?: number };
+  canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; vignette?: number; vignetteShape?: string; grain?: number };
   items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
@@ -1091,16 +1091,74 @@ function buildCollageMeshSvg(
 // box) that ellipse has radius 1/√2 ≈ 0.7071 on both axes from the centre — so
 // cx/cy 0.5, r 0.7071 gives exactly the farthest-corner ellipse on any aspect. The
 // 55% transparent core + the slider-scaled edge alpha mirror applyCollageTreatments.
-function buildCollageVignetteSvg(W: number, H: number, intensity: number): string {
+// v2.1 round 240 (Terry) — VIGNETTE SHAPE geometry, mirrored from viewer.html
+// (collageVignetteShapeMarkup) so the bake reproduces the preview shape-for-shape. Each
+// shape is normalized into a 100×100 box, centred, clearing a similar portion of the
+// canvas as the classic ellipse. The mask below renders these in box space with
+// preserveAspectRatio="none" so the box stretches to the canvas aspect — exactly like the
+// preview's CSS mask + the original radial-gradient ellipse.
+function collageVignetteShapeMarkup(shape: string, fill: string): string {
+  const f = `fill="${fill}"`;
+  switch (shape) {
+    case 'circle':
+      return `<circle cx="50" cy="50" r="39" ${f}/>`;
+    case 'heart':
+      return `<path ${f} d="M50 88 C18 66 8 48 8 33 C8 20 18 13 28 13 C37 13 45 19 50 28 C55 19 63 13 72 13 C82 13 92 20 92 33 C92 48 82 66 50 88 Z"/>`;
+    case 'hearts': {
+      const heart = (cx: number, cy: number, s: number): string =>
+        `<path ${f} d="` +
+        `M${cx} ${cy + 0.78 * s}` +
+        ` C${cx - 0.92 * s} ${cy + 0.18 * s} ${cx - 1.0 * s} ${cy - 0.30 * s} ${cx - 1.0 * s} ${cy - 0.52 * s}` +
+        ` C${cx - 1.0 * s} ${cy - 0.86 * s} ${cx - 0.55 * s} ${cy - 1.0 * s} ${cx - 0.28 * s} ${cy - 0.78 * s}` +
+        ` C${cx - 0.12 * s} ${cy - 0.64 * s} ${cx} ${cy - 0.46 * s} ${cx} ${cy - 0.40 * s}` +
+        ` C${cx} ${cy - 0.46 * s} ${cx + 0.12 * s} ${cy - 0.64 * s} ${cx + 0.28 * s} ${cy - 0.78 * s}` +
+        ` C${cx + 0.55 * s} ${cy - 1.0 * s} ${cx + 1.0 * s} ${cy - 0.86 * s} ${cx + 1.0 * s} ${cy - 0.52 * s}` +
+        ` C${cx + 1.0 * s} ${cy - 0.30 * s} ${cx + 0.92 * s} ${cy + 0.18 * s} ${cx} ${cy + 0.78 * s}` +
+        ` Z"/>`;
+      return heart(35, 42, 26) + heart(65, 56, 26);
+    }
+    case 'balloon':
+      return `<path ${f} d="M50 8 C71 8 84 25 84 43 C84 64 64 79 54 88 L57 95 C58 97 56 99 53 99 L47 99 C44 99 42 97 43 95 L46 88 C36 79 16 64 16 43 C16 25 29 8 50 8 Z"/>`;
+    case 'star':
+      return `<path ${f} d="M50 6 L61.8 36.6 L94.5 38.8 L69 59.4 L77.3 91.5 L50 73.5 L22.7 91.5 L31 59.4 L5.5 38.8 L38.2 36.6 Z"/>`;
+    case 'ellipse':
+    default:
+      return `<ellipse cx="50" cy="50" rx="45" ry="45" ${f}/>`;
+  }
+}
+
+// v2.1 round 240 (Terry) — the vignette bake. ELLIPSE (default) returns the EXACT original
+// radial-gradient SVG so its output is byte-for-byte unchanged. Any other shape paints a
+// solid black rect (at the slider-scaled 0..0.85 alpha) masked by a BLURRED shape so the
+// dark shows OUTSIDE the shape and feathers softly to clear inside — matching the preview's
+// rgba-black layer + CSS shape mask. The mask is rendered in the same 100×100 box space
+// with preserveAspectRatio="none" (and stdDev=5 in box units) as the preview, so feather +
+// coverage register across the canvas aspect.
+function buildCollageVignetteSvg(W: number, H: number, intensity: number, shape?: string): string {
   const v = Math.max(0, Math.min(100, intensity || 0));
   const a = ((v / 100) * 0.85).toFixed(3);   // matches the preview's 0..0.85 edge alpha
+  const sh = shape || 'ellipse';
+  if (sh === 'ellipse') {
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
+      `<defs><radialGradient id="v" cx="0.5" cy="0.5" r="0.7071">` +
+      `<stop offset="55%" stop-color="#000000" stop-opacity="0"/>` +
+      `<stop offset="100%" stop-color="#000000" stop-opacity="${a}"/>` +
+      `</radialGradient></defs>` +
+      `<rect width="${W}" height="${H}" fill="url(#v)"/></svg>`
+    );
+  }
+  // White field with a blurred dark hole in the shape → as a luminance mask, this keeps
+  // the black rect OUTSIDE the shape and softly clears it inside.
+  const hole = collageVignetteShapeMarkup(sh, '#000000');
   return (
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
-    `<defs><radialGradient id="v" cx="0.5" cy="0.5" r="0.7071">` +
-    `<stop offset="55%" stop-color="#000000" stop-opacity="0"/>` +
-    `<stop offset="100%" stop-color="#000000" stop-opacity="${a}"/>` +
-    `</radialGradient></defs>` +
-    `<rect width="${W}" height="${H}" fill="url(#v)"/></svg>`
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 100 100" preserveAspectRatio="none">` +
+    `<defs><filter id="b" x="-20%" y="-20%" width="140%" height="140%"><feGaussianBlur stdDeviation="5"/></filter>` +
+    `<mask id="m" maskUnits="userSpaceOnUse" x="0" y="0" width="100" height="100">` +
+    `<rect width="100" height="100" fill="#ffffff"/>` +
+    `<g filter="url(#b)">${hole}</g>` +
+    `</mask></defs>` +
+    `<rect width="100" height="100" fill="#000000" fill-opacity="${a}" mask="url(#m)"/></svg>`
   );
 }
 
@@ -1454,7 +1512,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     const vignette = Math.max(0, Math.min(100, Number(layout.canvas.vignette) || 0));
     if (vignette > 0) {
       try {
-        const vigBuf = await sharp(Buffer.from(buildCollageVignetteSvg(W, H, vignette))).png().toBuffer();
+        const vigBuf = await sharp(Buffer.from(buildCollageVignetteSvg(W, H, vignette, String(layout.canvas.vignetteShape || 'ellipse')))).png().toBuffer();
         composites.push({ input: vigBuf, left: PAD, top: PAD });
       } catch (vigErr) {
         log.warn(`[collage] vignette skipped (non-fatal): ${(vigErr as Error).message}`);
