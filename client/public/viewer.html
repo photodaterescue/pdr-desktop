@@ -4523,6 +4523,33 @@
     let collageExportPx = null;   // { w, h } | null
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
+    // v2.1 round 253 (Terry) — USER ZOOM for the whole collage canvas (mouse-wheel
+    // over the stage). This is a VIEW transform layered ON TOP of the fit: layoutCanvasSize
+    // sizes #collage-canvas's box to fill the stage (the "fit"); collageUserZoom is a
+    // CSS scale() applied to that box. effective on-screen scale = fit × collageUserZoom.
+    // At zoom 1 / pan 0 the transform is identity, so the default view is pixel-identical
+    // to before this round. Pan (collagePanX/Y, screen px) keeps the cursor anchored while
+    // zooming. transform-origin is the canvas top-left (0 0) so the pan math is a simple
+    // screen-px translate. Distinct from per-tile Ctrl+scroll zoom (it.zoom), which is
+    // unchanged and gated on e.ctrlKey.
+    const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 5;
+    let collageUserZoom = 1, collagePanX = 0, collagePanY = 0;
+    // Apply the current view transform to the canvas. Cheap; safe to call on every
+    // layout / zoom step. Re-positions the radial gradient epicentre (which is placed
+    // off the canvas's scaled rect) so it tracks the zoom too.
+    function applyCollageZoom() {
+      if (!collageCanvasEl) return;
+      collageCanvasEl.style.transformOrigin = '0 0';
+      collageCanvasEl.style.transform =
+        'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')';
+      try { positionGradEpicentre(); } catch (_) {}
+    }
+    // Reset the view to the fit (zoom 1, no pan). Used by the double-click-empty-stage
+    // reset, by reshape (canvas size change), and on entering collage mode.
+    function resetCollageZoom() {
+      collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
+      applyCollageZoom();
+    }
     // v2.1 round 142 (Terry) — optional background PHOTO behind the tiles,
     // faded over the bg colour (like the Trees canvas background).
     let collageBgImagePath = '';
@@ -8147,7 +8174,10 @@
       selectText(layer);
       // Bring this layer to the front of the text stack.
       layer.z = collageTexts.reduce((m, t) => Math.max(m, t.z || 0), 0) + 1;
-      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      // v2.1 round 253 (Terry) — scaled rect (not clientWidth) for the screen→fraction
+      // conversion, so text tracks the cursor 1:1 under wheel zoom (mirrors startItemDrag).
+      const _tRect = collageCanvasEl.getBoundingClientRect();
+      const cw = _tRect.width, ch = _tRect.height;
       const startX = e.clientX, startY = e.clientY;
       const sx = layer.xFrac, sy = layer.yFrac;
       // v2.1 round 208 (Terry) — Shift = horizontal-only path, same as the tile
@@ -8737,13 +8767,22 @@
     let collageSnapVEl = null, collageSnapHEl = null;
     function showCollageSnapGuides(vGuide, hGuide) {
       if (!collageCanvasEl) return;
+      // v2.1 round 253 (Terry) — vGuide/hGuide arrive in SCREEN px (computeDragSnap
+      // measures off getBoundingClientRect, which includes the user-zoom transform),
+      // but these guide lines are CHILDREN of #collage-canvas, so their left/top are
+      // read in the canvas's UN-scaled layout space and then visually scaled by the
+      // transform. Convert screen px → layout px (÷ effective scale) so the gold guide
+      // sits exactly on the tile edge at any zoom. At zoom 1 the factor is 1 (no change).
+      const _gRect = collageCanvasEl.getBoundingClientRect();
+      const s2cX = (_gRect.width > 0) ? (collageCanvasEl.clientWidth / _gRect.width) : 1;
+      const s2cY = (_gRect.height > 0) ? (collageCanvasEl.clientHeight / _gRect.height) : 1;
       if (vGuide != null) {
         if (!collageSnapVEl) {
           collageSnapVEl = document.createElement('div');
           collageSnapVEl.style.cssText = 'position:absolute;top:0;width:1px;height:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapVEl);
         }
-        collageSnapVEl.style.left = Math.round(vGuide) + 'px';
+        collageSnapVEl.style.left = Math.round(vGuide * s2cX) + 'px';
         collageSnapVEl.style.display = 'block';
       } else if (collageSnapVEl) { collageSnapVEl.style.display = 'none'; }
       if (hGuide != null) {
@@ -8752,7 +8791,7 @@
           collageSnapHEl.style.cssText = 'position:absolute;left:0;height:1px;width:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapHEl);
         }
-        collageSnapHEl.style.top = Math.round(hGuide) + 'px';
+        collageSnapHEl.style.top = Math.round(hGuide * s2cY) + 'px';
         collageSnapHEl.style.display = 'block';
       } else if (collageSnapHEl) { collageSnapHEl.style.display = 'none'; }
     }
@@ -8769,7 +8808,12 @@
       beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
-      const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+      // v2.1 round 253 (Terry) — use the SCALED rect (getBoundingClientRect, which
+      // includes the user-zoom transform) for the screen-delta→fraction conversion, so
+      // a tile tracks the cursor 1:1 at any zoom. (clientWidth is the un-scaled layout
+      // size; dividing a screen delta by it would over-move the tile by the zoom factor.)
+      const _dRect = collageCanvasEl.getBoundingClientRect();
+      const cw = _dRect.width, ch = _dRect.height;
       const startX = e.clientX, startY = e.clientY;
       const sx = it.xFrac, sy = it.yFrac;
       it.el.classList.add('dragging');
@@ -8925,6 +8969,12 @@
       const startX = e.clientX, startY = e.clientY;
       const sc = { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b };
       const cwpx = collageCanvasEl.clientWidth;
+      // v2.1 round 253 (Terry) — content-px per screen-px (= 1 / effective scale). The
+      // crop math works in CONTENT px (S, vS derive from clientWidth), but the pointer
+      // deltas are SCREEN px; under wheel zoom they differ by this factor. Multiply the
+      // local deltas by it so a crop edge tracks the cursor 1:1 at any zoom.
+      const _cRectCrop = collageCanvasEl.getBoundingClientRect();
+      const s2cCrop = (_cRectCrop.width > 0) ? (cwpx / _cRectCrop.width) : 1;
       const dims0 = cropWH(it);
       // S = the displayed FULL-photo width in px. Held constant through a
       // crop drag so the photo does NOT zoom — only the box/window
@@ -8939,7 +8989,8 @@
       const cosR = Math.cos(rad), sinR = Math.sin(rad);
       const MIN = 0.08; // never crop below 8% of the photo
       const move = (ev) => {
-        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        // v2.1 round 253 (Terry) — screen delta → content-px delta (÷ effective scale).
+        const dx = (ev.clientX - startX) * s2cCrop, dy = (ev.clientY - startY) * s2cCrop;
         const localX = dx * cosR + dy * sinR;
         const localY = -dx * sinR + dy * cosR;
         if (edge === 'l' || edge === 'r') {
@@ -8975,6 +9026,10 @@
       const startX = e.clientX, startY = e.clientY;
       const sx = it.panX || 0, sy = it.panY || 0;
       const cwpx = collageCanvasEl.clientWidth;
+      // v2.1 round 253 (Terry) — content-px per screen-px (= 1 / effective scale), so the
+      // in-frame pan tracks the cursor 1:1 under wheel zoom (rangeXpx etc. are content px).
+      const _cRectPan = collageCanvasEl.getBoundingClientRect();
+      const s2cPan = (_cRectPan.width > 0) ? (cwpx / _cRectPan.width) : 1;
       const iwPx = it.wFrac * cwpx;
       const ihPx = iwPx / effectiveAspect(it);
       const fbc = ((it.enh && it.enh.borderColor) || '').trim();
@@ -8985,7 +9040,8 @@
       const rangeXpx = innerW * (z - 1), rangeYpx = innerH * (z - 1);   // slack the zoom created
       const rad = (it.rot || 0) * Math.PI / 180, cosR = Math.cos(rad), sinR = Math.sin(rad);
       const move = (ev) => {
-        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        // v2.1 round 253 (Terry) — screen delta → content-px delta (÷ effective scale).
+        const dx = (ev.clientX - startX) * s2cPan, dy = (ev.clientY - startY) * s2cPan;
         const lx = dx * cosR + dy * sinR, ly = -dx * sinR + dy * cosR;   // tile-local delta
         // Drag the photo right → reveal its left side (panX decreases).
         it.panX = rangeXpx > 0 ? Math.max(-1, Math.min(1, sx - 2 * lx / rangeXpx)) : 0;
@@ -11058,6 +11114,11 @@
       collageAspectKey = aspect;
       collageSizeId = sizeId || '';
       collageExportPx = exportPx || null;
+      // v2.1 round 253 (Terry) — a canvas-size change re-fits the paper to the stage,
+      // so drop any user zoom/pan back to the fit (otherwise the new shape would open
+      // off-centre / partly off-screen). layoutCanvasSize re-applies the (now identity)
+      // transform at its tail.
+      collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
       syncCanvasSizeSelection();
       layoutCanvasSize();
       gridArrange();
@@ -11100,6 +11161,10 @@
       applyCanvasBgVisual();
       renderAllCollage();
       renderAllTexts();   // v2.1 round 185 (Text #1) — reposition/resize text on canvas resize
+      // v2.1 round 253 (Terry) — re-assert the user zoom/pan transform AFTER the fit
+      // re-sizes the canvas box, so effective scale = fit × userZoom stays composed
+      // (a window resize keeps the user's current zoom; reshape resets it separately).
+      applyCollageZoom();
     }
 
     async function saveCollage() {
@@ -11760,6 +11825,53 @@
         if (collageZoomTimer) clearTimeout(collageZoomTimer);
         collageZoomTimer = setTimeout(() => { collageZoomGesture = false; commitCollageChange(); }, 400);
       }, { passive: false });
+      // ─── v2.1 round 253 (Terry) — MOUSE-WHEEL ZOOM for the whole collage ────────
+      // Plain wheel (no Ctrl) over the collage stage zooms the canvas in/out. It's a
+      // pure VIEW transform (collageUserZoom + pan) — it doesn't touch any tile/text/
+      // bg data, so it's NOT an undo step. Distinct from the Ctrl+scroll handler above
+      // (that zooms the selected photo INSIDE its frame and IS undoable). The bottom
+      // filmstrip and the Enhance panel are separate siblings of the stage, so their
+      // wheel events don't reach here anyway; we still bail explicitly if the target is
+      // inside either (belt-and-braces, and future-proof against DOM moves) so those
+      // surfaces scroll normally and we never preventDefault on them.
+      collageStageEl.addEventListener('wheel', (e) => {
+        if (e.ctrlKey) return;   // Ctrl+scroll = per-tile zoom (handled above)
+        if (!document.body.classList.contains('collage-mode')) return;
+        // Don't hijack wheels over the filmstrip pool or the Enhance panel — let them
+        // scroll. (closest() walks up from the event target through the ancestors.)
+        const t = e.target;
+        if (t && t.closest && (t.closest('#filmstrip-wrap') || t.closest('#enhance-panel'))) return;
+        if (!collageCanvasEl) return;
+        e.preventDefault();
+        const rect = collageCanvasEl.getBoundingClientRect();
+        if (!rect.width || !rect.height) return;
+        const z0 = collageUserZoom;
+        // Multiplicative step per notch; deltaY<0 (wheel up) = zoom in.
+        const factor = e.deltaY < 0 ? 1.1 : 0.9;
+        let z1 = z0 * factor;
+        z1 = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, z1));
+        if (z1 === z0) return;   // already clamped — nothing to do
+        const dz = z1 / z0;
+        // Cursor-anchored: keep the canvas point under the cursor fixed on screen.
+        // With transform-origin 0 0, the canvas left/top shift needed to hold the
+        // point is (cursor − rectEdge) × (1 − dz); fold it straight into the pan.
+        collagePanX += (e.clientX - rect.left) * (1 - dz);
+        collagePanY += (e.clientY - rect.top) * (1 - dz);
+        collageUserZoom = z1;
+        applyCollageZoom();
+      }, { passive: false });
+      // v2.1 round 253 (Terry) — double-click the EMPTY stage / canvas backdrop resets
+      // the wheel zoom to the fit (zoom 1, pan 0). Gated strictly to the stage or canvas
+      // element itself: tiles, text layers and their handles are descendants, so a
+      // dblclick on any of them has a different target and never triggers this reset
+      // (those have their own dblclick behaviours — rotate-snap / enter-edit). No
+      // conflict with the existing stage handlers (there was no prior stage dblclick).
+      collageStageEl.addEventListener('dblclick', (e) => {
+        if (!document.body.classList.contains('collage-mode')) return;
+        if (e.target !== collageStageEl && e.target !== collageCanvasEl) return;
+        if (collageUserZoom === 1 && collagePanX === 0 && collagePanY === 0) return;
+        resetCollageZoom();
+      });
       wireCollageTextControls();   // v2.1 round 185 (Text #1)
       window.addEventListener('resize', layoutCanvasSize);
     }
@@ -13012,6 +13124,9 @@
       // Tone & colour here — that would override the user's saved choice.
       wireCollageControls();
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.enterCollage(saveCollage); } catch (_) {}
+      // v2.1 round 253 (Terry) — every fresh collage opens at the fit (no carried-over
+      // wheel zoom from a previous session).
+      collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
       // Lay out + tidy once now, and again after the panel slide + layout
       // settle (the canvas can measure 0×0 before first paint — same
       // throttle that bit the Looks strip in round 135).
