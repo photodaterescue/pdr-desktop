@@ -2960,6 +2960,10 @@
     }
     .ec-grad-swatch:hover { transform: translateY(-1px); border-color: rgba(169,156,255,0.6); }
     .ec-grad-swatch.active { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.45); }
+    /* v2.1 round 251 (Terry) — empty Custom gradient slot: same footprint as a preset
+       swatch but an empty dashed placeholder (non-interactive this round). */
+    .ec-grad-swatch.ec-grad-empty { background: transparent; border: 1px dashed rgba(169,156,255,0.35); box-shadow: none; cursor: default; }
+    .ec-grad-swatch.ec-grad-empty:hover { border-color: rgba(169,156,255,0.35); }
     .ec-ctgl-group { display: flex; gap: 6px; }
     .ec-grad-row { display: flex; align-items: center; gap: 8px; }
     .ec-grad-stops-label, .ec-grad-stop-hint { font-size: 11px; color: #9a93c8; }
@@ -3308,6 +3312,30 @@
             <div id="collage-gradient-custom" style="margin-top:10px">
               <!-- v2.1 round 250 (Terry) — "Custom" section header -->
               <div class="ec-grad-section-label" style="margin-top:12px">Custom</div>
+              <!-- v2.1 round 251 (Terry) — CUSTOM: 6 empty slots. Layout only this round; saving
+                   your own gradients into them comes next. Non-interactive (disabled) for now. -->
+              <div id="collage-gradient-custom-slots" class="ec-grad-presets">
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
+              </div>
+              <!-- v2.1 round 251 (Terry) — MOVED UP: Colours row + palette host now sit directly
+                   under the Custom slots, above Linear/Radial/Mesh + Angle/Blend. -->
+              <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
+                <span class="ec-grad-stops-label">Colours</span>
+                <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <span class="ec-grad-stop-hint" id="collage-gradient-stop-hint"></span>
+              </div>
+              <!-- v2.1 round 250 (Terry) — the shared Colour Palette (#collage-unified-color)
+                 parks HERE, directly under the gradient colour slots, while a stop is being
+                 edited (collageGradStopEdit != null). When no slot is armed it returns to the
+                 "Colour Palette" style group (#collage-bg-palette-grp-body). See bgPaletteHost
+                 / positionBgPalette. -->
+              <div id="collage-gradient-palette-host"></div>
               <!-- v2.1 round 237 (Terry) — TYPE selector replaces the round-236
                  fixed-angle DIRECTION quick-picks (those duplicated the angle slider:
                  each was just a preset angle). Two buttons — Linear / Radial — KEEP
@@ -3350,18 +3378,6 @@
                 <input type="range" id="collage-gradient-strength" min="0" max="100" step="1" value="50">
               </div>
               <div class="ec-grad-hint" id="collage-gradient-epi-hint" style="display:none">Drag the dot on the canvas to move the centre — it can go past the edges.</div>
-              <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
-                <span class="ec-grad-stops-label">Colours</span>
-                <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
-                <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
-                <span class="ec-grad-stop-hint" id="collage-gradient-stop-hint"></span>
-              </div>
-              <!-- v2.1 round 250 (Terry) — the shared Colour Palette (#collage-unified-color)
-                 parks HERE, directly under the gradient colour slots, while a stop is being
-                 edited (collageGradStopEdit != null). When no slot is armed it returns to the
-                 "Colour Palette" style group (#collage-bg-palette-grp-body). See bgPaletteHost
-                 / positionBgPalette. -->
-              <div id="collage-gradient-palette-host"></div>
             </div>
           </div>
             </div>
