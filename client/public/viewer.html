@@ -2194,7 +2194,20 @@
        reuse the SAME visual + ±7px offsets as the in-canvas tile handles. */
     #collage-chrome-box .chx { position: absolute; pointer-events: auto; }
     #collage-chrome-box.locked .chx-res,
+    #collage-chrome-box.locked .chx-crop,
     #collage-chrome-box.locked .chx-rotate { display: none; }
+    /* v2.1 round 269 (Terry) — overlay crop bars (the photo side-crop "line").
+       Dimensions/offsets MIRROR the in-canvas .ch-crop (~line 2532) exactly so the
+       grab feels identical; gold ring on white like the rest of the overlay chrome.
+       z-index:6 + their own pointer-events:auto means they win at the box edge over
+       the inset chx-body drag surface (same as the corner handles). */
+    #collage-chrome-box .chx-crop { position: absolute; background: #fff; border: 2px solid #FEC242; border-radius: 3px; pointer-events: auto; z-index: 6; }
+    #collage-chrome-box .chx-crop-l, #collage-chrome-box .chx-crop-r { width: 7px; height: 28px; top: 50%; margin-top: -14px; cursor: ew-resize; }
+    #collage-chrome-box .chx-crop-l { left: -4px; }
+    #collage-chrome-box .chx-crop-r { right: -4px; }
+    #collage-chrome-box .chx-crop-t, #collage-chrome-box .chx-crop-b { height: 7px; width: 28px; left: 50%; margin-left: -14px; cursor: ns-resize; }
+    #collage-chrome-box .chx-crop-t { top: -4px; }
+    #collage-chrome-box .chx-crop-b { bottom: -4px; }
     .chx-res {
       width: 14px; height: 14px;
       background: #FEC242;
@@ -2570,9 +2583,16 @@
     }
     .ch-tb-btn:hover { background: rgba(255,255,255,0.12); color: #fff; }
     .ch-tb-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
-    /* Lock button "active/locked" state — gold-filled padlock. */
-    .ch-tb-btn.ch-tb-lock.locked { color: #2e2960; background: #FEC242; }
-    .ch-tb-btn.ch-tb-lock.locked:hover { background: #ffd778; }
+    /* v2.1 round 269 (Terry) — a LOCKED pane shows a GOLD lock icon (all panes:
+       photo tiles + bg via .ch-tb-lock / the floating overlay's .chx-tb-lock,
+       and text/emoji via .ch-tb-lock). The icon is gold because .ch-tb-btn svg
+       uses stroke:currentColor, so colour:#FEC242 tints the padlock gold; a soft
+       gold-tinted pill keeps it legible on the dark toolbar. (Replaces the old
+       gold-fill / dark-icon look so the LOCK itself reads gold, as requested.) */
+    .ch-tb-btn.ch-tb-lock.locked,
+    .ch-tb-btn.chx-tb-lock.locked { color: #FEC242; background: rgba(254,194,66,0.16); }
+    .ch-tb-btn.ch-tb-lock.locked:hover,
+    .ch-tb-btn.chx-tb-lock.locked:hover { color: #FEC242; background: rgba(254,194,66,0.28); }
     /* v2.1 round 203 (Terry) — a locked tile: hide the resize + rotate
        handles (geometry frozen) and show a subtle locked affordance —
        a faint gold dashed ring + a small padlock badge in the corner. The
@@ -2618,10 +2638,16 @@
        have corners only (the tile's edge bars are CROP, not resize), so these are
        NEW to the bounding box. Centred on each edge; ew/ns cursors. v2.1 round 222
        (Terry) — the sides NON-UNIFORMLY STRETCH (scaleX/scaleY; see startTextResize). */
-    .collage-text .ch-res-l { left: -7px; top: 50%; margin-top: -7px; right: auto; bottom: auto; cursor: ew-resize; }
-    .collage-text .ch-res-r { right: -7px; top: 50%; margin-top: -7px; left: auto; bottom: auto; cursor: ew-resize; }
-    .collage-text .ch-res-t { top: -7px; left: 50%; margin-left: -7px; right: auto; bottom: auto; cursor: ns-resize; }
-    .collage-text .ch-res-b { bottom: -7px; left: 50%; margin-left: -7px; right: auto; top: auto; cursor: ns-resize; }
+    /* v2.1 round 269 (Terry) — the 4 SIDE handles read as LINES (bars), not round
+       dots — Terry wants the side grabs to be lines. CORNERS stay round dots. Same
+       gold fill (from the collage-mode rule below) + white border (base .ch-resize)
+       + box-shadow; only the shape changes: l/r → 7×28 vertical bar, t/b → 28×7
+       horizontal bar, border-radius 3px. The perpendicular centring margin grows to
+       −14px (half the 28px long side) so each bar stays centred on its edge. */
+    .collage-text .ch-res-l { left: -7px; top: 50%; width: 7px; height: 28px; margin-top: -14px; border-radius: 3px; right: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-r { right: -7px; top: 50%; width: 7px; height: 28px; margin-top: -14px; border-radius: 3px; left: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-t { top: -7px; left: 50%; width: 28px; height: 7px; margin-left: -14px; border-radius: 3px; right: auto; bottom: auto; cursor: ns-resize; }
+    .collage-text .ch-res-b { bottom: -7px; left: 50%; width: 28px; height: 7px; margin-left: -14px; border-radius: 3px; right: auto; top: auto; cursor: ns-resize; }
     /* Floating quick-action toolbar reveal for text/emoji (mirrors the tile rule
        at .collage-item.selected .ch-toolbar — the .ch-toolbar box style is shared
        from the unscoped rule above). */
@@ -3684,7 +3710,7 @@
                    -->
               <button id="collage-font-trigger" type="button" aria-haspopup="listbox" aria-expanded="false"
                       style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;background:#241f3a;border:1px solid rgba(255,255,255,0.14);color:#eee;border-radius:7px;padding:6px 9px;font-size:13px;cursor:pointer;text-align:left">
-                <span id="collage-font-trigger-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto">Impact</span>
+                <span id="collage-font-trigger-label" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:1 1 auto">Montserrat</span>
                 <span aria-hidden="true" style="flex:0 0 auto;opacity:0.7;font-size:11px">&#9662;</span>
               </button>
             </div>
@@ -7346,6 +7372,16 @@
       const rBR = document.createElement('div'); rBR.className = 'chx chx-res chx-res-br'; rBR.setAttribute('data-pdr-tooltip', 'Resize');
       const rot = document.createElement('div'); rot.className = 'chx chx-rotate'; rot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
       rot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8.5 5.94A7 7 0 1 0 15.5 5.94"/><polyline points="15.5 2.5 15.5 5.94 12.1 5.94"/></svg>';
+      // v2.1 round 269 (Terry) — restore the photo side-crop "line": four crop bars
+      // ON THE OVERLAY (the in-canvas .ch-crop bars stay hidden by the round-266
+      // overlay rule because they'd be clipped on oversized tiles). Mirror the
+      // in-canvas hCropL/R/T/B; wired below to the existing coordinate-agnostic
+      // startItemCrop (it works off the canvas rect + fractions, so it's happy
+      // being driven from the overlay, exactly like the corner resize handles).
+      const cropL = document.createElement('div'); cropL.className = 'chx chx-crop chx-crop-l'; cropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
+      const cropR = document.createElement('div'); cropR.className = 'chx chx-crop chx-crop-r'; cropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
+      const cropT = document.createElement('div'); cropT.className = 'chx chx-crop chx-crop-t'; cropT.setAttribute('data-pdr-tooltip', 'Crop top edge');
+      const cropB = document.createElement('div'); cropB.className = 'chx chx-crop chx-crop-b'; cropB.setAttribute('data-pdr-tooltip', 'Crop bottom edge');
       const rem = document.createElement('div'); rem.className = 'chx chx-remove'; rem.textContent = '×'; rem.setAttribute('data-pdr-tooltip', 'Remove from collage');
       const badge = document.createElement('div'); badge.className = 'chx-lockbadge'; badge.setAttribute('aria-hidden', 'true');
       const tbar = document.createElement('div'); tbar.className = 'chx-toolbar';
@@ -7358,6 +7394,10 @@
       tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
       box.appendChild(ring);
       box.appendChild(body);
+      // v2.1 round 269 (Terry) — crop bars appended AFTER chx-body and alongside the
+      // corner handles. They sit at the box EDGE with their own pointer-events:auto
+      // (like the corners), so they win there over the inset chx-body drag surface.
+      box.appendChild(cropL); box.appendChild(cropR); box.appendChild(cropT); box.appendChild(cropB);
       box.appendChild(rTL); box.appendChild(rTR); box.appendChild(rBL); box.appendChild(rBR);
       box.appendChild(rot); box.appendChild(rem); box.appendChild(badge); box.appendChild(tbar);
       collageChromeEl.appendChild(box);
@@ -7378,6 +7418,13 @@
       rTR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tr'); });
       rBL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'bl'); });
       rBR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'br'); });
+      // v2.1 round 269 (Terry) — crop bars → existing startItemCrop (l/r/t/b). Same
+      // guard + stopPropagation as the corner handlers (bg has no crop; startItemCrop
+      // also early-returns when the tile is locked).
+      cropL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemCrop(collageSelected, e, 'l'); });
+      cropR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemCrop(collageSelected, e, 'r'); });
+      cropT.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemCrop(collageSelected, e, 't'); });
+      cropB.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemCrop(collageSelected, e, 'b'); });
       rot.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemRotate(collageSelected, e); });
       rot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); if (collageSelected && !collageSelected.isBg) snapItemRot90(collageSelected); });
       rem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
@@ -8146,7 +8193,7 @@
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, scaleX: 1, scaleY: 1, font: 'Impact', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
