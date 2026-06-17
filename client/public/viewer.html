@@ -12501,17 +12501,18 @@
         if (collageZoomTimer) clearTimeout(collageZoomTimer);
         collageZoomTimer = setTimeout(() => { collageZoomGesture = false; commitCollageChange(); }, 400);
       }, { passive: false });
-      // ─── v2.1 round 253 (Terry) — MOUSE-WHEEL ZOOM for the whole collage ────────
-      // Plain wheel (no Ctrl) over the collage stage zooms the canvas in/out. It's a
-      // pure VIEW transform (collageUserZoom + pan) — it doesn't touch any tile/text/
-      // bg data, so it's NOT an undo step. Distinct from the Ctrl+scroll handler above
-      // (that zooms the selected photo INSIDE its frame and IS undoable). The bottom
-      // filmstrip and the Enhance panel are separate siblings of the stage, so their
-      // wheel events don't reach here anyway; we still bail explicitly if the target is
-      // inside either (belt-and-braces, and future-proof against DOM moves) so those
-      // surfaces scroll normally and we never preventDefault on them.
+      // ─── v2.1 round 253/259 (Terry) — VIEW ZOOM for the whole collage / carousel ────
+      // v2.1 round 259 (Terry) — Ctrl+wheel (was plain wheel), and ONLY when NOTHING is
+      // selected — i.e. the user clicked the dark space around the templates. A pure VIEW
+      // transform (collageUserZoom + pan) on the canvas / carousel track — it doesn't
+      // touch any tile/text/bg data, so it's NOT an undo step. When a PHOTO is selected,
+      // the Ctrl+wheel handler above zooms THAT photo instead, so we bail here if anything
+      // is selected. Plain wheel does nothing here (the stage scrolls normally). The
+      // filmstrip + Enhance panel are separate siblings, but we still bail if the target
+      // is inside either so they scroll normally and we never preventDefault on them.
       collageStageEl.addEventListener('wheel', (e) => {
-        if (e.ctrlKey) return;   // Ctrl+scroll = per-tile zoom (handled above)
+        if (!e.ctrlKey) return;                        // round 259 — view zoom needs Ctrl
+        if (collageSelected || selectedText) return;   // round 259 — a selected photo uses the per-tile Ctrl+zoom above; view zoom only on the empty dark space
         if (!document.body.classList.contains('collage-mode')) return;
         // Don't hijack wheels over the filmstrip pool or the Enhance panel — let them
         // scroll. (closest() walks up from the event target through the ancestors.)
