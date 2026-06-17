@@ -500,12 +500,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
       }>,
-    // v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. A carousel is an array
-    // of collage layouts (one per page); main bakes each via the shared pipeline and
-    // writes slide_01.jpg … slide_NN.jpg into one dedicated subfolder, returning the
-    // file list + folder (the renderer reveals the folder rather than opening N files).
-    saveCarousel: (layouts: unknown[]) =>
-      ipcRenderer.invoke('collage:saveCarousel', layouts) as Promise<{
+    // v2.1 round 260 (Terry) — carousel wide: SLICED EXPORT. The carousel is now ONE
+    // WIDE collage layout (canvas.w = pageCount*1080, h = 1350). Main bakes it once and
+    // crops N slices of exactly 1080×1350, writing slide_01.jpg … slide_NN.jpg into one
+    // dedicated subfolder and returning the file list + folder (the renderer reveals the
+    // folder rather than opening N files). Signature changed from (layouts[]) → (layout,
+    // pageCount); the return shape is unchanged.
+    saveCarousel: (layout: unknown, pageCount: number) =>
+      ipcRenderer.invoke('collage:saveCarousel', layout, pageCount) as Promise<{
         success: boolean;
         files?: Array<{ filePath: string; filename: string; fileId: number | null }>;
         folderPath?: string; count?: number; pending?: boolean; error?: string;

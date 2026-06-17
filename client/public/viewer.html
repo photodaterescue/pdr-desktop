@@ -2176,33 +2176,11 @@
        so the faded background layer can't cover it like an inset shadow did)
        + a soft glow, so it's obvious the whole collage backdrop is selected. */
     body.collage-bg-selected #collage-canvas { outline: 3px solid #a99cff; outline-offset: 3px; box-shadow: 0 8px 40px rgba(0,0,0,0.45), 0 0 0 7px rgba(169,156,255,0.28), 0 0 22px 4px rgba(169,156,255,0.35); }
-    /* v2.1 round 255 (Terry) — carousel P2: side-by-side page rendering. In carousel
-       mode #carousel-track is a flex ROW of .carousel-slot boxes inside #collage-stage;
-       the ACTIVE slot hosts the real #collage-canvas (re-parented, so editing is
-       unchanged), the others hold static renderPagePreview() mini-collages. The stage
-       must let the row overflow (zoom-out shows all pages) so it switches to auto. */
-    body.collage-mode.carousel-mode #collage-stage { overflow: auto; }
-    body.collage-mode.carousel-mode #carousel-track {
-      display: flex;
-      gap: 16px;
-      align-items: center;
-      justify-content: center;
-      transform-origin: 0 0;
-    }
-    .carousel-slot {
-      position: relative;
-      flex: 0 0 auto;
-      box-shadow: 0 8px 40px rgba(0,0,0,0.45);
-    }
-    /* The active slot hosts #collage-canvas, which carries its own box-shadow, so
-       suppress the slot's to avoid a double drop-shadow on the live page. */
-    .carousel-slot.carousel-slot-active { box-shadow: none; cursor: default; }
-    .carousel-slot:not(.carousel-slot-active) { cursor: pointer; }
-    /* Gold ring on the active page (outline draws OUTSIDE the box so it can't
-       cover the page content), matching the collage-mode gold accent. */
-    .carousel-slot.carousel-slot-active { outline: 2px solid #FEC242; outline-offset: 4px; }
-    /* The preview is a non-interactive mini-collage: its children never steal the
-       slot's activate click. */
+    /* v2.1 round 260 (Terry) — carousel wide: the carousel is now ONE wide #collage-canvas
+       (no #carousel-track / .carousel-slot side-by-side pages). The stage keeps the base
+       overflow:hidden so the wide canvas, panned/zoomed via its own transform, clips
+       cleanly to the stage exactly like a single collage. The .carousel-preview rule below
+       is retained — it now styles the CLIPPED slice thumbnails in the bottom filmstrip. */
     .carousel-preview { position: relative; overflow: hidden; background: #fff; }
     .carousel-preview * { pointer-events: none; }
     .collage-item {
@@ -4265,7 +4243,7 @@
     const filmstripEl = document.getElementById('filmstrip');
     // v2.1 round 256 (Terry) — carousel: a 1×1 transparent GIF used as the initial src
     // for not-yet-loaded <img> tiles. Hoisted to module scope (it used to be a local
-    // inside loadMedia) so renderPagePreview's carousel thumbnail fill can reuse it
+    // inside loadMedia) so renderCarouselSlicePreview's thumbnail fill can reuse it
     // without a ReferenceError; loadMedia's filmstrip builder references this same const.
     const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const counterEl = document.getElementById('counter');
@@ -4628,20 +4606,26 @@
     let collageExportPx = null;   // { w, h } | null
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
-    // v2.1 round 254 (Terry) — carousel P0: page model. A page = a snapshotCollage() object.
-    // NOTE: snapshotCollage() returns a STRING (JSON); carouselPages therefore holds
-    // STRINGS, and restoreCollageSnapshot is fed those strings verbatim (no re-stringify).
-    let carouselMode = false;        // true while editing a multi-page carousel
-    let carouselPages = [];          // array of page snapshot objects (stored as JSON strings)
-    let carouselActive = 0;          // index hydrated into the LIVE collage globals
+    // v2.1 round 260 (Terry) — carousel wide: WIDE-CANVAS model. A carousel is now ONE
+    // continuous #collage-canvas N slices wide (N×1080 × 1350), edited as a single
+    // collage; export bakes the whole wide canvas once and crops it into N 1080-wide
+    // slides. The old independent-page array (carouselPages[]/carouselActive) is gone —
+    // there's just the live collage + a slice COUNT. carouselPageCount = number of
+    // 1080-wide slices the wide canvas spans.
+    let carouselMode = false;        // true while editing a wide-canvas carousel
+    let carouselPageCount = 2;       // number of 1080-wide slices (clamped MIN..MAX)
     const CAROUSEL_MAX = 10, CAROUSEL_DEFAULT = 2, CAROUSEL_MIN = 2;
-    // v2.1 round 254 (Terry) — carousel P0: the canvas size every carousel page uses.
-    // 1080×1350 (4:5 portrait). sizeId 'ig-carousel' is a distinct key so the page
-    // snapshots all agree; restore stores collageSizeId verbatim (no preset-table
-    // lookup), so this id round-trips even though it isn't a COLLAGE_PRESETS row.
+    // v2.1 round 254 (Terry) — carousel: the per-slice canvas size. 1080×1350 (4:5
+    // portrait); a carousel of N slices is N×1080 × 1350. sizeId 'ig-carousel' is a
+    // distinct key so a restored carousel snapshot round-trips (restore stores
+    // collageSizeId verbatim, no preset-table lookup, even though it isn't a PRESETS row).
     const CAROUSEL_SIZE_ID = 'ig-carousel';
     const CAROUSEL_EXPORT_PX = { w: 1080, h: 1350 };
-    const CAROUSEL_ASPECT = 1080 / 1350;   // 0.8
+    const CAROUSEL_ASPECT = 1080 / 1350;   // 0.8 — one slice
+    // v2.1 round 260 (Terry) — carousel wide: the aspect of the WHOLE wide canvas
+    // (N slices side by side). getCanvasAspect returns this while carouselMode is on,
+    // so the single-canvas layout/render path sizes the wide paper with no special-casing.
+    function carouselWideAspect() { return (carouselPageCount * 1080) / 1350; }
     // v2.1 round 253 (Terry) — USER ZOOM for the whole collage canvas (mouse-wheel
     // over the stage). This is a VIEW transform layered ON TOP of the fit: layoutCanvasSize
     // sizes #collage-canvas's box to fill the stage (the "fit"); collageUserZoom is a
@@ -4651,30 +4635,21 @@
     // zooming. transform-origin is the canvas top-left (0 0) so the pan math is a simple
     // screen-px translate. Distinct from per-tile Ctrl+scroll zoom (it.zoom), which is
     // unchanged and gated on e.ctrlKey.
-    const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 5;
+    // v2.1 round 260 (Terry) — carousel wide: MAX raised 5→10 so the view can zoom the
+    // wide carousel canvas up enough for scrollViewToSlice to fill ONE 1080-wide slice
+    // even at N=10 (slice fill needs zoom ≈ N). Single-collage zoom is unaffected — the
+    // user simply has more headroom; nothing auto-zooms past 1 outside carousel mode.
+    const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 10;
     let collageUserZoom = 1, collagePanX = 0, collagePanY = 0;
     // Apply the current view transform to the canvas. Cheap; safe to call on every
     // layout / zoom step. Re-positions the radial gradient epicentre (which is placed
     // off the canvas's scaled rect) so it tracks the zoom too.
     function applyCollageZoom() {
       if (!collageCanvasEl) return;
-      // v2.1 round 255 (Terry) — carousel P2: zoom/pan ALL pages together. In carousel
-      // mode the view transform lives on #carousel-track (which contains every page),
-      // and #collage-canvas's OWN transform is cleared so the active page isn't double-
-      // transformed (it inherits the track's transform as a descendant). Outside carousel
-      // mode this is byte-identical to before — the transform stays on #collage-canvas.
-      if (carouselMode) {
-        const track = document.getElementById('carousel-track');
-        collageCanvasEl.style.transform = '';
-        collageCanvasEl.style.transformOrigin = '';
-        if (track) {
-          track.style.transformOrigin = '0 0';
-          track.style.transform =
-            'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')';
-        }
-        try { positionGradEpicentre(); } catch (_) {}
-        return;
-      }
+      // v2.1 round 260 (Terry) — carousel wide: the carousel is now ONE wide #collage-canvas
+      // (no per-page track), so the view transform ALWAYS targets #collage-canvas — in
+      // carousel mode the wide canvas is panned/zoomed exactly like a single collage. (The
+      // round-255 #carousel-track branch is gone; the track element no longer exists.)
       collageCanvasEl.style.transformOrigin = '0 0';
       collageCanvasEl.style.transform =
         'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')';
@@ -6728,8 +6703,8 @@
       // thumbnail when the tile scrolls into view. The .thumb's
       // background:#1a1a2e shows through cleanly during that gap.
       // v2.1 round 256 (Terry) — carousel: TRANSPARENT_PIXEL now lives at module scope
-      // (declared once near filmstripEl) so renderPagePreview can share it; the local
-      // redeclaration here was removed to avoid shadowing/duplication.
+      // (declared once near filmstripEl) so renderCarouselSlicePreview can share it; the
+      // local redeclaration here was removed to avoid shadowing/duplication.
 
       const FILMSTRIP_CHUNK_SIZE = 200;
       let buildCursor = 0;
@@ -6959,6 +6934,11 @@
     // (landscape/square/portrait) OR a numeric aspect (from a Canvas Size preset or
     // a Custom size). Resolve both; fall back to 3:2.
     function getCanvasAspect() {
+      // v2.1 round 260 (Terry) — carousel wide: in carousel mode the live canvas is the
+      // WHOLE wide carousel (N slices), so its aspect is authoritative here regardless of
+      // whatever numeric collageAspectKey reshapeCollage last stored — keeps grow/shrink
+      // and a restored carousel snapshot in lock-step with carouselPageCount.
+      if (carouselMode) return carouselWideAspect();
       const k = collageAspectKey;
       if (typeof k === 'number' && isFinite(k) && k > 0) return k;
       return COLLAGE_ASPECTS[k] || (3 / 2);
@@ -9251,73 +9231,198 @@
         t.classList.toggle('collage-off', !!(it && !it.on));
       });
     }
-    // v2.1 round 256 (Terry) — carousel: render the bottom filmstrip as one thumbnail per
-    // PAGE plus a trailing "+" add slot. The photo POOL (the [data-idx] tiles + the sticky
-    // "Add photos" button) is hidden via body.carousel-filmstrip (CSS) rather than removed,
-    // so exitCarouselMode can restore it instantly without rebuilding the pool. Each thumb
-    // is a small renderPagePreview() mini-collage (which now loads only cached 160px thumbs
-    // — FIX A) wrapped in a button: click → switch page; a × (min-gated) removes; the + slot
-    // (max-gated) adds. A 1..N number badge mirrors the side-by-side order.
+    // v2.1 round 260 (Terry) — carousel wide: render the bottom filmstrip as one thumbnail
+    // per SLICE of the live WIDE canvas, plus a trailing "+" add slot. The photo POOL (the
+    // [data-idx] tiles + the sticky "Add photos" button) is hidden via body.carousel-filmstrip
+    // (CSS), so exitCarouselMode restores it instantly. Each thumb is a CLIPPED view of the
+    // wide collage at slice i (renderCarouselSlicePreview, cached 160px thumbs only — never
+    // full-res, which caused the round-256 GPU hang) wrapped in a button: click → scroll the
+    // view to that slice; a × (min-gated) drops a slice (shrinkCarousel); the + slot
+    // (max-gated) adds one (growCarousel). A 1..N badge numbers the slices.
+    //
+    // renderCarouselSlicePreview(snapStr, sliceW, sliceH, sliceIndex, sliceCount) — a
+    // NON-INTERACTIVE clip of ONE slice. An overflow:hidden box (sliceW×sliceH) holds the
+    // WHOLE wide collage rendered at full wide width (sliceCount×sliceW), translated left by
+    // sliceIndex×sliceW so the wanted slice shows. Tile/text fractions are of the WHOLE wide
+    // canvas, so they're multiplied by the full wide px. Mirrors applyCanvasBgVisual's bg-kind
+    // precedence + renderCollageItem geometry at preview scale; text via renderTextToCanvas.
+    function renderCarouselSlicePreview(snapStr, sliceW, sliceH, sliceIndex, sliceCount) {
+      const clip = document.createElement('div');
+      clip.className = 'carousel-preview';
+      clip.style.width = sliceW + 'px';
+      clip.style.height = sliceH + 'px';
+      clip.style.overflow = 'hidden';
+      let snap = null;
+      try { snap = JSON.parse(snapStr); } catch (_) { snap = null; }
+      if (!snap) return clip;
+      const N = Math.max(1, sliceCount | 0);
+      const wideW = N * sliceW;           // full wide-canvas px at this thumb scale
+      const wideH = sliceH;
+      const inner = document.createElement('div');
+      inner.style.cssText = 'position:absolute;top:0;left:0;height:100%;';
+      inner.style.width = wideW + 'px';
+      inner.style.transform = 'translateX(' + (-sliceIndex * sliceW) + 'px)';
+      // ── Background (mirror applyCanvasBgVisual's kind precedence) — painted on inner so
+      //    the wide background spans all slices, clipped to the wanted one ──
+      try {
+        if (snap.transparent) {
+          inner.style.background = (typeof COLLAGE_CHECKER_BG !== 'undefined') ? COLLAGE_CHECKER_BG : '#ffffff';
+        } else if (snap.texture && collageTextureById(snap.texture.id)) {
+          const tex = collageTextureById(snap.texture.id);
+          inner.style.backgroundColor = tex.base;
+          inner.style.backgroundImage = 'url("' + collageTextureDataUri(tex, Math.max(1, Math.round(wideW)), Math.max(1, Math.round(wideH))) + '")';
+          inner.style.backgroundRepeat = 'no-repeat';
+          inner.style.backgroundSize = '100% 100%';
+          inner.style.backgroundPosition = '0 0';
+        } else if (snap.gradient && snap.gradient.kind === 'mesh') {
+          const base = /^#[0-9a-fA-F]{3,6}$/.test(String(snap.gradient.base || '')) ? snap.gradient.base : '#1a1a2e';
+          inner.style.backgroundColor = base;
+          inner.style.backgroundImage = collageMeshCss(snap.gradient);
+        } else if (snap.gradient) {
+          const css = collageGradientCss(snap.gradient);
+          if (css) inner.style.background = css; else inner.style.background = snap.bg || '#ffffff';
+        } else {
+          inner.style.background = snap.bg || '#ffffff';
+        }
+      } catch (_) { inner.style.background = snap.bg || '#ffffff'; }
+      // ── Background PHOTO (faded under the tiles), best-effort, spans the wide canvas ──
+      try {
+        if (!snap.transparent && snap.bgImagePath) {
+          const bgImg = document.createElement('img');
+          bgImg.src = getFileSrc(snap.bgImagePath);
+          bgImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
+          const op = (snap.bgEnh && typeof snap.bgEnh.opacity === 'number') ? snap.bgEnh.opacity : 0.4;
+          bgImg.style.opacity = String(op);
+          inner.appendChild(bgImg);
+        }
+      } catch (_) {}
+      // ── Tiles (ascending z so the front-most draws last) — fractions of the WIDE canvas ──
+      try {
+        const items = (Array.isArray(snap.items) ? snap.items : [])
+          .filter((it) => it && it.on && !isVideoPath(it.path))
+          .slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+        for (const it of items) {
+          const effAspect = (() => {
+            const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
+            const cw = Math.max(0.05, c.r - c.l), ch = Math.max(0.05, c.b - c.t);
+            return (it.aspect || 1) * (cw / ch);
+          })();
+          const wPx = (it.wFrac || 0) * wideW;
+          const hPx = wPx / (effAspect || 1);
+          const cell = document.createElement('div');
+          cell.style.cssText = 'position:absolute;overflow:hidden;';
+          cell.style.width = wPx + 'px';
+          cell.style.height = hPx + 'px';
+          cell.style.left = ((it.xFrac || 0) * wideW) + 'px';
+          cell.style.top = ((it.yFrac || 0) * wideH) + 'px';
+          cell.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
+          const img = document.createElement('img');
+          // CACHED 160px thumbnail only — never getFileSrc full-res (round-256 GPU hang).
+          img.src = TRANSPARENT_PIXEL;
+          (function (imEl, srcPath) {
+            fetchThumb(srcPath).then(function (url) { if (url) imEl.src = url; }).catch(function () {});
+          })(img, it.bgRemovedPath || it.path);
+          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
+          try {
+            const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
+            const ccx = ((c.l + c.r) / 2) * 100, ccy = ((c.t + c.b) / 2) * 100;
+            img.style.objectPosition = ccx + '% ' + ccy + '%';
+          } catch (_) {}
+          cell.appendChild(img);
+          inner.appendChild(cell);
+        }
+      } catch (_) {}
+      // ── Text layers (reuse renderTextToCanvas; short side = the canvas HEIGHT) ──
+      try {
+        const shortPx = wideH;   // wide canvas short side is its height
+        const texts = (Array.isArray(snap.texts) ? snap.texts : []).slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+        for (const t of texts) {
+          const cnv = renderTextToCanvas(t, shortPx);
+          if (!cnv) continue;
+          const sx = (typeof t.scaleX === 'number' && t.scaleX > 0) ? t.scaleX : 1;
+          const sy = (typeof t.scaleY === 'number' && t.scaleY > 0) ? t.scaleY : 1;
+          const holder = document.createElement('div');
+          holder.style.cssText = 'position:absolute;';
+          holder.style.left = ((t.xFrac || 0) * wideW) + 'px';
+          holder.style.top = ((t.yFrac || 0) * wideH) + 'px';
+          holder.style.transform = 'translate(-50%, -50%) rotate(' + (t.rot || 0) + 'deg) scale(' + sx + ',' + sy + ')';
+          holder.style.transformOrigin = 'center center';
+          cnv.style.display = 'block';
+          holder.appendChild(cnv);
+          inner.appendChild(holder);
+        }
+      } catch (_) {}
+      clip.appendChild(inner);
+      return clip;
+    }
     function updateCarouselFilmstrip() {
       if (!collageMode || !filmstripEl) return;
       try { document.body.classList.add('carousel-filmstrip'); } catch (_) {}
       // Drop any previously-built carousel UI (thumbs + add slot); leave the pool tiles
       // and #collage-add-photos in place (hidden by CSS).
       filmstripEl.querySelectorAll('.carousel-thumb, .carousel-add').forEach((el) => el.remove());
-      const THUMB_W = 58, THUMB_H = 72;   // ~1080/1350 (4:5) portrait
-      const n = carouselPages.length;
-      for (let i = 0; i < n; i++) {
+      const THUMB_W = 58, THUMB_H = 72;   // ~1080/1350 (4:5) portrait per slice
+      const N = Math.max(1, carouselPageCount);
+      // One LIVE snapshot drives every slice thumb (they're all slices of the same wide
+      // canvas), so we snapshot once per rebuild.
+      const snap = snapshotCollage();
+      for (let i = 0; i < N; i++) {
         const btn = document.createElement('button');
         btn.type = 'button';
-        btn.className = 'carousel-thumb' + (i === carouselActive ? ' carousel-thumb-active' : '');
-        btn.setAttribute('data-pdr-tooltip', 'Page ' + (i + 1));
+        // Highlight the slice the view is currently centred on (best-effort).
+        btn.className = 'carousel-thumb' + (i === currentCarouselSlice() ? ' carousel-thumb-active' : '');
+        btn.setAttribute('data-pdr-tooltip', 'Slide ' + (i + 1));
         btn.setAttribute('data-pdr-tooltip-side', 'top');
-        // The active page's live edits aren't in carouselPages[active] until a snapshot,
-        // so render the active thumb from the LIVE snapshot; others from their stored page.
-        const snap = (i === carouselActive) ? snapshotCollage() : carouselPages[i];
-        const prev = renderPagePreview(snap, THUMB_W, THUMB_H);
+        const prev = renderCarouselSlicePreview(snap, THUMB_W, THUMB_H, i, N);
         btn.appendChild(prev);
         const num = document.createElement('span');
         num.className = 'carousel-thumb-num';
         num.textContent = String(i + 1);
         btn.appendChild(num);
-        if (carouselPages.length > CAROUSEL_MIN) {
+        if (carouselPageCount > CAROUSEL_MIN) {
           const x = document.createElement('span');
           x.className = 'carousel-thumb-x';
-          x.setAttribute('aria-label', 'Remove page ' + (i + 1));
-          x.setAttribute('data-pdr-tooltip', 'Remove this page');
+          x.setAttribute('aria-label', 'Remove slide ' + (i + 1));
+          x.setAttribute('data-pdr-tooltip', 'Remove this slide');
           x.setAttribute('data-pdr-tooltip-side', 'top');
           x.innerHTML = '&times;';
           const idx = i;
           x.addEventListener('click', (e) => {
             e.stopPropagation();
-            removeCarouselPage(idx);   // rebuilds the strip itself
+            shrinkCarousel(idx);   // rebuilds the strip itself
           });
           btn.appendChild(x);
         }
         const idx = i;
-        btn.addEventListener('click', () => {
-          setCarouselActivePage(idx);   // rebuilds the strip itself
-        });
+        btn.addEventListener('click', () => { scrollViewToSlice(idx); updateCarouselFilmstrip(); });
         filmstripEl.appendChild(btn);
       }
       const add = document.createElement('button');
       add.type = 'button';
       add.className = 'carousel-add';
       add.innerHTML = '<span class="carousel-add-plus">+</span>';
-      if (carouselPages.length >= CAROUSEL_MAX) {
+      if (carouselPageCount >= CAROUSEL_MAX) {
         add.disabled = true;
-        add.setAttribute('data-pdr-tooltip', 'Maximum 10 pages');
+        add.setAttribute('data-pdr-tooltip', 'Maximum 10 slides');
       } else {
-        add.setAttribute('data-pdr-tooltip', 'Add a page');
+        add.setAttribute('data-pdr-tooltip', 'Add a slide');
       }
       add.setAttribute('data-pdr-tooltip-side', 'top');
-      add.addEventListener('click', () => {
-        if (carouselPages.length >= CAROUSEL_MAX) return;
-        const newIdx = addCarouselPage();           // appends a blank page + rebuilds strip
-        if (newIdx >= 0) setCarouselActivePage(newIdx);   // jump to it (rebuilds strip again)
-      });
+      add.addEventListener('click', () => { growCarousel(); scrollViewToSlice(carouselPageCount - 1); updateCarouselFilmstrip(); });
       filmstripEl.appendChild(add);
+    }
+    // Which slice the view is currently centred on (for the active-thumb highlight).
+    // Derived from the pan: at the slice-fill zoom, panX = -(i/N)*fitW*zoom, so
+    // i ≈ -panX / (fitW/N * zoom). Best-effort; clamps to [0, N-1].
+    function currentCarouselSlice() {
+      if (!carouselMode || !collageCanvasEl) return 0;
+      const N = Math.max(1, carouselPageCount);
+      const fitW = collageCanvasEl.clientWidth || 0;
+      if (!fitW || !collageUserZoom) return 0;
+      const sliceScreenW = (fitW / N) * collageUserZoom;
+      if (sliceScreenW <= 0) return 0;
+      const i = Math.round((-collagePanX) / sliceScreenW);
+      return Math.max(0, Math.min(N - 1, i));
     }
 
     function gridArrange() {
@@ -10127,10 +10232,10 @@
       // overlay nodes; drop the cached refs so they're lazily recreated.
       collageSnapVEl = null; collageSnapHEl = null;
       collageItems.length = 0;
-      // v2.1 round 254 (Terry) — carousel P0: in carousel mode the tiles are NOT the
-      // global files[] (each page has its own photo set, rebuilt by restoreCollageSnapshot
-      // from the page's stored item paths). Skip the files[] population so this never
-      // clobbers a hydrated carousel page; the bg + text layers are still rebuilt below.
+      // v2.1 round 254/260 (Terry) — carousel: in carousel mode the wide canvas's tiles
+      // are NOT the global files[] (they're the photos the user added to the wide
+      // carousel, rebuilt by restoreCollageSnapshot from the stored item paths). Skip the
+      // files[] population so this never clobbers carousel content; bg + text rebuilt below.
       if (!carouselMode) files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
         // enh = this tile's own Enhance state (edited via the side panel
@@ -10159,6 +10264,9 @@
       // re-create it so it survives a rebuild.
       renderCollageBgLayer();
       renderAllTexts();   // v2.1 round 185 (Text #1) — recreate text els on top
+      // v2.1 round 260 (Terry) — carousel wide: the innerHTML clear at the top also
+      // removed the slice-divider overlay; re-create it (no-op outside carousel mode).
+      if (carouselMode) { try { renderCarouselGuides(); } catch (_) {} }
     }
 
     // v2.1 round 140 — background swatches live in the Enhance panel's
@@ -11338,327 +11446,187 @@
         else selectCollageItem(null);
       }
     }
-    // ─── Carousel (multi-page collages) — PHASE 0: page model only ──────
-    // v2.1 round 254 (Terry) — carousel P0: a PAGE is a snapshotCollage() value
-    // (a JSON STRING). carouselPages holds those strings; the active page is the one
-    // hydrated into the live collage globals via restoreCollageSnapshot. NO UI / menu /
-    // rendering changes in this phase — just the model + the restore fix above.
+    // ─── Carousel — WIDE-CANVAS model (v2.1 round 260, Terry) ──────────────────
+    // A carousel is ONE continuous collage canvas N×1080 wide × 1350 tall, edited as a
+    // single collage (every tile/text/bg/Enhance/undo handler is the shared single-canvas
+    // code — carouselMode just widens getCanvasAspect()). Export bakes the whole wide
+    // canvas once and crops it into N 1080-wide slides. There is NO per-page array: just
+    // the live collage + carouselPageCount. The old independent-page machinery
+    // (carouselPages/carouselActive, blankPageSnapshot, set/add/removeCarouselPage,
+    // renderPagePreview, buildCarouselTrack, layoutCarousel) is gone.
     //
-    // blankPageSnapshot() — a snapshot STRING (same form snapshotCollage() returns)
-    // describing an EMPTY 1080×1350 carousel page: default solid white bg, no tiles, no
-    // text, no gradient/texture/photo, all treatments off, sizeId 'ig-carousel'. Built
-    // by constructing the exact key set snapshotCollage() emits (NOT by mutating live
-    // state), so restoreCollageSnapshot consumes it identically to a real page.
-    function blankPageSnapshot() {
+    // blankWideSnapshot(n) — a snapshot STRING (the form snapshotCollage() returns)
+    // describing an EMPTY wide carousel canvas: default solid white bg, no tiles, no text,
+    // sizeId 'ig-carousel', exportPx { n*1080, 1350 }, aspectKey the wide aspect. Restored
+    // with carouselMode already true, the round-254 nOrig=0 path empties the live canvas
+    // (no files[] re-sync) — honouring the "clears your photos" warning. Built by emitting
+    // the key set snapshotCollage() emits, so restoreCollageSnapshot consumes it identically.
+    function blankWideSnapshot(n) {
+      const count = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || carouselPageCount || CAROUSEL_DEFAULT));
       return JSON.stringify({
         bg: '#ffffff', bgImagePath: '', transparent: false,
         vignette: 0, grain: 0, vignetteShape: 'ellipse',
         gradient: null, texture: null,
-        bgEnh: null, aspectKey: CAROUSEL_ASPECT,
-        sizeId: CAROUSEL_SIZE_ID, exportPx: { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h },
+        bgEnh: null, aspectKey: (count * CAROUSEL_EXPORT_PX.w) / CAROUSEL_EXPORT_PX.h,
+        sizeId: CAROUSEL_SIZE_ID, exportPx: { w: count * CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h },
         items: [],
         texts: [],
         selTextId: null,
       });
     }
     function enterCarouselMode(n) {
-      // v2.1 round 257 (Terry) — starting a carousel CLEARS the collage: ALL pages blank.
+      // Starting a carousel CLEARS the live collage (the warning's promise) — restore a
+      // blank WIDE canvas with carouselMode already true so the round-254 nOrig=0 path
+      // empties it (no files[] re-sync).
       carouselMode = true;
-      // v2.1 round 255 (Terry) — carousel P2: mark the body so the side-by-side CSS
-      // (track flex + stage overflow) applies. Set BEFORE reshapeCollage so the layout
-      // it triggers already sees carousel-mode geometry.
+      carouselPageCount = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
+      // Body class kept for the carousel-filmstrip CSS (pool hidden, slice thumbs shown).
       try { document.body.classList.add('carousel-mode'); } catch (_) {}
-      // Put the live collage at the carousel size FIRST so page 0's snapshot carries the
-      // same sizeId/exportPx/aspect the blank pages do. reshapeCollage is the existing
-      // size-setting integration point (sets aspect/sizeId/exportPx → relayout → re-tidy).
-      // NB: its layoutCanvasSize() now routes to layoutCarousel(), which safely no-ops
-      // while the track/pages don't exist yet (built below).
-      try { reshapeCollage(CAROUSEL_ASPECT, CAROUSEL_SIZE_ID, { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h }); } catch (_) {}
-      // v2.1 round 257 (Terry) — ALL pages start blank (incl. page 0). Restoring a blank
-      // page with carouselMode already true uses the carousel restore path (no files[]
-      // re-sync), so the live canvas truly empties — honouring the "clears your photos" warning.
-      const count = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
-      carouselPages = [];
-      for (let i = 0; i < count; i++) carouselPages.push(blankPageSnapshot());
-      carouselActive = 0;
-      try { restoreCollageSnapshot(carouselPages[0]); } catch (_) {}
-      // v2.1 round 255 (Terry) — carousel P2: build the side-by-side track (active page
-      // hosts the real #collage-canvas; others are previews) + size everything.
-      buildCarouselTrack();
-      layoutCarousel();
-      // v2.1 round 256 (Terry) — carousel P3: swap the bottom strip to page thumbnails.
+      // Empty the canvas first (carouselMode=true → restore's nOrig=0 clears all tiles),
+      // then shape the live collage to the WHOLE wide size. reshapeCollage sets aspect/
+      // sizeId/exportPx and re-fits via the (single-canvas) layoutCanvasSize. collageExportPx
+      // becomes { n*1080, 1350 } so buildCollageLayout already returns the full wide layout.
+      try { restoreCollageSnapshot(blankWideSnapshot(carouselPageCount)); } catch (_) {}
+      try { reshapeCollage(carouselWideAspect(), CAROUSEL_SIZE_ID, { w: carouselPageCount * CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h }); } catch (_) {}
+      // Open at a usable scale (one slice filling the view) rather than the whole tiny
+      // strip; renderCarouselGuides paints the faint slice dividers; the bottom strip
+      // becomes N slice thumbnails.
+      resetCollageZoom();
+      scrollViewToSlice(0);
+      renderCarouselGuides();
       updateCarouselFilmstrip();
     }
     function exitCarouselMode() {
-      // Collapse back to the active page as the single live collage. carouselPages
-      // already holds STRINGS, so feed restoreCollageSnapshot the string verbatim
-      // (snapshotCollage → JSON string; restoreCollageSnapshot → JSON.parse).
-      if (carouselMode && carouselPages[carouselActive] != null) {
-        restoreCollageSnapshot(carouselPages[carouselActive]);
-      }
-      carouselMode = false; carouselPages = []; carouselActive = 0;
-      // v2.1 round 255 (Terry) — carousel P2: tear down the side-by-side track and
-      // return #collage-canvas to being a direct child of #collage-stage, BEFORE the
-      // body class is dropped (so the canvas lands back in the single-collage layout).
-      try {
-        const track = document.getElementById('carousel-track');
-        if (collageStageEl && collageCanvasEl) collageStageEl.appendChild(collageCanvasEl);
-        if (track && track.parentNode) track.parentNode.removeChild(track);
-      } catch (_) {}
+      // Collapse back to a SINGLE collage at the per-slice portrait size. The wide canvas
+      // content stays in the live globals; we just drop carousel mode + reshape to 1080×1350.
+      carouselMode = false;
+      // Drop the slice-divider overlay (a child of #collage-canvas).
+      try { const g = document.getElementById('carousel-guides'); if (g && g.parentNode) g.parentNode.removeChild(g); } catch (_) {}
+      // (No track to tear down — the carousel was the wide #collage-canvas itself.)
       try { document.body.classList.remove('carousel-mode'); } catch (_) {}
-      // v2.1 round 256 (Terry) — carousel P3: drop the page thumbnails + the pool-hiding
-      // class so the normal photo-pool filmstrip (its [data-idx] tiles + Add photos) shows
-      // again, then re-sync the pool's keep/sideline state for the now-single collage.
+      // Drop the slice thumbnails + the pool-hiding class so the normal photo-pool
+      // filmstrip ([data-idx] tiles + Add photos) shows again.
       try {
         if (filmstripEl) filmstripEl.querySelectorAll('.carousel-thumb, .carousel-add').forEach((el) => el.remove());
         document.body.classList.remove('carousel-filmstrip');
       } catch (_) {}
-      // Reset the view transform onto #collage-canvas (applyCollageZoom now targets the
-      // canvas again) and re-fit via the normal single-collage path.
-      try { layoutCanvasSize(); } catch (_) {}
+      // Reshape back to the single portrait canvas (resets zoom/pan to the fit) + re-sync
+      // the pool's keep/sideline state for the now-single collage.
+      try { reshapeCollage(CAROUSEL_ASPECT, CAROUSEL_SIZE_ID, { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h }); } catch (_) {}
       try { updateCollageFilmstrip(); } catch (_) {}
     }
-    function setCarouselActivePage(i) {
-      if (!carouselMode || i < 0 || i >= carouselPages.length || i === carouselActive) return;
-      carouselPages[carouselActive] = snapshotCollage();   // persist current edits (STRING)
-      carouselActive = i;
-      restoreCollageSnapshot(carouselPages[carouselActive]);   // STRING, as restore expects
-      try { selectCollageItem(null); } catch (_) {}
-      // v2.1 round 255 (Terry) — carousel P2: re-home the real #collage-canvas into the
-      // NEW active slot + re-render the other previews, then re-size the track.
-      buildCarouselTrack();
-      layoutCarousel();
-      // v2.1 round 256 (Terry) — carousel P3: move the active highlight to the new page.
-      updateCarouselFilmstrip();
-    }
-    function addCarouselPage() {
-      if (carouselPages.length >= CAROUSEL_MAX) return -1;
-      carouselPages.push(blankPageSnapshot());
-      // v2.1 round 255 (Terry) — carousel P2: a new page needs a new slot + a re-fit
-      // (more pages → smaller boxes). The active page is unchanged.
-      buildCarouselTrack();
-      layoutCarousel();
-      // v2.1 round 256 (Terry) — carousel P3: show the new page's thumb (+ may now hit max).
-      updateCarouselFilmstrip();
-      return carouselPages.length - 1;
-    }
-    function removeCarouselPage(i) {
-      if (carouselPages.length <= CAROUSEL_MIN || i < 0 || i >= carouselPages.length) return;
-      carouselPages[carouselActive] = snapshotCollage();   // persist current edits first
-      carouselPages.splice(i, 1);
-      if (carouselActive >= carouselPages.length) carouselActive = carouselPages.length - 1;
-      else if (i < carouselActive) carouselActive--;
-      restoreCollageSnapshot(carouselPages[carouselActive]);   // STRING, as restore expects
-      // v2.1 round 255 (Terry) — carousel P2: rebuild the track (slot removed, active
-      // re-homed if it shifted) + re-fit (fewer pages → larger boxes).
-      buildCarouselTrack();
-      layoutCarousel();
-      // v2.1 round 256 (Terry) — carousel P3: drop the removed page's thumb + re-number.
-      updateCarouselFilmstrip();
-    }
-    // ─── Carousel (multi-page collages) — PHASE 2: side-by-side render ──────
-    // v2.1 round 255 (Terry) — carousel P2: render N pages of 1080×1350 side by side in
-    // #collage-stage. The ACTIVE page IS the real, editable #collage-canvas (re-parented
-    // into its slot — SAME element, so every existing tile/text/bg/Enhance handler keeps
-    // working untouched); the others are static renderPagePreview() mini-collages. A
-    // click on an inactive slot activates it (setCarouselActivePage). No menu / filmstrip
-    // changes in this phase — the parent drives enter/switch via the debugger.
-    //
-    // renderPagePreview(snapshotStr, boxW, boxH) — a NON-INTERACTIVE mini-collage element
-    // (boxW×boxH) built FROM A SNAPSHOT STRING (JSON.parse). Mirrors applyCanvasBgVisual's
-    // bg-kind selection + renderCollageItem's tile geometry at preview scale, and reuses
-    // renderTextToCanvas for text. Children are pointer-events:none (CSS) so the slot's
-    // activate click always lands. Best-effort fidelity (object-position for crop/pan);
-    // the active page is always the pixel-exact live canvas.
-    function renderPagePreview(snapshotStr, boxW, boxH) {
-      const wrap = document.createElement('div');
-      wrap.className = 'carousel-preview';
-      wrap.style.width = boxW + 'px';
-      wrap.style.height = boxH + 'px';
-      let snap = null;
-      try { snap = JSON.parse(snapshotStr); } catch (_) { snap = null; }
-      if (!snap) return wrap;
-      // ── Background (mirror applyCanvasBgVisual's kind precedence) ──
-      try {
-        if (snap.transparent) {
-          wrap.style.background = (typeof COLLAGE_CHECKER_BG !== 'undefined') ? COLLAGE_CHECKER_BG : '#ffffff';
-        } else if (snap.texture && collageTextureById(snap.texture.id)) {
-          const tex = collageTextureById(snap.texture.id);
-          wrap.style.backgroundColor = tex.base;
-          wrap.style.backgroundImage = 'url("' + collageTextureDataUri(tex, Math.max(1, Math.round(boxW)), Math.max(1, Math.round(boxH))) + '")';
-          wrap.style.backgroundRepeat = 'no-repeat';
-          wrap.style.backgroundSize = '100% 100%';
-          wrap.style.backgroundPosition = '0 0';
-        } else if (snap.gradient && snap.gradient.kind === 'mesh') {
-          const base = /^#[0-9a-fA-F]{3,6}$/.test(String(snap.gradient.base || '')) ? snap.gradient.base : '#1a1a2e';
-          wrap.style.backgroundColor = base;
-          wrap.style.backgroundImage = collageMeshCss(snap.gradient);
-        } else if (snap.gradient) {
-          const css = collageGradientCss(snap.gradient);
-          if (css) wrap.style.background = css; else wrap.style.background = snap.bg || '#ffffff';
-        } else {
-          wrap.style.background = snap.bg || '#ffffff';
-        }
-      } catch (_) { wrap.style.background = snap.bg || '#ffffff'; }
-      // ── Background PHOTO (faded under the tiles), best-effort ──
-      try {
-        if (!snap.transparent && snap.bgImagePath) {
-          const bgImg = document.createElement('img');
-          bgImg.src = getFileSrc(snap.bgImagePath);
-          bgImg.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;';
-          // bgEnh.opacity is the fade (default 0.4 if absent), matching saveCollage.
-          const op = (snap.bgEnh && typeof snap.bgEnh.opacity === 'number') ? snap.bgEnh.opacity : 0.4;
-          bgImg.style.opacity = String(op);
-          wrap.appendChild(bgImg);
-        }
-      } catch (_) {}
-      // ── Tiles (ascending z so the front-most draws last) ──
-      try {
-        const items = (Array.isArray(snap.items) ? snap.items : [])
-          .filter((it) => it && it.on && !isVideoPath(it.path))
-          .slice().sort((a, b) => (a.z || 0) - (b.z || 0));
-        for (const it of items) {
-          const effAspect = (() => {
-            const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
-            const cw = Math.max(0.05, c.r - c.l), ch = Math.max(0.05, c.b - c.t);
-            return (it.aspect || 1) * (cw / ch);
-          })();
-          const wPx = (it.wFrac || 0) * boxW;
-          const hPx = wPx / (effAspect || 1);
-          const cell = document.createElement('div');
-          cell.style.cssText = 'position:absolute;overflow:hidden;';
-          cell.style.width = wPx + 'px';
-          cell.style.height = hPx + 'px';
-          cell.style.left = ((it.xFrac || 0) * boxW) + 'px';
-          cell.style.top = ((it.yFrac || 0) * boxH) + 'px';
-          cell.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
-          const img = document.createElement('img');
-          // v2.1 round 256 (Terry) — carousel: load the CACHED 160px thumbnail, NOT the
-          // full-res file. Setting img.src = getFileSrc(...) made every preview tile (and,
-          // with many pages × many tiles, the bottom page-thumbnails too) decode a
-          // multi-megabyte original — the GPU driver-hang crash fetchThumb's own comment
-          // warns about. Build the img with no real src synchronously (layout stays sync),
-          // then fill it from the shared thumbnail cache asynchronously.
-          img.src = TRANSPARENT_PIXEL;
-          (function (imEl, srcPath) {
-            fetchThumb(srcPath).then(function (url) { if (url) imEl.src = url; }).catch(function () {});
-          })(img, it.bgRemovedPath || it.path);
-          img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
-          // Best-effort crop/pan via object-position: centre of the visible crop region.
-          try {
-            const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
-            const ccx = ((c.l + c.r) / 2) * 100, ccy = ((c.t + c.b) / 2) * 100;
-            img.style.objectPosition = ccx + '% ' + ccy + '%';
-          } catch (_) {}
-          cell.appendChild(img);
-          wrap.appendChild(cell);
-        }
-      } catch (_) {}
-      // ── Text layers (reuse renderTextToCanvas; centre on xFrac/yFrac like the bake) ──
-      try {
-        const shortPx = Math.min(boxW, boxH);
-        const texts = (Array.isArray(snap.texts) ? snap.texts : []).slice().sort((a, b) => (a.z || 0) - (b.z || 0));
-        for (const t of texts) {
-          const cnv = renderTextToCanvas(t, shortPx);   // same renderer the live canvas + bake use
-          if (!cnv) continue;
-          const sx = (typeof t.scaleX === 'number' && t.scaleX > 0) ? t.scaleX : 1;
-          const sy = (typeof t.scaleY === 'number' && t.scaleY > 0) ? t.scaleY : 1;
-          const holder = document.createElement('div');
-          holder.style.cssText = 'position:absolute;';
-          holder.style.left = ((t.xFrac || 0) * boxW) + 'px';
-          holder.style.top = ((t.yFrac || 0) * boxH) + 'px';
-          holder.style.transform = 'translate(-50%, -50%) rotate(' + (t.rot || 0) + 'deg) scale(' + sx + ',' + sy + ')';
-          holder.style.transformOrigin = 'center center';
-          cnv.style.display = 'block';
-          holder.appendChild(cnv);
-          wrap.appendChild(holder);
-        }
-      } catch (_) {}
-      return wrap;
-    }
-    // buildCarouselTrack() — (re)build #carousel-track inside #collage-stage with one
-    // .carousel-slot per page. The active slot adopts the REAL #collage-canvas (so
-    // editing is unchanged); inactive slots get a renderPagePreview() and an activate
-    // click. Sizes are applied by layoutCarousel (called by every caller right after).
-    function buildCarouselTrack() {
-      if (!carouselMode || !collageStageEl || !collageCanvasEl) return;
-      let track = document.getElementById('carousel-track');
-      if (!track) {
-        track = document.createElement('div');
-        track.id = 'carousel-track';
-        collageStageEl.appendChild(track);
-      }
-      // Detach the live canvas BEFORE clearing the track (so clearing innerHTML can't
-      // destroy it), then clear the old slots/previews.
-      if (collageCanvasEl.parentNode) collageCanvasEl.parentNode.removeChild(collageCanvasEl);
-      track.innerHTML = '';
-      // Provisional box; layoutCarousel resizes both the slots and their contents next.
-      const provW = 200, provH = provW / CAROUSEL_ASPECT;
-      for (let i = 0; i < carouselPages.length; i++) {
-        const slot = document.createElement('div');
-        slot.className = 'carousel-slot';
-        slot.dataset.page = String(i);
-        if (i === carouselActive) {
-          slot.classList.add('carousel-slot-active');
-          slot.appendChild(collageCanvasEl);   // SAME element — all editing keeps working
-        } else {
-          const prev = renderPagePreview(carouselPages[i], provW, provH);
-          slot.appendChild(prev);
-          // Activate this page on click (anywhere in the slot; preview children are
-          // pointer-events:none via CSS, so the click always reaches the slot).
-          slot.addEventListener('click', () => setCarouselActivePage(i));
-        }
-        track.appendChild(slot);
-      }
-    }
-    // layoutCarousel() — sibling to layoutCanvasSize for carousel mode. Fits N pages of
-    // aspect CAROUSEL_ASPECT (1080/1350) side by side in the stage, sizes every slot +
-    // the active #collage-canvas + each preview to the shared box, centres the track,
-    // then renders the active page (renderAllCollage/renderAllTexts) + re-applies the
-    // view transform to the whole track (applyCollageZoom).
-    function layoutCarousel() {
-      if (!carouselMode || !collageStageEl) return;
-      const track = document.getElementById('carousel-track');
-      if (!track) return;
-      const N = Math.max(1, carouselPages.length);
+    // scrollViewToSlice(i) — set the view transform so slice i (0-based) fills the stage.
+    // The fit (layoutCanvasSize) sizes the WIDE canvas box to be width-limited in the
+    // stage, so the whole strip spans the stage width at zoom 1. To fill one slice we zoom
+    // by N (so one of the N equal slices fills the former full width) — clamped to the
+    // zoom ceiling — then pan so slice i's left edge sits at the canvas's left edge and
+    // the (now taller-than-stage) canvas is vertically centred.
+    function scrollViewToSlice(i) {
+      if (!carouselMode || !collageCanvasEl || !collageStageEl) return;
+      const N = Math.max(1, carouselPageCount);
+      const idx = Math.max(0, Math.min(N - 1, i | 0));
+      // The canvas box is laid out at the FIT (transform identity). Read its fitted size.
+      const fitW = collageCanvasEl.clientWidth || 0;
+      const fitH = collageCanvasEl.clientHeight || 0;
+      if (!fitW || !fitH) return;
+      const zoom = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, N));
+      // transform-origin is 0 0, so a slice of fitW/N scaled by `zoom` occupies
+      // (fitW/N)*zoom on screen; pan left by the start of slice idx (in scaled px).
+      collageUserZoom = zoom;
+      collagePanX = -(idx / N) * fitW * zoom;
+      // Vertically centre the scaled canvas within the stage's content box.
       const cs = getComputedStyle(collageStageEl);
-      const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
       const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
-      const availW = collageStageEl.clientWidth - padL - padR;
       const availH = collageStageEl.clientHeight - padT - padB;
-      const gap = 16;
-      const aspect = CAROUSEL_ASPECT;   // w/h
-      // Height-limited OR width-limited (N boxes + (N-1) gaps must fit availW).
-      const widthLimitedH = ((availW - (N - 1) * gap) / N) / aspect;
-      let pageH = Math.min(availH, widthLimitedH);
-      pageH = Math.max(80, pageH);   // clamp so pages never collapse to nothing
-      let pageW = pageH * aspect;
-      // Size every slot + its content to the shared box.
-      const slots = track.querySelectorAll('.carousel-slot');
-      for (const slot of slots) {
-        slot.style.width = pageW + 'px';
-        slot.style.height = pageH + 'px';
-        const prev = slot.querySelector('.carousel-preview');
-        if (prev) {
-          // Rebuild the preview at the final box size (it bakes px positions/sizes).
-          const pageIdx = parseInt(slot.dataset.page || '0', 10);
-          const fresh = renderPagePreview(carouselPages[pageIdx], pageW, pageH);
-          slot.replaceChild(fresh, prev);
-        }
-      }
-      // The active page is the real canvas — size it directly (renderAllCollage reads
-      // its clientWidth/Height for tile px).
-      if (collageCanvasEl) {
-        collageCanvasEl.style.width = pageW + 'px';
-        collageCanvasEl.style.height = pageH + 'px';
-      }
-      // Render the active page's bg + tiles + text at the new size.
-      applyCanvasBgVisual();
-      renderAllCollage();
-      renderAllTexts();
-      // Re-apply the view transform to the whole track (applyCollageZoom's carousel
-      // branch targets #carousel-track and clears the canvas's own transform).
+      collagePanY = (availH - fitH * zoom) / 2;
       applyCollageZoom();
+    }
+    // renderCarouselGuides() — faint vertical divider lines marking the N−1 slice
+    // boundaries, as ONE overlay (#carousel-guides) inside #collage-canvas. Positioned by
+    // PERCENT (left:(i/N)*100%), so they scale with the canvas + view transform for free.
+    // pointer-events:none; z just below text (COLLAGE_TEXT_Z=100000) so the lines sit above
+    // ALL tiles (tile z is small, from collageZTop) but text reads cleanly over them, and
+    // well below the gold snap guides (max z-index). NOT part of the bake (the bake reads
+    // only layout.items/canvas/texts).
+    function renderCarouselGuides() {
+      if (!collageCanvasEl) return;
+      let g = document.getElementById('carousel-guides');
+      if (!carouselMode) { if (g && g.parentNode) g.parentNode.removeChild(g); return; }
+      if (!g) {
+        g = document.createElement('div');
+        g.id = 'carousel-guides';
+        g.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:' + (COLLAGE_TEXT_Z - 1) + ';';
+        collageCanvasEl.appendChild(g);
+      }
+      // Re-append so it sits above tiles/text rebuilt this pass (but snap guides, added
+      // lazily later at z 2147483646, still win).
+      collageCanvasEl.appendChild(g);
+      g.innerHTML = '';
+      const N = Math.max(1, carouselPageCount);
+      for (let i = 1; i < N; i++) {
+        const line = document.createElement('div');
+        line.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,0.18);';
+        line.style.left = ((i / N) * 100) + '%';
+        g.appendChild(line);
+      }
+    }
+    // growCarousel() / shrinkCarousel(i) — change the slice count, keeping every existing
+    // slice pixel-stable. Widening from oldN→newN multiplies the canvas width by newN/oldN,
+    // so each tile's xFrac/wFrac (fractions of the WHOLE wide canvas) must be multiplied by
+    // oldN/newN to stay at the same absolute pixels; text x (xFrac, also whole-canvas) the
+    // same. A blank slice then appears at the right (grow); on shrink the rightmost slice's
+    // content stays in the data but lands off the narrower canvas. One undo step via
+    // begin/commit. NB: we do NOT route through reshapeCollage — its tail gridArrange()
+    // would re-tidy the tiles into a grid (destroying the rescale) and it resets the view.
+    // Instead we set the canvas-size state directly, re-fit, redraw guides, and snap the
+    // view to the slice the user was on (clamped) so the wide-canvas geometry updates in
+    // place. resetCarouselCanvasShape() applies the new aspect/exportPx without those side
+    // effects (getCanvasAspect already returns the wide aspect from carouselPageCount).
+    function rescaleSlicesForCount(oldN, newN) {
+      if (!oldN || !newN || oldN === newN) return;
+      const f = oldN / newN;
+      collageItems.forEach((it) => {
+        if (typeof it.xFrac === 'number') it.xFrac *= f;
+        if (typeof it.wFrac === 'number') it.wFrac *= f;
+      });
+      collageTexts.forEach((t) => { if (typeof t.xFrac === 'number') t.xFrac *= f; });
+    }
+    function resetCarouselCanvasShape() {
+      // Mirror the state-setting half of reshapeCollage (aspect/sizeId/exportPx) WITHOUT
+      // the zoom reset + gridArrange tail, then re-fit. getCanvasAspect() is authoritative
+      // for carousel mode, but keep collageAspectKey consistent so a later exit/restore is
+      // coherent.
+      collageAspectKey = carouselWideAspect();
+      collageSizeId = CAROUSEL_SIZE_ID;
+      collageExportPx = { w: carouselPageCount * CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h };
+      try { syncCanvasSizeSelection(); } catch (_) {}
+      layoutCanvasSize();
+    }
+    function growCarousel() {
+      if (!carouselMode || carouselPageCount >= CAROUSEL_MAX) return;
+      beginCollageChange();
+      const prevSlice = currentCarouselSlice();
+      const oldN = carouselPageCount;
+      carouselPageCount = oldN + 1;
+      rescaleSlicesForCount(oldN, carouselPageCount);
+      resetCarouselCanvasShape();
+      renderCarouselGuides();
+      scrollViewToSlice(Math.min(prevSlice, carouselPageCount - 1));
+      updateCarouselFilmstrip();
+      commitCollageChange();
+    }
+    function shrinkCarousel(i) {
+      if (!carouselMode || carouselPageCount <= CAROUSEL_MIN) return;
+      beginCollageChange();
+      const prevSlice = currentCarouselSlice();
+      const oldN = carouselPageCount;
+      carouselPageCount = oldN - 1;
+      rescaleSlicesForCount(oldN, carouselPageCount);
+      resetCarouselCanvasShape();
+      renderCarouselGuides();
+      scrollViewToSlice(Math.min(prevSlice, carouselPageCount - 1));
+      updateCarouselFilmstrip();
+      commitCollageChange();
     }
     // v2.1 round 226 (Terry) — legacy named-shape setter kept for any old callers /
     // restore paths; routes through the generalized reshape with no preset id and the
@@ -11693,6 +11661,10 @@
       // canvas size — route to enterCarouselFromMenu so we don't fall through to the
       // single-size reshapeCollage (which would flatten it back to one page).
       if (p && p.carousel) { enterCarouselFromMenu(p); return; }
+      // v2.1 round 260 (Terry) — carousel wide: picking a NON-carousel size while a
+      // carousel is open leaves carousel mode first (drops the slice guides/thumbs +
+      // returns getCanvasAspect to the single-canvas path), then applies the chosen size.
+      if (carouselMode) { try { exitCarouselMode(); } catch (_) {} }
       reshapeCollage(presetAspect(p), p.id, { w: p.px.w, h: p.px.h });
       try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p.id); } catch (_) {}
     }
@@ -11724,12 +11696,10 @@
     }
     function layoutCanvasSize() {
       if (!collageStageEl) return;
-      // v2.1 round 255 (Terry) — carousel P2: in carousel mode the stage shows N pages
-      // side by side, so all fit/render is handled by layoutCarousel (which sizes the
-      // active #collage-canvas + the preview slots, then renders the active page). Route
-      // every caller (incl. window-resize + reshape) through it. Outside carousel mode
-      // this is a no-op guard and the single-canvas path below runs byte-identically.
-      if (carouselMode) return layoutCarousel();
+      // v2.1 round 260 (Terry) — carousel wide: NO carousel early-return. The carousel is
+      // a single wide #collage-canvas now, so this one fit path sizes it for ANY aspect —
+      // getCanvasAspect() returns the wide aspect in carousel mode, and a wide aspect is
+      // simply width-limited here (h = w/a clamps to availH). layoutCarousel is gone.
       // Subtract the stage's actual padding — in collage mode the right
       // padding is large (it reserves room for the pinned Enhance panel),
       // so a fixed ±44 would let the canvas slide under the panel.
@@ -11927,54 +11897,30 @@
       }
     }
 
-    // v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. Persist the active page,
-    // then walk EVERY page: restore it into the live globals (so its tiles + text bake
-    // from that page's own state) and build its layout. Restore the original page +
-    // rebuild the side-by-side UI when done, then ship all layouts to one IPC which
-    // writes slide_01.jpg … slide_NN.jpg into a dedicated folder. We do NOT open the
-    // Viewer (wrong for N files) — on success we reveal the folder.
+    // v2.1 round 260 (Terry) — carousel wide: NUMBERED EXPORT from ONE wide canvas. The
+    // carousel is a single wide #collage-canvas, so buildCollageLayout() already returns
+    // the WHOLE wide layout (collageExportPx is { N*1080, 1350 }). Ship that one layout +
+    // the slice count to the IPC, which bakes the wide image once and crops it into N
+    // 1080-wide slides (slide_01.jpg … slide_NN.jpg) in a dedicated folder. We do NOT open
+    // the Viewer (wrong for N files) — on success we reveal the folder.
     async function saveCarousel() {
       const saveBtn = document.getElementById('collage-save');
       const originalHtml = saveBtn ? saveBtn.innerHTML : '';
-      // Persist the live edits of the page being viewed so it exports as seen.
-      carouselPages[carouselActive] = snapshotCollage();
-      const origActive = carouselActive;
-      // Empty-carousel guard: if NO page has an on-tile or any text, there's nothing
-      // to export. Inspect each snapshot string directly (don't disturb live state).
-      const anyContent = carouselPages.some((s) => {
-        try {
-          const snap = JSON.parse(s);
-          const hasTile = Array.isArray(snap.items) && snap.items.some((it) => it && it.on && !isVideoPath(it.path || ''));
-          const hasText = Array.isArray(snap.texts) && snap.texts.length > 0;
-          return hasTile || hasText;
-        } catch (_) { return false; }
-      });
-      if (!anyContent) { window.alert('Add at least one photo to a slide first.'); return; }
-      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving ' + carouselPages.length + ' slides…'; }
+      // Empty-carousel guard: nothing on the wide canvas → nothing to export.
+      const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
+      if (on.length === 0 && (!collageTexts || collageTexts.length === 0)) {
+        window.alert('Add at least one photo to a slide first.');
+        return;
+      }
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving ' + carouselPageCount + ' slides…'; }
       try {
-        // Build one layout per page from its own restored state. A blank page yields
-        // null (no on-tiles) and is dropped; the backend numbers slide_NN sequentially
-        // over the non-blank pages it receives.
-        const layouts = [];
-        for (let i = 0; i < carouselPages.length; i++) {
-          try { restoreCollageSnapshot(carouselPages[i]); } catch (_) {}
-          const layout = buildCollageLayout();
-          if (layout) layouts.push(layout);
-        }
-        // Restore the page the user was on + rebuild the side-by-side track / thumbs so
-        // the UI is exactly back to normal (we mutated the live globals in the loop).
-        try { restoreCollageSnapshot(carouselPages[origActive]); } catch (_) {}
-        carouselActive = origActive;
-        try { selectCollageItem(null); } catch (_) {}
-        try { buildCarouselTrack(); } catch (_) {}
-        try { layoutCarousel(); } catch (_) {}
-        try { updateCarouselFilmstrip(); } catch (_) {}
-        if (layouts.length === 0) {
+        const layout = buildCollageLayout();   // the WHOLE wide canvas
+        if (!layout) {
           window.alert('Add at least one photo to a slide first.');
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
           return;
         }
-        const res = await window.pdr.collage.saveCarousel(layouts);
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount);
         if (res && res.success && res.count > 0) {
           // Reveal the folder of slides rather than opening N files in the Viewer.
           try { if (res.folderPath && window.pdr.openDestinationFolder) window.pdr.openDestinationFolder(res.folderPath); } catch (_) {}
@@ -11988,8 +11934,6 @@
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
         }
       } catch (err) {
-        // Best-effort restore of the original page even on error.
-        try { restoreCollageSnapshot(carouselPages[origActive]); carouselActive = origActive; buildCarouselTrack(); layoutCarousel(); updateCarouselFilmstrip(); } catch (_) {}
         window.alert('Carousel save error:\n\n' + (err && err.message ? err.message : String(err)));
         if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
       }

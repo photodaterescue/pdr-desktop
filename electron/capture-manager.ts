@@ -1360,7 +1360,15 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
   }
   {
     const sharp = (await import('sharp')).default;
-    const W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
+    // v2.1 round 260 (Terry) — carousel wide: a carousel bakes ONE wide canvas
+    // (width = pageCount*1080, up to 10*1080 = 10800) that the saveCarousel handler
+    // then slices into N pages of exactly 1080×1350. So the W ceiling rises from
+    // 2400 to 11000 to admit the wide strip; H stays ≤ 2400. CRITICAL: the wide W
+    // must end up EXACTLY layout.canvas.w (= N*1080) so the slice boundaries fall on
+    // clean 1080 multiples — the 11000 ceiling is comfortably above 10800 and never
+    // clamps a valid carousel below N*1080. Single-collage saves pass normal sizes
+    // (≤ 2400), so the raised ceiling is a no-op for them.
+    const W = Math.max(600, Math.min(11000, Math.round(layout.canvas.w || 2000)));
     const H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
     const bg = hexToRgb(layout.canvas.bg || '#ffffff');
     // v2.1 round 177 (Terry) — transparent background: the removed areas (and
@@ -1370,9 +1378,28 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
     const transparent = !!layout.canvas.transparent;
     // Generous padding so a rotated / dragged-to-the-edge tile never
     // overflows the composite base (sharp errors if an input extends
-    // past the base bounds). 0.8·W covers a 45°-rotated full-width
-    // tile whose centre is clamped on-canvas (see clamps below).
-    const PAD = Math.ceil(W * 0.8);
+    // past the base bounds).
+    // v2.1 round 260 (Terry) — carousel wide: PAD must be TILE-bounded, not
+    // canvas-bounded. The old `0.8·W` was fine when W ≤ 2400 (PAD ≤ 1920), but on a
+    // 10800-wide carousel it became ~8640px → a 28080-wide ×4-channel base ≈ 350 MB,
+    // which OOMs sharp. The padding only needs to cover the LARGEST single tile when
+    // rotated 45° about an on-canvas centre — independent of how wide the canvas is.
+    // A tile is iw×ih where iw = wFrac·W (wFrac ≤ 1, so a tile can still be as wide
+    // as one whole 1080-page within the wide canvas); its 45°-rotated bbox half-extent
+    // is (iw+ih)/2·√2 ≤ (iw+ih). We take 0.8·max(H, maxTileExtentPx) to mirror the
+    // old margin while staying bounded by the biggest tile, never the wide W.
+    let maxTileExtentPx = 0;
+    for (const it of layout.items) {
+      if (!it) continue;
+      const _aspect = Number.isFinite(it.aspect) && it.aspect > 0.01 ? it.aspect : 1;
+      const _wFrac = Math.max(0.02, Math.min(1, it.wFrac || 0.3));
+      const _iw = Math.max(2, Math.round(_wFrac * W));
+      const _ih = Math.max(2, Math.round(_iw / _aspect));
+      // 45°-rotated bounding box edge ≈ (w+h)/√2; bound the half-extent by (w+h).
+      const _ext = Math.ceil((_iw + _ih) / Math.SQRT2);
+      if (_ext > maxTileExtentPx) maxTileExtentPx = _ext;
+    }
+    const PAD = Math.ceil(Math.max(H, maxTileExtentPx) * 0.8);
     const baseW = W + PAD * 2;
     const baseH = H + PAD * 2;
 
@@ -1720,18 +1747,43 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
   }
 });
 
-// v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. A carousel is N collage
-// pages; save each via the SAME shared bake (bakeCollageLayout) into ONE dedicated
-// subfolder `PDR Captures/<month>/Carousel_<YYYYMMDD_HHmmss>/` as slide_01.jpg …
-// slide_NN.jpg (slide_NN.png for any transparent page — the bake already returns a
-// PNG buffer for those). Each slide is indexed + added to the "PDR Collages" album
-// (same gate as the single save). Returns the full file list + the folder so the
-// renderer can reveal it (a single Viewer open is wrong for N files).
-ipcMain.handle('collage:saveCarousel', async (_event, layouts: CollageLayout[]) => {
+// v2.1 round 260 (Terry) — carousel wide: SLICED EXPORT. The carousel is now ONE
+// WIDE canvas (layout.canvas.w = pageCount*1080, h = 1350). We bake it ONCE through
+// the shared pipeline (bakeCollageLayout) — so a spanning gradient / background / tile
+// is rendered continuously across the whole strip — then crop N slices of EXACTLY
+// 1080×1350 from the single baked buffer. Bake-once+extract (vs N separate bakes) is
+// chosen so the seams between slides are pixel-continuous: any cross-page element is
+// composited in one coordinate system and only cut afterwards, leaving no resize /
+// rounding mismatch at the 1080 boundaries.
+//
+// Each slice is written into ONE dedicated subfolder `PDR Captures/<month>/
+// Carousel_<YYYYMMDD_HHmmss>/` as slide_01.jpg … slide_NN.jpg (slide_NN.png when the
+// canvas is transparent), then stamped + indexed (each at 1080×1350) + added to the
+// "PDR Collages" album (same Settings gate as the single save) — the index/album tail
+// is the SAME as the per-slide loop it replaces. Returns the file list + folder so the
+// renderer reveals the folder (a single Viewer open is wrong for N files). Shape
+// unchanged: { success, files, folderPath, count, pending }.
+const CAROUSEL_SLICE_W = 1080;
+const CAROUSEL_SLICE_H = 1350;
+ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number) => {
   try {
-    if (!Array.isArray(layouts) || layouts.length === 0) {
+    const n = Math.max(1, Math.round(Number(pageCount) || 0));
+    if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
       return { success: false, error: 'Nothing to save — the carousel is empty.' };
     }
+    // Bake the WHOLE wide canvas once. bakeCollageLayout throws on empty/unreadable,
+    // turning the same message strings into { success:false, error } via the catch.
+    const wideBuf = await bakeCollageLayout(layout);
+    const sharp = (await import('sharp')).default;
+    // The wide bake width MUST equal pageCount*1080 so the crops land on clean 1080
+    // boundaries (bakeCollageLayout's W ceiling is 11000, above 10*1080, so it never
+    // clamps a valid carousel below N*1080). Read the real baked dims back and assert
+    // every slice fits — never extract past the buffer (sharp would throw).
+    const wideMeta = await sharp(wideBuf).metadata();
+    const wideWidth = wideMeta.width || 0;
+    const wideHeight = wideMeta.height || 0;
+    const transparent = !!(layout.canvas && layout.canvas.transparent);
+
     const capturedAt = new Date();
     const { month } = timestampParts(capturedAt);
     const stamp = `${capturedAt.getFullYear()}${pad(capturedAt.getMonth() + 1)}${pad(capturedAt.getDate())}_${pad(capturedAt.getHours())}${pad(capturedAt.getMinutes())}${pad(capturedAt.getSeconds())}`;
@@ -1759,20 +1811,27 @@ ipcMain.handle('collage:saveCarousel', async (_event, layouts: CollageLayout[]) 
     }
 
     const files: Array<{ filePath: string; filename: string; fileId: number | null }> = [];
-    for (let i = 0; i < layouts.length; i++) {
-      const layout = layouts[i];
-      // bakeCollageLayout throws on an empty/unreadable page; skip that slide rather
-      // than aborting the whole carousel (the renderer already guards "all blank").
+    for (let i = 0; i < n; i++) {
+      const left = i * CAROUSEL_SLICE_W;
+      // Slice-accuracy guard: the crop must sit wholly inside the baked buffer.
+      // If the bake came back narrower than expected (clamp / unexpected dims),
+      // stop rather than ask sharp to extract past the edge (which throws).
+      if (left + CAROUSEL_SLICE_W > wideWidth || CAROUSEL_SLICE_H > wideHeight) {
+        log.warn(`[collage] carousel slice ${i + 1} out of bounds (left ${left}+${CAROUSEL_SLICE_W} > wide ${wideWidth}×${wideHeight}) — stopping`);
+        break;
+      }
       let buf: Buffer;
       try {
-        buf = await bakeCollageLayout(layout);
-      } catch (bakeErr) {
-        log.warn(`[collage] carousel slide ${i + 1} skipped (${(bakeErr as Error).message})`);
+        // Each slice is EXACTLY 1080×1350. PNG when transparent (keep alpha),
+        // else mozjpeg q92 — matching the single-collage encoder choice.
+        const slice = sharp(wideBuf).extract({ left, top: 0, width: CAROUSEL_SLICE_W, height: CAROUSEL_SLICE_H });
+        buf = transparent
+          ? await slice.png().toBuffer()
+          : await slice.jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+      } catch (sliceErr) {
+        log.warn(`[collage] carousel slice ${i + 1} extract failed (${(sliceErr as Error).message})`);
         continue;
       }
-      const transparent = !!(layout.canvas && layout.canvas.transparent);
-      const W = Math.max(600, Math.min(2400, Math.round((layout.canvas && layout.canvas.w) || 2000)));
-      const H = Math.max(450, Math.min(2400, Math.round((layout.canvas && layout.canvas.h) || 1500)));
       const filename = `slide_${String(i + 1).padStart(2, '0')}${transparent ? '.png' : '.jpg'}`;
       const outPath = path.join(folderPath, filename);
       fs.writeFileSync(toLongPath(outPath), buf);
@@ -1781,7 +1840,8 @@ ipcMain.handle('collage:saveCarousel', async (_event, layouts: CollageLayout[]) 
       let fileId: number | null = null;
       if (libRoot) {
         try {
-          fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
+          // Each slide is indexed at its true 1080×1350 (not the wide canvas dims).
+          fileId = await indexCapturedFile(outPath, libRoot, capturedAt, CAROUSEL_SLICE_W, CAROUSEL_SLICE_H, 'photo');
           if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
           if (fileId != null && albumId != null && addPhotosToAlbum) {
             try { addPhotosToAlbum(albumId, [fileId]); }
@@ -1797,7 +1857,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layouts: CollageLayout[]) 
     if (files.length === 0) {
       return { success: false, error: 'None of the slides could be saved.' };
     }
-    log.info(`[collage] saved carousel — ${files.length} slide(s) → ${folderPath}${libRoot ? '' : ' (pending)'}`);
+    log.info(`[collage] saved carousel — ${files.length}/${n} slide(s) sliced from ${wideWidth}×${wideHeight} → ${folderPath}${libRoot ? '' : ' (pending)'}`);
     return { success: true, files, folderPath, count: files.length, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
