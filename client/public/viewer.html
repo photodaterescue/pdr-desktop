@@ -4607,6 +4607,12 @@
     let collageSizeId = '';
     let collageExportPx = null;   // { w, h } | null
     let collageZTop = 1;
+    // v2.1 round 263 (Terry) — bg-tile: a DECREMENTING floor counter, the mirror of
+    // collageZTop. A background-photo tile is pushed at z = --collageZBottom so it sits
+    // BELOW every normal tile (which start at z≥1) and below later bg-tiles, reading as a
+    // backdrop while staying a normal, selectable item. Recomputed (min z) in
+    // restoreCollageSnapshot alongside collageZTop (max z) so undo/redo keeps the floor.
+    let collageZBottom = 0;
     let collageSelected = null; // currently-selected item (shows handles)
     // v2.1 round 260 (Terry) — carousel wide: WIDE-CANVAS model. A carousel is now ONE
     // continuous #collage-canvas N slices wide (N×1080 × 1350), edited as a single
@@ -6953,6 +6959,16 @@
       return { cw: Math.max(0.05, c.r - c.l), ch: Math.max(0.05, c.b - c.t) };
     }
     function effectiveAspect(it) {
+      // v2.1 round 263 (Terry) — bg-tile: a coverFill tile is a BOX the photo
+      // covers (objectFit:'cover'), NOT a box shaped to the photo. So its
+      // effective aspect is the BOX aspect, never the photo aspect — this keeps
+      // the dragged rectangle through a resize (height follows the box aspect)
+      // and lets the <img> cover it. boxAspect defaults to the canvas aspect
+      // (the full-canvas locked default = a box exactly the canvas shape).
+      if (it && it.coverFill) {
+        const ba = (typeof it.boxAspect === 'number' && isFinite(it.boxAspect) && it.boxAspect > 0) ? it.boxAspect : getCanvasAspect();
+        return ba;
+      }
       const { cw, ch } = cropWH(it);
       return (it.aspect || 1) * (cw / ch);
     }
@@ -7046,6 +7062,25 @@
       const _maskActive = !!(it.enh && ((it.enh.blend && it.enh.blend > 0) || (Array.isArray(it.enh.corners) && it.enh.corners.some(function (v) { return (v || 0) > 0.001; }))));
       const _hasFrame = !!(it.enh && (it.enh.borderColor || '').trim());
       it.el.style.boxShadow = (_maskActive || _hasFrame) ? 'none' : '';
+      // v2.1 round 263 (Terry) — bg-tile: a coverFill tile reads as a BACKGROUND.
+      // The <img> covers the WHOLE box (the box is itself the canvas at the locked
+      // full-canvas default, or the dragged rectangle once unlocked + resized) with
+      // GENUINE objectFit:'cover' — we bypass the crop/zoom/pan/frame-inset/shape-mask
+      // math entirely (none of those apply to a background fill). This MUST match the
+      // bake, which sizes the coverFill tile to the same box with sharp fit:'cover'.
+      if (it.coverFill && it.imgEl) {
+        it.el.style.boxShadow = '';   // no depth shadow on a backdrop fill
+        const im = it.imgEl;
+        im.style.position = 'absolute';
+        im.style.left = '0px'; im.style.top = '0px';
+        im.style.width = '100%'; im.style.height = '100%';
+        im.style.objectFit = 'cover';
+        im.style.objectPosition = 'center';
+        // Clear any shape mask a normal tile may have left on the clip.
+        applyShapeMask(it.clipEl, [0, 0, 0, 0], 0, iwPx, ihPx);
+        refreshTileToolbar(it);
+        return;
+      }
       // v2.1 round 145 — position the image inside the clip so only the
       // crop region shows (enlarge by 1/cropW × 1/cropH, offset by the
       // crop origin). With no crop this is an exact box fill.
@@ -9305,6 +9340,13 @@
           .slice().sort((a, b) => (a.z || 0) - (b.z || 0));
         for (const it of items) {
           const effAspect = (() => {
+            // v2.1 round 263 (Terry) — bg-tile: a coverFill tile's box is the BOX aspect
+            // (boxAspect; defaults to the wide-canvas aspect), not the photo aspect — so
+            // the thumb's cell matches the on-canvas box. The <img> already covers it.
+            if (it.coverFill) {
+              const ba = (typeof it.boxAspect === 'number' && isFinite(it.boxAspect) && it.boxAspect > 0) ? it.boxAspect : ((wideW || 1) / (wideH || 1));
+              return ba;
+            }
             const c = it.crop || { l: 0, t: 0, r: 1, b: 1 };
             const cw = Math.max(0.05, c.r - c.l), ch = Math.max(0.05, c.b - c.t);
             return (it.aspect || 1) * (cw / ch);
@@ -9814,7 +9856,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals)
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -9899,10 +9941,20 @@
       if (s.bgEnh) collageBgTile.enh = Object.assign(defaultBgEnh(), s.bgEnh);
       else if (s.bgOpacity != null) collageBgTile.enh = Object.assign(defaultBgEnh(), { opacity: s.bgOpacity });
       let maxZ = 1;
+      // v2.1 round 263 (Terry) — bg-tile: track the MIN z too, so collageZBottom (the
+      // decrementing floor for new background-photo tiles) is restored alongside
+      // collageZTop. Starts at 0 (the floor's resting value) so a snapshot with no
+      // back-z tile leaves the floor at 0.
+      let minZ = 0;
       // Apply one snapshot item's geometry/enh/lock onto a live tile (shared by
       // the per-file originals and the rebuilt duplicates below).
       const applySnapItem = (it, si) => {
         it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
+        // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
+        // lack both → a normal tile). boxAspect only matters for coverFill; default to the
+        // canvas aspect if a coverFill snapshot somehow lacks it.
+        it.coverFill = !!si.coverFill;
+        it.boxAspect = (typeof si.boxAspect === 'number' && isFinite(si.boxAspect) && si.boxAspect > 0) ? si.boxAspect : (it.coverFill ? getCanvasAspect() : undefined);
         if (si.crop) it.crop = { l: si.crop.l, t: si.crop.t, r: si.crop.r, b: si.crop.b };
         it.zoom = (typeof si.zoom === 'number') ? si.zoom : 1;   // v2.1 round 168 — photo zoom
         it.panX = (typeof si.panX === 'number') ? si.panX : 0;   // v2.1 round 169 — zoom pan
@@ -9916,6 +9968,7 @@
         it.bgRemoveStrength = (typeof si.bgRemoveStrength === 'number') ? si.bgRemoveStrength : 50;
         if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
         if (si.z > maxZ) maxZ = si.z;
+        if (si.z < minZ) minZ = si.z;   // v2.1 round 263 (Terry) — bg-tile: track the back-z floor
       };
       // v2.1 round 203 (Terry) — DUPLICATES make collageItems longer than the
       // per-file set, so the old `collageItems[si.idx]` mapping (which assumed
@@ -9952,6 +10005,10 @@
           const clone = {
             idx: si.idx, path: si.path, on: true,
             xFrac: si.xFrac, yFrac: si.yFrac, wFrac: si.wFrac, aspect: si.aspect, rot: si.rot,
+            // v2.1 round 263 (Terry) — bg-tile: carry coverFill + boxAspect so a
+            // background-photo tile (which lives past the per-file originals, like a
+            // clone) rebuilds correctly on undo/redo. applySnapItem re-asserts both below.
+            coverFill: !!si.coverFill, boxAspect: (typeof si.boxAspect === 'number') ? si.boxAspect : undefined,
             z: si.z, el: null, imgEl: null, clipEl: null, locked: !!si.locked,
             crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
             bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
@@ -9971,6 +10028,7 @@
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
       collageZTop = maxZ;
+      collageZBottom = minZ;   // v2.1 round 263 (Terry) — bg-tile: restore the back-z floor
       // v2.1 round 235 (Terry) — repaint the canvas bg directly (NOT via
       // setCollageBg, which now nulls collageBgGradient as a "colour swaps away
       // from gradient" guard — that would wipe the gradient we just restored).
@@ -10222,6 +10280,43 @@
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
       selectCollageItem(it);
       updateCollageFilmstrip();   // harmless no-op for the new tile (no thumb); matches duplicateCollageItem
+      commitCollageChange();
+    }
+
+    // v2.1 round 263 (Terry) — bg-tile: add a picked photo as a LOCKED, full-canvas
+    // COVER tile at the BACK. This is the new home for "Background photo" — instead of
+    // the legacy canvas.bgImage layer, the photo becomes a NORMAL collage item (so the
+    // floating menu, Lock/Unlock, Duplicate, Delete, Enhance + Fade all work) that just
+    // happens to be coverFill (fills its box via objectFit:'cover'), locked (frozen until
+    // the user unlocks to move/resize/rotate it — e.g. span carousel pages), and at z =
+    // --collageZBottom so it sits under every other tile. NO isBg flag: isBg is the legacy
+    // background pseudo-tile (toggleItemLock/duplicate early-return on it), which we do NOT
+    // want here. boxAspect = the canvas aspect so the initial box is exactly the canvas
+    // shape. Applies to single collages AND carousels (it's just an item).
+    function addBackgroundPhotoTile(fp) {
+      if (!fp || !collageMode) return;
+      if (isVideoPath(fp)) { try { window.alert('Only photos can be used as a background.'); } catch (_) {} return; }
+      beginCollageChange();
+      const it = {
+        idx: -1, path: fp, on: true,
+        // Full-canvas box, anchored top-left; coverFill + boxAspect make it fill the canvas.
+        xFrac: 0, yFrac: 0, wFrac: 1, aspect: 1, boxAspect: getCanvasAspect(), rot: 0,
+        // BACK of the stack — below every normal tile (z≥1) and below earlier bg-tiles.
+        z: --collageZBottom, el: null, imgEl: null, clipEl: null,
+        // Locked by default; coverFill makes it read as a background fill.
+        locked: true, coverFill: true,
+        crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+        bgRemovedPath: null, bgRemoveStrength: 50,
+        // Clean enh (no frame / mask / fade): opacity 1 so the photo reads fully; the
+        // user can still lower it via the Fade slider to reveal the base colour.
+        enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
+      };
+      collageItems.push(it);
+      buildCollageItemEl(it);
+      renderCollageItem(it);
+      try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
+      selectCollageItem(it);
+      updateCollageFilmstrip();
       commitCollageChange();
     }
 
@@ -10579,21 +10674,13 @@
     // by the shared syncTextColorPaletteRings(). Safe to call any time — it no-ops
     // when the locked specials aren't mounted (non-background target).
     function markBgLockedSpecialsActive() {
-      const photoShowing = !!collageBgImagePath && !collageTransparent;
       const tSw = document.getElementById('collage-bg-locked-transparent');
       if (tSw) tSw.classList.toggle('active', !!collageTransparent);
-      const pSw = document.getElementById('collage-bg-locked-photo');
-      if (pSw) {
-        pSw.classList.toggle('active', photoShowing);
-        // Thumbnail IS the photo once one is remembered; otherwise the image icon.
-        if (collageBgImagePath) {
-          pSw.classList.add('has-photo');
-          pSw.style.backgroundImage = 'url("' + getFileSrc(collageBgImagePath).replace(/"/g, '\\"') + '")';
-        } else {
-          pSw.classList.remove('has-photo');
-          pSw.style.backgroundImage = '';
-        }
-      }
+      // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is now a STATELESS
+      // ACTION button, not a stateful bg indicator — so there's no thumbnail / .has-photo
+      // / .active state to maintain here any more (a background photo is a normal tile,
+      // not a single remembered canvas.bgImage). The whole photo-swatch block was removed;
+      // the Transparent swatch + the style-group sync below are KEPT.
       // v2.1 round 245 (Terry) — refresh which Background STYLE group is "in use".
       // Hooked here because EVERY bg setter routes through markBgLockedSpecialsActive
       // (directly or via markCollageColorActive), incl. the undo/redo restore paths.
@@ -11531,15 +11618,22 @@
       const fitW = collageCanvasEl.clientWidth || 0;
       const fitH = collageCanvasEl.clientHeight || 0;
       if (!fitW || !fitH) return;
-      const zoom = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, N));
-      // transform-origin is 0 0, so a slice of fitW/N scaled by `zoom` occupies
-      // (fitW/N)*zoom on screen; pan left by the start of slice idx (in scaled px).
-      collageUserZoom = zoom;
-      collagePanX = -(idx / N) * fitW * zoom;
-      // Vertically centre the scaled canvas within the stage's content box.
+      // v2.1 round 263 (Terry) — FIT one slice to the stage instead of zoom=N. zoom=N filled
+      // the slice's WIDTH, but a portrait slice (1080×1350) in a landscape stage then
+      // overflowed top/bottom and read as "heavily zoomed / stuck" (e.g. 6 pages → 6×). The
+      // height binds for a portrait slice: zoom = availH/fitH, capped at N (the width-fill
+      // ceiling). Then centre the slice within the stage's content box.
       const cs = getComputedStyle(collageStageEl);
+      const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
       const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+      const availW = collageStageEl.clientWidth - padL - padR;
       const availH = collageStageEl.clientHeight - padT - padB;
+      const fitZoom = (fitH > 0 && availH > 0) ? (availH / fitH) : N;
+      const zoom = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, Math.min(N, fitZoom)));
+      collageUserZoom = zoom;
+      // transform-origin 0 0: bring slice idx's left edge to x=0, then centre it horizontally.
+      const sliceW = (fitW / N) * zoom;
+      collagePanX = -(idx / N) * fitW * zoom + Math.max(0, (availW - sliceW) / 2);
       collagePanY = (availH - fitH * zoom) / 2;
       applyCollageZoom();
     }
@@ -11615,7 +11709,10 @@
       rescaleSlicesForCount(oldN, carouselPageCount);
       resetCarouselCanvasShape();
       renderCarouselGuides();
-      scrollViewToSlice(Math.min(prevSlice, carouselPageCount - 1));
+      // v2.1 round 263 (Terry) — after add, FIT the whole carousel (was scrollViewToSlice,
+      // which zoomed hard into one page). The user sees all pages incl. the new one; zoom
+      // into a page via Ctrl+wheel or a thumbnail click.
+      resetCollageZoom();
       updateCarouselFilmstrip();
       commitCollageChange();
     }
@@ -11628,7 +11725,8 @@
       rescaleSlicesForCount(oldN, carouselPageCount);
       resetCarouselCanvasShape();
       renderCarouselGuides();
-      scrollViewToSlice(Math.min(prevSlice, carouselPageCount - 1));
+      // v2.1 round 263 (Terry) — after remove, FIT the whole carousel (see all pages).
+      resetCollageZoom();
       updateCarouselFilmstrip();
       commitCollageChange();
     }
@@ -11766,7 +11864,14 @@
           xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac,
           // v2.1 round 145 — send the CROPPED aspect so the backend tile
           // box matches what's on screen; crop rect baked via extract.
-          aspect: effectiveAspect(it), rot: it.rot, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY,
+          // v2.1 round 263 (Terry) — bg-tile: for a coverFill tile, effectiveAspect()
+          // already returns the BOX aspect (not the photo's), so `aspect` here is the
+          // box shape — the bake sizes the tile to wFrac×(wFrac/boxAspect) and covers
+          // the photo into it. The coverFill flag tells the bake to use fit:'cover' and
+          // skip crop/zoom (a backdrop fill has none), so preview == saved on any photo
+          // aspect. NOTE: a saved layout has EITHER canvas.bgImage (legacy) OR a coverFill
+          // item, never both (new picks route only to the tile).
+          aspect: effectiveAspect(it), coverFill: !!it.coverFill, rot: it.rot, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY,
           // v2.1 round 140 — each tile's own Enhance settings, baked
           // per-photo by the backend.
           enh: it.enh,
@@ -12363,7 +12468,13 @@
             // later background pick can never misroute here. Only the bg branch resets.
             if (mode === 'add') { if (fp) addPhotoToCollage(fp); return; }
             collagePickMode = 'bg';   // background delivery → back to the default
-            if (fp) { beginCollageChange(); setCollageBgImage(fp); commitCollageChange(); }
+            // v2.1 round 263 (Terry) — bg-tile: a NEW background pick now becomes a
+            // LOCKED, full-canvas COVER tile at the BACK (addBackgroundPhotoTile) instead
+            // of the legacy canvas.bgImage layer (setCollageBgImage). addBackgroundPhotoTile
+            // wraps its own begin/commit, so no begin/commit here. The legacy bg path
+            // (setCollageBgImage / collageBgImagePath / renderCollageBgLayer) is untouched
+            // so OLD saved collages with a canvas.bgImage still load + bake identically.
+            if (fp) addBackgroundPhotoTile(fp);
             markBgLockedSpecialsActive();
           });
         }
@@ -12488,7 +12599,7 @@
       // is inside either so they scroll normally and we never preventDefault on them.
       collageStageEl.addEventListener('wheel', (e) => {
         if (!e.ctrlKey) return;                        // round 259 — view zoom needs Ctrl
-        if (collageSelected || selectedText) return;   // round 259 — a selected photo uses the per-tile Ctrl+zoom above; view zoom only on the empty dark space
+        if ((collageSelected && !collageSelected.isBg && !collageSelected.locked) || selectedText) return;   // round 259/263 — a per-tile-zoomable photo uses the Ctrl+zoom above; the bg or a LOCKED tile can't be Ctrl-zoomed, so the VIEW zoom still works when they're selected (you can always zoom out)
         if (!document.body.classList.contains('collage-mode')) return;
         // Don't hijack wheels over the filmstrip pool or the Enhance panel — let them
         // scroll. (closest() walks up from the event target through the ancestors.)
@@ -13279,34 +13390,27 @@
       pSw.id = 'collage-bg-locked-photo';
       pSw.style.backgroundSize = 'cover';
       pSw.style.backgroundPosition = 'center';
-      pSw.setAttribute('data-pdr-tooltip', 'Background photo — pick one of your photos as the backdrop (click again to change it). Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates.');
-      // The image icon, shown only until a thumbnail is set (.has-photo hides it).
-      // v2.1 round 248 (Terry) — icon span PLUS a small × badge (shown only once a photo is
-      // set, via .has-photo CSS) that removes the bg photo — replaces the old full-width button.
-      pSw.innerHTML = '<span class="bg-photo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span><span class="bg-photo-x" aria-label="Remove background photo" data-pdr-tooltip="Remove background photo">&times;</span>';
+      // v2.1 round 263 (Terry) — bg-tile: the swatch is now a STATELESS ACTION (adds a
+      // locked cover tile at the back), not a stateful bg indicator — so it's a STATIC
+      // image icon. Dropped the round-248 × badge (the bg photo is now a normal tile,
+      // removed via that tile's own floating × / trash). Tooltip drops "click again to
+      // change it" (each click adds a new background tile).
+      pSw.setAttribute('data-pdr-tooltip', 'Background photo — add one of your photos as a full-canvas backdrop. It drops in locked at the back; unlock it to move, resize or rotate. Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates.');
+      pSw.innerHTML = '<span class="bg-photo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>';
+      // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is now a STATELESS
+      // ACTION — it ALWAYS opens the picker in 'bg' mode, and the delivered photo becomes
+      // a fresh locked full-canvas COVER tile at the back (onBackgroundPicked →
+      // addBackgroundPhotoTile). The old stateful branches (switch-back-from-transparent;
+      // "the photo is already the active bg → change it") are gone: there's no single
+      // remembered bg photo any more (each pick adds its own tile, edited/removed via that
+      // tile's floating menu). Re-arm 'bg' before launching so a previously CANCELLED
+      // "+ Add photos" pick (which leaves collagePickMode='add') can't misroute here.
       pSw.addEventListener('click', () => {
-        if (collageBgImagePath && collageTransparent) {
-          // A photo is remembered but Transparent is hiding it → switch back to it
-          // WITHOUT re-picking (the round-178 behaviour).
-          beginCollageChange();
-          setCollageTransparent(false);
-          setCollageBgImage(collageBgImagePath);
-          commitCollageChange();
-        } else {
-          // No photo yet, OR the photo is already the active bg → open the picker
-          // to choose / change the photo (result returns via onBackgroundPicked).
-          // v2.1 round 208 (Terry) — re-arm 'bg' before launching so a previously
-          // CANCELLED "+ Add photos" pick (which leaves collagePickMode='add', since
-          // only a delivery resets it) can't misroute this background pick into
-          // addPhotoToCollage. Each launch site now declares its own purpose.
-          try { collagePickMode = 'bg'; window.pdr.collage.pickBackground('your collage'); } catch (_) {}
-        }
+        try { collagePickMode = 'bg'; window.pdr.collage.pickBackground('your collage'); } catch (_) {}
       });
-      // v2.1 round 248 (Terry) — the × badge removes the bg photo (replaces the old
-      // full-width "Remove background photo" button). stopPropagation so it never
-      // bubbles to pSw's own click (which would re-open the picker).
-      const pX = pSw.querySelector('.bg-photo-x');
-      if (pX) pX.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setCollageBgImage(''); });
+      // v2.1 round 263 (Terry) — bg-tile: the round-248 × badge + its handler were
+      // removed (the bg photo is a normal tile now; it's removed via the tile's own × /
+      // trash, not from this swatch).
       // v2.1 round 200 (Terry) — Row-1 order is [custom +] [Photo] [Transparent]
       // [quick colours], so return Photo BEFORE Transparent. (Lookup is by id in
       // markBgLockedSpecialsActive, so order here only sets the on-screen sequence.)

@@ -908,7 +908,14 @@ interface CollageLayout {
   // (buildCollageTextureSvg, mirroring the renderer's COLLAGE_TEXTURES) at W×H and
   // composited as the BOTTOM layer.
   canvas: { w: number; h: number; bg: string; transparent?: boolean; bgImage?: { path: string; opacity: number; enh?: CollageEnhance }; gradient?: { kind: 'linear' | 'radial' | 'mesh'; angle?: number; stops?: Array<{ color: string; pos: number }>; base?: string; blobs?: Array<{ color: string; x: number; y: number; r: number }> }; texture?: { id: string }; vignette?: number; vignetteShape?: string; grain?: number };
-  items: Array<{ path: string; bgRemoved?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
+  // v2.1 round 263 (Terry) — bg-tile: `coverFill` marks a tile that reads as a
+  // BACKGROUND — the photo is cover-fit into its box (the box = whole canvas at
+  // the locked full-canvas default, or the user's resized rectangle once unlocked)
+  // rather than the box being shaped to the photo. `aspect` for a coverFill item is
+  // the BOX aspect (the renderer sends effectiveAspect = box aspect), so the bake
+  // sizes the tile to wFrac×(wFrac/aspect) and resizes the source with fit:'cover'
+  // (no crop/zoom). Mutually exclusive per saved layout with canvas.bgImage (legacy).
+  items: Array<{ path: string; bgRemoved?: boolean; coverFill?: boolean; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; zoom?: number; panX?: number; panY?: number; enh?: CollageEnhance; crop?: { l: number; t: number; r: number; b: number } }>;
   // v2.1 round 185 (Text #1) — text layers rendered to transparent PNGs in the
   // renderer (the SAME canvas render that drives the on-screen preview), so the
   // text lands at the same relative position + size here and sharp never renders
@@ -1417,11 +1424,19 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         const yFrac = clamp01(item.yFrac);
         const iw = Math.max(2, Math.round(wFrac * W));
         const ih = Math.max(2, Math.round(iw / aspect));
+        // v2.1 round 263 (Terry) — bg-tile: a coverFill tile is a BACKGROUND fill —
+        // the box (iw×ih above, computed from wFrac + the BOX aspect the renderer sent)
+        // is covered by the photo via fit:'cover', with NO crop and NO zoom/pan (a
+        // backdrop has none). For the locked full-canvas default wFrac=1 + box aspect =
+        // canvas aspect, so iw=W, ih=H. Skipping crop/zoom below keeps the bake matching
+        // the editor's genuine objectFit:'cover'. Centre position (not 'attention') so the
+        // saved fill matches the editor's object-position:center.
+        const isCover = !!item.coverFill;
         // v2.1 round 145 (Terry) — crop: convert the fractional rect to
         // oriented pixels (swap dims for EXIF 90/270) for sharp .extract.
         let cropRect: { left: number; top: number; width: number; height: number } | undefined;
         const cr = item.crop;
-        if (cr && (cr.l > 0.001 || cr.t > 0.001 || cr.r < 0.999 || cr.b < 0.999)) {
+        if (!isCover && cr && (cr.l > 0.001 || cr.t > 0.001 || cr.r < 0.999 || cr.b < 0.999)) {
           try {
             const meta = await sharp(toLongPath(item.path), { failOnError: false }).metadata();
             let ow = meta.width || 0, oh = meta.height || 0;
@@ -1441,7 +1456,7 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         // centre 1/zoom (defaulting to the full photo when there's no crop).
         // One extract → resize, so the saved file matches the editor preview.
         const _zoom = Math.max(1, Math.min(2, item.zoom || 1));
-        if (_zoom > 1) {
+        if (!isCover && _zoom > 1) {
           let region = cropRect;
           if (!region) {
             try {
@@ -1469,7 +1484,7 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         // Bake the tile (crop + resize + its own Enhance state + frame).
         // The result may be larger than iw×ih if a frame was added, so
         // read its real dims back.
-        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect, 'attention', !!item.bgRemoved)
+        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect, isCover ? 'centre' : 'attention', !!item.bgRemoved)
           .png()
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;

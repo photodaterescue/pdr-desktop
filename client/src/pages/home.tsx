@@ -569,8 +569,8 @@ export default function Home() {
             <ShowcaseCard
               accent="amber"
               icon={<LayoutGrid className="w-5 h-5" />}
-              title="Collages for Print & Social Media"
-              description="Design multi-photo collages & carousels, export ready to post or print."
+              title="Collages"
+              description="Create professional collages for print and social media, ready for posting."
               locked={cardsLocked}
               onClick={handleAppCard(async () => {
                 const { openCollageComposer } = await import('@/lib/electron-bridge');
