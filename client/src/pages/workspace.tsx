@@ -849,6 +849,20 @@ useEffect(() => {
         // session enables CTRL-held stay-open multi-add; the bg pick leaves it false.
         setCollageBgPickMulti(!!info.multi);
         setCollageBgPick(true);
+        // v2.1 round 265 (Terry) — force the Memories DATES tab so a prior
+        // Albums visit doesn't strand the picker on Albums. MemoriesPanel is
+        // conditionally mounted (only when activeView==='memories'), so when
+        // the collage is opened from the Welcome tile it isn't mounted yet and
+        // its `pdr:memoriesSwitchTab` listener can't catch a synchronous
+        // dispatch — its loadInitialTab() reads 'pdr-memories-tab' on mount
+        // instead. So mirror the round-1224 pdr:openAlbumsAlbum pattern: write
+        // the persisted tab key SYNCHRONOUSLY (covers the not-yet-mounted
+        // entry) AND dispatch the event (covers the already-on-Memories entry,
+        // switching the live panel). setActiveView LAST so the mount reads the
+        // key we just wrote. The App-level onStart effect flips the visible
+        // layer to Workspace; this pins the tab.
+        try { localStorage.setItem('pdr-memories-tab', 'byDate'); } catch { /* localStorage may be unavailable */ }
+        try { window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', { detail: 'byDate' })); } catch { /* noop */ }
         setActiveView('memories');
       }
     });

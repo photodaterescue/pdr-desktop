@@ -2346,6 +2346,14 @@
     .collage-item .ch-res-tr { right: -7px; top: -7px; left: auto; bottom: auto; cursor: nesw-resize; }
     .collage-item .ch-res-bl { left: -7px; bottom: -7px; right: auto; top: auto; cursor: nesw-resize; }
     .collage-item .ch-res-br { right: -7px; bottom: -7px; left: auto; top: auto; cursor: nwse-resize; }
+    /* v2.1 round 265 (Terry) — a coverFill (full-bleed background) tile is flush to the
+       canvas edges, so -7px-OUTSIDE handles fall half-off the canvas and are hard to
+       grab. INSET them ~8px INSIDE the corners so all four sit on-canvas + grabbable
+       once the tile is unlocked. (Locked tiles still hide handles via the round-203 rule.) */
+    .collage-item.coverfill .ch-res-tl { left: 8px; top: 8px; right: auto; bottom: auto; }
+    .collage-item.coverfill .ch-res-tr { right: 8px; top: 8px; left: auto; bottom: auto; }
+    .collage-item.coverfill .ch-res-bl { left: 8px; bottom: 8px; right: auto; top: auto; }
+    .collage-item.coverfill .ch-res-br { right: 8px; bottom: 8px; left: auto; top: auto; }
     /* Base rotate handle — the small white circular grab. v2.1 round 227 (Terry) —
        glyph is now a single clean CENTRED circular-arrow (stroked, so it inherits
        the stroke colour overrides below), and the connector tick (::before) is GONE
@@ -2442,6 +2450,13 @@
       white-space: nowrap;
     }
     .collage-item.selected .ch-toolbar { display: inline-flex; }
+    /* v2.1 round 265 (Terry) — when the above-tile toolbar would clip past the stage
+       top (e.g. a full-bleed bg-tile at fit-all), refreshTileToolbar flips it INSIDE
+       the tile's top edge instead of hiding it, so the Unlock button stays reachable. */
+    .ch-toolbar.ch-toolbar-inside {
+      bottom: auto; top: 8px;
+      margin-bottom: 0; margin-top: 8px;
+    }
     .ch-tb-btn {
       width: 28px; height: 28px;
       display: inline-flex; align-items: center; justify-content: center;
@@ -7040,6 +7055,11 @@
       // undo/redo restore.
       try {
         it.el.classList.toggle('locked', !!it.locked);
+        // v2.1 round 265 (Terry) — a coverFill (full-bleed background) tile gets the
+        // 'coverfill' class so its 4 resize handles sit INSET (~8px inside the corners)
+        // instead of -7px OUTSIDE — otherwise on a tile flush to the canvas edge the
+        // handles fall half-off the canvas and are hard to grab after Unlock.
+        it.el.classList.toggle('coverfill', !!it.coverFill);
         const lockBtn = it.el.querySelector('.ch-tb-lock');
         if (lockBtn) {
           lockBtn.classList.toggle('locked', !!it.locked);
@@ -7143,18 +7163,23 @@
       if (!tbar) return;
       // Only meaningful while this tile is the selection (otherwise the toolbar
       // is display:none via CSS and has no box to measure).
-      if (!it.el.classList.contains('selected')) { tbar.style.visibility = ''; return; }
+      if (!it.el.classList.contains('selected')) { tbar.style.visibility = ''; tbar.classList.remove('ch-toolbar-inside'); return; }
       try {
         const stageTop = (collageStageEl || collageCanvasEl).getBoundingClientRect().top;
-        // Measure the toolbar's OWN top edge: visibility:hidden keeps its layout
-        // box, so this stays accurate frame-to-frame (and handles a rotated tile,
-        // since the toolbar rotates with it). Fall back to estimating from the
-        // tile top − 8px margin − toolbar height if the box has no size yet.
+        // v2.1 round 265 (Terry) — instead of HIDING the toolbar when it would clip
+        // above the stage top (which made a full-bleed bg-tile's Unlock button
+        // unreachable), FLIP it INSIDE the tile's top via .ch-toolbar-inside
+        // (top:8px; bottom:auto). Measure with the inside-flip OFF first so the
+        // above-tile position is what we test; if that clips, flip it. This is
+        // hysteresis-free: the decision is made against the always-above geometry,
+        // never against the post-flip box, so it can't oscillate frame-to-frame.
+        tbar.classList.remove('ch-toolbar-inside');
+        tbar.style.visibility = '';
         let toolbarTop = tbar.getBoundingClientRect().top;
         if (!tbar.offsetHeight) toolbarTop = it.el.getBoundingClientRect().top - 8 - 36;
-        // A small slack so it hides just before it actually crosses the edge.
-        tbar.style.visibility = (toolbarTop < stageTop + 2) ? 'hidden' : '';
-      } catch (_) { tbar.style.visibility = ''; }
+        // A small slack so it flips just before it actually crosses the edge.
+        if (toolbarTop < stageTop + 2) tbar.classList.add('ch-toolbar-inside');
+      } catch (_) { tbar.style.visibility = ''; tbar.classList.remove('ch-toolbar-inside'); }
     }
     function renderAllCollage() {
       for (const it of collageItems) renderCollageItem(it);
@@ -8974,7 +8999,18 @@
       e.preventDefault();
       // v2.1 round 203 (Terry) — a locked tile can't be moved: select it (so its
       // toolbar/affordance show) but don't begin a drag gesture.
-      if (it && it.locked) { selectCollageItem(it); return; }
+      // v2.1 round 265 (Terry) — when ZOOMED IN (collageUserZoom>1), grabbing a locked
+      // tile (incl. a full-bleed bg-tile that covers the whole canvas, so there's no
+      // empty area to grab) now starts a VIEW-PAN instead of dead-ending. A plain click
+      // (no drag past the 4px threshold) still just selects. startViewPan lives in
+      // wireCollageControls' closure; reach it via the bridge set there at init.
+      if (it && it.locked) {
+        selectCollageItem(it);
+        if (collageUserZoom > 1 && typeof window.__pdrStartViewPan === 'function') {
+          window.__pdrStartViewPan(e, { onCanvas: false, noSelect: true });
+        }
+        return;
+      }
       beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
@@ -9496,7 +9532,10 @@
         add.setAttribute('data-pdr-tooltip', 'Add a slide');
       }
       add.setAttribute('data-pdr-tooltip-side', 'top');
-      add.addEventListener('click', () => { growCarousel(); scrollViewToSlice(carouselPageCount - 1); updateCarouselFilmstrip(); });
+      // v2.1 round 265 (Terry) — add-slide ends FIT-ALL too: growCarousel() already
+      // resetCollageZoom()s, so the trailing scrollViewToSlice(last) that zoomed into
+      // the new page is removed (keeps the whole wide canvas visible after adding).
+      add.addEventListener('click', () => { growCarousel(); updateCarouselFilmstrip(); });
       filmstripEl.appendChild(add);
     }
     // Which slice the view is currently centred on (for the active-thumb highlight).
@@ -11624,8 +11663,10 @@
       // Open at a usable scale (one slice filling the view) rather than the whole tiny
       // strip; renderCarouselGuides paints the faint slice dividers; the bottom strip
       // becomes N slice thumbnails.
+      // v2.1 round 265 (Terry) — enter ends FIT-ALL (whole wide canvas visible);
+      // resetCollageZoom() already width-fits, so the old scrollViewToSlice(0) that
+      // zoomed into page 1 is removed.
       resetCollageZoom();
-      scrollViewToSlice(0);
       renderCarouselGuides();
       updateCarouselFilmstrip();
     }
@@ -12575,14 +12616,27 @@
       // zoom) keeps the round-206 behaviour: clicking the canvas selects the background,
       // clicking the dark margin deselects. Tiles/text/handles stopPropagation on their own
       // pointerdown, so reaching here means the empty area. (move/up handlers below.)
+      // v2.1 round 265 (Terry) — hoisted the round-261 pan into a reusable startViewPan(e)
+      // so a full-bleed LOCKED bg-tile can ALSO start a view-pan (its el covers the canvas,
+      // so there's no empty area to grab). State + move/end handlers live at function scope;
+      // the stage's empty-area pointerdown and startItemDrag's locked branch both call
+      // startViewPan(e). onCanvas is only meaningful for the empty-area path (it drives
+      // the click-release select/deselect); a locked-tile pan passes onCanvas:false and
+      // selectCollageItem(it) is done by the caller before the pan starts.
       let collagePanDrag = null;
+      function startViewPan(e, opts) {
+        if (e.button !== 0) return;
+        const onCanvas = !!(opts && opts.onCanvas);
+        const noSelect = !!(opts && opts.noSelect);
+        collagePanDrag = { sx: e.clientX, sy: e.clientY, px: collagePanX, py: collagePanY, onCanvas, noSelect, moved: false, id: e.pointerId };
+        try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
+      }
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         const onCanvas = (e.target === collageCanvasEl);
         const onMargin = !collageCanvasEl.contains(e.target);
         if (!onCanvas && !onMargin) return;   // a tile/text inside the canvas → its own handler
-        collagePanDrag = { sx: e.clientX, sy: e.clientY, px: collagePanX, py: collagePanY, onCanvas, moved: false, id: e.pointerId };
-        try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
+        startViewPan(e, { onCanvas });
       });
       collageStageEl.addEventListener('pointermove', (e) => {
         if (!collagePanDrag || e.pointerId !== collagePanDrag.id) return;
@@ -12597,16 +12651,21 @@
       });
       const endCollagePan = (e) => {
         if (!collagePanDrag || (e && e.pointerId !== collagePanDrag.id)) return;
-        const wasDrag = collagePanDrag.moved, onCanvas = collagePanDrag.onCanvas;
+        const wasDrag = collagePanDrag.moved, onCanvas = collagePanDrag.onCanvas, noSelect = collagePanDrag.noSelect;
         try { collageStageEl.releasePointerCapture(collagePanDrag.id); } catch (_) {}
         collagePanDrag = null;
         try { document.body.classList.remove('collage-panning'); } catch (_) {}
         if (wasDrag) return;   // we panned — don't select/deselect on release
+        if (noSelect) return;  // locked-tile pan: caller already selected it on press, a click changes nothing
         if (onCanvas) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
         else { collapseAllSubcatsOnDeselect(); }
       };
       collageStageEl.addEventListener('pointerup', endCollagePan);
       collageStageEl.addEventListener('pointercancel', endCollagePan);
+      // v2.1 round 265 (Terry) — expose startViewPan so startItemDrag's locked branch can
+      // route a grab on a full-bleed locked tile into a view-pan (defined inside this DOM
+      // wiring closure; hoisted to the outer scope here for that one caller).
+      window.__pdrStartViewPan = startViewPan;
       // v2.1 round 206 (Terry) — the stage is centred inside #collage-root with a
       // dark background; if the click lands on that outer area (e.g. above/below
       // the centred stage) deselect too. Same guard: only when the target is the

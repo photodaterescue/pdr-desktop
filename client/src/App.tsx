@@ -1,4 +1,4 @@
-import { HashRouter, Routes, Route, useLocation } from "react-router-dom";
+import { HashRouter, Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { useEffect, useRef, useState } from "react";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
@@ -30,8 +30,37 @@ const queryClient = new QueryClient();
 // both… it will make the app seem so much faster".
 function AppShell() {
   const location = useLocation();
+  const navigate = useNavigate();
   const isWorkspace = location.pathname === '/workspace';
   const [workspaceMounted, setWorkspaceMounted] = useState(false);
+
+  // v2.1 round 265 (Terry) — single App-level chokepoint that flips the
+  // visible layer to the Workspace whenever a collage photo-pick starts,
+  // regardless of how the collage was opened (Welcome "Collages" tile,
+  // sidebar, or already-in-Workspace). Workspace is always mounted but
+  // only SHOWN on route /workspace; the Welcome "Collages" tile opens a
+  // collage without navigating, so without this the picker's
+  // photoPick:start would set activeView='memories' on a Workspace that
+  // stays hidden behind the Welcome screen. Same onStart channel +
+  // {purpose,label,multi} shape workspace.tsx subscribes to (preload
+  // photoPick.onStart → 'photoPick:start'); 'collage-bg' is the only
+  // purpose the picker emits (the add-photos flow reuses it with
+  // multi:true). Guarded to only navigate when we're NOT already on
+  // /workspace, so it can't loop and never re-navigates mid-session.
+  // This only changes route/visibility — Workspace stays mounted, so the
+  // live pick session is undisturbed; workspace.tsx's own onStart still
+  // sets activeView='memories' + forces the Dates tab.
+  useEffect(() => {
+    const api = (window as any).pdr?.photoPick;
+    if (!api?.onStart) return;
+    const off = api.onStart((info: { purpose?: string; label?: string; multi?: boolean }) => {
+      if (info?.purpose !== 'collage-bg') return;
+      if (window.location.hash.replace(/^#/, '').split('?')[0] !== '/workspace') {
+        navigate('/workspace?view=memories');
+      }
+    });
+    return () => { try { off?.(); } catch { /* noop */ } };
+  }, [navigate]);
   // Snapshot of the last non-workspace location, so the Routes
   // block keeps rendering Welcome/SourceSelection while the
   // workspace fades IN over it. Without this, the moment the route
