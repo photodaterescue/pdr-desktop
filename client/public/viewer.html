@@ -2258,7 +2258,13 @@
        (retract) control is hidden in collage — the panel stays open there, so a
        "can retract" affordance was misleading. */
     body.collage-mode .toolbar { border-bottom-color: rgba(254, 194, 66, 0.5); }
-    body.collage-mode .enhance-panel { border-left-color: rgba(254, 194, 66, 0.5); }
+    /* v2.1 round 247 (Terry) — the collage Enhance panel carries deeper content
+       than the photo viewer's (Canvas Size + the nested Background style groups +
+       Arrange / Text / Emojis); the round-246 indent pushed the palette swatch rows
+       and the 3-level-deep PALETTES past the right edge. Widen the panel 320->376px
+       in collage mode ONLY (separate window) so they fit with margin. Stage +
+       filmstrip padding below track the new width. */
+    body.collage-mode .enhance-panel { border-left-color: rgba(254, 194, 66, 0.5); width: 376px; }
     body.collage-mode .filmstrip-wrap { border-top-color: rgba(254, 194, 66, 0.5); }
     body.collage-mode #enhance-pin { display: none !important; }   /* beats the inline display:flex on the button */
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
@@ -2520,8 +2526,8 @@
        =========================================================== */
     /* In collage mode the canvas area + filmstrip pool sit LEFT of the
        pinned panel so nothing hides under it. */
-    body.collage-mode.enhance-panel-open #collage-stage { padding-right: 342px; }
-    body.collage-mode.enhance-panel-open #filmstrip-wrap { padding-right: 326px; }
+    body.collage-mode.enhance-panel-open #collage-stage { padding-right: 398px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
+    body.collage-mode.enhance-panel-open #filmstrip-wrap { padding-right: 382px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
     /* Toolbar controls that don't apply to a collage canvas. */
     body.collage-mode #counter,
     body.collage-mode #btn-fit,
