@@ -1673,20 +1673,27 @@
       background-color: rgba(255,255,255,0.06);
       color: #c9c4e6;
       position: relative; /* v2.1 round 248 (Terry) — anchor for the × badge */
+      /* v2.1 round 249 (Terry) — let the × badge overhang the circle's top-right
+         corner. This wins over .frame-locked-special's overflow:hidden (declared
+         earlier, equal specificity). The thumbnail is a background-image so it
+         stays clipped to the circle by border-radius regardless. */
+      overflow: visible;
     }
     .frame-swatch.frame-bg-photo .bg-photo-icon { display: flex; width: 14px; height: 14px; }
     .frame-swatch.frame-bg-photo .bg-photo-icon svg { width: 14px; height: 14px; }
     .frame-swatch.frame-bg-photo.has-photo .bg-photo-icon { display: none; }
-    /* v2.1 round 248 (Terry) — × badge to remove the bg photo, top-right INSIDE the
-       swatch (the slot has overflow:hidden, so it can't overhang). Shown only when a
-       photo is set (.has-photo). */
+    /* v2.1 round 248 (Terry) — × badge to remove the bg photo. v2.1 round 249 (Terry):
+       moved OUTSIDE the circle so it OVERHANGS the top-right corner (remove-badge style)
+       instead of competing with the swatch's click area for re-selecting (needs the
+       overflow:visible override on .frame-bg-photo above). Shown only when a photo is
+       set (.has-photo). */
     .frame-swatch.frame-bg-photo .bg-photo-x { display: none; }
     .frame-swatch.frame-bg-photo.has-photo .bg-photo-x {
       display: flex; align-items: center; justify-content: center;
-      position: absolute; top: 2px; right: 2px;
-      width: 13px; height: 13px; border-radius: 50%;
-      background: rgba(15,15,24,0.9); border: 1px solid rgba(255,255,255,0.55);
-      color: #fff; font-size: 12px; line-height: 1; cursor: pointer; z-index: 3;
+      position: absolute; top: -4px; right: -4px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: rgba(15,15,24,0.95); border: 1px solid rgba(255,255,255,0.7);
+      color: #fff; font-size: 12px; line-height: 1; cursor: pointer; z-index: 4;
     }
     .frame-swatch.frame-bg-photo.has-photo .bg-photo-x:hover { background: #e0473a; border-color: #e0473a; }
     .frame-custom {
@@ -3381,49 +3388,9 @@
           </details>
           </div>
           <!-- v2.1 round 246 (Terry) — /.ec-bg-grp-list (the indent wrapper for the 3 style groups) -->
-          <!-- v2.1 round 238 (Terry) — VIGNETTE + GRAIN finishing treatments. Unlike the
-               gradient (which is a bg KIND), these apply over the WHOLE collage — over the
-               photos AND the background — the classic film look. They work with any bg type
-               (colour / gradient / photo / transparent) and are independent of it, so they
-               live at the foot of the Background section ("background textures"). 0 = off.
-               Live preview = two pointer-events:none overlays on the canvas stage (above the
-               tiles); the bake composites matching layers as the TOP layer over the finished
-               collage. Both ride the panel's pointerdown/up undo wrapper like the gradient
-               sliders, and double-click resets each to 0 via the generic dbl-click handler. -->
-          <div id="collage-treatments-block" style="margin-top:14px">
-            <div class="enhance-control">
-              <div class="enhance-label-row"><label for="collage-vignette" data-pdr-tooltip="Darken the collage edges inward for a classic vignetted look. Double-click to reset.">Vignette</label><span class="enhance-val" id="collage-vignette-val">0</span></div>
-              <input class="enhance-slider" type="range" id="collage-vignette" min="0" max="100" step="1" value="0">
-              <!-- v2.1 round 240 (Terry) — VIGNETTE SHAPE selector. The vignette's clear
-                   (lit) region can be a shape; outside it darkens with a soft feathered
-                   edge by the vignette intensity. Ellipse = the original look (unchanged).
-                   Shown only when Vignette > 0 (toggled in syncCollageTreatmentsUi). -->
-              <div class="ec-vig-shapes" id="collage-vignette-shapes" role="group" aria-label="Vignette shape" style="display:none">
-                <button type="button" class="ec-vig-shape" data-shape="ellipse" data-pdr-tooltip="Ellipse — the classic oval vignette (default)">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="6.5"/></svg>
-                </button>
-                <button type="button" class="ec-vig-shape" data-shape="circle" data-pdr-tooltip="Circle — a round lit area">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
-                </button>
-                <button type="button" class="ec-vig-shape" data-shape="heart" data-pdr-tooltip="Heart — a single heart-shaped lit area">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.9-10-9.5C.6 8.9 1.9 5.5 5 5.5c1.9 0 3.2 1.1 4 2.3 0.8-1.2 2.1-2.3 4-2.3 3.1 0 4.4 3.4 3 6C19.5 16.1 12 21 12 21z"/></svg>
-                </button>
-                <button type="button" class="ec-vig-shape" data-shape="hearts" data-pdr-tooltip="Hearts — a cluster of hearts">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 19s-5-3.3-6.6-6.3C.5 10.6 1.4 8.3 3.5 8.3c1.2 0 2.1.7 2.5 1.5.4-.8 1.3-1.5 2.5-1.5 2.1 0 3 2.3 2.1 4.4C9 15.7 8 19 8 19z"/><path d="M17 16s-4-2.6-5.3-5C10.8 9.3 11.5 7.4 13.2 7.4c1 0 1.7.6 2 1.2.3-.6 1-1.2 2-1.2 1.7 0 2.4 1.9 1.7 3.6C17.6 13.4 17 16 17 16z" fill-opacity="0.92"/></svg>
-                </button>
-                <button type="button" class="ec-vig-shape" data-shape="balloon" data-pdr-tooltip="Balloon — a rounded balloon shape">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c3.6 0 6.2 3 6.2 6.7 0 4.2-3.6 7.6-5.4 9.1l1.2 1.7c.3.4 0 1-.5 1h-3c-.5 0-.8-.6-.5-1l1.2-1.7C9.4 16.3 5.8 12.9 5.8 8.7 5.8 5 8.4 2 12 2z"/></svg>
-                </button>
-                <button type="button" class="ec-vig-shape" data-shape="star" data-pdr-tooltip="Star — a five-pointed star">
-                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18.9 6.2 21l1.1-6.5L2.6 9.9l6.5-.9z"/></svg>
-                </button>
-              </div>
-            </div>
-            <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label for="collage-grain" data-pdr-tooltip="Add a subtle film-grain texture over the whole collage. Double-click to reset.">Grain</label><span class="enhance-val" id="collage-grain-val">0</span></div>
-              <input class="enhance-slider" type="range" id="collage-grain" min="0" max="100" step="1" value="0">
-            </div>
-          </div>
+          <!-- v2.1 round 249 (Terry) — the Vignette + Grain treatments block that used to
+               sit here (at the foot of the Background section) has MOVED into the Effects
+               subcategory below (#enhance-fx). See that block for the full note. -->
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
@@ -3674,6 +3641,51 @@
           </div>
           <input class="enhance-slider" id="slider-corners" type="range" min="0" max="100" step="1" value="0">
         </div>
+          <!-- v2.1 round 238 (Terry) — VIGNETTE + GRAIN finishing treatments. Unlike the
+               gradient (which is a bg KIND), these apply over the WHOLE collage — over the
+               photos AND the background — the classic film look. They work with any bg type
+               (colour / gradient / photo / transparent) and are independent of it. v2.1
+               round 249 (Terry): moved here into the Effects subcategory (they remain
+               WHOLE-COLLAGE treatments, not background-only). 0 = off. Live preview = two
+               pointer-events:none overlays on the canvas stage (above the tiles); the bake
+               composites matching layers as the TOP layer over the finished collage. Both
+               ride the panel's pointerdown/up undo wrapper like the gradient sliders, and
+               double-click resets each to 0 via the generic dbl-click handler. -->
+          <div id="collage-treatments-block" style="margin-top:14px">
+            <div class="enhance-control">
+              <div class="enhance-label-row"><label for="collage-vignette" data-pdr-tooltip="Darken the collage edges inward for a classic vignetted look. Double-click to reset.">Vignette</label><span class="enhance-val" id="collage-vignette-val">0</span></div>
+              <input class="enhance-slider" type="range" id="collage-vignette" min="0" max="100" step="1" value="0">
+              <!-- v2.1 round 240 (Terry) — VIGNETTE SHAPE selector. The vignette's clear
+                   (lit) region can be a shape; outside it darkens with a soft feathered
+                   edge by the vignette intensity. Ellipse = the original look (unchanged).
+                   Shown only when Vignette > 0 (toggled in syncCollageTreatmentsUi). -->
+              <div class="ec-vig-shapes" id="collage-vignette-shapes" role="group" aria-label="Vignette shape" style="display:none">
+                <button type="button" class="ec-vig-shape" data-shape="ellipse" data-pdr-tooltip="Ellipse — the classic oval vignette (default)">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><ellipse cx="12" cy="12" rx="9" ry="6.5"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="circle" data-pdr-tooltip="Circle — a round lit area">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="12" cy="12" r="8"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="heart" data-pdr-tooltip="Heart — a single heart-shaped lit area">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 21s-7.5-4.9-10-9.5C.6 8.9 1.9 5.5 5 5.5c1.9 0 3.2 1.1 4 2.3 0.8-1.2 2.1-2.3 4-2.3 3.1 0 4.4 3.4 3 6C19.5 16.1 12 21 12 21z"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="hearts" data-pdr-tooltip="Hearts — a cluster of hearts">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 19s-5-3.3-6.6-6.3C.5 10.6 1.4 8.3 3.5 8.3c1.2 0 2.1.7 2.5 1.5.4-.8 1.3-1.5 2.5-1.5 2.1 0 3 2.3 2.1 4.4C9 15.7 8 19 8 19z"/><path d="M17 16s-4-2.6-5.3-5C10.8 9.3 11.5 7.4 13.2 7.4c1 0 1.7.6 2 1.2.3-.6 1-1.2 2-1.2 1.7 0 2.4 1.9 1.7 3.6C17.6 13.4 17 16 17 16z" fill-opacity="0.92"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="balloon" data-pdr-tooltip="Balloon — a rounded balloon shape">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2c3.6 0 6.2 3 6.2 6.7 0 4.2-3.6 7.6-5.4 9.1l1.2 1.7c.3.4 0 1-.5 1h-3c-.5 0-.8-.6-.5-1l1.2-1.7C9.4 16.3 5.8 12.9 5.8 8.7 5.8 5 8.4 2 12 2z"/></svg>
+                </button>
+                <button type="button" class="ec-vig-shape" data-shape="star" data-pdr-tooltip="Star — a five-pointed star">
+                  <svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 2.5l2.9 5.9 6.5.9-4.7 4.6 1.1 6.5L12 18.9 6.2 21l1.1-6.5L2.6 9.9l6.5-.9z"/></svg>
+                </button>
+              </div>
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-grain" data-pdr-tooltip="Add a subtle film-grain texture over the whole collage. Double-click to reset.">Grain</label><span class="enhance-val" id="collage-grain-val">0</span></div>
+              <!-- v2.1 round 249 (Terry) — Grain range enlarged 50% (0-100 → 0-150) so it can be pushed stronger. -->
+              <input class="enhance-slider" type="range" id="collage-grain" min="0" max="150" step="1" value="0">
+            </div>
+          </div>
       </details>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
            chevron to declutter ("largely pre-chosen by Looks; if someone
@@ -9450,7 +9462,8 @@
       // predate these → default 0 = off). syncCollageTreatmentsUi() below repaints the
       // sliders + overlays after the canvas has been re-laid-out.
       collageVignette = Number.isFinite(s.vignette) ? Math.max(0, Math.min(100, s.vignette)) : 0;
-      collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(100, s.grain)) : 0;
+      // v2.1 round 249 (Terry) — Grain range enlarged 50% (max 150, was 100).
+      collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(150, s.grain)) : 0;
       // v2.1 round 240 (Terry) — restore vignette shape (old snapshots → 'ellipse').
       collageVignetteShape = ['ellipse','circle','heart','hearts','balloon','star'].indexOf(s.vignetteShape) >= 0 ? s.vignetteShape : 'ellipse';
       // v2.1 round 149 — restore the background's enh (fall back to the
@@ -10076,7 +10089,7 @@
       if (!collageCanvasEl) return;
       var els = ensureCollageTreatmentOverlays();
       var v = Math.max(0, Math.min(100, collageVignette || 0));
-      var g = Math.max(0, Math.min(100, collageGrain || 0));
+      var g = Math.max(0, Math.min(150, collageGrain || 0));   // v2.1 round 249 (Terry) — grain max 150
       if (els.vig) {
         if (v <= 0) { els.vig.style.display = 'none'; }
         else {
@@ -10520,7 +10533,7 @@
       var grainVal = document.getElementById('collage-grain-val');
       if (grainSlider) {
         grainSlider.addEventListener('input', function () {
-          collageGrain = Math.max(0, Math.min(100, parseInt(grainSlider.value, 10) || 0));
+          collageGrain = Math.max(0, Math.min(150, parseInt(grainSlider.value, 10) || 0));   // v2.1 round 249 (Terry) — grain max 150
           if (grainVal) grainVal.textContent = String(collageGrain);
           applyCollageTreatments();
         });
@@ -11002,7 +11015,7 @@
         // v2.1 round 240 (Terry) — send the vignette SHAPE so the bake masks the dark
         // layer to the same shape (ellipse = the original radial-gradient look).
         if (collageVignette > 0) canvas.vignetteShape = collageVignetteShape || 'ellipse';
-        if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(100, collageGrain));
+        if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(150, collageGrain));   // v2.1 round 249 (Terry) — grain max 150 (bake matches preview)
         // v2.1 round 235 (Terry) — GRADIENT bg: send the spec (kind/angle/stops) so
         // the bake builds a matching SVG gradient at W×H and composites it as the
         // bottom layer. Mutually exclusive with transparent + a bg photo (the setters
