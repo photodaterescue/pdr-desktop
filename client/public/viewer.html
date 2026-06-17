@@ -4093,16 +4093,17 @@
     //              centre colour reaches 50/50 with the edge colour (the radial twin of
     //              blend). Low = tight bright centre (weak); high = centre fills most.
     let collageBgGradient = null;
-    // v2.1 round 242 (Terry) — procedural surface TEXTURE background (brick / wood /
-    // woodchip / etc.). One more mutually-exclusive bg KIND alongside colour / gradient /
-    // photo / transparent: when collageBgTexture is non-null it WINS over the others for
-    // both the live preview and the bake. Model: { id } — the pattern id from
-    // COLLAGE_TEXTURES (each entry carries its own fixed default colour pair this round;
-    // no per-texture tint UI). Picking a colour / gradient / photo / transparent clears
-    // it (each bg setter nulls it), exactly like those kinds already swap each other.
-    // Preview + bake both build the SAME tileable SVG <pattern> from the table entry, so
-    // they match; the tile size is a FRACTION of the canvas short side (entry.tileFrac)
-    // so the visual scale is identical on screen and in the saved PNG.
+    // v2.1 round 244 (Terry) — close-up MATERIAL SURFACE texture background (brick face /
+    // wood grain / concrete / leather / marble / …). One more mutually-exclusive bg KIND
+    // alongside colour / gradient / photo / transparent: when collageBgTexture is non-null
+    // it WINS over the others for both the live preview and the bake. Model: { id } — the
+    // material id from COLLAGE_TEXTURES (each entry carries its own fixed colour + relief;
+    // no per-texture tint UI). Picking a colour / gradient / photo / transparent clears it
+    // (each bg setter nulls it), exactly like those kinds already swap each other. Preview
+    // + bake both build the SAME full-canvas feTurbulence surface SVG from the table entry
+    // (FIXED 1000×1000 viewBox so the noise scale is resolution-independent), so they match
+    // pixel-scale on screen and in the saved PNG. (Round 242 was zoomed-out repeating
+    // PATTERNS — replaced here by zoomed-IN continuous material surfaces.)
     let collageBgTexture = null;
     // The 12 curated presets shown as swatches in the Background section. Each:
     //   id    — stable key (selection highlight + sticky last-pick if wanted)
@@ -4161,210 +4162,141 @@
         { color: '#6b6b6b', x: 20, y: 22, r: 72 }, { color: '#9a9a9a', x: 82, y: 30, r: 62 },
         { color: '#4a4a4a', x: 60, y: 92, r: 70 }, { color: '#bdbdbd', x: 8, y: 90, r: 48 } ] } },
     ];
-    // v2.1 round 242 (Terry) — PROCEDURAL SURFACE TEXTURES (brick / wood / woodchip /
-    // etc.) as a Texture background KIND. Each entry is a SEAMLESS, tileable SVG
-    // <pattern>: `tile(p, fg, bg)` returns the INNER markup of ONE square tile `p` px
-    // wide; the pattern repeats it on a `p × p` grid (patternUnits="userSpaceOnUse").
-    // EVERY tile is authored to repeat with no visible seam — features that touch an
-    // edge are mirrored/wrapped to the opposite edge (e.g. the running-bond brick draws
-    // the mortar courses + a half-offset row, and bricks that run off the right re-enter
-    // on the left). `fg`/`bg` are the entry's fixed default colour PAIR (no per-texture
-    // tint UI this round). `tileFrac` sizes the tile as a fraction of the canvas SHORT
-    // side, so preview (background-size px) and bake (pattern width px) share one scale.
+    // v2.1 round 244 (Terry) — CLOSE-UP MATERIAL SURFACES as a Texture background KIND.
+    // REDO of round 242: those were zoomed-OUT repeating geometric PATTERNS (a brick
+    // wall, a grid of dots…). Terry wants the tactile close-up SURFACE of the material
+    // itself — a single brick's rough pitted face, wood's grain surface, rough concrete,
+    // woven linen fibre, pebbled leather, veined marble, etc. — filling the WHOLE canvas
+    // as ONE continuous surface (NOT a repeating object, NOT tiled).
     //
-    // collageTextureTileSvg(entry, p) wraps tile() into a tiny standalone SVG sized to a
-    // single tile — used BOTH for the swatch preview and (via a data-URI + background-
-    // size) for the canvas preview; collageTextureFullSvg(entry, W, H, tilePx) wraps the
-    // SAME tile() into a W×H <pattern>-filled rect for the bake. The bake builder is
-    // mirrored verbatim in capture-manager.ts (buildCollageTextureSvg) so saved == preview.
+    // HOW each surface is built (bake-safe, identical in Chromium AND sharp/librsvg):
+    //   • feTurbulence (fractal/Perlin noise) drives the roughness — this DOES render in
+    //     librsvg (round-238 grain proved it). `freq` is baseFrequency (a single value,
+    //     or "fx fy" for DIRECTIONAL noise: low X + higher Y = vertical grain/veins for
+    //     wood + marble). `oct` = numOctaves (detail). `seed` is FIXED (no Math.random).
+    //   • feColorMatrix maps the noise's luminance to the material colour + light/dark
+    //     RELIEF: out_c = base_c + (lum − 0.5)·amp_c per channel, so lighter = raised,
+    //     darker = pits → a tactile 3-D surface. `base` is the mid-tone colour; `amp`
+    //     is the relief swing (a single 0..1 value, or [aR,aG,aB] to tint the relief
+    //     warmer/cooler). NO feDiffuseLighting / feSpecularLighting — those DON'T render
+    //     in librsvg (bake would go flat while the preview looked 3-D). turbulence +
+    //     colour-matrix renders byte-identically in both engines.
+    //   • optional `grain` sub-layer = a second, FINER turbulence rect at low opacity for
+    //     micro-tooth on top of the coarse relief (same renderer-safe primitives).
+    //
+    // PREVIEW + BAKE FROM ONE SVG (must match): collageTextureSurfaceSvg(entry, w, h)
+    // emits a complete SVG whose noise coordinate space is a FIXED viewBox 1000×1000 with
+    // preserveAspectRatio="none". Because feTurbulence's baseFrequency is per USER-UNIT,
+    // pinning the user-unit space to 1000×1000 makes the noise scale + appearance
+    // IDENTICAL whether the SVG is rasterized at on-screen-canvas px (preview) or at
+    // output px (bake) — only the outer width/height differ; the grain coordinate space
+    // does not. Preview: data-URI as the canvas background-image at 100% 100%, no repeat.
+    // Bake: sharp rasterizes the SAME SVG at W×H (buildCollageTextureSvg in
+    // capture-manager.ts is a verbatim mirror) so saved == preview.
+    //
+    // State model is unchanged: collageBgTexture = { id } (one mutually-exclusive bg KIND
+    // alongside colour / gradient / photo / transparent); the swatch grid, the active
+    // ring, and undo/redo all carry over from round 242 — only WHAT each entry renders
+    // changed (a material surface, not a pattern).
     const COLLAGE_TEXTURES = [
-      // BRICK — running-bond courses, designed to tile with NO seam. The tile holds
-      // exactly TWO courses (period p vertically): course A at the top, course B
-      // (offset by half a brick) below. Mortar (bg) shows through a uniform gap `g` on
-      // every joint — the vertical rhythm is course-height + g so the gap at the tile's
-      // bottom edge meets course A of the tile below at the same `g`, and the horizontal
-      // joints are placed at the tile EDGE (course A) and tile CENTRE (course B), each
-      // shared with the neighbour, so the half-brick offset is continuous across tiles.
-      { id: 'brick', name: 'Brick', fg: '#b15a40', bg: '#caa98f', tileFrac: 0.16, tile: function (p, fg, bg) {
-        var g = Math.max(1, p / 18);    // uniform mortar gap
-        var ch = p / 2;                 // course pitch (two courses per tile)
-        var rh = ch - g;                // brick height within a course
-        function brick(x, y, w) { return '<rect x="' + x.toFixed(2) + '" y="' + y.toFixed(2) + '" width="' + w.toFixed(2) + '" height="' + rh.toFixed(2) + '" rx="' + (g * 0.5).toFixed(2) + '" fill="' + fg + '"/>'; }
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        // Course A (top): vertical joint at the tile edges → one full brick across the
-        // width, inset by half a joint each side so the seam joint reads as width g.
-        out += brick(g / 2, 0, p - g);
-        // Course B (lower): joint at the CENTRE → two bricks meeting mid-tile, each
-        // running to the tile edge (the edge halves join the neighbour → continuous).
-        out += brick(g / 2, ch, p / 2 - g);
-        out += brick(p / 2 + g / 2, ch, p / 2 - g);
-        return out;
-      } },
-      // WOODCHIP — fine random stipple over a warm beige (the classic painted-woodchip
-      // wall). A scatter of small fg flecks; positions are mirrored across both axes so
-      // the density is even and the tile wraps without a seam band.
-      { id: 'woodchip', name: 'Woodchip', fg: '#b9a07c', bg: '#e8ddc7', tileFrac: 0.10, tile: function (p, fg, bg) {
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        // deterministic pseudo-random flecks (no Math.random → preview==bake byte-stable)
-        var seed = 1234567;
-        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
-        var n = 26;
-        for (var i = 0; i < n; i++) {
-          var cx = rnd() * p, cy = rnd() * p;
-          var w = (0.6 + rnd() * 1.1) * (p / 22), h = (0.5 + rnd() * 0.9) * (p / 22);
-          var rot = Math.round(rnd() * 180);
-          var op = (0.35 + rnd() * 0.5).toFixed(2);
-          // draw the fleck and its wraps (±p on each axis) so edge flecks tile seamlessly
-          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
-            var x = cx + dx * p, y = cy + dy * p;
-            if (x < -3 || x > p + 3 || y < -3 || y > p + 3) continue;
-            out += '<ellipse cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" rx="' + w.toFixed(2) + '" ry="' + h.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '" transform="rotate(' + rot + ' ' + x.toFixed(2) + ' ' + y.toFixed(2) + ')"/>';
-          }
-        }
-        return out;
-      } },
-      // LINEN — woven crosshatch: evenly spaced vertical + horizontal threads at low
-      // opacity. Strokes run full edge-to-edge so they meet across tiles → seamless.
-      { id: 'linen', name: 'Linen', fg: '#9fb0c3', bg: '#eef2f6', tileFrac: 0.05, tile: function (p, fg, bg) {
-        var n = 4, sw = p / 22;
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        out += '<g stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '" stroke-opacity="0.5">';
-        for (var i = 0; i < n; i++) {
-          var t = (i + 0.5) * (p / n);
-          out += '<line x1="' + t.toFixed(2) + '" y1="0" x2="' + t.toFixed(2) + '" y2="' + p + '" stroke-opacity="0.55"/>';
-          out += '<line x1="0" y1="' + t.toFixed(2) + '" x2="' + p + '" y2="' + t.toFixed(2) + '" stroke-opacity="0.28"/>';
-        }
-        return out + '</g>';
-      } },
-      // PAPER — subtle fibre flecks (very low contrast) over off-white, like cotton-rag
-      // paper. Same wrapped-scatter technique as woodchip but fainter + finer.
-      { id: 'paper', name: 'Paper', fg: '#c9c4b6', bg: '#f7f4ec', tileFrac: 0.12, tile: function (p, fg, bg) {
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        var seed = 987654;
-        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
-        var n = 38;
-        for (var i = 0; i < n; i++) {
-          var cx = rnd() * p, cy = rnd() * p;
-          var r = (0.3 + rnd() * 0.7) * (p / 40);
-          var op = (0.15 + rnd() * 0.3).toFixed(2);
-          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
-            var x = cx + dx * p, y = cy + dy * p;
-            if (x < -2 || x > p + 2 || y < -2 || y > p + 2) continue;
-            out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + fg + '" fill-opacity="' + op + '"/>';
-          }
-        }
-        return out;
-      } },
-      // GRID — clean blueprint-style grid: thin fg lines on the right + bottom edges so
-      // adjacent tiles share a single line (no doubled seam).
-      { id: 'grid', name: 'Grid', fg: '#b8c4d0', bg: '#fbfcfe', tileFrac: 0.07, tile: function (p, fg, bg) {
-        var sw = Math.max(1, p / 28);
-        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
-          '<path d="M0 ' + (p - sw / 2).toFixed(2) + ' H' + p + ' M' + (p - sw / 2).toFixed(2) + ' 0 V' + p + '" stroke="' + fg + '" stroke-width="' + sw.toFixed(2) + '"/>';
-      } },
-      // DOTS — polka dots in a centred grid. A dot at the tile centre + quarter dots at
-      // the 4 corners (each corner dot is shared by 4 tiles) → seamless half-drop look.
-      { id: 'dots', name: 'Dots', fg: '#7f8cd6', bg: '#eef0fb', tileFrac: 0.06, tile: function (p, fg, bg) {
-        var r = p * 0.16;
-        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
-          '<g fill="' + fg + '">' +
-          '<circle cx="' + (p / 2) + '" cy="' + (p / 2) + '" r="' + r.toFixed(2) + '"/>' +
-          '<circle cx="0" cy="0" r="' + r.toFixed(2) + '"/>' +
-          '<circle cx="' + p + '" cy="0" r="' + r.toFixed(2) + '"/>' +
-          '<circle cx="0" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
-          '<circle cx="' + p + '" cy="' + p + '" r="' + r.toFixed(2) + '"/>' +
-          '</g>';
-      } },
-      // DIAGONAL STRIPES — 45° bands. Drawn as a parallelogram band repeated so the
-      // diagonal continues unbroken into the next tile (the band exits a corner and the
-      // wrap copy re-enters the opposite corner).
-      { id: 'diagonal', name: 'Diagonal', fg: '#d7b86a', bg: '#f4ead0', tileFrac: 0.07, tile: function (p, fg, bg) {
-        var w = p / 2;   // stripe width along the tile → two full stripes per tile, wraps cleanly
-        // Two diagonal bands via a polygon that the −p/+p copies complete across edges.
-        function band(off) {
-          return '<polygon points="' + (off) + ',0 ' + (off + w) + ',0 ' + (off + w - p) + ',' + p + ' ' + (off - p) + ',' + p + '" fill="' + fg + '"/>';
-        }
-        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
-          band(0) + band(w) + band(-p) + band(p);
-      } },
-      // CARBON FIBRE — near-black woven 2×2 twill: four cells, each a subtle diagonal
-      // highlight, alternating direction like real carbon weave. Tiles seamlessly because
-      // the 2×2 cell block fills the tile exactly.
-      { id: 'carbon', name: 'Carbon', fg: '#3a3a3a', bg: '#1a1a1a', tileFrac: 0.05, tile: function (p, fg, bg) {
-        var h = p / 2;
-        // Each of the 2×2 cells: a near-black square with a soft fg overlay + a thin
-        // diagonal sheen line; dir alternates the sheen direction (the carbon weave).
-        function cell(x, y, dir) {
-          return '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + bg + '"/>' +
-            '<rect x="' + x + '" y="' + y + '" width="' + h + '" height="' + h + '" fill="' + fg + '" fill-opacity="0.5"/>' +
-            '<line x1="' + (dir > 0 ? x : x + h) + '" y1="' + y + '" x2="' + (dir > 0 ? x + h : x) + '" y2="' + (y + h) + '" stroke="#555" stroke-width="' + (h * 0.12).toFixed(2) + '" stroke-opacity="0.6"/>';
-        }
-        return '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>' +
-          cell(0, 0, 1) + cell(h, 0, -1) + cell(0, h, -1) + cell(h, h, 1);
-      } },
-      // WOODGRAIN — stylised wavy grain: warm wood base with several gently waving
-      // darker grain lines running top→bottom. Each line is a smooth sine path whose
-      // value at y=0 equals its value at y=p, so it continues seamlessly into the tile
-      // below; lines that exit the right re-enter on the left (wrapped copy).
-      { id: 'woodgrain', name: 'Woodgrain', fg: '#9c6b3f', bg: '#c79865', tileFrac: 0.42, tile: function (p, fg, bg) {
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        var seed = 24680;
-        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
-        var lines = 7, segs = 16;
-        out += '<g stroke="' + fg + '" fill="none" stroke-opacity="0.45" stroke-linecap="round">';
-        for (var i = 0; i < lines; i++) {
-          var baseX = (i + 0.5) * (p / lines);
-          var amp = (0.3 + rnd() * 0.9) * (p / lines) * 0.6;
-          var phase = rnd() * Math.PI * 2;
-          var sw = (0.4 + rnd() * 0.8) * (p / 60);
-          // build a path sampling x(y) = baseX + amp*sin(2π·y/p + phase); periodic in p.
-          for (var wrap = -1; wrap <= 0; wrap++) {
-            var d = '';
-            for (var s = 0; s <= segs; s++) {
-              var y = (s / segs) * p;
-              var x = baseX + amp * Math.sin((2 * Math.PI * y) / p + phase) + wrap * p;
-              d += (s === 0 ? 'M' : 'L') + x.toFixed(2) + ' ' + y.toFixed(2) + ' ';
-            }
-            out += '<path d="' + d.trim() + '" stroke-width="' + sw.toFixed(2) + '"/>';
-          }
-        }
-        return out + '</g>';
-      } },
-      // CONCRETE — mottled grey: a mid-grey base scattered with soft lighter + darker
-      // blotches (wrapped on both axes) for an even, seamless poured-concrete look.
-      { id: 'concrete', name: 'Concrete', fg: '#8c8c8c', bg: '#a8a8a8', tileFrac: 0.5, tile: function (p, fg, bg) {
-        var out = '<rect width="' + p + '" height="' + p + '" fill="' + bg + '"/>';
-        var seed = 555111;
-        function rnd() { seed = (seed * 1103515245 + 12345) & 0x7fffffff; return seed / 0x7fffffff; }
-        var n = 40;
-        for (var i = 0; i < n; i++) {
-          var cx = rnd() * p, cy = rnd() * p;
-          var r = (2 + rnd() * 6) * (p / 100);
-          var light = rnd() > 0.5;
-          var col = light ? '#bdbdbd' : '#7a7a7a';
-          var op = (0.18 + rnd() * 0.3).toFixed(2);
-          for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) {
-            var x = cx + dx * p, y = cy + dy * p;
-            if (x < -r - 2 || x > p + r + 2 || y < -r - 2 || y > p + r + 2) continue;
-            out += '<circle cx="' + x.toFixed(2) + '" cy="' + y.toFixed(2) + '" r="' + r.toFixed(2) + '" fill="' + col + '" fill-opacity="' + op + '"/>';
-          }
-        }
-        return out;
-      } },
+      // BRICK — rough reddish pitted clay face (one brick, zoomed in): warm terracotta
+      // with coarse irregular pits/grit. Mid-frequency fractal noise, generous relief.
+      { id: 'brick',    name: 'Brick',    base: '#a8553a', freq: '0.022', oct: 4, seed: 11, type: 'fractalNoise', amp: [0.62, 0.42, 0.34], grain: { freq: '0.09', oct: 2, seed: 12, op: 0.18, amp: 0.5 } },
+      // WOOD — warm directional grain: low X / higher Y frequency stretches the noise
+      // into long vertical streaks (the grain lines), over a honey-oak base.
+      { id: 'wood',     name: 'Wood',     base: '#a9763f', freq: '0.006 0.05', oct: 5, seed: 7,  type: 'fractalNoise', amp: [0.5, 0.36, 0.22], grain: { freq: '0.012 0.16', oct: 2, seed: 8, op: 0.22, amp: 0.45 } },
+      // WOODCHIP — classic beige chunky bumpy wallpaper: coarse LOW-frequency turbulence
+      // (the big chips) with strong relief + a finer fleck grain on top.
+      { id: 'woodchip', name: 'Woodchip', base: '#d8c9a6', freq: '0.045', oct: 3, seed: 21, type: 'turbulence',   amp: [0.45, 0.42, 0.34], grain: { freq: '0.16', oct: 2, seed: 22, op: 0.22, amp: 0.5 } },
+      // CONCRETE — grey rough mottled poured concrete: fine fractal noise, moderate
+      // relief, with a fine grit grain for the sandy micro-tooth.
+      { id: 'concrete', name: 'Concrete', base: '#9a9a98', freq: '0.05', oct: 5, seed: 31, type: 'fractalNoise', amp: [0.34, 0.34, 0.34], grain: { freq: '0.28', oct: 2, seed: 32, op: 0.16, amp: 0.45 } },
+      // LINEN — woven fibre close-up: directional warp+weft built from a near-equal X/Y
+      // higher-frequency noise pair feel; a single mid-high frequency reads as woven tooth.
+      { id: 'linen',    name: 'Linen',    base: '#d9d2c2', freq: '0.10 0.11', oct: 2, seed: 41, type: 'turbulence',   amp: [0.26, 0.26, 0.24], grain: { freq: '0.35', oct: 1, seed: 42, op: 0.14, amp: 0.4 } },
+      // PAPER — off-white fine fibre (cotton-rag): very fine, very low-contrast fractal
+      // noise so it reads as a subtle tooth, not a pattern.
+      { id: 'paper',    name: 'Paper',    base: '#efe9dc', freq: '0.16', oct: 3, seed: 51, type: 'fractalNoise', amp: [0.14, 0.14, 0.13], grain: { freq: '0.5', oct: 1, seed: 52, op: 0.12, amp: 0.35 } },
+      // LEATHER — brown pebbled grain: coarse low-frequency turbulence makes the rounded
+      // pebbles; chunky relief, warm tint, with a fine crease grain over it.
+      { id: 'leather',  name: 'Leather',  base: '#7c4f33', freq: '0.06', oct: 3, seed: 61, type: 'turbulence',   amp: [0.5, 0.36, 0.26], grain: { freq: '0.2', oct: 2, seed: 62, op: 0.2, amp: 0.5 } },
+      // MARBLE — veined light stone: strongly DIRECTIONAL low-X noise draws the wandering
+      // veins across a near-white base; high octaves keep the veins wispy.
+      { id: 'marble',   name: 'Marble',   base: '#e6e3dc', freq: '0.006 0.03', oct: 6, seed: 71, type: 'fractalNoise', amp: [0.3, 0.3, 0.32], grain: { freq: '0.3', oct: 1, seed: 72, op: 0.1, amp: 0.3 } },
+      // SLATE — grey rocky split-stone: mid-frequency fractal noise, fairly strong cool
+      // relief for the cleaved rocky facets.
+      { id: 'slate',    name: 'Slate',    base: '#6f767c', freq: '0.04', oct: 5, seed: 81, type: 'fractalNoise', amp: [0.4, 0.42, 0.46], grain: { freq: '0.24', oct: 2, seed: 82, op: 0.18, amp: 0.5 } },
+      // SAND — warm fine grain: fine turbulence makes the countless tiny grains; gentle
+      // relief + a fine grit grain for the close-up sandy speckle.
+      { id: 'sand',     name: 'Sand',     base: '#d8c08a', freq: '0.14', oct: 3, seed: 91, type: 'turbulence',   amp: [0.3, 0.26, 0.18], grain: { freq: '0.5', oct: 2, seed: 92, op: 0.18, amp: 0.45 } },
     ];
-    // v2.1 round 242 (Terry) — look up a texture entry by id (null when none/unknown).
-    function collageTextureById(id) { return COLLAGE_TEXTURES.find(function (t) { return t.id === id; }) || null; }
-    // v2.1 round 242 (Terry) — build a STANDALONE single-tile SVG string for an entry
-    // (used by the swatch + canvas-preview data-URI). `p` is the tile size in px.
-    function collageTextureTileSvg(entry, p) {
-      if (!entry) return '';
-      var inner = entry.tile(p, entry.fg, entry.bg);
-      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + p + '" height="' + p + '" viewBox="0 0 ' + p + ' ' + p + '">' + inner + '</svg>';
+    // v2.1 round 244 (Terry) — parse "#rrggbb" → [r,g,b] in 0..1 (for the feColorMatrix
+    // base offsets). Falls back to mid-grey on a malformed value.
+    function collageHexRgb01(hex) {
+      var m = /^#?([0-9a-fA-F]{6})$/.exec(String(hex || ''));
+      if (!m) return [0.5, 0.5, 0.5];
+      var n = parseInt(m[1], 16);
+      return [((n >> 16) & 255) / 255, ((n >> 8) & 255) / 255, (n & 255) / 255];
     }
-    // v2.1 round 242 (Terry) — data-URI for the single tile (canvas-preview background-
-    // image). URL-encoded (not base64) so the markup stays inspectable + small.
-    function collageTextureDataUri(entry, p) {
-      return 'data:image/svg+xml,' + encodeURIComponent(collageTextureTileSvg(entry, p));
+    // v2.1 round 244 (Terry) — build ONE turbulence→colour-matrix <filter>. The matrix
+    // collapses the noise to luminance and maps it to base_c + (lum−0.5)·amp_c per
+    // channel (lighter = raised, darker = pits). `ampArr` is [aR,aG,aB]; alpha is forced
+    // opaque (last row 0 0 0 0 1). Only feTurbulence + feColorMatrix — both render
+    // identically in Chromium AND librsvg (NO lighting filters). The viewBox is fixed
+    // 1000×1000 by the wrapper, so baseFrequency is resolution-independent (preview==bake).
+    function collageSurfaceFilter(id, freq, oct, seed, type, baseArr, ampArr) {
+      function row(b, a) {
+        var k = (0.3333 * a).toFixed(5);
+        return k + ' ' + k + ' ' + k + ' 0 ' + (b - 0.5 * a).toFixed(5);
+      }
+      var matrix = row(baseArr[0], ampArr[0]) + '  ' + row(baseArr[1], ampArr[1]) + '  ' +
+        row(baseArr[2], ampArr[2]) + '  0 0 0 0 1';
+      return '<filter id="' + id + '" x="0" y="0" width="100%" height="100%" ' +
+        'filterUnits="objectBoundingBox" primitiveUnits="userSpaceOnUse" color-interpolation-filters="sRGB">' +
+        '<feTurbulence type="' + type + '" baseFrequency="' + freq + '" numOctaves="' + oct +
+        '" seed="' + seed + '" stitchTiles="stitch" result="t"/>' +
+        '<feColorMatrix in="t" type="matrix" values="' + matrix + '"/>' +
+        '</filter>';
+    }
+    // v2.1 round 244 (Terry) — INNER markup of a material surface (filter defs + base
+    // rect + relief rect + optional fine-grain rect), authored in the FIXED 1000×1000
+    // user-unit space. Identical for preview, swatch, and bake. `id` differs only to
+    // namespace the two filters; each standalone SVG is self-contained so a constant id
+    // prefix is collision-free.
+    function collageTextureSurfaceInner(entry) {
+      var base = collageHexRgb01(entry.base);
+      var amp = Array.isArray(entry.amp) ? entry.amp : [entry.amp, entry.amp, entry.amp];
+      var defs = collageSurfaceFilter('sr', entry.freq, entry.oct, entry.seed, entry.type || 'fractalNoise', base, amp);
+      // base colour underneath, then the relief surface filling the whole 1000×1000 box.
+      var out = '<defs>' + defs;
+      var grain = entry.grain;
+      if (grain) {
+        // fine micro-tooth: a grey-centred noise (base 0.5) so it nudges lighter/darker
+        // under normal alpha compositing at low rect opacity. Same safe primitives.
+        defs += collageSurfaceFilter('sg', grain.freq, grain.oct, grain.seed, 'fractalNoise', [0.5, 0.5, 0.5], [grain.amp, grain.amp, grain.amp]);
+        out = '<defs>' + defs;
+      }
+      out += '</defs>';
+      out += '<rect x="0" y="0" width="1000" height="1000" fill="' + entry.base + '"/>';
+      out += '<rect x="0" y="0" width="1000" height="1000" filter="url(#sr)"/>';
+      if (grain) out += '<rect x="0" y="0" width="1000" height="1000" filter="url(#sg)" opacity="' + grain.op + '"/>';
+      return out;
+    }
+    // v2.1 round 244 (Terry) — look up a texture entry by id (null when none/unknown).
+    function collageTextureById(id) { return COLLAGE_TEXTURES.find(function (t) { return t.id === id; }) || null; }
+    // v2.1 round 244 (Terry) — STANDALONE full-surface SVG for an entry, sized w×h px but
+    // with the FIXED viewBox 1000×1000 + preserveAspectRatio="none" so the noise scale is
+    // identical at any output size (preview canvas px == swatch px == bake output px).
+    function collageTextureSurfaceSvg(entry, w, h) {
+      if (!entry) return '';
+      return '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h +
+        '" viewBox="0 0 1000 1000" preserveAspectRatio="none">' + collageTextureSurfaceInner(entry) + '</svg>';
+    }
+    // v2.1 round 244 (Terry) — data-URI for the surface (canvas + swatch background-image).
+    // base64 (btoa) — the markup contains feColorMatrix value lists with spaces/#, so
+    // base64 is safer + smaller than URL-encoding here. Matches the grain data-URI style.
+    function collageTextureDataUri(entry, w, h) {
+      return 'data:image/svg+xml;base64,' + btoa(collageTextureSurfaceSvg(entry, w, h));
     }
     // v2.1 round 235 (Terry) — when editing a custom gradient, which STOP index the
     // shared Background colour palette currently writes to (0 or 1), or null when no
@@ -9833,25 +9765,23 @@
       // toggles). It self-hides when not radial / not bg-focused.
       try { updateGradEpicentreVisibility(); } catch (_) {}
       if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
-      // v2.1 round 242 (Terry) — TEXTURE: paint the entry's bg colour + a repeating
-      // tile image. The tile is built from the SAME tile() markup the bake uses; its
-      // on-screen size is tileFrac × the canvas SHORT side (px), and background-size
-      // pins that, so the visual scale matches the bake (which sizes the <pattern> the
-      // same fraction of the output short side). Done as explicit properties (not the
-      // shorthand) so background-color shows behind any tile transparency.
+      // v2.1 round 244 (Terry) — TEXTURE: paint the close-up MATERIAL SURFACE as ONE
+      // continuous full-canvas image (NOT tiled). The surface SVG uses a FIXED viewBox
+      // 1000×1000 (preserveAspectRatio="none") so its feTurbulence noise scale is
+      // identical to the bake regardless of pixel size; we size the data-URI to the
+      // canvas px only for rasterization crispness, then stretch it edge-to-edge with
+      // background-size:100% 100% + no-repeat. base colour sits underneath as a fallback.
       if (collageBgTexture) {
         var tex = collageTextureById(collageBgTexture.id);
         if (tex) {
           var rect = collageCanvasEl.getBoundingClientRect();
-          var shortPx = Math.max(1, Math.min(rect.width || 0, rect.height || 0));
-          // build the tile at a crisp, scale-independent resolution (200px) — the SVG is
-          // vector so it stays sharp; background-size then scales it to the on-screen tile.
-          var tilePx = Math.max(8, Math.round(tex.tileFrac * shortPx));
+          var sw = Math.max(1, Math.round(rect.width || 0));
+          var sh = Math.max(1, Math.round(rect.height || 0));
           collageCanvasEl.style.background = '';
-          collageCanvasEl.style.backgroundColor = tex.bg;
-          collageCanvasEl.style.backgroundImage = 'url("' + collageTextureDataUri(tex, 200) + '")';
-          collageCanvasEl.style.backgroundRepeat = 'repeat';
-          collageCanvasEl.style.backgroundSize = tilePx + 'px ' + tilePx + 'px';
+          collageCanvasEl.style.backgroundColor = tex.base;
+          collageCanvasEl.style.backgroundImage = 'url("' + collageTextureDataUri(tex, sw, sh) + '")';
+          collageCanvasEl.style.backgroundRepeat = 'no-repeat';
+          collageCanvasEl.style.backgroundSize = '100% 100%';
           collageCanvasEl.style.backgroundPosition = '0 0';
           return;
         }
@@ -10417,9 +10347,12 @@
       syncCollageGradientUi();
       syncCollageTreatmentsUi();
     }
-    // v2.1 round 242 (Terry) — build the procedural TEXTURE swatch grid (idempotent).
-    // Each swatch previews its pattern via the SAME tile() markup used by the canvas +
-    // bake (a tile data-URI tiled small inside the swatch), and clicking applies it.
+    // v2.1 round 244 (Terry) — build the material-surface swatch grid (idempotent). Each
+    // swatch previews the SAME surface SVG the canvas + bake use (a full-surface data-URI,
+    // no repeat). Because the surface fills a 1000-unit viewBox, showing it 1:1 in a ~28px
+    // swatch would squeeze the whole surface to static; instead we ZOOM IN via background-
+    // size>100% so a legible close-up crop of the material's relief reads in the swatch.
+    // (Presentation-only — the canvas + bake use 100% 100%.) Clicking applies it.
     var collageTextureWired = false;
     function buildCollageTextureUi() {
       if (collageTextureWired) return;
@@ -10430,13 +10363,11 @@
       COLLAGE_TEXTURES.forEach(function (t) {
         var b = document.createElement('button');
         b.type = 'button'; b.className = 'ec-grad-swatch'; b.dataset.texId = t.id;
-        // Preview: fill with the bg colour + a small repeat of the tile so the pattern
-        // reads inside the ~28px swatch. The tile SVG is built at 200px (vector → crisp);
-        // background-size pins it small. ~10px tiles show 2–3 repeats per swatch.
-        b.style.backgroundColor = t.bg;
-        b.style.backgroundImage = 'url("' + collageTextureDataUri(t, 200) + '")';
-        b.style.backgroundSize = '14px 14px';
-        b.style.backgroundRepeat = 'repeat';
+        b.style.backgroundColor = t.base;
+        b.style.backgroundImage = 'url("' + collageTextureDataUri(t, 120, 120) + '")';
+        b.style.backgroundSize = '340% 340%';
+        b.style.backgroundPosition = 'center';
+        b.style.backgroundRepeat = 'no-repeat';
         b.setAttribute('data-pdr-tooltip', t.name);
         b.setAttribute('aria-label', t.name);
         b.addEventListener('click', function () { setCollageTexture(t.id); });

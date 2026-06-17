@@ -4493,13 +4493,20 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             stable across collapse/expand. Opens a fresh empty collage in
             its own window (no active-highlight state, like People
             Manager). LayoutGrid = the shared collage icon. */}
+        {/* v2.1 round 243 (Terry) — drop the amber accent here. In the
+            collapsed rail the accent ONLY tints the icon (no crescent),
+            and the pale logo-gold (#FEC242) renders far too faint on the
+            light rail to read. With no accent the icon falls back to the
+            standard dark rail colour (text-muted-foreground /
+            hover:text-foreground) — same as Settings / About / the other
+            un-accented rail icons — and reads clearly. Matches the
+            expanded item's now-dark icon treatment. */}
         {iconBtn(
           'Collages',
           <LayoutGrid className="w-4 h-4" />,
           () => onOpenCollages(),
           false,
           false,
-          'amber',
         )}
         {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor entry
             removed. The standalone Date Editor window is replaced by
@@ -4933,8 +4940,23 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   main-view switch. Gold dot in the window matches the
                   collage chrome; LayoutGrid is the same icon the S&D /
                   Memories / Albums "Create collage" actions already use. */}
+              {/* v2.1 round 243 (Terry) — fix the washed-out Collages
+                  row. The label already inherits the standard dark
+                  text-sidebar-foreground (same as People Manager /
+                  Recycle Bin) — but the icon was tinted to the pale
+                  logo-gold accent (#FEC242) at opacity-70, which on the
+                  light side menu read as faint and made the whole row
+                  look unreadable. Keep the amber crescent (the 3px
+                  left bar — readable, and matches the siblings' "has an
+                  accent crescent" structure + the gold-as-collage-chrome
+                  identity), but render the icon in the standard dark
+                  text-sidebar-foreground at full strength. Per this
+                  component's own note, a per-icon text-* class wins over
+                  the accent wrapper's colour, so the icon is now dark and
+                  clearly readable while the crescent stays gold. Only the
+                  menu item's colour styling changes. */}
               <SidebarItem
-                icon={<LayoutGrid className="w-4 h-4 opacity-70" />}
+                icon={<LayoutGrid className="w-4 h-4 text-sidebar-foreground" />}
                 label="Collages"
                 accent="amber"
                 onClick={() => { onOpenCollages(); }}
