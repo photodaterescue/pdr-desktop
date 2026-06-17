@@ -2561,6 +2561,64 @@
        a + so the user knows clicking re-adds it. */
     .filmstrip .thumb.collage-off,
     .filmstrip .video-thumb.collage-off { opacity: 0.32; filter: grayscale(0.6); }
+    /* ===========================================================
+       v2.1 round 256 (Terry) — carousel: the bottom filmstrip shows one
+       thumbnail PER PAGE (+ an add slot) instead of the photo pool. While
+       body.carousel-filmstrip is set, hide the pool tiles + the sticky
+       "Add photos" button (they're kept in the DOM, just hidden, so exit
+       restores them instantly) and show the page thumbs / add slot. */
+    body.carousel-filmstrip #filmstrip > .thumb,
+    body.carousel-filmstrip #filmstrip > .video-thumb,
+    body.carousel-filmstrip #collage-add-photos { display: none !important; }
+    .carousel-thumb {
+      position: relative;
+      flex: 0 0 auto;
+      width: 58px; height: 72px;          /* 1080/1350 (4:5) portrait */
+      padding: 0; margin: 0;
+      border: 2px solid transparent;
+      border-radius: 5px;
+      overflow: visible;                  /* let the × badge overhang the corner */
+      background: #1a1a2e;
+      cursor: pointer;
+      opacity: 0.85;
+      transition: opacity 0.15s, border-color 0.15s, box-shadow 0.15s;
+    }
+    .carousel-thumb:hover { opacity: 1; border-color: rgba(169,156,255,0.45); }
+    .carousel-thumb .carousel-preview { width: 100%; height: 100%; border-radius: 3px; }
+    .carousel-thumb-active { opacity: 1; border-color: #FEC242; box-shadow: 0 0 0 1px #FEC242, 0 0 10px rgba(254,194,66,0.35); }
+    /* 1..N page-number badge, bottom-left corner. */
+    .carousel-thumb-num {
+      position: absolute; left: 2px; bottom: 2px;
+      min-width: 14px; height: 14px; padding: 0 3px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(15,15,24,0.85); color: #fff;
+      font-size: 9.5px; line-height: 1; font-weight: 600;
+      border-radius: 3px; pointer-events: none; z-index: 3;
+    }
+    /* × remove badge — overhangs the top-right corner (round 248/251 style). */
+    .carousel-thumb-x {
+      display: flex; align-items: center; justify-content: center;
+      position: absolute; top: -5px; right: -5px;
+      width: 15px; height: 15px; border-radius: 50%;
+      background: rgba(15,15,24,0.95); border: 1px solid rgba(255,255,255,0.7);
+      color: #fff; font-size: 12px; line-height: 1; cursor: pointer; z-index: 4;
+    }
+    .carousel-thumb-x:hover { background: #e0473a; border-color: #e0473a; }
+    /* The trailing "+" add-page slot — dashed, gold accent, centered +. */
+    .carousel-add {
+      flex: 0 0 auto;
+      width: 58px; height: 72px;
+      display: flex; align-items: center; justify-content: center;
+      border: 1.5px dashed rgba(254,194,66,0.55);
+      border-radius: 5px;
+      background: #12122a;
+      color: #FEC242;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms, color 120ms;
+    }
+    .carousel-add:hover { background: #1b1b3a; border-color: rgba(254,194,66,0.9); color: #ffd778; }
+    .carousel-add:disabled { opacity: 0.4; cursor: not-allowed; border-color: rgba(254,194,66,0.3); color: rgba(254,194,66,0.5); }
+    .carousel-add-plus { font-size: 24px; line-height: 1; font-weight: 300; }
     .filmstrip-pool-hint {
       position: absolute;
       left: 50%; top: 4px;
@@ -2751,6 +2809,18 @@
     .ec-size-name { font-size: 11.5px; color: #d7d2f0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ec-size-sub { font-size: 10px; color: #8f8aa6; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .ec-size-ratio { flex: 0 0 auto; font-size: 9.5px; color: #8f8aa6; letter-spacing: 0.02em; }
+    /* v2.1 round 256 (Terry) — carousel: a subtle "Multi-page" tag (stacked-pages glyph +
+       label) on the Carousel size row, so it reads as a MODE rather than just a size. */
+    .ec-size-pages {
+      flex: 0 0 auto; display: inline-flex; align-items: center; gap: 3px;
+      font-size: 9px; font-weight: 600; letter-spacing: 0.02em;
+      color: #FEC242;
+      background: rgba(254,194,66,0.12);
+      border: 1px solid rgba(254,194,66,0.4);
+      border-radius: 4px; padding: 1px 4px;
+    }
+    .ec-size-pages svg { width: 10px; height: 10px; }
+    .ec-size-row.active .ec-size-pages { color: #ffd778; border-color: #FEC242; background: rgba(254,194,66,0.2); }
     .ec-size-row.active {
       background: rgba(254,194,66,0.16); border-color: #FEC242;
     }
@@ -4192,6 +4262,11 @@
     const dimensionsEl = document.getElementById('dimensions');
     const zoomLabelEl = document.getElementById('zoomLabel');
     const filmstripEl = document.getElementById('filmstrip');
+    // v2.1 round 256 (Terry) — carousel: a 1×1 transparent GIF used as the initial src
+    // for not-yet-loaded <img> tiles. Hoisted to module scope (it used to be a local
+    // inside loadMedia) so renderPagePreview's carousel thumbnail fill can reuse it
+    // without a ReferenceError; loadMedia's filmstrip builder references this same const.
+    const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
     const counterEl = document.getElementById('counter');
     const btnPrev = document.getElementById('btn-prev');
     const btnNext = document.getElementById('btn-next');
@@ -4786,6 +4861,10 @@
       { id: 'ig-square',  group: 'social', platform: 'Instagram', name: 'Square Post',      sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
       { id: 'ig-portrait',group: 'social', platform: 'Instagram', name: 'Portrait Post',    sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
       { id: 'ig-story',   group: 'social', platform: 'Instagram', name: 'Story / Reel',     sub: '1080 × 1920 px', px: { w: 1080, h: 1920 }, ratio: '9:16' },
+      // v2.1 round 256 (Terry) — carousel: a multi-page Instagram canvas. Same field shape
+      // as the IG entries above; `carousel:true` marks it so selectCanvasPreset routes to
+      // carousel mode (enterCarouselFromMenu) instead of the single-size reshapeCollage.
+      { id: 'ig-carousel',group: 'social', platform: 'Instagram', name: 'Carousel',         sub: '1080 × 1350 px · multi-page', px: { w: 1080, h: 1350 }, ratio: '4:5', carousel: true },
       // Facebook
       { id: 'fb-square',  group: 'social', platform: 'Facebook',  name: 'Feed (Square)',    sub: '1080 × 1080 px', px: { w: 1080, h: 1080 }, ratio: '1:1' },
       { id: 'fb-portrait',group: 'social', platform: 'Facebook',  name: 'Feed (Portrait)',  sub: '1080 × 1350 px', px: { w: 1080, h: 1350 }, ratio: '4:5' },
@@ -6647,7 +6726,9 @@
       // visible, then the IntersectionObserver swaps in the real
       // thumbnail when the tile scrolls into view. The .thumb's
       // background:#1a1a2e shows through cleanly during that gap.
-      const TRANSPARENT_PIXEL = 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7';
+      // v2.1 round 256 (Terry) — carousel: TRANSPARENT_PIXEL now lives at module scope
+      // (declared once near filmstripEl) so renderPagePreview can share it; the local
+      // redeclaration here was removed to avoid shadowing/duplication.
 
       const FILMSTRIP_CHUNK_SIZE = 200;
       let buildCursor = 0;
@@ -9158,12 +9239,84 @@
     }
     function updateCollageFilmstrip() {
       if (!collageMode) return;
+      // v2.1 round 256 (Terry) — carousel: in carousel mode the bottom strip shows one
+      // thumbnail PER PAGE (+ an add slot), never the photo POOL. Gate here so any path
+      // that refreshes the pool (renderAllCollage, setItemOn…) routes to the page thumbs.
+      if (carouselMode) { return updateCarouselFilmstrip(); }
       const thumbs = filmstripEl.querySelectorAll('[data-idx]');
       thumbs.forEach((t) => {
         const i = parseInt(t.dataset.idx, 10);
         const it = collageItems[i];
         t.classList.toggle('collage-off', !!(it && !it.on));
       });
+    }
+    // v2.1 round 256 (Terry) — carousel: render the bottom filmstrip as one thumbnail per
+    // PAGE plus a trailing "+" add slot. The photo POOL (the [data-idx] tiles + the sticky
+    // "Add photos" button) is hidden via body.carousel-filmstrip (CSS) rather than removed,
+    // so exitCarouselMode can restore it instantly without rebuilding the pool. Each thumb
+    // is a small renderPagePreview() mini-collage (which now loads only cached 160px thumbs
+    // — FIX A) wrapped in a button: click → switch page; a × (min-gated) removes; the + slot
+    // (max-gated) adds. A 1..N number badge mirrors the side-by-side order.
+    function updateCarouselFilmstrip() {
+      if (!collageMode || !filmstripEl) return;
+      try { document.body.classList.add('carousel-filmstrip'); } catch (_) {}
+      // Drop any previously-built carousel UI (thumbs + add slot); leave the pool tiles
+      // and #collage-add-photos in place (hidden by CSS).
+      filmstripEl.querySelectorAll('.carousel-thumb, .carousel-add').forEach((el) => el.remove());
+      const THUMB_W = 58, THUMB_H = 72;   // ~1080/1350 (4:5) portrait
+      const n = carouselPages.length;
+      for (let i = 0; i < n; i++) {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'carousel-thumb' + (i === carouselActive ? ' carousel-thumb-active' : '');
+        btn.setAttribute('data-pdr-tooltip', 'Page ' + (i + 1));
+        btn.setAttribute('data-pdr-tooltip-side', 'top');
+        // The active page's live edits aren't in carouselPages[active] until a snapshot,
+        // so render the active thumb from the LIVE snapshot; others from their stored page.
+        const snap = (i === carouselActive) ? snapshotCollage() : carouselPages[i];
+        const prev = renderPagePreview(snap, THUMB_W, THUMB_H);
+        btn.appendChild(prev);
+        const num = document.createElement('span');
+        num.className = 'carousel-thumb-num';
+        num.textContent = String(i + 1);
+        btn.appendChild(num);
+        if (carouselPages.length > CAROUSEL_MIN) {
+          const x = document.createElement('span');
+          x.className = 'carousel-thumb-x';
+          x.setAttribute('aria-label', 'Remove page ' + (i + 1));
+          x.setAttribute('data-pdr-tooltip', 'Remove this page');
+          x.setAttribute('data-pdr-tooltip-side', 'top');
+          x.innerHTML = '&times;';
+          const idx = i;
+          x.addEventListener('click', (e) => {
+            e.stopPropagation();
+            removeCarouselPage(idx);   // rebuilds the strip itself
+          });
+          btn.appendChild(x);
+        }
+        const idx = i;
+        btn.addEventListener('click', () => {
+          setCarouselActivePage(idx);   // rebuilds the strip itself
+        });
+        filmstripEl.appendChild(btn);
+      }
+      const add = document.createElement('button');
+      add.type = 'button';
+      add.className = 'carousel-add';
+      add.innerHTML = '<span class="carousel-add-plus">+</span>';
+      if (carouselPages.length >= CAROUSEL_MAX) {
+        add.disabled = true;
+        add.setAttribute('data-pdr-tooltip', 'Maximum 10 pages');
+      } else {
+        add.setAttribute('data-pdr-tooltip', 'Add a page');
+      }
+      add.setAttribute('data-pdr-tooltip-side', 'top');
+      add.addEventListener('click', () => {
+        if (carouselPages.length >= CAROUSEL_MAX) return;
+        const newIdx = addCarouselPage();           // appends a blank page + rebuilds strip
+        if (newIdx >= 0) setCarouselActivePage(newIdx);   // jump to it (rebuilds strip again)
+      });
+      filmstripEl.appendChild(add);
     }
 
     function gridArrange() {
@@ -9332,6 +9485,15 @@
       const sb = document.createElement('span'); sb.className = 'ec-size-sub'; sb.textContent = p.sub;
       txt.appendChild(nm); txt.appendChild(sb);
       row.appendChild(cue); row.appendChild(txt);
+      // v2.1 round 256 (Terry) — carousel: a subtle stacked-pages "Multi-page" tag so the
+      // Carousel row reads as a MODE, not just another size. Sits before the ratio cue.
+      if (p.carousel) {
+        row.classList.add('ec-size-row-carousel');
+        const tag = document.createElement('span');
+        tag.className = 'ec-size-pages';
+        tag.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="7" y="3" width="13" height="13" rx="2"></rect><path d="M3 8v11a2 2 0 0 0 2 2h11"></path></svg><span>Multi-page</span>';
+        row.appendChild(tag);
+      }
       if (p.ratio) { const rt = document.createElement('span'); rt.className = 'ec-size-ratio'; rt.textContent = p.ratio; row.appendChild(rt); }
       row.addEventListener('click', () => selectCanvasPreset(p));
       return row;
@@ -9563,6 +9725,10 @@
         updateUndoButtons();
       }
       collagePendingSnap = null;
+      // v2.1 round 256 (Terry) — carousel P3: an edit to the live (active) page should be
+      // reflected in its bottom thumbnail. The active thumb renders from the live snapshot,
+      // so just rebuild the strip after each committed change while in carousel mode.
+      if (carouselMode) { try { updateCarouselFilmstrip(); } catch (_) {} }
     }
     function restoreCollageSnapshot(snapStr) {
       let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
@@ -11195,7 +11361,7 @@
       });
     }
     function enterCarouselMode(n) {
-      // The current live collage becomes page 0; pages 1..n-1 are blank.
+      // v2.1 round 257 (Terry) — starting a carousel CLEARS the collage: ALL pages blank.
       carouselMode = true;
       // v2.1 round 255 (Terry) — carousel P2: mark the body so the side-by-side CSS
       // (track flex + stage overflow) applies. Set BEFORE reshapeCollage so the layout
@@ -11207,14 +11373,20 @@
       // NB: its layoutCanvasSize() now routes to layoutCarousel(), which safely no-ops
       // while the track/pages don't exist yet (built below).
       try { reshapeCollage(CAROUSEL_ASPECT, CAROUSEL_SIZE_ID, { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h }); } catch (_) {}
-      carouselPages = [ snapshotCollage() ];   // STRING (snapshotCollage returns JSON)
+      // v2.1 round 257 (Terry) — ALL pages start blank (incl. page 0). Restoring a blank
+      // page with carouselMode already true uses the carousel restore path (no files[]
+      // re-sync), so the live canvas truly empties — honouring the "clears your photos" warning.
       const count = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
-      for (let i = 1; i < count; i++) carouselPages.push(blankPageSnapshot());
+      carouselPages = [];
+      for (let i = 0; i < count; i++) carouselPages.push(blankPageSnapshot());
       carouselActive = 0;
+      try { restoreCollageSnapshot(carouselPages[0]); } catch (_) {}
       // v2.1 round 255 (Terry) — carousel P2: build the side-by-side track (active page
       // hosts the real #collage-canvas; others are previews) + size everything.
       buildCarouselTrack();
       layoutCarousel();
+      // v2.1 round 256 (Terry) — carousel P3: swap the bottom strip to page thumbnails.
+      updateCarouselFilmstrip();
     }
     function exitCarouselMode() {
       // Collapse back to the active page as the single live collage. carouselPages
@@ -11233,9 +11405,17 @@
         if (track && track.parentNode) track.parentNode.removeChild(track);
       } catch (_) {}
       try { document.body.classList.remove('carousel-mode'); } catch (_) {}
+      // v2.1 round 256 (Terry) — carousel P3: drop the page thumbnails + the pool-hiding
+      // class so the normal photo-pool filmstrip (its [data-idx] tiles + Add photos) shows
+      // again, then re-sync the pool's keep/sideline state for the now-single collage.
+      try {
+        if (filmstripEl) filmstripEl.querySelectorAll('.carousel-thumb, .carousel-add').forEach((el) => el.remove());
+        document.body.classList.remove('carousel-filmstrip');
+      } catch (_) {}
       // Reset the view transform onto #collage-canvas (applyCollageZoom now targets the
       // canvas again) and re-fit via the normal single-collage path.
       try { layoutCanvasSize(); } catch (_) {}
+      try { updateCollageFilmstrip(); } catch (_) {}
     }
     function setCarouselActivePage(i) {
       if (!carouselMode || i < 0 || i >= carouselPages.length || i === carouselActive) return;
@@ -11247,6 +11427,8 @@
       // NEW active slot + re-render the other previews, then re-size the track.
       buildCarouselTrack();
       layoutCarousel();
+      // v2.1 round 256 (Terry) — carousel P3: move the active highlight to the new page.
+      updateCarouselFilmstrip();
     }
     function addCarouselPage() {
       if (carouselPages.length >= CAROUSEL_MAX) return -1;
@@ -11255,6 +11437,8 @@
       // (more pages → smaller boxes). The active page is unchanged.
       buildCarouselTrack();
       layoutCarousel();
+      // v2.1 round 256 (Terry) — carousel P3: show the new page's thumb (+ may now hit max).
+      updateCarouselFilmstrip();
       return carouselPages.length - 1;
     }
     function removeCarouselPage(i) {
@@ -11268,6 +11452,8 @@
       // re-homed if it shifted) + re-fit (fewer pages → larger boxes).
       buildCarouselTrack();
       layoutCarousel();
+      // v2.1 round 256 (Terry) — carousel P3: drop the removed page's thumb + re-number.
+      updateCarouselFilmstrip();
     }
     // ─── Carousel (multi-page collages) — PHASE 2: side-by-side render ──────
     // v2.1 round 255 (Terry) — carousel P2: render N pages of 1080×1350 side by side in
@@ -11346,7 +11532,16 @@
           cell.style.top = ((it.yFrac || 0) * boxH) + 'px';
           cell.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
           const img = document.createElement('img');
-          img.src = getFileSrc(it.bgRemovedPath || it.path);
+          // v2.1 round 256 (Terry) — carousel: load the CACHED 160px thumbnail, NOT the
+          // full-res file. Setting img.src = getFileSrc(...) made every preview tile (and,
+          // with many pages × many tiles, the bottom page-thumbnails too) decode a
+          // multi-megabyte original — the GPU driver-hang crash fetchThumb's own comment
+          // warns about. Build the img with no real src synchronously (layout stays sync),
+          // then fill it from the shared thumbnail cache asynchronously.
+          img.src = TRANSPARENT_PIXEL;
+          (function (imEl, srcPath) {
+            fetchThumb(srcPath).then(function (url) { if (url) imEl.src = url; }).catch(function () {});
+          })(img, it.bgRemovedPath || it.path);
           img.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;display:block;';
           // Best-effort crop/pan via object-position: centre of the visible crop region.
           try {
@@ -11493,8 +11688,29 @@
     // Apply a Canvas Size preset object.
     function selectCanvasPreset(p) {
       if (!p) return;
+      // v2.1 round 256 (Terry) — carousel: a carousel preset is a MODE, not a single
+      // canvas size — route to enterCarouselFromMenu so we don't fall through to the
+      // single-size reshapeCollage (which would flatten it back to one page).
+      if (p && p.carousel) { enterCarouselFromMenu(p); return; }
       reshapeCollage(presetAspect(p), p.id, { w: p.px.w, h: p.px.h });
       try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p.id); } catch (_) {}
+    }
+    // v2.1 round 256 (Terry) — carousel: enter carousel mode from the Canvas Size menu.
+    // If already in carousel mode this is a no-op (the size is fixed at ig-carousel). If
+    // the current single collage has any photos/text, warn that starting a carousel
+    // clears them; on confirm, blank the live collage FIRST (so every page — including
+    // page 0 that enterCarouselMode snapshots — starts empty, matching the warning) then
+    // enter at the default page count. Persists the sticky last-pick like selectCanvasPreset.
+    function enterCarouselFromMenu(p) {
+      if (carouselMode) { syncCanvasSizeSelection(); return; }
+      const nonEmpty = collageItems.some((it) => it.on && !isVideoPath(it.path)) || (collageTexts && collageTexts.length > 0);
+      if (nonEmpty) {
+        if (!window.confirm('Starting a carousel will clear the current photos. Continue?')) return;
+      }
+      // v2.1 round 257 (Terry) — enterCarouselMode now starts ALL pages blank (it clears
+      // the live collage via the carousel restore path), so no separate pre-clear here.
+      enterCarouselMode(CAROUSEL_DEFAULT);
+      try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p && p.id ? p.id : CAROUSEL_SIZE_ID); } catch (_) {}
     }
     // Paint the gold highlight on whichever preset row matches collageSizeId, and
     // clear it from the rest. Also keep the legacy .ec-shape-btn active sync as a
