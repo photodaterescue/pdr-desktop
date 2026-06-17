@@ -2298,6 +2298,8 @@
     body.collage-mode .enhance-panel { border-left-color: rgba(254, 194, 66, 0.5); width: 376px; }
     body.collage-mode .filmstrip-wrap { border-top-color: rgba(254, 194, 66, 0.5); }
     body.collage-mode #enhance-pin { display: none !important; }   /* beats the inline display:flex on the button */
+    /* v2.1 round 261 (Terry) — grab-to-pan: grabbing cursor while dragging the empty canvas/margin to pan the zoomed view. */
+    body.collage-panning #collage-stage, body.collage-panning #collage-stage * { cursor: grabbing !important; }
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     /* v2.1 round 203 (Terry) — collage wears gold: the corner resize dots,
@@ -12409,17 +12411,45 @@
         try { selectCollageItem(null); } catch (_) {}
         try { selectText(null); } catch (_) {}
       }
+      // v2.1 round 261 (Terry) — GRAB-TO-PAN the zoomed view. Pressing the empty canvas
+      // backdrop or the dark margin and DRAGGING pans the view (collagePanX/Y) while zoomed
+      // in (collageUserZoom>1) — so you can move around a zoomed / wide carousel canvas and
+      // reach a spanning photo's resize handles. A plain CLICK (no drag, or any press at fit
+      // zoom) keeps the round-206 behaviour: clicking the canvas selects the background,
+      // clicking the dark margin deselects. Tiles/text/handles stopPropagation on their own
+      // pointerdown, so reaching here means the empty area. (move/up handlers below.)
+      let collagePanDrag = null;
       collageStageEl.addEventListener('pointerdown', (e) => {
-        if (e.target === collageCanvasEl) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
-        // v2.1 round 206 (Terry) — a click on the dark margin AROUND the canvas
-        // (the stage padding / any non-canvas, non-tile target outside the paper)
-        // deselects everything (tile / text / background). Tiles, text layers and
-        // their handles live INSIDE #collage-canvas and stopPropagation on their
-        // own pointerdown, so reaching here with a target that isn't the canvas
-        // and isn't inside it means the empty dark area was clicked. Clicking the
-        // canvas BACKGROUND itself is handled above (selects the bg) — unchanged.
-        else if (!collageCanvasEl.contains(e.target)) { collapseAllSubcatsOnDeselect(); }
+        if (e.button !== 0) return;
+        const onCanvas = (e.target === collageCanvasEl);
+        const onMargin = !collageCanvasEl.contains(e.target);
+        if (!onCanvas && !onMargin) return;   // a tile/text inside the canvas → its own handler
+        collagePanDrag = { sx: e.clientX, sy: e.clientY, px: collagePanX, py: collagePanY, onCanvas, moved: false, id: e.pointerId };
+        try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
       });
+      collageStageEl.addEventListener('pointermove', (e) => {
+        if (!collagePanDrag || e.pointerId !== collagePanDrag.id) return;
+        if (collageUserZoom <= 1) return;   // nothing to pan at fit zoom
+        const dx = e.clientX - collagePanDrag.sx, dy = e.clientY - collagePanDrag.sy;
+        if (!collagePanDrag.moved && Math.hypot(dx, dy) < 4) return;   // click-vs-drag threshold
+        collagePanDrag.moved = true;
+        try { document.body.classList.add('collage-panning'); } catch (_) {}
+        collagePanX = collagePanDrag.px + dx;
+        collagePanY = collagePanDrag.py + dy;
+        applyCollageZoom();
+      });
+      const endCollagePan = (e) => {
+        if (!collagePanDrag || (e && e.pointerId !== collagePanDrag.id)) return;
+        const wasDrag = collagePanDrag.moved, onCanvas = collagePanDrag.onCanvas;
+        try { collageStageEl.releasePointerCapture(collagePanDrag.id); } catch (_) {}
+        collagePanDrag = null;
+        try { document.body.classList.remove('collage-panning'); } catch (_) {}
+        if (wasDrag) return;   // we panned — don't select/deselect on release
+        if (onCanvas) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
+        else { collapseAllSubcatsOnDeselect(); }
+      };
+      collageStageEl.addEventListener('pointerup', endCollagePan);
+      collageStageEl.addEventListener('pointercancel', endCollagePan);
       // v2.1 round 206 (Terry) — the stage is centred inside #collage-root with a
       // dark background; if the click lands on that outer area (e.g. above/below
       // the centred stage) deselect too. Same guard: only when the target is the
