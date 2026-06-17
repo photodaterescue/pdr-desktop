@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { motion, Variants } from "framer-motion";
-import { HardDrive, PlayCircle, ShieldCheck, ArrowRight, Check, LayoutDashboard, Sparkles, CalendarClock, Network, Users, HelpCircle } from "lucide-react";
+import { HardDrive, PlayCircle, ShieldCheck, ArrowRight, Check, LayoutDashboard, Sparkles, CalendarClock, Network, Users, HelpCircle, LayoutGrid } from "lucide-react";
 import { Button } from "@/components/ui/custom-button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Card } from "@/components/ui/custom-card";
@@ -511,7 +511,9 @@ export default function Home() {
             </p>
           )}
           {!cardsLocked && <div className="mb-3" />}
-          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 ${cardsLocked ? 'opacity-60' : ''}`}>
+          {/* v2.1 round 262 (Terry) — 6-up so the Collages tile joins
+              the app showcase row on the same line as the other five. */}
+          <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-3 ${cardsLocked ? 'opacity-60' : ''}`}>
             <ShowcaseCard
               accent="lavender"
               icon={<LayoutDashboard className="w-5 h-5" />}
@@ -554,6 +556,25 @@ export default function Home() {
               onClick={handleAppCard(async () => {
                 const { openPeopleWindow } = await import('@/lib/electron-bridge');
                 await openPeopleWindow();
+              })}
+            />
+            {/* v2.1 round 262 (Terry) — Collages tile. Secondary creative
+                action: it sits LAST in the showcase row so the core
+                import / find-your-photos flow above stays primary. Opens
+                an EMPTY collage (no filePaths) via the same opener the
+                Collages side-menu uses, so the user lands on a fresh
+                canvas ready for the in-collage "Add photos". LayoutGrid +
+                amber accent mirror the side-menu's gold-as-collage-chrome
+                identity (round 243). */}
+            <ShowcaseCard
+              accent="amber"
+              icon={<LayoutGrid className="w-5 h-5" />}
+              title="Collages for Print & Social Media"
+              description="Design multi-photo collages & carousels, export ready to post or print."
+              locked={cardsLocked}
+              onClick={handleAppCard(async () => {
+                const { openCollageComposer } = await import('@/lib/electron-bridge');
+                await openCollageComposer();
               })}
             />
           </div>
