@@ -2185,6 +2185,11 @@
     /* Selection ring (mirrors .collage-item.selected — gold in collage mode). */
     #collage-chrome-box .chx-ring { position: absolute; inset: 0; outline: 2px solid #FEC242; outline-offset: 0; pointer-events: none; }
     #collage-chrome-box.locked .chx-ring { outline-style: dashed; }
+    /* v2.1 round 268 (Terry) — the box BODY is a drag surface for the SELECTED tile, so the
+       photo can be grabbed-to-move ANYWHERE inside its selection box, including where it
+       overhangs into the dark margin (the clipped tile content isn't there to grab). Appended
+       BEFORE the corner/rotate handles so those still win at the edges. */
+    #collage-chrome-box .chx-body { position: absolute; inset: 0; pointer-events: auto; cursor: move; }
     /* Overlay handles re-enable pointer events (the container is pass-through). They
        reuse the SAME visual + ±7px offsets as the in-canvas tile handles. */
     #collage-chrome-box .chx { position: absolute; pointer-events: auto; }
@@ -3086,7 +3091,9 @@
        dimmed shared classes — .frame-palette / .enhance-presets-label —
        which also matched the background palette + its labels.) */
     .enhance-tile-controls { display: flex; flex-direction: column; gap: 16px; }
-    body.collage-mode.collage-no-tile .enhance-tile-controls { opacity: 0.4; pointer-events: none; }
+    /* v2.1 round 268 (Terry) — keep the per-photo sections dimmed when no tile is selected
+       (they don't apply yet), but LESS dim than before (0.4 → 0.6) so they're still readable. */
+    body.collage-mode.collage-no-tile .enhance-tile-controls { opacity: 0.6; pointer-events: none; }
     /* Controls that only make sense inside a collage (e.g. per-photo
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
@@ -3230,7 +3237,10 @@
     .enhance-collapse { padding: 0; }
     .enhance-collapse > summary {
       list-style: none; cursor: pointer; outline: none;
-      font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #8a8a93;
+      /* v2.1 round 268 (Terry) — section labels were too dim to read (#8a8a93); lift to a
+         clearly-readable secondary grey while staying below full-white (still reads as a label,
+         not a heading). The per-photo sections' extra "disabled" dim is eased separately. */
+      font-size: 11px; letter-spacing: 0.04em; text-transform: uppercase; color: #b6b6c0;
       display: flex; align-items: center; gap: 6px; padding: 2px 0; user-select: none;
     }
     .enhance-collapse > summary::-webkit-details-marker { display: none; }
@@ -7328,6 +7338,8 @@
       const box = document.createElement('div');
       box.id = 'collage-chrome-box';
       const ring = document.createElement('div'); ring.className = 'chx-ring';
+      // v2.1 round 268 (Terry) — drag surface filling the box interior (see CSS).
+      const body = document.createElement('div'); body.className = 'chx-body';
       const rTL = document.createElement('div'); rTL.className = 'chx chx-res chx-res-tl'; rTL.setAttribute('data-pdr-tooltip', 'Resize');
       const rTR = document.createElement('div'); rTR.className = 'chx chx-res chx-res-tr'; rTR.setAttribute('data-pdr-tooltip', 'Resize');
       const rBL = document.createElement('div'); rBL.className = 'chx chx-res chx-res-bl'; rBL.setAttribute('data-pdr-tooltip', 'Resize');
@@ -7345,6 +7357,7 @@
       tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
       tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
       box.appendChild(ring);
+      box.appendChild(body);
       box.appendChild(rTL); box.appendChild(rTR); box.appendChild(rBL); box.appendChild(rBR);
       box.appendChild(rot); box.appendChild(rem); box.appendChild(badge); box.appendChild(tbar);
       collageChromeEl.appendChild(box);
@@ -7356,6 +7369,11 @@
       // stop it here defensively so an overlay-handle press can NEVER bubble to the stage's
       // pointerdown (which would otherwise start a view-pan, since the handle DOM sits
       // OUTSIDE #collage-canvas and the stage treats anything not-in-the-canvas as margin).
+      // v2.1 round 268 (Terry) — body = grab-to-move the SELECTED tile from ANYWHERE inside its
+      // box (over the carousel OR the dark margin). startItemDrag routes locked→view-pan,
+      // unlocked→move; stopPropagation stops the stage's pointerdown from ALSO starting a pan
+      // (the fix for "the canvas is being moved with the photo" when grabbing over the black).
+      body.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemDrag(collageSelected, e); });
       rTL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tl'); });
       rTR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tr'); });
       rBL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'bl'); });
@@ -11979,9 +11997,15 @@
       const zoom = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, Math.min(N, fitZoom)));
       collageUserZoom = zoom;
       // transform-origin 0 0: bring slice idx's left edge to x=0, then centre it horizontally.
-      const sliceW = (fitW / N) * zoom;
-      collagePanX = -(idx / N) * fitW * zoom + Math.max(0, (availW - sliceW) / 2);
-      collagePanY = (availH - fitH * zoom) / 2;
+      // v2.1 round 268 (Terry) — #collage-stage flex-CENTERS the (unscaled) canvas, so its
+      // base top-left already sits at (availW-fitW)/2,(availH-fitH)/2. The old pan used
+      // (avail-fit*zoom)/2, which DOUBLE-counted that flex offset and dropped the (short, wide)
+      // carousel to the bottom of the stage. With transform-origin 0 0 the correction to
+      // re-centre the scaled canvas is fit*(1-zoom)/2; for a slice, shift by the slice's
+      // fractional centre. (availW/availH cancel against the flex base, so they're not used
+      // for the pan — availH is still used above for the fit-zoom.)
+      collagePanX = fitW / 2 - ((idx + 0.5) / N) * fitW * zoom;
+      collagePanY = fitH * (1 - zoom) / 2;
       applyCollageZoom();
     }
     // renderCarouselGuides() — faint vertical divider lines marking the N−1 slice
@@ -12991,15 +13015,14 @@
         // the canvas in the stage's content box — same avail-padding math as
         // scrollViewToSlice. At/above fit we keep the EXACT cursor-anchored pan below.
         if (z1 < 1) {
-          const cs = getComputedStyle(collageStageEl);
-          const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
-          const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
-          const availW = collageStageEl.clientWidth - padL - padR;
-          const availH = collageStageEl.clientHeight - padT - padB;
+          // v2.1 round 268 (Terry) — below-fit centring. #collage-stage flex-centres the
+          // UNSCALED canvas, so with transform-origin 0 0 the only correction to re-centre the
+          // scaled canvas is fit*(1-z)/2. The old (avail-fit*z)/2 double-counted the flex
+          // offset and pushed the (short, wide) carousel to the BOTTOM of the stage.
           const fitW = collageCanvasEl.clientWidth || 0;
           const fitH = collageCanvasEl.clientHeight || 0;
-          collagePanX = (availW - fitW * z1) / 2;
-          collagePanY = (availH - fitH * z1) / 2;
+          collagePanX = fitW * (1 - z1) / 2;
+          collagePanY = fitH * (1 - z1) / 2;
           collageUserZoom = z1;
           applyCollageZoom();
           return;
