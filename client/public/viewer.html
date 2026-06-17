@@ -1734,6 +1734,10 @@
       font-variant-numeric: tabular-nums;
       font-weight: 500;
     }
+    /* v2.1 round 252 (Terry) — click any slider's value to TYPE a number into it. */
+    .enhance-val { cursor: text; }
+    .enhance-val:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
+    .enhance-val-edit { width: 3.4em; background: rgba(255,255,255,0.08); border: 1px solid rgba(169,156,255,0.55); border-radius: 4px; color: #cfc8ff; font: inherit; text-align: right; padding: 0 3px; outline: none; }
     .enhance-slider {
       -webkit-appearance: none;
       appearance: none;
@@ -2964,6 +2968,13 @@
        swatch but an empty dashed placeholder (non-interactive this round). */
     .ec-grad-swatch.ec-grad-empty { background: transparent; border: 1px dashed rgba(169,156,255,0.35); box-shadow: none; cursor: default; }
     .ec-grad-swatch.ec-grad-empty:hover { border-color: rgba(169,156,255,0.35); }
+    /* v2.1 round 252 (Terry) — CUSTOM gradient slots are now functional: empty slot saves the
+       current gradient (+), filled slot applies it, the × (top-right) clears it. */
+    .ec-grad-custom-slot { position: relative; display:flex; align-items:center; justify-content:center; overflow: visible; }
+    .ec-grad-slot-plus { color: rgba(169,156,255,0.6); font-size: 15px; line-height: 1; }
+    .ec-grad-custom-slot.ec-grad-empty { cursor: pointer; }   /* override round-251's default cursor — empty slots ARE clickable now */
+    .ec-grad-slot-x { position:absolute; top:-4px; right:-4px; width:14px; height:14px; border-radius:50%; background:rgba(15,15,24,0.95); border:1px solid rgba(255,255,255,0.7); color:#fff; font-size:12px; line-height:1; display:flex; align-items:center; justify-content:center; cursor:pointer; z-index:3; }
+    .ec-grad-slot-x:hover { background:#e0473a; border-color:#e0473a; }
     .ec-ctgl-group { display: flex; gap: 6px; }
     .ec-grad-row { display: flex; align-items: center; gap: 8px; }
     .ec-grad-stops-label, .ec-grad-stop-hint { font-size: 11px; color: #9a93c8; }
@@ -3312,16 +3323,11 @@
             <div id="collage-gradient-custom" style="margin-top:10px">
               <!-- v2.1 round 250 (Terry) — "Custom" section header -->
               <div class="ec-grad-section-label" style="margin-top:12px">Custom</div>
-              <!-- v2.1 round 251 (Terry) — CUSTOM: 6 empty slots. Layout only this round; saving
-                   your own gradients into them comes next. Non-interactive (disabled) for now. -->
-              <div id="collage-gradient-custom-slots" class="ec-grad-presets">
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-                <button type="button" class="ec-grad-swatch ec-grad-empty" aria-label="Empty custom slot" disabled></button>
-              </div>
+              <!-- v2.1 round 252 (Terry) — CUSTOM: 6 functional slots. Populated + wired by
+                   renderCustomGradientSlots() / buildCollageGradientUi(): an empty slot saves
+                   the CURRENT gradient, a filled slot applies it, the × clears it. Persisted
+                   in localStorage. (Round 251 shipped these as static disabled placeholders.) -->
+              <div id="collage-gradient-custom-slots" class="ec-grad-presets"></div>
               <!-- v2.1 round 251 (Terry) — MOVED UP: Colours row + palette host now sit directly
                    under the Custom slots, above Linear/Radial/Mesh + Angle/Blend. -->
               <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
@@ -3342,7 +3348,10 @@
                  the current colours; the controls shown below depend on the type:
                  Linear → Angle + Blend sliders; Radial → a draggable epicentre on the
                  canvas + a Strength slider. -->
-              <div class="ec-grad-dirs" id="collage-gradient-types" role="group" aria-label="Gradient type">
+              <!-- v2.1 round 252 (Terry) — margin-top 16px: after the round-251 reorder the type
+                   row sat cramped against Colours (the palette-host between them collapses to ~0
+                   height when no stop is armed). Was effectively 0; now 16px for clear separation. -->
+              <div class="ec-grad-dirs" id="collage-gradient-types" role="group" aria-label="Gradient type" style="margin-top:16px">
                 <button type="button" class="ec-grad-dir" data-kind="linear" data-pdr-tooltip="Linear — a straight sweep at any angle">
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-lin" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-lin)"/></svg>
                   Linear
@@ -10402,6 +10411,75 @@
       try { positionBgPalette(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
     }
+    // v2.1 round 252 (Terry) — TYPE A NUMBER into any slider's value. Every slider
+    // shows its value in a <span class="enhance-val">; clicking it swaps the text for
+    // a temp input so the user can type an exact figure (clamped to the slider's
+    // min/max), then commits back to the slider. The val ids are inconsistent across
+    // sliders, so we find the matching <input type=range> via the DOM, not by id.
+    function findSliderForVal(valEl){
+      var ctrl = valEl.closest('.enhance-control');
+      if (ctrl){ var s = ctrl.querySelector('input[type=range]'); if (s) return s; }
+      var row = valEl.closest('.enhance-label-row');
+      var parent = row ? row.parentElement : valEl.parentElement;
+      return parent ? parent.querySelector('input[type=range]') : null;
+    }
+    function beginValEdit(valEl){
+      if (valEl.dataset.editing === '1') return;
+      var slider = findSliderForVal(valEl);
+      if (!slider) return;
+      valEl.dataset.editing = '1';
+      var orig = valEl.textContent;
+      var num = parseFloat(String(orig).replace(/[^0-9.\-]/g,''));
+      var inp = document.createElement('input');
+      inp.type='text'; inp.inputMode='numeric'; inp.className='enhance-val-edit';
+      inp.value = Number.isFinite(num) ? String(num) : '';
+      valEl.textContent=''; valEl.appendChild(inp); inp.focus(); inp.select();
+      var done=false;
+      function commit(apply){
+        if (done) return; done=true; valEl.dataset.editing='';
+        var clamped=null;
+        if (apply){
+          var v=parseFloat(inp.value);
+          if (Number.isFinite(v)){
+            var mn=parseFloat(slider.min), mx=parseFloat(slider.max);
+            if (Number.isFinite(mn)) v=Math.max(mn,v);
+            if (Number.isFinite(mx)) v=Math.min(mx,v);
+            clamped=v;
+            var isCollage = document.body.classList.contains('collage-mode');
+            if (isCollage && typeof beginCollageChange==='function'){ try{ beginCollageChange(); }catch(_){} }
+            slider.value=v;
+            slider.dispatchEvent(new Event('input',{bubbles:true}));
+            if (!isCollage) slider.dispatchEvent(new Event('change',{bubbles:true}));
+            if (isCollage && typeof commitCollageChange==='function'){ try{ commitCollageChange(); }catch(_){} }
+          }
+        }
+        // The slider's own input handler normally rewrites valEl.textContent (removing our
+        // temp input). If it didn't, restore: the clamped value (applied) or the original.
+        if (valEl.contains(inp)) valEl.textContent = (apply && clamped!=null) ? String(clamped) : orig;
+      }
+      inp.addEventListener('keydown', function(e){ e.stopPropagation(); if (e.key==='Enter'){ e.preventDefault(); commit(true);} else if (e.key==='Escape'){ e.preventDefault(); commit(false);} });
+      inp.addEventListener('blur', function(){ commit(true); });
+      inp.addEventListener('click', function(e){ e.stopPropagation(); });
+    }
+    // v2.1 round 252 (Terry) — CUSTOM gradient slots: save / apply / clear the user's own
+    // gradients. Six slots persisted in localStorage (each = a gradient object or null).
+    // collageBgGradient is the current gradient (linear/radial = {kind,angle,blend,cx,cy,
+    // strength,stops}; mesh = {kind:'mesh',base,blobs}). collageGradientCss(g) previews any
+    // kind; setCollageGradient / setCollageMeshGradient apply it.
+    var collageCustomGradients = (function(){ try{ var a=JSON.parse(localStorage.getItem('pdr-collage-custom-gradients')||'[]'); if(!Array.isArray(a)) a=[]; while(a.length<6) a.push(null); return a.slice(0,6);}catch(_){ return [null,null,null,null,null,null]; } })();
+    function saveCustomGradients(){ try{ localStorage.setItem('pdr-collage-custom-gradients', JSON.stringify(collageCustomGradients)); }catch(_){} }
+    function renderCustomGradientSlots(){
+      var host=document.getElementById('collage-gradient-custom-slots'); if(!host) return;
+      host.innerHTML='';
+      for (var i=0;i<6;i++){
+        var g=collageCustomGradients[i];
+        var b=document.createElement('button'); b.type='button'; b.dataset.slot=i;
+        b.className='ec-grad-swatch ec-grad-custom-slot'+(g?'':' ec-grad-empty');
+        if (g){ b.style.background=collageGradientCss(g); b.setAttribute('data-pdr-tooltip','Your saved gradient — click to apply'); b.innerHTML='<span class="ec-grad-slot-x" aria-label="Remove saved gradient" data-pdr-tooltip="Remove">&times;</span>'; }
+        else { b.setAttribute('data-pdr-tooltip','Empty slot — set up a gradient above, then click here to save it'); b.innerHTML='<span class="ec-grad-slot-plus" aria-hidden="true">+</span>'; }
+        host.appendChild(b);
+      }
+    }
     let collageGradientWired = false;
     function buildCollageGradientUi() {
       if (collageGradientWired) return;
@@ -10571,6 +10649,25 @@
           collageGrain = Math.max(0, Math.min(150, parseInt(grainSlider.value, 10) || 0));   // v2.1 round 249 (Terry) — grain max 150
           if (grainVal) grainVal.textContent = String(collageGrain);
           applyCollageTreatments();
+        });
+      }
+      // v2.1 round 252 (Terry) — CUSTOM gradient slots: populate + wire once (inside the
+      // collageGradientWired guard so the delegated handler attaches a single time). Empty
+      // slot saves the CURRENT gradient; filled slot applies it; the × clears it. Undo is one
+      // step via beginCollageChange/commitCollageChange (apply path; clear is local state).
+      renderCustomGradientSlots();
+      var customHost=document.getElementById('collage-gradient-custom-slots');
+      if (customHost && !customHost.dataset.wired){
+        customHost.dataset.wired='1';
+        customHost.addEventListener('click', function(e){
+          var x = e.target.closest && e.target.closest('.ec-grad-slot-x');
+          var slot = e.target.closest && e.target.closest('.ec-grad-custom-slot');
+          if (!slot) return;
+          var i = parseInt(slot.dataset.slot,10)||0;
+          if (x){ e.stopPropagation(); collageCustomGradients[i]=null; saveCustomGradients(); renderCustomGradientSlots(); return; }
+          var g = collageCustomGradients[i];
+          if (g){ try{ beginCollageChange(); }catch(_){}; if (g.kind==='mesh') setCollageMeshGradient(g); else setCollageGradient(g); try{ commitCollageChange(); }catch(_){}; }
+          else { if (!collageBgGradient) return; collageCustomGradients[i]=JSON.parse(JSON.stringify(collageBgGradient)); saveCustomGradients(); renderCustomGradientSlots(); }
         });
       }
       syncCollageGradientUi();
@@ -13503,6 +13600,14 @@ function zoomTo(newZoom, centreX, centreY) {
       const sCorners = document.getElementById('slider-corners');
       const vCorners = document.getElementById('val-corners');
       if (!panel || !openBtn) return;
+
+      // v2.1 round 252 (Terry) — click any slider's value (.enhance-val) to TYPE a
+      // number. Registered once here (this IIFE always runs at load) so it covers BOTH
+      // the single-photo enhance sliders AND the collage sliders. beginValEdit finds
+      // the matching range input via the DOM (ids are inconsistent) and clamps to
+      // min/max. The temp input stops Enter/Escape propagation so the global viewer
+      // key handlers don't fire while typing.
+      document.addEventListener('click', function(e){ var v = e.target.closest && e.target.closest('.enhance-val'); if (v && !(e.target.closest && e.target.closest('.enhance-val-edit'))) beginValEdit(v); });
 
       const state = {
         brightness: 100,
