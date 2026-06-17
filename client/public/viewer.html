@@ -4523,6 +4523,20 @@
     let collageExportPx = null;   // { w, h } | null
     let collageZTop = 1;
     let collageSelected = null; // currently-selected item (shows handles)
+    // v2.1 round 254 (Terry) — carousel P0: page model. A page = a snapshotCollage() object.
+    // NOTE: snapshotCollage() returns a STRING (JSON); carouselPages therefore holds
+    // STRINGS, and restoreCollageSnapshot is fed those strings verbatim (no re-stringify).
+    let carouselMode = false;        // true while editing a multi-page carousel
+    let carouselPages = [];          // array of page snapshot objects (stored as JSON strings)
+    let carouselActive = 0;          // index hydrated into the LIVE collage globals
+    const CAROUSEL_MAX = 10, CAROUSEL_DEFAULT = 2, CAROUSEL_MIN = 2;
+    // v2.1 round 254 (Terry) — carousel P0: the canvas size every carousel page uses.
+    // 1080×1350 (4:5 portrait). sizeId 'ig-carousel' is a distinct key so the page
+    // snapshots all agree; restore stores collageSizeId verbatim (no preset-table
+    // lookup), so this id round-trips even though it isn't a COLLAGE_PRESETS row.
+    const CAROUSEL_SIZE_ID = 'ig-carousel';
+    const CAROUSEL_EXPORT_PX = { w: 1080, h: 1350 };
+    const CAROUSEL_ASPECT = 1080 / 1350;   // 0.8
     // v2.1 round 253 (Terry) — USER ZOOM for the whole collage canvas (mouse-wheel
     // over the stage). This is a VIEW transform layered ON TOP of the fit: layoutCanvasSize
     // sizes #collage-canvas's box to fill the stage (the "fit"); collageUserZoom is a
@@ -9591,8 +9605,18 @@
       // each by index; (2) any snapshot entry BEYOND that is a clone — tear down
       // the current clone els, then rebuild fresh clone models from the snapshot
       // (path carried in the snapshot) so duplicate + its removal both undo.
-      const nOrig = files.length;
-      // Tear down + drop any existing clones (array position >= nOrig).
+      // v2.1 round 254 (Terry) — carousel P0: per-page photo sets. In carousel mode
+      // a page can hold ANY photos (not the global files[]), so the files[]/idx
+      // mapping above cannot work. Force nOrig = 0: the teardown loop below removes
+      // EVERY existing item el, and the s.items loop then takes the clone branch for
+      // ALL items — rebuilding each tile from its snapshot `path` via buildCollageItemEl
+      // + applySnapItem, independent of files[]. tile.idx is carried through but is
+      // NON-LOAD-BEARING here (never used to look up a file). Outside carousel mode
+      // (carouselMode=false) nOrig is files.length exactly as before → byte-identical
+      // single-collage restore; this branch changes nothing for the non-carousel path.
+      const nOrig = carouselMode ? 0 : files.length;
+      // Tear down + drop any existing items (array position >= nOrig). In carousel
+      // mode nOrig=0 so this clears ALL items; otherwise it drops clones only.
       for (let k = collageItems.length - 1; k >= nOrig; k--) {
         const ex = collageItems[k];
         if (ex && ex.el && ex.el.parentNode) ex.el.parentNode.removeChild(ex.el);
@@ -9890,7 +9914,11 @@
       // overlay nodes; drop the cached refs so they're lazily recreated.
       collageSnapVEl = null; collageSnapHEl = null;
       collageItems.length = 0;
-      files.forEach((fp, i) => {
+      // v2.1 round 254 (Terry) — carousel P0: in carousel mode the tiles are NOT the
+      // global files[] (each page has its own photo set, rebuilt by restoreCollageSnapshot
+      // from the page's stored item paths). Skip the files[] population so this never
+      // clobbers a hydrated carousel page; the bg + text layers are still rebuilt below.
+      if (!carouselMode) files.forEach((fp, i) => {
         const isVid = isVideoPath(fp);
         // enh = this tile's own Enhance state (edited via the side panel
         // when the tile is selected; baked per-tile on save).
@@ -11096,6 +11124,70 @@
         if (collageBgImagePath) { ensureCollageBgTile(); window.pdrEnhanceBridge.setTile(collageBgTile); }
         else selectCollageItem(null);
       }
+    }
+    // ─── Carousel (multi-page collages) — PHASE 0: page model only ──────
+    // v2.1 round 254 (Terry) — carousel P0: a PAGE is a snapshotCollage() value
+    // (a JSON STRING). carouselPages holds those strings; the active page is the one
+    // hydrated into the live collage globals via restoreCollageSnapshot. NO UI / menu /
+    // rendering changes in this phase — just the model + the restore fix above.
+    //
+    // blankPageSnapshot() — a snapshot STRING (same form snapshotCollage() returns)
+    // describing an EMPTY 1080×1350 carousel page: default solid white bg, no tiles, no
+    // text, no gradient/texture/photo, all treatments off, sizeId 'ig-carousel'. Built
+    // by constructing the exact key set snapshotCollage() emits (NOT by mutating live
+    // state), so restoreCollageSnapshot consumes it identically to a real page.
+    function blankPageSnapshot() {
+      return JSON.stringify({
+        bg: '#ffffff', bgImagePath: '', transparent: false,
+        vignette: 0, grain: 0, vignetteShape: 'ellipse',
+        gradient: null, texture: null,
+        bgEnh: null, aspectKey: CAROUSEL_ASPECT,
+        sizeId: CAROUSEL_SIZE_ID, exportPx: { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h },
+        items: [],
+        texts: [],
+        selTextId: null,
+      });
+    }
+    function enterCarouselMode(n) {
+      // The current live collage becomes page 0; pages 1..n-1 are blank.
+      carouselMode = true;
+      // Put the live collage at the carousel size FIRST so page 0's snapshot carries the
+      // same sizeId/exportPx/aspect the blank pages do. reshapeCollage is the existing
+      // size-setting integration point (sets aspect/sizeId/exportPx → relayout → re-tidy).
+      try { reshapeCollage(CAROUSEL_ASPECT, CAROUSEL_SIZE_ID, { w: CAROUSEL_EXPORT_PX.w, h: CAROUSEL_EXPORT_PX.h }); } catch (_) {}
+      carouselPages = [ snapshotCollage() ];   // STRING (snapshotCollage returns JSON)
+      const count = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
+      for (let i = 1; i < count; i++) carouselPages.push(blankPageSnapshot());
+      carouselActive = 0;
+    }
+    function exitCarouselMode() {
+      // Collapse back to the active page as the single live collage. carouselPages
+      // already holds STRINGS, so feed restoreCollageSnapshot the string verbatim
+      // (snapshotCollage → JSON string; restoreCollageSnapshot → JSON.parse).
+      if (carouselMode && carouselPages[carouselActive] != null) {
+        restoreCollageSnapshot(carouselPages[carouselActive]);
+      }
+      carouselMode = false; carouselPages = []; carouselActive = 0;
+    }
+    function setCarouselActivePage(i) {
+      if (!carouselMode || i < 0 || i >= carouselPages.length || i === carouselActive) return;
+      carouselPages[carouselActive] = snapshotCollage();   // persist current edits (STRING)
+      carouselActive = i;
+      restoreCollageSnapshot(carouselPages[carouselActive]);   // STRING, as restore expects
+      try { selectCollageItem(null); } catch (_) {}
+    }
+    function addCarouselPage() {
+      if (carouselPages.length >= CAROUSEL_MAX) return -1;
+      carouselPages.push(blankPageSnapshot());
+      return carouselPages.length - 1;
+    }
+    function removeCarouselPage(i) {
+      if (carouselPages.length <= CAROUSEL_MIN || i < 0 || i >= carouselPages.length) return;
+      carouselPages[carouselActive] = snapshotCollage();   // persist current edits first
+      carouselPages.splice(i, 1);
+      if (carouselActive >= carouselPages.length) carouselActive = carouselPages.length - 1;
+      else if (i < carouselActive) carouselActive--;
+      restoreCollageSnapshot(carouselPages[carouselActive]);   // STRING, as restore expects
     }
     // v2.1 round 226 (Terry) — legacy named-shape setter kept for any old callers /
     // restore paths; routes through the generalized reshape with no preset id and the
