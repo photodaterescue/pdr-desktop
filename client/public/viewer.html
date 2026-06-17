@@ -1582,9 +1582,28 @@
        uppercase summary with a gold ▸ chevron, the body indented one level with a
        faint gold left rule. These carry NEITHER .enhance-collapse NOR a managed id
        in CONTEXTUAL_SECTION_IDS, so the round-231 accordion / observer / round-157
-       persistence never sweep them — they keep independent, sticky open state. */
-    /* No margin-top: the Background section's ::details-content flex gap (14px) already
-       spaces these groups; an extra margin would double the gap. */
+       persistence never sweep them.
+       v2.1 round 246 (Terry) — the groups are now wrapped in .ec-bg-grp-list (below)
+       so the whole list indents ONE level under BACKGROUND, exactly like the Canvas
+       Size groups indent under CANVAS SIZE. Their open/closed state is driven by which
+       style is IN USE (active expanded, other two collapsed — syncCollageBgStyleGroupActive),
+       replacing the round-245 sticky-localStorage state. */
+    /* v2.1 round 246 (Terry) — INDENT WRAPPER for the 3 style groups. Mirrors
+       #ec-canvas-size-list (.ec-size-list): the SAME margin-left + padding-left + faint
+       gold left rule pushes the whole group list ONE level under the BACKGROUND header,
+       so Gradient / Texture / Colour Palette read as children of Background — pixel-for-
+       pixel like Social Media / Prints / Paper / More / Custom nest under CANVAS SIZE.
+       The groups were previously direct flex children of the Background ::details-content
+       (14px gap between each); now they're inside this block wrapper, so it re-creates
+       that inter-group spacing as a flex column with the same 14px gap. The Background
+       section's ::details-content flex gap still spaces THIS wrapper from the fade-row
+       above / Vignette+Grain below. */
+    .ec-bg-grp-list {
+      display: flex; flex-direction: column; gap: 14px;
+      margin-left: 14px;
+      padding-left: 8px;
+      border-left: 1px solid rgba(254, 194, 66, 0.18);
+    }
     .ec-bg-grp { padding: 0; }
     .ec-bg-grp > summary {
       list-style: none; cursor: pointer; outline: none;
@@ -3217,10 +3236,17 @@
             <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The colour above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
             <button id="collage-bg-remove" type="button" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
           </div>
+          <!-- v2.1 round 246 (Terry) — INDENT WRAPPER. The three style groups (Gradient /
+               Texture / Colour Palette) now live inside this .ec-bg-grp-list container so
+               they sit ONE level under the BACKGROUND header — exactly like #ec-canvas-size-list
+               nests Social Media / Prints / Paper / More / Custom under CANVAS SIZE (same
+               margin-left + faint gold left rule). Vignette/Grain stay OUTSIDE the wrapper
+               (they're whole-collage treatments, not bg style groups). -->
+          <div class="ec-bg-grp-list">
           <!-- v2.1 round 245 (Terry) — STYLE GROUP 1 of 3: Gradient. The gradient
-               controls are now wrapped in a collapsible .ec-bg-grp sub-group (collapsed
-               by default, sticky per-group). Its header shows an "in use" pill when a
-               gradient (linear/radial/mesh) is the current background. NOT
+               controls are now wrapped in a collapsible .ec-bg-grp sub-group. Its header
+               shows an "in use" pill when a gradient (linear/radial/mesh) is the current
+               background, and the in-use group auto-EXPANDS (round 246). NOT
                .enhance-collapse / no managed id → invisible to the round-231 accordion. -->
           <details class="ec-bg-grp" id="collage-bg-grad-grp" data-bg-style="gradient">
             <summary data-pdr-tooltip="Gradient backgrounds — preset sweeps plus linear / radial / mesh custom controls"><span>Gradient</span><span class="ec-bg-grp-inuse">In use</span></summary>
@@ -3289,8 +3315,9 @@
             </div>
           </details>
           <!-- v2.1 round 245 (Terry) — STYLE GROUP 2 of 3: Texture. The texture swatch
-               grid is wrapped in its own collapsible .ec-bg-grp sub-group (collapsed by
-               default, sticky). Its header shows "In use" when a texture is the bg. -->
+               grid is wrapped in its own collapsible .ec-bg-grp sub-group. Its header
+               shows "In use" when a texture is the bg, and the group auto-EXPANDS when a
+               texture is the active bg (round 246; the other two collapse). -->
           <details class="ec-bg-grp" id="collage-bg-texture-grp" data-bg-style="texture">
             <summary data-pdr-tooltip="Procedural surface textures — brick, wood, linen and more. Click a swatch to apply it as the background."><span>Texture</span><span class="ec-bg-grp-inuse">In use</span></summary>
             <div class="ec-bg-grp-body">
@@ -3313,11 +3340,14 @@
                image-swatch + transparent checkerboard (the locked specials), AND the
                PALETTES categories sub-group. Header shows "In use" when the bg is a
                solid colour / photo / transparent. Body starts empty; the palette is
-               moved in on selection. Collapsed by default, sticky per-group. -->
+               moved in on selection. v2.1 round 246 (Terry) — open state is now driven
+               by which style is in use (expanded when this is the active bg), not sticky. -->
           <details class="ec-bg-grp" id="collage-bg-palette-grp" data-bg-style="palette">
             <summary data-pdr-tooltip="Solid colours, a photo background, transparent, and the colour collections"><span>Colour Palette</span><span class="ec-bg-grp-inuse">In use</span></summary>
             <div class="ec-bg-grp-body" id="collage-bg-palette-grp-body"></div>
           </details>
+          </div>
+          <!-- v2.1 round 246 (Terry) — /.ec-bg-grp-list (the indent wrapper for the 3 style groups) -->
           <!-- v2.1 round 238 (Terry) — VIGNETTE + GRAIN finishing treatments. Unlike the
                gradient (which is a bg KIND), these apply over the WHOLE collage — over the
                photos AND the background — the classic film look. They work with any bg type
@@ -10077,29 +10107,27 @@
       if (collageBgGradient) active = 'gradient';      // linear / radial / mesh
       else if (collageBgTexture) active = 'texture';
       document.querySelectorAll('#collage-bg-collapse .ec-bg-grp[data-bg-style]').forEach((grp) => {
-        grp.classList.toggle('is-inuse', grp.getAttribute('data-bg-style') === active);
+        const isActive = grp.getAttribute('data-bg-style') === active;
+        grp.classList.toggle('is-inuse', isActive);
+        // v2.1 round 246 (Terry) — the in-use style group is EXPANDED, the other two
+        // COLLAPSED. This runs on every bg change (setters + undo/redo), so switching the
+        // active style moves the expansion to the newly-active group automatically. The
+        // user can still MANUALLY expand a collapsed group to switch styles: picking a
+        // gradient/texture/colour there makes it active → this re-fires → it stays open
+        // and the previously-open one collapses. Guard against redundant writes so we
+        // don't fire the <details> 'toggle' event when nothing actually changed.
+        if (grp.open !== isActive) grp.open = isActive;
       });
     }
-    // v2.1 round 245 (Terry) — restore each Background style group's sticky open state
-    // (default COLLAPSED) and persist it on toggle. Keyed per group by data-bg-style.
-    // Idempotent: the toggle listener is bound once per group (guarded by a dataset flag)
-    // since the collage init build sequence can run more than once.
-    const collageBgStyleGroupKey = (style) => 'pdr-collage-bg-grp-' + String(style || '');
-    function initCollageBgStyleGroups() {
-      document.querySelectorAll('#collage-bg-collapse .ec-bg-grp[data-bg-style]').forEach((grp) => {
-        const style = grp.getAttribute('data-bg-style');
-        const key = collageBgStyleGroupKey(style);
-        let open = false;
-        try { open = localStorage.getItem(key) === '1'; } catch (_) { open = false; }
-        grp.open = open;   // default collapsed unless a previous session opened it
-        if (!grp.dataset.bgGrpWired) {
-          grp.dataset.bgGrpWired = '1';
-          grp.addEventListener('toggle', () => {
-            try { localStorage.setItem(key, grp.open ? '1' : '0'); } catch (_) {}
-          });
-        }
-      });
-    }
+    // v2.1 round 246 (Terry) — the per-group STICKY localStorage open-state (round 245)
+    // was DROPPED. The open/closed state of the three Background style groups is now
+    // driven entirely by which style is IN USE: syncCollageBgStyleGroupActive() expands
+    // the active group and collapses the other two, and it's called immediately after
+    // this in the init sequence (and on every bg change / undo / redo). So there's no
+    // sticky state to restore and no toggle listener to persist. Kept as a no-op stub so
+    // the init call-site (and any stale reference) stays valid; the very next init line
+    // runs syncCollageBgStyleGroupActive() to set the correct open group.
+    function initCollageBgStyleGroups() { /* no-op — open state driven by syncCollageBgStyleGroupActive() */ }
     // v2.1 round 199 (Terry) — kept as thin aliases so every existing call-site
     // (undo/redo restore, the setters below) keeps working unchanged. Both now
     // just refresh the locked background specials; plain-colour rings are handled
@@ -11416,14 +11444,15 @@
       buildCollageGradientUi();
       // v2.1 round 242 (Terry) — build the procedural Texture swatch grid (idempotent).
       buildCollageTextureUi();
-      // v2.1 round 245 (Terry) — restore + persist each Background STYLE group's
-      // open/closed state (Gradient / Texture / Colour Palette). DEFAULT COLLAPSED;
-      // each remembers its own state in its own localStorage key. These are plain
-      // .ec-bg-grp <details> (no .enhance-collapse / managed id), so the round-231
-      // accordion never touches them — independent, sticky open state like the
-      // round-228 Canvas Size groups.
+      // v2.1 round 246 (Terry) — the three Background STYLE groups (Gradient / Texture /
+      // Colour Palette) no longer carry sticky per-group open state (round 245). Their
+      // open/closed state is driven by which style is IN USE: the call below expands the
+      // active group and collapses the other two. initCollageBgStyleGroups() is now a
+      // no-op stub (kept for the call-site). These are plain .ec-bg-grp <details> (no
+      // .enhance-collapse / managed id), so the round-231 accordion never touches them.
       initCollageBgStyleGroups();
-      // Reflect the initial bg kind onto the group headers ("in use" marker).
+      // Reflect the initial bg kind onto the group headers ("in use" marker) AND set the
+      // in-use group open / the others collapsed.
       try { syncCollageBgStyleGroupActive(); } catch (_) {}
       // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
       // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
