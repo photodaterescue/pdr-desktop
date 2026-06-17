@@ -573,22 +573,22 @@ export default function Home() {
               description="Create professional collages for print and social media, ready for posting."
               locked={cardsLocked}
               onClick={handleAppCard(async () => {
-                // v2.1 round 266 (Terry) — pre-position the MAIN window on
-                // Memories→Dates BEFORE opening the collage, so the heavy
-                // Workspace+Memories mount happens hidden behind the new
-                // collage window. Without this the main window stays on the
-                // Welcome route; when a later background/photo pick fires,
-                // main.ts shows+focuses the main window (still on Welcome),
-                // then the round-265 App listener navigates — and the first
-                // Workspace+Memories mount (~1s) is fully visible as a
-                // Welcome→Memories flash. Navigating here moves that mount
-                // to collage-open time (behind the collage window, which
-                // opens in its own window regardless), so the pick lands on
-                // an already-painted Memories→Dates. The round-265 App-level
-                // photoPick.onStart listener stays as a harmless fallback.
-                navigate("/workspace?view=memories");
+                // v2.1 round 267 (Terry) — open the collage FIRST, THEN quietly
+                // move the main window to the WORKSPACE (not Memories) behind the
+                // now-covering collage window. Round 266 navigated to Memories
+                // BEFORE opening the collage, which flashed the main window onto
+                // Memories at collage-open ("they didn't select it") — a view the
+                // user never asked for. Memories is a sub-view INSIDE the Workspace
+                // route (activeView in workspace.tsx), so once the main window is on
+                // /workspace the add-photo pick switches to Memories→Dates instantly
+                // with no fade — matching the already-clean Workspace→Collages→pick
+                // path. Navigating AFTER the collage opens keeps the 300ms Workspace
+                // cross-fade hidden behind the collage, so the user never sees the
+                // main window change; workspace.tsx's photoPick.onStart sets
+                // activeView='memories' (+ Dates) when the pick actually fires.
                 const { openCollageComposer } = await import('@/lib/electron-bridge');
                 await openCollageComposer();
+                navigate("/workspace");
               })}
             />
           </div>

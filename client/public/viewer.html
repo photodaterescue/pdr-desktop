@@ -10633,20 +10633,29 @@
       if (!fp || !collageMode) return;
       if (isVideoPath(fp)) { try { window.alert('Only photos can be used as a background.'); } catch (_) {} return; }
       beginCollageChange();
+      // v2.1 round 267 (Terry) — Background photo now behaves EXACTLY like the
+      // bottom-left "Add photos" (addPhotoToCollage): a NORMAL, UNLOCKED tile at
+      // its natural aspect with a sensible centred size — NOT the round-263 locked,
+      // full-canvas, coverFill (carousel-shaped) tile, which Terry called an "awful
+      // experience" with "no flexibility". The ONLY thing that still marks it as a
+      // background is the z-order: it drops to --collageZBottom so it sits behind
+      // every normal tile (a backdrop the user can freely move / resize / rotate,
+      // and enlarge beyond the pages via the round-266 oversize handles). coverFill
+      // + boxAspect are intentionally NOT set (the legacy coverFill render/bake path
+      // stays only for OLD saved collages); placeCenter gives the same default size
+      // and centring as a normal added tile, and the natural aspect is applied when
+      // the <img> loads, exactly as for an Add-photos tile.
       const it = {
         idx: -1, path: fp, on: true,
-        // Full-canvas box, anchored top-left; coverFill + boxAspect make it fill the canvas.
-        xFrac: 0, yFrac: 0, wFrac: 1, aspect: 1, boxAspect: getCanvasAspect(), rot: 0,
-        // BACK of the stack — below every normal tile (z≥1) and below earlier bg-tiles.
+        xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
+        // BACK of the stack — below every normal tile (z≥1) and earlier bg-tiles.
         z: --collageZBottom, el: null, imgEl: null, clipEl: null,
-        // Locked by default; coverFill makes it read as a background fill.
-        locked: true, coverFill: true,
+        locked: false,
         crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
         bgRemovedPath: null, bgRemoveStrength: 50,
-        // Clean enh (no frame / mask / fade): opacity 1 so the photo reads fully; the
-        // user can still lower it via the Fade slider to reveal the base colour.
         enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
       };
+      placeCenter(it);   // sensible default size + centred, like a normal tile
       collageItems.push(it);
       buildCollageItemEl(it);
       renderCollageItem(it);
