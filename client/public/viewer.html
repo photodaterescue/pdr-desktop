@@ -2964,6 +2964,8 @@
     .ec-grad-row { display: flex; align-items: center; gap: 8px; }
     .ec-grad-stops-label, .ec-grad-stop-hint { font-size: 11px; color: #9a93c8; }
     .ec-grad-stop-hint { margin-left: auto; }
+    /* v2.1 round 250 (Terry) — "Presets" / "Custom" gradient section headers */
+    .ec-grad-section-label { font-size:11px; color:#9a93c8; font-weight:600; letter-spacing:0.04em; text-transform:uppercase; margin:0 0 6px; }
     .ec-grad-stop {
       width: 30px; height: 24px; border-radius: 7px; padding: 0; cursor: pointer;
       border: 1px solid rgba(255,255,255,0.18); background: transparent;
@@ -3299,9 +3301,13 @@
                round 232). Choosing a preset or a custom change makes the gradient
                the bg, swapping away colour/photo/transparent. -->
           <div id="collage-gradient-block">
+            <!-- v2.1 round 250 (Terry) — "Presets" / "Custom" section headers -->
+            <div class="ec-grad-section-label">Presets</div>
             <div id="collage-gradient-presets" class="ec-grad-presets"></div>
             <!-- Custom controls -->
             <div id="collage-gradient-custom" style="margin-top:10px">
+              <!-- v2.1 round 250 (Terry) — "Custom" section header -->
+              <div class="ec-grad-section-label" style="margin-top:12px">Custom</div>
               <!-- v2.1 round 237 (Terry) — TYPE selector replaces the round-236
                  fixed-angle DIRECTION quick-picks (those duplicated the angle slider:
                  each was just a preset angle). Two buttons — Linear / Radial — KEEP
@@ -3350,6 +3356,12 @@
                 <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
                 <span class="ec-grad-stop-hint" id="collage-gradient-stop-hint"></span>
               </div>
+              <!-- v2.1 round 250 (Terry) — the shared Colour Palette (#collage-unified-color)
+                 parks HERE, directly under the gradient colour slots, while a stop is being
+                 edited (collageGradStopEdit != null). When no slot is armed it returns to the
+                 "Colour Palette" style group (#collage-bg-palette-grp-body). See bgPaletteHost
+                 / positionBgPalette. -->
+              <div id="collage-gradient-palette-host"></div>
             </div>
           </div>
             </div>
@@ -10154,6 +10166,10 @@
       // Hooked here because EVERY bg setter routes through markBgLockedSpecialsActive
       // (directly or via markCollageColorActive), incl. the undo/redo restore paths.
       try { syncCollageBgStyleGroupActive(); } catch (_) {}
+      // v2.1 round 250 (Terry) — re-home the bg palette: switching bg kind / picking a
+      // preset / undo-redo can clear the armed gradient stop, so the palette returns to
+      // the Colour Palette group. Self-guards on colorTarget === 'background'.
+      try { positionBgPalette(); } catch (_) {}
     }
     // v2.1 round 245 (Terry) — mark the ONE Background style sub-group that matches the
     // current bg KIND as "in use" (gold header + "In use" pill), clearing the others.
@@ -10363,8 +10379,11 @@
     // the armed stop's colour, and repaints the stop chips.
     function armCollageGradientStop(idx) {
       if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
-      collageGradStopEdit = idx;
+      // v2.1 round 250 (Terry) — re-clicking the armed slot disarms (hides the palette);
+      // re-home the palette to/from the gradient slot host on every toggle.
+      collageGradStopEdit = (collageGradStopEdit === idx) ? null : idx;
       try { renderTextColorPaletteForTarget(); } catch (_) {}
+      try { positionBgPalette(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
     }
     let collageGradientWired = false;
@@ -10685,7 +10704,7 @@
       });
       // Hint.
       const hint = document.getElementById('collage-gradient-stop-hint');
-      if (hint) hint.textContent = (g && !isMesh && collageGradStopEdit != null) ? 'pick a colour →' : '';
+      if (hint) hint.textContent = (g && !isMesh && collageGradStopEdit != null) ? 'pick a colour ↓' : '';   // v2.1 round 250 (Terry) — palette now BELOW the slots, arrow points down
     }
     // v2.1 round 237 (Terry) — highlight the TYPE button (Linear / Radial) matching
     // the live gradient. Light enough to call mid-drag.
@@ -12454,7 +12473,9 @@
           // two LOCKED specials (round 200 moved them out of Favourites — see
           // buildBgLockedSpecials / the row-1 assembly). No '∅ None' special — White
           // in Row 1 is the default base.
-          { lockedSpecials: buildBgLockedSpecials() },
+          // v2.1 round 250 (Terry) — while editing a gradient STOP the photo + transparent
+          // locked specials don't apply (a stop is a plain colour), so hide them.
+          { lockedSpecials: (collageGradStopEdit != null) ? [] : buildBgLockedSpecials() },
         );
         // Freshly-built locked swatches: set their initial ring + photo thumbnail.
         markBgLockedSpecialsActive();
@@ -12631,6 +12652,20 @@
     // is ONE node, moved not cloned), and paint that subcategory's <summary> gold
     // (.color-subcat-active), clearing gold from the others. Pass a falsy target
     // to hide the palette + clear all gold (nothing colourable selected).
+    // v2.1 round 250 (Terry) — where the BACKGROUND palette parks: under the gradient
+    // slots while a stop is being edited, else inside the Colour Palette style group.
+    function bgPaletteHost() {
+      return (collageGradStopEdit != null)
+        ? document.getElementById('collage-gradient-palette-host')
+        : document.getElementById('collage-bg-palette-grp-body');
+    }
+    function positionBgPalette() {
+      if (colorTarget !== 'background') return;
+      const block = document.getElementById('collage-unified-color');
+      if (!block) return;
+      const host = bgPaletteHost();
+      if (host && block.parentNode !== host) host.appendChild(block);
+    }
     function placeColorPalette(target) {
       const block = document.getElementById('collage-unified-color');
       if (!block) return;
@@ -12657,9 +12692,11 @@
       // the third collapsible style group. Text/Frame are unchanged (parked after their
       // own section). The round-232 floating gate (syncFloatingForFocus) still only flips
       // this node's display, so nesting it deeper doesn't affect that logic.
-      const bgPaletteBody = (target === 'background') ? document.getElementById('collage-bg-palette-grp-body') : null;
-      if (bgPaletteBody) {
-        if (block.parentNode !== bgPaletteBody) bgPaletteBody.appendChild(block);
+      // v2.1 round 250 (Terry) — background palette host is now dynamic: the gradient
+      // slot host while a stop is armed, else the Colour Palette style group body.
+      if (target === 'background') {
+        const host = bgPaletteHost();
+        if (host && block.parentNode !== host) host.appendChild(block);
       } else if (block.previousElementSibling !== anchor) {
         anchor.parentNode.insertBefore(block, anchor.nextSibling);
       }
