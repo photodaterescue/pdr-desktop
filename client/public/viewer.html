@@ -2564,12 +2564,13 @@
     /* ===========================================================
        v2.1 round 256 (Terry) — carousel: the bottom filmstrip shows one
        thumbnail PER PAGE (+ an add slot) instead of the photo pool. While
-       body.carousel-filmstrip is set, hide the pool tiles + the sticky
-       "Add photos" button (they're kept in the DOM, just hidden, so exit
-       restores them instantly) and show the page thumbs / add slot. */
+       body.carousel-filmstrip is set, hide the pool tiles (kept in the DOM,
+       just hidden, so exit restores them instantly) and show the page thumbs /
+       add slot. v2.1 round 258 (Terry) — the "Add photos" button STAYS visible:
+       in carousel mode it adds photos to the ACTIVE page (addPhotoToCollage
+       pushes to the live collage = the active page). */
     body.carousel-filmstrip #filmstrip > .thumb,
-    body.carousel-filmstrip #filmstrip > .video-thumb,
-    body.carousel-filmstrip #collage-add-photos { display: none !important; }
+    body.carousel-filmstrip #filmstrip > .video-thumb { display: none !important; }
     .carousel-thumb {
       position: relative;
       flex: 0 0 auto;
@@ -11756,14 +11757,17 @@
       applyCollageZoom();
     }
 
-    async function saveCollage() {
+    // v2.1 round 258 (Terry) — carousel P4: EXTRACTED the layout-builder out of
+    // saveCollage so a carousel can build one layout PER PAGE (after restoring that
+    // page into the live globals) and ship them all to one IPC. buildCollageLayout()
+    // reads ONLY the live collage globals + bakes the text PNGs from the live state,
+    // so the single-collage path (saveCollage → buildCollageLayout → saveLayout) is
+    // byte-identical to before, and each carousel page bakes from its own restored
+    // state. Returns the { canvas, items, texts } object (or null if no on-tiles).
+    function buildCollageLayout() {
       const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
-      if (on.length === 0) { window.alert('Add at least one photo to the collage first.'); return; }
-      const saveBtn = document.getElementById('collage-save');
-      const originalHtml = saveBtn ? saveBtn.innerHTML : '';
-      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
-      try {
-        const a = getCanvasAspect();
+      if (on.length === 0) return null;
+      const a = getCanvasAspect();
         // v2.1 round 226 (Terry) — Canvas Size export resolution. If a preset (or
         // Custom) set a target export size, save AT that exact pixel size so the file
         // matches the real-world dimensions (Social = the given px; Print/Paper = px
@@ -11885,6 +11889,21 @@
           xFrac: t.xFrac, yFrac: t.yFrac, rot: t.rot || 0,
         }));
         const layout = { canvas, items, texts };
+        return layout;
+    }
+
+    async function saveCollage() {
+      // v2.1 round 258 (Terry) — carousel P4: in carousel mode, Save exports the
+      // whole carousel as numbered slides instead of one collage file.
+      if (carouselMode) return saveCarousel();
+      const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
+      if (on.length === 0) { window.alert('Add at least one photo to the collage first.'); return; }
+      const saveBtn = document.getElementById('collage-save');
+      const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+      try {
+        const layout = buildCollageLayout();
+        if (!layout) { window.alert('Add at least one photo to the collage first.'); if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; } return; }
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
@@ -11904,6 +11923,74 @@
         }
       } catch (err) {
         window.alert('Collage save error:\n\n' + (err && err.message ? err.message : String(err)));
+        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+      }
+    }
+
+    // v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. Persist the active page,
+    // then walk EVERY page: restore it into the live globals (so its tiles + text bake
+    // from that page's own state) and build its layout. Restore the original page +
+    // rebuild the side-by-side UI when done, then ship all layouts to one IPC which
+    // writes slide_01.jpg … slide_NN.jpg into a dedicated folder. We do NOT open the
+    // Viewer (wrong for N files) — on success we reveal the folder.
+    async function saveCarousel() {
+      const saveBtn = document.getElementById('collage-save');
+      const originalHtml = saveBtn ? saveBtn.innerHTML : '';
+      // Persist the live edits of the page being viewed so it exports as seen.
+      carouselPages[carouselActive] = snapshotCollage();
+      const origActive = carouselActive;
+      // Empty-carousel guard: if NO page has an on-tile or any text, there's nothing
+      // to export. Inspect each snapshot string directly (don't disturb live state).
+      const anyContent = carouselPages.some((s) => {
+        try {
+          const snap = JSON.parse(s);
+          const hasTile = Array.isArray(snap.items) && snap.items.some((it) => it && it.on && !isVideoPath(it.path || ''));
+          const hasText = Array.isArray(snap.texts) && snap.texts.length > 0;
+          return hasTile || hasText;
+        } catch (_) { return false; }
+      });
+      if (!anyContent) { window.alert('Add at least one photo to a slide first.'); return; }
+      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving ' + carouselPages.length + ' slides…'; }
+      try {
+        // Build one layout per page from its own restored state. A blank page yields
+        // null (no on-tiles) and is dropped; the backend numbers slide_NN sequentially
+        // over the non-blank pages it receives.
+        const layouts = [];
+        for (let i = 0; i < carouselPages.length; i++) {
+          try { restoreCollageSnapshot(carouselPages[i]); } catch (_) {}
+          const layout = buildCollageLayout();
+          if (layout) layouts.push(layout);
+        }
+        // Restore the page the user was on + rebuild the side-by-side track / thumbs so
+        // the UI is exactly back to normal (we mutated the live globals in the loop).
+        try { restoreCollageSnapshot(carouselPages[origActive]); } catch (_) {}
+        carouselActive = origActive;
+        try { selectCollageItem(null); } catch (_) {}
+        try { buildCarouselTrack(); } catch (_) {}
+        try { layoutCarousel(); } catch (_) {}
+        try { updateCarouselFilmstrip(); } catch (_) {}
+        if (layouts.length === 0) {
+          window.alert('Add at least one photo to a slide first.');
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+          return;
+        }
+        const res = await window.pdr.collage.saveCarousel(layouts);
+        if (res && res.success && res.count > 0) {
+          // Reveal the folder of slides rather than opening N files in the Viewer.
+          try { if (res.folderPath && window.pdr.openDestinationFolder) window.pdr.openDestinationFolder(res.folderPath); } catch (_) {}
+          if (saveBtn) {
+            saveBtn.disabled = false;
+            saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides';
+            setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2600);
+          }
+        } else {
+          window.alert('Carousel save failed:\n\n' + ((res && res.error) || 'Unknown error.'));
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+        }
+      } catch (err) {
+        // Best-effort restore of the original page even on error.
+        try { restoreCollageSnapshot(carouselPages[origActive]); carouselActive = origActive; buildCarouselTrack(); layoutCarousel(); updateCarouselFilmstrip(); } catch (_) {}
+        window.alert('Carousel save error:\n\n' + (err && err.message ? err.message : String(err)));
         if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
       }
     }

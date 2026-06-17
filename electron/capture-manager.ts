@@ -1348,11 +1348,17 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
   return p;
 }
 
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
-  try {
-    if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
-      return { success: false, error: 'Nothing to save — the collage is empty.' };
-    }
+// v2.1 round 258 (Terry) — carousel P4: extracted the layout→final-image-Buffer
+// bake out of collage:saveLayout so a carousel can bake N pages with the SAME
+// compositing pipeline. Pure function of `layout`; the single-collage handler and
+// the per-slide carousel loop both call it, then do their own write/index/album.
+// Throws (not returns) on empty / unreadable so callers' try/catch turns the SAME
+// message strings into { success:false, error } — single-save stays byte-identical.
+async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
+  if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
+    throw new Error('Nothing to save — the collage is empty.');
+  }
+  {
     const sharp = (await import('sharp')).default;
     const W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
     const H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
@@ -1483,7 +1489,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         log.warn(`[collage] skipped a photo (${item.path}): ${(cellErr as Error).message}`);
       }
     }
-    if (composites.length === 0) return { success: false, error: 'None of the photos could be read.' };
+    if (composites.length === 0) throw new Error('None of the photos could be read.');
 
     // v2.1 round 235 (Terry) — optional GRADIENT background (phase 1 of "Background
     // textures"). Rasterize the gradient SVG at the OUTPUT W×H via sharp and prepend
@@ -1655,6 +1661,20 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
     const collageBuf = transparent
       ? await sharp(paddedBuf).extract({ left: PAD, top: PAD, width: W, height: H }).png().toBuffer()
       : await sharp(paddedBuf).extract({ left: PAD, top: PAD, width: W, height: H }).flatten({ background: bg }).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+    log.info(`[collage] baked composite (${composites.length} photos, ${W}×${H})`);
+    return collageBuf;
+  }
+}
+
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
+  try {
+    // v2.1 round 258 (Terry) — carousel P4: bake via the shared helper, then the
+    // unchanged write/index/album tail. W/H/transparent are pure fns of the canvas
+    // (same clamp as inside the bake), so recomputing them here is exact.
+    const collageBuf = await bakeCollageLayout(layout);
+    const W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
+    const H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
+    const transparent = !!layout.canvas.transparent;
 
     const capturedAt = new Date();
     const { date, time, month } = timestampParts(capturedAt);
@@ -1692,10 +1712,95 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
         log.warn(`[collage] composite index pass failed (file saved): ${(idxErr as Error).message}`);
       }
     }
-    log.info(`[collage] saved freeform composite ${filename} (${composites.length} photos, ${W}×${H})${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
+    log.info(`[collage] saved freeform composite ${filename} (${W}×${H})${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
     return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveLayout failed: ${(err as Error).message}`);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. A carousel is N collage
+// pages; save each via the SAME shared bake (bakeCollageLayout) into ONE dedicated
+// subfolder `PDR Captures/<month>/Carousel_<YYYYMMDD_HHmmss>/` as slide_01.jpg …
+// slide_NN.jpg (slide_NN.png for any transparent page — the bake already returns a
+// PNG buffer for those). Each slide is indexed + added to the "PDR Collages" album
+// (same gate as the single save). Returns the full file list + the folder so the
+// renderer can reveal it (a single Viewer open is wrong for N files).
+ipcMain.handle('collage:saveCarousel', async (_event, layouts: CollageLayout[]) => {
+  try {
+    if (!Array.isArray(layouts) || layouts.length === 0) {
+      return { success: false, error: 'Nothing to save — the carousel is empty.' };
+    }
+    const capturedAt = new Date();
+    const { month } = timestampParts(capturedAt);
+    const stamp = `${capturedAt.getFullYear()}${pad(capturedAt.getMonth() + 1)}${pad(capturedAt.getDate())}_${pad(capturedAt.getHours())}${pad(capturedAt.getMinutes())}${pad(capturedAt.getSeconds())}`;
+    const libRoot = onlineLibraryRoot();
+    const baseDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
+    const folderPath = path.join(baseDir, `Carousel_${stamp}`);
+    fs.mkdirSync(toLongPath(folderPath), { recursive: true });
+
+    // Album helpers imported once (not per slide). Same Settings gate + title as
+    // the single save, so carousel slides land in "PDR Collages" alongside collages.
+    const wantCollagesAlbum = (() => { try { return getSettings().saveCollagesToAlbum !== false; } catch { return true; } })();
+    let albumId: number | null = null;
+    let addPhotosToAlbum: ((id: number, ids: number[]) => unknown) | null = null;
+    if (libRoot && wantCollagesAlbum) {
+      try {
+        const sdb = await import('./search-database.js');
+        const ALBUM_TITLE = 'PDR Collages';
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const existing = (sdb.listAlbums() as any[]).find((a) => (a && a.title || '').toLowerCase() === ALBUM_TITLE.toLowerCase());
+        albumId = existing ? existing.id : sdb.createUserAlbum(ALBUM_TITLE);
+        addPhotosToAlbum = sdb.addPhotosToAlbum;
+      } catch (albErr) {
+        log.warn(`[collage] carousel album prep failed (non-fatal): ${(albErr as Error).message}`);
+      }
+    }
+
+    const files: Array<{ filePath: string; filename: string; fileId: number | null }> = [];
+    for (let i = 0; i < layouts.length; i++) {
+      const layout = layouts[i];
+      // bakeCollageLayout throws on an empty/unreadable page; skip that slide rather
+      // than aborting the whole carousel (the renderer already guards "all blank").
+      let buf: Buffer;
+      try {
+        buf = await bakeCollageLayout(layout);
+      } catch (bakeErr) {
+        log.warn(`[collage] carousel slide ${i + 1} skipped (${(bakeErr as Error).message})`);
+        continue;
+      }
+      const transparent = !!(layout.canvas && layout.canvas.transparent);
+      const W = Math.max(600, Math.min(2400, Math.round((layout.canvas && layout.canvas.w) || 2000)));
+      const H = Math.max(450, Math.min(2400, Math.round((layout.canvas && layout.canvas.h) || 1500)));
+      const filename = `slide_${String(i + 1).padStart(2, '0')}${transparent ? '.png' : '.jpg'}`;
+      const outPath = path.join(folderPath, filename);
+      fs.writeFileSync(toLongPath(outPath), buf);
+      await stampCaptureMetadata(outPath, capturedAt, 'collage');
+
+      let fileId: number | null = null;
+      if (libRoot) {
+        try {
+          fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
+          if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
+          if (fileId != null && albumId != null && addPhotosToAlbum) {
+            try { addPhotosToAlbum(albumId, [fileId]); }
+            catch (albErr) { log.warn(`[collage] carousel slide ${i + 1} album-add failed (non-fatal): ${(albErr as Error).message}`); }
+          }
+        } catch (idxErr) {
+          log.warn(`[collage] carousel slide ${i + 1} index pass failed (file saved): ${(idxErr as Error).message}`);
+        }
+      }
+      files.push({ filePath: outPath, filename, fileId });
+    }
+
+    if (files.length === 0) {
+      return { success: false, error: 'None of the slides could be saved.' };
+    }
+    log.info(`[collage] saved carousel — ${files.length} slide(s) → ${folderPath}${libRoot ? '' : ' (pending)'}`);
+    return { success: true, files, folderPath, count: files.length, pending: !libRoot };
+  } catch (err) {
+    log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   }
 });

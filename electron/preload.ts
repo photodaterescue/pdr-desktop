@@ -500,6 +500,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
       }>,
+    // v2.1 round 258 (Terry) — carousel P4: NUMBERED EXPORT. A carousel is an array
+    // of collage layouts (one per page); main bakes each via the shared pipeline and
+    // writes slide_01.jpg … slide_NN.jpg into one dedicated subfolder, returning the
+    // file list + folder (the renderer reveals the folder rather than opening N files).
+    saveCarousel: (layouts: unknown[]) =>
+      ipcRenderer.invoke('collage:saveCarousel', layouts) as Promise<{
+        success: boolean;
+        files?: Array<{ filePath: string; filename: string; fileId: number | null }>;
+        folderPath?: string; count?: number; pending?: boolean; error?: string;
+      }>,
     // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
     // open the shared photo picker for a background, and listens for the
     // chosen photo coming back.
