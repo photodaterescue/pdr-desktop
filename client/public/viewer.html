@@ -8883,6 +8883,17 @@
       // FIRST so that, with strict-less-than comparison below, it wins ties.
       const vCand = [cRect.width / 2, 0, cRect.width];                 // centreX, left, right
       const hCand = [cRect.height / 2, 0, cRect.height];               // centreY, top, bottom
+      // v2.1 round 264 (Terry) — snap: in carousel mode the wide canvas is N equal
+      // 1080-wide pages; add every page boundary as a vertical snap candidate so a
+      // tile's left/centre/right can snap to any page edge (e.g. lock a cover from
+      // the left of page 3 to the right of page 6). Boundaries are at i/N of the
+      // canvas width (i=0..N), CANVAS-relative px to match the candidates above —
+      // i=0 and i=N coincide with the left/right already listed (harmless dupes).
+      // Strictly gated on carouselMode so single-collage snapping is unchanged.
+      if (carouselMode) {
+        const N = Math.max(1, carouselPageCount);
+        for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width);
+      }
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
         if (!o || !o.el || o.el === draggedEl) continue;
@@ -9046,20 +9057,53 @@
       const anchorY = rect.top + anchorYFrac * ch;
       const startDist = Math.hypot(e.clientX - anchorX, e.clientY - anchorY) || 1;
       const startW = it.wFrac;
+      // v2.1 round 264 (Terry) — snap: carousel page-edge snapping for RESIZE (was
+      // none). Whichever corner is grabbed, its X-edge snaps to the nearest page
+      // boundary; the OPPOSITE corner (the anchor) stays pinned by re-deriving wFrac
+      // as the distance from the anchor to the snapped edge, then feeding the EXACT
+      // existing anchor formulas below. Threshold matches the drag snap (6 screen px).
+      // Boundaries are SCREEN px (rect = getBoundingClientRect, includes user zoom) —
+      // the same space as the grabbed corner's clientX. Hold ALT to bypass (mirrors
+      // drag). Gated on carouselMode so single-collage resize is byte-identical.
+      const SNAP_T = 6;
+      const isLeftCorner = (corner === 'tl' || corner === 'bl');   // grabbed edge is the tile's LEFT
       const move = (ev) => {
         const dist = Math.hypot(ev.clientX - anchorX, ev.clientY - anchorY);
         let nw = startW * (dist / startDist);
         nw = Math.max(0.05, Math.min(1.4, nw));
+        // Snap the grabbed X-edge to the nearest carousel page boundary, keeping the
+        // anchor fixed: the grabbed edge sits at anchorX ∓ nw*cw (left/right of the
+        // anchor); snapping it to a boundary screen-x just rescales nw. ALT bypasses.
+        let vGuide = null;
+        if (carouselMode && !ev.altKey && cw > 0) {
+          const grabbedScreenX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
+          const N = Math.max(1, carouselPageCount);
+          let best = SNAP_T + 1, snapX = null;
+          for (let i = 0; i <= N; i++) {
+            const bx = rect.left + (i / N) * rect.width;             // boundary, screen px
+            const gap = Math.abs(grabbedScreenX - bx);
+            if (gap < best) { best = gap; snapX = bx; }
+          }
+          if (snapX != null && best <= SNAP_T) {
+            nw = Math.abs(snapX - anchorX) / cw;                     // anchor stays pinned
+            nw = Math.max(0.05, Math.min(1.4, nw));
+            vGuide = snapX - rect.left;                              // canvas-relative px for the guide
+          }
+        }
         it.wFrac = nw;
         const ihFrac = itemHeightFrac(it);
         // Re-pin the anchor corner: derive the new left/top from the fixed corner.
         it.xFrac = (corner === 'tl' || corner === 'bl') ? (anchorXFrac - nw) : anchorXFrac;
         it.yFrac = (corner === 'tl' || corner === 'tr') ? (anchorYFrac - ihFrac) : anchorYFrac;
         renderCollageItem(it);
+        // v2.1 round 264 (Terry) — snap: reuse the shared gold guide (vertical only;
+        // resize snaps the X-edge to page boundaries). Hidden when not snapping/ALT.
+        showCollageSnapGuides(vGuide, null);
       };
       // commit is handled by the global collage pointerup listener (one undo per
       // gesture) — same as startItemDrag / startItemRotate.
       const up = () => {
+        hideCollageSnapGuides();   // v2.1 round 264 (Terry) — snap: clear guide on drop
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
