@@ -11567,7 +11567,9 @@
       const N = Math.max(1, carouselPageCount);
       for (let i = 1; i < N; i++) {
         const line = document.createElement('div');
-        line.style.cssText = 'position:absolute;top:0;bottom:0;width:1px;background:rgba(0,0,0,0.18);';
+        // v2.1 round 262 (Terry) — page separators in PDR gold (was a faint 1px dark line
+        // that read as "a slight gap"). Centred on the boundary via translateX(-50%).
+        line.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:#FEC242;transform:translateX(-50%);';
         line.style.left = ((i / N) * 100) + '%';
         g.appendChild(line);
       }
