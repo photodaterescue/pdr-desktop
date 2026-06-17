@@ -931,6 +931,32 @@ function hexToRgb(hex: string): { r: number; g: number; b: number } {
   return { r: parseInt(h.slice(0, 2), 16), g: parseInt(h.slice(2, 4), 16), b: parseInt(h.slice(4, 6), 16) };
 }
 const clamp01 = (n: number) => (Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0);
+// v2.1 round 266 (Terry) — oversized tiles: a collage/carousel tile may be LARGER
+// than the page (Canva-style), so the bake's wFrac ceiling rises from 1 to 4× the
+// (wide) canvas width. Content is still clipped to each page by the final extract;
+// the PAD below is bounded by each tile's real OFF-PAGE OVERHANG (not its full 4×
+// extent) so the composite base never balloons. Must match viewer.html's client
+// resize ceiling (Phase 3).
+const TILE_WFRAC_MAX = 4;
+// v2.1 round 266 (Terry) — oversized tiles travel off-page, so the box TOP-LEFT
+// fraction is clamped to a WIDE window (not [0,1]) — far enough that a tile up to
+// TILE_WFRAC_MAX× can sit fully above/left/below/right of the page yet still
+// composite at its true position. The final per-tile safety clamp (~L1527) keeps the
+// placed bbox inside the PAD-expanded base. Used by BOTH the PAD pre-scan and the
+// composite loop so cx/cy agree exactly. (clamp01 is still used for crop rects etc.)
+const clampTileX = (n: number) => (Number.isFinite(n) ? Math.max(-TILE_WFRAC_MAX, Math.min(1 + TILE_WFRAC_MAX, n)) : 0);
+const clampTileY = (n: number) => (Number.isFinite(n) ? Math.max(-TILE_WFRAC_MAX, Math.min(1 + TILE_WFRAC_MAX, n)) : 0);
+// v2.1 round 266 (Terry) — OOM BACKSTOP. wFrac is a fraction of the WHOLE wide
+// carousel canvas, so TILE_WFRAC_MAX× on a 10-page strip (W≈10800) could be a
+// ~43000px raster (multi-GB) and crash the bake at toBuffer(). This is a pure
+// crash-guard, NOT a feature: it is a guaranteed no-op for every realistic
+// "bigger than the pages" size (a 2× tile on the 6-page panorama = 12960px, well
+// under the cap) and only clamps genuinely pathological rasters (>16000px in a
+// dimension, i.e. wFrac beyond ~1.5× the entire multi-page strip). At those
+// extreme sizes the tile is shrunk to the cap (a small position shift), which is
+// always preferable to losing the user's save to an out-of-memory crash.
+const MAX_TILE_PX = 16000;
+const capTilePx = (n: number) => Math.min(n, MAX_TILE_PX);
 
 // v2.1 round 237 (Terry) — CSS colour-HINT (midpoint) sampling. A bare percentage
 // token between two colour stops in a CSS gradient — `c0 0%, H%, c1 100%` — is NOT
@@ -1391,22 +1417,49 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
     // 10800-wide carousel it became ~8640px → a 28080-wide ×4-channel base ≈ 350 MB,
     // which OOMs sharp. The padding only needs to cover the LARGEST single tile when
     // rotated 45° about an on-canvas centre — independent of how wide the canvas is.
-    // A tile is iw×ih where iw = wFrac·W (wFrac ≤ 1, so a tile can still be as wide
-    // as one whole 1080-page within the wide canvas); its 45°-rotated bbox half-extent
-    // is (iw+ih)/2·√2 ≤ (iw+ih). We take 0.8·max(H, maxTileExtentPx) to mirror the
-    // old margin while staying bounded by the biggest tile, never the wide W.
-    let maxTileExtentPx = 0;
+    //
+    // v2.1 round 266 (Terry) — oversized tiles (≤ TILE_WFRAC_MAX× the canvas) can now
+    // exceed the page, so round-260's "bound PAD by the LARGEST tile extent" would
+    // re-introduce the OOM it cured: a 4× tile's full extent on a wide canvas is huge.
+    // PAD only needs to cover how far a tile sticks OUT past the visible page rect
+    // [0,W]×[0,H] — its OFF-PAGE OVERHANG. Any tile pixels beyond [0,W]×[0,H] are cut
+    // by the final extract anyway; the base just has to physically contain each placed
+    // tile's bbox (sharp throws if an input overruns the base, and the final safety
+    // clamp ~L1527 would otherwise SHIFT an off-page tile back in, corrupting its
+    // position — so PAD must equal the real overhang for legitimately off-page tiles).
+    // For each tile: rotated half-extents hw,hh about centre (cx,cy); overhang on each
+    // side = how far [cx-hw,cx+hw]×[cy-hh,cy+hh] exceeds [0,W]×[0,H]. A tile fully
+    // on-page contributes 0 → a centred-but-oversized tile still only pads by its real
+    // spill, never by the wide W. Half-extents are inflated 8% (FRAME_SLOP) so a frame
+    // grown tile — whose true rotW/rotH the pre-scan can't see — still fits.
+    const FRAME_SLOP = 1.08;
+    let maxOverhangPx = 0;
     for (const it of layout.items) {
       if (!it) continue;
       const _aspect = Number.isFinite(it.aspect) && it.aspect > 0.01 ? it.aspect : 1;
-      const _wFrac = Math.max(0.02, Math.min(1, it.wFrac || 0.3));
-      const _iw = Math.max(2, Math.round(_wFrac * W));
-      const _ih = Math.max(2, Math.round(_iw / _aspect));
-      // 45°-rotated bounding box edge ≈ (w+h)/√2; bound the half-extent by (w+h).
-      const _ext = Math.ceil((_iw + _ih) / Math.SQRT2);
-      if (_ext > maxTileExtentPx) maxTileExtentPx = _ext;
+      const _wFrac = Math.max(0.02, Math.min(TILE_WFRAC_MAX, it.wFrac || 0.3));
+      const _iw = capTilePx(Math.max(2, Math.round(_wFrac * W)));
+      const _ih = capTilePx(Math.max(2, Math.round(_iw / _aspect)));
+      // Rotated bbox dims: rW = iw·|cos|+ih·|sin|, rH = iw·|sin|+ih·|cos|.
+      const _rad = (((it.rot || 0) % 360) * Math.PI) / 180;
+      const _c = Math.abs(Math.cos(_rad)), _s = Math.abs(Math.sin(_rad));
+      const _hw = ((_iw * _c + _ih * _s) / 2) * FRAME_SLOP;
+      const _hh = ((_iw * _s + _ih * _c) / 2) * FRAME_SLOP;
+      // Box centre in page px (matches cx/cy used at composite time below).
+      const _cx = clampTileX(it.xFrac) * W + _iw / 2;
+      const _cy = clampTileY(it.yFrac) * H + _ih / 2;
+      const _over = Math.max(
+        _hw - _cx,            // spill past the LEFT edge (x=0)
+        (_cx + _hw) - W,      // spill past the RIGHT edge (x=W)
+        _hh - _cy,            // spill past the TOP edge (y=0)
+        (_cy + _hh) - H,      // spill past the BOTTOM edge (y=H)
+        0,
+      );
+      if (_over > maxOverhangPx) maxOverhangPx = _over;
     }
-    const PAD = Math.ceil(Math.max(H, maxTileExtentPx) * 0.8);
+    // Floor preserves round-260's small rotation/rounding margin for the no-overhang
+    // (on-page) case; +64 absolute slop covers feather/round-corner growth + rounding.
+    const PAD = Math.ceil(maxOverhangPx) + 64 + Math.min(256, Math.round(H * 0.1));
     const baseW = W + PAD * 2;
     const baseH = H + PAD * 2;
 
@@ -1419,11 +1472,15 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
       if (!item || !item.path || !fs.existsSync(toLongPath(item.path))) continue;
       try {
         const aspect = Number.isFinite(item.aspect) && item.aspect > 0.01 ? item.aspect : 1;
-        const wFrac = Math.max(0.02, Math.min(1, item.wFrac || 0.3));
-        const xFrac = clamp01(item.xFrac);
-        const yFrac = clamp01(item.yFrac);
-        const iw = Math.max(2, Math.round(wFrac * W));
-        const ih = Math.max(2, Math.round(iw / aspect));
+        // v2.1 round 266 (Terry) — oversized tiles: ceiling 1 → TILE_WFRAC_MAX, and the
+        // box top-left clamps from [0,1] to the wide clampTileX/Y window so an off-page
+        // tile composites at its TRUE position (was forced on-page). MUST mirror the PAD
+        // pre-scan above exactly or the overhang estimate undersizes the base.
+        const wFrac = Math.max(0.02, Math.min(TILE_WFRAC_MAX, item.wFrac || 0.3));
+        const xFrac = clampTileX(item.xFrac);
+        const yFrac = clampTileY(item.yFrac);
+        const iw = capTilePx(Math.max(2, Math.round(wFrac * W)));
+        const ih = capTilePx(Math.max(2, Math.round(iw / aspect)));
         // v2.1 round 263 (Terry) — bg-tile: a coverFill tile is a BACKGROUND fill —
         // the box (iw×ih above, computed from wFrac + the BOX aspect the renderer sent)
         // is covered by the photo via fit:'cover', with NO crop and NO zoom/pan (a

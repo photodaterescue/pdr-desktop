@@ -573,6 +573,20 @@ export default function Home() {
               description="Create professional collages for print and social media, ready for posting."
               locked={cardsLocked}
               onClick={handleAppCard(async () => {
+                // v2.1 round 266 (Terry) — pre-position the MAIN window on
+                // Memories→Dates BEFORE opening the collage, so the heavy
+                // Workspace+Memories mount happens hidden behind the new
+                // collage window. Without this the main window stays on the
+                // Welcome route; when a later background/photo pick fires,
+                // main.ts shows+focuses the main window (still on Welcome),
+                // then the round-265 App listener navigates — and the first
+                // Workspace+Memories mount (~1s) is fully visible as a
+                // Welcome→Memories flash. Navigating here moves that mount
+                // to collage-open time (behind the collage window, which
+                // opens in its own window regardless), so the pick lands on
+                // an already-painted Memories→Dates. The round-265 App-level
+                // photoPick.onStart listener stays as a harmless fallback.
+                navigate("/workspace?view=memories");
                 const { openCollageComposer } = await import('@/lib/electron-bridge');
                 await openCollageComposer();
               })}

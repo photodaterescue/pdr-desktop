@@ -2169,6 +2169,96 @@
       box-shadow: 0 8px 40px rgba(0,0,0,0.45);
       overflow: hidden;
     }
+    /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
+       A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
+       selected tile's ring/handles/rotate/toolbar can render in the dark margin
+       above/below the page while the photo content stays clipped inside the canvas.
+       The container passes pointer events through; its interactive children re-enable
+       them. positionSelectionChrome() positions #collage-chrome-box (the rotating
+       wrapper) at the tile's true on-screen box each frame. z-index sits above all
+       tiles/text but below the gold snap guides (which live inside the canvas). */
+    #collage-chrome { position: absolute; inset: 0; pointer-events: none; z-index: 120000; display: none; }
+    #collage-chrome.active { display: block; }
+    /* The rotating wrapper: positioned (left/top/width/height) at the tile's unrotated
+       on-screen box; transform:rotate(it.rot) about its centre matches the tile. */
+    #collage-chrome-box { position: absolute; transform-origin: 50% 50%; pointer-events: none; }
+    /* Selection ring (mirrors .collage-item.selected — gold in collage mode). */
+    #collage-chrome-box .chx-ring { position: absolute; inset: 0; outline: 2px solid #FEC242; outline-offset: 0; pointer-events: none; }
+    #collage-chrome-box.locked .chx-ring { outline-style: dashed; }
+    /* Overlay handles re-enable pointer events (the container is pass-through). They
+       reuse the SAME visual + ±7px offsets as the in-canvas tile handles. */
+    #collage-chrome-box .chx { position: absolute; pointer-events: auto; }
+    #collage-chrome-box.locked .chx-res,
+    #collage-chrome-box.locked .chx-rotate { display: none; }
+    .chx-res {
+      width: 14px; height: 14px;
+      background: #FEC242;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.35);
+    }
+    .chx-res-tl { left: -7px; top: -7px; cursor: nwse-resize; }
+    .chx-res-tr { right: -7px; top: -7px; cursor: nesw-resize; }
+    .chx-res-bl { left: -7px; bottom: -7px; cursor: nesw-resize; }
+    .chx-res-br { right: -7px; bottom: -7px; cursor: nwse-resize; }
+    /* coverFill full-bleed tile: inset the corners ~8px so they stay grabbable when the
+       tile is flush to the canvas/stage edge (carries over the round-265 intent). */
+    #collage-chrome-box.coverfill .chx-res-tl { left: 8px; top: 8px; }
+    #collage-chrome-box.coverfill .chx-res-tr { right: 8px; top: 8px; }
+    #collage-chrome-box.coverfill .chx-res-bl { left: 8px; bottom: 8px; }
+    #collage-chrome-box.coverfill .chx-res-br { right: 8px; bottom: 8px; }
+    .chx-rotate {
+      width: 24px; height: 24px;
+      left: 100%; top: 50%;
+      margin-left: 14px; margin-top: -12px;
+      background: #fff;
+      border: 2px solid #FEC242;
+      border-radius: 50%;
+      cursor: grab;
+      display: flex; align-items: center; justify-content: center;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    }
+    .chx-rotate svg { width: 16px; height: 16px; fill: none; stroke: #5a4a12; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
+    .chx-remove {
+      width: 20px; height: 20px;
+      right: -10px; top: -10px;
+      background: #ef4444;
+      border: 2px solid #fff;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 13px; line-height: 16px; text-align: center; font-weight: 700;
+      cursor: pointer;
+    }
+    /* Locked-tile padlock badge in the overlay (mirrors .collage-item.locked.selected::after). */
+    #collage-chrome-box .chx-lockbadge { display: none; position: absolute; right: 4px; top: 4px; width: 18px; height: 18px; border-radius: 5px; background: rgba(28,26,46,0.9) center / 12px 12px no-repeat; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23FEC242' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Crect x='3' y='11' width='18' height='11' rx='2'/%3E%3Cpath d='M7 11V7a5 5 0 0 1 10 0v4'/%3E%3C/svg%3E"); pointer-events: none; }
+    #collage-chrome-box.locked .chx-lockbadge { display: block; }
+    /* The overlay toolbar reuses the .ch-toolbar / .ch-tb-btn look. Above the box by
+       default; positionSelectionChrome flips it BELOW when it would clip the stage top. */
+    #collage-chrome-box .chx-toolbar {
+      position: absolute;
+      bottom: 100%; left: 50%;
+      transform: translateX(-50%);
+      margin-bottom: 8px;
+      display: inline-flex; align-items: center; gap: 4px; padding: 4px;
+      background: rgba(28,26,46,0.96);
+      border: 1px solid rgba(255,255,255,0.14);
+      border-radius: 9px;
+      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+      white-space: nowrap;
+      pointer-events: auto;
+    }
+    #collage-chrome-box .chx-toolbar.below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 8px; }
+    /* v2.1 round 266 (Terry) — when the overlay owns the chrome, suppress the in-canvas
+       tile chrome (ring + handles + toolbar) on the selected tile so it isn't drawn twice
+       (and so the clipped partial ring doesn't show). The overlay draws the full ring.
+       Both the normal (.selected) and locked (.locked.selected) tile outlines are covered;
+       the locked variant is listed too so its `outline-style:dashed !important` (later in
+       source) can't re-introduce a clipped ring. */
+    body.collage-overlay-chrome .collage-item.selected,
+    body.collage-overlay-chrome .collage-item.locked.selected { outline: none !important; outline-style: none !important; }
+    body.collage-overlay-chrome .collage-item.selected .ch,
+    body.collage-overlay-chrome .collage-item.selected .ch-toolbar { display: none !important; }
+    body.collage-overlay-chrome .collage-item.locked.selected::after { content: none !important; }
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
@@ -2349,7 +2439,12 @@
     /* v2.1 round 265 (Terry) — a coverFill (full-bleed background) tile is flush to the
        canvas edges, so -7px-OUTSIDE handles fall half-off the canvas and are hard to
        grab. INSET them ~8px INSIDE the corners so all four sit on-canvas + grabbable
-       once the tile is unlocked. (Locked tiles still hide handles via the round-203 rule.) */
+       once the tile is unlocked. (Locked tiles still hide handles via the round-203 rule.)
+       v2.1 round 266 (Terry) — SUPERSEDED by the floating overlay: the in-canvas tile
+       chrome is hidden under body.collage-overlay-chrome, so these inset rules are now
+       inert. The equivalent coverFill inset lives on #collage-chrome-box.coverfill .chx-res-*
+       (the overlay removed the clip these worked around). Kept here only for the (unused)
+       in-canvas fallback path; harmless. */
     .collage-item.coverfill .ch-res-tl { left: 8px; top: 8px; right: auto; bottom: auto; }
     .collage-item.coverfill .ch-res-tr { right: 8px; top: 8px; left: auto; bottom: auto; }
     .collage-item.coverfill .ch-res-bl { left: 8px; bottom: 8px; right: auto; top: auto; }
@@ -3252,6 +3347,15 @@
   <div id="collage-root">
     <div id="collage-stage">
       <div id="collage-canvas"></div>
+      <!-- v2.1 round 266 (Terry) — Phase 4: FLOATING selection chrome overlay. A peer of
+           #collage-canvas (NOT inside it), so it is NOT clipped by the canvas's
+           overflow:hidden. The selected tile's ring + resize handles + rotate + toolbar are
+           drawn here at the tile's TRUE on-screen box (computed from fractions × the live,
+           post-transform canvas rect), so they show UNCLIPPED in the dark stage above/below
+           the strip while the photo CONTENT stays page-clipped inside the canvas. The
+           container ignores pointer events; its interactive children re-enable them.
+           View-only — never part of the bake (the bake reads only layout.items/canvas/texts). -->
+      <div id="collage-chrome" aria-hidden="true"></div>
       <!-- v2.1 round 237 (Terry) — RADIAL epicentre handle. Lives in the STAGE (not
            the canvas, which is overflow:hidden) so it can be dragged INTO the dark
            margin around the paper — the stored cx/cy fractions may go <0 or >1.
@@ -4663,6 +4767,14 @@
     // even at N=10 (slice fill needs zoom ≈ N). Single-collage zoom is unaffected — the
     // user simply has more headroom; nothing auto-zooms past 1 outside carousel mode.
     const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 10;
+    // v2.1 round 266 (Terry) — Behaviour A: zoom-out floor. In carousel mode the user
+    // can zoom OUT past the fit until the carousel takes up ~half the page width (0.5);
+    // single-collage keeps the existing 0.2 floor. Used by the Ctrl+wheel view-zoom clamp.
+    function collageZoomFloor() { return carouselMode ? 0.5 : COLLAGE_ZOOM_MIN; }
+    // v2.1 round 266 (Terry) — Behaviour B (Phase 3): a tile may grow LARGER than the
+    // page (Canva allows it). Matches the backend bake ceiling (capture-manager.ts
+    // TILE_WFRAC_MAX). Tiles can be up to 4× the (wide) canvas width.
+    const TILE_WFRAC_MAX = 4;
     let collageUserZoom = 1, collagePanX = 0, collagePanY = 0;
     // Apply the current view transform to the canvas. Cheap; safe to call on every
     // layout / zoom step. Re-positions the radial gradient epicentre (which is placed
@@ -4677,6 +4789,10 @@
       collageCanvasEl.style.transform =
         'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')';
       try { positionGradEpicentre(); } catch (_) {}
+      // v2.1 round 266 (Terry) — Phase 4: re-glue the floating selection chrome AFTER the
+      // canvas transform is written, so pan/zoom (incl. Behaviour A below-fit centring)
+      // keep the ring/handles on the tile. positionSelectionChrome reads the LIVE rect.
+      try { positionSelectionChrome(); } catch (_) {}
     }
     // Reset the view to the fit (zoom 1, no pan). Used by the double-click-empty-stage
     // reset, by reshape (canvas size change), and on entering collage mode.
@@ -6952,6 +7068,8 @@
     const collageRootEl = document.getElementById('collage-root');
     const collageStageEl = document.getElementById('collage-stage');
     const collageCanvasEl = document.getElementById('collage-canvas');
+    // v2.1 round 266 (Terry) — Phase 4: the unclipped floating-chrome overlay layer.
+    const collageChromeEl = document.getElementById('collage-chrome');
 
     // v2.1 round 226 (Terry) — collageAspectKey is now either a named legacy key
     // (landscape/square/portrait) OR a numeric aspect (from a Canvas Size preset or
@@ -7099,6 +7217,9 @@
         // Clear any shape mask a normal tile may have left on the clip.
         applyShapeMask(it.clipEl, [0, 0, 0, 0], 0, iwPx, ihPx);
         refreshTileToolbar(it);
+        // v2.1 round 266 (Terry) — Phase 4: keep the floating overlay glued to THIS tile
+        // each frame it re-renders (covers drag/resize/rotate, undo/redo, enhance resizes).
+        if (it === collageSelected) { try { positionSelectionChrome(); } catch (_) {} }
         return;
       }
       // v2.1 round 145 — position the image inside the clip so only the
@@ -7149,6 +7270,9 @@
       // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
       // clipping under the titlebar when the tile is near the top (Terry SS2).
       refreshTileToolbar(it);
+      // v2.1 round 266 (Terry) — Phase 4: re-glue the floating overlay to the selected
+      // tile every frame it re-renders (drag/resize/rotate call renderCollageItem).
+      if (it === collageSelected) { try { positionSelectionChrome(); } catch (_) {} }
     }
     // v2.1 round 204 (Terry) — show/hide the tile's floating .ch-toolbar so it
     // never crosses above the collage stage top (where it would slide under the
@@ -7159,6 +7283,12 @@
     // zoom) — the tile's geometry is already laid out by the time we measure.
     function refreshTileToolbar(it) {
       if (!it || !it.el || it.isBg) return;
+      // v2.1 round 266 (Terry) — Phase 4: the FLOATING overlay (#collage-chrome) now owns
+      // the selected tile's toolbar and positions/flips it (positionSelectionChrome). The
+      // in-canvas .ch-toolbar is hidden via the body.collage-overlay-chrome CSS, so the
+      // round-204/265 clip-avoidance below is retired — bail before touching it. (Function
+      // kept so its existing call sites in renderCollageItem/selectCollageItem are no-ops.)
+      return;
       const tbar = it.el.querySelector('.ch-toolbar');
       if (!tbar) return;
       // Only meaningful while this tile is the selection (otherwise the toolbar
@@ -7180,6 +7310,111 @@
         // A small slack so it flips just before it actually crosses the edge.
         if (toolbarTop < stageTop + 2) tbar.classList.add('ch-toolbar-inside');
       } catch (_) { tbar.style.visibility = ''; tbar.classList.remove('ch-toolbar-inside'); }
+    }
+    // ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection chrome overlay ───
+    // The selected tile's selection ring + 4 corner resize handles + rotate handle +
+    // remove × + quick-action toolbar are drawn in #collage-chrome (a stage-level peer of
+    // the clipped canvas) at the tile's TRUE on-screen box, so they show UNCLIPPED in the
+    // dark margin while the photo content stays page-clipped. The handle pointerdowns route
+    // to the EXISTING startItemResize/startItemRotate/startItemDrag/toggleItemLock/
+    // duplicateCollageItem/setItemOn — those derive all their math from
+    // collageCanvasEl.getBoundingClientRect() + fractions + the event's clientX/Y, so they
+    // are agnostic to where the handle DOM lives and work unchanged on the overlay handles.
+    // Built ONCE (only one tile is selected at a time → at most one chrome group); every
+    // call to positionSelectionChrome() just re-points it at the current selection.
+    let collageChromeBox = null, collageChromeParts = null;
+    function ensureChromeBox() {
+      if (collageChromeBox || !collageChromeEl) return collageChromeBox;
+      const box = document.createElement('div');
+      box.id = 'collage-chrome-box';
+      const ring = document.createElement('div'); ring.className = 'chx-ring';
+      const rTL = document.createElement('div'); rTL.className = 'chx chx-res chx-res-tl'; rTL.setAttribute('data-pdr-tooltip', 'Resize');
+      const rTR = document.createElement('div'); rTR.className = 'chx chx-res chx-res-tr'; rTR.setAttribute('data-pdr-tooltip', 'Resize');
+      const rBL = document.createElement('div'); rBL.className = 'chx chx-res chx-res-bl'; rBL.setAttribute('data-pdr-tooltip', 'Resize');
+      const rBR = document.createElement('div'); rBR.className = 'chx chx-res chx-res-br'; rBR.setAttribute('data-pdr-tooltip', 'Resize');
+      const rot = document.createElement('div'); rot.className = 'chx chx-rotate'; rot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
+      rot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8.5 5.94A7 7 0 1 0 15.5 5.94"/><polyline points="15.5 2.5 15.5 5.94 12.1 5.94"/></svg>';
+      const rem = document.createElement('div'); rem.className = 'chx chx-remove'; rem.textContent = '×'; rem.setAttribute('data-pdr-tooltip', 'Remove from collage');
+      const badge = document.createElement('div'); badge.className = 'chx-lockbadge'; badge.setAttribute('aria-hidden', 'true');
+      const tbar = document.createElement('div'); tbar.className = 'chx-toolbar';
+      const tbLock = document.createElement('button'); tbLock.type = 'button'; tbLock.className = 'ch-tb-btn chx-tb-lock'; tbLock.setAttribute('data-pdr-tooltip', 'Lock (freeze position / size / rotation)');
+      tbLock.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
+      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn chx-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
+      tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+      const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn chx-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
+      tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
+      tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
+      box.appendChild(ring);
+      box.appendChild(rTL); box.appendChild(rTR); box.appendChild(rBL); box.appendChild(rBR);
+      box.appendChild(rot); box.appendChild(rem); box.appendChild(badge); box.appendChild(tbar);
+      collageChromeEl.appendChild(box);
+      // Route every overlay handle to the existing gesture functions, ALWAYS using the
+      // live collageSelected (the overlay is reused for whatever is selected). These
+      // functions read the canvas rect + fractions, so they don't care that the handle
+      // DOM lives in the stage-level overlay rather than on the tile.
+      // NB: startItemResize/startItemRotate call e.stopPropagation() internally; we ALSO
+      // stop it here defensively so an overlay-handle press can NEVER bubble to the stage's
+      // pointerdown (which would otherwise start a view-pan, since the handle DOM sits
+      // OUTSIDE #collage-canvas and the stage treats anything not-in-the-canvas as margin).
+      rTL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tl'); });
+      rTR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tr'); });
+      rBL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'bl'); });
+      rBR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'br'); });
+      rot.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemRotate(collageSelected, e); });
+      rot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); if (collageSelected && !collageSelected.isBg) snapItemRot90(collageSelected); });
+      rem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
+      tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLock(collageSelected); });
+      tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) duplicateCollageItem(collageSelected); });
+      tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
+      collageChromeBox = box;
+      collageChromeParts = { ring, tbar, tbLock, badge };
+      return box;
+    }
+    function hideSelectionChrome() {
+      if (collageChromeEl) collageChromeEl.classList.remove('active');
+    }
+    function positionSelectionChrome() {
+      if (!collageChromeEl || !collageCanvasEl || !collageStageEl) return;
+      const it = collageSelected;
+      // Overlay is for REAL tiles only: the background uses the canvas ring; nothing /
+      // an off tile hides it. (Text layers keep their own in-canvas chrome.)
+      if (!it || it.isBg || !it.on || !it.el) { hideSelectionChrome(); return; }
+      const box = ensureChromeBox();
+      if (!box) return;
+      const canvasRect = collageCanvasEl.getBoundingClientRect();   // POST-transform: includes zoom/pan + Behaviour A centring
+      const stageRect = collageStageEl.getBoundingClientRect();
+      if (!canvasRect.width || !canvasRect.height) { hideSelectionChrome(); return; }
+      const ihFrac = itemHeightFrac(it);
+      const w = it.wFrac * canvasRect.width;
+      const h = ihFrac * canvasRect.height;
+      // Stage-relative px (the overlay is inset:0 inside the stage).
+      const left = canvasRect.left + it.xFrac * canvasRect.width - stageRect.left;
+      const top = canvasRect.top + it.yFrac * canvasRect.height - stageRect.top;
+      box.style.left = left + 'px';
+      box.style.top = top + 'px';
+      box.style.width = w + 'px';
+      box.style.height = h + 'px';
+      // Rotate the whole chrome group about the box centre — matches the tile's own
+      // rotate(it.rot) (renderCollageItem) which uses the default centre transform-origin.
+      box.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
+      box.classList.toggle('locked', !!it.locked);
+      box.classList.toggle('coverfill', !!it.coverFill);
+      // Lock badge mirrors the tile state (CSS shows it only when .locked).
+      if (collageChromeParts && collageChromeParts.tbLock) {
+        collageChromeParts.tbLock.classList.toggle('locked', !!it.locked);
+        collageChromeParts.tbLock.setAttribute('data-pdr-tooltip', it.locked ? 'Unlock' : 'Lock (freeze position / size / rotation)');
+      }
+      // Toolbar clip-avoidance: the toolbar floats ABOVE the box; if the box top sits too
+      // near the stage top (where the toolbar would slide under the titlebar / off the
+      // stage), flip it BELOW the box. Measured against the UNROTATED box top in viewport
+      // px (canvasRect.top + yFrac*h) vs the stage top — same reference refreshTileToolbar
+      // used. ~44px ≈ toolbar height (36) + gap (8).
+      if (collageChromeParts && collageChromeParts.tbar) {
+        const boxTopViewport = canvasRect.top + it.yFrac * canvasRect.height;
+        collageChromeParts.tbar.classList.toggle('below', boxTopViewport - 44 < stageRect.top + 2);
+      }
+      collageChromeEl.classList.add('active');
     }
     function renderAllCollage() {
       for (const it of collageItems) renderCollageItem(it);
@@ -8872,6 +9107,9 @@
       // fits above the tile or would clip into the titlebar (it isn't re-rendered
       // here otherwise). The .selected class set above makes it measurable.
       try { if (it && !it.isBg) refreshTileToolbar(it); } catch (_) {}
+      // v2.1 round 266 (Terry) — Phase 4: point the floating overlay at the new selection
+      // (a real tile shows the unclipped ring/handles; bg or null hides the overlay).
+      try { positionSelectionChrome(); } catch (_) {}
       // v2.1 round 237 (Terry) — the radial epicentre dot is a Background control:
       // show it only when the Background is now focused (and the gradient is radial);
       // any other selection hides it. Also keep the per-type controls/highlight fresh.
@@ -9006,7 +9244,12 @@
       // wireCollageControls' closure; reach it via the bridge set there at init.
       if (it && it.locked) {
         selectCollageItem(it);
-        if (collageUserZoom > 1 && typeof window.__pdrStartViewPan === 'function') {
+        // v2.1 round 266 (Terry) — Behaviour A: in carousel mode a grab on a locked tile
+        // starts a VIEW-PAN at ANY zoom (was zoom>1 only). The stage pointermove now pans
+        // at any zoom in carousel mode too, so the floor gate here is dropped; the typeof
+        // guard stays. Single-collage locked tiles still just select (no pan), so we gate
+        // on carouselMode.
+        if (carouselMode && typeof window.__pdrStartViewPan === 'function') {
           window.__pdrStartViewPan(e, { onCanvas: false, noSelect: true });
         }
         return;
@@ -9035,8 +9278,13 @@
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         const ihFrac = itemHeightFrac(it);
-        it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, sx + dx));
-        it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, sy + dy));
+        // v2.1 round 266 (Terry) — Phase 3: loosen the travel clamps so an OVERSIZED
+        // tile (taller/wider than the page) can move fully above/below/beside the strip
+        // (Canva). xFrac/yFrac are the tile's TOP-LEFT corner; allowing [-wFrac, 1+wFrac]
+        // lets the tile slide from just-off one edge to just-off the opposite edge. (Was
+        // a centre-in-range clamp [-wFrac/2, 1-wFrac/2] that trapped a big tile on-page.)
+        it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, sx + dx));
+        it.yFrac = Math.max(-ihFrac, Math.min(1 + ihFrac, sy + dy));
         if (yLock !== null) it.yFrac = yLock;   // freeze Y while Shift held
         renderCollageItem(it);
         // v2.1 round 206 (Terry) — Canva-style snapping. Render at the proposed
@@ -9047,11 +9295,14 @@
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 6);
-        if (snap.dx) it.xFrac = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, it.xFrac + snap.dx / cRect.width));
+        // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
+        // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
+        // would fight an oversized tile's off-page drag.
+        if (snap.dx) it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, it.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — composes with round-206 snapping: X still snaps,
         // but while Shift locks Y we skip the Y snap AND suppress its guide line so
         // the tile can't drift vertically off the locked path.
-        if (snap.dy && yLock === null) it.yFrac = Math.max(-ihFrac / 2, Math.min(1 - ihFrac / 2, it.yFrac + snap.dy / cRect.height));
+        if (snap.dy && yLock === null) it.yFrac = Math.max(-ihFrac, Math.min(1 + ihFrac, it.yFrac + snap.dy / cRect.height));
         if (snap.dx || (snap.dy && yLock === null)) renderCollageItem(it);
         showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
       };
@@ -9106,7 +9357,9 @@
       const move = (ev) => {
         const dist = Math.hypot(ev.clientX - anchorX, ev.clientY - anchorY);
         let nw = startW * (dist / startDist);
-        nw = Math.max(0.05, Math.min(1.4, nw));
+        // v2.1 round 266 (Terry) — Phase 3: allow a tile LARGER than the page (ceiling
+        // 1.4 → TILE_WFRAC_MAX=4, matching the backend bake). Keep the 0.05 floor.
+        nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, nw));
         // Snap the grabbed X-edge to the nearest carousel page boundary, keeping the
         // anchor fixed: the grabbed edge sits at anchorX ∓ nw*cw (left/right of the
         // anchor); snapping it to a boundary screen-x just rescales nw. ALT bypasses.
@@ -9122,7 +9375,7 @@
           }
           if (snapX != null && best <= SNAP_T) {
             nw = Math.abs(snapX - anchorX) / cw;                     // anchor stays pinned
-            nw = Math.max(0.05, Math.min(1.4, nw));
+            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, nw));      // v2.1 round 266 (Terry) — Phase 3: match the widened ceiling
             vGuide = snapX - rect.left;                              // canvas-relative px for the guide
           }
         }
@@ -12640,7 +12893,10 @@
       });
       collageStageEl.addEventListener('pointermove', (e) => {
         if (!collagePanDrag || e.pointerId !== collagePanDrag.id) return;
-        if (collageUserZoom <= 1) return;   // nothing to pan at fit zoom
+        // v2.1 round 266 (Terry) — Behaviour A: grab-pan at ANY zoom in carousel mode
+        // (Terry: "grab the black screen and move ... should work zoomed out also").
+        // Single-collage keeps the round-261 gate (only pan when zoomed past fit).
+        if (!carouselMode && collageUserZoom <= 1) return;   // nothing to pan at fit zoom
         const dx = e.clientX - collagePanDrag.sx, dy = e.clientY - collagePanDrag.sy;
         if (!collagePanDrag.moved && Math.hypot(dx, dy) < 4) return;   // click-vs-drag threshold
         collagePanDrag.moved = true;
@@ -12716,8 +12972,29 @@
         // Multiplicative step per notch; deltaY<0 (wheel up) = zoom in.
         const factor = e.deltaY < 0 ? 1.1 : 0.9;
         let z1 = z0 * factor;
-        z1 = Math.max(COLLAGE_ZOOM_MIN, Math.min(COLLAGE_ZOOM_MAX, z1));
+        // v2.1 round 266 (Terry) — Behaviour A: lower floor in carousel mode
+        // (collageZoomFloor() = 0.5) so the carousel can shrink to ~half the page.
+        z1 = Math.max(collageZoomFloor(), Math.min(COLLAGE_ZOOM_MAX, z1));
         if (z1 === z0) return;   // already clamped — nothing to do
+        // v2.1 round 266 (Terry) — Behaviour A: below-fit CENTRING. When the new zoom is
+        // below the fit (z1 < 1) the scaled canvas is smaller than the stage, so instead
+        // of the cursor-anchored pan (which would let it drift into a corner) we CENTRE
+        // the canvas in the stage's content box — same avail-padding math as
+        // scrollViewToSlice. At/above fit we keep the EXACT cursor-anchored pan below.
+        if (z1 < 1) {
+          const cs = getComputedStyle(collageStageEl);
+          const padL = parseFloat(cs.paddingLeft) || 0, padR = parseFloat(cs.paddingRight) || 0;
+          const padT = parseFloat(cs.paddingTop) || 0, padB = parseFloat(cs.paddingBottom) || 0;
+          const availW = collageStageEl.clientWidth - padL - padR;
+          const availH = collageStageEl.clientHeight - padT - padB;
+          const fitW = collageCanvasEl.clientWidth || 0;
+          const fitH = collageCanvasEl.clientHeight || 0;
+          collagePanX = (availW - fitW * z1) / 2;
+          collagePanY = (availH - fitH * z1) / 2;
+          collageUserZoom = z1;
+          applyCollageZoom();
+          return;
+        }
         const dz = z1 / z0;
         // Cursor-anchored: keep the canvas point under the cursor fixed on screen.
         // With transform-origin 0 0, the canvas left/top shift needed to hold the
@@ -16894,6 +17171,10 @@ function zoomTo(newZoom, centreX, centreY) {
           collageTile = null;
           collageSaveFn = typeof saveFn === 'function' ? saveFn : null;
           document.body.classList.add('collage-mode');
+          // v2.1 round 266 (Terry) — Phase 4: the floating-chrome overlay owns the
+          // selected tile's ring/handles/toolbar; this class suppresses the in-canvas
+          // duplicate (see the CSS under #collage-chrome).
+          document.body.classList.add('collage-overlay-chrome');
           document.body.classList.add('collage-no-tile');
           // v2.1 round 151 (Terry) — "Reset all" was ambiguous (whole
           // collage vs the selected photo). It only ever resets the selected
@@ -16904,6 +17185,8 @@ function zoomTo(newZoom, centreX, centreY) {
         exitCollage: function () {
           collageActive = false; collageTile = null; collageSaveFn = null;
           document.body.classList.remove('collage-mode');
+          document.body.classList.remove('collage-overlay-chrome');   // v2.1 round 266 (Terry) — Phase 4
+          try { hideSelectionChrome(); } catch (_) {}                  // v2.1 round 266 (Terry) — Phase 4: drop the floating overlay on exit
           document.body.classList.remove('collage-no-tile');
           document.body.classList.remove('collage-bg-selected');
           if (resetBtn) resetBtn.textContent = 'Reset all';
