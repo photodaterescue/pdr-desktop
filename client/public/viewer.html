@@ -1672,10 +1672,23 @@
       display: flex; align-items: center; justify-content: center;
       background-color: rgba(255,255,255,0.06);
       color: #c9c4e6;
+      position: relative; /* v2.1 round 248 (Terry) — anchor for the × badge */
     }
     .frame-swatch.frame-bg-photo .bg-photo-icon { display: flex; width: 14px; height: 14px; }
     .frame-swatch.frame-bg-photo .bg-photo-icon svg { width: 14px; height: 14px; }
     .frame-swatch.frame-bg-photo.has-photo .bg-photo-icon { display: none; }
+    /* v2.1 round 248 (Terry) — × badge to remove the bg photo, top-right INSIDE the
+       swatch (the slot has overflow:hidden, so it can't overhang). Shown only when a
+       photo is set (.has-photo). */
+    .frame-swatch.frame-bg-photo .bg-photo-x { display: none; }
+    .frame-swatch.frame-bg-photo.has-photo .bg-photo-x {
+      display: flex; align-items: center; justify-content: center;
+      position: absolute; top: 2px; right: 2px;
+      width: 13px; height: 13px; border-radius: 50%;
+      background: rgba(15,15,24,0.9); border: 1px solid rgba(255,255,255,0.55);
+      color: #fff; font-size: 12px; line-height: 1; cursor: pointer; z-index: 3;
+    }
+    .frame-swatch.frame-bg-photo.has-photo .bg-photo-x:hover { background: #e0473a; border-color: #e0473a; }
     .frame-custom {
       flex: 0 0 auto;
       width: 28px;
@@ -2609,6 +2622,13 @@
       display: inline-flex; align-items: center; line-height: 0;
     }
     .ec-size-summary-bulk button:hover { opacity: 1 !important; }
+    /* v2.1 round 248 (Terry) — Background Expand-all / Collapse-all icons on the
+       BACKGROUND summary row, mirroring Canvas Size. Visible ONLY when Background is
+       open; scrollbar-stable via the fixed margin-right (the panel reserves the gutter). */
+    .ec-bg-summary-bulk { display: none; margin-left: auto; margin-right: 12px; align-items: center; gap: 8px; }
+    #collage-bg-collapse[open] > summary > .ec-bg-summary-bulk { display: inline-flex; }
+    .ec-bg-summary-bulk button { background: none; border: none; padding: 0; cursor: pointer; display: inline-flex; align-items: center; line-height: 0; }
+    .ec-bg-summary-bulk button:hover { opacity: 1 !important; }
     /* v2.1 round 228 (Terry) — Canvas Size is now a NESTED collapsible hierarchy that
        mirrors the round-223 Palettes look: top-level groups (Social Media / Prints /
        Paper / More / Custom…) are .ec-size-grp <details>; within Social Media each
@@ -3234,13 +3254,20 @@
              setCollageBgImage) + the round-178 "remember bg photo" behaviour are
              unchanged — they're now driven from the locked palette swatches. -->
         <details class="enhance-collapse" id="collage-bg-collapse">
-          <summary>Background</summary>
+          <!-- v2.1 round 248 (Terry) — Expand-all / Collapse-all icons on the BACKGROUND
+               summary row, mirroring Canvas Size. They operate on the three Background
+               STYLE groups (Gradient / Texture / Colour Palette = the direct .ec-bg-grp
+               children of .ec-bg-grp-list) and show ONLY when Background is open. Their
+               handlers preventDefault + stopPropagation so the icon never toggles the
+               section. -->
+          <summary>Background<span class="ec-bg-summary-bulk"><button type="button" id="collage-bg-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all background style groups" aria-label="Expand all background style groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="collage-bg-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all background style groups" aria-label="Collapse all background style groups"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></summary>
           <div id="collage-bg-fade-row" style="display:none; margin-top:8px">
             <!-- v2.1 round 150 (Terry) — the photo now fills the background
                  fully by default; the chosen colour is kept underneath as a
                  base, and lowering the photo's Fade blends it back through. -->
+            <!-- v2.1 round 248 (Terry) — the full-width "Remove background photo" button
+                 was removed; removal is now a small × badge on the photo swatch. Hint stays. -->
             <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The colour above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
-            <button id="collage-bg-remove" type="button" style="width:100%;background:transparent;border:1px solid rgba(255,255,255,0.14);color:#cfcfe0;font-size:11px;padding:6px;border-radius:7px;cursor:pointer">Remove background photo</button>
           </div>
           <!-- v2.1 round 246 (Terry) — INDENT WRAPPER. The three style groups (Gradient /
                Texture / Colour Palette) now live inside this .ec-bg-grp-list container so
@@ -9171,6 +9198,19 @@
       if (!host) return;
       host.querySelectorAll('details').forEach((d) => { if (!d.open) d.open = true; });
     }
+    // v2.1 round 248 (Terry) — Expand/Collapse the three Background STYLE groups
+    // (Gradient / Texture / Colour Palette = the direct .ec-bg-grp children). Scoped to
+    // those three only; the Colour Palette's own categories have their own controls.
+    function expandBgGroups() {
+      const host = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
+      if (!host) return;
+      host.querySelectorAll(':scope > details.ec-bg-grp').forEach((d) => { if (!d.open) d.open = true; });
+    }
+    function collapseBgGroups() {
+      const host = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
+      if (!host) return;
+      host.querySelectorAll(':scope > details.ec-bg-grp').forEach((d) => { if (d.open) d.open = false; });
+    }
     function buildCanvasSizeMenu() {
       const host = document.getElementById('ec-canvas-size-list');
       if (!host) return;
@@ -11463,9 +11503,10 @@
       // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
       // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
       // shared Colour Palette (pickBackground, called inside the locked swatch's
-      // click handler). The fade row's "Remove background photo" stays here.
-      const bgRemove = document.getElementById('collage-bg-remove');
-      if (bgRemove) bgRemove.addEventListener('click', () => setCollageBgImage(''));
+      // click handler).
+      // v2.1 round 248 (Terry) — the full-width "Remove background photo" button (and its
+      // handler) were removed; removal is now a small × badge on the photo swatch itself
+      // (wired in the locked-specials builder, with stopPropagation).
       // The chosen background photo comes back from the main-window picker (async,
       // not a pointer interaction) — snapshot explicitly. setCollageBgImage() then
       // refreshes the Use-a-photo slot's thumbnail (via markBgLockedSpecialsActive).
@@ -11820,6 +11861,19 @@
       if (sizeCollapse && !sizeCollapse.dataset.wired) {
         sizeCollapse.dataset.wired = '1';
         sizeCollapse.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); try { resetCanvasSizeGroups(); } catch (_) {} });
+      }
+      // v2.1 round 248 (Terry) — wire the Background Expand-all / Collapse-all icons
+      // (same pattern as Canvas Size: they live inside the Background <summary>, so
+      // preventDefault + stopPropagation keep the click on the icon and off the section).
+      const bgExpand = document.getElementById('collage-bg-expand-all');
+      const bgCollapse = document.getElementById('collage-bg-collapse-all');
+      if (bgExpand && !bgExpand.dataset.wired) {
+        bgExpand.dataset.wired = '1';
+        bgExpand.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); try { expandBgGroups(); } catch (_) {} });
+      }
+      if (bgCollapse && !bgCollapse.dataset.wired) {
+        bgCollapse.dataset.wired = '1';
+        bgCollapse.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); try { collapseBgGroups(); } catch (_) {} });
       }
       updateColorTargets();
       // v2.1 round 224 (Terry) — wire BOTH contextual Delete buttons (text one inside
@@ -12317,7 +12371,9 @@
       pSw.style.backgroundPosition = 'center';
       pSw.setAttribute('data-pdr-tooltip', 'Background photo — pick one of your photos as the backdrop (click again to change it). Not in your library yet? Screenshot it (camera button / Ctrl+Shift+S) and it lands in Memories → Dates.');
       // The image icon, shown only until a thumbnail is set (.has-photo hides it).
-      pSw.innerHTML = '<span class="bg-photo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span>';
+      // v2.1 round 248 (Terry) — icon span PLUS a small × badge (shown only once a photo is
+      // set, via .has-photo CSS) that removes the bg photo — replaces the old full-width button.
+      pSw.innerHTML = '<span class="bg-photo-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></span><span class="bg-photo-x" aria-label="Remove background photo" data-pdr-tooltip="Remove background photo">&times;</span>';
       pSw.addEventListener('click', () => {
         if (collageBgImagePath && collageTransparent) {
           // A photo is remembered but Transparent is hiding it → switch back to it
@@ -12336,6 +12392,11 @@
           try { collagePickMode = 'bg'; window.pdr.collage.pickBackground('your collage'); } catch (_) {}
         }
       });
+      // v2.1 round 248 (Terry) — the × badge removes the bg photo (replaces the old
+      // full-width "Remove background photo" button). stopPropagation so it never
+      // bubbles to pSw's own click (which would re-open the picker).
+      const pX = pSw.querySelector('.bg-photo-x');
+      if (pX) pX.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); setCollageBgImage(''); });
       // v2.1 round 200 (Terry) — Row-1 order is [custom +] [Photo] [Transparent]
       // [quick colours], so return Photo BEFORE Transparent. (Lookup is by id in
       // markBgLockedSpecialsActive, so order here only sets the on-screen sequence.)
