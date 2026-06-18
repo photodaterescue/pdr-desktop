@@ -5369,6 +5369,25 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                             }
                             setAddToAlbumOpenTick(t => t + 1);
                           }}
+                          onSendToPhone={() => {
+                            const paths = selectedFiles.size > 0 && selectedFiles.has(file.id)
+                              ? Array.from(selectedFilesMap.values()).map(f => f.file_path)
+                              : [file.file_path];
+                            window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths } }));
+                          }}
+                          onPrint={() => {
+                            const paths = selectedFiles.size > 0 && selectedFiles.has(file.id)
+                              ? Array.from(selectedFilesMap.values()).map(f => f.file_path)
+                              : [file.file_path];
+                            window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths } }));
+                          }}
+                          onCreateAlbum={() => {
+                            if (!(selectedFiles.size > 0 && selectedFiles.has(file.id))) {
+                              setSelectedFiles(new Set([file.id]));
+                              setSelectedFilesMap(new Map([[file.id, file]]));
+                            }
+                            setAddToAlbumCreateOpenTick(t => t + 1);
+                          }}
                           onTranscribe={() => {
                             // v2.1 round 35 (Terry 2026-06-08) — same
                             // selection-aware pattern as onAddToAlbum.
@@ -5907,7 +5926,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon, count }: { labe
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscript, getDragPaths }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscript?: boolean; getDragPaths?: () => string[] }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscript, getDragPaths, onSendToPhone, onPrint, onCreateAlbum }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscript?: boolean; getDragPaths?: () => string[]; onSendToPhone?: () => void; onPrint?: () => void; onCreateAlbum?: () => void }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -6076,6 +6095,27 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
               Add to album…
             </ContextMenuItem>
           </>
+        )}
+        {/* v2.1 round 282 (Terry) — share/print/create-album in the right-click
+            menu. Parent resolves the paths (whole selection or just this tile). */}
+        {(onSendToPhone || onPrint || onCreateAlbum) && <ContextMenuSeparator />}
+        {onSendToPhone && (
+          <ContextMenuItem onSelect={() => onSendToPhone()} data-testid={`filecard-send-phone-${file.id}`}>
+            <Smartphone className="w-3.5 h-3.5 mr-2" />
+            Send to phone…
+          </ContextMenuItem>
+        )}
+        {onPrint && (
+          <ContextMenuItem onSelect={() => onPrint()} data-testid={`filecard-print-${file.id}`}>
+            <Printer className="w-3.5 h-3.5 mr-2" />
+            Print…
+          </ContextMenuItem>
+        )}
+        {onCreateAlbum && (
+          <ContextMenuItem onSelect={() => onCreateAlbum()} data-testid={`filecard-create-album-${file.id}`}>
+            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+            Create new album…
+          </ContextMenuItem>
         )}
       </ContextMenuContent>
     </ContextMenu>

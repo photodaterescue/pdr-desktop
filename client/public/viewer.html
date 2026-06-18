@@ -1311,6 +1311,29 @@
       box-shadow: 0 0 12px rgba(139,92,246,0.3);
     }
     .filmstrip-share-hint svg { width: 13px; height: 13px; flex-shrink: 0; }
+    /* v2.1 round 282 (Terry) — chevron to hide/show the thumbnail strip.
+       Floats just above the strip's right edge so it survives the collapse
+       (when the strip itself is display:none). Click toggles body.filmstrip-hidden. */
+    .filmstrip-toggle {
+      position: absolute;
+      top: -25px; right: 12px;
+      width: 32px; height: 22px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(18, 18, 42, 0.95);
+      border: 1px solid rgba(169, 156, 255, 0.35);
+      border-radius: 7px;
+      color: #cdbcff; cursor: pointer; padding: 0;
+      box-shadow: 0 3px 10px rgba(0, 0, 0, 0.45);
+      z-index: 32;
+      transition: background 0.12s, color 0.12s;
+    }
+    .filmstrip-toggle:hover { background: rgba(40, 40, 70, 0.98); color: #eae4ff; }
+    .filmstrip-toggle svg { width: 15px; height: 15px; transition: transform 0.2s; }
+    body.collage-mode .filmstrip-toggle { display: none; }   /* collage owns the strip */
+    /* Collapsed — strip + select bar hidden, chevron flips up to "show". */
+    body.filmstrip-hidden #filmstrip,
+    body.filmstrip-hidden #filmstrip-select-bar { display: none !important; }
+    body.filmstrip-hidden .filmstrip-toggle svg { transform: rotate(180deg); }
     /* v2.1 round 208 (Terry) — "Add photos" button on the collage filmstrip.
        Hidden in the single-photo viewer; shown only in collage mode. Sticky to
        the left edge so it stays put while the pool scrolls. Gold accent to match
@@ -2874,6 +2897,7 @@
     body.collage-mode #btn-rotateLeft,
     body.collage-mode #btn-rotateRight,
     body.collage-mode #btn-drag-file,
+    body.collage-mode #btn-print,
     body.collage-mode #btn-copy-filename { display: none !important; }
     /* v2.1 round 144 — collage Undo/Redo/Refresh live on the toolbar in
        collage mode only. */
@@ -3458,6 +3482,10 @@
     <div class="toolbar-actions">
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
       <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
+      <!-- v2.1 round 282 (Terry) — Print from the Viewer. Prints the filmstrip
+           selection when one is active, else the current photo (native OS print
+           dialog: any printer + Microsoft Print to PDF). Hidden in collage mode. -->
+      <button class="toolbar-btn" id="btn-print" data-pdr-tooltip="Print this photo (or the selected ones)">Print</button>
       <button class="toolbar-btn" id="btn-slideshow" data-pdr-tooltip="Start slideshow (Space)" hidden>▶</button>
       <div class="speed-wrap" id="slideshow-wrap" hidden>
         <button class="toolbar-btn" id="btn-slideshowInterval" data-pdr-tooltip="Slideshow interval">5s</button>
@@ -3526,6 +3554,12 @@
         drag any to share
       </span>
     </div>
+    <!-- v2.1 round 282 (Terry) — chevron to hide/show the thumbnail strip
+         (more room for the photo). Lives in the wrap, not the strip, so it
+         survives the collapse. -->
+    <button type="button" id="filmstrip-toggle" class="filmstrip-toggle" data-pdr-tooltip="Hide thumbnails" data-pdr-tooltip-side="top" aria-label="Hide thumbnails">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+    </button>
     <div id="filmstrip" class="filmstrip"><!-- v2.1 round 208 (Terry) — "Add photos"
       affordance on the collage filmstrip (the photo pool). Sticky-pinned to the
       left so it stays visible while the strip scrolls; collage-mode only (hidden in
@@ -4565,6 +4599,36 @@
     try {
       const fsClear = document.getElementById('filmstrip-select-clear');
       if (fsClear) fsClear.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); clearFilmstripSelection(); });
+    } catch (_) {}
+
+    // v2.1 round 282 (Terry) — hide/show the thumbnail strip via the chevron.
+    try {
+      const fsToggle = document.getElementById('filmstrip-toggle');
+      if (fsToggle) fsToggle.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const hidden = document.body.classList.toggle('filmstrip-hidden');
+        fsToggle.setAttribute('data-pdr-tooltip', hidden ? 'Show thumbnails' : 'Hide thumbnails');
+        fsToggle.setAttribute('aria-label', hidden ? 'Show thumbnails' : 'Hide thumbnails');
+      });
+    } catch (_) {}
+
+    // v2.1 round 282 (Terry) — Print from the Viewer. Prints the filmstrip
+    // selection if one is active, else the current photo, via the native OS
+    // print dialog (window.pdr.print.photos). Sensible defaults; the rich
+    // layout/size/B&W options live in the library Print modal.
+    try {
+      const printBtn = document.getElementById('btn-print');
+      if (printBtn) printBtn.addEventListener('click', async () => {
+        if (collageMode) return;
+        const cur = (typeof files !== 'undefined' && files && files[currentIndex]) ? files[currentIndex] : '';
+        const paths = (filmstripSelection && filmstripSelection.size > 0) ? Array.from(filmstripSelection) : (cur ? [cur] : []);
+        if (!paths.length) return;
+        try {
+          if (window.pdr && window.pdr.print && window.pdr.print.photos) {
+            await window.pdr.print.photos(paths, { layout: '1', fit: 'fit', paper: 'Letter', orientation: 'portrait', color: 'color' });
+          }
+        } catch (err) { console.warn('[viewer] print failed:', err && (err.message || err)); }
+      });
     } catch (_) {}
 
     const dragFileBtn = document.getElementById('btn-drag-file');

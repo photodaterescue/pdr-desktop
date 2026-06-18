@@ -3995,6 +3995,41 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <FolderPlus className="w-3.5 h-3.5 mr-2" />
                         Add to album…
                       </ContextMenuItem>
+                      {/* v2.1 round 282 (Terry) — share/print/create-album in the
+                          right-click menu. Whole selection when the right-clicked
+                          tile is part of it, else just this photo. */}
+                      <ContextMenuItem
+                        onSelect={() => {
+                          const inMulti = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id);
+                          const paths = inMulti ? albumPhotos.filter(x => selectedAlbumPhotoIds.has(x.id)).map(x => x.file_path) : [p.file_path];
+                          window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths } }));
+                        }}
+                      >
+                        <Smartphone className="w-3.5 h-3.5 mr-2" />
+                        Send to phone…
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={() => {
+                          const inMulti = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id);
+                          const paths = inMulti ? albumPhotos.filter(x => selectedAlbumPhotoIds.has(x.id)).map(x => x.file_path) : [p.file_path];
+                          window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths } }));
+                        }}
+                      >
+                        <Printer className="w-3.5 h-3.5 mr-2" />
+                        Print…
+                      </ContextMenuItem>
+                      <ContextMenuItem
+                        onSelect={() => {
+                          if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
+                            setSelectedAlbumPhotoIds(new Set([p.id]));
+                            lastAlbumClickedIndexRef.current = null;
+                          }
+                          setAddToAlbumCreateTick(t => t + 1);
+                        }}
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                        Create new album…
+                      </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={async () => {
                           try {

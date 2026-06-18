@@ -243,6 +243,12 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
     if (typeof localStorage === 'undefined') return false;
     return localStorage.getItem(OTD_HIDDEN_KEY) === '1';
   });
+  // v2.1 round 282 (Terry) — selection for the "On This Day" AI-suggestion strip
+  // (lives in THIS component, MemoriesView — the day drilldown has its own grid
+  // selection). Lets users checkbox-pick suggestions and Send-to-phone / Print
+  // them instead of only click-to-open.
+  const [selectedOtdIds, setSelectedOtdIds] = useState<Set<number>>(new Set());
+  const toggleOtd = (id: number) => setSelectedOtdIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   // "Ready to render" gate that defers the OTD card's first mount
   // by one frame after Memories itself mounts. Terry's theory
   // 2026-05-21: with the OTD card mounting in the same render
@@ -911,6 +917,34 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                   <span className="text-xs text-muted-foreground">
                     {onThisDay.length} {onThisDay.length === 1 ? 'photo' : 'photos'}
                   </span>
+                  {/* v2.1 round 282 (Terry) — actions for the checkbox-picked
+                      suggestions (share, not just open-in-viewer). */}
+                  {selectedOtdIds.size > 0 && (
+                    <div className="ml-auto flex items-center gap-2">
+                      <span className="inline-flex items-center h-7 px-3 rounded-full bg-[var(--color-gold)] text-[#1f1a08] text-xs font-medium">
+                        {selectedOtdIds.size} selected
+                      </span>
+                      <button
+                        onClick={() => { const paths = onThisDay.filter(o => selectedOtdIds.has(o.id)).map(o => o.file_path); if (paths.length) window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths } })); }}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full border border-border text-xs font-medium text-foreground hover:bg-secondary/50 transition-colors"
+                      >
+                        <Smartphone className="w-3.5 h-3.5" /> Send to phone
+                      </button>
+                      <button
+                        onClick={() => { const paths = onThisDay.filter(o => selectedOtdIds.has(o.id)).map(o => o.file_path); if (paths.length) window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths } })); }}
+                        className="inline-flex items-center gap-1.5 h-7 px-3 rounded-full border border-border text-xs font-medium text-foreground hover:bg-secondary/50 transition-colors"
+                      >
+                        <Printer className="w-3.5 h-3.5" /> Print
+                      </button>
+                      <button
+                        onClick={() => setSelectedOtdIds(new Set())}
+                        className="inline-flex items-center justify-center h-7 w-7 rounded-full border border-border text-muted-foreground hover:bg-secondary/50 transition-colors"
+                        aria-label="Clear selection"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  )}
                 </div>
                 <div className="mb-3 pr-8">
                   <h2 className="text-base font-bold text-foreground leading-tight">On {otdLabel} in previous years</h2>
@@ -935,8 +969,21 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                       // viewer's left/right arrows browse the rest of
                       // the "On this day in previous years" set.
                       onClick={() => openSearchViewer(onThisDay.map(o => o.file_path), onThisDay.map(o => o.filename), idx)}
-                      className={`group relative shrink-0 w-[140px] h-[140px] overflow-hidden bg-secondary/30 transition-all ${otdTileClass}`}
+                      className={`group relative shrink-0 w-[140px] h-[140px] overflow-hidden bg-secondary/30 transition-all ${otdTileClass} ${selectedOtdIds.has(item.id) ? 'ring-2 ring-[var(--color-gold)]' : ''}`}
                     >
+                      {/* v2.1 round 282 (Terry) — selection checkbox for AI
+                          suggestions; gold tick mirrors the Dates tile checkbox.
+                          Stops propagation so it picks without opening the viewer. */}
+                      <div
+                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleOtd(item.id); }}
+                        className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
+                          selectedOtdIds.has(item.id)
+                            ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
+                            : 'border-white/80 bg-black/40 text-transparent hover:border-white opacity-0 group-hover:opacity-100'
+                        }`}
+                      >
+                        {selectedOtdIds.has(item.id) && <Check className="w-3 h-3" />}
+                      </div>
                       {thumbs[item.file_path] ? (
                         <img src={thumbs[item.file_path]} alt={item.filename} className="w-full h-full object-cover" />
                       ) : (
@@ -3536,6 +3583,42 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
+                  </ContextMenuItem>
+                  {/* v2.1 round 282 (Terry) — share/print/create-album in the
+                      right-click menu. Acts on the whole selection when the
+                      right-clicked tile is part of it, else just this photo. */}
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const inMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                      const baseArr = visibleFiles ?? files ?? [];
+                      const paths = inMulti ? baseArr.filter(x => selectedFileIds.has(x.id)).map(x => x.file_path) : [f.file_path];
+                      window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths } }));
+                    }}
+                  >
+                    <Smartphone className="w-3.5 h-3.5 mr-2" />
+                    Send to phone…
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const inMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                      const baseArr = visibleFiles ?? files ?? [];
+                      const paths = inMulti ? baseArr.filter(x => selectedFileIds.has(x.id)).map(x => x.file_path) : [f.file_path];
+                      window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths } }));
+                    }}
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-2" />
+                    Print…
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
+                      const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                      if (!alreadyInMulti) setSelectedFileIds(new Set([f.id]));
+                      lastClickedIndexRef.current = idx;
+                      setAddToAlbumCreateTick(t => t + 1);
+                    }}
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                    Create new album…
                   </ContextMenuItem>
                   {/* v2.0.13 — per-photo caption. Pre-fills with the
                       current caption (if any) so the same item handles
