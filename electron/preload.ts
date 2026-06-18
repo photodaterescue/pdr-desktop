@@ -1152,6 +1152,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // an image (paste into chats/docs). Local-only.
   clipboard: {
     copyImage: (path: string) => ipcRenderer.invoke('clipboard:copyImage', path) as Promise<{ success: boolean; error?: string }>,
+    // v2.1 round 285 (Terry) — copy one or many files (CF_HDROP) so Ctrl+C / Ctrl+V
+    // pastes them all in Explorer / email / chat.
+    copyFiles: (paths: string[]) => ipcRenderer.invoke('clipboard:copyFiles', paths) as Promise<{ success: boolean; count?: number; error?: string }>,
   },
 
   ai: {

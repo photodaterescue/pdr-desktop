@@ -69,6 +69,7 @@ import {
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 // v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
 import { startFileDrag } from '@/lib/os-file-drag';
+import { useCopyFilesHotkey } from '@/lib/useCopyFilesHotkey';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
@@ -1351,6 +1352,14 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // also toggles. Mirrors SearchPanel's FileCard contract.
   const [selectedFileIds, setSelectedFileIds] = useState<Set<number>>(new Set());
   const lastClickedIndexRef = useRef<number | null>(null);
+  // v2.1 round 285 (Terry) — Ctrl/Cmd+C copies the selected day-grid photo(s) to
+  // the clipboard so Ctrl+V pastes them all. Gated on this drilldown being visible.
+  const dayRootRef = useRef<HTMLDivElement | null>(null);
+  useCopyFilesHotkey(dayRootRef, () => {
+    if (selectedFileIds.size === 0) return [];
+    const base = visibleFiles ?? files ?? [];
+    return base.filter(f => selectedFileIds.has(f.id)).map(f => f.file_path);
+  });
   // v2.0.15 (Terry 2026-06-01) — open trigger for AddToAlbumPopover.
   // Bumped by the per-tile context menu's "Add to album…" item so
   // the picker opens directly instead of requiring the user to then
@@ -2184,7 +2193,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
       : `${MONTH_NAMES[month - 1]} ${day}, ${year}`;
 
   return (
-    <div className="h-full flex flex-col bg-background">
+    <div ref={dayRootRef} className="h-full flex flex-col bg-background">
       {/* v2.0.15 (Terry 2026-05-30) — unified toolbar rhythm.
           Every control on this row standardises on h-8 height,
           text-xs typography, and gap-2 spacing so the cluster reads

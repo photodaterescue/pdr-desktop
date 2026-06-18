@@ -43,6 +43,7 @@ import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 // v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
 import { startFileDrag } from '@/lib/os-file-drag';
+import { useCopyFilesHotkey } from '@/lib/useCopyFilesHotkey';
 // v2.1 round 275 (Terry) — Actions dropdown for the Albums multi-select
 // toolbar (parity with Dates). Same primitives MemoriesView uses.
 import {
@@ -472,6 +473,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
   }, [performUndo, performRedo]);
+
+  // v2.1 round 285 (Terry) — Ctrl/Cmd+C copies the selected album photo(s) to the
+  // clipboard so Ctrl+V pastes them all. Gated on AlbumsView being visible.
+  useCopyFilesHotkey(albumsRootRef, () => (
+    selectedAlbumPhotoIds.size > 0 ? albumPhotos.filter(p => selectedAlbumPhotoIds.has(p.id)).map(p => p.file_path) : []
+  ));
 
   // ── Tile-size zoom (v2.0.8 step 6 polish, Terry 2026-05-19) ───────
   // Same zoom interaction Memories By Date uses — Ctrl+scroll on the

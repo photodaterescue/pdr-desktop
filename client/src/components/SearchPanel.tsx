@@ -86,6 +86,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 // v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
 import { startFileDrag } from '@/lib/os-file-drag';
+import { useCopyFilesHotkey } from '@/lib/useCopyFilesHotkey';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
@@ -1023,6 +1024,13 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [navigateFile, selectedFile, searchActive]);
+
+  // v2.1 round 285 (Terry) — Ctrl/Cmd+C copies the selected file(s) to the
+  // clipboard so Ctrl+V pastes them all (single or multi). Gated on the S&D grid
+  // being visible so it doesn't fire from a hidden, mounted S&D view.
+  useCopyFilesHotkey(gridContainerRef, () => (
+    selectedFiles.size > 0 ? Array.from(selectedFilesMap.values()).map(f => f.file_path) : []
+  ));
 
   // ─── DB init ──────────────────────────────────────────────────────────────
 

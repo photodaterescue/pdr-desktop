@@ -13708,6 +13708,33 @@ ipcMain.handle('clipboard:copyImage', async (_event, filePath: string) => {
   }
 });
 
+// v2.1 round 285 (Terry) — copy one OR MANY files to the clipboard as a file
+// drop (CF_HDROP), so Ctrl+C on a selection then Ctrl+V in Explorer / an email /
+// a chat pastes ALL the files. Electron's clipboard module can't write CF_HDROP,
+// so we use PowerShell's Set-Clipboard; the paths go via a temp list-file + an
+// env var to dodge command-line length + quoting limits. All local.
+ipcMain.handle('clipboard:copyFiles', async (_event, paths: string[]) => {
+  try {
+    const files = (paths || []).filter((p) => p && fs.existsSync(p));
+    if (files.length === 0) return { success: false, error: 'No files to copy.' };
+    const listFile = path.join(os.tmpdir(), `pdr-clip-${process.pid}-${Math.floor(Math.random() * 1e9).toString(36)}.txt`);
+    await fs.promises.writeFile(listFile, files.join('\r\n'), 'utf8');
+    await new Promise<void>((resolve, reject) => {
+      execFile(
+        'powershell.exe',
+        ['-NoProfile', '-STA', '-ExecutionPolicy', 'Bypass', '-Command',
+          'Set-Clipboard -LiteralPath (Get-Content -LiteralPath $env:PDR_CLIP_LIST -Encoding UTF8 | Where-Object { $_ })'],
+        { windowsHide: true, env: { ...process.env, PDR_CLIP_LIST: listFile } },
+        (err) => { if (err) reject(err); else resolve(); },
+      );
+    });
+    fs.promises.unlink(listFile).catch(() => {});
+    return { success: true, count: files.length };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
   try {
     const sharp = (await import('sharp')).default;

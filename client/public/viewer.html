@@ -13292,6 +13292,13 @@
         const k = (e.key || '').toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
+        // v2.1 round 285 (Terry) — Delete/Backspace removes the selected element
+        // (photo, text, emoji), like Canva. Background + locked layers are exempt;
+        // the guard above already exempts an active text editor (contentEditable).
+        else if ((k === 'delete' || k === 'backspace') && collageSelected && !collageSelected.isBg && !collageSelected.locked) {
+          e.preventDefault();
+          setItemOn(collageSelected, false);
+        }
       });
       // Snapshot for undo around every Enhance-panel edit: begin on a
       // pointerdown anywhere in the panel, commit just after the change
