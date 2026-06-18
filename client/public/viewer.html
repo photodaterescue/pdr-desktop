@@ -5107,6 +5107,12 @@
     // restoreCollageSnapshot alongside collageZTop (max z) so undo/redo keeps the floor.
     let collageZBottom = 0;
     let collageSelected = null; // currently-selected item (shows handles)
+    // v2.1 round 286 (Terry) — Canva-style shortcuts + (next) multi-select. The
+    // full selected set; for single-select it mirrors [collageSelected]. Ops
+    // (duplicate/copy/paste/delete/nudge/reorder) act on this set.
+    let collageSelection = [];
+    let collageClipboard = [];     // item refs captured on Ctrl+C
+    let collageNudgeTimer = null;  // coalesces an arrow-nudge burst into one undo
     // v2.1 round 260 (Terry) — carousel wide: WIDE-CANVAS model. A carousel is now ONE
     // continuous #collage-canvas N slices wide (N×1080 × 1350), edited as a single
     // collage; export bakes the whole wide canvas once and crops it into N 1080-wide
@@ -9588,9 +9594,17 @@
       // pseudo-tile (it.isBg). Tiles show the handle ring on their box; the
       // background's cue is the canvas ring driven by the collage-bg-selected
       // body class (set in bridge.setTile), so nothing to toggle here.
+      // v2.1 round 286 (Terry) — clear .selected from the ENTIRE prior selection
+      // (multi-aware), not just the old primary, so switching or clearing the
+      // selection never leaves stale gold rings on the other members.
+      try { (collageSelection || []).forEach(x => { if (x && x.el) x.el.classList.remove('selected'); }); } catch (_) {}
       if (collageSelected && !collageSelected.isBg && collageSelected.el) collageSelected.el.classList.remove('selected');
       collageSelected = it || null;
       if (it && !it.isBg && it.el) it.el.classList.add('selected');
+      // Keep the multi-select set in sync with a plain single selection (a real
+      // tile → [it]; background/null → []). Bulk entry points (marquee /
+      // Ctrl+click / Ctrl+A) overwrite this afterwards.
+      collageSelection = (it && !it.isBg) ? [it] : [];
       // v2.1 round 185 (Text #1) — a tile/background and a text layer are
       // never co-selected: picking a tile drops any text selection.
       if (it && selectedText) selectText(null);
@@ -11072,13 +11086,14 @@
     // (same path/idx; deep-copy enh + crop; carry zoom/pan/rot/aspect/wFrac/
     // bgRemovedPath; clone is unlocked), offset by ~+0.03 (clamped on-canvas),
     // give it the top z, build its el, render + select it. One undo step.
-    function duplicateCollageItem(it) {
-      if (!it || it.isBg) return;
-      beginCollageChange();
+    // v2.1 round 286 (Terry) — clone-builder factored out of duplicateCollageItem
+    // so duplicate / paste / multi-duplicate share ONE proven recipe. Builds +
+    // DOM-mounts + repaints a copy of `it`, offset by `off` fraction (default
+    // 0.03), and RETURNS it. Does NOT touch undo/selection (callers wrap those).
+    function makeCollageClone(it, off) {
+      if (!it || it.isBg) return null;
       const ih = itemHeightFrac(it);
-      const OFF = 0.03;
-      // Clamp the offset position so the clone stays on the canvas (same clamp
-      // rule the drag uses: the tile centre stays within [0,1]).
+      const OFF = (typeof off === 'number') ? off : 0.03;
       const nx = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, (it.xFrac || 0) + OFF));
       const ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
       const clone = {
@@ -11095,12 +11110,111 @@
       collageItems.push(clone);
       buildCollageItemEl(clone);
       renderCollageItem(clone);
-      // Repaint the clone's <img> from its own enh so the duplicate looks like
-      // the original immediately (the shared apply path the rest of the app uses).
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(clone); } catch (_) {}
-      selectCollageItem(clone);
+      return clone;
+    }
+    function duplicateCollageItem(it) {
+      if (!it || it.isBg) return;
+      beginCollageChange();
+      const clone = makeCollageClone(it, 0.03);
+      if (clone) selectCollageItem(clone);
       updateCollageFilmstrip();
       commitCollageChange();
+    }
+
+    // ── v2.1 round 286 (Terry) — Canva-style selection ops. They act on the
+    // selected SET (single-select = the one tile). Each wraps ONE begin/commit,
+    // mutating items directly (NOT via setItemOn/duplicateCollageItem, whose
+    // internal begin() would clobber a multi-item snapshot). ──
+    function selectedItemsForOp() {
+      return (collageSelection || []).filter(it => it && !it.isBg && it.on);
+    }
+    // Select a SET: chrome + Enhance follow the LAST (primary); the rest just
+    // carry the gold .selected ring.
+    function setCollageSelectionItems(items) {
+      const list = (items || []).filter(it => it && !it.isBg && it.on);
+      try { collageItems.forEach(x => { if (x.el) x.el.classList.remove('selected'); }); } catch (_) {}
+      const primary = list.length ? list[list.length - 1] : null;
+      selectCollageItem(primary);          // sets collageSelected + chrome + Enhance (resets collageSelection)
+      collageSelection = list.slice();     // restore the full set after selectCollageItem's single-reset
+      list.forEach(it => { if (it.el) it.el.classList.add('selected'); });
+    }
+    function clearCollageSelection() { selectCollageItem(null); }   // clears all rings (multi-aware) + empties the set
+    function selectAllCollageItems() {
+      const all = collageItems.filter(it => it.on && !it.isBg);
+      if (all.length) setCollageSelectionItems(all);
+    }
+    // Z-order helpers (one item). collageZTop/Bottom are the running counters.
+    function bringItemToFront(it) { it.z = ++collageZTop; if (it.el) it.el.style.zIndex = String(it.z); }
+    function sendItemToBack(it) { it.z = --collageZBottom; if (it.el) it.el.style.zIndex = String(it.z); }
+    function _orderableByZ() { return collageItems.filter(x => x.on && !x.isBg).sort((a, b) => a.z - b.z); }
+    function bringItemForward(it) {
+      const arr = _orderableByZ(); const i = arr.indexOf(it);
+      if (i < 0 || i >= arr.length - 1) return;
+      const ab = arr[i + 1]; const tz = it.z; it.z = ab.z; ab.z = tz;
+      if (it.el) it.el.style.zIndex = String(it.z); if (ab.el) ab.el.style.zIndex = String(ab.z);
+    }
+    function sendItemBackward(it) {
+      const arr = _orderableByZ(); const i = arr.indexOf(it);
+      if (i <= 0) return;
+      const bl = arr[i - 1]; const tz = it.z; it.z = bl.z; bl.z = tz;
+      if (it.el) it.el.style.zIndex = String(it.z); if (bl.el) bl.el.style.zIndex = String(bl.z);
+    }
+    function orderCollageSelection(mode) {
+      const items = selectedItemsForOp(); if (!items.length) return;
+      beginCollageChange();
+      if (mode === 'front') items.slice().sort((a, b) => a.z - b.z).forEach(bringItemToFront);
+      else if (mode === 'back') items.slice().sort((a, b) => b.z - a.z).forEach(sendItemToBack);
+      else if (mode === 'forward') items.slice().sort((a, b) => b.z - a.z).forEach(bringItemForward);
+      else if (mode === 'backward') items.slice().sort((a, b) => a.z - b.z).forEach(sendItemBackward);
+      commitCollageChange();
+    }
+    function duplicateCollageSelection() {
+      const items = selectedItemsForOp(); if (!items.length) return;
+      beginCollageChange();
+      const made = items.map(it => makeCollageClone(it, 0.03)).filter(Boolean);
+      if (made.length) setCollageSelectionItems(made);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+    function copyCollageSelection() {
+      const items = selectedItemsForOp();
+      if (items.length) collageClipboard = items.slice();
+    }
+    function pasteCollageClipboard() {
+      const src = (collageClipboard || []).filter(it => it && it.path);
+      if (!src.length) return;
+      beginCollageChange();
+      const made = src.map(it => makeCollageClone(it, 0.04)).filter(Boolean);
+      if (made.length) setCollageSelectionItems(made);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+    function deleteCollageSelection() {
+      const items = selectedItemsForOp().filter(it => !it.locked);
+      if (!items.length) return;
+      beginCollageChange();
+      items.forEach(it => { it.on = false; renderCollageItem(it); });
+      collageSelection = [];
+      selectCollageItem(null);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+    function nudgeCollageSelection(dir, big) {
+      const items = selectedItemsForOp().filter(it => !it.locked); if (!items.length) return;
+      const cw = collageCanvasEl ? (collageCanvasEl.clientWidth || 1) : 1;
+      const ch = collageCanvasEl ? (collageCanvasEl.clientHeight || 1) : 1;
+      const stepPx = big ? 10 : 1;
+      let dxF = 0, dyF = 0;
+      if (dir === 'arrowleft') dxF = -stepPx / cw;
+      else if (dir === 'arrowright') dxF = stepPx / cw;
+      else if (dir === 'arrowup') dyF = -stepPx / ch;
+      else if (dir === 'arrowdown') dyF = stepPx / ch;
+      if (!collageNudgeTimer) beginCollageChange();      // coalesce a burst into one undo step
+      items.forEach(it => { it.xFrac = (it.xFrac || 0) + dxF; it.yFrac = (it.yFrac || 0) + dyF; renderCollageItem(it); });
+      try { positionSelectionChrome(); } catch (_) {}
+      if (collageNudgeTimer) clearTimeout(collageNudgeTimer);
+      collageNudgeTimer = setTimeout(() => { collageNudgeTimer = null; try { commitCollageChange(); } catch (_) {} }, 500);
     }
 
     // v2.1 round 208 (Terry) — "Add photos" flow. The shared library picker is
@@ -13292,12 +13406,28 @@
         const k = (e.key || '').toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
-        // v2.1 round 285 (Terry) — Delete/Backspace removes the selected element
-        // (photo, text, emoji), like Canva. Background + locked layers are exempt;
-        // the guard above already exempts an active text editor (contentEditable).
-        else if ((k === 'delete' || k === 'backspace') && collageSelected && !collageSelected.isBg && !collageSelected.locked) {
-          e.preventDefault();
-          setItemOn(collageSelected, false);
+        // v2.1 round 285/286 (Terry) — Canva-style shortcuts on the selected
+        // element(s). The guard above exempts an active text editor; ops skip the
+        // background + (for delete/move) locked layers. Bracket shortcuts use
+        // e.code (Shift+] reports '}' via e.key), and the Shift variants are
+        // tested first so Ctrl+] still hits "forward".
+        else if (k === 'delete' || k === 'backspace') {
+          if (selectedItemsForOp().length) { e.preventDefault(); deleteCollageSelection(); }
+        }
+        else if ((e.ctrlKey || e.metaKey) && k === 'c') { e.preventDefault(); copyCollageSelection(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); pasteCollageClipboard(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicateCollageSelection(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); selectAllCollageItems(); }
+        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'BracketRight') { e.preventDefault(); orderCollageSelection('front'); }
+        else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'BracketLeft') { e.preventDefault(); orderCollageSelection('back'); }
+        else if ((e.ctrlKey || e.metaKey) && e.code === 'BracketRight') { e.preventDefault(); orderCollageSelection('forward'); }
+        else if ((e.ctrlKey || e.metaKey) && e.code === 'BracketLeft') { e.preventDefault(); orderCollageSelection('backward'); }
+        else if (k === 'escape') {
+          // Only consume Esc when a real pane is selected → never blocks exit-fullscreen.
+          if (selectedItemsForOp().length || (collageSelected && !collageSelected.isBg)) { e.preventDefault(); clearCollageSelection(); }
+        }
+        else if (!e.ctrlKey && !e.metaKey && !e.altKey && (k === 'arrowleft' || k === 'arrowright' || k === 'arrowup' || k === 'arrowdown')) {
+          if (selectedItemsForOp().length) { e.preventDefault(); nudgeCollageSelection(k, e.shiftKey); }
         }
       });
       // Snapshot for undo around every Enhance-panel edit: begin on a
