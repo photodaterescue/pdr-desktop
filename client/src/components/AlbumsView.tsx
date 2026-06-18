@@ -4040,6 +4040,20 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <Copy className="w-3.5 h-3.5 mr-2" />
                         Copy filename
                       </ContextMenuItem>
+                      {/* v2.1 round 284 (Terry) — Sharing Phase 4: copy the photo
+                          as an image to paste into a chat / email / document. */}
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          try {
+                            const r = await (window as any).pdr?.clipboard?.copyImage(p.file_path);
+                            if (r?.success) toast.success('Image copied', { description: 'Paste it into a chat, email, or document.' });
+                            else toast.error(r?.error || "Couldn't copy the image");
+                          } catch { toast.error("Couldn't copy the image"); }
+                        }}
+                      >
+                        <ImageIcon className="w-3.5 h-3.5 mr-2" />
+                        Copy image
+                      </ContextMenuItem>
                       <ContextMenuSeparator />
                       <ContextMenuItem
                         onSelect={() => { void editPhotoCaption({ fileId: p.id, filename: p.filename }); }}

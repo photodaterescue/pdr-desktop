@@ -1148,6 +1148,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     onOpenModal: (cb: (paths: string[]) => void) => { const h = (_e: any, paths: string[]) => cb(paths); ipcRenderer.on('print:openModal', h); return () => ipcRenderer.removeListener('print:openModal', h); },
   },
 
+  // v2.1 round 284 (Terry) — Sharing Phase 4: copy a photo to the clipboard as
+  // an image (paste into chats/docs). Local-only.
+  clipboard: {
+    copyImage: (path: string) => ipcRenderer.invoke('clipboard:copyImage', path) as Promise<{ success: boolean; error?: string }>,
+  },
+
   ai: {
     start: () => ipcRenderer.invoke('ai:start'),
     cancel: () => ipcRenderer.invoke('ai:cancel'),

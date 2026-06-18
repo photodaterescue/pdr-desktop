@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess, screen, nativeTheme } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, protocol, net, nativeImage, utilityProcess, screen, nativeTheme, clipboard } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as os from 'os';
@@ -13679,6 +13679,29 @@ ipcMain.handle('print:requestModal', async (_event, paths: string[]) => {
       mainWindow.focus();
       mainWindow.webContents.send('print:openModal', (paths || []).filter(Boolean));
     }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v2.1 round 284 (Terry) — Sharing Phase 4: copy a photo to the clipboard as an
+// IMAGE (paste straight into WhatsApp / Word / Slack, etc.). nativeImage handles
+// JPEG/PNG/BMP; HEIC + anything it can't decode falls back through sharp. All
+// local — the bitmap never leaves the machine.
+ipcMain.handle('clipboard:copyImage', async (_event, filePath: string) => {
+  try {
+    if (!filePath || !fs.existsSync(filePath)) return { success: false, error: 'File not found.' };
+    let img = nativeImage.createFromPath(filePath);
+    if (img.isEmpty()) {
+      try {
+        const sharp = (await import('sharp')).default;
+        const buf = await sharp(filePath, { failOnError: false }).rotate().png().toBuffer();
+        img = nativeImage.createFromBuffer(buf);
+      } catch { /* leave empty → handled below */ }
+    }
+    if (img.isEmpty()) return { success: false, error: 'Could not read this image.' };
+    clipboard.writeImage(img);
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
