@@ -4777,6 +4777,17 @@
     // 1080-wide slices the wide canvas spans.
     let carouselMode = false;        // true while editing a wide-canvas carousel
     let carouselPageCount = 2;       // number of 1080-wide slices (clamped MIN..MAX)
+    // v2.1 round 270 (Terry) — the page brought into focus by a thumbnail click
+    // (scrollViewToSlice). New items (photo / text / emoji) are placed on THIS page so they
+    // land in the view the user just framed, instead of the middle of the whole strip.
+    let carouselFocusPage = 0;
+    // x-fraction (of the WIDE canvas) of the focused page's CENTRE; 0.5 outside carousel mode.
+    function carouselCenterXFrac() {
+      if (!carouselMode) return 0.5;
+      const N = Math.max(1, carouselPageCount);
+      const p = Math.max(0, Math.min(N - 1, carouselFocusPage | 0));
+      return (p + 0.5) / N;
+    }
     const CAROUSEL_MAX = 10, CAROUSEL_DEFAULT = 2, CAROUSEL_MIN = 2;
     // v2.1 round 254 (Terry) — carousel: the per-slice canvas size. 1080×1350 (4:5
     // portrait); a carousel of N slices is N×1080 × 1350. sizeId 'ig-carousel' is a
@@ -8193,7 +8204,7 @@
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.08, scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -8542,7 +8553,7 @@
       beginCollageChange();
       const layer = {
         id: collageTextSeq++, isEmoji: true, text: ch,
-        xFrac: 0.5, yFrac: 0.5, sizeFrac: 0.12, scaleX: 1, scaleY: 1, rot: 0,   // v2.1 round 222 (Terry) — scaleX/scaleY: SIDE handles stretch an emoji one axis (1 = unstretched)
+        xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.12, scaleX: 1, scaleY: 1, rot: 0,   // v2.1 round 222 (Terry) — scaleX/scaleY: SIDE handles stretch an emoji one axis (1 = unstretched); round 270 — focused-page centre in carousel
         z: collageTexts.length + 1,
         // Carried for engine compatibility (snapshot/restore + renderTextToCanvas
         // read these), but the emoji branch ignores them — colour emoji are bitmaps.
@@ -9221,6 +9232,11 @@
       if (carouselMode) {
         const N = Math.max(1, carouselPageCount);
         for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width);
+        // v2.1 round 270 (Terry) — also offer each PAGE's CENTRE as a snap line, so a tile /
+        // text can be centred WITHIN a single page (the dividers act as edges → the midpoint
+        // between two dividers is the page centre). Without this only the whole-strip centre
+        // was findable, so you couldn't centre text on page 1.
+        for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
       }
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
@@ -9615,10 +9631,15 @@
     }
 
     function placeCenter(it) {
-      const wFrac = Math.min(0.42, it.wFrac || 0.35);
+      // v2.1 round 270 (Terry) — in carousel mode size the new tile relative to ONE PAGE
+      // (÷N) and centre it on the page currently in focus, so a photo drops onto the slide
+      // the user just clicked into rather than spanning the middle of the whole strip.
+      const N = carouselMode ? Math.max(1, carouselPageCount) : 1;
+      let wFrac = Math.min(0.42, it.wFrac || 0.35);
+      if (carouselMode) wFrac = wFrac / N;
       it.wFrac = wFrac;
       const ihFrac = itemHeightFrac(it);
-      it.xFrac = 0.5 - wFrac / 2;
+      it.xFrac = carouselCenterXFrac() - wFrac / 2;
       it.yFrac = 0.5 - ihFrac / 2;
       it.rot = 0;
     }
@@ -11979,6 +12000,7 @@
       // empties it (no files[] re-sync).
       carouselMode = true;
       carouselPageCount = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
+      carouselFocusPage = 0;   // v2.1 round 270 (Terry) — start focused on page 1
       // Body class kept for the carousel-filmstrip CSS (pool hidden, slice thumbs shown).
       try { document.body.classList.add('carousel-mode'); } catch (_) {}
       // Empty the canvas first (carouselMode=true → restore's nOrig=0 clears all tiles),
@@ -12026,6 +12048,7 @@
       if (!carouselMode || !collageCanvasEl || !collageStageEl) return;
       const N = Math.max(1, carouselPageCount);
       const idx = Math.max(0, Math.min(N - 1, i | 0));
+      carouselFocusPage = idx;   // v2.1 round 270 (Terry) — this page is now "in focus" for new items
       // The canvas box is laid out at the FIT (transform identity). Read its fitted size.
       const fitW = collageCanvasEl.clientWidth || 0;
       const fitH = collageCanvasEl.clientHeight || 0;
@@ -12449,11 +12472,17 @@
         }
         const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount);
         if (res && res.success && res.count > 0) {
-          // Reveal the folder of slides rather than opening N files in the Viewer.
-          try { if (res.folderPath && window.pdr.openDestinationFolder) window.pdr.openDestinationFolder(res.folderPath); } catch (_) {}
+          // v2.1 round 270 (Terry) — open ALL the slides in the Viewer (like a normal collage
+          // save), instead of only revealing the folder. res.files = [{filePath,filename,..}] in
+          // slide order, so the Viewer opens page 1 first and the user can flick through them.
+          try {
+            const paths = (res.files || []).map((f) => f && f.filePath).filter(Boolean);
+            const names = (res.files || []).map((f) => (f && f.filename) || ((f && f.filePath) || '').split(/[\\/]/).pop());
+            if (paths.length) await window.pdr.search.openViewer(paths, names, 0, false);
+          } catch (_) {}
           if (saveBtn) {
             saveBtn.disabled = false;
-            saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides';
+            saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides — opened in Viewer';
             setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2600);
           }
         } else {
