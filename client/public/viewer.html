@@ -12886,6 +12886,35 @@
       // Reflect the initial bg kind onto the group headers ("in use" marker) AND set the
       // in-use group open / the others collapsed.
       try { syncCollageBgStyleGroupActive(); } catch (_) {}
+      // v2.1 round 271 (Terry) — opening the COLOUR PALETTE style group must PULL the single
+      // shared palette into it. While a gradient stop is armed the palette parks under the
+      // gradient slots (bgPaletteHost), so after building a gradient this group would open
+      // EMPTY (Terry: "I clicked Colour Palette but it hasn't expanded for me to add [a photo]").
+      // On open: disarm the stop so bgPaletteHost returns THIS group's body, target the
+      // background, re-host the palette here, and re-sync the gradient UI (clears the armed
+      // slot highlight + "pick a colour" hint).
+      try {
+        const palGrp = document.getElementById('collage-bg-palette-grp');
+        if (palGrp && !palGrp.__pdrPaletteHostWired) {
+          palGrp.__pdrPaletteHostWired = true;
+          palGrp.addEventListener('toggle', () => {
+            if (!palGrp.open) return;
+            collageGradStopEdit = null;        // disarm any gradient slot
+            colorTarget = 'background';         // the palette colours the BACKGROUND
+            // Re-RENDER the bg palette: with the stop now disarmed it rebuilds WITH the
+            // photo + transparent locked specials (round 248 strips them while a stop is
+            // armed), then re-host it into THIS group's body so the section shows them.
+            try { renderTextColorPaletteForTarget(); } catch (_) {}
+            try { positionBgPalette(); } catch (_) {}
+            // The user explicitly opened this section to set a background fill, so make the
+            // palette VISIBLE here. syncFloatingForFocus only un-hides it when the background
+            // is the SELECTED colourable; opening this section IS that intent, so show it
+            // directly (a later focus/selection change re-evaluates the gate as normal).
+            try { const blk = document.getElementById('collage-unified-color'); if (blk) blk.style.display = ''; } catch (_) {}
+            try { syncCollageGradientUi(); } catch (_) {}   // clear armed-slot highlight + hint
+          });
+        }
+      } catch (_) {}
       // v2.1 round 199 (Terry) — the standalone "Use a photo…" button was removed;
       // the bg-photo picker now opens from the Use-a-photo LOCKED slot in the
       // shared Colour Palette (pickBackground, called inside the locked swatch's
