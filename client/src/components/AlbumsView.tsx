@@ -3976,12 +3976,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         Add to S&amp;D pile
                       </ContextMenuItem>
                       <ContextMenuSeparator />
-                      {/* v2.1 round 275 (Terry) — Add to album…, parity
-                          with Dates. Opens the AddToAlbumPopover (list
-                          mode) via its open-tick. When the right-clicked
-                          tile is part of an active multi-select, adds the
-                          whole selection; otherwise it selects just this
-                          one photo first so the popover targets it. */}
+                      {/* v2.1 round 283 (Terry) — album actions grouped (Create
+                          first, then Add), then a separator, then share actions.
+                          Whole selection when the right-clicked tile is part of it,
+                          else just this photo. */}
+                      <ContextMenuItem
+                        onSelect={() => {
+                          if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
+                            setSelectedAlbumPhotoIds(new Set([p.id]));
+                            lastAlbumClickedIndexRef.current = null;
+                          }
+                          setAddToAlbumCreateTick(t => t + 1);
+                        }}
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                        Create new album…
+                      </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={() => {
                           if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
@@ -3995,9 +4005,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <FolderPlus className="w-3.5 h-3.5 mr-2" />
                         Add to album…
                       </ContextMenuItem>
-                      {/* v2.1 round 282 (Terry) — share/print/create-album in the
-                          right-click menu. Whole selection when the right-clicked
-                          tile is part of it, else just this photo. */}
+                      <ContextMenuSeparator />
                       <ContextMenuItem
                         onSelect={() => {
                           const inMulti = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id);
@@ -4017,18 +4025,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       >
                         <Printer className="w-3.5 h-3.5 mr-2" />
                         Print…
-                      </ContextMenuItem>
-                      <ContextMenuItem
-                        onSelect={() => {
-                          if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
-                            setSelectedAlbumPhotoIds(new Set([p.id]));
-                            lastAlbumClickedIndexRef.current = null;
-                          }
-                          setAddToAlbumCreateTick(t => t + 1);
-                        }}
-                      >
-                        <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                        Create new album…
                       </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={async () => {

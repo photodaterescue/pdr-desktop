@@ -1141,6 +1141,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('print:photos', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; error?: string }>,
     savePdf: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string; color?: string }) =>
       ipcRenderer.invoke('print:savePdf', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>,
+    // v2.1 round 283 (Terry) — open the PDR Print modal from another window (the
+    // Viewer). main focuses the main window + tells its renderer to open the modal,
+    // so Viewer print and library print share ONE path: PDR modal -> native dialog.
+    requestModal: (paths: string[]) => ipcRenderer.invoke('print:requestModal', paths) as Promise<{ success: boolean; error?: string }>,
+    onOpenModal: (cb: (paths: string[]) => void) => { const h = (_e: any, paths: string[]) => cb(paths); ipcRenderer.on('print:openModal', h); return () => ipcRenderer.removeListener('print:openModal', h); },
   },
 
   ai: {

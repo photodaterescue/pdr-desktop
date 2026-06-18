@@ -6076,29 +6076,23 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             Transcribe…
           </ContextMenuItem>
         )}
-        {/* v2.0.15 (Terry 2026-06-02) — Add to album. Mirrors the
-            MemoriesView / AlbumsView per-tile context menu's
-            equivalent item. Parent (SearchPanel) wires the actual
-            open-popover behaviour: if the right-clicked file isn't
-            part of an active multi-select, the parent replaces
-            selection with just this file; either way it bumps the
-            AddToAlbumPopover's openTrigger so the picker opens on
-            next render. */}
-        {onAddToAlbum && (
-          <>
-            <ContextMenuSeparator />
-            <ContextMenuItem
-              onSelect={() => onAddToAlbum()}
-              data-testid={`filecard-add-to-album-${file.id}`}
-            >
-              <FolderPlus className="w-3.5 h-3.5 mr-2" />
-              Add to album…
-            </ContextMenuItem>
-          </>
+        {/* v2.1 round 283 (Terry) — album actions grouped (Create first, then
+            Add), then a separator, then the share actions. Parent (SearchPanel)
+            resolves the paths / selection for each. */}
+        {(onCreateAlbum || onAddToAlbum) && <ContextMenuSeparator />}
+        {onCreateAlbum && (
+          <ContextMenuItem onSelect={() => onCreateAlbum()} data-testid={`filecard-create-album-${file.id}`}>
+            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+            Create new album…
+          </ContextMenuItem>
         )}
-        {/* v2.1 round 282 (Terry) — share/print/create-album in the right-click
-            menu. Parent resolves the paths (whole selection or just this tile). */}
-        {(onSendToPhone || onPrint || onCreateAlbum) && <ContextMenuSeparator />}
+        {onAddToAlbum && (
+          <ContextMenuItem onSelect={() => onAddToAlbum()} data-testid={`filecard-add-to-album-${file.id}`}>
+            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+            Add to album…
+          </ContextMenuItem>
+        )}
+        {(onSendToPhone || onPrint) && <ContextMenuSeparator />}
         {onSendToPhone && (
           <ContextMenuItem onSelect={() => onSendToPhone()} data-testid={`filecard-send-phone-${file.id}`}>
             <Smartphone className="w-3.5 h-3.5 mr-2" />
@@ -6109,12 +6103,6 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
           <ContextMenuItem onSelect={() => onPrint()} data-testid={`filecard-print-${file.id}`}>
             <Printer className="w-3.5 h-3.5 mr-2" />
             Print…
-          </ContextMenuItem>
-        )}
-        {onCreateAlbum && (
-          <ContextMenuItem onSelect={() => onCreateAlbum()} data-testid={`filecard-create-album-${file.id}`}>
-            <FolderPlus className="w-3.5 h-3.5 mr-2" />
-            Create new album…
           </ContextMenuItem>
         )}
       </ContextMenuContent>

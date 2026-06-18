@@ -13668,6 +13668,23 @@ ipcMain.handle('print:savePdf', async (event, paths: string[], opts: PrintOpts) 
   }
 });
 
+// v2.1 round 283 (Terry) — open the PDR Print modal in the MAIN window on behalf
+// of another window (the Viewer), so Viewer print and library print share ONE
+// path: PDR modal -> native dialog. Focus the main window + tell its renderer.
+ipcMain.handle('print:requestModal', async (_event, paths: string[]) => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('print:openModal', (paths || []).filter(Boolean));
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('ai:faceContext', async (_event, filePath: string, boxX: number, boxY: number, boxW: number, boxH: number, size: number = 240) => {
   try {
     const sharp = (await import('sharp')).default;

@@ -4612,10 +4612,11 @@
       });
     } catch (_) {}
 
-    // v2.1 round 282 (Terry) — Print from the Viewer. Prints the filmstrip
-    // selection if one is active, else the current photo, via the native OS
-    // print dialog (window.pdr.print.photos). Sensible defaults; the rich
-    // layout/size/B&W options live in the library Print modal.
+    // v2.1 round 282/283 (Terry) — Print from the Viewer. Opens the SAME PDR
+    // Print modal the library uses (layout / photo-size / B&W / preview), routed
+    // to the main window via print.requestModal, so both print paths are
+    // identical: PDR modal -> native dialog. Prints the filmstrip selection if
+    // one is active, else the current photo.
     try {
       const printBtn = document.getElementById('btn-print');
       if (printBtn) printBtn.addEventListener('click', async () => {
@@ -4624,8 +4625,8 @@
         const paths = (filmstripSelection && filmstripSelection.size > 0) ? Array.from(filmstripSelection) : (cur ? [cur] : []);
         if (!paths.length) return;
         try {
-          if (window.pdr && window.pdr.print && window.pdr.print.photos) {
-            await window.pdr.print.photos(paths, { layout: '1', fit: 'fit', paper: 'Letter', orientation: 'portrait', color: 'color' });
+          if (window.pdr && window.pdr.print && window.pdr.print.requestModal) {
+            await window.pdr.print.requestModal(paths);
           }
         } catch (err) { console.warn('[viewer] print failed:', err && (err.message || err)); }
       });

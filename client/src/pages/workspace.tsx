@@ -1031,9 +1031,16 @@ useEffect(() => {
   };
   window.addEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
   window.addEventListener('pdr:printPhotos', onPrint as EventListener);
+  // v2.1 round 283 (Terry) — the Viewer (a separate window) asks main to open
+  // the PDR Print modal here, so its print path matches the library's.
+  const offPrintModal = (window as any).pdr?.print?.onOpenModal?.((paths: string[]) => {
+    const p = (paths || []).filter(Boolean);
+    if (p.length) setPrintTarget(p);
+  });
   return () => {
     window.removeEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
     window.removeEventListener('pdr:printPhotos', onPrint as EventListener);
+    offPrintModal?.();
   };
 }, []);
 // Library-Drive-offline modal — surfaced when the persisted

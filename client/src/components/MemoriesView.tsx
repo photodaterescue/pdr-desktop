@@ -249,6 +249,13 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
   // them instead of only click-to-open.
   const [selectedOtdIds, setSelectedOtdIds] = useState<Set<number>>(new Set());
   const toggleOtd = (id: number) => setSelectedOtdIds(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
+  // v2.1 round 283 (Terry) — Ctrl/Shift on the OTD strip, matching Dates. Anchor
+  // index for Shift-range; otdRangeAdd adds onThisDay[from..to] to the selection.
+  const lastOtdClickIdx = useRef<number | null>(null);
+  const otdRangeAdd = (items: { id: number }[], from: number, to: number) => {
+    const a = Math.min(from, to), b = Math.max(from, to);
+    setSelectedOtdIds(prev => { const n = new Set(prev); for (let i = a; i <= b; i++) { const it = items[i]; if (it) n.add(it.id); } return n; });
+  };
   // "Ready to render" gate that defers the OTD card's first mount
   // by one frame after Memories itself mounts. Terry's theory
   // 2026-05-21: with the OTD card mounting in the same render
@@ -968,14 +975,27 @@ export default function MemoriesView({ headerControlsTarget }: { headerControlsT
                       // Pass the full strip + this item's index so the
                       // viewer's left/right arrows browse the rest of
                       // the "On this day in previous years" set.
-                      onClick={() => openSearchViewer(onThisDay.map(o => o.file_path), onThisDay.map(o => o.filename), idx)}
+                      // v2.1 round 283 (Terry) — Ctrl/Shift+click select (like
+                      // Dates); a plain click opens the viewer.
+                      onClick={(e) => {
+                        if (e.ctrlKey || e.metaKey) { e.preventDefault(); toggleOtd(item.id); lastOtdClickIdx.current = idx; return; }
+                        if (e.shiftKey && lastOtdClickIdx.current !== null) { e.preventDefault(); otdRangeAdd(onThisDay, lastOtdClickIdx.current, idx); lastOtdClickIdx.current = idx; return; }
+                        lastOtdClickIdx.current = idx;
+                        openSearchViewer(onThisDay.map(o => o.file_path), onThisDay.map(o => o.filename), idx);
+                      }}
                       className={`group relative shrink-0 w-[140px] h-[140px] overflow-hidden bg-secondary/30 transition-all ${otdTileClass} ${selectedOtdIds.has(item.id) ? 'ring-2 ring-[var(--color-gold)]' : ''}`}
                     >
                       {/* v2.1 round 282 (Terry) — selection checkbox for AI
                           suggestions; gold tick mirrors the Dates tile checkbox.
-                          Stops propagation so it picks without opening the viewer. */}
+                          Stops propagation so it picks without opening the viewer.
+                          v2.1 round 283 — Shift+checkbox range-adds. */}
                       <div
-                        onClick={(e) => { e.stopPropagation(); e.preventDefault(); toggleOtd(item.id); }}
+                        onClick={(e) => {
+                          e.stopPropagation(); e.preventDefault();
+                          if (e.shiftKey && lastOtdClickIdx.current !== null) otdRangeAdd(onThisDay, lastOtdClickIdx.current, idx);
+                          else toggleOtd(item.id);
+                          lastOtdClickIdx.current = idx;
+                        }}
                         className={`absolute top-1.5 left-1.5 w-5 h-5 rounded border-2 flex items-center justify-center transition-all cursor-pointer hover:scale-110 z-10 ${
                           selectedOtdIds.has(item.id)
                             ? 'bg-[var(--color-gold)] border-[var(--color-gold)] text-[#1f1a08] opacity-100'
@@ -3562,17 +3582,23 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     Copy filename
                   </ContextMenuItem>
                   <ContextMenuSeparator />
+                  {/* v2.1 round 283 (Terry) — album actions grouped (Create
+                      first, then Add), then a separator, then the share actions
+                      grouped. Right-click acts on the whole selection when the
+                      tile is part of it, else just this photo. */}
                   <ContextMenuItem
                     onSelect={() => {
-                      // v2.0.15 (Terry 2026-06-01) — open the picker
-                      // directly. If the right-clicked tile isn't
-                      // part of an active multi-select, treat the
-                      // operation as single-photo: replace the
-                      // selection with just this file so the
-                      // popover targets the right set. If it IS
-                      // already in the selection, keep the existing
-                      // multi-select. Either way bump the trigger
-                      // tick so the popover opens on next render.
+                      const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
+                      if (!alreadyInMulti) setSelectedFileIds(new Set([f.id]));
+                      lastClickedIndexRef.current = idx;
+                      setAddToAlbumCreateTick(t => t + 1);
+                    }}
+                  >
+                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                    Create new album…
+                  </ContextMenuItem>
+                  <ContextMenuItem
+                    onSelect={() => {
                       const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
                       if (!alreadyInMulti) {
                         setSelectedFileIds(new Set([f.id]));
@@ -3584,9 +3610,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
                   </ContextMenuItem>
-                  {/* v2.1 round 282 (Terry) — share/print/create-album in the
-                      right-click menu. Acts on the whole selection when the
-                      right-clicked tile is part of it, else just this photo. */}
+                  <ContextMenuSeparator />
                   <ContextMenuItem
                     onSelect={() => {
                       const inMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
@@ -3608,17 +3632,6 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   >
                     <Printer className="w-3.5 h-3.5 mr-2" />
                     Print…
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onSelect={() => {
-                      const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
-                      if (!alreadyInMulti) setSelectedFileIds(new Set([f.id]));
-                      lastClickedIndexRef.current = idx;
-                      setAddToAlbumCreateTick(t => t + 1);
-                    }}
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                    Create new album…
                   </ContextMenuItem>
                   {/* v2.0.13 — per-photo caption. Pre-fills with the
                       current caption (if any) so the same item handles
