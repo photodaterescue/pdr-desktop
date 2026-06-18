@@ -1831,8 +1831,10 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
 // Each slice is written into ONE dedicated subfolder `PDR Captures/<month>/
 // Carousel_<YYYYMMDD_HHmmss>/` as slide_01.jpg … slide_NN.jpg (slide_NN.png when the
 // canvas is transparent), then stamped + indexed (each at 1080×1350) + added to the
-// "PDR Collages" album (same Settings gate as the single save) — the index/album tail
-// is the SAME as the per-slide loop it replaces. Returns the file list + folder so the
+// "PDR Carousels" album (same Settings gate as the single save, separate album) — the
+// index/album tail is the SAME as the per-slide loop it replaces. v2.1 round 273 (Terry):
+// carousels get their OWN "PDR Carousels" album (single collages stay in "PDR Collages").
+// Returns the file list + folder so the
 // renderer reveals the folder (a single Viewer open is wrong for N files). Shape
 // unchanged: { success, files, folderPath, count, pending }.
 const CAROUSEL_SLICE_W = 1080;
@@ -1864,21 +1866,23 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     const folderPath = path.join(baseDir, `Carousel_${stamp}`);
     fs.mkdirSync(toLongPath(folderPath), { recursive: true });
 
-    // Album helpers imported once (not per slide). Same Settings gate + title as
-    // the single save, so carousel slides land in "PDR Collages" alongside collages.
+    // Album helpers imported once (not per slide). Same Settings gate + lookup/create
+    // pattern as the single save, but carousel slides land in their OWN "PDR Carousels"
+    // album (kept separate from single collages' "PDR Collages").
+    // v2.1 round 273 (Terry) — route carousels into "PDR Carousels" (was "PDR Collages").
     const wantCollagesAlbum = (() => { try { return getSettings().saveCollagesToAlbum !== false; } catch { return true; } })();
     let albumId: number | null = null;
     let addPhotosToAlbum: ((id: number, ids: number[]) => unknown) | null = null;
     if (libRoot && wantCollagesAlbum) {
       try {
         const sdb = await import('./search-database.js');
-        const ALBUM_TITLE = 'PDR Collages';
+        const ALBUM_TITLE = 'PDR Carousels'; // v2.1 round 273 (Terry)
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const existing = (sdb.listAlbums() as any[]).find((a) => (a && a.title || '').toLowerCase() === ALBUM_TITLE.toLowerCase());
         albumId = existing ? existing.id : sdb.createUserAlbum(ALBUM_TITLE);
         addPhotosToAlbum = sdb.addPhotosToAlbum;
       } catch (albErr) {
-        log.warn(`[collage] carousel album prep failed (non-fatal): ${(albErr as Error).message}`);
+        log.warn(`[collage] carousel "PDR Carousels" album prep failed (non-fatal): ${(albErr as Error).message}`); // v2.1 round 273 (Terry)
       }
     }
 

@@ -4815,9 +4815,11 @@
     // user simply has more headroom; nothing auto-zooms past 1 outside carousel mode.
     const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 10;
     // v2.1 round 266 (Terry) — Behaviour A: zoom-out floor. In carousel mode the user
-    // can zoom OUT past the fit until the carousel takes up ~half the page width (0.5);
-    // single-collage keeps the existing 0.2 floor. Used by the Ctrl+wheel view-zoom clamp.
-    function collageZoomFloor() { return carouselMode ? 0.5 : COLLAGE_ZOOM_MIN; }
+    // can zoom OUT past the fit until the carousel takes up ~40% of the page width; single-
+    // collage keeps the existing 0.2 floor. Used by the Ctrl+wheel view-zoom clamp.
+    // v2.1 round 273 (Terry) — floor lowered 0.5 → 0.4 (20% more zoom-out; 0.5 was "borderline
+    // not enough"). Pairs with the round-268 below-fit centring so the carousel stays centred.
+    function collageZoomFloor() { return carouselMode ? 0.4 : COLLAGE_ZOOM_MIN; }
     // v2.1 round 266 (Terry) — Behaviour B (Phase 3): a tile may grow LARGER than the
     // page (Canva allows it). Matches the backend bake ceiling (capture-manager.ts
     // TILE_WFRAC_MAX). Tiles can be up to 4× the (wide) canvas width.
@@ -10679,7 +10681,8 @@
     let collagePickMode = 'bg';   // 'bg' = background pick (default) | 'add' = add-a-tile
     function addPhotoToCollage(fp) {
       if (!fp || !collageMode) return;
-      if (isVideoPath(fp)) { try { window.alert('Only photos can be added to a collage.'); } catch (_) {} return; }
+      // v2.1 round 273 (Terry) — styled alert (no native dialog); fire-and-forget (return value unused, function not async).
+      if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can be added to a collage.' }); return; }
       beginCollageChange();
       // Build a fresh tile model with the same defaults buildCollageItems() uses
       // for a per-file tile, but with the picked path and a centred placement.
@@ -10717,7 +10720,8 @@
     // shape. Applies to single collages AND carousels (it's just an item).
     function addBackgroundPhotoTile(fp) {
       if (!fp || !collageMode) return;
-      if (isVideoPath(fp)) { try { window.alert('Only photos can be used as a background.'); } catch (_) {} return; }
+      // v2.1 round 273 (Terry) — styled alert (no native dialog); fire-and-forget (return value unused, function not async).
+      if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can be used as a background.' }); return; }
       beginCollageChange();
       // v2.1 round 267 (Terry) — Background photo now behaves EXACTLY like the
       // bottom-left "Add photos" (addPhotoToCollage): a NORMAL, UNLOCKED tile at
@@ -12225,11 +12229,15 @@
     // clears them; on confirm, blank the live collage FIRST (so every page — including
     // page 0 that enterCarouselMode snapshots — starts empty, matching the warning) then
     // enter at the default page count. Persists the sticky last-pick like selectCanvasPreset.
-    function enterCarouselFromMenu(p) {
+    // v2.1 round 273 (Terry) — async so the clear-warning uses the styled
+    // showPdrConfirm (no native OS dialog). Sole caller (selectCanvasPreset)
+    // fire-and-forgets the returned Promise — it returns void either way.
+    async function enterCarouselFromMenu(p) {
       if (carouselMode) { syncCanvasSizeSelection(); return; }
       const nonEmpty = collageItems.some((it) => it.on && !isVideoPath(it.path)) || (collageTexts && collageTexts.length > 0);
       if (nonEmpty) {
-        if (!window.confirm('Starting a carousel will clear the current photos. Continue?')) return;
+        const ok = await showPdrConfirm({ title: 'Start a carousel?', body: 'Starting a carousel will clear the current photos. Continue?', confirmLabel: 'Continue', cancelLabel: 'Cancel' });
+        if (!ok) return;
       }
       // v2.1 round 257 (Terry) — enterCarouselMode now starts ALL pages blank (it clears
       // the live collage via the carousel restore path), so no separate pre-clear here.
@@ -12425,13 +12433,13 @@
       // whole carousel as numbered slides instead of one collage file.
       if (carouselMode) return saveCarousel();
       const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
-      if (on.length === 0) { window.alert('Add at least one photo to the collage first.'); return; }
+      if (on.length === 0) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
       const saveBtn = document.getElementById('collage-save');
       const originalHtml = saveBtn ? saveBtn.innerHTML : '';
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
       try {
         const layout = buildCollageLayout();
-        if (!layout) { window.alert('Add at least one photo to the collage first.'); if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; } return; }
+        if (!layout) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; } return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
         const res = await window.pdr.collage.saveLayout(layout);
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
@@ -12446,11 +12454,11 @@
             setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2200);
           }
         } else {
-          window.alert('Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.'));
+          await showPdrAlert({ title: 'Save failed', body: 'Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
         }
       } catch (err) {
-        window.alert('Collage save error:\n\n' + (err && err.message ? err.message : String(err)));
+        await showPdrAlert({ title: 'Save failed', body: 'Collage save error:\n\n' + (err && err.message ? err.message : String(err)) });  // v2.1 round 273 (Terry) — styled alert, no native dialog
         if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
       }
     }
@@ -12467,14 +12475,14 @@
       // Empty-carousel guard: nothing on the wide canvas → nothing to export.
       const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
       if (on.length === 0 && (!collageTexts || collageTexts.length === 0)) {
-        window.alert('Add at least one photo to a slide first.');
+        await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to a slide first.' });  // v2.1 round 273 (Terry) — styled alert, no native dialog
         return;
       }
       if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving ' + carouselPageCount + ' slides…'; }
       try {
         const layout = buildCollageLayout();   // the WHOLE wide canvas
         if (!layout) {
-          window.alert('Add at least one photo to a slide first.');
+          await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to a slide first.' });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
           return;
         }
@@ -12494,11 +12502,11 @@
             setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2600);
           }
         } else {
-          window.alert('Carousel save failed:\n\n' + ((res && res.error) || 'Unknown error.'));
+          await showPdrAlert({ title: 'Save failed', body: 'Carousel save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
         }
       } catch (err) {
-        window.alert('Carousel save error:\n\n' + (err && err.message ? err.message : String(err)));
+        await showPdrAlert({ title: 'Save failed', body: 'Carousel save error:\n\n' + (err && err.message ? err.message : String(err)) });  // v2.1 round 273 (Terry) — styled alert, no native dialog
         if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
       }
     }
@@ -16581,6 +16589,48 @@ function zoomTo(newZoom, centreX, centreY) {
           setTimeout(function () { try { input.focus(); input.select(); } catch (_) {} }, 30);
         });
       }
+      // v2.1 round 273 (Terry) — styled one-button alert. Reuses the SAME
+      // enhance-ai-warning card markup as showPdrConfirm above, but with a
+      // single OK/Got it button (no Cancel). Replaces native window.alert so
+      // nothing native pops up. Resolves when dismissed (button / Enter / Escape).
+      function showPdrAlert(opts) {
+        return new Promise(function (resolve) {
+          const overlay = document.createElement('div');
+          overlay.className = 'enhance-ai-warning';
+          overlay.style.display = 'flex';
+          overlay.innerHTML = ''
+            + '<div class="enhance-ai-warning-card">'
+            +   '<div class="enhance-ai-warning-title">' + escapeForFaceLabel(opts.title || 'Notice') + '</div>'
+            +   '<p>' + escapeForFaceLabel(opts.body || '') + '</p>'
+            +   '<div class="enhance-ai-warning-actions">'
+            +     '<button class="enhance-ai-warning-continue" type="button" data-action="ok">' + escapeForFaceLabel(opts.okLabel || 'Got it') + '</button>'
+            +   '</div>'
+            + '</div>';
+          document.body.appendChild(overlay);
+          function close() {
+            window.removeEventListener('keydown', onKey, true);
+            overlay.remove();
+            resolve();
+          }
+          overlay.querySelector('[data-action="ok"]').onclick = function () { close(); };
+          // Enter or Escape dismiss the single-button alert.
+          const onKey = function (e) {
+            if (e.key === 'Escape' || e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); close(); }
+          };
+          window.addEventListener('keydown', onKey, true);
+          setTimeout(function () { try { overlay.querySelector('[data-action="ok"]').focus(); } catch (_) {} }, 30);
+        });
+      }
+      // v2.1 round 273 (Terry) — showPdrConfirm / showPdrPrompt / showPdrAlert are declared in
+      // THIS setup function's closure, but the TOP-LEVEL collage handlers (saveCollage /
+      // saveCarousel / enterCarouselFromMenu / addPhotoToCollage / addBackgroundPhotoTile) call
+      // them after the round-273 native-dialog swap. They are out of scope there → "showPdrAlert
+      // is not defined". Expose on window so a bare showPdrAlert(...)/showPdrConfirm(...) in those
+      // top-level functions resolves to the global. (In-closure callers keep using the closure
+      // binding unchanged.)
+      window.showPdrConfirm = showPdrConfirm;
+      window.showPdrPrompt = showPdrPrompt;
+      window.showPdrAlert = showPdrAlert;
 
       // v2.1 round 11 — click delegation on the face-boxes layer for
       // name + delete actions. One listener instead of per-box
@@ -17169,11 +17219,16 @@ function zoomTo(newZoom, centreX, centreY) {
         }
         // Confirm before replacing.
         if (mode === 'replace') {
-          const ok = window.confirm(
-            'Replace the original file with these adjustments?\n\n' +
-            'This overwrites the file on disk. There is no undo from here.\n\n' +
-            'Click Cancel to save as a new file instead.'
-          );
+          // v2.1 round 273 (Terry) — styled confirm (no native OS dialog). performSave is
+          // already async and its callers fire-and-forget, so awaiting here is safe.
+          const ok = await showPdrConfirm({
+            title: 'Replace the original?',
+            body: 'Replace the original file with these adjustments?\n\n' +
+              'This overwrites the file on disk. There is no undo from here.\n\n' +
+              'Click Cancel to save as a new file instead.',
+            confirmLabel: 'Save',
+            cancelLabel: 'Cancel',
+          });
           if (!ok) return;
         }
         // Disable buttons during the save to prevent double-clicks.
@@ -17259,10 +17314,10 @@ function zoomTo(newZoom, centreX, centreY) {
             resetState();
           } else {
             const err = (result && result.error) || 'Save failed.';
-            window.alert('Enhanced save failed:\n\n' + err);
+            await showPdrAlert({ title: 'Save failed', body: 'Enhanced save failed:\n\n' + err });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           }
         } catch (err) {
-          window.alert('Enhanced save error:\n\n' + (err && err.message ? err.message : String(err)));
+          await showPdrAlert({ title: 'Save failed', body: 'Enhanced save error:\n\n' + (err && err.message ? err.message : String(err)) });  // v2.1 round 273 (Terry) — styled alert, no native dialog
         } finally {
           targets.forEach(function (b) { if (b) { b.classList.remove('enhance-save-saving'); } });
           updateSaveAvailability();
