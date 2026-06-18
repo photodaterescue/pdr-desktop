@@ -10648,7 +10648,7 @@
           return;
         }
         if (wrapUndo) beginCollageChange();
-        reshapeCollage(w / h, '', { w: w, h: h });   // custom → no preset highlight; export at the exact px
+        reshapeCollage(w / h, '', { w: w, h: h }, true);   // custom size, Magic Resize: keep the layout
         if (wrapUndo) commitCollageChange();
       };
       applyBtn.addEventListener('click', () => applyCustom(false));   // pointer click → wrapper handles undo
@@ -12780,7 +12780,7 @@
     // { w, h } target export size (null = legacy 2000px long-edge default). Mirrors
     // the old setCollageAspect body (set state → sync highlight → relayout → re-tidy);
     // one undo step is provided by the panel-wide pointerdown/up wrapper for clicks.
-    function reshapeCollage(aspect, sizeId, exportPx) {
+    function reshapeCollage(aspect, sizeId, exportPx, preserveLayout) {
       if (!(typeof aspect === 'number' && isFinite(aspect) && aspect > 0)) return;
       collageAspectKey = aspect;
       collageSizeId = sizeId || '';
@@ -12792,7 +12792,12 @@
       collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
       syncCanvasSizeSelection();
       layoutCanvasSize();
-      gridArrange();
+      // v2.1 round 287 (Terry) — Magic Resize: when preserveLayout, KEEP the user's
+      // arrangement. Items are fraction-based, so layoutCanvasSize() above already
+      // reflowed each one proportionally into the new aspect — no re-grid needed.
+      // We only auto-grid when NOT preserving (carousel/legacy callers). Re-tiling
+      // on demand is still available via the Arrange / Shuffle button.
+      if (!preserveLayout) gridArrange();
     }
     // Apply a Canvas Size preset object.
     function selectCanvasPreset(p) {
@@ -12805,7 +12810,7 @@
       // carousel is open leaves carousel mode first (drops the slice guides/thumbs +
       // returns getCanvasAspect to the single-canvas path), then applies the chosen size.
       if (carouselMode) { try { exitCarouselMode(); } catch (_) {} }
-      reshapeCollage(presetAspect(p), p.id, { w: p.px.w, h: p.px.h });
+      reshapeCollage(presetAspect(p), p.id, { w: p.px.w, h: p.px.h }, true);   // Magic Resize: keep the layout
       try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p.id); } catch (_) {}
     }
     // v2.1 round 256 (Terry) — carousel: enter carousel mode from the Canvas Size menu.
