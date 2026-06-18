@@ -41,6 +41,8 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+// v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
+import { startFileDrag } from '@/lib/os-file-drag';
 // v2.1 round 275 (Terry) — Actions dropdown for the Albums multi-select
 // toolbar (parity with Dates). Same primitives MemoriesView uses.
 import {
@@ -3471,6 +3473,17 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           <X className="w-3 h-3 opacity-70" />
                         </button>
                       </IconTooltip>
+                      {/* v2.1 round 277 (Terry) — Sharing Phase 1
+                          discoverability cue (mirrors MemoriesView). Static
+                          muted hint that selected tiles can be dragged out
+                          to another app / email; the in-motion "Drag (N)"
+                          gold badge is the during-drag affordance. */}
+                      <IconTooltip label="Drag any selected photo to another app or email — they all come along" side="bottom">
+                        <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground select-none">
+                          <GripVertical className="w-3.5 h-3.5 opacity-70" />
+                          drag to share
+                        </span>
+                      </IconTooltip>
                       {/* Hidden AddToAlbumPopover anchor — squashed off-
                           screen so it serves only as the popover anchor
                           the Actions items open via open-ticks (list mode
@@ -3756,9 +3769,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         data-pick-path={isVideoPathExt(p.file_path) ? undefined : p.file_path}
                         draggable
                         onDragStart={(e) => {
-                          try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
-                          e.preventDefault();
-                          (window as any).pdr?.drag?.start?.([p.file_path], thumbs[p.file_path]);
+                          // v2.1 round 277 (Terry) — Sharing Phase 1: was
+                          // single-file. Now drags the WHOLE selection when
+                          // the dragged tile is part of it (mirrors
+                          // startExportSelectedAsPL's set), else just this
+                          // photo. Routed through the shared helper for the
+                          // count badge + never-empty icon guarantee.
+                          const dragSet = (selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))
+                            ? albumPhotos.filter((x) => selectedAlbumPhotoIds.has(x.id)).map((x) => x.file_path)
+                            : [p.file_path];
+                          startFileDrag(e, dragSet, { iconSrc: thumbs[dragSet[0]] });
                         }}
                         onClick={(e) => handleAlbumPhotoClick(visiblePhotos, i, e)}
                         className={`group relative w-full h-full overflow-hidden transition-all ${

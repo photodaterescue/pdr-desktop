@@ -33,6 +33,7 @@ import {
   ZoomIn,
   ZoomOut,
   Search,
+  GripVertical,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { promptConfirm } from '@/components/trees/promptConfirm';
@@ -64,6 +65,8 @@ import {
   type IndexedRun,
 } from '../lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+// v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
+import { startFileDrag } from '@/lib/os-file-drag';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
@@ -2874,6 +2877,17 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 <X className="w-3 h-3 opacity-70" />
               </button>
             </IconTooltip>
+            {/* v2.1 round 277 (Terry) — Sharing Phase 1 discoverability
+                cue. Static (zero timing risk) muted hint that the
+                selected tiles can be dragged straight out to another
+                app / email. The in-motion "Drag (N)" gold badge is the
+                during-drag affordance; this is the at-rest one. */}
+            <IconTooltip label="Drag any selected photo to another app or email — they all come along" side="bottom">
+              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground select-none">
+                <GripVertical className="w-3.5 h-3.5 opacity-70" />
+                drag to share
+              </span>
+            </IconTooltip>
             {/* v2.1 round 35 (Terry 2026-06-08) — toolbar restructure.
                 Terry: "we should combine the CTAs into a dropdown
                 menu, because they are quite simply doing my fucking
@@ -3171,14 +3185,17 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       data-pick-path={f.file_type === 'video' ? undefined : f.file_path}
                       draggable
                       onDragStart={(e) => {
-                        try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
-                        e.preventDefault();
+                        // v2.1 round 277 (Terry) — Sharing Phase 1: route
+                        // the (already multi-file-correct) drag through the
+                        // shared helper so it gains the "Drag (N)" count
+                        // badge + the never-empty icon guarantee. dragSet
+                        // logic is unchanged: whole selection when the
+                        // dragged tile is part of it, else just this file.
                         const base = visibleFiles ?? files ?? [];
                         const dragSet = (selectedFileIds.size > 0 && selectedFileIds.has(f.id))
                           ? base.filter((x) => selectedFileIds.has(x.id)).map((x) => x.file_path)
                           : [f.file_path];
-                        const iconUrl = thumbs[f.file_path];
-                        (window as any).pdr?.drag?.start?.(dragSet, iconUrl);
+                        startFileDrag(e, dragSet, { iconSrc: thumbs[dragSet[0]] });
                       }}
                       // Modifier-key contract mirrors SearchPanel/S&D:
                       //   plain click            → open viewer (jump in at idx)

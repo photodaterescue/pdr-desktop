@@ -77,10 +77,13 @@ import {
   FolderPlus,
   Captions,
   Files,
+  GripVertical,
 } from 'lucide-react';
 import { BrandedDatePicker } from '@/components/ui/branded-date-picker';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+// v2.1 round 277 (Terry) — Sharing Phase 1: shared multi-file OS drag helper.
+import { startFileDrag } from '@/lib/os-file-drag';
 import { useTranscribeVideos } from '@/hooks/useTranscribeVideos';
 import { useTranscribedFileIds } from '@/hooks/useTranscribedFileIds';
 import { TranscriptBadge } from '@/components/TranscriptBadge';
@@ -5005,6 +5008,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   <X className="w-3.5 h-3.5 opacity-70" />
                 </button>
               </IconTooltip>
+              {/* v2.1 round 277 (Terry) — Sharing Phase 1 discoverability
+                  cue (mirrors MemoriesView + AlbumsView). Static muted
+                  hint that selected tiles can be dragged out to another
+                  app / email; the in-motion "Drag (N)" gold badge is the
+                  during-drag affordance. */}
+              <IconTooltip label="Drag any selected photo to another app or email — they all come along" side="bottom">
+                <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground select-none shrink-0">
+                  <GripVertical className="w-3.5 h-3.5 opacity-70" />
+                  drag to share
+                </span>
+              </IconTooltip>
               {/* v2.1 round 113 (Terry 2026-06-11) — primary CTA
                   brought back to the band, but the verb is now
                   Open-in-Viewer rather than Add-to-PL. Terry: "the
@@ -5306,6 +5320,17 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                           isSelected={selectedFile?.id === file.id}
                           isMultiSelected={selectedFiles.has(file.id)}
                           hasTranscript={file.file_type === 'video' && transcribedFileIds.has(file.id)}
+                          // v2.1 round 277 (Terry) — Sharing Phase 1: resolve
+                          // the OS-drag set HERE (FileCard has no selection
+                          // access). Whole selection when this tile is part
+                          // of it, else just this file. Mirrors the
+                          // onAddToAlbum precedent; we read file paths from
+                          // selectedFilesMap, never pass the Map down.
+                          getDragPaths={() => (
+                            selectedFiles.size > 0 && selectedFiles.has(file.id)
+                              ? Array.from(selectedFilesMap.values()).map(f => f.file_path)
+                              : [file.file_path]
+                          )}
                           onAddToAlbum={() => {
                             // v2.0.15 (Terry 2026-06-02) — context menu
                             // "Add to album". If the right-clicked tile
@@ -5859,7 +5884,7 @@ function FilterCheckbox({ label, checked, onChange, color, icon, count }: { labe
 // Metadata field keys that users can toggle on for tile footers
 type TileMetaField = 'filename' | 'date' | 'size' | 'camera' | 'lens' | 'iso' | 'aperture' | 'focalLength' | 'dimensions' | 'country' | 'city' | 'confidence';
 
-function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscript }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscript?: boolean }) {
+function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onCheckboxClick, onDoubleClick, metaFields, selectionMode, onAddToAlbum, onTranscribe, hasTranscript, getDragPaths }: { file: IndexedFile; thumbnail?: string; isSelected: boolean; isMultiSelected?: boolean; onClick: (e: React.MouseEvent) => void; onCheckboxClick?: (e: React.MouseEvent) => void; onDoubleClick?: () => void; metaFields?: TileMetaField[]; selectionMode?: boolean; onAddToAlbum?: () => void; onTranscribe?: () => void; hasTranscript?: boolean; getDragPaths?: () => string[] }) {
   const highlighted = isSelected || isMultiSelected;
   const fields = metaFields ?? [];
   const hasAnyMeta = fields.length > 0;
@@ -5880,9 +5905,14 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
       // for the full rationale + the File Explorer caveat.
       draggable
       onDragStart={(e) => {
-        try { e.dataTransfer.effectAllowed = 'copy'; } catch { /* readonly in some contexts */ }
-        e.preventDefault();
-        (window as any).pdr?.drag?.start?.([file.file_path], thumbnail);
+        // v2.1 round 277 (Terry) — Sharing Phase 1: was single-file.
+        // getDragPaths (threaded from the parent, which owns the
+        // selection sets) resolves the WHOLE selection when this tile
+        // is part of it, else just this file. Falls back to this one
+        // path if the prop isn't wired. Routed through the shared
+        // helper for the count badge + never-empty icon guarantee.
+        const paths = getDragPaths ? getDragPaths() : [file.file_path];
+        startFileDrag(e, paths, { iconSrc: thumbnail });
       }}
       // Premium hover: subtle 2px lift + softer shadow so the tile
       // pops out of the dense gap-0 grid. `relative hover:z-10` is

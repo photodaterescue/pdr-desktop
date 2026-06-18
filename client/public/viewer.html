@@ -6907,6 +6907,61 @@
       // chunks land (which would fight the user's manual scroll).
       let activeScrolled = false;
 
+      // v2.1 round 277 (Terry) — Sharing Phase 1: native OS drag straight
+      // FROM a filmstrip thumb out to another app / email. SINGLE-file
+      // (the filmstrip has no multi-select) and GATED to non-collage mode
+      // — in collage mode the strip thumbs drive keep/sideline + the
+      // collage's own pointer-drag-to-canvas, so we must NOT also start
+      // an OS drag there. Reuses the same never-empty-icon discipline as
+      // the toolbar drag button (4316-4332): a lavender PDR square is
+      // generated once and used whenever a thumb's real image isn't
+      // loaded yet (the placeholder TRANSPARENT_PIXEL must never be sent
+      // as the icon — startDrag silently no-ops on an empty-ish icon).
+      let filmstripFallbackIcon = '';
+      const getFilmstripFallbackIcon = () => {
+        if (filmstripFallbackIcon) return filmstripFallbackIcon;
+        try {
+          const c = document.createElement('canvas');
+          c.width = 48; c.height = 48;
+          const ctx = c.getContext('2d');
+          if (ctx) {
+            ctx.fillStyle = '#A99CFF';
+            ctx.fillRect(0, 0, 48, 48);
+            ctx.fillStyle = '#1a1a2e';
+            ctx.font = 'bold 22px sans-serif';
+            ctx.textBaseline = 'middle';
+            ctx.textAlign = 'center';
+            ctx.fillText('PDR', 24, 26);
+            filmstripFallbackIcon = c.toDataURL('image/png');
+          }
+        } catch (_) {}
+        return filmstripFallbackIcon;
+      };
+      // dragstart handler shared by both thumb kinds. `getSrc` returns the
+      // thumb's loaded image src (or '' for the video-thumb div, which has
+      // no <img>); we fall back to the lavender square otherwise.
+      const onFilmstripThumbDragStart = (e, getSrc) => {
+        if (collageMode) { return; }   // collage owns the strip; no OS drag
+        const fp = e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.fp : '';
+        if (!fp) { e.preventDefault(); return; }
+        try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
+        e.preventDefault();
+        let icon = '';
+        try {
+          const s = getSrc ? getSrc() : '';
+          // Ignore the 1×1 transparent placeholder — it reads as empty.
+          if (s && s !== TRANSPARENT_PIXEL && s.indexOf('data:image/gif') !== 0) icon = s;
+        } catch (_) {}
+        if (!icon) icon = getFilmstripFallbackIcon();
+        try {
+          if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
+            window.pdr.drag.start([fp], icon);
+          }
+        } catch (err) {
+          console.warn('[viewer] filmstrip D&D drag.start threw:', err && (err.message || err));
+        }
+      };
+
       const buildFilmstripChunk = () => {
         const end = Math.min(buildCursor + FILMSTRIP_CHUNK_SIZE, files.length);
         for (let i = buildCursor; i < end; i++) {
@@ -6926,6 +6981,11 @@
             div.setAttribute('data-pdr-tooltip-side', 'top');
             div.dataset.idx = String(i);
             div.dataset.fp = fp;
+            // v2.1 round 277 (Terry) — Sharing Phase 1: drag a video thumb
+            // out to another app. No <img> here, so the icon is always the
+            // lavender PDR square (handler-gated to non-collage mode).
+            div.setAttribute('draggable', 'true');
+            div.addEventListener('dragstart', (e) => onFilmstripThumbDragStart(e, () => ''));
             // v2.1 — read data-idx at click time, not at bind time.
             // This lets us splice files[] (eg live trim-clip add) and
             // simply update data-idx attributes on shifted tiles
@@ -6951,6 +7011,14 @@
             thumb.alt = '';
             thumb.dataset.idx = String(i);
             thumb.dataset.fp = fp;
+            // v2.1 round 277 (Terry) — Sharing Phase 1: drag a photo thumb
+            // out to another app. The icon is the thumb's own loaded src
+            // (handler filters out the transparent placeholder, falling
+            // back to the lavender square). Handler-gated to non-collage
+            // mode so it doesn't collide with the collage drag-to-canvas.
+            // <img> is draggable by default; set it explicitly for clarity.
+            thumb.setAttribute('draggable', 'true');
+            thumb.addEventListener('dragstart', (e) => onFilmstripThumbDragStart(e, () => (e.currentTarget && e.currentTarget.src) || ''));
             thumb.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
               handleThumbActivate(idx);
