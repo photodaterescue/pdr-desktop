@@ -3655,7 +3655,7 @@
                moved in on selection. v2.1 round 246 (Terry) — open state is now driven
                by which style is in use (expanded when this is the active bg), not sticky. -->
           <details class="ec-bg-grp" id="collage-bg-palette-grp" data-bg-style="palette">
-            <summary data-pdr-tooltip="Solid colours, a photo background, transparent, and the colour collections"><span>Colour Palette</span><span class="ec-bg-grp-inuse">In use</span></summary>
+            <summary data-pdr-tooltip="Solid colours, a photo background, transparent, and the colour collections"><span>Colour / Photo</span><span class="ec-bg-grp-inuse">In use</span></summary><!-- v2.1 round 272 (Terry) — renamed "Colour Palette" → "Colour / Photo" so the photo (+ transparent) options read as belonging here -->
             <div class="ec-bg-grp-body" id="collage-bg-palette-grp-body"></div>
           </details>
           </div>
@@ -11127,21 +11127,29 @@
     // texture → Texture; a solid colour / photo / transparent → Colour Palette. Driven
     // off the same state vars the setters maintain, so it stays correct for every entry
     // point (presets, custom controls, palette swatches, locked specials, undo/redo).
+    // v2.1 round 272 (Terry) — remember the last active bg style so we only re-drive the
+    // groups' open/closed state when the style actually CHANGES (see below).
+    let collageBgLastActiveStyle = null;
     function syncCollageBgStyleGroupActive() {
       let active = 'palette';   // solid colour / photo / transparent all live in Colour Palette
       if (collageBgGradient) active = 'gradient';      // linear / radial / mesh
       else if (collageBgTexture) active = 'texture';
+      // v2.1 round 272 (Terry) — only re-drive open/closed state when the active style
+      // CHANGED. Round 246 forced grp.open = isActive on EVERY sync, which re-closed a group
+      // the user had just MANUALLY opened (e.g. opening Colour Palette to add a photo while a
+      // gradient is in use → any later sync slammed it shut because 'gradient' is still
+      // active). Now: a real style change still tidies (expand the new style, collapse the
+      // rest); same-style syncs leave open state alone so a manual open sticks.
+      const styleChanged = (active !== collageBgLastActiveStyle);
+      collageBgLastActiveStyle = active;
       document.querySelectorAll('#collage-bg-collapse .ec-bg-grp[data-bg-style]').forEach((grp) => {
         const isActive = grp.getAttribute('data-bg-style') === active;
         grp.classList.toggle('is-inuse', isActive);
-        // v2.1 round 246 (Terry) — the in-use style group is EXPANDED, the other two
-        // COLLAPSED. This runs on every bg change (setters + undo/redo), so switching the
-        // active style moves the expansion to the newly-active group automatically. The
-        // user can still MANUALLY expand a collapsed group to switch styles: picking a
-        // gradient/texture/colour there makes it active → this re-fires → it stays open
-        // and the previously-open one collapses. Guard against redundant writes so we
-        // don't fire the <details> 'toggle' event when nothing actually changed.
-        if (grp.open !== isActive) grp.open = isActive;
+        // Always ensure the in-use group is OPEN (so the active style's controls are visible),
+        // but only force the OTHERS closed when the style just changed — never slam shut a
+        // group the user opened by hand.
+        if (isActive) { if (!grp.open) grp.open = true; }
+        else if (styleChanged && grp.open) { grp.open = false; }
       });
     }
     // v2.1 round 246 (Terry) — the per-group STICKY localStorage open-state (round 245)
