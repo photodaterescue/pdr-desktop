@@ -6,8 +6,9 @@ import { Button } from '@/components/ui/button';
 
 type Layout = '1' | '2' | '4' | 'contact';
 type Fit = 'fit' | 'fill';
-type Paper = 'Letter' | 'A4';
+type Paper = 'Letter' | 'A4' | '4x6' | '5x7' | '8x10';
 type Orientation = 'portrait' | 'landscape';
+type Color = 'color' | 'bw';
 
 interface PrintModalProps {
   /** Absolute file paths to print. Non-null ⇒ open. */
@@ -15,7 +16,16 @@ interface PrintModalProps {
   onClose: () => void;
 }
 
-const PAPER_DIMS: Record<Paper, [number, number]> = { Letter: [8.5, 11], A4: [210, 297] };
+const PAPER_DIMS: Record<Paper, [number, number]> = {
+  Letter: [8.5, 11], A4: [210, 297], '4x6': [4, 6], '5x7': [5, 7], '8x10': [8, 10],
+};
+const PAPER_OPTIONS: { key: Paper; label: string }[] = [
+  { key: 'Letter', label: 'Letter' },
+  { key: 'A4', label: 'A4' },
+  { key: '4x6', label: '4×6 in — photo' },
+  { key: '5x7', label: '5×7 in — photo' },
+  { key: '8x10', label: '8×10 in — photo' },
+];
 
 const LAYOUTS: { key: Layout; label: string; icon: typeof Square }[] = [
   { key: '1', label: '1 / page', icon: Square },
@@ -64,6 +74,7 @@ export function PrintModal({ paths, onClose }: PrintModalProps) {
   const [fit, setFit] = useState<Fit>('fit');
   const [paper, setPaper] = useState<Paper>('Letter');
   const [orientation, setOrientation] = useState<Orientation>('portrait');
+  const [color, setColor] = useState<Color>('color');
   const [busy, setBusy] = useState<null | 'print' | 'pdf'>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
@@ -88,7 +99,7 @@ export function PrintModal({ paths, onClose }: PrintModalProps) {
 
   if (!isOpen || !paths) return null;
 
-  const opts = { layout, fit, paper, orientation };
+  const opts = { layout, fit, paper, orientation, color };
   const portrait = orientation === 'portrait';
   const [pw, ph] = PAPER_DIMS[paper];
   const aspect = portrait ? `${pw}/${ph}` : `${ph}/${pw}`;
@@ -191,7 +202,10 @@ export function PrintModal({ paths, onClose }: PrintModalProps) {
                           src={thumbs[p]}
                           alt=""
                           className="w-full h-full"
-                          style={{ objectFit: fit === 'fill' || layout === 'contact' ? 'cover' : 'contain' }}
+                          style={{
+                            objectFit: fit === 'fill' || layout === 'contact' ? 'cover' : 'contain',
+                            filter: color === 'bw' ? 'grayscale(1)' : undefined,
+                          }}
                         />
                       ) : (
                         <Loader2 className="w-4 h-4 text-muted-foreground/50 animate-spin" />
@@ -234,12 +248,25 @@ export function PrintModal({ paths, onClose }: PrintModalProps) {
                 </div>
               )}
 
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium text-muted-foreground">Paper</span>
-                <Segmented
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-xs font-medium text-muted-foreground">Size</span>
+                <select
                   value={paper}
-                  onChange={(v) => setPaper(v as Paper)}
-                  options={[{ key: 'Letter', label: 'Letter' }, { key: 'A4', label: 'A4' }]}
+                  onChange={(e) => setPaper(e.target.value as Paper)}
+                  className="h-8 rounded-lg border border-border bg-secondary/30 px-2.5 text-xs font-medium text-foreground focus:outline-none focus:ring-1 focus:ring-primary"
+                >
+                  {PAPER_OPTIONS.map((o) => (
+                    <option key={o.key} value={o.key}>{o.label}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-muted-foreground">Color</span>
+                <Segmented
+                  value={color}
+                  onChange={(v) => setColor(v as Color)}
+                  options={[{ key: 'color', label: 'Color' }, { key: 'bw', label: 'B&W' }]}
                 />
               </div>
 

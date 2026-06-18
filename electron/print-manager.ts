@@ -14,17 +14,56 @@ import * as path from 'path';
 
 export type PrintLayout = '1' | '2' | '4' | 'contact';
 export type PrintFit = 'fit' | 'fill';
-export type PrintPaper = 'Letter' | 'A4';
+export type PrintPaper = 'Letter' | 'A4' | '4x6' | '5x7' | '8x10';
 export type PrintOrientation = 'portrait' | 'landscape';
+export type PrintColor = 'color' | 'bw';
 
 export interface PrintOpts {
   layout: PrintLayout;
   fit: PrintFit;
   paper: PrintPaper;
   orientation: PrintOrientation;
+  color?: PrintColor;
 }
 
 export interface PrintInput { path: string; name?: string; }
+
+// v2.1 round 281 (Terry) — paper + photo-print sizes. Named sizes (Letter/A4)
+// pass straight through to the print APIs; the glossy photo sizes (4×6/5×7/8×10
+// for framing) are explicit dimensions. NOTE the unit footgun, confirmed against
+// electron.d.ts: webContents.print() custom pageSize is in MICRONS, while
+// printToPDF() custom pageSize is in INCHES.
+interface PaperSpec { named?: 'Letter' | 'A4'; inches?: [number, number]; }
+const PAPERS: Record<PrintPaper, PaperSpec> = {
+  Letter: { named: 'Letter' },
+  A4: { named: 'A4' },
+  '4x6': { inches: [4, 6] },
+  '5x7': { inches: [5, 7] },
+  '8x10': { inches: [8, 10] },
+};
+
+/** @page size token — named + orientation keyword, or explicit (swapped) dims. */
+function pageCss(paper: PrintPaper, orientation: PrintOrientation): string {
+  const spec = PAPERS[paper];
+  if (spec.named) return `${spec.named} ${orientation}`;
+  const [w, h] = spec.inches!;
+  return orientation === 'landscape' ? `${h}in ${w}in` : `${w}in ${h}in`;
+}
+/** Bigger margin for document paper; a thin one for photo paper (near-edge). */
+function pageMargin(paper: PrintPaper): string {
+  return PAPERS[paper].named ? '0.4in' : '0.12in';
+}
+/** pageSize + landscape for print() (unit='microns') / printToPDF (unit='inches').
+ *  Named sizes carry the landscape flag; explicit sizes are pre-swapped so the
+ *  flag stays false (avoids a double rotation). */
+function pageSizeOpt(paper: PrintPaper, orientation: PrintOrientation, unit: 'microns' | 'inches') {
+  const spec = PAPERS[paper];
+  if (spec.named) return { pageSize: spec.named, landscape: orientation === 'landscape' };
+  const [w, h] = spec.inches!;
+  const [pw, ph] = orientation === 'landscape' ? [h, w] : [w, h];
+  const mult = unit === 'microns' ? 25400 : 1;
+  return { pageSize: { width: Math.round(pw * mult), height: Math.round(ph * mult) }, landscape: false };
+}
 
 function esc(s: string): string {
   return String(s).replace(/[&<>"']/g, (c) => (
@@ -81,7 +120,7 @@ export function buildPrintHtml(files: PrintInput[], opts: PrintOpts): string {
 
   return `<!doctype html>
 <html><head><meta charset="utf-8"><style>
-  @page { size: ${opts.paper} ${opts.orientation}; margin: 0.4in; }
+  @page { size: ${pageCss(opts.paper, opts.orientation)}; margin: ${pageMargin(opts.paper)}; }
   * { box-sizing: border-box; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   html, body { margin: 0; padding: 0; background: #fff; }
   .page {
@@ -99,8 +138,11 @@ export function buildPrintHtml(files: PrintInput[], opts: PrintOpts): string {
   .contact .citem { break-inside: avoid; margin: 0; text-align: center; }
   .contact .citem img { width: 100%; height: 1.55in; object-fit: cover; border: 1px solid #ddd; display: block; }
   .contact .cap { font-size: 7pt; color: #444; word-break: break-all; margin-top: 2px; line-height: 1.1; }
+  /* v2.1 round 281 (Terry) — black & white print. print-color-adjust:exact
+     (set above) makes Chromium honour the filter in the print/PDF output. */
+  body.bw img { filter: grayscale(1) !important; -webkit-filter: grayscale(1) !important; }
 </style></head>
-<body class="${fitClass}">${body}</body></html>`;
+<body class="${fitClass}${opts.color === 'bw' ? ' bw' : ''}">${body}</body></html>`;
 }
 
 /** Wait until every <img> in the window has loaded (or errored), with a cap. */
@@ -161,12 +203,13 @@ export async function printPhotos(
 ): Promise<{ success: boolean; cancelled?: boolean; error?: string }> {
   if (!files || files.length === 0) return { success: false, error: 'Nothing to print.' };
   try {
+    const ps = pageSizeOpt(opts.paper, opts.orientation, 'microns');
     return await withPrintWindow(files, opts, (win) => new Promise((resolve) => {
       win.webContents.print({
         silent: false,
         printBackground: true,
-        pageSize: opts.paper,
-        landscape: opts.orientation === 'landscape',
+        pageSize: ps.pageSize,
+        landscape: ps.landscape,
         margins: { marginType: 'none' },
       }, (ok, failureReason) => {
         if (ok) resolve({ success: true });
@@ -187,11 +230,12 @@ export async function savePhotosPdf(
 ): Promise<{ success: boolean; error?: string }> {
   if (!files || files.length === 0) return { success: false, error: 'Nothing to save.' };
   try {
+    const ps = pageSizeOpt(opts.paper, opts.orientation, 'inches');
     return await withPrintWindow(files, opts, async (win) => {
       const pdf = await win.webContents.printToPDF({
         printBackground: true,
-        pageSize: opts.paper,
-        landscape: opts.orientation === 'landscape',
+        pageSize: ps.pageSize,
+        landscape: ps.landscape,
         margins: { top: 0, bottom: 0, left: 0, right: 0 },
       });
       await fs.promises.writeFile(savePath, pdf);

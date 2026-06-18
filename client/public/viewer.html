@@ -4425,6 +4425,9 @@
     // thumb — or the title-bar Share handle — hands them ALL to the OS at
     // once. Single-photo viewer only (the collage pool owns its own strip).
     const filmstripSelection = new Set();
+    // v2.1 round 281 (Terry) — anchor index for Shift-range selection, matching
+    // Memories — Dates (lastClickedIndexRef). Reset whenever the selection clears.
+    let lastFilmstripClickIdx = null;
     function updateFilmstripSelectionUI() {
       try {
         const fs = document.getElementById('filmstrip');
@@ -4450,9 +4453,39 @@
       updateFilmstripSelectionUI();
     }
     function clearFilmstripSelection() {
+      lastFilmstripClickIdx = null;
       if (!filmstripSelection.size) { updateFilmstripSelectionUI(); return; }
       filmstripSelection.clear();
       updateFilmstripSelectionUI();
+    }
+    // v2.1 round 281 (Terry) — add files[from..to] to the selection (Shift-range).
+    function filmstripRangeAdd(fromIdx, toIdx) {
+      if (typeof files === 'undefined' || !files) return;
+      const a = Math.min(fromIdx, toIdx), b = Math.max(fromIdx, toIdx);
+      for (let i = a; i <= b; i++) { const p = files[i]; if (p) filmstripSelection.add(p); }
+      updateFilmstripSelectionUI();
+    }
+    // Ctrl/Cmd+click → toggle (additive); Shift+click → range-add from the
+    // anchor; plain click → just record the anchor (caller then navigates).
+    // Returns true if the modifier consumed the click. Mirrors Dates exactly.
+    function handleFilmstripModifierSelect(e, idx) {
+      if ((typeof collageMode !== 'undefined') && collageMode) return false;
+      const fp = (typeof files !== 'undefined' && files) ? files[idx] : null;
+      if (!fp) return false;
+      if (e.ctrlKey || e.metaKey) {
+        e.preventDefault();
+        toggleFilmstripSelect(fp);
+        lastFilmstripClickIdx = idx;
+        return true;
+      }
+      if (e.shiftKey && lastFilmstripClickIdx !== null) {
+        e.preventDefault();
+        filmstripRangeAdd(lastFilmstripClickIdx, idx);
+        lastFilmstripClickIdx = idx;
+        return true;
+      }
+      lastFilmstripClickIdx = idx;
+      return false;
     }
     function filmstripShareSet(fp) {
       // Whole selection when the dragged tile is part of it, else just
@@ -7206,7 +7239,14 @@
         cb.setAttribute('aria-label', 'Select for sharing');
         cb.setAttribute('draggable', 'false');
         cb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6"/></svg>';
-        cb.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleFilmstripSelect(fp); });
+        cb.addEventListener('click', (e) => {
+          e.stopPropagation(); e.preventDefault();
+          // v2.1 round 281 (Terry) — Shift+checkbox range-adds (like Dates).
+          const cbIdx = parseInt(tile.dataset.idx || '0', 10);
+          if (e.shiftKey && lastFilmstripClickIdx !== null) filmstripRangeAdd(lastFilmstripClickIdx, cbIdx);
+          else toggleFilmstripSelect(fp);
+          lastFilmstripClickIdx = cbIdx;
+        });
         cb.addEventListener('mousedown', (e) => { e.stopPropagation(); });
         cb.addEventListener('dragstart', (e) => { e.stopPropagation(); e.preventDefault(); });
         tile.appendChild(cb);
@@ -7243,6 +7283,9 @@
             // without re-binding every handler.
             div.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              // v2.1 round 281 (Terry) — Ctrl/Shift+click selects (like Dates);
+              // a plain click falls through to navigate.
+              if (handleFilmstripModifierSelect(e, idx)) return;
               handleThumbActivate(idx);
             });
             addThumbCheckbox(div, fp);
@@ -7269,6 +7312,9 @@
             thumb.addEventListener('dragstart', onFilmstripThumbDragStart);
             thumb.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              // v2.1 round 281 (Terry) — Ctrl/Shift+click selects (like Dates);
+              // a plain click falls through to navigate.
+              if (handleFilmstripModifierSelect(e, idx)) return;
               handleThumbActivate(idx);
             });
             addThumbCheckbox(thumb, fp);
@@ -7355,6 +7401,9 @@
             newTile.addEventListener('dragstart', onFilmstripThumbDragStart);
             newTile.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+              // v2.1 round 281 (Terry) — Ctrl/Shift+click selects (like Dates);
+              // a plain click falls through to navigate.
+              if (handleFilmstripModifierSelect(e, idx)) return;
               handleThumbActivate(idx);
             });
             addThumbCheckbox(newTile, fp);

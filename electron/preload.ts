@@ -1137,9 +1137,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // opens the native OS print dialog (any printer + Microsoft Print to PDF);
   // savePdf() prompts for a path and writes a PDF. opts = layout/fit/paper/orientation.
   print: {
-    photos: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string }) =>
+    photos: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string; color?: string }) =>
       ipcRenderer.invoke('print:photos', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; error?: string }>,
-    savePdf: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string }) =>
+    savePdf: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string; color?: string }) =>
       ipcRenderer.invoke('print:savePdf', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>,
   },
 
