@@ -158,7 +158,7 @@ export function LibraryDriveOfflineModal({
             </p>
             {retryFailed && (
               <p className="text-body-muted text-rose-700 dark:text-rose-300 mt-3">
-                Still not reachable. Make sure the drive is plugged in and recognised by Windows, then Retry.
+                Still not reachable. Make sure the drive is plugged in and recognized by Windows, then Retry.
               </p>
             )}
           </div>

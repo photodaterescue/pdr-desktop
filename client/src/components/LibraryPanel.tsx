@@ -702,7 +702,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     if (isScanningDrives) return;
     setIsScanningDrives(true);
     const toastId = toast.loading('Scanning drives for legacy libraries…', {
-      description: 'Looking for PDR catalogue files and PDR-style folder structures across your connected drives. This may take a minute on large external drives — your scan results will be saved here so you can close the Library Drive Manager and come back to them.',
+      description: 'Looking for PDR catalog files and PDR-style folder structures across your connected drives. This may take a minute on large external drives — your scan results will be saved here so you can close the Library Drive Manager and come back to them.',
     });
     try {
       const res = await (window as any).pdr?.library?.scanForLegacyLibraries?.();
@@ -2613,7 +2613,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                     case 'sql-runs':
                       return { label: 'From your Fix history', tone: 'bg-emerald-100 text-emerald-800 dark:bg-emerald-950/40 dark:text-emerald-300' };
                     case 'catalogue-csv':
-                      return { label: 'PDR catalogue found on disk', tone: 'bg-primary/15 text-primary' };
+                      return { label: 'PDR catalog found on disk', tone: 'bg-primary/15 text-primary' };
                     case 'folder-pattern':
                       return { label: 'Folder structure looks like PDR', tone: 'bg-amber-100 text-amber-800 dark:bg-amber-950/40 dark:text-amber-300' };
                   }
@@ -2630,7 +2630,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                     ? `${lib.currentFileCount}${lib.currentFileCountCapped ? '+' : ''} file${lib.currentFileCount === 1 ? '' : 's'} on disk`
                     : null;
                   if (lib.source === 'catalogue-csv') {
-                    const base = `Catalogue last updated ${formatRelativeTime(lib.lastIndexedAt)}`;
+                    const base = `Catalog last updated ${formatRelativeTime(lib.lastIndexedAt)}`;
                     return fileCountLabel ? `${base} · ${fileCountLabel}` : base;
                   }
                   const base = `Folder last modified ${formatRelativeTime(lib.lastIndexedAt)}`;
@@ -2696,7 +2696,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                   <><HardDrive className="w-3.5 h-3.5 mr-1.5" /> Scan drives for more</>
                 )}
               </Button>
-              <p className="text-caption">Looks for PDR catalogue files and PDR-style folder structures across all connected drives. Can take a minute on large external drives.</p>
+              <p className="text-caption">Looks for PDR catalog files and PDR-style folder structures across all connected drives. Can take a minute on large external drives.</p>
             </div>
           </section>
 

@@ -159,7 +159,7 @@ export function EnrichingModal() {
         // feedback 2026-05-26.
         window.dispatchEvent(new CustomEvent('pdr:takeoutEnrichmentComplete'));
         if (res.data.cancelled) {
-          toast.info('Enrichment cancelled', {
+          toast.info('Enrichment canceled', {
             description: `${res.data.upgraded.toLocaleString()} files upgraded before cancel; everything already changed is saved.`,
           });
         } else {
@@ -230,7 +230,7 @@ export function EnrichingModal() {
                 {phase === 'confirm' && 'Only files whose date or metadata can be upgraded are touched. Your album curations, Trees and named people are left alone.'}
                 {phase === 'running' && (progress.currentFilename ?? 'Reading file list…')}
                 {phase === 'done' && (summary?.cancelled
-                  ? 'Cancelled mid-run. Everything that was upgraded before you stopped is saved.'
+                  ? 'Canceled mid-run. Everything that was upgraded before you stopped is saved.'
                   : 'Your library now reflects the best metadata your Takeout exports contain.')}
               </p>
             </div>
@@ -317,7 +317,7 @@ export function EnrichingModal() {
                 <li>
                   <strong className="font-medium">{summary.dedupedDuplicates.toLocaleString()}</strong> duplicate <em className="text-muted-foreground">_RC</em> copies removed.
                   <span className="block text-xs text-muted-foreground mt-0.5 leading-relaxed">
-                    These were photos Fixed twice from <strong className="text-foreground">different sources at different times</strong> &mdash; the only way for a duplicate to slip past PDR&apos;s per-run dedup. Detected either as byte-identical to the existing <em>_CF</em>, or by comparing the image data alone after stripping the EXIF metadata (so a photo whose <em>_CF</em> had its EXIF rewritten by an earlier Fix run is still recognised as the same picture). The redundant <em>_RC</em> was deleted to clean up.
+                    These were photos Fixed twice from <strong className="text-foreground">different sources at different times</strong> &mdash; the only way for a duplicate to slip past PDR&apos;s per-run dedup. Detected either as byte-identical to the existing <em>_CF</em>, or by comparing the image data alone after stripping the EXIF metadata (so a photo whose <em>_CF</em> had its EXIF rewritten by an earlier Fix run is still recognized as the same picture). The redundant <em>_RC</em> was deleted to clean up.
                   </span>
                 </li>
               )}

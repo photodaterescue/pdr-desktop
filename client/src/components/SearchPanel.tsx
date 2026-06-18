@@ -5643,7 +5643,7 @@ function RibbonGroup({ label, children, onExpand, groupId, isFavourited, onToggl
       <div className="flex items-center justify-center flex-1 [&>div]:justify-center">{children}</div>
       <div className="flex items-center justify-center gap-1 border-t mt-0.5 pt-0.5 pb-0.5 ribbon-group-border">
         {groupId && onToggleFavourite && (
-          <IconTooltip label={isFavourited ? 'Remove from Favourites' : 'Add to Favourites'} side="top">
+          <IconTooltip label={isFavourited ? 'Remove from Favorites' : 'Add to Favorites'} side="top">
             <button onClick={() => onToggleFavourite(groupId)}
               className={`p-0 leading-none transition-colors ${isFavourited ? 'text-amber-500 hover:text-amber-400' : 'text-foreground/25 hover:text-amber-400'}`}>
               <Star className={`w-2.5 h-2.5 ${isFavourited ? 'fill-amber-500' : ''}`} />

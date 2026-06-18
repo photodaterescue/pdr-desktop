@@ -2620,7 +2620,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         <FocusPickerModal
           persons={allPersons}
           currentFocusId={null}
-          title="Who's at the centre of this new tree?"
+          title="Who's at the center of this new tree?"
           showSortOptions={true}
           onPick={async (personId) => {
             setNewTreePickerOpen(false);
@@ -2989,7 +2989,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                           { key: 'sonar',    label: 'Sonar ping',     hint: 'expanding rings',        state: effectSonar,    set: setEffectSonar,    storageKey: 'pdr-trees-effect-sonar' },
                           { key: 'sweep',    label: 'Gradient sweep', hint: 'soft trailing stripe',   state: effectSweep,    set: setEffectSweep,    storageKey: 'pdr-trees-effect-sweep' },
                           { key: 'electric', label: 'Electric arc',   hint: 'jagged bolts',           state: effectElectric, set: setEffectElectric, storageKey: 'pdr-trees-effect-electric' },
-                          { key: 'fiber',    label: 'Fibre-optic',    hint: 'flowing dashes',         state: effectFiber,    set: setEffectFiber,    storageKey: 'pdr-trees-effect-fiber' },
+                          { key: 'fiber',    label: 'Fiber-optic',    hint: 'flowing dashes',         state: effectFiber,    set: setEffectFiber,    storageKey: 'pdr-trees-effect-fiber' },
                           { key: 'led',      label: 'LED tube',       hint: 'steady neon glow',       state: effectLed,      set: setEffectLed,      storageKey: 'pdr-trees-effect-led' },
                         ] as const).map(row => (
                           <div

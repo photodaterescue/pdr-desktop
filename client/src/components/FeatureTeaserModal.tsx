@@ -25,7 +25,7 @@ const COPY: Record<TeaserFeature, FeatureCopy> = {
   'dashboard': {
     icon: <LayoutDashboard className="w-8 h-8 text-primary" />,
     title: 'Dashboard',
-    description: 'See at a glance how many dates PDR confirmed, recovered, or marked for review across every source. Your command centre before and after each fix.',
+    description: 'See at a glance how many dates PDR confirmed, recovered, or marked for review across every source. Your command center before and after each fix.',
   },
   'search-discovery': {
     icon: <Sparkles className="w-8 h-8 text-primary" />,

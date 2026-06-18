@@ -3403,7 +3403,7 @@ export default function PeopleManager() {
               : p.phase === 'match'
                 ? 'Looking for more matches…'
                 : p.phase === 'finalising'
-                  ? 'Finalising…'
+                  ? 'Finalizing…'
                   : 'Almost done…';
         const pct = (p && p.itemsTotal > 0)
           ? Math.min(100, Math.max(0, Math.round((p.itemIndex / p.itemsTotal) * 100)))

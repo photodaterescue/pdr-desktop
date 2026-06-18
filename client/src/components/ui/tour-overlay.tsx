@@ -791,7 +791,7 @@ export const REPORTS_TOUR_STEPS: TourStep[] = [
     id: 'rh-detail',
     targetSelector: '[data-tour="rh-detail"]',
     title: 'Row at a Glance',
-    description: 'Each row summarizes one Fix run — confirmed (green), recovered (blue), marked (grey), and duplicates (amber). The numbers tell you at a glance how the run went without opening anything.',
+    description: 'Each row summarizes one Fix run — confirmed (green), recovered (blue), marked (gray), and duplicates (amber). The numbers tell you at a glance how the run went without opening anything.',
     preferredPositions: ['top', 'left', 'right'],
     highlightPadding: 8
   },

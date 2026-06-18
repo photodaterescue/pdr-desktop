@@ -1067,7 +1067,7 @@ export function FolderBrowserModal({ isOpen, onSelect, onCancel, title = 'Select
                       </div>
                       <div className="min-w-0 flex-1">
                         <div className="text-sm font-medium text-foreground">Not sure which drive? Open Drive Advisor</div>
-                        <div className="text-xs text-muted-foreground">Get personalised guidance on which drive is best for your library</div>
+                        <div className="text-xs text-muted-foreground">Get personalized guidance on which drive is best for your library</div>
                       </div>
                     </button>
                   )}

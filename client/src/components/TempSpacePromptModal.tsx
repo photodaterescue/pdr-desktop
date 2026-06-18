@@ -124,7 +124,7 @@ export function TempSpacePromptModal({
           </div>
 
           <p className="text-xs text-muted-foreground leading-relaxed">
-            Pick another local drive with enough room — usually an external SSD or a roomy data drive. PDR will only use it as a temporary staging area while it analyses the zip; nothing is left behind once the run finishes.
+            Pick another local drive with enough room — usually an external SSD or a roomy data drive. PDR will only use it as a temporary staging area while it analyzes the zip; nothing is left behind once the run finishes.
           </p>
         </div>
 

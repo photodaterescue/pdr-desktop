@@ -120,7 +120,7 @@ export function useTranscribeVideos(): {
             <li>Newer CPUs are likely to finish quicker; older ones slower.</li>
             <li>GPU transcription upgrades planned for PDR v2.2.</li>
             <li>Keep using PDR while your videos transcribe.</li>
-            <li>Watch the progress toast at the top-centre of your screen.</li>
+            <li>Watch the progress toast at the top-center of your screen.</li>
           </ul>
         </div>
       </>

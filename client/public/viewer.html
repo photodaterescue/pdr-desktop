@@ -3526,7 +3526,7 @@
                  base, and lowering the photo's Fade blends it back through. -->
             <!-- v2.1 round 248 (Terry) — the full-width "Remove background photo" button
                  was removed; removal is now a small × badge on the photo swatch. Hint stays. -->
-            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The colour above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
+            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The color above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
           </div>
           <!-- v2.1 round 246 (Terry) — INDENT WRAPPER. The three style groups (Gradient /
                Texture / Colour Palette) now live inside this .ec-bg-grp-list container so
@@ -3566,9 +3566,9 @@
               <!-- v2.1 round 251 (Terry) — MOVED UP: Colours row + palette host now sit directly
                    under the Custom slots, above Linear/Radial/Mesh + Angle/Blend. -->
               <div class="ec-grad-row" id="collage-gradient-stops" style="margin-top:8px">
-                <span class="ec-grad-stops-label">Colours</span>
-                <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
-                <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End colour — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <span class="ec-grad-stops-label">Colors</span>
+                <button type="button" class="ec-grad-stop" data-stop="0" data-pdr-tooltip="Start color — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
+                <button type="button" class="ec-grad-stop" data-stop="1" data-pdr-tooltip="End color — click, then pick from the palette below"><span class="ec-grad-stop-sw"></span></button>
                 <span class="ec-grad-stop-hint" id="collage-gradient-stop-hint"></span>
               </div>
               <!-- v2.1 round 250 (Terry) — the shared Colour Palette (#collage-unified-color)
@@ -3591,7 +3591,7 @@
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><linearGradient id="grad-ico-lin" x1="0%" y1="0%" x2="100%" y2="100%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></linearGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-lin)"/></svg>
                   Linear
                 </button>
-                <button type="button" class="ec-grad-dir" data-kind="radial" data-pdr-tooltip="Radial — a soft circle spreading out from a movable centre">
+                <button type="button" class="ec-grad-dir" data-kind="radial" data-pdr-tooltip="Radial — a soft circle spreading out from a movable center">
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-rad" cx="50%" cy="50%" r="50%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0.18"/></radialGradient></defs><circle cx="12" cy="12" r="9" fill="url(#grad-ico-rad)"/></svg>
                   Radial
                 </button>
@@ -3599,7 +3599,7 @@
                    colour blobs blended across the canvas. Preset-driven this round, so
                    choosing Mesh hides the linear/radial controls + their preset grid and
                    shows the curated mesh swatches below. -->
-                <button type="button" class="ec-grad-dir" data-kind="mesh" data-pdr-tooltip="Mesh — a base colour with several soft colour blobs blended across the canvas">
+                <button type="button" class="ec-grad-dir" data-kind="mesh" data-pdr-tooltip="Mesh — a base color with several soft color blobs blended across the canvas">
                   <svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><defs><radialGradient id="grad-ico-mesh-a" cx="30%" cy="30%" r="60%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.95"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></radialGradient><radialGradient id="grad-ico-mesh-b" cx="78%" cy="72%" r="55%"><stop offset="0%" stop-color="currentColor" stop-opacity="0.6"/><stop offset="100%" stop-color="currentColor" stop-opacity="0"/></radialGradient></defs><rect x="4" y="4" width="16" height="16" rx="2" fill="currentColor" fill-opacity="0.14"/><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-mesh-a)"/><rect x="4" y="4" width="16" height="16" rx="2" fill="url(#grad-ico-mesh-b)"/></svg>
                   Mesh
                 </button>
@@ -3613,15 +3613,15 @@
                 <input type="range" id="collage-gradient-angle" min="0" max="360" step="1" value="135">
               </div>
               <div class="enhance-control" id="collage-gradient-blend-row" style="margin-top:8px">
-                <div class="enhance-label-row"><label for="collage-gradient-blend" data-pdr-tooltip="Where the two colours meet 50/50 along the sweep — lower lets the END colour fill more of the canvas, higher the start colour">Blend</label><span class="enhance-val" id="collage-gradient-blend-val">50</span></div>
+                <div class="enhance-label-row"><label for="collage-gradient-blend" data-pdr-tooltip="Where the two colors meet 50/50 along the sweep — lower lets the END color fill more of the canvas, higher the start color">Blend</label><span class="enhance-val" id="collage-gradient-blend-val">50</span></div>
                 <input type="range" id="collage-gradient-blend" min="0" max="100" step="1" value="50">
               </div>
               <!-- RADIAL-only: Strength (the epicentre is the draggable handle on the canvas) -->
               <div class="enhance-control" id="collage-gradient-strength-row" style="margin-top:8px;display:none">
-                <div class="enhance-label-row"><label for="collage-gradient-strength" data-pdr-tooltip="How far the centre colour spreads before meeting the edge colour — low = a tight bright centre, high = the centre colour fills most of the canvas">Strength</label><span class="enhance-val" id="collage-gradient-strength-val">50</span></div>
+                <div class="enhance-label-row"><label for="collage-gradient-strength" data-pdr-tooltip="How far the center color spreads before meeting the edge color — low = a tight bright center, high = the center color fills most of the canvas">Strength</label><span class="enhance-val" id="collage-gradient-strength-val">50</span></div>
                 <input type="range" id="collage-gradient-strength" min="0" max="100" step="1" value="50">
               </div>
-              <div class="ec-grad-hint" id="collage-gradient-epi-hint" style="display:none">Drag the dot on the canvas to move the centre — it can go past the edges.</div>
+              <div class="ec-grad-hint" id="collage-gradient-epi-hint" style="display:none">Drag the dot on the canvas to move the center — it can go past the edges.</div>
             </div>
           </div>
             </div>
@@ -3655,7 +3655,7 @@
                moved in on selection. v2.1 round 246 (Terry) — open state is now driven
                by which style is in use (expanded when this is the active bg), not sticky. -->
           <details class="ec-bg-grp" id="collage-bg-palette-grp" data-bg-style="palette">
-            <summary data-pdr-tooltip="Solid colours, a photo background, transparent, and the colour collections"><span>Colour / Photo</span><span class="ec-bg-grp-inuse">In use</span></summary><!-- v2.1 round 272 (Terry) — renamed "Colour Palette" → "Colour / Photo" so the photo (+ transparent) options read as belonging here -->
+            <summary data-pdr-tooltip="Solid colors, a photo background, transparent, and the color collections"><span>Color / Photo</span><span class="ec-bg-grp-inuse">In use</span></summary><!-- v2.1 round 272 (Terry) — renamed "Colour Palette" → "Colour / Photo" so the photo (+ transparent) options read as belonging here -->
             <div class="ec-bg-grp-body" id="collage-bg-palette-grp-body"></div>
           </details>
           </div>
@@ -3724,10 +3724,10 @@
             <div class="enhance-control" style="margin-top:8px">
               <div style="display:flex;align-items:flex-end;gap:12px">
                 <div>
-                  <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centred, or right">Alignment</label></div>
+                  <div class="enhance-label-row"><label data-pdr-tooltip="Line up the text left, centered, or right">Alignment</label></div>
                   <div style="display:flex;gap:6px" id="collage-text-align">
                     <button class="ec-toggle-btn" data-align="left" type="button" data-pdr-tooltip="Align left" aria-label="Align left"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg></button>
-                    <button class="ec-toggle-btn active" data-align="center" type="button" data-pdr-tooltip="Centre" aria-label="Centre"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg></button>
+                    <button class="ec-toggle-btn active" data-align="center" type="button" data-pdr-tooltip="Center" aria-label="Center"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg></button>
                     <button class="ec-toggle-btn" data-align="right" type="button" data-pdr-tooltip="Align right" aria-label="Align right"><svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="6" y1="8" x2="14" y2="8"/><line x1="3" y1="12" x2="14" y2="12"/></svg></button>
                   </div>
                 </div>
@@ -3753,7 +3753,7 @@
                 <button class="ec-effect-btn active" data-effect="none" type="button" data-pdr-tooltip="No effect">None</button>
                 <button class="ec-effect-btn" data-effect="outline" type="button" data-pdr-tooltip="Outlined letters">Outline</button>
                 <button class="ec-effect-btn" data-effect="shadow" type="button" data-pdr-tooltip="Drop shadow">Shadow</button>
-                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon: letters in the text colour, glow in the effect colour">Neon</button>
+                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon: letters in the text color, glow in the effect color">Neon</button>
                 <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Extruded 3D look">3D</button>
               </div>
             </div>
@@ -3835,8 +3835,8 @@
                Cars) only. Styled like the panel-level round-157 links but
                scoped strictly to the .frame-coll-collapse <details> inside
                #collage-text-palette — it never touches the panel sections. -->
-          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a colour for whatever is selected">Colour Palette</label><span class="enhance-collapse-all" id="collage-palette-coll-toggle"><!-- v2.1 round 202 (Terry) — icon expand/collapse-all: gold chevron-down (expand) / chevron-right (collapse) + list lines; lines moved further from the chevron (x1 13) + icon dimmed 25% (opacity .75). --><button type="button" id="collage-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all colour collections" aria-label="Expand all colour collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="collage-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all colour collections" aria-label="Collapse all colour collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
-          <div class="ec-color-toggle" id="collage-color-targets" role="group" aria-label="Colour target"></div>
+          <div class="enhance-label-row"><label data-pdr-tooltip="Choose a color for whatever is selected">Color Palette</label><span class="enhance-collapse-all" id="collage-palette-coll-toggle"><!-- v2.1 round 202 (Terry) — icon expand/collapse-all: gold chevron-down (expand) / chevron-right (collapse) + list lines; lines moved further from the chevron (x1 13) + icon dimmed 25% (opacity .75). --><button type="button" id="collage-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all color collections" aria-label="Expand all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="collage-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all color collections" aria-label="Collapse all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
+          <div class="ec-color-toggle" id="collage-color-targets" role="group" aria-label="Color target"></div>
           <div class="frame-palette" id="collage-text-palette"></div>
           <!-- v2.1 round 205 (Terry) — the empty-favourites hint that used to sit
                here (a static #collage-text-fav-hint) was REMOVED: it rendered
@@ -3965,7 +3965,7 @@
            single-photo mode; enterCollageMode() collapses it for the
            busier collage panel. -->
       <details class="enhance-collapse" id="enhance-levels" open>
-        <summary>Tone &amp; colour</summary>
+        <summary>Tone &amp; color</summary>
       <div class="enhance-control">
         <div class="enhance-label-row">
           <label for="slider-brightness" data-pdr-tooltip="How light or dark the photo is">Brightness</label>
@@ -3982,7 +3982,7 @@
       </div>
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-saturation" data-pdr-tooltip="How rich the colours are">Saturation</label>
+          <label for="slider-saturation" data-pdr-tooltip="How rich the colors are">Saturation</label>
           <span class="enhance-val" id="val-saturation">100</span>
         </div>
         <input class="enhance-slider" id="slider-saturation" type="range" min="0" max="200" step="1" value="100" data-dblreset-self>
@@ -4001,7 +4001,7 @@
            other levels so every slider's default sits in the middle. -->
       <div class="enhance-control">
         <div class="enhance-label-row">
-          <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Colour</label>
+          <label for="slider-colour" data-pdr-tooltip="Middle = normal · down = black &amp; white · up = extra vivid">Color</label>
           <span class="enhance-val" id="val-colour">50</span>
         </div>
         <input class="enhance-slider enhance-slider-bipolar" id="slider-colour" type="range" min="0" max="100" step="1" value="50" data-dblreset-self>
@@ -4053,7 +4053,7 @@
              cut-out (it.isViewer && it.bgRemovedPath); hidden otherwise. No
              "None" swatch — Transparent IS the no-background option here. -->
         <div class="frame-palette" id="viewer-bg-palette" style="display:none;margin-top:6px">
-          <button class="frame-add" id="viewer-bg-add" data-pdr-tooltip="Pick a custom colour"><span class="frame-add-plus">+</span></button>
+          <button class="frame-add" id="viewer-bg-add" data-pdr-tooltip="Pick a custom color"><span class="frame-add-plus">+</span></button>
           <input type="color" id="viewer-bg-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
           <button class="frame-swatch frame-bg-transparent" data-color="__transparent__" id="viewer-bg-transparent" data-pdr-tooltip="Transparent — saves as a see-through PNG (removed areas stay clear)" style="background:repeating-conic-gradient(#cfcfda 0% 25%, #ffffff 0% 50%) 50%/10px 10px"></button>
           <button class="frame-swatch" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
@@ -4090,7 +4090,7 @@
       <details class="enhance-collapse" id="enhance-frame-collapse">
       <summary>Frame</summary>
       <div class="frame-palette" id="enhance-frames">
-        <button class="frame-add" id="frame-add" data-pdr-tooltip="Pick a custom colour">
+        <button class="frame-add" id="frame-add" data-pdr-tooltip="Pick a custom color">
           <span class="frame-add-plus">+</span>
         </button>
         <input type="color" id="frame-custom" value="#ffffff" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
@@ -4542,7 +4542,7 @@
       { id: 'dusk',     name: 'Dusk',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#4e54c8', pos: 0 }, { color: '#8f94fb', pos: 100 }] } },
       { id: 'berry',    name: 'Berry',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#cc2b5e', pos: 0 }, { color: '#753a88', pos: 100 }] } },
       { id: 'rose',     name: 'Rose',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffafbd', pos: 0 }, { color: '#ffc3a0', pos: 100 }] } },
-      { id: 'mono',     name: 'Mono grey', grad: { kind: 'linear', angle: 135, stops: [{ color: '#e0e0e0', pos: 0 }, { color: '#9a9a9a', pos: 100 }] } },
+      { id: 'mono',     name: 'Mono gray', grad: { kind: 'linear', angle: 135, stops: [{ color: '#e0e0e0', pos: 0 }, { color: '#9a9a9a', pos: 100 }] } },
       { id: 'glow',     name: 'Soft glow', grad: { kind: 'radial', angle: 0,   stops: [{ color: '#ffffff', pos: 0 }, { color: '#cfd9e8', pos: 100 }] } },
     ];
     // v2.1 round 239 (Terry) — MESH gradient presets. A mesh = a base colour + a few
@@ -5692,13 +5692,13 @@
             // user can retry later if the video gets re-encoded.
             showAiResult({
               title: 'No speech found',
-              body: 'Whisper analysed ' + (res.durationSeconds ? res.durationSeconds.toFixed(0) + ' seconds of audio' : 'the audio') + ' but didn\'t find any usable dialogue. Likely causes: the video has no speech (music / ambient sound only), the audio is too quiet for the model to pick out words, or the voices are too far from the mic. No transcript was saved — you can try again later if the audio quality improves.',
+              body: 'Whisper analyzed ' + (res.durationSeconds ? res.durationSeconds.toFixed(0) + ' seconds of audio' : 'the audio') + ' but didn\'t find any usable dialog. Likely causes: the video has no speech (music / ambient sound only), the audio is too quiet for the model to pick out words, or the voices are too far from the mic. No transcript was saved — you can try again later if the audio quality improves.',
               okLabel: 'OK',
             });
           } else if (res && res.success) {
             showAiResult({
               title: 'No speech found',
-              body: 'Whisper ran successfully but didn\'t find any spoken audio to transcribe. This usually means the video has no dialogue or the audio is too quiet / noisy for the model to pick out words.',
+              body: 'Whisper ran successfully but didn\'t find any spoken audio to transcribe. This usually means the video has no dialog or the audio is too quiet / noisy for the model to pick out words.',
               okLabel: 'OK',
             });
           } else {
@@ -9961,7 +9961,7 @@
       { key: 'cols3', label: '3-col', cells: (n) => arrCols(n, 3), tip: 'Three columns' },
       { key: 'featL', label: 'Left', cells: arrFeatureLeft, tip: 'Feature the first photo on the left, the rest stacked down the right' },
       { key: 'featT', label: 'Top', cells: arrFeatureTop, tip: 'Feature the first photo across the top, the rest in a row below' },
-      { key: 'stack', label: 'Stack', cells: arrStack, tip: 'Overlapping centred pile' },
+      { key: 'stack', label: 'Stack', cells: arrStack, tip: 'Overlapping centered pile' },
       { key: 'cascade', label: 'Cascade', cells: arrCascade, tip: 'Step the photos diagonally, overlapping' },
       { key: 'scatter', label: 'Scatter', scatter: true, tip: 'Scatter the photos at jaunty random angles' },
     ];
@@ -11754,7 +11754,7 @@
       });
       // Hint.
       const hint = document.getElementById('collage-gradient-stop-hint');
-      if (hint) hint.textContent = (g && !isMesh && collageGradStopEdit != null) ? 'pick a colour ↓' : '';   // v2.1 round 250 (Terry) — palette now BELOW the slots, arrow points down
+      if (hint) hint.textContent = (g && !isMesh && collageGradStopEdit != null) ? 'pick a color ↓' : '';   // v2.1 round 250 (Terry) — palette now BELOW the slots, arrow points down
     }
     // v2.1 round 237 (Terry) — highlight the TYPE button (Linear / Radial) matching
     // the live gradient. Light enough to call mid-drag.
@@ -13488,7 +13488,7 @@
       { name: 'Neutral', colors: [
         ['#F4E9D8', 'Ivory'], ['#ECEAE4', 'Soft White'], ['#F1D0B6', 'Cream'], ['#DCD3C8', 'Linen'],
         ['#D3B18A', 'Sand'], ['#C6A376', 'Camel'], ['#B0A086', 'Taupe'], ['#D68B4F', 'Terracotta'],
-        ['#B9A58E', 'Stone'], ['#B6A894', 'Mushroom'], ['#C5926A', 'Clay'], ['#66776B', 'Sage Grey'],
+        ['#B9A58E', 'Stone'], ['#B6A894', 'Mushroom'], ['#C5926A', 'Clay'], ['#66776B', 'Sage Gray'],
         ['#8A6745', 'Walnut'], ['#9D5C42', 'Chestnut'], ['#755B4A', 'Cocoa'], ['#4D3F2F', 'Espresso'],
       ] },
       { name: 'Seasonal', colors: [
@@ -13517,7 +13517,7 @@
         ['#DDF6FF', 'Arctic Ice'], ['#B9F3E4', 'Sea Foam'], ['#6DE5E8', 'Lagoon'], ['#27D3E0', 'Caribbean'],
         ['#00B8D4', 'Tropical Sea'], ['#00E5FF', 'Aqua'], ['#2196F3', 'Ocean Blue'], ['#1565C0', 'Deep Ocean'],
         ['#0D47A1', 'Navy'], ['#082567', 'Midnight Sea'], ['#FF6F61', 'Coral Reef'], ['#E8D3A1', 'Sand'],
-        ['#B49A7B', 'Driftwood'], ['#2E8B57', 'Seaweed'], ['#708090', 'Storm Grey'], ['#3A5F8A', 'Whale Blue'],
+        ['#B49A7B', 'Driftwood'], ['#2E8B57', 'Seaweed'], ['#708090', 'Storm Gray'], ['#3A5F8A', 'Whale Blue'],
       ] },
       { name: 'Luxury', colors: [
         ['#D4AF37', 'Gold'], ['#B76E79', 'Rose Gold'], ['#C0C0C0', 'Silver'], ['#E5E4E2', 'Platinum'],
@@ -13528,7 +13528,7 @@
       { name: 'Cars', colors: [
         ['#F7F7F7', 'Pearl White'], ['#FFD43B', 'Lamborghini Yellow'], ['#C2C2C2', 'Nardo Grey'], ['#CDBE67', 'Champagne Gold'],
         ['#A8ADB0', 'Silver Metallic'], ['#FF7A18', 'McLaren Orange'], ['#E63B2E', 'Ferrari Red'], ['#4A5721', 'British Racing Green'],
-        ['#5A5A5A', 'Graphite Grey'], ['#1F6BC5', 'Subaru WR Blue'], ['#2D6BC9', 'Gulf Blue'], ['#A0111A', 'Mazda Soul Red'],
+        ['#5A5A5A', 'Graphite Gray'], ['#1F6BC5', 'Subaru WR Blue'], ['#2D6BC9', 'Gulf Blue'], ['#A0111A', 'Mazda Soul Red'],
         ['#D50000', 'Racing Red'], ['#2D3E5B', 'Slate Blue'], ['#0F4720', 'Aston Green'], ['#1E1E22', 'RX8 Kuro Black'],
       ] },
       { name: 'Skin', colors: [
@@ -13545,7 +13545,7 @@
       ] },
       { name: 'Monochrome', colors: [
         ['#FFFFFF', 'Pure White'], ['#F7F7F7', 'Snow'], ['#EEEEEE', 'Cloud'], ['#E0E0E0', 'Silver Mist'],
-        ['#D0D0D0', 'Light Grey'], ['#B8B8B8', 'Grey'], ['#A0A0A0', 'Steel'], ['#888888', 'Slate'],
+        ['#D0D0D0', 'Light Gray'], ['#B8B8B8', 'Gray'], ['#A0A0A0', 'Steel'], ['#888888', 'Slate'],
         ['#707070', 'Ash'], ['#585858', 'Charcoal'], ['#404040', 'Gunmetal'], ['#303030', 'Graphite'],
         ['#202020', 'Jet'], ['#151515', 'Onyx'], ['#0A0A0A', 'Rich Black'], ['#000000', 'Pure Black'],
       ] },
@@ -13676,7 +13676,7 @@
       if (opts.addable) {
         const badge = document.createElement('span');
         badge.className = 'frame-fav-add'; badge.textContent = '+';
-        badge.setAttribute('data-pdr-tooltip', 'Add to favourites');
+        badge.setAttribute('data-pdr-tooltip', 'Add to favorites');
         badge.addEventListener('click', (e) => { e.stopPropagation(); textAddFav(hex); });
         b.appendChild(badge);
       }
@@ -13728,7 +13728,7 @@
       // Custom "+" — opens a hidden colour input; a picked colour applies to the
       // target AND is added to Favourites (on commit).
       const add = document.createElement('button');
-      add.type = 'button'; add.className = 'frame-add'; add.setAttribute('data-pdr-tooltip', 'Pick a custom colour (added to favourites)');
+      add.type = 'button'; add.className = 'frame-add'; add.setAttribute('data-pdr-tooltip', 'Pick a custom color (added to favorites)');
       add.innerHTML = '<span class="frame-add-plus">+</span>';
       const custom = document.createElement('input');
       custom.type = 'color'; custom.value = '#ffffff';
@@ -13782,7 +13782,7 @@
         // (the old static #collage-text-fav-hint element was removed in round 205).
         const hint = document.createElement('div');
         hint.className = 'frame-fav-hint';
-        hint.textContent = 'Tap ＋ on any colour below to save a favourite ↓';
+        hint.textContent = 'Tap ＋ on any color below to save a favorite ↓';
         hostEl.appendChild(hint);
       }
       // v2.1 round 223 (Terry) — the 12 colour CATEGORIES now live behind ONE
@@ -13803,7 +13803,7 @@
       const collGroupSum = document.createElement('summary');
       collGroupSum.className = 'frame-coll-group-summary';
       collGroupSum.textContent = 'Palettes';
-      collGroupSum.setAttribute('data-pdr-tooltip', 'Browse the colour collections (Neon, Pastel, Skin, Cars…)');
+      collGroupSum.setAttribute('data-pdr-tooltip', 'Browse the color collections (Neon, Pastel, Skin, Cars…)');
       collGroup.appendChild(collGroupSum);
       collGroup.addEventListener('toggle', () => {
         try { localStorage.setItem(PALETTES_GROUP_OPEN_KEY, collGroup.open ? '1' : '0'); } catch (_) {}
@@ -13958,7 +13958,7 @@
           host,
           () => (selectedText ? (selectedText.effectColor || '') : ''),
           (hex) => setTextEffectColor(hex),
-          { special: { label: 'A', tip: 'Auto — match the text (the default effect colour)' } },
+          { special: { label: 'A', tip: 'Auto — match the text (the default effect color)' } },
         );
       } else if (colorTarget === 'frame') {
         renderTextColorPalette(
@@ -14266,20 +14266,20 @@
       // Effect colour targets (the palette would do nothing), so it contributes no
       // chips → the whole Colour Palette block hides for an emoji selection.
       if (selectedText && !selectedText.isEmoji) {
-        chips.push({ t: 'text', label: 'Text', tip: 'Colour the text itself' });
+        chips.push({ t: 'text', label: 'Text', tip: 'Color the text itself' });
         chips.push({ t: 'effect', label: 'Effect', disabled: !effectOn,
-          tip: effectOn ? 'Colour the chosen effect (outline / shadow / glow / 3D side)' : 'Pick an effect first' });
+          tip: effectOn ? 'Color the chosen effect (outline / shadow / glow / 3D side)' : 'Pick an effect first' });
       } else if (selectedText && selectedText.isEmoji) {
         // No colourable target for an emoji — leave chips empty (palette hides).
       } else if (collageSelected && collageSelected.isBg) {
-        chips.push({ t: 'background', label: 'Background', tip: 'Colour the collage background' });
+        chips.push({ t: 'background', label: 'Background', tip: 'Color the collage background' });
       } else if (collageSelected) {
         // v2.1 round 208 (Terry) — a photo tile no longer AUTO-points the Colour
         // Palette at Frame on select (Looks is the default subcategory now). Only
         // surface the Frame colour target once the user explicitly opens the Frame
         // chevron (which sets frameColorArmed). Until then there's no colourable
         // chip, so the palette hides + Looks stays the gold/expanded section.
-        if (frameColorArmed) chips.push({ t: 'frame', label: 'Frame', tip: 'Colour the frame around this photo' });
+        if (frameColorArmed) chips.push({ t: 'frame', label: 'Frame', tip: 'Color the frame around this photo' });
       }
       // v2.1 round 208 (Terry) — gold + expand the LOOKS section whenever a plain
       // photo tile is selected and the user hasn't explicitly armed Frame. This is
@@ -16036,7 +16036,7 @@ function zoomTo(newZoom, centreX, centreY) {
       if (aiModalCancelBtn) {
         aiModalCancelBtn.addEventListener('click', function () {
           aiCancelled = true;
-          if (aiModalPhase) aiModalPhase.textContent = 'Cancelling…';
+          if (aiModalPhase) aiModalPhase.textContent = 'Canceling…';
           try {
             if (window.pdr && window.pdr.viewer && window.pdr.viewer.cancelEnhance) {
               window.pdr.viewer.cancelEnhance().catch(function () {});
@@ -16180,7 +16180,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (enhancementType === 'codeformer' && n === 0) {
           showAiResult({
             title: 'CodeFormer couldn\'t find a face in that box',
-            body: 'The model needs to detect facial features inside the rectangle you drew. The box may be too tight, too loose, or off the face. Try drawing a slightly larger box centred on the face — include hairline + chin + a little space either side.',
+            body: 'The model needs to detect facial features inside the rectangle you drew. The box may be too tight, too loose, or off the face. Try drawing a slightly larger box centered on the face — include hairline + chin + a little space either side.',
             okLabel: 'Close',
             secondary: {
               label: 'Draw again',

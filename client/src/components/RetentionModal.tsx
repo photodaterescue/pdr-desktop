@@ -316,9 +316,9 @@ export function RetentionModal({ isOpen, onClose }: RetentionModalProps) {
         setStep('error');
         return;
       }
-      setSuccessHeading('Subscription cancelled');
+      setSuccessHeading('Subscription canceled');
       setSuccessMsg(
-        'Your subscription has been cancelled and will not renew. You can keep using Photo Date Rescue until the end of your current billing period.',
+        'Your subscription has been canceled and will not renew. You can keep using Photo Date Rescue until the end of your current billing period.',
       );
       setStep('success');
       return;

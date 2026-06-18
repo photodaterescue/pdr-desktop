@@ -620,8 +620,8 @@ export default function ParallelStructureModal({ isOpen, onClose, files, totalRe
                   {result.cancelled ? (
                     <div className="text-center py-4">
                       <AlertTriangle className="w-10 h-10 text-amber-500 mx-auto mb-2" />
-                      <p className="text-lg font-semibold">Cancelled</p>
-                      <p className="text-sm text-muted-foreground">Operation was cancelled before completion.</p>
+                      <p className="text-lg font-semibold">Canceled</p>
+                      <p className="text-sm text-muted-foreground">Operation was canceled before completion.</p>
                     </div>
                   ) : (
                     <div className="text-center py-4">
