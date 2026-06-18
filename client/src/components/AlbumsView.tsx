@@ -474,12 +474,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => window.removeEventListener('keydown', handler);
   }, [performUndo, performRedo]);
 
-  // v2.1 round 285 (Terry) — Ctrl/Cmd+C copies the selected album photo(s) to the
-  // clipboard so Ctrl+V pastes them all. Gated on AlbumsView being visible.
-  useCopyFilesHotkey(albumsRootRef, () => (
-    selectedAlbumPhotoIds.size > 0 ? albumPhotos.filter(p => selectedAlbumPhotoIds.has(p.id)).map(p => p.file_path) : []
-  ));
-
   // ── Tile-size zoom (v2.0.8 step 6 polish, Terry 2026-05-19) ───────
   // Same zoom interaction Memories By Date uses — Ctrl+scroll on the
   // grid container scales the tiles — plus a visible pill control
@@ -559,6 +553,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // component. Fires whenever Ctrl-wheel hits anywhere inside
   // Albums — no per-surface re-attachment, no ref timing race.
   const albumsRootRef = useRef<HTMLDivElement | null>(null);
+  // v2.1 round 287 (Terry) — Ctrl/Cmd+C copies the selected album photo(s) so
+  // Ctrl+V pastes them all. MUST sit AFTER albumsRootRef is declared: the ref is
+  // read eagerly as the hook's first arg, and declaring it later caused a
+  // "Cannot access before initialization" TDZ that blanked the Memories/Albums view.
+  useCopyFilesHotkey(albumsRootRef, () => (
+    selectedAlbumPhotoIds.size > 0 ? albumPhotos.filter(p => selectedAlbumPhotoIds.has(p.id)).map(p => p.file_path) : []
+  ));
   // Keep gridScrollRef for callers (right-click ContextMenu trigger,
   // various place still reference it via ref={gridScrollRef}). It's
   // no longer used for the wheel listener but harmless to retain.
