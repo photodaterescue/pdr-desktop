@@ -1284,6 +1284,12 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // the picker opens directly instead of requiring the user to then
   // hunt down the pill in the header.
   const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  // v2.1 round 275 (Terry) — sibling open-tick that opens the
+  // AddToAlbumPopover DIRECTLY in "create new album" mode (parity
+  // with the new Albums toolbar). Powers the Actions item "Create
+  // new album from N photos…" → handleCreateAndAdd makes the album
+  // and adds the selection in one transaction.
+  const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
   const toggleSelection = (file: IndexedFile, mode?: 'add' | 'remove') => {
     setSelectedFileIds(prev => {
       const next = new Set(prev);
@@ -2730,6 +2736,17 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   <FolderPlus className="w-3.5 h-3.5 mr-2" />
                   Add to album…
                 </DropdownMenuItem>
+                {/* v2.1 round 275 (Terry) — NEW: create a fresh album
+                    straight from the selection (parity with Albums).
+                    Opens the AddToAlbumPopover directly in create mode
+                    via openCreateTrigger. */}
+                <DropdownMenuItem
+                  onSelect={() => { setAddToAlbumCreateTick(t => t + 1); }}
+                  data-testid="memories-actions-create-album"
+                >
+                  <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                  Create new album from {selectedFileIds.size} photo{selectedFileIds.size === 1 ? '' : 's'}…
+                </DropdownMenuItem>
                 {/* v2.1 round 138 (Terry) — Create Collage from 2+
                     selected photos. Opens the composer → PDRV. Photos
                     only (videos can't be tiled into a still collage). */}
@@ -2876,6 +2893,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 fileIds={Array.from(selectedFileIds)}
                 onAdded={clearSelection}
                 openTrigger={addToAlbumOpenTick}
+                openCreateTrigger={addToAlbumCreateTick}
               />
             </div>
           </>

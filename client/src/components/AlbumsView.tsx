@@ -33,10 +33,25 @@ import {
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
   Captions, Info, Eye, Filter, Film, Files,
+  // v2.1 round 275 (Terry) — icons for the new multi-select Actions
+  // toolbar ported from MemoriesView (Dates). ChevronDown + FolderPlus
+  // already imported above; PlayCircle is new (Open-in-viewer item).
+  PlayCircle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+// v2.1 round 275 (Terry) — Actions dropdown for the Albums multi-select
+// toolbar (parity with Dates). Same primitives MemoriesView uses.
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from '@/components/ui/dropdown-menu';
+import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
+import AddToAlbumPopover from './AddToAlbumPopover';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -65,6 +80,9 @@ import {
   openSearchViewer,
   setAlbumCoverPhoto,
   openCollageComposer,
+  // v2.1 round 275 (Terry) — recycle handler for the new Albums
+  // multi-select toolbar + per-photo menu (parity with Dates).
+  moveToRecycleBin,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
@@ -250,6 +268,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return { type: 'all' };
   });
   const [albumPhotos, setAlbumPhotos] = useState<IndexedFile[]>([]);
+  // v2.1 round 275 (Terry) — bump to re-run the album-photos loader for the SAME album (e.g.
+  // after Move to Recycle Bin) so deleted tiles vanish. Declared HERE (not with the other
+  // round-275 state further down) because the loader effect lists it in its dependency array,
+  // which is evaluated at render BEFORE that lower block — declaring it there hit a TDZ
+  // ("Cannot access … before initialization") that blanked the Albums view.
+  const [albumPhotosRefreshTick, setAlbumPhotosRefreshTick] = useState(0);
   const [albumPhotosLoading, setAlbumPhotosLoading] = useState(false);
   // v2.0.13 (Terry 2026-05-27) — "Captioned only" filter. Narrows the
   // album's photo grid to just the rows whose indexed_files.caption is
@@ -1465,7 +1489,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       setAlbumPhotosLoading(false);
     })();
     return () => { cancelled = true; };
-  }, [selection]);
+    // v2.1 round 275 (Terry) — albumPhotosRefreshTick added so a
+    // Move-to-Recycle-Bin can force-reload the SAME album's photos
+    // (selection is unchanged, so without this the grid keeps showing
+    // deleted tiles — RISK 1).
+  }, [selection, albumPhotosRefreshTick]);
 
   // v2.0.15 (Terry 2026-06-02) — scroll-to-tile after photos load.
   // Back-pill flow latches the file id the user right-clicked from
@@ -1743,6 +1771,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [transcribedFileIds] = useTranscribedFileIds();
   const lastAlbumClickedIndexRef = useRef<number | null>(null);
   useEffect(() => { setSelectedAlbumPhotoIds(new Set()); lastAlbumClickedIndexRef.current = null; }, [selection]);
+  // v2.1 round 275 (Terry) — multi-select Actions toolbar parity with
+  // Dates (MemoriesView). Grace-close for the Actions dropdown (same
+  // 1500 ms forgiveness MemoriesView uses), plus open-ticks for the
+  // hidden AddToAlbumPopover anchor: addToAlbumOpenTick opens it in
+  // list mode ("Add to album…"), addToAlbumCreateTick opens it
+  // directly in create-new mode ("Create new album from selection").
+  const actionsGrace = usePopoverGraceClose(1500);
+  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
+  // v2.1 round 275 (Terry) — albumPhotosRefreshTick (the RISK-1 recycle-refresh tick) is
+  // declared up with `albumPhotos`, because the loader effect references it in its dep array
+  // and must therefore be initialized before that effect (avoids a TDZ blank-screen).
+  // v2.1 round 275 (Terry) — mirrors MemoriesView.clearSelection.
+  const clearAlbumSelection = () => {
+    setSelectedAlbumPhotoIds(new Set());
+    lastAlbumClickedIndexRef.current = null;
+  };
   const handleAlbumPhotoClick = (
     visibleList: Array<{ id: number }>,
     idx: number,
@@ -2939,6 +2984,241 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     (content-locked) — same gating the right-click
                     menu uses. All controls reuse shared primitives. */}
                 <div className="ml-auto flex items-center gap-2 shrink-0">
+                  {/* v2.1 round 275 (Terry) — multi-select Actions
+                      toolbar, ported verbatim from MemoriesView (Dates,
+                      the reference block) for full parity. Gated on a
+                      live selection. Substitutions vs Dates:
+                      selectedFileIds→selectedAlbumPhotoIds,
+                      clearSelection→clearAlbumSelection, base =
+                      albumPhotos.filter(selected), return-source uses
+                      the ALBUM shape, "Set as monthly thumbnail" →
+                      "Set as album thumbnail", recycle bumps
+                      albumPhotosRefreshTick (RISK 1), plus a NEW
+                      "Create new album from N" item. All handlers are
+                      the existing shared ones (openSearchViewer,
+                      openCollageComposer, moveToRecycleBin,
+                      setAlbumCoverPhoto, transcribeVideoPaths, the
+                      pdr:sendToSearchPile event, AddToAlbumPopover via
+                      open-ticks). */}
+                  {selectedAlbumPhotoIds.size > 0 && (() => {
+                    const base = albumPhotos.filter(p => selectedAlbumPhotoIds.has(p.id));
+                    const selectedVideos = base.filter(f => isVideoPathExt(f.file_path));
+                    return (
+                      <DropdownMenu open={actionsGrace.open} onOpenChange={actionsGrace.setOpen}>
+                        <DropdownMenuTrigger asChild>
+                          <Button
+                            size="sm"
+                            data-testid="albums-selection-actions"
+                            className="bg-[var(--color-gold)] border border-[var(--color-gold)] hover:opacity-90 text-[#1f1a08] hover:bg-[var(--color-gold)]"
+                            {...actionsGrace.triggerHoverProps}
+                          >
+                            Actions
+                            <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end" className="min-w-[260px]" {...actionsGrace.contentHoverProps}>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              if (base.length === 0) return;
+                              openSearchViewer(base.map(f => f.file_path), base.map(f => f.filename));
+                            }}
+                            data-testid="albums-actions-open-viewer"
+                          >
+                            <PlayCircle className="w-3.5 h-3.5 mr-2" />
+                            Open {selectedAlbumPhotoIds.size} Selected in Viewer
+                          </DropdownMenuItem>
+                          {selectedAlbumPhotoIds.size === 1 && (
+                            <DropdownMenuItem
+                              onSelect={() => {
+                                const target = base[0];
+                                if (!target) return;
+                                (window as any).pdr?.revealInFolder?.(target.file_path);
+                              }}
+                              data-testid="albums-actions-reveal"
+                            >
+                              <HardDrive className="w-3.5 h-3.5 mr-2" />
+                              Show in File Explorer
+                            </DropdownMenuItem>
+                          )}
+                          <DropdownMenuSeparator />
+                          {/* Send to S&D (replace) + Add to S&D pile
+                              (accumulate). Album-shape return-source so the
+                              back-pill drills back into THIS album — copied
+                              from the Albums per-photo context menu below. */}
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              const fileIds = Array.from(selectedAlbumPhotoIds);
+                              if (fileIds.length === 0) return;
+                              void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id }));
+                              window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                                detail: { fileIds, source: 'albums', mode: 'replace' },
+                              }));
+                            }}
+                            data-testid="albums-actions-send-to-sd"
+                          >
+                            <SearchIcon className="w-3.5 h-3.5 mr-2" />
+                            Send {selectedAlbumPhotoIds.size} to S&amp;D
+                          </DropdownMenuItem>
+                          <DropdownMenuItem
+                            onSelect={() => {
+                              const fileIds = Array.from(selectedAlbumPhotoIds);
+                              if (fileIds.length === 0) return;
+                              void import('@/lib/memories-return-source').then(m => m.setMemoriesReturnSource({ tab: 'albums', label: `Album "${selectedAlbum.title}"`, albumId: selectedAlbum.id }));
+                              window.dispatchEvent(new CustomEvent('pdr:sendToSearchPile', {
+                                detail: { fileIds, source: 'albums', mode: 'accumulate' },
+                              }));
+                            }}
+                            data-testid="albums-actions-add-to-sd-pile"
+                          >
+                            <SearchIcon className="w-3.5 h-3.5 mr-2" />
+                            Add {selectedAlbumPhotoIds.size} to S&amp;D pile
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
+                            data-testid="albums-actions-add-to-album"
+                          >
+                            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                            Add to album…
+                          </DropdownMenuItem>
+                          {/* v2.1 round 275 (Terry) — NEW: create a fresh
+                              album straight from the selection. Opens the
+                              AddToAlbumPopover directly in create mode via
+                              openCreateTrigger → handleCreateAndAdd makes
+                              the album + adds these photos in one go. */}
+                          <DropdownMenuItem
+                            onSelect={() => { setAddToAlbumCreateTick(t => t + 1); }}
+                            data-testid="albums-actions-create-album"
+                          >
+                            <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                            Create new album from {selectedAlbumPhotoIds.size} photo{selectedAlbumPhotoIds.size === 1 ? '' : 's'}…
+                          </DropdownMenuItem>
+                          {/* Create Collage from 2+ selected photos →
+                              composer → PDRV. Photos only (videos can't be
+                              tiled into a still collage). */}
+                          {(() => {
+                            const photos = base.filter(f => !isVideoPathExt(f.file_path));
+                            if (photos.length < 2) return null;
+                            return (
+                              <DropdownMenuItem
+                                onSelect={() => { void openCollageComposer(photos.map(p => p.file_path)); }}
+                                data-testid="albums-actions-create-collage"
+                              >
+                                <LayoutGrid className="w-3.5 h-3.5 mr-2" />
+                                Create collage from {photos.length} photos…
+                              </DropdownMenuItem>
+                            );
+                          })()}
+                          {selectedVideos.length > 0 && (
+                            <DropdownMenuItem
+                              onSelect={() => transcribeVideoPaths(selectedVideos.map(v => v.file_path))}
+                              data-testid="albums-actions-transcribe"
+                            >
+                              <Captions className="w-3.5 h-3.5 mr-2" />
+                              Transcribe {selectedVideos.length} video{selectedVideos.length === 1 ? '' : 's'}…
+                            </DropdownMenuItem>
+                          )}
+                          {/* Set as ALBUM thumbnail — single-photo only.
+                              Replaces Dates' "Set as monthly thumbnail";
+                              same setAlbumCoverPhoto + refreshAll the
+                              per-photo menu uses. */}
+                          {selectedAlbumPhotoIds.size === 1 && (
+                            <DropdownMenuItem
+                              onSelect={async () => {
+                                const target = base[0];
+                                if (!target) return;
+                                const result = await setAlbumCoverPhoto(selectedAlbum.id, target.id);
+                                if (result.success) {
+                                  void refreshAll();
+                                  toast.success('Album thumbnail set', {
+                                    description: `“${selectedAlbum.title}” now uses this photo`,
+                                  });
+                                } else {
+                                  toast.error("Couldn't set album thumbnail", { description: result.error });
+                                }
+                              }}
+                              data-testid="albums-actions-set-album-thumb"
+                            >
+                              <Star className="w-3.5 h-3.5 mr-2" />
+                              Set as album thumbnail
+                            </DropdownMenuItem>
+                          )}
+                          {/* Copy filename(s) — newline-separated for
+                              multi-select (matches Dates). */}
+                          <DropdownMenuItem
+                            onSelect={async () => {
+                              if (base.length === 0) return;
+                              const names = base.map(f => f.filename).join('\n');
+                              try {
+                                await navigator.clipboard.writeText(names);
+                                toast.success(
+                                  base.length === 1 ? 'Filename copied' : `Copied ${base.length} filenames`,
+                                  base.length === 1 ? { description: base[0].filename } : undefined,
+                                );
+                              } catch {
+                                toast.error("Couldn't copy filename" + (base.length === 1 ? '' : 's'));
+                              }
+                            }}
+                            data-testid="albums-actions-copy-filenames"
+                          >
+                            <Copy className="w-3.5 h-3.5 mr-2" />
+                            {selectedAlbumPhotoIds.size === 1 ? 'Copy filename' : `Copy ${selectedAlbumPhotoIds.size} filenames`}
+                          </DropdownMenuItem>
+                          <DropdownMenuSeparator />
+                          <DropdownMenuItem
+                            onSelect={async () => {
+                              const ids = Array.from(selectedAlbumPhotoIds);
+                              if (ids.length === 0) return;
+                              const r = await moveToRecycleBin(ids);
+                              if (r.success) {
+                                toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                                clearAlbumSelection();
+                                // v2.1 round 275 (Terry) — RISK 1: force the
+                                // album-photos loader to re-run so deleted
+                                // tiles vanish (refreshAll alone reloads only
+                                // albums/groups/memberships, not albumPhotos).
+                                setAlbumPhotosRefreshTick(t => t + 1);
+                                void refreshAll();
+                              } else {
+                                toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                              }
+                            }}
+                            className="text-destructive focus:text-destructive"
+                            data-testid="albums-actions-delete"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 mr-2" />
+                            Move {selectedAlbumPhotoIds.size} to Recycle Bin
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    );
+                  })()}
+                  {selectedAlbumPhotoIds.size > 0 && (
+                    <>
+                      <IconTooltip label="Clear selection" side="bottom">
+                        <button
+                          onClick={clearAlbumSelection}
+                          className="inline-flex items-center gap-1.5 h-8 px-3 rounded-full border border-[var(--color-gold)] bg-[var(--color-gold)] hover:opacity-90 text-xs font-medium text-[#1f1a08] transition-colors"
+                          data-testid="albums-selection-chip"
+                        >
+                          {selectedAlbumPhotoIds.size} selected
+                          <X className="w-3 h-3 opacity-70" />
+                        </button>
+                      </IconTooltip>
+                      {/* Hidden AddToAlbumPopover anchor — squashed off-
+                          screen so it serves only as the popover anchor
+                          the Actions items open via open-ticks (list mode
+                          + create mode). Mirrors the MemoriesView pattern. */}
+                      <div className="absolute -left-[9999px] top-0">
+                        <AddToAlbumPopover
+                          fileIds={Array.from(selectedAlbumPhotoIds)}
+                          onAdded={clearAlbumSelection}
+                          openTrigger={addToAlbumOpenTick}
+                          openCreateTrigger={addToAlbumCreateTick}
+                        />
+                      </div>
+                    </>
+                  )}
                   {selectedAlbum.source === 'user_created' && (
                     <Popover open={addFilesPopoverOpen} onOpenChange={setAddFilesPopoverOpen}>
                       <IconTooltip label="Pick more photos from Search & Discovery or By Date" side="bottom">
@@ -3316,6 +3596,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </button>
                     </ContextMenuTrigger>
                     <ContextMenuContent>
+                      {/* v2.1 round 275 (Terry) — Open in viewer, parity
+                          with the Dates per-tile menu. Opens just this
+                          photo in the shared viewer. */}
+                      <ContextMenuItem
+                        onSelect={() => { void openSearchViewer([p.file_path], [p.filename]); }}
+                        data-testid={`album-photo-open-viewer-${p.id}`}
+                      >
+                        <PlayCircle className="w-3.5 h-3.5 mr-2" />
+                        Open in viewer
+                      </ContextMenuItem>
                       {/* v2.0.15 (Terry 2026-05-28) — "Show in File
                           Explorer" opens File Explorer at the photo's
                           folder and highlights the file. */}
@@ -3394,12 +3684,25 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         Add to S&amp;D pile
                       </ContextMenuItem>
                       <ContextMenuSeparator />
-                      {/* v2.0.13 (Terry 2026-05-26) — mirrors MemoriesView's
-                          per-photo menu. "Add to album" lives on the
-                          MemoriesView surface because it needs the multi-
-                          select infra that AlbumsView doesn't carry yet —
-                          if a user wants to copy a photo into another
-                          album they can do it from Search & Discovery. */}
+                      {/* v2.1 round 275 (Terry) — Add to album…, parity
+                          with Dates. Opens the AddToAlbumPopover (list
+                          mode) via its open-tick. When the right-clicked
+                          tile is part of an active multi-select, adds the
+                          whole selection; otherwise it selects just this
+                          one photo first so the popover targets it. */}
+                      <ContextMenuItem
+                        onSelect={() => {
+                          if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
+                            setSelectedAlbumPhotoIds(new Set([p.id]));
+                            lastAlbumClickedIndexRef.current = null;
+                          }
+                          setAddToAlbumOpenTick(t => t + 1);
+                        }}
+                        data-testid={`album-photo-add-to-album-${p.id}`}
+                      >
+                        <FolderPlus className="w-3.5 h-3.5 mr-2" />
+                        Add to album…
+                      </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={async () => {
                           try {
@@ -3478,6 +3781,36 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         Set as album thumbnail
                       </ContextMenuItem>
                       )}
+                      {/* v2.1 round 275 (Terry) — Move to Recycle Bin,
+                          parity with Dates. Recycles the whole active
+                          multi-select if the clicked tile is part of it,
+                          else just this one. RISK 1: after the recycle we
+                          bump albumPhotosRefreshTick so the grid reloads
+                          and the deleted tiles vanish (refreshAll alone
+                          does not reload albumPhotos). */}
+                      <ContextMenuSeparator />
+                      <ContextMenuItem
+                        onSelect={async () => {
+                          const ids = selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)
+                            ? Array.from(selectedAlbumPhotoIds)
+                            : [p.id];
+                          if (ids.length === 0) return;
+                          const r = await moveToRecycleBin(ids);
+                          if (r.success) {
+                            toast.success(`Moved ${r.count ?? ids.length} to Recycle Bin`);
+                            clearAlbumSelection();
+                            setAlbumPhotosRefreshTick(t => t + 1);
+                            void refreshAll();
+                          } else {
+                            toast.error('Couldn’t move to Recycle Bin', { description: r.error });
+                          }
+                        }}
+                        className="text-destructive focus:text-destructive"
+                        data-testid={`album-photo-recycle-${p.id}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5 mr-2" />
+                        Move to PDR Recycle Bin{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id) ? ` (${selectedAlbumPhotoIds.size})` : ''}
+                      </ContextMenuItem>
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
