@@ -9788,8 +9788,16 @@
         }
         return;
       }
+      // v2.1 round 286 Tier 2 (Terry) — Ctrl/Cmd+click toggles this tile in the
+      // multi-selection (no drag begins).
+      if ((e.ctrlKey || e.metaKey) && !it.isBg) { toggleItemInSelection(it); return; }
       beginCollageChange();
-      selectCollageItem(it);
+      // If grabbing a member of a multi-selection (2+), move the WHOLE group
+      // together — keep the selection instead of collapsing to just this tile.
+      const dragGroup = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)
+        ? collageSelection.filter(g => g && !g.isBg && !g.locked && g.on && g !== it)
+        : null;
+      if (!dragGroup) selectCollageItem(it);
       bringFront(it);
       // v2.1 round 253 (Terry) — use the SCALED rect (getBoundingClientRect, which
       // includes the user-zoom transform) for the screen-delta→fraction conversion, so
@@ -9799,18 +9807,32 @@
       const cw = _dRect.width, ch = _dRect.height;
       const startX = e.clientX, startY = e.clientY;
       const sx = it.xFrac, sy = it.yFrac;
+      const groupStarts = dragGroup ? dragGroup.map(g => ({ g: g, sx: g.xFrac, sy: g.yFrac })) : null;
       it.el.classList.add('dragging');
       // v2.1 round 208 (Terry) — Shift = constrain to a HORIZONTAL path. While
       // Shift is held the tile's vertical position is frozen at whatever yFrac it
       // had the MOMENT Shift was pressed; X keeps following the cursor (and may
       // still snap). Releasing Shift clears the lock and resumes free movement.
       let yLock = null;
+      let dragMoved = false;   // v2.1 round 286 Tier 2 — track real drag vs plain click (group case)
       const move = (ev) => {
         // Capture / release the Y lock on the Shift up→down / down→up transitions.
         if (ev.shiftKey) { if (yLock === null) yLock = it.yFrac; }
         else { yLock = null; }
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
+        // v2.1 round 286 Tier 2 — group drag: move every selected member by the
+        // same delta (no per-tile snap for groups). Shift still locks the Y axis.
+        if (groupStarts) {
+          if (!dragMoved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;   // below threshold → let a plain click collapse to one
+          dragMoved = true;
+          const dyEff = (yLock !== null) ? 0 : dy;
+          it.xFrac = sx + dx; it.yFrac = sy + dyEff; renderCollageItem(it);
+          groupStarts.forEach(m => { m.g.xFrac = m.sx + dx; m.g.yFrac = m.sy + dyEff; renderCollageItem(m.g); });
+          try { positionSelectionChrome(); } catch (_) {}
+          hideCollageSnapGuides();
+          return;
+        }
         const ihFrac = itemHeightFrac(it);
         // v2.1 round 266 (Terry) — Phase 3: loosen the travel clamps so an OVERSIZED
         // tile (taller/wider than the page) can move fully above/below/beside the strip
@@ -9843,6 +9865,9 @@
       const up = () => {
         it.el.classList.remove('dragging');
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
+        // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
+        // multi-selection collapses to just that tile (Canva behaviour).
+        if (dragGroup && !dragMoved) selectCollageItem(it);
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
@@ -11140,6 +11165,15 @@
       list.forEach(it => { if (it.el) it.el.classList.add('selected'); });
     }
     function clearCollageSelection() { selectCollageItem(null); }   // clears all rings (multi-aware) + empties the set
+    // v2.1 round 286 Tier 2 (Terry) — Ctrl/Cmd+click toggles a tile in/out of the
+    // multi-selection (the just-added tile becomes the primary).
+    function toggleItemInSelection(it) {
+      if (!it || it.isBg) return;
+      const cur = (collageSelection || []).slice();
+      const i = cur.indexOf(it);
+      if (i >= 0) cur.splice(i, 1); else cur.push(it);
+      if (cur.length) setCollageSelectionItems(cur); else clearCollageSelection();
+    }
     function selectAllCollageItems() {
       const all = collageItems.filter(it => it.on && !it.isBg);
       if (all.length) setCollageSelectionItems(all);
@@ -13612,14 +13646,58 @@
         collagePanDrag = { sx: e.clientX, sy: e.clientY, px: collagePanX, py: collagePanY, onCanvas, noSelect, moved: false, id: e.pointerId };
         try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
       }
+      // v2.1 round 286 Tier 2 (Terry) — rubber-band MARQUEE select. At fit-zoom in
+      // a single collage an empty-canvas drag doesn't pan (the gate in pointermove),
+      // so it's free for a marquee that highlights the tiles it covers. Carousel /
+      // zoomed-in keep their pan. Canvas-only (the dark margin keeps pan/deselect).
+      let collageMarquee = null, collageMarqueeEl = null;
+      function startMarquee(e) {
+        collageMarquee = { sx: e.clientX, sy: e.clientY, id: e.pointerId, moved: false };
+        try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
+      }
+      function updateMarquee(e) {
+        if (!collageMarquee || e.pointerId !== collageMarquee.id) return;
+        const dx = e.clientX - collageMarquee.sx, dy = e.clientY - collageMarquee.sy;
+        if (!collageMarquee.moved && Math.hypot(dx, dy) < 4) return;
+        collageMarquee.moved = true;
+        if (!collageMarqueeEl) {
+          collageMarqueeEl = document.createElement('div');
+          collageMarqueeEl.style.cssText = 'position:absolute;border:1px solid #FEC242;background:rgba(254,194,66,0.14);pointer-events:none;z-index:9998;';
+          collageStageEl.appendChild(collageMarqueeEl);
+        }
+        const sr = collageStageEl.getBoundingClientRect();
+        collageMarqueeEl.style.left = (Math.min(e.clientX, collageMarquee.sx) - sr.left) + 'px';
+        collageMarqueeEl.style.top = (Math.min(e.clientY, collageMarquee.sy) - sr.top) + 'px';
+        collageMarqueeEl.style.width = Math.abs(dx) + 'px';
+        collageMarqueeEl.style.height = Math.abs(dy) + 'px';
+        collageMarqueeEl.style.display = 'block';
+      }
+      function endMarquee(e) {
+        if (!collageMarquee || (e && e.pointerId !== collageMarquee.id)) return;
+        const moved = collageMarquee.moved;
+        const rb = moved ? { l: Math.min(e.clientX, collageMarquee.sx), t: Math.min(e.clientY, collageMarquee.sy), r: Math.max(e.clientX, collageMarquee.sx), b: Math.max(e.clientY, collageMarquee.sy) } : null;
+        try { collageStageEl.releasePointerCapture(collageMarquee.id); } catch (_) {}
+        collageMarquee = null;
+        if (collageMarqueeEl) collageMarqueeEl.style.display = 'none';
+        if (!moved) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); return; }   // plain click → deselect (existing behaviour)
+        const hits = collageItems.filter(it => it.on && !it.isBg && it.el).filter(it => {
+          const r = it.el.getBoundingClientRect();
+          return !(r.right < rb.l || r.left > rb.r || r.bottom < rb.t || r.top > rb.b);
+        });
+        if (hits.length) setCollageSelectionItems(hits); else clearCollageSelection();
+      }
       collageStageEl.addEventListener('pointerdown', (e) => {
         if (e.button !== 0) return;
         const onCanvas = (e.target === collageCanvasEl);
         const onMargin = !collageCanvasEl.contains(e.target);
         if (!onCanvas && !onMargin) return;   // a tile/text inside the canvas → its own handler
+        // v2.1 round 286 Tier 2 — empty-canvas drag at fit-zoom (single collage,
+        // where pan no-ops) = marquee select; otherwise keep the existing pan.
+        if (onCanvas && !carouselMode && collageUserZoom <= 1) { startMarquee(e); return; }
         startViewPan(e, { onCanvas });
       });
       collageStageEl.addEventListener('pointermove', (e) => {
+        if (collageMarquee) { updateMarquee(e); return; }
         if (!collagePanDrag || e.pointerId !== collagePanDrag.id) return;
         // v2.1 round 266 (Terry) — Behaviour A: grab-pan at ANY zoom in carousel mode
         // (Terry: "grab the black screen and move ... should work zoomed out also").
@@ -13634,6 +13712,7 @@
         applyCollageZoom();
       });
       const endCollagePan = (e) => {
+        if (collageMarquee) { endMarquee(e); return; }
         if (!collagePanDrag || (e && e.pointerId !== collagePanDrag.id)) return;
         const wasDrag = collagePanDrag.moved, onCanvas = collagePanDrag.onCanvas, noSelect = collagePanDrag.noSelect;
         try { collageStageEl.releasePointerCapture(collagePanDrag.id); } catch (_) {}
