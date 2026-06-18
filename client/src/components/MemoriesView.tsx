@@ -9,6 +9,7 @@ import {
   ChevronDown,
   LayoutGrid,
   Sparkles,
+  Smartphone,
   Film,
   Scissors,
   Image as ImageIcon,
@@ -2766,6 +2767,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     </DropdownMenuItem>
                   );
                 })()}
+                {/* v2.1 round 279 (Terry) — Sharing Phase 2: send the selected
+                    photos to a phone over local Wi-Fi (QR). */}
+                <DropdownMenuItem
+                  onSelect={() => window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths: base.filter(f => selectedFileIds.has(f.id)).map(f => f.file_path) } }))}
+                  data-testid="memories-actions-send-phone"
+                >
+                  <Smartphone className="w-3.5 h-3.5 mr-2" />
+                  Send {selectedFileIds.size} to Phone…
+                </DropdownMenuItem>
                 {selectedVideos.length > 0 && (
                   <DropdownMenuItem
                     onSelect={() => transcribeSelectedVideos(selectedVideos.map(v => v.file_path))}

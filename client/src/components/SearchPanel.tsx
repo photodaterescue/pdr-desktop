@@ -46,6 +46,7 @@ import {
   Table2,
   Info,
   Sparkles,
+  Smartphone,
   Users,
   User,
   Tag,
@@ -5093,6 +5094,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   >
                     <Copy className="w-3.5 h-3.5 mr-2" />
                     Add {selectedFiles.size.toLocaleString()} to Parallel Library
+                  </DropdownMenuItem>
+                  {/* v2.1 round 279 (Terry) — Sharing Phase 2: send the
+                      selected photos to a phone over local Wi-Fi (QR). */}
+                  <DropdownMenuItem
+                    onSelect={() => window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths: Array.from(selectedFilesMap.values()).map(f => f.file_path) } }))}
+                    data-testid="sd-actions-send-phone"
+                  >
+                    <Smartphone className="w-3.5 h-3.5 mr-2" />
+                    Send {selectedFiles.size.toLocaleString()} to Phone…
                   </DropdownMenuItem>
                   {/* v2.1 round 116 (Terry 2026-06-11) — "Create new
                       PDR album" sits ABOVE "Add to album…" because

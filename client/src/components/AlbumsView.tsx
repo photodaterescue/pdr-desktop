@@ -29,7 +29,7 @@ import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'rea
 import {
   ChevronDown, ChevronRight, ChevronLeft, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy,
+  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy, Smartphone,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
   Captions, Info, Eye, Filter, Film, Files,
@@ -3376,6 +3376,15 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           >
                             <Copy className="w-3.5 h-3.5 mr-2" />
                             Export {selectedAlbumPhotoIds.size} Selected as Parallel Library
+                          </DropdownMenuItem>
+                          {/* v2.1 round 279 (Terry) — Sharing Phase 2: send the
+                              selected photos to a phone over local Wi-Fi (QR). */}
+                          <DropdownMenuItem
+                            onSelect={() => window.dispatchEvent(new CustomEvent('pdr:sendToPhone', { detail: { paths: base.map(f => f.file_path) } }))}
+                            data-testid="albums-actions-send-phone"
+                          >
+                            <Smartphone className="w-3.5 h-3.5 mr-2" />
+                            Send {selectedAlbumPhotoIds.size} to Phone…
                           </DropdownMenuItem>
                           {selectedVideos.length > 0 && (
                             <DropdownMenuItem

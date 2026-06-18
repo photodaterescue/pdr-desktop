@@ -328,6 +328,8 @@ import {
   recoverOrphanRecordings,
   flushRecordingOnQuit,
 } from './capture-manager.js';
+// v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone" LAN server.
+import { startShare as phoneStartShare, stopShare as phoneStopShare, getStatus as phoneShareStatus } from './phone-share.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
@@ -13593,6 +13595,39 @@ ipcMain.handle('capture:setHotkey', async (_event, accelerator: string) => {
       try { win.webContents.send('settings:changed', { key: 'captureHotkey', value: accel }); } catch { /* non-fatal */ }
     }
     return { success: true, registered: reg.registered, accelerator: reg.accelerator };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── Send to Phone IPC (Sharing Phase 2) ────────────────────────────────────
+// A short-lived local-Wi-Fi server the phone pulls the selected photos from
+// (see electron/phone-share.ts). The renderer hands over its already-resolved
+// selection of absolute paths; the server returns the URL to QR-encode.
+ipcMain.handle('phoneShare:start', async (_event, items: Array<string | { path: string; name?: string }>) => {
+  try {
+    const norm = (items || [])
+      .map((it) => (typeof it === 'string' ? { path: it } : it))
+      .filter((it) => it && it.path);
+    const status = await phoneStartShare(norm);
+    return { success: true, data: status };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('phoneShare:stop', async () => {
+  try {
+    await phoneStopShare();
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('phoneShare:status', async () => {
+  try {
+    return { success: true, data: phoneShareStatus() };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

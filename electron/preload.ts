@@ -1123,6 +1123,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     start: (files: string[], iconDataUrl?: string) => ipcRenderer.invoke('drag:start', { files, iconDataUrl }),
   },
 
+  // v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone" over local Wi-Fi.
+  // start() takes the renderer's resolved selection (absolute file paths); main
+  // spins up a short-lived LAN server and returns the URL to QR-encode. status()
+  // polls the live download count; stop() tears the server down.
+  phoneShare: {
+    start: (paths: string[]) => ipcRenderer.invoke('phoneShare:start', paths) as Promise<{ success: boolean; data?: { active: boolean; url?: string; ip?: string; port?: number; fileCount?: number; downloads?: number; expiresAt?: number }; error?: string }>,
+    stop: () => ipcRenderer.invoke('phoneShare:stop') as Promise<{ success: boolean; error?: string }>,
+    status: () => ipcRenderer.invoke('phoneShare:status') as Promise<{ success: boolean; data?: { active: boolean; url?: string; ip?: string; port?: number; fileCount?: number; downloads?: number; expiresAt?: number }; error?: string }>,
+  },
+
   ai: {
     start: () => ipcRenderer.invoke('ai:start'),
     cancel: () => ipcRenderer.invoke('ai:cancel'),

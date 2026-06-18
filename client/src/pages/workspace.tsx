@@ -128,6 +128,7 @@ import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
 import { TrialLimitModal } from "@/components/TrialLimitModal";
+import { SendToPhoneModal } from "@/components/SendToPhoneModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
@@ -1009,6 +1010,20 @@ useEffect(() => {
 
 const [showLicenseRequired, setShowLicenseRequired] = useState(false);
 const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
+// v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone". The three photo
+// surfaces (Dates / Albums / S&D) dispatch a `pdr:sendToPhone` CustomEvent with
+// the selected paths (the established cross-component-open pattern, cf.
+// pdr:sendToSearchPile); the modal lives here at the workspace root.
+const [phoneShareTarget, setPhoneShareTarget] = useState<string[] | null>(null);
+useEffect(() => {
+  const onSendToPhone = (e: Event) => {
+    const detail = (e as CustomEvent).detail as { paths?: string[] } | undefined;
+    const paths = (detail?.paths || []).filter(Boolean);
+    if (paths.length) setPhoneShareTarget(paths);
+  };
+  window.addEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
+  return () => window.removeEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
+}, []);
 // Library-Drive-offline modal — surfaced when the persisted
 // destinationPath doesn't resolve on disk (drive unplugged, NAS
 // offline, USB asleep). Drives the calm "Library Drive isn't
@@ -3550,6 +3565,10 @@ return (
 		  feature={teaserFeature}
 		  onClose={() => setTeaserFeature(null)}
 		  onActivate={handleActivateLicense}
+		/>
+		<SendToPhoneModal
+		  paths={phoneShareTarget}
+		  onClose={() => setPhoneShareTarget(null)}
 		/>
       {/* Custom Folder Browser — defaults to source-add ("Add Source"
           / mode="source"), but callers can override via folderBrowserOpts
