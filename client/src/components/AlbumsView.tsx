@@ -615,6 +615,57 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     try { localStorage.setItem(ALBUMS_DENSITY_KEY, density); } catch { /* localStorage may be unavailable */ }
   }, [density]);
 
+  // ── v2.1 round 276 (Terry) — responsive album-detail toolbar ──────
+  // The album-detail header packs a lot: the multi-select Actions
+  // dropdown + "N selected" pill, an "Export Album as Parallel
+  // Library" CTA, plus Media / Display / density / Add-files view
+  // controls. On a narrow window these wrapped / clipped. Rather than
+  // a horizontal scrollbar, we degrade in two steps:
+  //   • toolbarCompact      — the COLLAPSIBLE view controls (Media,
+  //                           Display, density, Add files) shrink to
+  //                           ICON-ONLY buttons (tooltips retained).
+  //   • toolbarVeryCompact  — those same controls fold into a single
+  //                           "⋯ More" dropdown.
+  // HIGH-priority controls (Actions, the N-selected pill, the Export
+  // Album button) stay inline with full labels at every width.
+  //
+  // We observe the HEADER CONTAINER's width, never the items. The
+  // items change size as the flags flip, but the container is the
+  // fixed-width header row, so its measured width is independent of
+  // our own output — no resize feedback loop / flicker. Thresholds
+  // chosen for the album-detail row's fixed left content (icon +
+  // title + count + badges) plus the right cluster; tune if the left
+  // content grows. Hysteresis isn't needed because the container
+  // width only changes on real window/pane resizes, not on our
+  // class swaps.
+  const headerToolbarRef = useRef<HTMLDivElement | null>(null);
+  const [toolbarCompact, setToolbarCompact] = useState(false);
+  const [toolbarVeryCompact, setToolbarVeryCompact] = useState(false);
+  useEffect(() => {
+    const el = headerToolbarRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const measure = (w: number) => {
+      // < 760px → fold collapsibles into "⋯ More"; < 980px → icon-only.
+      const veryCompact = w < 760;
+      const compact = w < 980;
+      setToolbarVeryCompact((prev) => (prev === veryCompact ? prev : veryCompact));
+      setToolbarCompact((prev) => (prev === compact ? prev : compact));
+    };
+    measure(el.getBoundingClientRect().width);
+    const ro = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const w = entry.contentRect?.width ?? (entry.target as HTMLElement).getBoundingClientRect().width;
+        measure(w);
+      }
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+    // Re-attach when the selection changes album because the header
+    // container is conditionally rendered (different element instance
+    // per selection branch); a one-shot mount effect would bind to a
+    // stale / unmounted node.
+  }, [selection]);
+
   // v2.1 round 88 (Terry 2026-06-10) — Scroll-position date pill
   // listener. Computes the photo at the visible top using grid maths
   // (uniform tile dimensions after the round-88 gap fix), reads its
@@ -1788,6 +1839,27 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     setSelectedAlbumPhotoIds(new Set());
     lastAlbumClickedIndexRef.current = null;
   };
+
+  // v2.1 round 276 (Terry) — export only the SELECTED photos as a
+  // Parallel Library. Reuses the SAME shared wizard
+  // (ParallelStructureModal) — we just feed exportPhotos the subset
+  // instead of the whole album. Mirrors the fixActive guard + toast
+  // from startExportAlbumAsPL. Plain fn (not useCallback) so it always
+  // reads the live selectedAlbumPhotoIds / albumPhotos — and so it can
+  // sit below the selectedAlbumPhotoIds declaration without a dep-array
+  // TDZ. Reached from the multi-select Actions dropdown (selection > 0);
+  // the standalone header "Export Album…" button is hidden while a
+  // selection is live, so the two never compete.
+  const startExportSelectedAsPL = () => {
+    if (fixActive) {
+      toast.error('Wait for the current Fix to finish — Parallel Libraries use the same copy engine.');
+      return;
+    }
+    const sel = albumPhotos.filter(p => selectedAlbumPhotoIds.has(p.id));
+    if (!sel.length) return;
+    setExportPhotos(sel);
+    setShowStructureModal(true);
+  };
   const handleAlbumPhotoClick = (
     visibleList: Array<{ id: number }>,
     idx: number,
@@ -2462,25 +2534,37 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // h-8 + rounded-md + border + min-w-[150px] + justify-between +
   // Eye icon. Active-state badge counts non-default Display toggles
   // (selectionMode + metaFields + groupByDay-OFF).
-  const displayButton = (
+  // v2.1 round 276 (Terry) — render-fn (was a const) so the responsive
+  // album-detail toolbar can ask for an ICON-ONLY variant (`compact`)
+  // when space is tight. Identical popover body in both modes — only
+  // the trigger chrome differs (label + min-width hidden when compact,
+  // and the active-count badge shrinks to a dot). Other render sites
+  // (All-albums / Group headers) call it with no arg = full label.
+  const renderDisplayButton = (compact = false) => (
     <Popover>
       <IconTooltip label="Display options — tile size, selection mode, info under tiles, group by day" side="bottom">
         <PopoverTrigger asChild>
           <button
             type="button"
             data-testid="albums-display-trigger"
-            className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+            className={`inline-flex items-center ${compact ? 'justify-center w-8' : 'justify-between min-w-[150px]'} gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${insightsActive ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
           >
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 relative">
               <Eye className="w-3.5 h-3.5" />
-              <span>Display</span>
-              {insightsActive && (
+              {!compact && <span>Display</span>}
+              {insightsActive && !compact && (
                 <span className="ml-0.5 inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-primary/15 text-primary text-[10px] font-semibold tabular-nums">
                   {insightsCount}
                 </span>
               )}
+              {/* Compact mode: a tiny dot stands in for the count badge
+                  so the user can still tell a non-default Display state
+                  exists without the label/number taking up width. */}
+              {insightsActive && compact && (
+                <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full bg-primary" />
+              )}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            {!compact && <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
           </button>
         </PopoverTrigger>
       </IconTooltip>
@@ -2625,21 +2709,29 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         : captionedOnly && mediaFilter === 'all'
           ? MessageSquareText
           : Files;
-  const mediaButton = (
+  // v2.1 round 276 (Terry) — render-fn (was a const) so the responsive
+  // album-detail toolbar can request an ICON-ONLY variant when space
+  // is tight. Same popover body either way; compact hides the
+  // "Media: <label>" text + min-width and shows a dot when a non-
+  // default filter is active.
+  const renderMediaButton = (compact = false) => (
     <Popover>
       <IconTooltip label="Filter what's shown — Photos, Videos, Captioned" side="bottom">
         <PopoverTrigger asChild>
           <button
             type="button"
             data-testid="albums-media-filter"
-            className={`inline-flex items-center justify-between gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors min-w-[150px] ${!mediaIsDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+            className={`inline-flex items-center ${compact ? 'justify-center w-8' : 'justify-between min-w-[150px]'} gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${!mediaIsDefault ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
           >
-            <span className="inline-flex items-center gap-1.5">
+            <span className="inline-flex items-center gap-1.5 relative">
               <MediaChipIcon className="w-3.5 h-3.5" />
-              <span className="text-muted-foreground/85">Media:</span>
-              <span>{mediaShortLabel}</span>
+              {!compact && <span className="text-muted-foreground/85">Media:</span>}
+              {!compact && <span>{mediaShortLabel}</span>}
+              {!mediaIsDefault && compact && (
+                <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full bg-primary" />
+              )}
             </span>
-            <ChevronDown className="w-3.5 h-3.5 opacity-70" />
+            {!compact && <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
           </button>
         </PopoverTrigger>
       </IconTooltip>
@@ -2687,6 +2779,158 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // collapses cleanly when the child renders nothing.
   const refreshButton: React.ReactNode = null;
 
+  // v2.1 round 276 (Terry) — Add-files control as a render-fn so the
+  // responsive album-detail toolbar can show it full-label, icon-only,
+  // or skip it (it's relocated into "⋯ More" at the narrowest width).
+  // Same controlled Popover + same two destination dispatches as the
+  // original inline block; only the trigger chrome changes. Guarded on
+  // selectedAlbum (only the album-detail branch calls it, and only for
+  // user_created albums — the caller still gates on source).
+  const renderAddFilesControl = (compact = false) => {
+    if (!selectedAlbum) return null;
+    const albumId = selectedAlbum.id;
+    const albumTitle = selectedAlbum.title;
+    return (
+      <Popover open={addFilesPopoverOpen} onOpenChange={setAddFilesPopoverOpen}>
+        <IconTooltip label="Pick more photos from Search & Discovery or By Date" side="bottom">
+          <PopoverTrigger asChild>
+            <Button
+              variant="secondary"
+              size="sm"
+              className={compact ? 'justify-center w-8 px-0 h-8' : 'gap-1.5 px-3 py-1 h-auto text-xs'}
+              data-testid="button-album-add-from-elsewhere"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              {!compact && 'Add files'}
+            </Button>
+          </PopoverTrigger>
+        </IconTooltip>
+        <PopoverContent align="end" className="w-64 p-1">
+          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
+            Pick photos from…
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setAddFilesPopoverOpen(false);
+              window.dispatchEvent(new CustomEvent('pdr:openSearchDiscovery', {
+                detail: { from: { albumId, title: albumTitle } },
+              }));
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
+            data-testid="album-add-from-sd"
+          >
+            <SearchIcon className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="font-medium">Search &amp; Discovery</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              setAddFilesPopoverOpen(false);
+              window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', {
+                detail: { tab: 'byDate', from: { albumId, title: albumTitle } },
+              }));
+            }}
+            className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
+            data-testid="album-add-from-bydate"
+          >
+            <CalendarRange className="w-4 h-4 text-muted-foreground shrink-0" />
+            <span className="font-medium">Dates</span>
+          </button>
+        </PopoverContent>
+      </Popover>
+    );
+  };
+
+  // v2.1 round 276 (Terry) — density control. Full segmented
+  // DensityToggle when there's room; an icon-only toggle button in
+  // compact mode (the shared DensityToggle has baked-in "Spacious /
+  // Tight" text labels and lives in ui/, which is out of scope to
+  // edit — so the compact form is a small local icon button that
+  // flips the SAME density state). Layers icon = spacious (gaps),
+  // Rows/LayoutGrid swap conveys tight; we keep one glyph + tooltip
+  // for clarity.
+  const renderDensityControl = (compact = false) => {
+    if (!compact) {
+      return <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />;
+    }
+    return (
+      <IconTooltip
+        label={density === 'spacious' ? 'Density: Spacious — switch to Tight' : 'Density: Tight — switch to Spacious'}
+        side="bottom"
+      >
+        <button
+          type="button"
+          onClick={() => setDensity(density === 'spacious' ? 'tight' : 'spacious')}
+          className={`inline-flex items-center justify-center w-8 h-8 rounded-md border text-xs font-medium transition-colors ${density === 'tight' ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+          data-testid="albums-density-toggle-compact"
+          aria-label="Toggle density"
+        >
+          {/* Dense grid glyph when tight, layered glyph when spacious —
+              the icon itself signals current state (reinforced by the
+              lavender active border). */}
+          {density === 'tight' ? <LayoutGrid className="w-3.5 h-3.5" /> : <Layers className="w-3.5 h-3.5" />}
+        </button>
+      </IconTooltip>
+    );
+  };
+
+  // v2.1 round 276 (Terry) — "⋯ More" overflow menu for the narrowest
+  // album-detail toolbar (toolbarVeryCompact). Relocates the SAME
+  // collapsible control components — full-label Media + Display
+  // popovers, the Add-files popover, and the DensityToggle — into a
+  // dropdown, stacked as rows. We DON'T reimplement their internals;
+  // we render the very same components, just inside the menu.
+  //
+  // Nested-portal note: these children open their own Radix popovers.
+  // A DropdownMenu normally closes when you interact "outside" it —
+  // which a nested popover's portal counts as. We keep the More menu
+  // open while the user works a nested popover by vetoing
+  // onInteractOutside / onFocusOutside when the event target sits in a
+  // Radix popper wrapper ([data-radix-popper-content-wrapper]) — i.e.
+  // inside one of OUR nested popovers — and by running modal={false}
+  // so the page doesn't lock. Closing the More menu itself (Escape /
+  // click its trigger / click truly outside) still works.
+  const renderMoreMenu = () => {
+    const insideNestedPopper = (target: EventTarget | null) =>
+      target instanceof Element && !!target.closest('[data-radix-popper-content-wrapper]');
+    return (
+      <DropdownMenu modal={false}>
+        <IconTooltip label="More view controls — Media, Display, density, Add files" side="bottom">
+          <DropdownMenuTrigger asChild>
+            <button
+              type="button"
+              className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-border bg-background hover:bg-accent text-foreground transition-colors"
+              data-testid="albums-toolbar-more"
+              aria-label="More controls"
+            >
+              <span className="text-base leading-none font-semibold tracking-widest">⋯</span>
+            </button>
+          </DropdownMenuTrigger>
+        </IconTooltip>
+        <DropdownMenuContent
+          align="end"
+          className="p-2 min-w-[230px]"
+          onInteractOutside={(e) => { if (insideNestedPopper(e.target)) e.preventDefault(); }}
+          onFocusOutside={(e) => { if (insideNestedPopper(e.target)) e.preventDefault(); }}
+        >
+          <div className="flex flex-col gap-1.5">
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-1">View</span>
+            {renderMediaButton(false)}
+            {renderDisplayButton(false)}
+            <div className="flex items-center justify-between gap-2 px-1">
+              <span className="text-xs text-muted-foreground">Spacing</span>
+              <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle-more" />
+            </div>
+            {selectedAlbum?.source === 'user_created' && (
+              <div className="pt-1">{renderAddFilesControl(false)}</div>
+            )}
+          </div>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    );
+  };
+
   const renderRightPane = () => {
     if (loading) {
       return <p className="text-sm text-muted-foreground px-6 py-6">Loading albums…</p>;
@@ -2714,7 +2958,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 control. Both share state across the All-albums /
                 per-group / detail surfaces. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {displayButton}
+              {/* v2.1 round 276 (Terry) — displayButton is now a render-fn;
+                  All-albums view stays full-label (not space-constrained). */}
+              {renderDisplayButton()}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-all-density-toggle" />
             </div>
@@ -2814,7 +3060,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 State is shared, so resizing here also resizes
                 everywhere else. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
-              {displayButton}
+              {/* v2.1 round 276 (Terry) — full-label render-fn call. */}
+              {renderDisplayButton()}
               {refreshButton}
               <DensityToggle value={density} onChange={setDensity} testId="albums-group-density-toggle" />
             </div>
@@ -2900,7 +3147,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       return (
         <div className="flex flex-col h-full group/album-header">
           {renderBreadcrumb()}
-          <div className="flex items-center gap-3 px-6 py-3 border-b border-border">
+          {/* v2.1 round 276 (Terry) — headerToolbarRef drives the
+              responsive overflow (ResizeObserver → toolbarCompact /
+              toolbarVeryCompact). min-w-0 lets the row actually shrink
+              below its content so the observer sees narrow widths. */}
+          <div ref={headerToolbarRef} className="flex items-center gap-3 px-6 py-3 border-b border-border min-w-0">
             <span className={getSourceProfileForAlbum(selectedAlbum).iconColorClass}>
               {(() => {
                 const I = getSourceProfileForAlbum(selectedAlbum).Icon;
@@ -3109,6 +3360,21 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                               </DropdownMenuItem>
                             );
                           })()}
+                          {/* v2.1 round 276 (Terry) — export ONLY the
+                              selected photos as a Parallel Library. The
+                              standalone header "Export Album…" button is
+                              hidden while a selection is live; this is its
+                              selection-scoped counterpart. Same Copy icon
+                              + fixActive guard as that button (PL shares
+                              the Fix copy engine). */}
+                          <DropdownMenuItem
+                            onSelect={startExportSelectedAsPL}
+                            disabled={fixActive}
+                            data-testid="albums-actions-export-pl"
+                          >
+                            <Copy className="w-3.5 h-3.5 mr-2" />
+                            Export {selectedAlbumPhotoIds.size} Selected as Parallel Library
+                          </DropdownMenuItem>
                           {selectedVideos.length > 0 && (
                             <DropdownMenuItem
                               onSelect={() => transcribeVideoPaths(selectedVideos.map(v => v.file_path))}
@@ -3219,85 +3485,70 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </div>
                     </>
                   )}
-                  {selectedAlbum.source === 'user_created' && (
-                    <Popover open={addFilesPopoverOpen} onOpenChange={setAddFilesPopoverOpen}>
-                      <IconTooltip label="Pick more photos from Search & Discovery or By Date" side="bottom">
-                        <PopoverTrigger asChild>
-                          <Button
-                            variant="secondary"
-                            size="sm"
-                            className="gap-1.5 px-3 py-1 h-auto text-xs"
-                            data-testid="button-album-add-from-elsewhere"
-                          >
-                            <Plus className="w-3.5 h-3.5" />
-                            Add files
-                          </Button>
-                        </PopoverTrigger>
-                      </IconTooltip>
-                      <PopoverContent align="end" className="w-64 p-1">
-                        <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">
-                          Pick photos from…
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddFilesPopoverOpen(false);
-                            window.dispatchEvent(new CustomEvent('pdr:openSearchDiscovery', {
-                              detail: { from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
-                            }));
-                          }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
-                          data-testid="album-add-from-sd"
-                        >
-                          <SearchIcon className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium">Search &amp; Discovery</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setAddFilesPopoverOpen(false);
-                            window.dispatchEvent(new CustomEvent('pdr:memoriesSwitchTab', {
-                              detail: { tab: 'byDate', from: { albumId: selectedAlbum.id, title: selectedAlbum.title } },
-                            }));
-                          }}
-                          className="w-full flex items-center gap-2.5 px-3 py-2 text-left rounded-md hover:bg-muted/50 text-sm text-foreground transition-colors"
-                          data-testid="album-add-from-bydate"
-                        >
-                          <CalendarRange className="w-4 h-4 text-muted-foreground shrink-0" />
-                          <span className="font-medium">Dates</span>
-                        </button>
-                      </PopoverContent>
-                    </Popover>
+                  {/* v2.1 round 276 (Terry) — COLLAPSIBLE view controls.
+                      Three responsive states driven by the
+                      headerToolbarRef ResizeObserver:
+                        • veryCompact → all fold into the "⋯ More" menu.
+                        • compact     → icon-only (tooltips retained):
+                                        Add files / Media / Display / density.
+                        • wide        → full labels, exactly as before.
+                      The Actions dropdown, the N-selected pill, and the
+                      Export-Album button (below) are HIGH-priority and
+                      never collapse. */}
+                  {toolbarVeryCompact ? (
+                    renderMoreMenu()
+                  ) : toolbarCompact ? (
+                    <>
+                      {selectedAlbum.source === 'user_created' && renderAddFilesControl(true)}
+                      {renderMediaButton(true)}
+                      {renderDisplayButton(true)}
+                      {refreshButton}
+                      {renderDensityControl(true)}
+                    </>
+                  ) : (
+                    <>
+                      {selectedAlbum.source === 'user_created' && renderAddFilesControl(false)}
+                      {renderMediaButton(false)}
+                      {renderDisplayButton(false)}
+                      {refreshButton}
+                      {renderDensityControl(false)}
+                    </>
                   )}
-                  {mediaButton}
-                  {displayButton}
-                  {refreshButton}
-                  <DensityToggle value={density} onChange={setDensity} testId="albums-density-toggle" />
-                  <IconTooltip
-                    label={
-                      fixActive
-                        ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
-                        : selectedAlbum.photoCount === 0
-                          ? 'Add photos to this album before exporting'
-                          : `Copy these ${selectedAlbum.photoCount} photo${selectedAlbum.photoCount === 1 ? '' : 's'} into a Parallel Library`
-                    }
-                    side="bottom"
-                  >
-                    <Button
-                      variant="primary"
-                      size="sm"
-                      onClick={() => {
-                        if (fixActive || albumPhotos.length === 0) return;
-                        startExportAlbumAsPL(selectedAlbum);
-                      }}
-                      disabled={fixActive || albumPhotos.length === 0}
-                      className="gap-1.5 px-3 py-1 h-auto text-xs"
-                      data-testid="button-album-export-pl"
+                  {/* v2.1 round 276 (Terry) — HIGH-priority "Export Album
+                      as Parallel Library" CTA. Renamed from "Export as
+                      Parallel Library" and now gated to render ONLY when
+                      there's NO photo selection — with a selection live,
+                      its selection-scoped counterpart lives in the
+                      Actions dropdown ("Export N Selected as Parallel
+                      Library"). Never collapses to an icon (it's a
+                      primary action). */}
+                  {selectedAlbumPhotoIds.size === 0 && (
+                    <IconTooltip
+                      label={
+                        fixActive
+                          ? `${FIX_BLOCKED_TOOLTIP} — Parallel Libraries use the same copy engine as the Fix.`
+                          : selectedAlbum.photoCount === 0
+                            ? 'Add photos to this album before exporting'
+                            : `Copy these ${selectedAlbum.photoCount} photo${selectedAlbum.photoCount === 1 ? '' : 's'} into a Parallel Library`
+                      }
+                      side="bottom"
                     >
-                      <Copy className="w-3.5 h-3.5" />
-                      Export as Parallel Library
-                    </Button>
-                  </IconTooltip>
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        onClick={() => {
+                          if (fixActive || albumPhotos.length === 0) return;
+                          startExportAlbumAsPL(selectedAlbum);
+                        }}
+                        disabled={fixActive || albumPhotos.length === 0}
+                        className="gap-1.5 px-3 py-1 h-auto text-xs"
+                        data-testid="button-album-export-pl"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                        Export Album as Parallel Library
+                      </Button>
+                    </IconTooltip>
+                  )}
                 </div>
               </>
             )}
