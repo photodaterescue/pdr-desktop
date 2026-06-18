@@ -160,32 +160,41 @@
        grip is the universal "this is draggable" affordance the user
        expects from PDR. cursor: grab → grabbing communicates the
        intent through the cursor as well. */
+    /* v2.1 round 278 (Terry) — the drag-to-share handle now wears PDR's
+       AI visual language (violet→fuchsia gradient + soft glow + sparkle)
+       so it actually gets noticed. Terry: the old muted "D&D" pill
+       "wasn't really noticeable... a little AI branding around it makes
+       people think there's something to be aware of." It isn't AI — the
+       styling is purely an attention cue. Drags the current photo, or the
+       whole filmstrip selection when one is active. */
     .toolbar-drag-btn {
       -webkit-app-region: no-drag;
       display: inline-flex;
       align-items: center;
-      gap: 4px;
+      gap: 5px;
       height: 22px;
-      padding: 0 8px 0 4px;
-      background: #A99CFF;
-      border: 1px solid #A99CFF;
-      border-radius: 5px;
-      color: #1a1a2e;
+      padding: 0 10px;
+      background: linear-gradient(90deg, #8b5cf6, #d946ef);
+      border: 1px solid rgba(217,70,239,0.6);
+      border-radius: 6px;
+      color: #fff;
       font-size: 10px;
       font-weight: 700;
       letter-spacing: 0.6px;
       cursor: grab;
-      transition: background 0.15s, border-color 0.15s, color 0.15s;
+      box-shadow: 0 0 10px rgba(139,92,246,0.45);
+      transition: filter 0.15s, box-shadow 0.15s;
       flex-shrink: 0;
       position: relative;
     }
     .toolbar-drag-btn:hover {
-      background: #988bf2;
-      border-color: #988bf2;
+      filter: brightness(1.1);
+      box-shadow: 0 0 14px rgba(217,70,239,0.6);
     }
     .toolbar-drag-btn:active { cursor: grabbing; }
-    .toolbar-drag-btn .drag-dots {
+    .toolbar-drag-btn .share-spark {
       display: inline-block;
+      width: 12px; height: 12px;
       flex-shrink: 0;
     }
     /* Amber tint when file > 50 MB — premium "informational" hint
@@ -1135,8 +1144,14 @@
          and landscape source aspects. */
       width: 80px;
       height: 60px;
-      object-fit: cover;
-      background: #1a1a2e;
+      /* v2.1 round 278 (Terry) — photo thumbs are now background-image
+         DIVs (not <img>) so each tile can hold a selection checkbox
+         child (an <img> can't). The lazy observer already paints the
+         resolved thumbnail onto .style.backgroundImage for non-IMG
+         tiles, so the flat #filmstrip > tile structure — and every
+         [data-idx]/[data-fp]/.active query that depends on it — is
+         unchanged. center/cover matches the old object-fit:cover. */
+      background: #1a1a2e center / cover no-repeat;
       border-radius: 4px;
       cursor: pointer;
       border: 2px solid transparent;
@@ -1144,6 +1159,7 @@
       transition: all 0.15s;
       flex-shrink: 0;
       display: block;
+      position: relative;
     }
     .filmstrip .thumb:hover { opacity: 0.9; border-color: rgba(169,156,255,0.4); }
     .filmstrip .thumb.active { opacity: 1; border-color: #A99CFF; }
@@ -1164,6 +1180,46 @@
     }
     .filmstrip .video-thumb:hover { opacity: 0.9; border-color: rgba(169,156,255,0.4); }
     .filmstrip .video-thumb.active { opacity: 1; border-color: #A99CFF; }
+    /* v2.1 round 278 (Terry) — per-thumb selection checkbox, mirrors the
+       Memories — Dates tile checkbox: a small box top-left, hidden until
+       hover, gold-filled with a dark check when selected. Lets the user
+       pick-and-choose several filmstrip thumbs and drag them ALL out to
+       share at once (the share-set is the selection). */
+    .filmstrip .thumb-check {
+      position: absolute;
+      top: 4px; left: 4px;
+      width: 18px; height: 18px;
+      box-sizing: border-box;
+      border-radius: 4px;
+      border: 2px solid rgba(255,255,255,0.85);
+      background: rgba(0,0,0,0.45);
+      display: flex; align-items: center; justify-content: center;
+      padding: 0; margin: 0;
+      color: #1f1a08;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.12s, transform 0.12s, background 0.12s, border-color 0.12s;
+      z-index: 6;
+    }
+    .filmstrip .thumb-check:hover { transform: scale(1.12); }
+    .filmstrip .thumb-check svg { width: 11px; height: 11px; display: none; }
+    .filmstrip .thumb:hover .thumb-check,
+    .filmstrip .video-thumb:hover .thumb-check { opacity: 1; }
+    /* Selected: gold ring on the tile + gold-filled check (overrides the
+       lavender .active border — selection state wins for the share UI). */
+    .filmstrip .thumb.selected,
+    .filmstrip .video-thumb.selected { opacity: 1; border-color: #FEC242; }
+    .filmstrip .thumb.selected .thumb-check,
+    .filmstrip .video-thumb.selected .thumb-check {
+      opacity: 1;
+      background: #FEC242;
+      border-color: #FEC242;
+    }
+    .filmstrip .thumb.selected .thumb-check svg,
+    .filmstrip .video-thumb.selected .thumb-check svg { display: block; }
+    /* Checkboxes are a single-photo-viewer share affordance only; the
+       collage photo-pool strip manages its own keep/sideline behaviour. */
+    body.collage-mode .thumb-check { display: none !important; }
     .filmstrip .video-thumb::after {
       content: '';
       position: absolute;
@@ -1207,6 +1263,54 @@
       z-index: 30;
     }
     .filmstrip-date-pill.visible { opacity: 1; }
+    /* v2.1 round 278 (Terry) — filmstrip selection bar. Sits at the
+       TOP-LEFT of the strip (just above the first thumbs — where Terry
+       marked it), shows the gold "N selected" count + a clear (×), and
+       an AI-styled "drag to share" hint so people notice the selected
+       thumbs can be dragged straight out. Hidden until ≥1 is picked. */
+    .filmstrip-select-bar {
+      position: absolute;
+      top: -34px;
+      left: 12px;
+      display: none;
+      align-items: center;
+      gap: 8px;
+      z-index: 31;
+    }
+    .filmstrip-select-bar.visible { display: inline-flex; }
+    .filmstrip-select-chip {
+      display: inline-flex; align-items: center; gap: 7px;
+      height: 26px; padding: 0 5px 0 11px;
+      border-radius: 9999px;
+      background: #FEC242; color: #1f1a08;
+      font-size: 12px; font-weight: 600; white-space: nowrap;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+    }
+    .filmstrip-select-chip .fs-clear {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 17px; height: 17px; border-radius: 9999px;
+      background: rgba(0,0,0,0.14); border: none; color: #1f1a08;
+      cursor: pointer; padding: 0; line-height: 0;
+      transition: background 0.12s;
+    }
+    .filmstrip-select-chip .fs-clear:hover { background: rgba(0,0,0,0.26); }
+    .filmstrip-select-chip .fs-clear svg { width: 10px; height: 10px; }
+    /* AI-styled share hint — violet→fuchsia gradient + sparkle, the
+       same visual language PDR uses for its AI surfaces, so the eye
+       catches it (Terry: "a little AI branding... makes people think
+       there's something to be aware of"). It isn't AI, just attention. */
+    .filmstrip-share-hint {
+      display: inline-flex; align-items: center; gap: 5px;
+      height: 26px; padding: 0 11px;
+      border-radius: 9999px;
+      background: linear-gradient(90deg, rgba(139,92,246,0.26), rgba(217,70,239,0.26));
+      border: 1px solid rgba(167,139,250,0.55);
+      color: #e3dcff;
+      font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
+      white-space: nowrap;
+      box-shadow: 0 0 12px rgba(139,92,246,0.3);
+    }
+    .filmstrip-share-hint svg { width: 13px; height: 13px; flex-shrink: 0; }
     /* v2.1 round 208 (Terry) — "Add photos" button on the collage filmstrip.
        Hidden in the single-photo viewer; shown only in collage mode. Sticky to
        the left edge so it stays put while the pool scrolls. Gold accent to match
@@ -3321,21 +3425,20 @@
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
       </button>
-      <!-- v2.1 (Terry 2026-06-07) — drag-to-app handle. Text label
-           "D&D" is more universally recognised than any icon at
-           this size. The user drags this to WhatsApp, an email,
-           Photoshop, or any file-drop-accepting app — the receiver
-           gets the original file from disk (Electron's
-           webContents.startDrag). Works for photos, videos, AND
-           freshly-trimmed clips. Tooltip styled to match PDR's
-           IconTooltip pill (dark bg + lavender border). -->
-      <button class="toolbar-drag-btn" id="btn-drag-file" draggable="true" data-pdr-tooltip="Drag and drop to another app or email">
-        <svg class="drag-dots" width="10" height="14" viewBox="0 0 10 14" fill="currentColor" aria-hidden="true">
-          <circle cx="2.5" cy="3" r="1.1" /><circle cx="7.5" cy="3" r="1.1" />
-          <circle cx="2.5" cy="7" r="1.1" /><circle cx="7.5" cy="7" r="1.1" />
-          <circle cx="2.5" cy="11" r="1.1" /><circle cx="7.5" cy="11" r="1.1" />
+      <!-- v2.1 round 278 (Terry) — drag-to-share handle, rebranded from
+           the easy-to-miss "D&D" pill to a sparkle + "Share" with PDR's
+           AI gradient so it draws the eye. The user drags this to
+           WhatsApp, an email, Photoshop, or any file-drop-accepting app
+           — the receiver gets the original file(s) from disk (Electron's
+           webContents.startDrag). Drags the current photo, or the whole
+           filmstrip selection when one is active. Works for photos,
+           videos, AND freshly-trimmed clips. -->
+      <button class="toolbar-drag-btn" id="btn-drag-file" draggable="true" data-pdr-tooltip="Drag to share — drop onto another app, an email, or a folder">
+        <svg class="share-spark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" />
+          <path d="M19 14l.7 1.9L22 17l-2.3.6L19 20l-.7-1.9L16 17l2.3-.6L19 14z" />
         </svg>
-        D&amp;D
+        Share
       </button>
       <!-- v2.1 round 146 (Terry) — collage Undo/Redo/Refresh on the LEFT
            of the toolbar. They were on the right before, but the pinned
@@ -3408,6 +3511,21 @@
        layout impact) so the strip itself behaves exactly as before. -->
   <div class="filmstrip-wrap" id="filmstrip-wrap" style="display:none">
     <div id="filmstrip-date-pill" class="filmstrip-date-pill" aria-hidden="true"></div>
+    <!-- v2.1 round 278 (Terry) — filmstrip multi-select bar. Sits top-left
+         above the first thumbs; gold "N selected" + clear, plus an AI-styled
+         "drag any to share" hint. Hidden until ≥1 thumb is checkbox-picked. -->
+    <div id="filmstrip-select-bar" class="filmstrip-select-bar" aria-hidden="true">
+      <span class="filmstrip-select-chip">
+        <span id="filmstrip-select-count">0 selected</span>
+        <button type="button" id="filmstrip-select-clear" class="fs-clear" data-pdr-tooltip="Clear selection" data-pdr-tooltip-side="top" aria-label="Clear selection">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18" /></svg>
+        </button>
+      </span>
+      <span class="filmstrip-share-hint" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9L12 3z" /></svg>
+        drag any to share
+      </span>
+    </div>
     <div id="filmstrip" class="filmstrip"><!-- v2.1 round 208 (Terry) — "Add photos"
       affordance on the collage filmstrip (the photo pool). Sticky-pinned to the
       left so it stays visible while the strip scrolls; collage-mode only (hidden in
@@ -4301,6 +4419,121 @@
     // to hand the current file path over via webContents.startDrag.
     // Receivers (WhatsApp, email, Photoshop, etc.) get the original
     // file from disk — same payload File Explorer would deliver.
+    // v2.1 round 278 (Terry) — filmstrip multi-select for sharing. Picked
+    // thumbs are tracked by file-PATH (stable across the live-splice that
+    // renumbers data-idx). The set IS the share-set: dragging any picked
+    // thumb — or the title-bar Share handle — hands them ALL to the OS at
+    // once. Single-photo viewer only (the collage pool owns its own strip).
+    const filmstripSelection = new Set();
+    function updateFilmstripSelectionUI() {
+      try {
+        const fs = document.getElementById('filmstrip');
+        if (fs) {
+          fs.querySelectorAll('[data-fp]').forEach((tile) => {
+            tile.classList.toggle('selected', filmstripSelection.has(tile.dataset.fp));
+          });
+        }
+        const bar = document.getElementById('filmstrip-select-bar');
+        const cnt = document.getElementById('filmstrip-select-count');
+        const n = filmstripSelection.size;
+        if (cnt) cnt.textContent = n + ' selected';
+        // collageMode may not be declared yet at first paint; treat
+        // undefined as "not collage".
+        const inCollage = (typeof collageMode !== 'undefined') && collageMode;
+        if (bar) bar.classList.toggle('visible', n > 0 && !inCollage);
+      } catch (_) {}
+    }
+    function toggleFilmstripSelect(fp) {
+      if (!fp) return;
+      if (filmstripSelection.has(fp)) filmstripSelection.delete(fp);
+      else filmstripSelection.add(fp);
+      updateFilmstripSelectionUI();
+    }
+    function clearFilmstripSelection() {
+      if (!filmstripSelection.size) { updateFilmstripSelectionUI(); return; }
+      filmstripSelection.clear();
+      updateFilmstripSelectionUI();
+    }
+    function filmstripShareSet(fp) {
+      // Whole selection when the dragged tile is part of it, else just
+      // that one file — mirrors the React surfaces (Albums/Dates/S&D).
+      if (fp && filmstripSelection.size > 0 && filmstripSelection.has(fp)) {
+        return Array.from(filmstripSelection);
+      }
+      return fp ? [fp] : Array.from(filmstripSelection);
+    }
+    // Shared OS-drag icon builder (module scope so BOTH the title-bar
+    // Share handle and the filmstrip thumbs use it): the dragged thumb
+    // (or a lavender PDR square) + a gold "(N)" count pill when a
+    // multi-selection is dragged. Mirrors client/src/lib/os-file-drag.ts
+    // so the in-motion badge looks the same everywhere.
+    function roundRectPathV(ctx, x, y, w, h, r) {
+      const rr = Math.min(r, w / 2, h / 2);
+      ctx.beginPath();
+      ctx.moveTo(x + rr, y);
+      ctx.arcTo(x + w, y, x + w, y + h, rr);
+      ctx.arcTo(x + w, y + h, x, y + h, rr);
+      ctx.arcTo(x, y + h, x, y, rr);
+      ctx.arcTo(x, y, x + w, y, rr);
+      ctx.closePath();
+    }
+    function buildShareDragIcon(baseSrc, count) {
+      try {
+        const SZ = 72;
+        const c = document.createElement('canvas');
+        c.width = SZ; c.height = SZ;
+        const ctx = c.getContext('2d');
+        if (!ctx) return baseSrc || '';
+        let drew = false;
+        if (baseSrc) {
+          try {
+            const img = new Image();
+            img.src = baseSrc;
+            if (img.complete && img.naturalWidth > 0) {
+              const s = Math.min(img.naturalWidth, img.naturalHeight);
+              const sx = (img.naturalWidth - s) / 2;
+              const sy = (img.naturalHeight - s) / 2;
+              ctx.save();
+              roundRectPathV(ctx, 0, 0, SZ, SZ, 13);
+              ctx.clip();
+              ctx.drawImage(img, sx, sy, s, s, 0, 0, SZ, SZ);
+              ctx.restore();
+              drew = true;
+            }
+          } catch (_) { /* undrawable → fall through to the square */ }
+        }
+        if (!drew) {
+          ctx.fillStyle = '#A99CFF';
+          roundRectPathV(ctx, 0, 0, SZ, SZ, 13);
+          ctx.fill();
+          ctx.fillStyle = '#1a1a2e';
+          ctx.font = 'bold 22px sans-serif';
+          ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+          ctx.fillText('PDR', SZ / 2, SZ / 2 + 1);
+        }
+        if (count > 1) {
+          const label = String(count);
+          ctx.font = 'bold 19px sans-serif';
+          const tw = ctx.measureText(label).width;
+          const ph = 29, pw = Math.max(ph, Math.round(tw + 18));
+          const x = SZ - pw - 3, y = SZ - ph - 3;
+          ctx.fillStyle = 'rgba(0,0,0,0.28)';
+          roundRectPathV(ctx, x - 1, y - 1, pw + 2, ph + 2, (ph + 2) / 2); ctx.fill();
+          ctx.fillStyle = '#FEC242';
+          roundRectPathV(ctx, x, y, pw, ph, ph / 2); ctx.fill();
+          ctx.fillStyle = '#1f1a08';
+          ctx.textBaseline = 'middle'; ctx.textAlign = 'center';
+          ctx.fillText(label, x + pw / 2, y + ph / 2 + 1);
+        }
+        const url = c.toDataURL('image/png');
+        return (url && url.length > 'data:,'.length) ? url : (baseSrc || '');
+      } catch (_) { return baseSrc || ''; }
+    }
+    try {
+      const fsClear = document.getElementById('filmstrip-select-clear');
+      if (fsClear) fsClear.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); clearFilmstripSelection(); });
+    } catch (_) {}
+
     const dragFileBtn = document.getElementById('btn-drag-file');
     if (dragFileBtn) {
       // v2.1 (Terry 2026-06-07) — mirrors the Memories tile drag
@@ -4333,18 +4566,25 @@
 
       dragFileBtn.addEventListener('dragstart', (e) => {
         const filePath = (typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '';
-        console.log('[viewer] D&D dragstart fired — file=' + filePath + ' pdr.drag=' + !!(window.pdr && window.pdr.drag) + ' icon=' + (dragIconDataUrl ? 'yes' : 'no'));
-        if (!filePath) { e.preventDefault(); return; }
+        // v2.1 round 278 — drag the filmstrip share-selection when one is
+        // active; otherwise the currently-viewed photo.
+        let paths;
+        try {
+          paths = (filmstripSelection && filmstripSelection.size > 0) ? Array.from(filmstripSelection) : (filePath ? [filePath] : []);
+        } catch (_) { paths = filePath ? [filePath] : []; }
+        if (!paths.length) { e.preventDefault(); return; }
         try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
         e.preventDefault();
+        let icon = dragIconDataUrl;
+        try { icon = buildShareDragIcon(dragIconDataUrl, paths.length); } catch (_) {}
         try {
           if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
-            window.pdr.drag.start([filePath], dragIconDataUrl);
+            window.pdr.drag.start(paths, icon);
           } else {
-            console.warn('[viewer] D&D — window.pdr.drag.start missing');
+            console.warn('[viewer] Share — window.pdr.drag.start missing');
           }
         } catch (err) {
-          console.warn('[viewer] D&D drag.start threw:', err && (err.message || err));
+          console.warn('[viewer] Share drag.start threw:', err && (err.message || err));
         }
       });
       // The "large file" amber tint is informational — update it
@@ -4352,7 +4592,7 @@
       // browser fetch HEAD on the file:// URL (cheap, cached). Also
       // refresh the tooltip with the human-readable size + MB-aware
       // hint when the threshold is crossed.
-      const DRAG_TOOLTIP_BASE = 'Drag and drop to another app or email';
+      const DRAG_TOOLTIP_BASE = 'Drag to share — drop onto another app, an email, or a folder';
       window.__refreshDragBtnSize = (filePath) => {
         if (!filePath) { dragFileBtn.classList.remove('large'); dragFileBtn.setAttribute('data-pdr-tooltip', DRAG_TOOLTIP_BASE); return; }
         try {
@@ -6907,59 +7147,69 @@
       // chunks land (which would fight the user's manual scroll).
       let activeScrolled = false;
 
-      // v2.1 round 277 (Terry) — Sharing Phase 1: native OS drag straight
-      // FROM a filmstrip thumb out to another app / email. SINGLE-file
-      // (the filmstrip has no multi-select) and GATED to non-collage mode
-      // — in collage mode the strip thumbs drive keep/sideline + the
-      // collage's own pointer-drag-to-canvas, so we must NOT also start
-      // an OS drag there. Reuses the same never-empty-icon discipline as
-      // the toolbar drag button (4316-4332): a lavender PDR square is
-      // generated once and used whenever a thumb's real image isn't
-      // loaded yet (the placeholder TRANSPARENT_PIXEL must never be sent
-      // as the icon — startDrag silently no-ops on an empty-ish icon).
-      let filmstripFallbackIcon = '';
-      const getFilmstripFallbackIcon = () => {
-        if (filmstripFallbackIcon) return filmstripFallbackIcon;
+      // v2.1 round 277/278 (Terry) — native OS drag straight FROM a
+      // filmstrip thumb out to another app / email / folder. MULTI-file
+      // when the user has checkbox-picked thumbs (round 278), else the
+      // single dragged thumb. GATED to non-collage mode — in collage mode
+      // the strip thumbs drive keep/sideline + the collage's own
+      // pointer-drag-to-canvas, so we must NOT also start an OS drag.
+      // The icon comes from the shared buildShareDragIcon() (lavender PDR
+      // square fallback + gold "(N)" count pill) so it's never empty
+      // (startDrag silently no-ops on an empty icon).
+
+      // Fresh filmstrip build → clear any stale share-selection.
+      clearFilmstripSelection();
+
+      // Pull the loaded thumbnail dataURL back off a tile's
+      // backgroundImage (both photo + video tiles are bg-image divs now)
+      // to use as the drag icon.
+      const tileBgUrl = (el) => {
         try {
-          const c = document.createElement('canvas');
-          c.width = 48; c.height = 48;
-          const ctx = c.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#A99CFF';
-            ctx.fillRect(0, 0, 48, 48);
-            ctx.fillStyle = '#1a1a2e';
-            ctx.font = 'bold 22px sans-serif';
-            ctx.textBaseline = 'middle';
-            ctx.textAlign = 'center';
-            ctx.fillText('PDR', 24, 26);
-            filmstripFallbackIcon = c.toDataURL('image/png');
-          }
-        } catch (_) {}
-        return filmstripFallbackIcon;
+          const bg = el && el.style ? el.style.backgroundImage : '';
+          if (!bg || bg === 'none') return '';
+          const m = bg.match(/url\(["']?(.*?)["']?\)/);
+          return (m && m[1]) ? m[1] : '';
+        } catch (_) { return ''; }
       };
-      // dragstart handler shared by both thumb kinds. `getSrc` returns the
-      // thumb's loaded image src (or '' for the video-thumb div, which has
-      // no <img>); we fall back to the lavender square otherwise.
-      const onFilmstripThumbDragStart = (e, getSrc) => {
+
+      const onFilmstripThumbDragStart = (e) => {
         if (collageMode) { return; }   // collage owns the strip; no OS drag
         const fp = e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.fp : '';
         if (!fp) { e.preventDefault(); return; }
         try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
         e.preventDefault();
-        let icon = '';
+        const paths = filmstripShareSet(fp);
+        let baseSrc = '';
         try {
-          const s = getSrc ? getSrc() : '';
+          const s = tileBgUrl(e.currentTarget);
           // Ignore the 1×1 transparent placeholder — it reads as empty.
-          if (s && s !== TRANSPARENT_PIXEL && s.indexOf('data:image/gif') !== 0) icon = s;
+          if (s && s !== TRANSPARENT_PIXEL && s.indexOf('data:image/gif') !== 0) baseSrc = s;
         } catch (_) {}
-        if (!icon) icon = getFilmstripFallbackIcon();
+        const icon = buildShareDragIcon(baseSrc, paths.length);
         try {
           if (window.pdr && window.pdr.drag && window.pdr.drag.start) {
-            window.pdr.drag.start([fp], icon);
+            window.pdr.drag.start(paths, icon);
           }
         } catch (err) {
-          console.warn('[viewer] filmstrip D&D drag.start threw:', err && (err.message || err));
+          console.warn('[viewer] filmstrip drag.start threw:', err && (err.message || err));
         }
+      };
+
+      // v2.1 round 278 (Terry) — per-thumb selection checkbox (single-
+      // photo viewer only). Clicking it toggles the share-set WITHOUT
+      // navigating; the gold tick + ring mirror Memories — Dates.
+      const addThumbCheckbox = (tile, fp) => {
+        if (collageMode) return;
+        const cb = document.createElement('button');
+        cb.type = 'button';
+        cb.className = 'thumb-check';
+        cb.setAttribute('aria-label', 'Select for sharing');
+        cb.setAttribute('draggable', 'false');
+        cb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12l5 5L20 6"/></svg>';
+        cb.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleFilmstripSelect(fp); });
+        cb.addEventListener('mousedown', (e) => { e.stopPropagation(); });
+        cb.addEventListener('dragstart', (e) => { e.stopPropagation(); e.preventDefault(); });
+        tile.appendChild(cb);
       };
 
       const buildFilmstripChunk = () => {
@@ -6981,11 +7231,12 @@
             div.setAttribute('data-pdr-tooltip-side', 'top');
             div.dataset.idx = String(i);
             div.dataset.fp = fp;
-            // v2.1 round 277 (Terry) — Sharing Phase 1: drag a video thumb
-            // out to another app. No <img> here, so the icon is always the
-            // lavender PDR square (handler-gated to non-collage mode).
+            // v2.1 round 277/278 (Terry) — drag a video thumb (or the whole
+            // share-selection) out to another app. The lazy observer paints
+            // the resolved thumb onto backgroundImage; the icon falls back
+            // to the lavender PDR square. Handler-gated to non-collage mode.
             div.setAttribute('draggable', 'true');
-            div.addEventListener('dragstart', (e) => onFilmstripThumbDragStart(e, () => ''));
+            div.addEventListener('dragstart', onFilmstripThumbDragStart);
             // v2.1 — read data-idx at click time, not at bind time.
             // This lets us splice files[] (eg live trim-clip add) and
             // simply update data-idx attributes on shifted tiles
@@ -6994,35 +7245,33 @@
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
               handleThumbActivate(idx);
             });
+            addThumbCheckbox(div, fp);
             filmstripEl.appendChild(div);
             lazyObserver.observe(div);
           } else {
-            const thumb = document.createElement('img');
+            // v2.1 round 278 (Terry) — photo thumbs are background-image
+            // DIVs (was <img>) so each can hold a selection checkbox child.
+            // The lazy observer paints the resolved thumbnail onto
+            // .style.backgroundImage; until then the .thumb's #1a1a2e
+            // background shows (same clean empty box the transparent-GIF
+            // placeholder used to provide for the old <img>).
+            const thumb = document.createElement('div');
             thumb.className = 'thumb';
-            // Transparent placeholder so the empty box shows the dark
-            // .thumb background instead of the filename-as-alt-text
-            // fallback that was making the strip look "wrong" for the
-            // ~100 ms before each tile's real thumbnail resolved.
-            thumb.src = TRANSPARENT_PIXEL;
             thumb.setAttribute('data-pdr-tooltip', getFilename(fp));
             thumb.setAttribute('data-pdr-tooltip-side', 'top');
-            // alt attribute kept blank-but-present for a11y; the
-            // tooltip handles visible naming.
-            thumb.alt = '';
             thumb.dataset.idx = String(i);
             thumb.dataset.fp = fp;
-            // v2.1 round 277 (Terry) — Sharing Phase 1: drag a photo thumb
-            // out to another app. The icon is the thumb's own loaded src
-            // (handler filters out the transparent placeholder, falling
-            // back to the lavender square). Handler-gated to non-collage
-            // mode so it doesn't collide with the collage drag-to-canvas.
-            // <img> is draggable by default; set it explicitly for clarity.
+            // v2.1 round 277/278 (Terry) — drag a photo thumb (or the whole
+            // share-selection) out to another app. Icon = the tile's loaded
+            // backgroundImage, falling back to the lavender square. Gated to
+            // non-collage mode so it doesn't collide with drag-to-canvas.
             thumb.setAttribute('draggable', 'true');
-            thumb.addEventListener('dragstart', (e) => onFilmstripThumbDragStart(e, () => (e.currentTarget && e.currentTarget.src) || ''));
+            thumb.addEventListener('dragstart', onFilmstripThumbDragStart);
             thumb.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
               handleThumbActivate(idx);
             });
+            addThumbCheckbox(thumb, fp);
             filmstripEl.appendChild(thumb);
             lazyObserver.observe(thumb);
           }
@@ -7087,10 +7336,10 @@
               newTile = document.createElement('div');
               newTile.className = 'video-thumb';
             } else {
-              newTile = document.createElement('img');
+              // v2.1 round 278 — background-image div (was <img>), same as
+              // the initial build, so it can hold a checkbox child.
+              newTile = document.createElement('div');
               newTile.className = 'thumb';
-              newTile.src = TRANSPARENT_PIXEL;
-              newTile.alt = '';
             }
             // v2.1 round 28 (Terry 2026-06-08) — PDR tooltip, not
             // the browser-native `title`. Same recipe as the
@@ -7099,10 +7348,16 @@
             newTile.setAttribute('data-pdr-tooltip-side', 'top');
             newTile.dataset.idx = String(insertAt);
             newTile.dataset.fp = fp;
+            // v2.1 round 278 — live-added tiles are draggable + checkbox-
+            // pickable too, matching the initial build (round 277 left
+            // them undraggable).
+            newTile.setAttribute('draggable', 'true');
+            newTile.addEventListener('dragstart', onFilmstripThumbDragStart);
             newTile.addEventListener('click', (e) => {
               const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
               handleThumbActivate(idx);
             });
+            addThumbCheckbox(newTile, fp);
 
             // Locate the tile that currently sits at `insertAt` (the
             // first tile that needs to shift right). insertBefore it

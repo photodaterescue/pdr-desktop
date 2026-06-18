@@ -2882,9 +2882,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 selected tiles can be dragged straight out to another
                 app / email. The in-motion "Drag (N)" gold badge is the
                 during-drag affordance; this is the at-rest one. */}
-            <IconTooltip label="Drag any selected photo to another app or email — they all come along" side="bottom">
-              <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground select-none">
-                <GripVertical className="w-3.5 h-3.5 opacity-70" />
+            <IconTooltip label="Drag any selected photo to another app, email, or folder — they all come along" side="bottom">
+              {/* v2.1 round 278 (Terry) — the at-rest cue now wears PDR's
+                  AI visual language (sparkle + violet→fuchsia gradient +
+                  soft glow) so it gets noticed. Terry: the muted grip text
+                  "wasn't really noticeable... a little AI branding makes
+                  people think there's something to be aware of." Not AI —
+                  purely an attention treatment. */}
+              <span className="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full select-none text-[11px] font-semibold text-violet-700 dark:text-violet-200 bg-gradient-to-r from-violet-100 to-fuchsia-100 dark:from-violet-500/20 dark:to-fuchsia-500/20 border border-violet-300/70 dark:border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.25)]">
+                <Sparkles className="w-3.5 h-3.5" />
                 drag to share
               </span>
             </IconTooltip>

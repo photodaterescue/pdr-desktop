@@ -3478,9 +3478,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           muted hint that selected tiles can be dragged out
                           to another app / email; the in-motion "Drag (N)"
                           gold badge is the during-drag affordance. */}
-                      <IconTooltip label="Drag any selected photo to another app or email — they all come along" side="bottom">
-                        <span className="hidden sm:inline-flex items-center gap-1 text-[11px] text-muted-foreground select-none">
-                          <GripVertical className="w-3.5 h-3.5 opacity-70" />
+                      {/* v2.1 round 278 (Terry) — AI-styled cue (sparkle +
+                          violet→fuchsia gradient + glow) so it gets noticed;
+                          mirrors MemoriesView. Not AI, just attention. */}
+                      <IconTooltip label="Drag any selected photo to another app, email, or folder — they all come along" side="bottom">
+                        <span className="hidden sm:inline-flex items-center gap-1.5 h-7 px-2.5 rounded-full select-none text-[11px] font-semibold text-violet-700 dark:text-violet-200 bg-gradient-to-r from-violet-100 to-fuchsia-100 dark:from-violet-500/20 dark:to-fuchsia-500/20 border border-violet-300/70 dark:border-violet-400/30 shadow-[0_0_10px_rgba(139,92,246,0.25)]">
+                          <Sparkles className="w-3.5 h-3.5" />
                           drag to share
                         </span>
                       </IconTooltip>
