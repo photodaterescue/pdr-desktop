@@ -29,7 +29,7 @@ import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'rea
 import {
   ChevronDown, ChevronRight, ChevronLeft, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy, Smartphone,
+  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy, Smartphone, Printer,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
   Captions, Info, Eye, Filter, Film, Files,
@@ -3385,6 +3385,15 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           >
                             <Smartphone className="w-3.5 h-3.5 mr-2" />
                             Send {selectedAlbumPhotoIds.size} to Phone…
+                          </DropdownMenuItem>
+                          {/* v2.1 round 280 (Terry) — Sharing Phase 3: print the
+                              selection (any printer + Print to PDF). */}
+                          <DropdownMenuItem
+                            onSelect={() => window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths: base.map(f => f.file_path) } }))}
+                            data-testid="albums-actions-print"
+                          >
+                            <Printer className="w-3.5 h-3.5 mr-2" />
+                            Print {selectedAlbumPhotoIds.size}…
                           </DropdownMenuItem>
                           {selectedVideos.length > 0 && (
                             <DropdownMenuItem

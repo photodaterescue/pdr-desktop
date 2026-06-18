@@ -47,6 +47,7 @@ import {
   Info,
   Sparkles,
   Smartphone,
+  Printer,
   Users,
   User,
   Tag,
@@ -5103,6 +5104,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                   >
                     <Smartphone className="w-3.5 h-3.5 mr-2" />
                     Send {selectedFiles.size.toLocaleString()} to Phone…
+                  </DropdownMenuItem>
+                  {/* v2.1 round 280 (Terry) — Sharing Phase 3: print the
+                      selection (any printer + Print to PDF). */}
+                  <DropdownMenuItem
+                    onSelect={() => window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths: Array.from(selectedFilesMap.values()).map(f => f.file_path) } }))}
+                    data-testid="sd-actions-print"
+                  >
+                    <Printer className="w-3.5 h-3.5 mr-2" />
+                    Print {selectedFiles.size.toLocaleString()}…
                   </DropdownMenuItem>
                   {/* v2.1 round 116 (Terry 2026-06-11) — "Create new
                       PDR album" sits ABOVE "Add to album…" because

@@ -10,6 +10,7 @@ import {
   LayoutGrid,
   Sparkles,
   Smartphone,
+  Printer,
   Film,
   Scissors,
   Image as ImageIcon,
@@ -2775,6 +2776,15 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 >
                   <Smartphone className="w-3.5 h-3.5 mr-2" />
                   Send {selectedFileIds.size} to Phone…
+                </DropdownMenuItem>
+                {/* v2.1 round 280 (Terry) — Sharing Phase 3: print the
+                    selection (any printer + Print to PDF). */}
+                <DropdownMenuItem
+                  onSelect={() => window.dispatchEvent(new CustomEvent('pdr:printPhotos', { detail: { paths: base.filter(f => selectedFileIds.has(f.id)).map(f => f.file_path) } }))}
+                  data-testid="memories-actions-print"
+                >
+                  <Printer className="w-3.5 h-3.5 mr-2" />
+                  Print {selectedFileIds.size}…
                 </DropdownMenuItem>
                 {selectedVideos.length > 0 && (
                   <DropdownMenuItem

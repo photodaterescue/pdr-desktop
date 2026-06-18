@@ -330,6 +330,8 @@ import {
 } from './capture-manager.js';
 // v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone" LAN server.
 import { startShare as phoneStartShare, stopShare as phoneStopShare, getStatus as phoneShareStatus } from './phone-share.js';
+// v2.1 round 280 (Terry) — Sharing Phase 3: Print + Print to PDF.
+import { printPhotos, savePhotosPdf, type PrintOpts, type PrintInput } from './print-manager.js';
 import { getSettings, setSetting, setSettings, PDRSettings, resetCriticalSettings, resetToOptimisedDefaults, getScannerOverride, listScannerOverrides } from './settings-store.js';
 import { writeExifDate, shutdownExiftool } from './exif-writer.js';
 import {
@@ -13628,6 +13630,39 @@ ipcMain.handle('phoneShare:stop', async () => {
 ipcMain.handle('phoneShare:status', async () => {
   try {
     return { success: true, data: phoneShareStatus() };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// ─── Print / Print to PDF IPC (Sharing Phase 3) ─────────────────────────────
+// printPhotos opens the native OS print dialog (every printer + Microsoft Print
+// to PDF); savePdf renders straight to a .pdf the user picks. See print-manager.ts.
+ipcMain.handle('print:photos', async (_event, paths: string[], opts: PrintOpts) => {
+  try {
+    const files: PrintInput[] = (paths || []).filter(Boolean).map((p) => ({ path: p }));
+    return await printPhotos(files, opts);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('print:savePdf', async (event, paths: string[], opts: PrintOpts) => {
+  try {
+    const files: PrintInput[] = (paths || []).filter(Boolean).map((p) => ({ path: p }));
+    if (files.length === 0) return { success: false, error: 'Nothing to save.' };
+    const win = BrowserWindow.fromWebContents(event.sender) || mainWindow!;
+    const defaultName = files.length === 1
+      ? path.basename(files[0].path).replace(/\.[^.]+$/, '') + '.pdf'
+      : `PDR-photos-${files.length}.pdf`;
+    const result = await dialog.showSaveDialog(win, {
+      title: 'Save photos as PDF',
+      defaultPath: path.join(app.getPath('documents'), defaultName),
+      filters: [{ name: 'PDF', extensions: ['pdf'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, cancelled: true };
+    const res = await savePhotosPdf(files, opts, result.filePath);
+    return { ...res, path: res.success ? result.filePath : undefined };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

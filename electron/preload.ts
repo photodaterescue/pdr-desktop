@@ -1133,6 +1133,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     status: () => ipcRenderer.invoke('phoneShare:status') as Promise<{ success: boolean; data?: { active: boolean; url?: string; ip?: string; port?: number; fileCount?: number; downloads?: number; expiresAt?: number }; error?: string }>,
   },
 
+  // v2.1 round 280 (Terry) — Sharing Phase 3: Print + Print to PDF. photos()
+  // opens the native OS print dialog (any printer + Microsoft Print to PDF);
+  // savePdf() prompts for a path and writes a PDF. opts = layout/fit/paper/orientation.
+  print: {
+    photos: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string }) =>
+      ipcRenderer.invoke('print:photos', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; error?: string }>,
+    savePdf: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string }) =>
+      ipcRenderer.invoke('print:savePdf', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>,
+  },
+
   ai: {
     start: () => ipcRenderer.invoke('ai:start'),
     cancel: () => ipcRenderer.invoke('ai:cancel'),

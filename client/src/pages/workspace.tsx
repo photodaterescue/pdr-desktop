@@ -129,6 +129,7 @@ import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
 import { TrialLimitModal } from "@/components/TrialLimitModal";
 import { SendToPhoneModal } from "@/components/SendToPhoneModal";
+import { PrintModal } from "@/components/PrintModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
 import DestinationAdvisorModal from "@/components/DestinationAdvisorModal";
 import LibraryPlannerModal, { type LibraryPlannerAnswers } from "@/components/LibraryPlannerModal";
@@ -1015,14 +1016,25 @@ const [teaserFeature, setTeaserFeature] = useState<TeaserFeature | null>(null);
 // the selected paths (the established cross-component-open pattern, cf.
 // pdr:sendToSearchPile); the modal lives here at the workspace root.
 const [phoneShareTarget, setPhoneShareTarget] = useState<string[] | null>(null);
+// v2.1 round 280 (Terry) — Sharing Phase 3: "Print" target (same CustomEvent pattern).
+const [printTarget, setPrintTarget] = useState<string[] | null>(null);
 useEffect(() => {
   const onSendToPhone = (e: Event) => {
     const detail = (e as CustomEvent).detail as { paths?: string[] } | undefined;
     const paths = (detail?.paths || []).filter(Boolean);
     if (paths.length) setPhoneShareTarget(paths);
   };
+  const onPrint = (e: Event) => {
+    const detail = (e as CustomEvent).detail as { paths?: string[] } | undefined;
+    const paths = (detail?.paths || []).filter(Boolean);
+    if (paths.length) setPrintTarget(paths);
+  };
   window.addEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
-  return () => window.removeEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
+  window.addEventListener('pdr:printPhotos', onPrint as EventListener);
+  return () => {
+    window.removeEventListener('pdr:sendToPhone', onSendToPhone as EventListener);
+    window.removeEventListener('pdr:printPhotos', onPrint as EventListener);
+  };
 }, []);
 // Library-Drive-offline modal — surfaced when the persisted
 // destinationPath doesn't resolve on disk (drive unplugged, NAS
@@ -3569,6 +3581,10 @@ return (
 		<SendToPhoneModal
 		  paths={phoneShareTarget}
 		  onClose={() => setPhoneShareTarget(null)}
+		/>
+		<PrintModal
+		  paths={printTarget}
+		  onClose={() => setPrintTarget(null)}
 		/>
       {/* Custom Folder Browser — defaults to source-add ("Add Source"
           / mode="source"), but callers can override via folderBrowserOpts
