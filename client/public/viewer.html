@@ -9908,19 +9908,26 @@
         // was findable, so you couldn't centre text on page 1.
         for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
       }
+      // v2.1 round 297 (Terry) — SYMMETRY snap. Besides aligning to each other tile's edges
+      // + centres, also offer the MIRROR of those edges about the canvas centre: snapping the
+      // dragged tile's LEFT edge onto the mirror of another tile's RIGHT edge makes the two
+      // equidistant from their nearest page edges (true left↔right symmetry). Same for
+      // top↔bottom. So "this photo, same gap from the left as that one has from the right".
+      const pushEdgesWithMirror = (r) => {
+        const oL = r.left - cRect.left, oR = r.right - cRect.left, oCx = oL + r.width / 2;
+        const oT = r.top - cRect.top, oB = r.bottom - cRect.top, oCy = oT + r.height / 2;
+        vCand.push(oL, oCx, oR, cRect.width - oL, cRect.width - oCx, cRect.width - oR);
+        hCand.push(oT, oCy, oB, cRect.height - oT, cRect.height - oCy, cRect.height - oB);
+      };
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
         if (!o || !o.el || o.el === draggedEl) continue;
-        const r = o.el.getBoundingClientRect();
-        vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left);
-        hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top);
+        pushEdgesWithMirror(o.el.getBoundingClientRect());
       }
       for (let i = 0; i < collageTexts.length; i++) {
         const o = collageTexts[i];
         if (!o || !o.el || o.el === draggedEl) continue;
-        const r = o.el.getBoundingClientRect();
-        vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left);
-        hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top);
+        pushEdgesWithMirror(o.el.getBoundingClientRect());
       }
       // Best snap on X: test the dragged element's left / centre / right against
       // every vertical candidate; keep the smallest gap within threshold.
@@ -11765,6 +11772,19 @@
     // so it can't be toggled out via a thumb — it's removed via the tile's own ×.
     // (Same as a duplicated tile, which has lived without a strip thumb since r203.)
     let collagePickMode = 'bg';   // 'bg' = background pick (default) | 'add' = add-a-tile
+    // v2.1 round 297 (Terry) — remove a photo from the canvas the same way it was added:
+    // un-ticking it in the "Add photos" picker delivers a remove, which drops the matching
+    // tile (the most-recently-added on-tile with that path). setItemOn handles undo + the
+    // filmstrip refresh, exactly like the tile's own × / Delete.
+    function removeCollagePhotoByPath(fp) {
+      if (!fp) return;
+      let tile = null;
+      for (let i = collageItems.length - 1; i >= 0; i--) {
+        const it = collageItems[i];
+        if (it && it.on && !it.isBg && it.path === fp) { tile = it; break; }
+      }
+      if (tile) { try { setItemOn(tile, false); } catch (_) {} }
+    }
     function addPhotoToCollage(fp) {
       if (!fp || !collageMode) return;
       // v2.1 round 273 (Terry) — styled alert (no native dialog); fire-and-forget (return value unused, function not async).
@@ -14140,7 +14160,7 @@
       // resets the mode; anything else keeps the original background behaviour.
       try {
         if (window.pdr.collage.onBackgroundPicked) {
-          window.pdr.collage.onBackgroundPicked((fp) => {
+          window.pdr.collage.onBackgroundPicked((fp, remove) => {
             const mode = collagePickMode;
             // v2.1 round 209 (Terry) — multi-add: the main-window picker can stay
             // OPEN across several CTRL-held clicks, so DON'T reset the mode after an
@@ -14149,7 +14169,10 @@
             // collagePickMode='bg' before launching, ~below) and a fresh "+ Add photos"
             // click (sets 'add') keep the flag correct for the NEXT pick session, so a
             // later background pick can never misroute here. Only the bg branch resets.
-            if (mode === 'add') { if (fp) addPhotoToCollage(fp); return; }
+            if (mode === 'add') {
+              if (remove) { if (fp) removeCollagePhotoByPath(fp); return; }   // v2.1 round 297 (Terry) — toggle-off in the picker removes that photo's tile
+              if (fp) addPhotoToCollage(fp); return;
+            }
             collagePickMode = 'bg';   // background delivery → back to the default
             // v2.1 round 263 (Terry) — bg-tile: a NEW background pick now becomes a
             // LOCKED, full-canvas COVER tile at the BACK (addBackgroundPhotoTile) instead

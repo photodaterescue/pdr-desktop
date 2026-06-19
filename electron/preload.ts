@@ -522,8 +522,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // info carries the multi hint, which workspace.tsx reads to enable stay-open.
     pickBackground: (label?: string, multi?: boolean) =>
       ipcRenderer.invoke('photoPick:start', { purpose: 'collage-bg', label: label || '', multi: !!multi }) as Promise<{ success: boolean; error?: string }>,
-    onBackgroundPicked: (callback: (filePath: string) => void) => {
-      const handler = (_event: any, p: any) => { if (p && p.purpose === 'collage-bg' && p.filePath) callback(p.filePath); };
+    onBackgroundPicked: (callback: (filePath: string, remove?: boolean) => void) => {
+      // v2.1 round 297 (Terry) — `remove` = the photo was un-ticked in the picker, so the
+      // collage drops its tile (toggle-off) instead of adding one.
+      const handler = (_event: any, p: any) => { if (p && p.purpose === 'collage-bg' && p.filePath) callback(p.filePath, !!p.remove); };
       ipcRenderer.on('photoPick:picked', handler);
       return () => ipcRenderer.removeListener('photoPick:picked', handler);
     },
@@ -548,7 +550,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v2.1 round 210 (Terry) — optional keepOpen: a CTRL-held multi-add delivery.
     // When true, main delivers the photo but does NOT refocus the requester (so
     // the user stays in the picker to keep CTRL-clicking). Default false = finish.
-    deliver: (purpose: string, filePath: string, keepOpen?: boolean) => ipcRenderer.send('photoPick:deliver', { purpose, filePath, keepOpen: !!keepOpen }),
+    deliver: (purpose: string, filePath: string, keepOpen?: boolean, remove?: boolean) => ipcRenderer.send('photoPick:deliver', { purpose, filePath, keepOpen: !!keepOpen, remove: !!remove }),
     cancel: () => ipcRenderer.send('photoPick:cancel'),
   },
 

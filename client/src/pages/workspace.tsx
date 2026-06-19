@@ -942,6 +942,19 @@ useEffect(() => {
       collagePickMarksRef.current.push({ el, badge, prevOutline, prevOffset, prevPosition });
     } catch { /* noop */ }
   }, []);
+  // v2.1 round 297 (Terry) — un-mark ONE tile (the toggle-off mirror of markPickedTile):
+  // restore its outline/offset/position + remove the corner badge, and drop it from the
+  // marks list. Used when the user clicks an already-added photo to remove it.
+  const unmarkPickedTile = useCallback((el: HTMLElement) => {
+    const marks = collagePickMarksRef.current;
+    for (let i = marks.length - 1; i >= 0; i--) {
+      const m = marks[i];
+      if (m.el !== el) continue;
+      try { m.badge.remove(); } catch { /* noop */ }
+      try { m.el.style.outline = m.prevOutline; m.el.style.outlineOffset = m.prevOffset; m.el.style.position = m.prevPosition; } catch { /* noop */ }
+      marks.splice(i, 1);
+    }
+  }, []);
   useEffect(() => {
     if (!collageBgPick) return;
     const handler = (e: MouseEvent) => {
@@ -961,7 +974,16 @@ useEffect(() => {
       // The background pick (collageBgPickMulti false) is UNCHANGED: one click
       // delivers (keepOpen false) and exits.
       if (collageBgPickMulti) {
-        if (collagePickPathsRef.current.has(path)) return;   // already added — ignore repeat
+        // v2.1 round 297 (Terry) — TOGGLE. Already added → clicking it again REMOVES it from
+        // the collage (delivers remove=true), the mirror of the add gesture; not-yet-added →
+        // add it. The picker stays open either way (keepOpen=true).
+        if (collagePickPathsRef.current.has(path)) {
+          collagePickPathsRef.current.delete(path);
+          try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, true, true); } catch { /* noop */ }
+          unmarkPickedTile(el);
+          setCollageBgPickCount((n) => Math.max(0, n - 1));
+          return;
+        }
         collagePickPathsRef.current.add(path);
         try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, true); } catch { /* noop */ }
         markPickedTile(el);                 // persistent gold ring + corner check

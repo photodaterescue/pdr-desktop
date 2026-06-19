@@ -11636,7 +11636,7 @@ ipcMain.handle('photoPick:start', (event, opts: { purpose: string; label?: strin
 });
 // Main window (React) delivers the chosen photo → route it back to the
 // requesting window (the collage viewer) and bring that window forward.
-ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string; keepOpen?: boolean }) => {
+ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: string; keepOpen?: boolean; remove?: boolean }) => {
   // v2.1 round 210 (Terry) — keepOpen = a stay-open CTRL multi-add delivery
   // (the user is adding several photos in one session). For those we send the
   // picked photo but do NOT refocus the requester or clear the requester id —
@@ -11653,7 +11653,7 @@ ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: s
   if (!keepOpen) photoPickRequesterId = null;
   if (requester) {
     try {
-      requester.webContents.send('photoPick:picked', { purpose: payload?.purpose, filePath: payload?.filePath });
+      requester.webContents.send('photoPick:picked', { purpose: payload?.purpose, filePath: payload?.filePath, remove: !!payload?.remove });
       // Only the finishing delivery pulls the collage back to the front; a
       // keepOpen delivery leaves focus on the picker window so CTRL-clicking
       // can continue.
