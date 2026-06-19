@@ -8249,7 +8249,11 @@
       // green on those two. (The matching SNAP lives in computeDragSnap as out.pageEq.)
       const vIsTop = mTop <= mBot, vM = vIsTop ? mTop : mBot;
       const hIsLeft = mLeft <= mRight, hM = hIsLeft ? mLeft : mRight;
-      const pageEq = vM > 0 && hM > 0 && Math.abs(vM - hM) <= TOL;
+      // round 308 — vs the PAGE: the nearest ref on each chosen side must be the page edge (no
+      // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
+      const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
+      const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
+      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= TOL;
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       const line = (el, x, y, len, horiz, sym, pe) => {
         el.classList.toggle('pageEq', !!pe);
@@ -10156,15 +10160,24 @@
       // relationship from tile symmetry/edges, so it only fires when no edge/tile/centre snap
       // already claimed an axis, and the caller paints it PDR lavender (out.pageEq), not gold/
       // green. Terry: equal top/left spacing stayed gold + never snapped — "needs a steady hand".
+      // v2.1 round 308 (Terry) — corner-equal is specifically symmetry vs the PAGE, so it fires
+      // when the nearest reference on each chosen side IS the page edge (no neighbour between the
+      // photo and that corner) — and then it OVERRIDES the other snaps. Round 307 only fired when
+      // no axis snapped, so a coincidental tile/distribute candidate blocked it (lavender showed
+      // but it wouldn't stick — Terry: "they don't snap when both appear"). It claims both axes +
+      // clears the gold guides; the lavender badges are the cue.
       out.pageEq = false;
-      if (out.vGuide === null && out.hGuide === null) {
+      {
         const mL = dLeft - lRef, mR = rRef - dRight, mT = dTop - tRef, mB = bRef - dBottom;
         const vIsTop = mT <= mB, vM = vIsTop ? mT : mB;   // nearest horizontal-edge margin
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
-        if (vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
+        const hVsPage = hIsLeft ? (lRef <= 0.5) : (rRef >= cRect.width - 0.5);   // chosen H ref is the page edge
+        const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
+        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
           const m = (vM + hM) / 2;
           out.dx = hIsLeft ? (m - mL) : (mR - m);
           out.dy = vIsTop ? (m - mT) : (mB - m);
+          out.vGuide = null; out.hGuide = null;
           out.pageEq = true;
         }
       }
