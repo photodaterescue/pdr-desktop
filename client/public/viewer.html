@@ -3103,6 +3103,24 @@
     .ec-size-default-star.on svg { fill: #FEC242; }
     .ec-size-default-star.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
     .ec-size-row.is-default .ec-size-text::after { content: 'Default'; display: inline-block; align-self: flex-start; margin-top: 2px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.04em; color: #FEC242; background: rgba(254,194,66,0.14); border: 1px solid rgba(254,194,66,0.5); border-radius: 4px; padding: 1px 5px; }
+    /* v2.1 round 290 (Terry) — keyboard-shortcuts legend overlay (collage). Opened from
+       the ⌨ button beside Enhance so people can discover the Canva-style shortcuts. */
+    #collage-shortcuts-overlay { position: fixed; inset: 0; z-index: 2147483647; display: none; align-items: center; justify-content: center; background: rgba(8,7,18,0.6); }
+    #collage-shortcuts-overlay.open { display: flex; }
+    .csl-card { width: min(760px, 92vw); max-height: 86vh; overflow: auto; background: #17152a; border: 1px solid rgba(254,194,66,0.35); border-radius: 14px; box-shadow: 0 24px 80px rgba(0,0,0,0.6); padding: 22px 24px 26px; }
+    .csl-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+    .csl-title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: 0.01em; }
+    .csl-title span { color: #FEC242; }
+    .csl-close { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.04); color: #cfcadf; font-size: 18px; line-height: 1; cursor: pointer; }
+    .csl-close:hover { color: #fff; border-color: rgba(254,194,66,0.6); }
+    .csl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 30px; }
+    .csl-col h4 { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FEC242; margin: 0 0 6px; }
+    .csl-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
+    .csl-desc { font-size: 12.5px; color: #d7d2f0; }
+    .csl-keys { flex: 0 0 auto; white-space: nowrap; }
+    .csl-keys kbd { display: inline-block; font-family: inherit; font-size: 10.5px; font-weight: 600; color: #efeaff; background: #2a2746; border: 1px solid rgba(255,255,255,0.18); border-bottom-width: 2px; border-radius: 5px; padding: 2px 6px; margin-left: 3px; }
+    .csl-keys .csl-plus { color: #8f8aa6; font-size: 10px; margin-left: 3px; }
+    @media (max-width: 560px) { .csl-grid { grid-template-columns: 1fr; } }
     /* v2.1 round 228 (Terry) — the Custom… fields sit inside a top-level .ec-size-grp
        <details> at the very bottom (was the old .ec-size-more). Keep the same indented,
        gold-ruled field row look. */
@@ -3507,6 +3525,8 @@
     <div class="toolbar-actions">
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
       <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
+      <!-- v2.1 round 290 (Terry) — keyboard-shortcuts legend; collage-only, sits beside Enhance. -->
+      <button class="toolbar-btn tb-collage" id="btn-collage-shortcuts" data-pdr-tooltip="Keyboard shortcuts" aria-label="Keyboard shortcuts"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M10 14h4"></path></svg></button>
       <!-- v2.1 round 282 (Terry) — Print from the Viewer. Prints the filmstrip
            selection when one is active, else the current photo (native OS print
            dialog: any printer + Microsoft Print to PDF). Hidden in collage mode. -->
@@ -9851,6 +9871,81 @@
       if (collageSnapVEl) collageSnapVEl.style.display = 'none';
       if (collageSnapHEl) collageSnapHEl.style.display = 'none';
     }
+    // ─── v2.1 round 290 (Terry) — keyboard-shortcuts legend ───────────────────
+    // Terry: "There should be a shortcut list/menu/legend so people know how to speed up
+    // their workflow… a button next to Enhance." Opened from the ⌨ button; built lazily.
+    let collageShortcutsEl = null;
+    const COLLAGE_SHORTCUTS = [
+      { group: 'Select', items: [
+        { k: ['Click'], d: 'Select a photo' },
+        { k: ['Ctrl', 'Click'], d: 'Add / remove from selection' },
+        { k: ['Drag'], d: 'Box-select (on empty canvas)' },
+        { k: ['Ctrl', 'A'], d: 'Select all' },
+        { k: ['Esc'], d: 'Deselect' },
+      ] },
+      { group: 'Edit', items: [
+        { k: ['Ctrl', 'D'], d: 'Duplicate' },
+        { k: ['Ctrl', 'C'], d: 'Copy' },
+        { k: ['Ctrl', 'V'], d: 'Paste' },
+        { k: ['Del'], d: 'Remove from collage' },
+        { k: ['Arrows'], d: 'Nudge (Shift = bigger step)' },
+        { k: ['Ctrl', 'Z'], d: 'Undo / Redo (Ctrl+Y)' },
+      ] },
+      { group: 'Layer order', items: [
+        { k: ['Ctrl', ']'], d: 'Bring forward' },
+        { k: ['Ctrl', '['], d: 'Send backward' },
+        { k: ['Ctrl', 'Shift', ']'], d: 'Bring to front' },
+        { k: ['Ctrl', 'Shift', '['], d: 'Send to back' },
+      ] },
+      { group: 'While moving', items: [
+        { k: ['Drag'], d: 'Move the whole selection together' },
+        { k: ['Shift'], d: 'Move in a straight line' },
+        { k: ['Shift'], d: 'Rotate in 15° steps' },
+        { k: ['Alt'], d: 'Ignore snapping (free placement)' },
+      ] },
+    ];
+    function buildCollageShortcutsOverlay() {
+      if (collageShortcutsEl) return collageShortcutsEl;
+      const ov = document.createElement('div'); ov.id = 'collage-shortcuts-overlay';
+      const card = document.createElement('div'); card.className = 'csl-card';
+      const head = document.createElement('div'); head.className = 'csl-head';
+      head.innerHTML = '<div class="csl-title">Keyboard <span>shortcuts</span></div>';
+      const close = document.createElement('button'); close.className = 'csl-close'; close.textContent = '×'; close.setAttribute('aria-label', 'Close');
+      close.addEventListener('click', () => toggleCollageShortcuts(false));
+      head.appendChild(close);
+      const grid = document.createElement('div'); grid.className = 'csl-grid';
+      let isMac = false; try { isMac = /mac/i.test(navigator.platform || ''); } catch (_) {}
+      COLLAGE_SHORTCUTS.forEach((sec) => {
+        const col = document.createElement('div'); col.className = 'csl-col';
+        const h = document.createElement('h4'); h.textContent = sec.group; col.appendChild(h);
+        sec.items.forEach((it) => {
+          const row = document.createElement('div'); row.className = 'csl-row';
+          const d = document.createElement('span'); d.className = 'csl-desc'; d.textContent = it.d;
+          const keys = document.createElement('span'); keys.className = 'csl-keys';
+          it.k.forEach((key, i) => {
+            if (i) { const plus = document.createElement('span'); plus.className = 'csl-plus'; plus.textContent = '+'; keys.appendChild(plus); }
+            const kb = document.createElement('kbd'); kb.textContent = (key === 'Ctrl' && isMac) ? '⌘' : key; keys.appendChild(kb);
+          });
+          row.appendChild(d); row.appendChild(keys); col.appendChild(row);
+        });
+        grid.appendChild(col);
+      });
+      card.appendChild(head); card.appendChild(grid);
+      ov.appendChild(card);
+      ov.addEventListener('pointerdown', (e) => { if (e.target === ov) toggleCollageShortcuts(false); });
+      // Esc closes the legend first (capture so it wins over the canvas deselect).
+      document.addEventListener('keydown', (e) => {
+        if (e.key === 'Escape' && collageShortcutsEl && collageShortcutsEl.classList.contains('open')) { e.preventDefault(); e.stopPropagation(); toggleCollageShortcuts(false); }
+      }, true);
+      document.body.appendChild(ov);
+      collageShortcutsEl = ov;
+      return ov;
+    }
+    function toggleCollageShortcuts(force) {
+      const ov = buildCollageShortcutsOverlay();
+      const open = (typeof force === 'boolean') ? force : !ov.classList.contains('open');
+      ov.classList.toggle('open', open);
+    }
 
     function startItemDrag(it, e) {
       e.preventDefault();
@@ -9998,6 +10093,7 @@
       // drag). Gated on carouselMode so single-collage resize is byte-identical.
       const SNAP_T = 6;
       const isLeftCorner = (corner === 'tl' || corner === 'bl');   // grabbed edge is the tile's LEFT
+      const isTopCorner = (corner === 'tl' || corner === 'tr');    // v2.1 round 290 — grabbed edge is the tile's TOP
       const move = (ev) => {
         const dist = Math.hypot(ev.clientX - anchorX, ev.clientY - anchorY);
         let nw = startW * (dist / startDist);
@@ -10007,20 +10103,33 @@
         // Snap the grabbed X-edge to the nearest carousel page boundary, keeping the
         // anchor fixed: the grabbed edge sits at anchorX ∓ nw*cw (left/right of the
         // anchor); snapping it to a boundary screen-x just rescales nw. ALT bypasses.
-        let vGuide = null;
-        if (carouselMode && !ev.altKey && cw > 0) {
-          const grabbedScreenX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
-          const N = Math.max(1, carouselPageCount);
-          let best = SNAP_T + 1, snapX = null;
-          for (let i = 0; i <= N; i++) {
-            const bx = rect.left + (i / N) * rect.width;             // boundary, screen px
-            const gap = Math.abs(grabbedScreenX - bx);
-            if (gap < best) { best = gap; snapX = bx; }
-          }
-          if (snapX != null && best <= SNAP_T) {
-            nw = Math.abs(snapX - anchorX) / cw;                     // anchor stays pinned
-            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, nw));      // v2.1 round 266 (Terry) — Phase 3: match the widened ceiling
-            vGuide = snapX - rect.left;                              // canvas-relative px for the guide
+        // v2.1 round 290 (Terry) — RESIZE snapping on BOTH axes, in EVERY mode (was a
+        // carousel-only X-edge snap). The grabbed corner's X-edge and Y-edge each look for
+        // the nearest alignment line — canvas edges/centre, every other tile/text edge +
+        // centre, and (carousel) page boundaries — and the closer axis within threshold
+        // wins. Uniform scale: snapping either edge just re-derives nw with the OPPOSITE
+        // (anchor) corner pinned, then the existing formulas below place the tile. ALT bypasses.
+        // This is what makes a photo's BOTTOM edge line up to a neighbour, not just guesswork.
+        let vGuide = null, hGuide = null;
+        if (!ev.altKey && cw > 0 && ch > 0) {
+          const K = getCanvasAspect() / Math.max(0.0001, effectiveAspect(it));   // ihFrac = nw * K
+          const grabX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
+          const grabY = isTopCorner ? (anchorY - nw * K * ch) : (anchorY + nw * K * ch);
+          const xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
+          const yc = [rect.top, rect.top + ch / 2, rect.top + ch];      // canvas T / centre / B
+          if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
+          const pushEdges = (r) => { xc.push(r.left, r.left + r.width / 2, r.right); yc.push(r.top, r.top + r.height / 2, r.bottom); };
+          for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect()); }
+          for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) pushEdges(o.el.getBoundingClientRect()); }
+          let bX = SNAP_T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
+          let bY = SNAP_T + 1, sY = null; for (let c = 0; c < yc.length; c++) { const g = Math.abs(grabY - yc[c]); if (g < bY) { bY = g; sY = yc[c]; } }
+          const okX = sX != null && bX <= SNAP_T, okY = sY != null && bY <= SNAP_T;
+          if (okX && (!okY || bX <= bY)) {
+            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw));   // X-edge to a vertical line
+            vGuide = sX - rect.left;
+          } else if (okY) {
+            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch)));   // Y-edge to a horizontal line
+            hGuide = sY - rect.top;
           }
         }
         it.wFrac = nw;
@@ -10029,9 +10138,7 @@
         it.xFrac = (corner === 'tl' || corner === 'bl') ? (anchorXFrac - nw) : anchorXFrac;
         it.yFrac = (corner === 'tl' || corner === 'tr') ? (anchorYFrac - ihFrac) : anchorYFrac;
         renderCollageItem(it);
-        // v2.1 round 264 (Terry) — snap: reuse the shared gold guide (vertical only;
-        // resize snaps the X-edge to page boundaries). Hidden when not snapping/ALT.
-        showCollageSnapGuides(vGuide, null);
+        showCollageSnapGuides(vGuide, hGuide);   // gold guide on whichever edge snapped (or both null = hidden)
       };
       // commit is handled by the global collage pointerup listener (one undo per
       // gesture) — same as startItemDrag / startItemRotate.
@@ -13601,6 +13708,9 @@
         // Refresh = shuffle to a fresh arrangement (undoable, not a reset).
         beginCollageChange(); jumbleArrange(); commitCollageChange();
       });
+      // v2.1 round 290 (Terry) — open the keyboard-shortcuts legend.
+      const shortcutsBtn = document.getElementById('btn-collage-shortcuts');
+      if (shortcutsBtn) shortcutsBtn.addEventListener('click', () => { try { toggleCollageShortcuts(); } catch (_) {} });
       window.addEventListener('keydown', (e) => {
         if (!collageMode) return;
         // v2.1 round 185 (Text #1) — let a focused field own Ctrl+Z/Y for native
@@ -16005,6 +16115,23 @@ function zoomTo(newZoom, centreX, centreY) {
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
             if (!collageTile.isBg) renderCollageItem(collageTile);
+            // v2.1 round 290 (Terry) — MULTI-EDIT: with 2+ tiles selected, mirror this
+            // tile's LOOK (the filter / tone / colour fields) onto the other selected
+            // tiles so "make them all B&W" works in one click. Frame / corners / opacity /
+            // flip stay per-tile (those are layout, not a look). Single selection → no-op,
+            // so ordinary one-tile editing is byte-identical. Locked + bg tiles are skipped.
+            try {
+              if (!collageTile.isBg && typeof collageSelection !== 'undefined' && collageSelection.length > 1) {
+                const LOOK = ['brightness', 'contrast', 'saturation', 'temperature', 'colour', 'tone'];
+                collageSelection.forEach((t) => {
+                  if (!t || t === collageTile || t.isBg || !t.on || t.locked || !t.imgEl) return;
+                  if (!t.enh) t.enh = {};
+                  LOOK.forEach((k) => { t.enh[k] = collageTile.enh[k]; });
+                  applyFilterToEl(t.imgEl, t.enh, composeFilterString(t.enh), t.el);
+                  renderCollageItem(t);
+                });
+              }
+            } catch (_) {}
           }
           // Keep the Looks strip in sync with the selected tile's photo.
           try {
