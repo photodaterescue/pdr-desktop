@@ -595,16 +595,19 @@ function restorePrepWindow(): void {
   prepMinimized = null;
 }
 
-export async function captureCollageRegion(
+// v2.1 round 313 (Terry) — SHARED region-capture flow, used by BOTH the collage chevron and the
+// title-bar "Capture region" (Terry: the title-bar one should match the collage one — no separate
+// "which screen?" step). Hide the calling window so the user can navigate, float the prep bar,
+// then the LIVE per-monitor overlay → drag/adjust → grab the chosen display → crop. Returns the
+// cropped PNG + dims (or cancelled/error); callers persist it differently (collage tile vs Library).
+async function regionCaptureWithPrep(
   callingWin: BrowserWindow | null,
-): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }> {
-  if (captureInFlight || prepBarWindow) return { success: false, error: 'A screenshot is already being set up.' };
-  // ── PHASE 1: PREPARE ── minimise the collage window so the user can navigate, then
-  // wait for them to click Capture (or Cancel) on the floating bar.
+): Promise<{ buffer: Buffer; width: number; height: number } | { cancelled: true } | { error: string }> {
+  if (captureInFlight || prepBarWindow) return { error: 'A screenshot is already being set up.' };
+  // ── PHASE 1: PREPARE ── hide the calling window so the user can navigate, then wait for
+  // Capture/Cancel on the floating bar. HIDE (not minimise) — minimize/restore left it stuck on
+  // Cancel; hide/show + the always-on-top flip reliably brings it back (round 312).
   prepMinimized = callingWin && !callingWin.isDestroyed() ? callingWin : null;
-  // v2.1 round 312 (Terry) — HIDE (not minimise) the collage: minimize()/restore() left it
-  // stuck minimised on Cancel ("the Collage stays hidden"); hide()/show() reliably brings it
-  // straight back to the front on BOTH Capture and Cancel.
   if (prepMinimized) { try { prepMinimized.hide(); } catch { /* non-fatal */ } }
   const go = await new Promise<boolean>((resolve) => {
     prepResolve = resolve;
@@ -621,24 +624,21 @@ export async function captureCollageRegion(
     prepBarWindow = bar;
     try { bar.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
     bar.once('closed', () => { const r = prepResolve; prepResolve = null; prepBarWindow = null; if (r) r(false); });
-    bar.webContents.once('did-finish-load', () => { if (!bar.isDestroyed()) bar.showInactive(); });   // showInactive: don't steal focus from the user's navigating
+    bar.webContents.once('did-finish-load', () => { if (!bar.isDestroyed()) bar.showInactive(); });
     void bar.loadFile(path.join(__dirname, '../dist/public/capture-prep-bar.html'));
   });
   closePrepBar();
-  if (!go) { restorePrepWindow(); return { success: false, cancelled: true }; }
-  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil on EVERY screen and let them
-  // drag a box on whichever one has their content, then grab that region from a fresh capture.
+  if (!go) { restorePrepWindow(); return { cancelled: true }; }
+  // ── PHASE 2: CAPTURE ── live per-monitor overlay (round 311 — one window PER screen, so the
+  // 2nd monitor works and there's no "which screen?" step) → drag/adjust → grab + crop.
   captureInFlight = true;
   try {
     await sleep(160);   // let the prep bar fully disappear first
-    // v2.1 round 311 (Terry) — ONE overlay window per monitor (round 310's single spanning
-    // window didn't work on the 2nd screen + hung). The chosen display + a rect in ITS OWN CSS
-    // pixels come back, so the crop is the same simple per-display maths as a single screen.
     const picked = await openMultiDisplayOverlay({ adjustable: true });
-    if (!picked) { restorePrepWindow(); return { success: false, cancelled: true }; }
+    if (!picked) { restorePrepWindow(); return { cancelled: true }; }
     const { rect, display } = picked;
     const grab = await grabDisplayPng(display, { hideWindows: false });
-    if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
+    if (!grab) { restorePrepWindow(); return { error: 'Could not capture the screen.' }; }
     grab.restore();
     const scaleX = grab.width / display.bounds.width, scaleY = grab.height / display.bounds.height;
     const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
@@ -646,21 +646,31 @@ export async function captureCollageRegion(
     const width = Math.max(1, Math.min(grab.width - x, Math.round(rect.width * scaleX)));
     const height = Math.max(1, Math.min(grab.height - y, Math.round(rect.height * scaleY)));
     const cropped = nativeImage.createFromBuffer(grab.buffer).crop({ x, y, width, height });
-    if (cropped.isEmpty()) { restorePrepWindow(); return { success: false, error: 'The selected area was empty.' }; }
-    const dir = path.join(app.getPath('userData'), 'collage-captures');
-    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* non-fatal */ }
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const filePath = path.join(dir, `Screenshot_${stamp}.png`);
-    fs.writeFileSync(toLongPath(filePath), cropped.toPNG());
-    restorePrepWindow();   // bring the collage window back; the renderer adds the tile
-    return { success: true, filePath };
+    if (cropped.isEmpty()) { restorePrepWindow(); return { error: 'The selected area was empty.' }; }
+    restorePrepWindow();   // bring the calling window back to the front
+    return { buffer: cropped.toPNG(), width, height };
   } catch (err) {
     restorePrepWindow();
-    log.warn(`[capture] collage region capture failed: ${(err as Error).message}`);
-    return { success: false, error: (err as Error).message };
+    log.warn(`[capture] region capture failed: ${(err as Error).message}`);
+    return { error: (err as Error).message };
   } finally {
     captureInFlight = false;
   }
+}
+
+export async function captureCollageRegion(
+  callingWin: BrowserWindow | null,
+): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }> {
+  const r = await regionCaptureWithPrep(callingWin);
+  if ('cancelled' in r) return { success: false, cancelled: true };
+  if ('error' in r) return { success: false, error: r.error };
+  // Persist as a collage ingredient (not the Library).
+  const dir = path.join(app.getPath('userData'), 'collage-captures');
+  try { fs.mkdirSync(dir, { recursive: true }); } catch { /* non-fatal */ }
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const filePath = path.join(dir, `Screenshot_${stamp}.png`);
+  fs.writeFileSync(toLongPath(filePath), r.buffer);
+  return { success: true, filePath };
 }
 
 ipcMain.handle('collage:captureRegion', async (event) => {
@@ -851,72 +861,25 @@ function openRegionOverlay(
 }
 
 /**
- * Region screenshot: freeze the target display, let the user drag a
- * rectangle over the frozen frame, crop, and land it in the library
- * through the same pipeline as the full-screen verb.
+ * Region screenshot to the Library. v2.1 round 313 (Terry) — now uses the SAME flow as the
+ * collage chevron: hide PDR so you can navigate, a floating "Capture region" bar, then a LIVE
+ * per-monitor overlay (every screen at once — no "which screen?" picker) with Lightshot-style
+ * adjustable handles. Only the destination differs from the collage (the Library, via
+ * persistCapture). The old frozen-frame + display-picker path is gone.
  */
-export async function captureRegion(opts: {
+export async function captureRegion(_opts: {
   displayId?: string;
   trigger: 'button' | 'hotkey';
 }): Promise<CaptureScreenshotResult> {
-  if (captureInFlight) {
-    return { success: false, error: 'A capture is already in progress.' };
-  }
-  captureInFlight = true;
-  try {
-    void flushPendingCaptures().catch((err) =>
-      log.warn(`[capture] inline pending flush failed (non-fatal): ${(err as Error).message}`),
-    );
-
-    const resolved = resolveTargetDisplay(opts);
-    if ('error' in resolved) return { success: false, error: resolved.error };
-    if ('pick' in resolved) {
-      return { success: false, needsDisplayPick: true, displays: await listCaptureDisplays() };
-    }
-    const display = resolved.display;
-
-    // Freeze the screen NOW — the screenshot is this moment, however
-    // long the user then spends framing the rectangle. Window rects
-    // are enumerated in the same frozen moment for snap-to-window.
-    const capturedAt = new Date();
-    const grab = await grabDisplayPng(display, { includeWindows: true });
-    if (!grab) return { success: false, error: 'Could not capture the screen.' };
-
-    const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-    let rect: SelectionRect | null = null;
-    try {
-      // PDR's windows restore once the overlay is SHOWING (onShown) —
-      // invisible behind it, ready when the overlay closes.
-      rect = await openRegionOverlay(display, dataUrl, grab.windows, grab.restore);
-    } finally {
-      // Belt-and-braces: if the overlay never reached 'shown' (load
-      // failure, instant cancel), the windows still come back.
-      grab.restore();
-    }
-    if (!rect) {
-      log.info('[capture] region selection cancelled');
-      return { success: false, cancelled: true };
-    }
-
-    // Overlay coords are the display's CSS pixels; the frozen frame is
-    // native pixels — scale, round, clamp.
-    const scaleX = grab.width / display.bounds.width;
-    const scaleY = grab.height / display.bounds.height;
-    const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
-    const y = Math.max(0, Math.min(grab.height - 1, Math.round(rect.y * scaleY)));
-    const width = Math.max(1, Math.min(grab.width - x, Math.round(rect.width * scaleX)));
-    const height = Math.max(1, Math.min(grab.height - y, Math.round(rect.height * scaleY)));
-
-    const cropped = nativeImage.createFromBuffer(grab.buffer).crop({ x, y, width, height });
-    if (cropped.isEmpty()) return { success: false, error: 'Selected area was empty.' };
-
-    return await persistCapture(cropped.toPNG(), capturedAt, width, height, 'region');
-  } catch (err) {
-    log.warn(`[capture] region capture failed: ${(err as Error).message}`);
-    return { success: false, error: (err as Error).message };
-  } finally {
-    captureInFlight = false;
-  }
+  void flushPendingCaptures().catch((err) =>
+    log.warn(`[capture] inline pending flush failed (non-fatal): ${(err as Error).message}`),
+  );
+  // Hide the focused PDR window during the prep step (the title-bar button → the main window;
+  // a hotkey fired over a non-PDR window → null, so nothing of ours to hide).
+  const r = await regionCaptureWithPrep(BrowserWindow.getFocusedWindow());
+  if ('cancelled' in r) { log.info('[capture] region selection cancelled'); return { success: false, cancelled: true }; }
+  if ('error' in r) return { success: false, error: r.error };
+  return await persistCapture(r.buffer, new Date(), r.width, r.height, 'region');
 }
 
 /**
