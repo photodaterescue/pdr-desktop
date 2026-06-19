@@ -541,6 +541,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // the "PDR Collages" album.
     backfillAlbum: () =>
       ipcRenderer.invoke('collage:backfillAlbum') as Promise<{ success: boolean; albumId?: number | null; total?: number; added?: number; error?: string }>,
+    // v2.1 round 303 (Terry) — collage "Take Screenshot": list every screen + open
+    // window (PDR's own excluded) as thumbnails for the picker, then grab the chosen
+    // one full-res to a PNG the collage adds as a tile (window grabs work even when
+    // the window is behind PDR).
+    listCaptureSources: () =>
+      ipcRenderer.invoke('collage:listCaptureSources') as Promise<Array<{
+        id: string; name: string; type: 'screen' | 'window'; thumbnailDataUrl: string; appIconDataUrl: string | null;
+      }>>,
+    captureSource: (sourceId: string) =>
+      ipcRenderer.invoke('collage:captureSource', sourceId) as Promise<{ success: boolean; filePath?: string; error?: string }>,
   },
 
   // v2.1 round 142 (Terry) — shared photo-picker mode (main React window

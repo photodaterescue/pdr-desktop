@@ -1342,19 +1342,29 @@
        Hidden in the single-photo viewer; shown only in collage mode. Sticky to
        the left edge so it stays put while the pool scrolls. Gold accent to match
        the collage chrome (the strip/title gold from round 179). */
-    #collage-add-photos { display: none; }
-    body.collage-mode #collage-add-photos {
+    /* v2.1 round 303 (Terry) — the Add-photos + Take-screenshot GROUP is the sticky-left
+       anchor now (was the Add-photos button itself); both children pin together while the
+       strip scrolls, and the added-photo thumbs append after the group. */
+    #collage-add-group { display: none; }
+    body.collage-mode #collage-add-group {
       display: inline-flex;
-      align-items: center;
+      align-items: stretch;
       gap: 6px;
       flex: 0 0 auto;
       position: sticky;
       left: 0;
       z-index: 12;
       align-self: stretch;
+      margin-right: 6px;
+    }
+    #collage-add-photos { display: none; }
+    body.collage-mode #collage-add-photos {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      flex: 0 0 auto;
       min-height: 64px;
       padding: 0 14px;
-      margin-right: 6px;
       border: 1.25px dashed rgba(254, 194, 66, 0.55);
       border-radius: 8px;
       background: #12122a;       /* opaque so scrolling thumbs don't show through */
@@ -1372,6 +1382,51 @@
       color: #ffd778;
     }
     body.collage-mode #collage-add-photos svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    /* The Take-screenshot chevron — same dashed-gold language, compact, flips on hover
+       (Canva "Add page type" feel). Click opens the window/screen picker. */
+    #collage-shot-chev { display: none; }
+    body.collage-mode #collage-shot-chev {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 auto;
+      width: 42px;
+      min-height: 64px;
+      padding: 0;
+      border: 1.25px dashed rgba(254, 194, 66, 0.55);
+      border-radius: 8px;
+      background: #12122a;
+      color: #FEC242;
+      cursor: pointer;
+      transition: background 120ms, border-color 120ms, color 120ms;
+    }
+    body.collage-mode #collage-shot-chev:hover {
+      background: #1b1b3a;
+      border-color: rgba(254, 194, 66, 0.9);
+      color: #ffd778;
+    }
+    body.collage-mode #collage-shot-chev svg { width: 18px; height: 18px; flex: 0 0 auto; transition: transform 160ms ease; }
+    body.collage-mode #collage-shot-chev:hover svg { transform: rotate(180deg); }
+    /* v2.1 round 303 (Terry) — Take-screenshot SOURCE PICKER: a grid of every screen +
+       open window (thumbnails), pick one → it's grabbed full-res and added as a tile. */
+    #collage-shot-picker { position: fixed; inset: 0; z-index: 200000; display: none; align-items: center; justify-content: center; background: rgba(8, 8, 20, 0.74); }
+    #collage-shot-picker.open { display: flex; }
+    #collage-shot-panel { width: min(900px, 92vw); max-height: 84vh; display: flex; flex-direction: column; background: #15152e; border: 1px solid rgba(254,194,66,0.22); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,0.62); overflow: hidden; }
+    #collage-shot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    #collage-shot-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: #f3eefe; letter-spacing: 0.01em; }
+    #collage-shot-head p { margin: 3px 0 0; font-size: 11.5px; color: #9a93b8; }
+    #collage-shot-close { background: rgba(255,255,255,0.06); border: none; color: #cfc8e8; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
+    #collage-shot-close:hover { background: rgba(255,255,255,0.12); color: #fff; }
+    #collage-shot-grid { padding: 18px 20px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 14px; }
+    .shot-src { display: flex; flex-direction: column; gap: 8px; background: #1d1d3c; border: 1.5px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; transition: border-color 120ms, background 120ms, transform 120ms; text-align: left; font: inherit; }
+    .shot-src:hover { border-color: #FEC242; background: #232348; transform: translateY(-1px); }
+    .shot-thumb { width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; background: #0c0c1c center / contain no-repeat; border: 1px solid rgba(255,255,255,0.06); }
+    .shot-meta { display: flex; align-items: center; gap: 7px; min-width: 0; }
+    .shot-icon { width: 16px; height: 16px; flex: 0 0 auto; object-fit: contain; }
+    .shot-name { font-size: 11.5px; color: #d8d2ee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+    .shot-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #1a1830; background: #FEC242; padding: 1px 5px; border-radius: 5px; flex: 0 0 auto; }
+    #collage-shot-empty { padding: 44px 20px; text-align: center; color: #9a93b8; font-size: 13px; }
+    #collage-shot-busy { display: none; padding: 48px 20px; text-align: center; color: #cfc8e8; font-size: 13.5px; }
     /* v2.1 round 302 (Terry) — Canva-style index number on every collage strip thumb.
        A pure CSS counter (reset on the strip, incremented per .thumb) auto-renumbers as
        thumbs are added/removed, no JS. The sticky "Add photos" button isn't a .thumb so
@@ -3672,7 +3727,9 @@
       left so it stays visible while the strip scrolls; collage-mode only (hidden in
       the single-photo viewer via CSS). Opens the shared library photo picker and
       drops the chosen photo onto the canvas as a new tile. Carries no data-idx so
-      the strip's index logic ignores it. --><button type="button" id="collage-add-photos" data-pdr-tooltip="Add another photo to this collage" data-pdr-tooltip-side="top" aria-label="Add photos to collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add photos</span></button></div>
+      the strip's index logic ignores it. --><div id="collage-add-group"><!-- v2.1 round 303 (Terry) — Add-photos + a Take-screenshot
+      chevron, Canva "Add page type" style. Wrapped in one sticky-left group so both stay
+      pinned while the strip scrolls (the added-photo thumbs append after this group). --><button type="button" id="collage-add-photos" data-pdr-tooltip="Add another photo to this collage" data-pdr-tooltip-side="top" aria-label="Add photos to collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add photos</span></button><button type="button" id="collage-shot-chev" data-pdr-tooltip="Take screenshot" data-pdr-tooltip-side="top" aria-label="Take a screenshot to add to this collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div></div>
   </div>
 
 
@@ -11883,6 +11940,102 @@
       updateCollageFilmstrip();
       commitCollageChange();
     }
+    // ─── v2.1 round 303 (Terry) — Take-screenshot source picker ──────────────────
+    // The "Add photos" chevron opens this: a grid of every screen + open window
+    // (thumbnails, PDR's own excluded). Pick one → main grabs it full-res → it's
+    // added to the collage as a normal tile. Window grabs work even behind PDR.
+    function ensureCollageShotPicker() {
+      let ov = document.getElementById('collage-shot-picker');
+      if (ov) return ov;
+      ov = document.createElement('div');
+      ov.id = 'collage-shot-picker';
+      ov.innerHTML =
+        '<div id="collage-shot-panel" role="dialog" aria-modal="true" aria-label="Take a screenshot">' +
+          '<div id="collage-shot-head">' +
+            '<div><h3>Take a screenshot</h3><p>Pick a window or screen — it\'ll be added to your collage. Windows behind PDR work too.</p></div>' +
+            '<button type="button" id="collage-shot-close" aria-label="Cancel">&times;</button>' +
+          '</div>' +
+          '<div id="collage-shot-err" style="display:none;margin:0 20px;margin-top:14px;padding:9px 12px;border-radius:8px;background:rgba(229,72,77,0.14);border:1px solid rgba(229,72,77,0.4);color:#ffb4b7;font-size:12px;"></div>' +
+          '<div id="collage-shot-busy">Capturing…</div>' +
+          '<div id="collage-shot-grid"></div>' +
+        '</div>';
+      document.body.appendChild(ov);
+      ov.addEventListener('pointerdown', (e) => { if (e.target === ov) closeCollageShotPicker(); });   // backdrop only
+      ov.querySelector('#collage-shot-close').addEventListener('click', closeCollageShotPicker);
+      return ov;
+    }
+    function collageShotKeyHandler(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCollageShotPicker(); }
+    }
+    function closeCollageShotPicker() {
+      const ov = document.getElementById('collage-shot-picker');
+      if (ov) ov.classList.remove('open');
+      document.removeEventListener('keydown', collageShotKeyHandler, true);
+    }
+    async function openCollageShotPicker() {
+      if (!window.pdr || !window.pdr.collage || !window.pdr.collage.listCaptureSources) return;
+      const ov = ensureCollageShotPicker();
+      const grid = ov.querySelector('#collage-shot-grid');
+      const busy = ov.querySelector('#collage-shot-busy');
+      const err = ov.querySelector('#collage-shot-err');
+      err.style.display = 'none';
+      busy.style.display = 'none';
+      grid.style.display = 'grid';
+      grid.innerHTML = '<div id="collage-shot-empty">Finding your windows…</div>';
+      ov.classList.add('open');
+      document.addEventListener('keydown', collageShotKeyHandler, true);
+      let sources = [];
+      try { sources = await window.pdr.collage.listCaptureSources(); } catch (_) { sources = []; }
+      if (!ov.classList.contains('open')) return;   // user closed it while loading
+      if (!sources || !sources.length) {
+        grid.innerHTML = '<div id="collage-shot-empty">No windows or screens were found to capture.</div>';
+        return;
+      }
+      grid.innerHTML = '';
+      sources.forEach((s) => {
+        const tile = document.createElement('button');
+        tile.type = 'button';
+        tile.className = 'shot-src';
+        const thumb = document.createElement('div');
+        thumb.className = 'shot-thumb';
+        if (s.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + s.thumbnailDataUrl + '")';
+        const meta = document.createElement('div');
+        meta.className = 'shot-meta';
+        if (s.appIconDataUrl) { const ic = document.createElement('img'); ic.className = 'shot-icon'; ic.src = s.appIconDataUrl; ic.alt = ''; meta.appendChild(ic); }
+        if (s.type === 'screen') { const b = document.createElement('span'); b.className = 'shot-badge'; b.textContent = 'Screen'; meta.appendChild(b); }
+        const nm = document.createElement('span');
+        nm.className = 'shot-name';
+        nm.textContent = s.name || (s.type === 'screen' ? 'Screen' : 'Window');
+        meta.appendChild(nm);
+        tile.appendChild(thumb);
+        tile.appendChild(meta);
+        tile.addEventListener('click', () => captureCollageShotSource(s));
+        grid.appendChild(tile);
+      });
+    }
+    async function captureCollageShotSource(s) {
+      const ov = document.getElementById('collage-shot-picker');
+      if (!ov) return;
+      const grid = ov.querySelector('#collage-shot-grid');
+      const busy = ov.querySelector('#collage-shot-busy');
+      const err = ov.querySelector('#collage-shot-err');
+      err.style.display = 'none';
+      grid.style.display = 'none';
+      busy.style.display = 'block';
+      busy.textContent = 'Capturing "' + (s.name || 'screen') + '"…';
+      let res = null;
+      try { res = await window.pdr.collage.captureSource(s.id); } catch (e) { res = { success: false, error: (e && e.message) || 'Capture failed.' }; }
+      if (res && res.success && res.filePath) {
+        closeCollageShotPicker();
+        try { addPhotoToCollage(res.filePath, true); } catch (_) {}   // noGrid: cascade onto the in-progress layout
+        return;
+      }
+      // Failure — keep the picker open so they can try another source.
+      busy.style.display = 'none';
+      grid.style.display = 'grid';
+      err.textContent = (res && res.error) || 'That window could not be captured. Try another.';
+      err.style.display = 'block';
+    }
     function deleteCollageSelection() {
       const items = selectedItemsForOp().filter(it => !it.locked);
       if (!items.length) return;
@@ -14403,6 +14556,13 @@
           // ("Adding photos to <label>"), so it must read as the collage, not "a photo".
           try { window.pdr.collage.pickBackground('your collage', true); } catch (_) { collagePickMode = 'bg'; }
         });
+      }
+      // v2.1 round 303 (Terry) — the Take-screenshot chevron next to "Add photos":
+      // opens the window/screen picker; the captured image is added as a tile.
+      const shotChev = document.getElementById('collage-shot-chev');
+      if (shotChev && !shotChev.dataset.wired) {
+        shotChev.dataset.wired = '1';
+        shotChev.addEventListener('click', (e) => { e.stopPropagation(); openCollageShotPicker(); });
       }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
       // layer over it) → select the BACKGROUND so it can be reset/edited and

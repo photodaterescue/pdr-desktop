@@ -560,6 +560,146 @@ export async function captureScreenshot(opts: {
   }
 }
 
+// ─── v2.1 round 303 (Terry) — collage "Take Screenshot" (pick a window/screen) ─
+// The collage's "Add photos" chevron offers a screenshot. We list every screen +
+// real window (PDR's own windows excluded), the user picks one from a thumbnail
+// grid, and we grab that source full-res to a PNG the collage drops in as a tile.
+// Window sources capture via the DWM backing surface, so a window sitting BEHIND
+// PDR still captures cleanly — exactly the case Terry called out (the thing you
+// want to grab is usually on a window behind PDR). Self-contained: it does NOT
+// touch the screenshot-to-Library pipeline.
+
+export interface CollageCaptureSource {
+  id: string;
+  name: string;
+  type: 'screen' | 'window';
+  thumbnailDataUrl: string;
+  appIconDataUrl: string | null;
+}
+
+/** Titles of PDR's own live windows, so we can drop them from the list —
+ *  the user never wants to screenshot PDR into a PDR collage. */
+function pdrOwnWindowTitles(): Set<string> {
+  const titles = new Set<string>();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { const t = win.getTitle(); if (t) titles.add(t); } catch { /* non-fatal */ }
+  }
+  return titles;
+}
+
+/** Largest native (device-pixel) display size across all monitors — a safe
+ *  capture box: screens grab exact, windows (≤ a screen) fit within it with
+ *  little-to-no upscale. */
+function maxNativeCaptureBox(): { width: number; height: number } {
+  let w = 1920, h = 1200;
+  for (const d of screen.getAllDisplays()) {
+    const sf = d.scaleFactor || 1;
+    w = Math.max(w, Math.round(d.size.width * sf));
+    h = Math.max(h, Math.round(d.size.height * sf));
+  }
+  return { width: w, height: h };
+}
+
+export async function listCollageCaptureSources(): Promise<CollageCaptureSource[]> {
+  const own = pdrOwnWindowTitles();
+  let sources: Electron.DesktopCapturerSource[] = [];
+  try {
+    sources = await desktopCapturer.getSources({
+      types: ['screen', 'window'],
+      thumbnailSize: { width: 400, height: 260 },
+      fetchWindowIcons: true,
+    });
+  } catch (err) {
+    log.warn(`[capture] collage source list failed: ${(err as Error).message}`);
+    return [];
+  }
+  const out: CollageCaptureSource[] = [];
+  let screenN = 0;
+  for (const s of sources) {
+    const isScreen = s.id.startsWith('screen:');
+    if (isScreen) {
+      screenN += 1;
+    } else {
+      // Drop PDR's own windows + nameless/blank ghosts (minimised UWP shells etc.).
+      if (!s.name || own.has(s.name)) continue;
+      if (s.thumbnail.isEmpty()) continue;
+    }
+    out.push({
+      id: s.id,
+      name: isScreen ? (sources.filter((x) => x.id.startsWith('screen:')).length > 1 ? `Screen ${screenN}` : 'Whole screen') : s.name,
+      type: isScreen ? 'screen' : 'window',
+      thumbnailDataUrl: s.thumbnail.isEmpty() ? '' : s.thumbnail.toDataURL(),
+      appIconDataUrl: s.appIcon && !s.appIcon.isEmpty() ? s.appIcon.toDataURL() : null,
+    });
+  }
+  // Screens first, then windows.
+  out.sort((a, b) => (a.type === b.type ? 0 : a.type === 'screen' ? -1 : 1));
+  return out;
+}
+
+export async function captureCollageSource(
+  sourceId: string,
+): Promise<{ success: boolean; filePath?: string; error?: string }> {
+  try {
+    const isScreen = sourceId.startsWith('screen:');
+    const box = maxNativeCaptureBox();
+    // A screen grab would include PDR itself — hide our windows for the shot, then
+    // restore. A WINDOW grab reads that window's own surface, so we leave PDR in
+    // place (no focus theft, no flicker) and capture even when it's behind us.
+    let restore: (() => void) | null = null;
+    if (isScreen) {
+      const toRestore: { win: BrowserWindow; focused: boolean }[] = [];
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed() && win.isVisible() && !win.isMinimized()) {
+          toRestore.push({ win, focused: win.isFocused() });
+        }
+      }
+      restore = () => {
+        for (const { win, focused } of toRestore) {
+          if (win.isDestroyed()) continue;
+          try { focused ? win.show() : win.showInactive(); } catch { /* non-fatal */ }
+        }
+      };
+      for (const { win } of toRestore) { try { win.hide(); } catch { /* non-fatal */ } }
+      if (toRestore.length > 0) await sleep(280);
+    }
+    let sources: Electron.DesktopCapturerSource[];
+    try {
+      sources = await desktopCapturer.getSources({
+        types: isScreen ? ['screen'] : ['window'],
+        thumbnailSize: box,
+      });
+    } finally {
+      if (restore) restore();
+    }
+    const src = sources.find((s) => s.id === sourceId);
+    if (!src || src.thumbnail.isEmpty()) {
+      return { success: false, error: 'That window could not be captured — it may have been closed or minimised.' };
+    }
+    const png = src.thumbnail.toPNG();
+    // Persist to a stable per-user folder (survives OS temp sweeps; the collage
+    // tile references it by path until the collage is baked/exported).
+    const dir = path.join(app.getPath('userData'), 'collage-captures');
+    try { fs.mkdirSync(dir, { recursive: true }); } catch { /* non-fatal */ }
+    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const filePath = path.join(dir, `Screenshot_${stamp}.png`);
+    fs.writeFileSync(toLongPath(filePath), png);
+    return { success: true, filePath };
+  } catch (err) {
+    log.warn(`[capture] collage source capture failed: ${(err as Error).message}`);
+    return { success: false, error: (err as Error).message };
+  }
+}
+
+ipcMain.handle('collage:listCaptureSources', async () => {
+  return await listCollageCaptureSources();
+});
+ipcMain.handle('collage:captureSource', async (_e, sourceId: string) => {
+  if (typeof sourceId !== 'string' || !sourceId) return { success: false, error: 'No source selected.' };
+  return await captureCollageSource(sourceId);
+});
+
 // ─── Region selection overlay ────────────────────────────────────────────────
 
 let overlayWindow: BrowserWindow | null = null;
