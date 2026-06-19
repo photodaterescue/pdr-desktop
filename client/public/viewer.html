@@ -2404,6 +2404,15 @@
     body.collage-overlay-chrome .collage-item.selected .ch,
     body.collage-overlay-chrome .collage-item.selected .ch-toolbar { display: none !important; }
     body.collage-overlay-chrome .collage-item.locked.selected::after { content: none !important; }
+    /* v2.1 round 289 (Terry) — MULTI-SELECT overlay. The marquee / Ctrl+click select a
+       SET, but in overlay-chrome mode the per-item ring is suppressed (above) and the
+       single floating box wraps only the PRIMARY — so a multi-selection looked like just
+       ONE tile. These draw a floating gold ring per selected tile + a dashed group box
+       (with an "N selected" tag) in #collage-chrome, which is stage-level and NOT clipped,
+       so they show even on oversized tiles. */
+    #collage-chrome .chx-multi-ring { position: absolute; transform-origin: 50% 50%; pointer-events: none; outline: 2px solid #FEC242; outline-offset: 0; box-shadow: 0 0 0 1px rgba(20,18,38,0.55); display: none; }
+    #collage-group-box { position: absolute; pointer-events: none; border: 1.5px dashed rgba(254,194,66,0.95); border-radius: 4px; background: rgba(254,194,66,0.05); display: none; }
+    #collage-group-box .cgb-count { position: absolute; left: -1px; top: -21px; background: #FEC242; color: #1a1830; font-size: 10.5px; font-weight: 700; letter-spacing: 0.01em; padding: 3px 7px; border-radius: 5px 5px 5px 0; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
@@ -3078,6 +3087,22 @@
     .ec-size-row.active .ec-size-sub,
     .ec-size-row.active .ec-size-ratio { color: rgba(254,194,66,0.92); }
     .ec-size-row.active .ec-size-cue i { border-color: #FEC242; background: rgba(254,194,66,0.14); }
+    /* v2.1 round 289 (Terry) — always-visible CURRENT SIZE chip at the top of the Canvas
+       Size list. The active preset row is otherwise buried in a collapsed group, so there
+       was no sign of which size you're on. The ★ sets the current size as the default that
+       NEW collages open at; the default preset is tagged in the list below. */
+    .ec-size-current { display: flex; align-items: center; gap: 8px; width: 100%; padding: 7px 8px; margin-bottom: 9px; border-radius: 8px; border: 1px solid rgba(254,194,66,0.5); background: rgba(254,194,66,0.10); }
+    .ec-size-current .ec-size-cue i { border-color: rgba(254,194,66,0.85); background: rgba(254,194,66,0.16); }
+    .ec-size-current-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; line-height: 1.25; }
+    .ec-size-current-lbl { font-size: 9px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: rgba(254,194,66,0.85); }
+    .ec-size-current-name { font-size: 12px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
+    .ec-size-default-star { flex: 0 0 auto; display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.16); background: rgba(0,0,0,0.18); color: #9a96ad; cursor: pointer; transition: color 120ms, border-color 120ms, background 120ms; }
+    .ec-size-default-star svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; }
+    .ec-size-default-star:hover { color: #ffd778; border-color: rgba(254,194,66,0.6); }
+    .ec-size-default-star.on { color: #FEC242; border-color: #FEC242; background: rgba(254,194,66,0.18); }
+    .ec-size-default-star.on svg { fill: #FEC242; }
+    .ec-size-default-star.disabled { opacity: 0.4; cursor: default; pointer-events: none; }
+    .ec-size-row.is-default .ec-size-text::after { content: 'Default'; display: inline-block; align-self: flex-start; margin-top: 2px; font-size: 8.5px; font-weight: 700; letter-spacing: 0.04em; color: #FEC242; background: rgba(254,194,66,0.14); border: 1px solid rgba(254,194,66,0.5); border-radius: 4px; padding: 1px 5px; }
     /* v2.1 round 228 (Terry) — the Custom… fields sit inside a top-level .ec-size-grp
        <details> at the very bottom (was the old .ec-size-more). Keep the same indented,
        gold-ruled field row look. */
@@ -7895,8 +7920,68 @@
     function hideSelectionChrome() {
       if (collageChromeEl) collageChromeEl.classList.remove('active');
     }
+    // ─── v2.1 round 289 (Terry) — MULTI-SELECT floating chrome ───────────────
+    // A marquee / Ctrl+click selection of 2+ tiles. Mirrors positionSelectionChrome's
+    // fraction math for EACH tile (a floating ring that rotates with the tile) plus a
+    // dashed bounding box around the union. Lives in #collage-chrome (un-clipped), and
+    // HIDES the single-item handle box (group editing — drag any member to move all).
+    let collageGroupBox = null; const collageMultiRings = [];
+    function ensureGroupBox() {
+      if (collageGroupBox || !collageChromeEl) return collageGroupBox;
+      const gb = document.createElement('div'); gb.id = 'collage-group-box';
+      const cnt = document.createElement('div'); cnt.className = 'cgb-count'; gb.appendChild(cnt);
+      collageChromeEl.appendChild(gb); collageGroupBox = gb; return gb;
+    }
+    function ensureMultiRing(i) {
+      if (collageMultiRings[i]) return collageMultiRings[i];
+      const r = document.createElement('div'); r.className = 'chx-multi-ring';
+      if (collageChromeEl) collageChromeEl.appendChild(r);
+      collageMultiRings[i] = r; return r;
+    }
+    function hideMultiSelectChrome() {
+      if (collageGroupBox) collageGroupBox.style.display = 'none';
+      collageMultiRings.forEach((r) => { if (r) r.style.display = 'none'; });
+      if (collageChromeBox) collageChromeBox.style.display = '';   // restore the single-item handle box
+    }
+    // Returns true when it handled a 2+ selection (and kept the single chrome hidden).
+    function positionMultiSelectChrome() {
+      if (!collageChromeEl || !collageCanvasEl || !collageStageEl) return false;
+      const sel = (collageSelection || []).filter((x) => x && !x.isBg && x.on && x.el);
+      if (sel.length < 2) return false;   // single / none → let the single chrome run
+      const canvasRect = collageCanvasEl.getBoundingClientRect();
+      const stageRect = collageStageEl.getBoundingClientRect();
+      if (!canvasRect.width || !canvasRect.height) { hideMultiSelectChrome(); return true; }
+      let gl = Infinity, gt = Infinity, gr = -Infinity, gb = -Infinity;
+      sel.forEach((it, i) => {
+        const ring = ensureMultiRing(i);
+        const w = it.wFrac * canvasRect.width;
+        const h = itemHeightFrac(it) * canvasRect.height;
+        ring.style.left = (canvasRect.left + it.xFrac * canvasRect.width - stageRect.left) + 'px';
+        ring.style.top = (canvasRect.top + it.yFrac * canvasRect.height - stageRect.top) + 'px';
+        ring.style.width = w + 'px'; ring.style.height = h + 'px';
+        ring.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
+        ring.style.display = 'block';
+        const r = it.el.getBoundingClientRect();   // true AABB (incl. rotation) → group box
+        gl = Math.min(gl, r.left); gt = Math.min(gt, r.top); gr = Math.max(gr, r.right); gb = Math.max(gb, r.bottom);
+      });
+      for (let i = sel.length; i < collageMultiRings.length; i++) { if (collageMultiRings[i]) collageMultiRings[i].style.display = 'none'; }
+      const box = ensureGroupBox();
+      box.style.left = (gl - stageRect.left) + 'px';
+      box.style.top = (gt - stageRect.top) + 'px';
+      box.style.width = (gr - gl) + 'px';
+      box.style.height = (gb - gt) + 'px';
+      box.style.display = 'block';
+      if (box.firstChild) box.firstChild.textContent = sel.length + ' selected';
+      if (collageChromeBox) collageChromeBox.style.display = 'none';   // no per-item handles in a group
+      collageChromeEl.classList.add('active');
+      return true;
+    }
     function positionSelectionChrome() {
       if (!collageChromeEl || !collageCanvasEl || !collageStageEl) return;
+      // v2.1 round 289 (Terry) — a 2+ selection draws floating per-item rings + a group
+      // box instead of the single-item handle box.
+      if (positionMultiSelectChrome()) return;
+      hideMultiSelectChrome();
       const it = collageSelected;
       // Overlay is for REAL tiles only: the background uses the canvas ring; nothing /
       // an off tile hides it. (Text layers keep their own in-canvas chrome.)
@@ -10497,6 +10582,7 @@
     // the parent #ec-shape-collapse stays the one managed section.
     const CANVAS_SIZE_MORE_KEY = 'pdr-canvas-size-more-open';   // sticky More… state (legacy key kept for the More group)
     const CANVAS_SIZE_LAST_KEY = 'pdr-canvas-size-last';        // last-picked preset id (not auto-applied; just remembered)
+    const CANVAS_SIZE_DEFAULT_KEY = 'pdr-canvas-size-default';  // v2.1 round 289 (Terry) — user's chosen default; NEW collages open at this preset
     // Sticky open-state key for any Canvas Size group / platform sub-group. Slugified
     // so platform names with slashes/spaces (e.g. "X / Twitter") make a safe key.
     const canvasGroupKey = (kind, label) => 'pdr-canvas-size-grp-' + kind + '-' + String(label).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
@@ -10588,10 +10674,84 @@
       if (!host) return;
       host.querySelectorAll(':scope > details.ec-bg-grp').forEach((d) => { if (d.open) d.open = false; });
     }
+    // ─── v2.1 round 289 (Terry) — CURRENT SIZE indicator + default ───────────
+    // Terry: "How do I even know what canvas size I'm starting with? … It should be
+    // possible to choose a default." The active preset row is buried in a collapsed
+    // group, so this always-visible chip surfaces the live size, and its ★ pins the
+    // current size as the default that NEW collages open at (applied in enterCollageMode).
+    let ecSizeIndicatorParts = null;
+    // Reduce an aspect to a tidy ratio for the "Freeform · 3:2" label.
+    function ratioText(a) {
+      if (!(a > 0)) return '1:1';
+      let best = null;
+      for (let den = 1; den <= 16; den++) {
+        const num = Math.round(a * den);
+        if (num < 1) continue;
+        const err = Math.abs(num / den - a);
+        if (!best || err < best.err - 1e-9) best = { num, den, err };
+      }
+      const gcd = (x, y) => (y ? gcd(y, x % y) : x);
+      const d = gcd(best.num, best.den) || 1;
+      return (best.num / d) + ':' + (best.den / d);
+    }
+    function readCanvasDefault() { try { return localStorage.getItem(CANVAS_SIZE_DEFAULT_KEY) || ''; } catch (_) { return ''; } }
+    function buildCanvasSizeIndicator(host) {
+      const wrap = document.createElement('div'); wrap.className = 'ec-size-current';
+      wrap.setAttribute('data-pdr-tooltip', 'The collage’s current canvas size');
+      const cue = document.createElement('span'); cue.className = 'ec-size-cue';
+      const ibox = document.createElement('i'); cue.appendChild(ibox);
+      const txt = document.createElement('span'); txt.className = 'ec-size-current-text';
+      const lbl = document.createElement('span'); lbl.className = 'ec-size-current-lbl'; lbl.textContent = 'Current size';
+      const nm = document.createElement('span'); nm.className = 'ec-size-current-name';
+      txt.appendChild(lbl); txt.appendChild(nm);
+      const star = document.createElement('button'); star.type = 'button'; star.className = 'ec-size-default-star';
+      star.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>';
+      star.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleCanvasSizeDefault(); });
+      wrap.appendChild(cue); wrap.appendChild(txt); wrap.appendChild(star);
+      host.appendChild(wrap);
+      ecSizeIndicatorParts = { box: ibox, name: nm, star };
+      updateCanvasSizeIndicator();
+    }
+    function updateCanvasSizeIndicator() {
+      if (!ecSizeIndicatorParts) return;
+      const { box, name, star } = ecSizeIndicatorParts;
+      let aspect = 1, label = '', presetId = '';
+      if (carouselMode) {
+        aspect = 1080 / 1350;
+        label = 'Carousel · ' + Math.max(1, carouselPageCount) + ' pages';
+      } else {
+        const p = collageSizeId ? COLLAGE_PRESETS.find((x) => x.id === collageSizeId) : null;
+        if (p) { aspect = presetAspect(p); label = p.name + ' · ' + p.sub; presetId = p.id; }
+        else {
+          aspect = getCanvasAspect();
+          if (collageExportPx && collageExportPx.w && collageExportPx.h) label = 'Custom · ' + collageExportPx.w + ' × ' + collageExportPx.h + ' px';
+          else label = 'Freeform · ' + ratioText(aspect);
+        }
+      }
+      box.style.setProperty('--ar', String(aspect || 1));
+      name.textContent = label;
+      const canDefault = !!presetId && !carouselMode;
+      const def = readCanvasDefault();
+      star.classList.toggle('on', canDefault && def === presetId);
+      star.classList.toggle('disabled', !canDefault);
+      star.setAttribute('data-pdr-tooltip',
+        !canDefault ? 'Pick a preset size to set it as your default'
+        : (def === presetId ? 'This is your default for new collages — click to clear'
+        : 'Set as the default size for new collages'));
+    }
+    function toggleCanvasSizeDefault() {
+      if (carouselMode || !collageSizeId) return;
+      const p = COLLAGE_PRESETS.find((x) => x.id === collageSizeId && !x.carousel);
+      if (!p) return;
+      const def = readCanvasDefault();
+      try { if (def === p.id) localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); else localStorage.setItem(CANVAS_SIZE_DEFAULT_KEY, p.id); } catch (_) {}
+      syncCanvasSizeSelection();   // refresh the chip ★ + the list 'Default' tag
+    }
     function buildCanvasSizeMenu() {
       const host = document.getElementById('ec-canvas-size-list');
       if (!host) return;
       host.innerHTML = '';
+      buildCanvasSizeIndicator(host);   // v2.1 round 289 — always-visible current-size chip + ★ default
       const by = (g) => COLLAGE_PRESETS.filter((p) => p.group === g);
       // ── Social Media — a collapsible top-level group containing one collapsible
       //    sub-group PER platform (round 228). Platforms in the spec order; each lists
@@ -11163,6 +11323,7 @@
       selectCollageItem(primary);          // sets collageSelected + chrome + Enhance (resets collageSelection)
       collageSelection = list.slice();     // restore the full set after selectCollageItem's single-reset
       list.forEach(it => { if (it.el) it.el.classList.add('selected'); });
+      try { positionSelectionChrome(); } catch (_) {}   // v2.1 round 289 — paint the multi rings/group box now the full set is restored
     }
     function clearCollageSelection() { selectCollageItem(null); }   // clears all rings (multi-aware) + empties the set
     // v2.1 round 286 Tier 2 (Terry) — Ctrl/Cmd+click toggles a tile in/out of the
@@ -12842,10 +13003,13 @@
     // clear it from the rest. Also keep the legacy .ec-shape-btn active sync as a
     // no-op-safe fallback (those buttons no longer exist after round 226).
     function syncCanvasSizeSelection() {
+      const def = readCanvasDefault();   // v2.1 round 289 — tag the user's default preset row
       document.querySelectorAll('#ec-canvas-size-list .ec-size-row').forEach((row) => {
         row.classList.toggle('active', !!collageSizeId && row.dataset.sizeId === collageSizeId);
+        row.classList.toggle('is-default', !!def && row.dataset.sizeId === def);
       });
       document.querySelectorAll('.ec-shape-btn[data-aspect]').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
+      try { updateCanvasSizeIndicator(); } catch (_) {}   // v2.1 round 289 — keep the current-size chip live
     }
     function layoutCanvasSize() {
       if (!collageStageEl) return;
@@ -15071,6 +15235,16 @@
         if (filmstripEl) filmstripEl.style.display = 'flex';
       } catch (_) {}
       buildCollageItems();
+      // v2.1 round 289 (Terry) — open NEW collages at the user's chosen default canvas
+      // size (set via the ★ on the Canvas Size "Current size" chip). Set state here, before
+      // the panel builds + the first layout/grid, so the menu + tiles reflect it at once.
+      try {
+        const defId = readCanvasDefault();
+        if (defId && !carouselMode) {
+          const p = COLLAGE_PRESETS.find((x) => x.id === defId && !x.carousel);
+          if (p) { collageAspectKey = presetAspect(p); collageSizeId = p.id; collageExportPx = { w: p.px.w, h: p.px.h }; }
+        }
+      } catch (_) {}
       // v2.1 round 157 (Terry) — section open/closed state is now persisted
       // per-user (setupCollapsePersistence), so we no longer force-collapse
       // Tone & colour here — that would override the user's saved choice.
