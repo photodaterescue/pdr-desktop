@@ -622,7 +622,7 @@ export async function captureCollageRegion(
     // and reads as the live screen. The content is static (they navigated to it), so we grab the
     // selected region from a fresh capture once the box is drawn. enumerate windows for snap.
     const windows = enumerateWindowRectsForDisplay(display);
-    const rect = await openRegionOverlay(display, null, windows, undefined, { live: true });
+    const rect = await openRegionOverlay(display, null, windows, undefined, { live: true, adjustable: true });   // round 309 — drag → adjust handles → confirm
     if (!rect) { restorePrepWindow(); return { success: false, cancelled: true }; }
     // Grab the live desktop AS-IS (the collage window is minimised; the user's content is on top).
     const grab = await grabDisplayPng(display, { hideWindows: false });
@@ -700,7 +700,7 @@ function openRegionOverlay(
   frozenDataUrl: string | null,
   windows: SelectionRect[],
   onShown?: () => void,
-  opts?: { live?: boolean },
+  opts?: { live?: boolean; adjustable?: boolean },
 ): Promise<SelectionRect | null> {
   // Round 131 (Terry) — LIVE mode: a transparent dimming veil over
   // the real desktop instead of a pasted frozen screenshot. The
@@ -757,7 +757,7 @@ function openRegionOverlay(
 
     win.webContents.once('did-finish-load', () => {
       if (win.isDestroyed()) return;
-      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl, windows, live });
+      win.webContents.send('capture:overlay-init', { imageDataUrl: frozenDataUrl, windows, live, adjustable: opts?.adjustable === true });
       win.show();
       win.focus();
       // PDR's hidden windows restore NOW, underneath the overlay —

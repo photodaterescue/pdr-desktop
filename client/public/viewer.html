@@ -10054,9 +10054,10 @@
     // Returns { dx, dy, vGuide, hGuide }: dx/dy are px deltas to apply on each
     // axis (0 if no snap that axis); vGuide/hGuide are the canvas-relative px X/Y
     // where a guide line should show (or null). X and Y snap independently.
-    function computeDragSnap(draggedEl, canvasEl, threshold) {
+    function computeDragSnap(draggedEl, canvasEl, threshold, opts) {
       const T = threshold || 6;
       const out = { dx: 0, dy: 0, vGuide: null, hGuide: null };
+      const axisLocked = !!(opts && (opts.lockX || opts.lockY));   // round 309 — Shift-drag locks an axis; the 2-axis corner-equal can't apply
       if (!draggedEl || !canvasEl) return out;
       const cRect = canvasEl.getBoundingClientRect();
       if (!cRect.width || !cRect.height) return out;
@@ -10173,7 +10174,7 @@
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
         const hVsPage = hIsLeft ? (lRef <= 0.5) : (rRef >= cRect.width - 0.5);   // chosen H ref is the page edge
         const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
-        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
+        if (!axisLocked && vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
           const m = (vM + hM) / 2;
           out.dx = hIsLeft ? (m - mL) : (mR - m);
           out.dy = vIsTop ? (m - mT) : (mB - m);
@@ -10430,7 +10431,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 6);
+        const snap = computeDragSnap(it.el, collageCanvasEl, 6, { lockY: yLock !== null });   // round 309 — Shift locks Y; tell the snapper so the X edge/centre snaps still work (corner-equal is skipped)
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.

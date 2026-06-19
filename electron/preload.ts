@@ -478,7 +478,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // entire API surface: receive the frozen frame (+ snap-to-window
     // rects), report the chosen rect (display CSS pixels), or report
     // a cancel.
-    onOverlayInit: (callback: (info: { imageDataUrl: string; windows?: Array<{ x: number; y: number; width: number; height: number }> }) => void) => {
+    onOverlayInit: (callback: (info: { imageDataUrl: string; live?: boolean; adjustable?: boolean; windows?: Array<{ x: number; y: number; width: number; height: number }> }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:overlay-init', handler);
       return () => ipcRenderer.removeListener('capture:overlay-init', handler);

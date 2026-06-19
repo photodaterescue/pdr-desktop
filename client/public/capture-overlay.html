@@ -7,100 +7,89 @@
   v2.1 (Terry 2026-06-11) — PDR region-capture overlay.
 
   Loaded by capture-manager.ts into a frameless always-on-top window
-  covering one display. Receives the FROZEN full-screen frame over the
-  capture:overlay-init channel (the grab happened before this window
-  existed, so this page can never appear in the shot), shows it 1:1,
-  and lets the user drag a rectangle: surrounding area dims, the
-  selection stays at full brightness, a size badge tracks the corner.
+  covering one display. Receives the FROZEN full-screen frame (or runs
+  as a transparent LIVE veil) over capture:overlay-init, and lets the
+  user pick a rectangle: surrounding area dims, the selection stays
+  bright, a size badge tracks the corner.
 
-  Esc or clicking away cancels. Enter takes the whole frozen frame.
-  The chosen rect (display CSS pixels) goes back over
-  capture:overlay-select; main scales it to native pixels and crops.
+  v2.1 round 309 (Terry) — ADJUSTABLE selection (Lightshot-style), enabled
+  when main passes `adjustable` (the collage screenshot). After the first
+  drag the box STAYS with 8 resize handles + a ✓/✕ toolbar so it can be
+  nudged/resized before capture; ✓/Enter/double-click confirms, ✕/Esc
+  cancels, dragging on empty space starts a fresh box. Without the flag
+  (title-bar capture, recording area pick) it captures immediately, as before.
 
-  Deliberately self-contained vanilla HTML/JS — this is OS chrome, not
-  app UI: it must paint instantly, can't wait on the React bundle, and
-  shares no components with the workspace.
+  Esc or clicking away cancels. The chosen rect (display CSS pixels) goes
+  back over capture:overlay-select; main scales it to native px and crops.
+
+  Deliberately self-contained vanilla HTML/JS — OS chrome, not app UI.
 -->
 <style>
   html, body {
-    margin: 0;
-    padding: 0;
-    width: 100%;
-    height: 100%;
-    overflow: hidden;
-    cursor: crosshair;
-    user-select: none;
-    -webkit-user-select: none;
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; cursor: crosshair;
+    user-select: none; -webkit-user-select: none;
     background: #000;
   }
-  /* Round 131 — LIVE mode (recording area pick): the window is
-     transparent and shows the real desktop; no frozen screenshot is
-     pasted (that produced a confusing second taskbar). Only the
-     dimming veil sits over the live desktop. */
+  /* LIVE mode (round 131): transparent window over the real desktop, no
+     pasted frozen frame (which produced a confusing second taskbar). */
   body.live, html.live { background: transparent; }
   body.live #shot { display: none; }
-  #shot {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    pointer-events: none;
-  }
+  #shot { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
   /* Full veil before the first drag begins. */
-  #veil {
-    position: absolute;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.45);
-  }
-  /* During a drag the selection box's huge box-shadow becomes the
-     veil — the box interior shows the frozen frame undimmed. */
+  #veil { position: absolute; inset: 0; background: rgba(0, 0, 0, 0.45); }
+  /* During a drag the selection box's huge box-shadow becomes the veil. */
   #selection {
-    position: absolute;
-    display: none;
+    position: absolute; display: none;
     outline: 1.5px solid rgba(255, 255, 255, 0.95);
     box-shadow: 0 0 0 100000px rgba(0, 0, 0, 0.45);
   }
+  /* round 309 — resize handles (only while adjusting). */
+  .handle { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px;
+    background: #fff; border: 1px solid rgba(0,0,0,0.55); border-radius: 2px;
+    box-sizing: border-box; display: none; z-index: 5; pointer-events: none; }
+  body.adjusting .handle { display: block; }
+  body.adjusting #selection { cursor: move; }
   #sizeBadge {
-    position: absolute;
-    display: none;
-    padding: 3px 8px;
-    border-radius: 6px;
-    background: rgba(20, 20, 24, 0.92);
-    color: #fff;
+    position: absolute; display: none;
+    padding: 3px 8px; border-radius: 6px;
+    background: rgba(20, 20, 24, 0.92); color: #fff;
     font: 500 12px/1.4 system-ui, 'Segoe UI', sans-serif;
-    letter-spacing: 0.02em;
-    pointer-events: none;
-    white-space: nowrap;
+    letter-spacing: 0.02em; pointer-events: none; white-space: nowrap; z-index: 6;
   }
+  /* round 309 — confirm/cancel toolbar (only while adjusting). */
+  #toolbar { position: absolute; display: none; gap: 6px; padding: 6px;
+    border-radius: 10px; background: rgba(20, 20, 24, 0.95);
+    box-shadow: 0 6px 24px rgba(0,0,0,0.5); z-index: 7; }
+  body.adjusting #toolbar { display: flex; }
+  #toolbar button { border: none; border-radius: 7px; padding: 7px 13px;
+    font: 600 12px/1 system-ui, 'Segoe UI', sans-serif; cursor: pointer; }
+  #toolbar .ok { background: #FEC242; color: #1a1830; }
+  #toolbar .ok:hover { background: #ffd778; }
+  #toolbar .no { background: rgba(255,255,255,0.12); color: #fff; }
+  #toolbar .no:hover { background: rgba(255,255,255,0.22); }
   #hint {
-    position: absolute;
-    top: 18px;
-    left: 50%;
-    transform: translateX(-50%);
-    padding: 8px 16px;
-    border-radius: 999px;
-    background: rgba(20, 20, 24, 0.92);
-    color: #fff;
+    position: absolute; top: 18px; left: 50%; transform: translateX(-50%);
+    padding: 8px 16px; border-radius: 999px;
+    background: rgba(20, 20, 24, 0.92); color: #fff;
     font: 500 13px/1.4 system-ui, 'Segoe UI', sans-serif;
-    pointer-events: none;
-    transition: opacity 0.4s ease;
+    pointer-events: none; transition: opacity 0.4s ease;
   }
-  #hint .key {
-    display: inline-block;
-    padding: 0 5px;
-    margin: 0 1px;
-    border: 1px solid rgba(255, 255, 255, 0.35);
-    border-radius: 4px;
-    font-size: 11px;
-  }
+  #hint .key { display: inline-block; padding: 0 5px; margin: 0 1px;
+    border: 1px solid rgba(255, 255, 255, 0.35); border-radius: 4px; font-size: 11px; }
 </style>
 </head>
 <body>
   <img id="shot" alt="" />
   <div id="veil"></div>
-  <div id="selection"></div>
+  <div id="selection">
+    <div class="handle h-nw"></div><div class="handle h-n"></div><div class="handle h-ne"></div>
+    <div class="handle h-w"></div><div class="handle h-e"></div>
+    <div class="handle h-sw"></div><div class="handle h-s"></div><div class="handle h-se"></div>
+  </div>
   <div id="sizeBadge"></div>
-  <div id="hint">Click a window or drag to select an area &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap to edges &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
+  <div id="toolbar"><button class="ok" id="tbOk" type="button">✓ Capture</button><button class="no" id="tbNo" type="button">✕ Cancel</button></div>
+  <div id="hint">Click a window or drag to select &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap to edges &nbsp;·&nbsp; <span class="key">Enter</span> whole screen &nbsp;·&nbsp; <span class="key">Esc</span> cancel</div>
 <script>
 (function () {
   var pdr = window.pdr;
@@ -108,33 +97,25 @@
   var veil = document.getElementById('veil');
   var selection = document.getElementById('selection');
   var sizeBadge = document.getElementById('sizeBadge');
+  var toolbar = document.getElementById('toolbar');
   var hint = document.getElementById('hint');
+  var handleEls = {};
+  ['nw','n','ne','w','e','sw','s','se'].forEach(function (k) { handleEls[k] = selection.querySelector('.h-' + k); });
 
-  // Snap-to-window (round 124): main sends the z-ordered rectangles
-  // of every real window on the frozen frame. Hovering highlights the
-  // topmost window under the cursor; a plain CLICK captures it. A
-  // drag of 8px+ switches to free-rectangle selection.
+  var adjustable = false;   // round 309 — set from overlay-init (collage screenshot only)
   var windowRects = [];
-  // Round 127 (Terry) — magnetic edges. While dragging with Ctrl
-  // held, the selection's edges snap to nearby window edges (and the
-  // screen borders) so you don't have to be pixel-precise with the
-  // mouse. Candidates are derived from the same frozen-moment window
-  // list that powers click-a-window.
-  var vEdges = [];
-  var hEdges = [];
+  var vEdges = [], hEdges = [];
   function rebuildEdges() {
     vEdges = [0, window.innerWidth];
     hEdges = [0, window.innerHeight];
     for (var i = 0; i < windowRects.length; i++) {
       var r = windowRects[i];
-      vEdges.push(r.x, r.x + r.width);
-      hEdges.push(r.y, r.y + r.height);
+      vEdges.push(r.x, r.x + r.width); hEdges.push(r.y, r.y + r.height);
     }
   }
   var SNAP_PX = 14;
   function snapTo(value, edges) {
-    var best = value;
-    var bestDist = SNAP_PX + 1;
+    var best = value, bestDist = SNAP_PX + 1;
     for (var i = 0; i < edges.length; i++) {
       var d = Math.abs(edges[i] - value);
       if (d < bestDist) { bestDist = d; best = edges[i]; }
@@ -144,27 +125,20 @@
 
   if (pdr && pdr.capture && pdr.capture.onOverlayInit) {
     pdr.capture.onOverlayInit(function (info) {
-      if (info && info.live) {
-        document.body.classList.add('live');
-        document.documentElement.classList.add('live');
-      } else if (info && info.imageDataUrl) {
-        shot.src = info.imageDataUrl;
-      }
+      if (info && info.live) { document.body.classList.add('live'); document.documentElement.classList.add('live'); }
+      else if (info && info.imageDataUrl) { shot.src = info.imageDataUrl; }
       if (info && info.windows && info.windows.length) windowRects = info.windows;
+      adjustable = !!(info && info.adjustable);
+      if (adjustable) hint.innerHTML = 'Drag to select, then drag the handles to adjust &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap &nbsp;·&nbsp; <span class="key">Enter</span> capture &nbsp;·&nbsp; <span class="key">Esc</span> cancel';
       rebuildEdges();
     });
   }
   rebuildEdges();
 
-  function cancel() {
-    if (pdr && pdr.capture && pdr.capture.overlayCancel) pdr.capture.overlayCancel();
-  }
-  function select(rect) {
-    if (pdr && pdr.capture && pdr.capture.overlaySelect) pdr.capture.overlaySelect(rect);
-  }
+  function cancel() { if (pdr && pdr.capture && pdr.capture.overlayCancel) pdr.capture.overlayCancel(); }
+  function select(rect) { if (pdr && pdr.capture && pdr.capture.overlaySelect) pdr.capture.overlaySelect(rect); }
 
   function windowUnder(x, y) {
-    // windowRects arrive topmost-first — first hit wins.
     for (var i = 0; i < windowRects.length; i++) {
       var r = windowRects[i];
       if (x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height) return r;
@@ -172,119 +146,185 @@
     return null;
   }
 
-  var armed = false;      // left button is down
-  var dragging = false;   // moved 8px+ since mousedown → free-rect mode
-  var startX = 0;
-  var startY = 0;
-  var snapRect = null;    // window rect currently highlighted
+  var mode = 'idle';      // 'idle' | 'drawing' | 'adjusting'
+  var armed = false, dragging = false, startX = 0, startY = 0;
+  var snapRect = null;    // window highlighted on hover
+  var sel = null;         // committed rect while adjusting
+  var op = null;          // active resize/move: { type, handle, sx, sy, base }
 
-  function currentRect(ev) {
-    var x1 = Math.min(startX, ev.clientX);
-    var x2 = Math.max(startX, ev.clientX);
-    var y1 = Math.min(startY, ev.clientY);
-    var y2 = Math.max(startY, ev.clientY);
+  function rawRect(ev) {
+    var x1 = Math.min(startX, ev.clientX), x2 = Math.max(startX, ev.clientX);
+    var y1 = Math.min(startY, ev.clientY), y2 = Math.max(startY, ev.clientY);
     if (ev.ctrlKey) {
-      // Magnetic edges — each side snaps independently to the
-      // nearest window/screen edge within reach.
-      var sx1 = snapTo(x1, vEdges);
-      var sx2 = snapTo(x2, vEdges);
-      var sy1 = snapTo(y1, hEdges);
-      var sy2 = snapTo(y2, hEdges);
+      var sx1 = snapTo(x1, vEdges), sx2 = snapTo(x2, vEdges);
+      var sy1 = snapTo(y1, hEdges), sy2 = snapTo(y2, hEdges);
       if (sx2 > sx1) { x1 = sx1; x2 = sx2; }
       if (sy2 > sy1) { y1 = sy1; y2 = sy2; }
     }
     return { x: x1, y: y1, width: x2 - x1, height: y2 - y1 };
   }
 
-  function paintRect(r) {
-    selection.style.display = 'block';
-    selection.style.left = r.x + 'px';
-    selection.style.top = r.y + 'px';
-    selection.style.width = r.width + 'px';
-    selection.style.height = r.height + 'px';
-    veil.style.display = 'none';
-    sizeBadge.style.display = 'block';
-    sizeBadge.textContent = r.width + ' × ' + r.height;
-    // Badge under the bottom-right corner; flip above when cramped.
-    var bx = r.x + r.width + 8;
-    var by = r.y + r.height + 8;
-    if (bx + 90 > window.innerWidth) bx = Math.max(4, r.x + r.width - 90);
-    if (by + 24 > window.innerHeight) by = Math.max(4, r.y - 28);
-    sizeBadge.style.left = bx + 'px';
-    sizeBadge.style.top = by + 'px';
+  function positionHandles(r) {
+    var mids = {
+      nw: [r.x, r.y], n: [r.x + r.width / 2, r.y], ne: [r.x + r.width, r.y],
+      w: [r.x, r.y + r.height / 2], e: [r.x + r.width, r.y + r.height / 2],
+      sw: [r.x, r.y + r.height], s: [r.x + r.width / 2, r.y + r.height], se: [r.x + r.width, r.y + r.height]
+    };
+    Object.keys(mids).forEach(function (k) {
+      // handles are children of #selection, so position RELATIVE to its top-left
+      handleEls[k].style.left = (mids[k][0] - r.x) + 'px';
+      handleEls[k].style.top = (mids[k][1] - r.y) + 'px';
+    });
+  }
+  function positionToolbar(r) {
+    var tw = 168, th = 36;
+    var tx = r.x + r.width - tw; if (tx < 4) tx = 4; if (tx + tw > window.innerWidth - 4) tx = window.innerWidth - tw - 4;
+    var ty = r.y + r.height + 10;
+    if (ty + th > window.innerHeight - 4) ty = r.y - th - 10;       // flip above if cramped
+    if (ty < 4) ty = 4;
+    toolbar.style.left = tx + 'px'; toolbar.style.top = ty + 'px';
   }
 
+  function paintRect(r) {
+    selection.style.display = 'block';
+    selection.style.left = r.x + 'px'; selection.style.top = r.y + 'px';
+    selection.style.width = r.width + 'px'; selection.style.height = r.height + 'px';
+    veil.style.display = 'none';
+    sizeBadge.style.display = 'block';
+    sizeBadge.textContent = Math.round(r.width) + ' × ' + Math.round(r.height);
+    var bx = r.x + r.width + 8, by = r.y + r.height + 8;
+    if (bx + 90 > window.innerWidth) bx = Math.max(4, r.x + r.width - 90);
+    if (by + 24 > window.innerHeight) by = Math.max(4, r.y - 28);
+    sizeBadge.style.left = bx + 'px'; sizeBadge.style.top = by + 'px';
+  }
+  function paintAdjust() {
+    paintRect(sel);
+    positionHandles(sel);
+    positionToolbar(sel);
+  }
   function restingState() {
     selection.style.display = 'none';
     sizeBadge.style.display = 'none';
     veil.style.display = 'block';
-    snapRect = null;
+    snapRect = null; sel = null; op = null;
+    mode = 'idle';
+    document.body.classList.remove('adjusting');
+  }
+  function enterAdjustOrSelect(r) {
+    if (adjustable) {
+      sel = { x: r.x, y: r.y, width: r.width, height: r.height };
+      mode = 'adjusting';
+      document.body.classList.add('adjusting');
+      paintAdjust();
+      hint.style.opacity = '0';
+    } else {
+      select(r);
+    }
+  }
+
+  // Which handle (if any) is under the cursor while adjusting.
+  function handleAt(x, y) {
+    if (!sel) return null;
+    var pts = {
+      nw: [sel.x, sel.y], n: [sel.x + sel.width / 2, sel.y], ne: [sel.x + sel.width, sel.y],
+      w: [sel.x, sel.y + sel.height / 2], e: [sel.x + sel.width, sel.y + sel.height / 2],
+      sw: [sel.x, sel.y + sel.height], s: [sel.x + sel.width / 2, sel.y + sel.height], se: [sel.x + sel.width, sel.y + sel.height]
+    };
+    var R = 9, keys = Object.keys(pts);
+    for (var i = 0; i < keys.length; i++) {
+      var p = pts[keys[i]];
+      if (Math.abs(x - p[0]) <= R && Math.abs(y - p[1]) <= R) return keys[i];
+    }
+    return null;
+  }
+  function insideSel(x, y) {
+    return sel && x >= sel.x && x <= sel.x + sel.width && y >= sel.y && y <= sel.y + sel.height;
+  }
+
+  function applyOp(ev) {
+    var b = op.base, dx = ev.clientX - op.sx, dy = ev.clientY - op.sy;
+    if (op.type === 'move') {
+      var nx = Math.max(0, Math.min(window.innerWidth - b.width, b.x + dx));
+      var ny = Math.max(0, Math.min(window.innerHeight - b.height, b.y + dy));
+      sel = { x: nx, y: ny, width: b.width, height: b.height };
+    } else { // resize
+      var x1 = b.x, y1 = b.y, x2 = b.x + b.width, y2 = b.y + b.height;
+      var h = op.handle;
+      if (h.indexOf('w') >= 0) x1 = b.x + dx;
+      if (h.indexOf('e') >= 0) x2 = b.x + b.width + dx;
+      if (h.indexOf('n') >= 0) y1 = b.y + dy;
+      if (h.indexOf('s') >= 0) y2 = b.y + b.height + dy;
+      if (ev.ctrlKey) {
+        if (h.indexOf('w') >= 0) x1 = snapTo(x1, vEdges);
+        if (h.indexOf('e') >= 0) x2 = snapTo(x2, vEdges);
+        if (h.indexOf('n') >= 0) y1 = snapTo(y1, hEdges);
+        if (h.indexOf('s') >= 0) y2 = snapTo(y2, hEdges);
+      }
+      var nx1 = Math.min(x1, x2), nx2 = Math.max(x1, x2), ny1 = Math.min(y1, y2), ny2 = Math.max(y1, y2);
+      sel = { x: nx1, y: ny1, width: Math.max(8, nx2 - nx1), height: Math.max(8, ny2 - ny1) };
+    }
+    paintAdjust();
   }
 
   document.addEventListener('mousedown', function (ev) {
     if (ev.button !== 0) return;
-    armed = true;
-    dragging = false;
-    startX = ev.clientX;
-    startY = ev.clientY;
+    if (mode === 'adjusting') {
+      var hk = handleAt(ev.clientX, ev.clientY);
+      if (hk) { op = { type: 'resize', handle: hk, sx: ev.clientX, sy: ev.clientY, base: { x: sel.x, y: sel.y, width: sel.width, height: sel.height } }; ev.preventDefault(); return; }
+      if (insideSel(ev.clientX, ev.clientY)) { op = { type: 'move', sx: ev.clientX, sy: ev.clientY, base: { x: sel.x, y: sel.y, width: sel.width, height: sel.height } }; ev.preventDefault(); return; }
+      // empty space → start a fresh selection
+      restingState();
+    }
+    armed = true; dragging = false; startX = ev.clientX; startY = ev.clientY;
     hint.style.opacity = '0';
   });
 
   document.addEventListener('mousemove', function (ev) {
+    if (op) { applyOp(ev); return; }
     if (armed) {
-      if (!dragging && (Math.abs(ev.clientX - startX) >= 8 || Math.abs(ev.clientY - startY) >= 8)) {
-        dragging = true;
-        snapRect = null;
-      }
-      if (dragging) paintRect(currentRect(ev));
+      if (!dragging && (Math.abs(ev.clientX - startX) >= 8 || Math.abs(ev.clientY - startY) >= 8)) { dragging = true; snapRect = null; mode = 'drawing'; }
+      if (dragging) paintRect(rawRect(ev));
       return;
     }
-    // Hover (no button) — highlight the window under the cursor.
+    if (mode === 'adjusting') return;   // hovering with the box up — leave it; handles drive changes
+    // Hover (idle) — highlight the window under the cursor.
     var w = windowUnder(ev.clientX, ev.clientY);
-    if (w) {
-      snapRect = w;
-      paintRect(w);
-    } else {
-      restingState();
-    }
+    if (w) { snapRect = w; paintRect(w); } else { restingState(); }
   });
 
   document.addEventListener('mouseup', function (ev) {
-    if (!armed || ev.button !== 0) return;
+    if (ev.button !== 0) return;
+    if (op) { op = null; return; }   // finished a resize/move; stay in adjusting
+    if (!armed) return;
     armed = false;
     if (dragging) {
       dragging = false;
-      var r = currentRect(ev);
-      if (r.width < 8 || r.height < 8) {
-        // Micro-drag — back to resting rather than a sliver capture.
-        restingState();
-        hint.style.opacity = '0.35';
-        return;
-      }
-      select(r);
+      var r = rawRect(ev);
+      if (r.width < 8 || r.height < 8) { restingState(); hint.style.opacity = '0.35'; return; }
+      enterAdjustOrSelect(r);
       return;
     }
-    // Plain click: capture the highlighted window, if any.
+    // Plain click: the highlighted window.
     var w = snapRect || windowUnder(ev.clientX, ev.clientY);
-    if (w) {
-      select(w);
-    } else {
-      restingState();
-      hint.style.opacity = '0.35';
-    }
+    if (w) { enterAdjustOrSelect(w); } else { restingState(); hint.style.opacity = '0.35'; }
   });
+
+  document.addEventListener('dblclick', function (ev) {
+    if (mode === 'adjusting' && insideSel(ev.clientX, ev.clientY)) { ev.preventDefault(); select(sel); }
+  });
+
+  document.getElementById('tbOk').addEventListener('mousedown', function (ev) { ev.stopPropagation(); ev.preventDefault(); if (sel) select(sel); });
+  document.getElementById('tbNo').addEventListener('mousedown', function (ev) { ev.stopPropagation(); ev.preventDefault(); cancel(); });
 
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape') {
+    if (ev.key === 'Escape') { ev.preventDefault(); cancel(); }
+    else if (ev.key === 'Enter') {
       ev.preventDefault();
-      cancel();
-    } else if (ev.key === 'Enter') {
-      ev.preventDefault();
-      select({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight });
+      if (mode === 'adjusting' && sel) select(sel);
+      else select({ x: 0, y: 0, width: window.innerWidth, height: window.innerHeight });
     }
   });
 
-  // Soften the hint once the user has had a moment to read it.
   setTimeout(function () { hint.style.opacity = '0.35'; }, 3500);
 })();
 </script>
