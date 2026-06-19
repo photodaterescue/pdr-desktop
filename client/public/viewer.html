@@ -12594,7 +12594,11 @@
           var shape = btn.getAttribute('data-shape') || 'ellipse';
           if (collageSelected && !collageSelected.isBg) { try { window.pdrEnhanceBridge.setVignetteShape(shape); } catch (_) {} }   // v2.1 round 294 — per-photo
           else { collageVignetteShape = shape; applyCollageTreatments(); }
-          syncCollageTreatmentsUi();
+          // v2.1 round 295 (Terry) — BUGFIX: sync the sliders from the SELECTION, not the
+          // whole-canvas globals. The old syncCollageTreatmentsUi() read the (zero) globals
+          // after a per-photo shape change, so the slider snapped to 0 while the photo's
+          // vignette stayed at its real value (the shape stayed visible at "0").
+          syncTreatmentSlidersForSelection();
         });
       });
       var grainSlider = document.getElementById('collage-grain');
