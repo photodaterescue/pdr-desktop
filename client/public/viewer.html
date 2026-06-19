@@ -1372,6 +1372,33 @@
       color: #ffd778;
     }
     body.collage-mode #collage-add-photos svg { width: 16px; height: 16px; flex: 0 0 auto; }
+    /* v2.1 round 302 (Terry) — Canva-style index number on every collage strip thumb.
+       A pure CSS counter (reset on the strip, incremented per .thumb) auto-renumbers as
+       thumbs are added/removed, no JS. The sticky "Add photos" button isn't a .thumb so
+       it never counts. Bottom-left so it clears the hover checkbox (top-left). */
+    body.collage-mode .filmstrip { counter-reset: cthumb; }
+    body.collage-mode .filmstrip .thumb { counter-increment: cthumb; }
+    /* ::before (not ::after): the thumbs carry data-pdr-tooltip, and the global
+       [data-pdr-tooltip]::after { content: none !important } rule (tooltip suppression)
+       would otherwise kill the number. ::before is free. */
+    body.collage-mode .filmstrip .thumb::before {
+      content: counter(cthumb);
+      position: absolute;
+      left: 3px; bottom: 3px;
+      min-width: 13px;
+      height: 14px;
+      padding: 0 4px;
+      box-sizing: border-box;
+      line-height: 14px;
+      text-align: center;
+      font-size: 9px;
+      font-weight: 700;
+      color: #FEC242;
+      background: rgba(10, 10, 24, 0.82);
+      border-radius: 7px;
+      pointer-events: none;
+      z-index: 3;
+    }
   </style>
 </head>
 <body>
@@ -8138,6 +8165,24 @@
       const mLeft = Math.max(0, r.left - leftRef), mRight = Math.max(0, rightRef - r.right);
       const mTop = Math.max(0, r.top - topRef), mBot = Math.max(0, botRef - r.bottom);
       const balX = Math.abs(mLeft - mRight) <= TOL, balY = Math.abs(mTop - mBot) <= TOL;
+      // v2.1 round 302 (Terry SS1) — green also when THIS edge is symmetric or aligned with
+      // another photo, measured from the PAGE edges (round 301 only greened balanced gaps,
+      // which lost the symmetric-pair confirmation). Per-edge: left photo's left margin ==
+      // right photo's right margin → both go green (mirror symmetry); tops level → both tops
+      // green (edge alignment). dLm/dRm/dTm/dBm = this photo's own margins to the page.
+      const dLm = r.left - c.left, dRm = c.right - r.right, dTm = r.top - c.top, dBm = c.bottom - r.bottom;
+      let eL = false, eR = false, eT = false, eB = false;
+      for (let i = 0; i < collageItems.length; i++) {
+        const o = collageItems[i];
+        if (!o || !o.el || o.el === it.el || !o.on || o.isBg) continue;
+        const q = o.el.getBoundingClientRect();
+        const oLm = q.left - c.left, oRm = c.right - q.right, oTm = q.top - c.top, oBm = c.bottom - q.bottom;
+        if (Math.abs(dLm - oRm) <= TOL || Math.abs(dLm - oLm) <= TOL) eL = true;   // symmetric to O's right, or left edges level
+        if (Math.abs(dRm - oLm) <= TOL || Math.abs(dRm - oRm) <= TOL) eR = true;   // symmetric to O's left, or right edges level
+        if (Math.abs(dTm - oBm) <= TOL || Math.abs(dTm - oTm) <= TOL) eT = true;   // symmetric to O's bottom, or tops level
+        if (Math.abs(dBm - oTm) <= TOL || Math.abs(dBm - oBm) <= TOL) eB = true;   // symmetric to O's top, or bottoms level
+      }
+      const grL = balX || eL, grR = balX || eR, grT = balY || eT, grB = balY || eB;
       const line = (el, x, y, len, horiz, sym) => {
         el.classList.toggle('sym', !!sym);
         el.style.left = x + 'px'; el.style.top = y + 'px';
@@ -8151,14 +8196,14 @@
         el.textContent = String(val);
         el.style.display = val > 0 ? 'block' : 'none';
       };
-      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, balX);
-      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), balX);
-      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, balX);
-      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), balX);
-      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, balY);
-      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), balY);
-      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, balY);
-      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), balY);
+      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL);
+      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL);
+      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR);
+      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR);
+      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT);
+      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT);
+      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB);
+      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
       collageChromeEl.classList.add('active');
