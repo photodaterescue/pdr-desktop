@@ -10474,7 +10474,12 @@
           const xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
           const yc = [rect.top, rect.top + ch / 2, rect.top + ch];      // canvas T / centre / B
           if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
-          const pushEdges = (r) => { xc.push(r.left, r.left + r.width / 2, r.right); yc.push(r.top, r.top + r.height / 2, r.bottom); };
+          // v2.1 round 305 (Terry) — also offer each other tile's MIRROR about the canvas centre
+          // (symmetry), so a resized edge snaps to the symmetric spot the green measurement shows
+          // (resize is aspect-locked, so the distribute/equal-gaps case can't apply here — that
+          // lives in the crop + move snaps, which move one edge at a time).
+          const mirX = (x) => 2 * rect.left + cw - x, mirY = (y) => 2 * rect.top + ch - y;
+          const pushEdges = (r) => { xc.push(r.left, r.left + r.width / 2, r.right, mirX(r.left), mirX(r.left + r.width / 2), mirX(r.right)); yc.push(r.top, r.top + r.height / 2, r.bottom, mirY(r.top), mirY(r.top + r.height / 2), mirY(r.bottom)); };
           for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect()); }
           for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) pushEdges(o.el.getBoundingClientRect()); }
           let bX = SNAP_T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
@@ -10639,10 +10644,18 @@
           const r = it.el.getBoundingClientRect();
           if (edge === 'l' || edge === 'r') {
             const grabX = (edge === 'l') ? r.left : r.right;
+            // v2.1 round 305 (Terry) — the crop edge now snaps to the SAME places the green
+            // measurement lights up: besides canvas + other-tile edges, also their MIRROR about
+            // the canvas centre (symmetry) and the DISTRIBUTE point (equal gaps). Round 293's
+            // crop snap had only edges/centres, so symmetric/balanced spots greened but never
+            // stuck — Terry: "it turns green but doesn't snap." mirX mirrors a screen-x.
+            const mirX = (x) => 2 * cr.left + cr.width - x;
             const xc = [cr.left, cr.left + cr.width / 2, cr.left + cr.width];
             if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(cr.left + (i / N) * cr.width); }
-            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right); } }
-            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right); } }
+            let lRef = cr.left, rRef = cr.left + cr.width;   // nearest L/R refs (for the distribute candidate)
+            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right, mirX(q.left), mirX(q.left + q.width / 2), mirX(q.right)); if (q.top < r.bottom - 1 && q.bottom > r.top + 1) { if (q.right <= r.left + 1 && q.right > lRef) lRef = q.right; if (q.left >= r.right - 1 && q.left < rRef) rRef = q.left; } } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right, mirX(q.left), mirX(q.left + q.width / 2), mirX(q.right)); } }
+            xc.push((edge === 'l') ? (lRef + (rRef - r.right)) : (rRef - (r.left - lRef)));   // distribute: makes left gap == right gap
             let best = T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < best) { best = g; sX = xc[c]; } }
             if (sX != null && best <= T) {
               const dCrop = ((sX - grabX) * s2cCrop) / S;   // screen → content px → crop fraction
@@ -10655,9 +10668,12 @@
             }
           } else {
             const grabY = (edge === 't') ? r.top : r.bottom;
+            const mirY = (y) => 2 * cr.top + cr.height - y;   // round 305 — mirror about canvas horizontal centre (symmetry)
             const yc = [cr.top, cr.top + cr.height / 2, cr.top + cr.height];
-            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom); } }
-            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom); } }
+            let tRef = cr.top, bRef = cr.top + cr.height;   // nearest T/B refs (for distribute)
+            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom, mirY(q.top), mirY(q.top + q.height / 2), mirY(q.bottom)); if (q.left < r.right - 1 && q.right > r.left + 1) { if (q.bottom <= r.top + 1 && q.bottom > tRef) tRef = q.bottom; if (q.top >= r.bottom - 1 && q.top < bRef) bRef = q.top; } } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom, mirY(q.top), mirY(q.top + q.height / 2), mirY(q.bottom)); } }
+            yc.push((edge === 't') ? (tRef + (bRef - r.bottom)) : (bRef - (r.top - tRef)));   // distribute: makes top gap == bottom gap
             let best = T + 1, sY = null; for (let c = 0; c < yc.length; c++) { const g = Math.abs(grabY - yc[c]); if (g < best) { best = g; sY = yc[c]; } }
             if (sY != null && best <= T) {
               const dCrop = ((sY - grabY) * s2cCrop) / vSfix;
