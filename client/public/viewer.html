@@ -2387,7 +2387,7 @@
       position: absolute;
       bottom: 100%; left: 50%;
       transform: translateX(-50%);
-      margin-bottom: 8px;
+      margin-bottom: 18px;   /* v2.1 round 300 (Terry) — Canva-like breathing room above the tile (was 8px) */
       display: inline-flex; align-items: center; gap: 4px; padding: 4px;
       background: rgba(28,26,46,0.96);
       border: 1px solid rgba(255,255,255,0.14);
@@ -2396,7 +2396,7 @@
       white-space: nowrap;
       pointer-events: auto;
     }
-    #collage-chrome-box .chx-toolbar.below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 8px; }
+    #collage-chrome-box .chx-toolbar.below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 18px; }
     /* v2.1 round 266 (Terry) — when the overlay owns the chrome, suppress the in-canvas
        tile chrome (ring + handles + toolbar) on the selected tile so it isn't drawn twice
        (and so the clipped partial ring doesn't show). The overlay draws the full ring.
@@ -2912,6 +2912,26 @@
        pinned panel so nothing hides under it. */
     body.collage-mode.enhance-panel-open #collage-stage { padding-right: 398px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
     body.collage-mode.enhance-panel-open #filmstrip-wrap { padding-right: 382px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
+    /* v2.1 round 300 (Terry) — collapse the Enhance panel for a full-width VIEW (a viewing
+       toggle; editing still needs it open). A tab on the panel's left edge folds it away and
+       the canvas re-fits into the freed width. Editing controls are untouched — re-expand to edit. */
+    #collage-panel-toggle { display: none; }
+    body.collage-mode #collage-panel-toggle {
+      display: flex; align-items: center; justify-content: center;
+      position: fixed; top: 50%; right: 376px; transform: translateY(-50%);
+      width: 22px; height: 48px; padding: 0;
+      background: rgba(18,18,42,0.95); border: 1px solid rgba(254,194,66,0.4); border-right: none;
+      border-radius: 8px 0 0 8px; color: #cdbcff; cursor: pointer; z-index: 130000;
+      box-shadow: -3px 0 10px rgba(0,0,0,0.4);
+    }
+    body.collage-mode #collage-panel-toggle:hover { color: #ffd778; border-color: #FEC242; }
+    #collage-panel-toggle svg { width: 14px; height: 14px; transition: transform 0.2s; }
+    body.collage-panel-collapsed #collage-panel-toggle { right: 0; }
+    body.collage-panel-collapsed #collage-panel-toggle svg { transform: rotate(180deg); }
+    body.collage-panel-collapsed #enhance-panel { display: none !important; }
+    body.collage-mode.collage-panel-collapsed #collage-stage { padding-right: 22px; }
+    body.collage-mode.collage-panel-collapsed #filmstrip-wrap { padding-right: 0; }
+    body.collage-mode.collage-panel-collapsed .filmstrip-toggle { right: 12px; }
     /* Toolbar controls that don't apply to a collage canvas. */
     body.collage-mode #counter,
     body.collage-mode #btn-fit,
@@ -8099,6 +8119,7 @@
       // goes green AND we draw the partner photo's matching distance, so the user sees two
       // equal green numbers = it's confirmed symmetric (not just a guessed snap line).
       let mH = null, mV = null;   // matched partner margin: { side, x, y, len, val }
+      const dCx = (r.left + r.right) / 2, dCy = (r.top + r.bottom) / 2;
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
         if (!o || !o.el || o.el === it.el || !o.on || o.isBg) continue;
@@ -8106,10 +8127,20 @@
         const qL = q.left - c.left, qR = c.right - q.right, qT = q.top - c.top, qB = c.bottom - q.bottom;
         const qcy = (Math.max(q.top, c.top) + Math.min(q.bottom, c.bottom)) / 2;
         const qcx = (Math.max(q.left, c.left) + Math.min(q.right, c.right)) / 2;
-        if (!mH && ml > 2 && Math.abs(ml - qR) <= TOL) mH = { side: 'left', x: q.right - s.left, y: qcy - s.top, len: qR, val: pxX(qR) };        // this.left ≡ partner.right
-        else if (!mH && mr > 2 && Math.abs(mr - qL) <= TOL) mH = { side: 'right', x: c.left - s.left, y: qcy - s.top, len: qL, val: pxX(qL) };   // this.right ≡ partner.left
-        if (!mV && mt > 2 && Math.abs(mt - qB) <= TOL) mV = { side: 'top', x: qcx - s.left, y: q.bottom - s.top, len: qB, val: pxY(qB) };        // this.top ≡ partner.bottom
-        else if (!mV && mb > 2 && Math.abs(mb - qT) <= TOL) mV = { side: 'bottom', x: qcx - s.left, y: c.top - s.top, len: qT, val: pxY(qT) };   // this.bottom ≡ partner.top
+        const qCx = (q.left + q.right) / 2, qCy = (q.top + q.bottom) / 2;
+        // v2.1 round 300 (Terry) — OUTER symmetry only. Compare each photo's OUTER edge (the
+        // one nearer ITS OWN page edge) to the partner's outer edge on the opposite side, so
+        // a photo ABOVE another matches TOP-edge↔partner's BOTTOM-edge (top of the top photo ↔
+        // bottom of the bottom photo) — never the inner gap edges. Gated by relative centre so
+        // it's correct whichever photo you drag.
+        if (!mH) {
+          if (dCx <= qCx) { if (ml > 2 && Math.abs(ml - qR) <= TOL) mH = { side: 'left',  x: q.right - s.left, y: qcy - s.top, len: qR, val: pxX(qR) }; }
+          else            { if (mr > 2 && Math.abs(mr - qL) <= TOL) mH = { side: 'right', x: c.left - s.left,  y: qcy - s.top, len: qL, val: pxX(qL) }; }
+        }
+        if (!mV) {
+          if (dCy <= qCy) { if (mt > 2 && Math.abs(mt - qB) <= TOL) mV = { side: 'top',    x: qcx - s.left, y: q.bottom - s.top, len: qB, val: pxY(qB) }; }
+          else            { if (mb > 2 && Math.abs(mb - qT) <= TOL) mV = { side: 'bottom', x: qcx - s.left, y: c.top - s.top,    len: qT, val: pxY(qT) }; }
+        }
       }
       const centeredX = Math.abs(ml - mr) <= TOL, centeredY = Math.abs(mt - mb) <= TOL;
       const symL = centeredX || (mH && mH.side === 'left'), symR = centeredX || (mH && mH.side === 'right');
@@ -10624,12 +10655,55 @@
       if (collageMode) { toggleCollageItem(idx); return; }
       loadMedia(idx);
     }
+    // v2.1 round 300 (Terry) — a self-contained pool thumb for an ADDED photo (one that's a
+    // collageItem beyond files[], so the chunked builder never made it one). Uses only
+    // top-level helpers (the chunked builder's drag/checkbox/lazy are closure-scoped); the
+    // image loads via fetchThumb, and a click toggles the tile on/off like any pool thumb.
+    function makeCollageAddedThumb(i, fp) {
+      const thumb = document.createElement('div');
+      thumb.className = 'thumb';
+      thumb.setAttribute('data-pdr-tooltip', getFilename(fp));
+      thumb.setAttribute('data-pdr-tooltip-side', 'top');
+      thumb.dataset.idx = String(i);
+      thumb.dataset.fp = fp;
+      thumb.addEventListener('click', (e) => {
+        const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
+        if (handleFilmstripModifierSelect(e, idx)) return;
+        handleThumbActivate(idx);
+      });
+      try { fetchThumb(fp).then((url) => { if (url) thumb.style.backgroundImage = 'url("' + url + '")'; }).catch(() => {}); } catch (_) {}
+      return thumb;
+    }
     function updateCollageFilmstrip() {
       if (!collageMode) return;
       // v2.1 round 256 (Terry) — carousel: in carousel mode the bottom strip shows one
       // thumbnail PER PAGE (+ an add slot), never the photo POOL. Gate here so any path
       // that refreshes the pool (renderAllCollage, setItemOn…) routes to the page thumbs.
       if (carouselMode) { return updateCarouselFilmstrip(); }
+      // v2.1 round 300 (Terry) — reconcile the pool with collageItems so ADDED photos get a
+      // thumb too (Terry: the strip stopped showing added photos). The originally-opened
+      // files[] thumbs are built by the chunked builder; here we append any MISSING tile's
+      // thumb (before the Add-photos button) and prune thumbs whose tile no longer exists
+      // (e.g. after undo). Runs on every pool refresh (add / remove / setItemOn / restore).
+      try {
+        const addBtn = document.getElementById('collage-add-photos');
+        const nFiles = (typeof files !== 'undefined' && files) ? files.length : 0;
+        const have = new Set();
+        filmstripEl.querySelectorAll('[data-idx]').forEach((t) => have.add(parseInt(t.dataset.idx, 10)));
+        // Only the ADDED photos (idx >= files.length) are ours; the originally-opened files[]
+        // thumbs are owned by the chunked builder (touching them double-builds — Terry's 8 thumbs).
+        for (let i = nFiles; i < collageItems.length; i++) {
+          const it = collageItems[i];
+          if (!it || it.isBg || !it.path || have.has(i)) continue;
+          const thumb = makeCollageAddedThumb(i, it.path);
+          if (addBtn && addBtn.parentNode === filmstripEl) filmstripEl.insertBefore(thumb, addBtn);
+          else filmstripEl.appendChild(thumb);
+        }
+        filmstripEl.querySelectorAll('[data-idx]').forEach((t) => {
+          const i = parseInt(t.dataset.idx, 10);
+          if (i >= nFiles && (!collageItems[i] || collageItems[i].isBg)) t.remove();   // prune orphaned ADDED thumbs only
+        });
+      } catch (_) {}
       const thumbs = filmstripEl.querySelectorAll('[data-idx]');
       thumbs.forEach((t) => {
         const i = parseInt(t.dataset.idx, 10);
@@ -14090,6 +14164,26 @@
       // v2.1 round 290 (Terry) — open the keyboard-shortcuts legend.
       const shortcutsBtn = document.getElementById('btn-collage-shortcuts');
       if (shortcutsBtn) shortcutsBtn.addEventListener('click', () => { try { toggleCollageShortcuts(); } catch (_) {} });
+      // v2.1 round 300 (Terry) — collapse/expand the Enhance panel for a full-width VIEW (the
+      // panel can't close in collage — it's the editor — so this folds it away purely for
+      // viewing; the canvas re-fits into the freed width, editing controls untouched).
+      try {
+        if (!document.getElementById('collage-panel-toggle')) {
+          const pt = document.createElement('button');
+          pt.id = 'collage-panel-toggle'; pt.type = 'button';
+          pt.setAttribute('data-pdr-tooltip', 'Hide the Enhance panel (view full width)');
+          pt.setAttribute('data-pdr-tooltip-side', 'left');
+          pt.setAttribute('aria-label', 'Hide the Enhance panel');
+          pt.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"></polyline></svg>';
+          pt.addEventListener('click', () => {
+            const collapsed = document.body.classList.toggle('collage-panel-collapsed');
+            pt.setAttribute('data-pdr-tooltip', collapsed ? 'Show the Enhance panel' : 'Hide the Enhance panel (view full width)');
+            pt.setAttribute('aria-label', collapsed ? 'Show the Enhance panel' : 'Hide the Enhance panel');
+            try { layoutCanvasSize(); } catch (_) {}
+          });
+          document.body.appendChild(pt);
+        }
+      } catch (_) {}
       window.addEventListener('keydown', (e) => {
         if (!collageMode) return;
         // v2.1 round 185 (Text #1) — let a focused field own Ctrl+Z/Y for native
