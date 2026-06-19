@@ -578,7 +578,20 @@ function closePrepBar(): void {
   prepBarWindow = null;
 }
 function restorePrepWindow(): void {
-  if (prepMinimized && !prepMinimized.isDestroyed()) { try { prepMinimized.restore(); prepMinimized.focus(); } catch { /* non-fatal */ } }
+  // v2.1 round 312 (Terry) — Capture OR Cancel must both bring the collage straight back to the
+  // FRONT. show()+focus() alone can leave it un-hidden but occluded (Windows blocks a background
+  // app from taking the foreground), so use the always-on-top flip — set topmost, show/focus,
+  // then drop topmost — which forces it above other windows without needing foreground rights.
+  if (prepMinimized && !prepMinimized.isDestroyed()) {
+    const w = prepMinimized;
+    try {
+      if (w.isMinimized()) w.restore();
+      w.show();
+      w.setAlwaysOnTop(true);
+      w.focus();
+      w.setAlwaysOnTop(false);
+    } catch { /* non-fatal */ }
+  }
   prepMinimized = null;
 }
 
@@ -589,7 +602,10 @@ export async function captureCollageRegion(
   // ── PHASE 1: PREPARE ── minimise the collage window so the user can navigate, then
   // wait for them to click Capture (or Cancel) on the floating bar.
   prepMinimized = callingWin && !callingWin.isDestroyed() ? callingWin : null;
-  if (prepMinimized) { try { prepMinimized.minimize(); } catch { /* non-fatal */ } }
+  // v2.1 round 312 (Terry) — HIDE (not minimise) the collage: minimize()/restore() left it
+  // stuck minimised on Cancel ("the Collage stays hidden"); hide()/show() reliably brings it
+  // straight back to the front on BOTH Capture and Cancel.
+  if (prepMinimized) { try { prepMinimized.hide(); } catch { /* non-fatal */ } }
   const go = await new Promise<boolean>((resolve) => {
     prepResolve = resolve;
     const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
@@ -600,7 +616,7 @@ export async function captureCollageRegion(
       x: bx, y: by, width: W, height: H, frame: false, transparent: true, resizable: false,
       movable: true, minimizable: false, maximizable: false, fullscreenable: false,
       skipTaskbar: true, alwaysOnTop: true, show: false,
-      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+      webPreferences: { preload: path.join(__dirname, 'capture-mini-preload.js'), contextIsolation: true, nodeIntegration: false },
     });
     prepBarWindow = bar;
     try { bar.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
@@ -726,7 +742,7 @@ function openMultiDisplayOverlay(opts: { adjustable?: boolean }): Promise<{ rect
         frame: false, show: false, transparent: true, backgroundColor: '#00000000',
         resizable: false, movable: false, minimizable: false, maximizable: false,
         fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
-        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+        webPreferences: { preload: path.join(__dirname, 'capture-mini-preload.js'), contextIsolation: true, nodeIntegration: false },
       });
       try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
       try { win.setContentProtection(true); } catch { /* non-fatal */ }
@@ -786,7 +802,7 @@ function openRegionOverlay(
       transparent: live,
       backgroundColor: live ? '#00000000' : '#000000',
       webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
+        preload: path.join(__dirname, 'capture-mini-preload.js'),   // round 312 — tiny preload, loads instantly
         contextIsolation: true,
         nodeIntegration: false,
       },
