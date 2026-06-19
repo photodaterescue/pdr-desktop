@@ -10300,6 +10300,7 @@
       const rad = (it.rot || 0) * Math.PI / 180;
       const cosR = Math.cos(rad), sinR = Math.sin(rad);
       const MIN = 0.08; // never crop below 8% of the photo
+      const vSfix = S / aspect; // px per photo-height-fraction (for the top/bottom snap math)
       const move = (ev) => {
         // v2.1 round 253 (Terry) — screen delta → content-px delta (÷ effective scale).
         const dx = (ev.clientX - startX) * s2cCrop, dy = (ev.clientY - startY) * s2cCrop;
@@ -10311,14 +10312,59 @@
           it.wFrac = ((it.crop.r - it.crop.l) * S) / cwpx; // box narrows with the crop (no zoom)
           if (edge === 'l') it.xFrac = rightFrac - it.wFrac; // right edge stays put
         } else {
-          const vS = S / aspect; // px per photo-height-fraction
-          if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, sc.t + localY / vS));
-          else it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY / vS));
+          if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, sc.t + localY / vSfix));
+          else it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY / vSfix));
           if (edge === 't') it.yFrac = bottomFrac0 - itemHeightFrac(it); // bottom edge stays put
         }
         renderCollageItem(it);
+        // v2.1 round 293 (Terry) — CROP SNAPPING. Cropping is a form of resizing, so the
+        // dragged crop EDGE snaps to the same alignment lines as a resize — canvas
+        // edges/centre, every other tile/text edge+centre, carousel page lines — with the
+        // gold guide. Only for an axis-aligned tile (rot≈0): on a rotated tile the visible
+        // crop edge isn't parallel to the snap lines, so we leave it free. ALT bypasses.
+        let vGuide = null, hGuide = null;
+        const rotN = (((it.rot || 0) % 360) + 360) % 360;
+        const axisAligned = (rotN < 0.5 || rotN > 359.5);
+        if (!ev.altKey && axisAligned) {
+          const T = 6;
+          const cr = collageCanvasEl.getBoundingClientRect();
+          const r = it.el.getBoundingClientRect();
+          if (edge === 'l' || edge === 'r') {
+            const grabX = (edge === 'l') ? r.left : r.right;
+            const xc = [cr.left, cr.left + cr.width / 2, cr.left + cr.width];
+            if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(cr.left + (i / N) * cr.width); }
+            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right); } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right); } }
+            let best = T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < best) { best = g; sX = xc[c]; } }
+            if (sX != null && best <= T) {
+              const dCrop = ((sX - grabX) * s2cCrop) / S;   // screen → content px → crop fraction
+              if (edge === 'l') it.crop.l = Math.max(0, Math.min(sc.r - MIN, it.crop.l + dCrop));
+              else it.crop.r = Math.min(1, Math.max(sc.l + MIN, it.crop.r + dCrop));
+              it.wFrac = ((it.crop.r - it.crop.l) * S) / cwpx;
+              if (edge === 'l') it.xFrac = rightFrac - it.wFrac;
+              renderCollageItem(it);
+              vGuide = sX - cr.left;
+            }
+          } else {
+            const grabY = (edge === 't') ? r.top : r.bottom;
+            const yc = [cr.top, cr.top + cr.height / 2, cr.top + cr.height];
+            for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom); } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom); } }
+            let best = T + 1, sY = null; for (let c = 0; c < yc.length; c++) { const g = Math.abs(grabY - yc[c]); if (g < best) { best = g; sY = yc[c]; } }
+            if (sY != null && best <= T) {
+              const dCrop = ((sY - grabY) * s2cCrop) / vSfix;
+              if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, it.crop.t + dCrop));
+              else it.crop.b = Math.min(1, Math.max(sc.t + MIN, it.crop.b + dCrop));
+              if (edge === 't') it.yFrac = bottomFrac0 - itemHeightFrac(it);
+              renderCollageItem(it);
+              hGuide = sY - cr.top;
+            }
+          }
+        }
+        showCollageSnapGuides(vGuide, hGuide);
       };
       const up = () => {
+        hideCollageSnapGuides();   // v2.1 round 293 (Terry) — clear the crop guide on drop
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
