@@ -135,7 +135,7 @@
       else if (info && info.imageDataUrl) { shot.src = info.imageDataUrl; }
       if (info && info.windows && info.windows.length) windowRects = info.windows;
       adjustable = !!(info && info.adjustable);
-      if (adjustable) hint.innerHTML = '<b>Step 1 of 2</b> &nbsp; Drag a box around what you want &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap to edges &nbsp;·&nbsp; <span class="key">Esc</span> to cancel';
+      if (adjustable) hint.innerHTML = '<b>Step 1 of 2</b> &nbsp; Drag a box around what you want — rough is fine, you\'ll fine-tune next &nbsp;·&nbsp; <span class="key">Esc</span> to cancel';
       rebuildEdges();
     });
   }
@@ -224,7 +224,7 @@
       document.body.classList.add('adjusting');
       paintAdjust();
       // round 312 (Terry) — STEP 2 cue: make the two-part nature obvious (draw, THEN adjust).
-      hint.innerHTML = '<b>Step 2 of 2</b> &nbsp; Drag the handles to fine-tune &nbsp;·&nbsp; then <span class="key">✓ Capture</span> (or <span class="key">Enter</span>) &nbsp;·&nbsp; <span class="key">Esc</span> to cancel';
+      hint.innerHTML = '<b>Step 2 of 2</b> &nbsp; Drag the handles to fine-tune &nbsp;·&nbsp; hold <span class="key">Ctrl</span> to snap to edges &nbsp;·&nbsp; then <span class="key">✓ Capture</span> (or <span class="key">Enter</span>) &nbsp;·&nbsp; <span class="key">Esc</span> to cancel';
       hint.style.opacity = '1';
     } else {
       select(r);
