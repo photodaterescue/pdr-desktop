@@ -610,38 +610,23 @@ export async function captureCollageRegion(
   });
   closePrepBar();
   if (!go) { restorePrepWindow(); return { success: false, cancelled: true }; }
-  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil over EVERY screen and let
-  // them drag a box, then grab that region from a fresh capture of whichever screen it lands on.
+  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil on EVERY screen and let them
+  // drag a box on whichever one has their content, then grab that region from a fresh capture.
   captureInFlight = true;
   try {
     await sleep(160);   // let the prep bar fully disappear first
-    // v2.1 round 310 (Terry) — span ALL displays (was the cursor's screen only — annoying when
-    // the thing to grab is on another monitor). One overlay over the virtual desktop (the union
-    // of every display's bounds); window rects are enumerated in the same union space for snap.
-    const displays = screen.getAllDisplays();
-    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-    for (const d of displays) {
-      minX = Math.min(minX, d.bounds.x); minY = Math.min(minY, d.bounds.y);
-      maxX = Math.max(maxX, d.bounds.x + d.bounds.width); maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
-    }
-    const sf = screen.getPrimaryDisplay().scaleFactor || 1;
-    const union = { bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY }, scaleFactor: sf } as Electron.Display;
-    // v2.1 round 308 (Terry) — LIVE veil (not a frozen screenshot): a transparent dim over the
-    // REAL desktop, so just one (real) taskbar, no captured duplicate pasted on top.
-    const windows = enumerateWindowRectsForDisplay(union);   // union-relative rects (generic helper)
-    const rect = await openRegionOverlay(union, null, windows, undefined, { live: true, adjustable: true });   // round 309 — drag → adjust handles → confirm
-    if (!rect) { restorePrepWindow(); return { success: false, cancelled: true }; }
-    // The rect is union CSS px (relative to the union's top-left). Resolve to absolute screen
-    // coords, pick the display the box's CENTRE is on, and crop from a fresh grab of THAT display.
-    const absX = minX + rect.x, absY = minY + rect.y;
-    const target = screen.getDisplayNearestPoint({ x: Math.round(absX + rect.width / 2), y: Math.round(absY + rect.height / 2) });
-    const grab = await grabDisplayPng(target, { hideWindows: false });
+    // v2.1 round 311 (Terry) — ONE overlay window per monitor (round 310's single spanning
+    // window didn't work on the 2nd screen + hung). The chosen display + a rect in ITS OWN CSS
+    // pixels come back, so the crop is the same simple per-display maths as a single screen.
+    const picked = await openMultiDisplayOverlay({ adjustable: true });
+    if (!picked) { restorePrepWindow(); return { success: false, cancelled: true }; }
+    const { rect, display } = picked;
+    const grab = await grabDisplayPng(display, { hideWindows: false });
     if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
     grab.restore();
-    const scaleX = grab.width / target.bounds.width, scaleY = grab.height / target.bounds.height;
-    const lx = absX - target.bounds.x, ly = absY - target.bounds.y;   // box position in the target display's CSS px
-    const x = Math.max(0, Math.min(grab.width - 1, Math.round(lx * scaleX)));
-    const y = Math.max(0, Math.min(grab.height - 1, Math.round(ly * scaleY)));
+    const scaleX = grab.width / display.bounds.width, scaleY = grab.height / display.bounds.height;
+    const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
+    const y = Math.max(0, Math.min(grab.height - 1, Math.round(rect.y * scaleY)));
     const width = Math.max(1, Math.min(grab.width - x, Math.round(rect.width * scaleX)));
     const height = Math.max(1, Math.min(grab.height - y, Math.round(rect.height * scaleY)));
     const cropped = nativeImage.createFromBuffer(grab.buffer).crop({ x, y, width, height });
@@ -674,6 +659,14 @@ ipcMain.on('collage:prepCancel', () => { const r = prepResolve; prepResolve = nu
 let overlayWindow: BrowserWindow | null = null;
 let overlayResolve: ((rect: SelectionRect | null) => void) | null = null;
 
+// v2.1 round 311 (Terry) — MULTI-DISPLAY region capture: one overlay window PER monitor.
+// Round 310's single window spanning all monitors didn't work — Terry couldn't select on his
+// 2nd screen and the capture hung (a transparent window spanning displays is unreliable on
+// Windows, esp. mixed VGA/DVI). Each window is single-screen; whichever one the user draws on
+// wins, and the rect comes back in that display's own CSS pixels.
+let multiOverlayWins: Array<{ win: BrowserWindow; display: Electron.Display }> = [];
+let multiOverlayResolve: ((r: { rect: SelectionRect; display: Electron.Display } | null) => void) | null = null;
+
 /** Resolve the pending overlay promise exactly once and tear the
  *  overlay window down. null = cancelled (Esc / blur / closed). */
 function finishOverlay(rect: SelectionRect | null): void {
@@ -687,19 +680,72 @@ function finishOverlay(rect: SelectionRect | null): void {
   if (resolve) resolve(rect);
 }
 
+/** Resolve the multi-display overlay once and close EVERY per-monitor window. */
+function finishMultiOverlay(result: { rect: SelectionRect; display: Electron.Display } | null): void {
+  const resolve = multiOverlayResolve;
+  multiOverlayResolve = null;
+  const wins = multiOverlayWins;
+  multiOverlayWins = [];
+  for (const w of wins) { if (!w.win.isDestroyed()) { try { w.win.close(); } catch { /* non-fatal */ } } }
+  if (resolve) resolve(result);
+}
+
 // Selection events from the overlay page. Registered once at module
 // load; the sender check pins them to the live overlay so a stale or
 // spoofed renderer can't complete someone else's selection.
 ipcMain.on('capture:overlay-select', (event, rect: SelectionRect) => {
   if (overlayWindow && !overlayWindow.isDestroyed() && event.sender === overlayWindow.webContents) {
     finishOverlay(rect && rect.width >= 1 && rect.height >= 1 ? rect : null);
+    return;
   }
+  const m = multiOverlayWins.find((w) => !w.win.isDestroyed() && w.win.webContents === event.sender);
+  if (m && rect && rect.width >= 1 && rect.height >= 1) finishMultiOverlay({ rect, display: m.display });
 });
 ipcMain.on('capture:overlay-cancel', (event) => {
   if (overlayWindow && !overlayWindow.isDestroyed() && event.sender === overlayWindow.webContents) {
     finishOverlay(null);
+    return;
   }
+  if (multiOverlayWins.some((w) => !w.win.isDestroyed() && w.win.webContents === event.sender)) finishMultiOverlay(null);
 });
+
+/**
+ * Open a LIVE region overlay on EVERY display (one window each) and resolve with the rect +
+ * the display it was drawn on. No blur-cancel (the windows cover every screen, so moving the
+ * cursor between them would otherwise self-cancel); Esc on any window cancels them all.
+ */
+function openMultiDisplayOverlay(opts: { adjustable?: boolean }): Promise<{ rect: SelectionRect; display: Electron.Display } | null> {
+  return new Promise((resolve) => {
+    multiOverlayResolve = resolve;
+    multiOverlayWins = [];
+    const displays = screen.getAllDisplays();
+    const cursorDisp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    displays.forEach((d) => {
+      const win = new BrowserWindow({
+        x: d.bounds.x, y: d.bounds.y, width: d.bounds.width, height: d.bounds.height,
+        frame: false, show: false, transparent: true, backgroundColor: '#00000000',
+        resizable: false, movable: false, minimizable: false, maximizable: false,
+        fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
+        webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+      });
+      try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+      try { win.setContentProtection(true); } catch { /* non-fatal */ }
+      win.setMenu(null);
+      const localWindows = enumerateWindowRectsForDisplay(d);
+      multiOverlayWins.push({ win, display: d });
+      win.webContents.once('did-finish-load', () => {
+        if (win.isDestroyed()) return;
+        win.webContents.send('capture:overlay-init', { live: true, adjustable: opts.adjustable === true, windows: localWindows });
+        if (d.id === cursorDisp.id) { win.show(); win.focus(); } else { win.showInactive(); }
+      });
+      // If a window is closed externally and they're ALL gone with nothing selected, cancel.
+      win.on('closed', () => {
+        if (multiOverlayResolve && multiOverlayWins.every((w) => w.win.isDestroyed())) finishMultiOverlay(null);
+      });
+      void win.loadFile(path.join(__dirname, '../dist/public/capture-overlay.html'));
+    });
+  });
+}
 
 /**
  * Frameless always-on-top window covering the target display, showing
