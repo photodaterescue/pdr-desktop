@@ -7957,7 +7957,9 @@
       const cropR = document.createElement('div'); cropR.className = 'chx chx-crop chx-crop-r'; cropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
       const cropT = document.createElement('div'); cropT.className = 'chx chx-crop chx-crop-t'; cropT.setAttribute('data-pdr-tooltip', 'Crop top edge');
       const cropB = document.createElement('div'); cropB.className = 'chx chx-crop chx-crop-b'; cropB.setAttribute('data-pdr-tooltip', 'Crop bottom edge');
-      const rem = document.createElement('div'); rem.className = 'chx chx-remove'; rem.textContent = '×'; rem.setAttribute('data-pdr-tooltip', 'Remove from collage');
+      // v2.1 round 301 (Terry) — the top-right "×" is GONE; that corner is now a normal resize
+      // handle (rTR) like the other three. Delete a tile via the toolbar trash, Delete key, or
+      // by un-ticking it in the strip / Add-photos picker.
       const badge = document.createElement('div'); badge.className = 'chx-lockbadge'; badge.setAttribute('aria-hidden', 'true');
       const tbar = document.createElement('div'); tbar.className = 'chx-toolbar';
       const tbLock = document.createElement('button'); tbLock.type = 'button'; tbLock.className = 'ch-tb-btn chx-tb-lock'; tbLock.setAttribute('data-pdr-tooltip', 'Lock (freeze position / size / rotation)');
@@ -7974,7 +7976,7 @@
       // (like the corners), so they win there over the inset chx-body drag surface.
       box.appendChild(cropL); box.appendChild(cropR); box.appendChild(cropT); box.appendChild(cropB);
       box.appendChild(rTL); box.appendChild(rTR); box.appendChild(rBL); box.appendChild(rBR);
-      box.appendChild(rot); box.appendChild(rem); box.appendChild(badge); box.appendChild(tbar);
+      box.appendChild(rot); box.appendChild(badge); box.appendChild(tbar);
       collageChromeEl.appendChild(box);
       // Route every overlay handle to the existing gesture functions, ALWAYS using the
       // live collageSelected (the overlay is reused for whatever is selected). These
@@ -8002,7 +8004,6 @@
       cropB.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemCrop(collageSelected, e, 'b'); });
       rot.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemRotate(collageSelected, e); });
       rot.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); if (collageSelected && !collageSelected.isBg) snapItemRot90(collageSelected); });
-      rem.addEventListener('pointerdown', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
       tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
       tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLock(collageSelected); });
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) duplicateCollageItem(collageSelected); });
@@ -8109,42 +8110,34 @@
       const exp = collageExportDims();
       const pxX = (sp) => Math.round((sp / c.width) * exp.w);
       const pxY = (sp) => Math.round((sp / c.height) * exp.h);
-      const ml = Math.max(0, r.left - c.left), mr = Math.max(0, c.right - r.right);
-      const mt = Math.max(0, r.top - c.top), mb = Math.max(0, c.bottom - r.bottom);
+      const TOL = 1.5;
       const cyMid = (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2;
       const cxMid = (Math.max(r.left, c.left) + Math.min(r.right, c.right)) / 2;
-      const TOL = 1.5;
-      // v2.1 round 298 (Terry) — SYMMETRY MATCH confirmation. Does this photo's margin equal
-      // ANOTHER photo's OPPOSITE margin (left↔right or top↔bottom)? If so, the matched side
-      // goes green AND we draw the partner photo's matching distance, so the user sees two
-      // equal green numbers = it's confirmed symmetric (not just a guessed snap line).
-      let mH = null, mV = null;   // matched partner margin: { side, x, y, len, val }
-      const dCx = (r.left + r.right) / 2, dCy = (r.top + r.bottom) / 2;
+      // v2.1 round 301 (Terry) — measure to the NEAREST reference per side: a neighbouring
+      // photo's facing edge if one sits between this photo and the page edge AND shares its
+      // band, else the page edge. So a photo right of centre shows the GAP to the photo on its
+      // left (not a long line across to the far edge over another tile), and a photo BETWEEN
+      // two others shows BOTH gaps. Equal left/right (or top/bottom) measures = evenly placed
+      // → both go GREEN (Canva's spacing/distribute feel; the numbers, not just a snap line).
+      const overlapV = (q) => q.top < r.bottom - 1 && q.bottom > r.top + 1;
+      const overlapH = (q) => q.left < r.right - 1 && q.right > r.left + 1;
+      let leftRef = c.left, rightRef = c.right, topRef = c.top, botRef = c.bottom;
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
         if (!o || !o.el || o.el === it.el || !o.on || o.isBg) continue;
         const q = o.el.getBoundingClientRect();
-        const qL = q.left - c.left, qR = c.right - q.right, qT = q.top - c.top, qB = c.bottom - q.bottom;
-        const qcy = (Math.max(q.top, c.top) + Math.min(q.bottom, c.bottom)) / 2;
-        const qcx = (Math.max(q.left, c.left) + Math.min(q.right, c.right)) / 2;
-        const qCx = (q.left + q.right) / 2, qCy = (q.top + q.bottom) / 2;
-        // v2.1 round 300 (Terry) — OUTER symmetry only. Compare each photo's OUTER edge (the
-        // one nearer ITS OWN page edge) to the partner's outer edge on the opposite side, so
-        // a photo ABOVE another matches TOP-edge↔partner's BOTTOM-edge (top of the top photo ↔
-        // bottom of the bottom photo) — never the inner gap edges. Gated by relative centre so
-        // it's correct whichever photo you drag.
-        if (!mH) {
-          if (dCx <= qCx) { if (ml > 2 && Math.abs(ml - qR) <= TOL) mH = { side: 'left',  x: q.right - s.left, y: qcy - s.top, len: qR, val: pxX(qR) }; }
-          else            { if (mr > 2 && Math.abs(mr - qL) <= TOL) mH = { side: 'right', x: c.left - s.left,  y: qcy - s.top, len: qL, val: pxX(qL) }; }
+        if (overlapV(q)) {
+          if (q.right <= r.left + 1 && q.right > leftRef) leftRef = q.right;     // nearest neighbour to the left
+          if (q.left >= r.right - 1 && q.left < rightRef) rightRef = q.left;     // nearest to the right
         }
-        if (!mV) {
-          if (dCy <= qCy) { if (mt > 2 && Math.abs(mt - qB) <= TOL) mV = { side: 'top',    x: qcx - s.left, y: q.bottom - s.top, len: qB, val: pxY(qB) }; }
-          else            { if (mb > 2 && Math.abs(mb - qT) <= TOL) mV = { side: 'bottom', x: qcx - s.left, y: c.top - s.top,    len: qT, val: pxY(qT) }; }
+        if (overlapH(q)) {
+          if (q.bottom <= r.top + 1 && q.bottom > topRef) topRef = q.bottom;     // nearest above
+          if (q.top >= r.bottom - 1 && q.top < botRef) botRef = q.top;           // nearest below
         }
       }
-      const centeredX = Math.abs(ml - mr) <= TOL, centeredY = Math.abs(mt - mb) <= TOL;
-      const symL = centeredX || (mH && mH.side === 'left'), symR = centeredX || (mH && mH.side === 'right');
-      const symT = centeredY || (mV && mV.side === 'top'), symB = centeredY || (mV && mV.side === 'bottom');
+      const mLeft = Math.max(0, r.left - leftRef), mRight = Math.max(0, rightRef - r.right);
+      const mTop = Math.max(0, r.top - topRef), mBot = Math.max(0, botRef - r.bottom);
+      const balX = Math.abs(mLeft - mRight) <= TOL, balY = Math.abs(mTop - mBot) <= TOL;
       const line = (el, x, y, len, horiz, sym) => {
         el.classList.toggle('sym', !!sym);
         el.style.left = x + 'px'; el.style.top = y + 'px';
@@ -8158,19 +8151,16 @@
         el.textContent = String(val);
         el.style.display = val > 0 ? 'block' : 'none';
       };
-      line(els.lL, c.left - s.left, cyMid - s.top, ml, true, symL);
-      badge(els.bL, c.left + ml / 2 - s.left, cyMid - s.top, pxX(ml), symL);
-      line(els.lR, r.right - s.left, cyMid - s.top, mr, true, symR);
-      badge(els.bR, r.right + mr / 2 - s.left, cyMid - s.top, pxX(mr), symR);
-      line(els.lT, cxMid - s.left, c.top - s.top, mt, false, symT);
-      badge(els.bT, cxMid - s.left, c.top + mt / 2 - s.top, pxY(mt), symT);
-      line(els.lB, cxMid - s.left, r.bottom - s.top, mb, false, symB);
-      badge(els.bB, cxMid - s.left, r.bottom + mb / 2 - s.top, pxY(mb), symB);
-      // PARTNER margins — green, only when matched with another photo.
-      if (mH) { line(els.lPh, mH.x, mH.y, mH.len, true, true); badge(els.bPh, mH.x + mH.len / 2, mH.y, mH.val, true); }
-      else { els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; }
-      if (mV) { line(els.lPv, mV.x, mV.y, mV.len, false, true); badge(els.bPv, mV.x, mV.y + mV.len / 2, mV.val, true); }
-      else { els.lPv.style.display = 'none'; els.bPv.style.display = 'none'; }
+      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, balX);
+      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), balX);
+      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, balX);
+      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), balX);
+      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, balY);
+      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), balY);
+      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, balY);
+      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), balY);
+      // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
+      els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
       collageChromeEl.classList.add('active');
     }
     function positionSelectionChrome() {
@@ -10695,9 +10685,11 @@
         for (let i = nFiles; i < collageItems.length; i++) {
           const it = collageItems[i];
           if (!it || it.isBg || !it.path || have.has(i)) continue;
+          // v2.1 round 301 (Terry) — APPEND (don't insertBefore the Add-photos button): that
+          // button is position:sticky;left:0 and must stay the FIRST child to pin left, so
+          // added thumbs go at the END after the files[] thumbs (Add photos stays on the left).
           const thumb = makeCollageAddedThumb(i, it.path);
-          if (addBtn && addBtn.parentNode === filmstripEl) filmstripEl.insertBefore(thumb, addBtn);
-          else filmstripEl.appendChild(thumb);
+          filmstripEl.appendChild(thumb);
         }
         filmstripEl.querySelectorAll('[data-idx]').forEach((t) => {
           const i = parseInt(t.dataset.idx, 10);
