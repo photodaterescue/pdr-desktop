@@ -2413,6 +2413,13 @@
     #collage-chrome .chx-multi-ring { position: absolute; transform-origin: 50% 50%; pointer-events: none; outline: 2px solid #FEC242; outline-offset: 0; box-shadow: 0 0 0 1px rgba(20,18,38,0.55); display: none; }
     #collage-group-box { position: absolute; pointer-events: none; border: 1.5px dashed rgba(254,194,66,0.95); border-radius: 4px; background: rgba(254,194,66,0.05); display: none; }
     #collage-group-box .cgb-count { position: absolute; left: -1px; top: -21px; background: #FEC242; color: #1a1830; font-size: 10.5px; font-weight: 700; letter-spacing: 0.01em; padding: 3px 7px; border-radius: 5px 5px 5px 0; white-space: nowrap; box-shadow: 0 2px 6px rgba(0,0,0,0.35); }
+    /* v2.1 round 296 (Terry) — MEASUREMENT badges: the px distance from a dragged/resized
+       photo's edges to the page edges (Canva-style), for symmetry confidence. Drawn in
+       #collage-chrome (un-clipped, over the stage). Opposite margins that MATCH turn green. */
+    #collage-chrome .cm-line { position: absolute; background: rgba(254,194,66,0.8); pointer-events: none; display: none; z-index: 9; }
+    #collage-chrome .cm-line.sym { background: rgba(91,224,160,0.9); }
+    #collage-chrome .cm-badge { position: absolute; transform: translate(-50%, -50%); background: #FEC242; color: #1a1830; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,0.4); display: none; z-index: 10; }
+    #collage-chrome .cm-badge.sym { background: #5be0a0; }
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
@@ -8036,6 +8043,70 @@
       collageChromeEl.classList.add('active');
       return true;
     }
+    // ─── v2.1 round 296 (Terry) — MEASUREMENT badges (symmetry confidence) ─────────
+    // While a SINGLE photo is dragged / resized, show the px distance from each of its
+    // edges to the matching page edge (Canva-style). Numbers are in EXPORT px (the final
+    // image's resolution), so "left 540 / right 540" tells you it's truly centred — snap
+    // lines aren't gospel, the numbers are. Opposite margins that MATCH turn green. Lives
+    // in #collage-chrome (un-clipped). Hidden on drop, and for a multi-selection.
+    let collageMeasureEls = null;
+    function ensureMeasureEls() {
+      if (collageMeasureEls || !collageChromeEl) return collageMeasureEls;
+      const mk = (cls) => { const d = document.createElement('div'); d.className = cls; collageChromeEl.appendChild(d); return d; };
+      collageMeasureEls = {
+        lL: mk('cm-line'), lR: mk('cm-line'), lT: mk('cm-line'), lB: mk('cm-line'),
+        bL: mk('cm-badge'), bR: mk('cm-badge'), bT: mk('cm-badge'), bB: mk('cm-badge'),
+      };
+      return collageMeasureEls;
+    }
+    function hideCollageMeasurements() {
+      if (!collageMeasureEls) return;
+      Object.keys(collageMeasureEls).forEach((k) => { collageMeasureEls[k].style.display = 'none'; });
+    }
+    function collageExportDims() {
+      if (collageExportPx && collageExportPx.w && collageExportPx.h) return { w: collageExportPx.w, h: collageExportPx.h };
+      const a = getCanvasAspect();
+      return a >= 1 ? { w: 2000, h: Math.round(2000 / a) } : { w: Math.round(2000 * a), h: 2000 };
+    }
+    function showCollageMeasurements(it) {
+      if (!it || it.isBg || !it.el || !collageChromeEl || !collageCanvasEl || !collageStageEl) { hideCollageMeasurements(); return; }
+      if (collageSelection && collageSelection.length > 1) { hideCollageMeasurements(); return; }   // single only
+      const c = collageCanvasEl.getBoundingClientRect();
+      const s = collageStageEl.getBoundingClientRect();
+      const r = it.el.getBoundingClientRect();
+      if (!c.width || !c.height) { hideCollageMeasurements(); return; }
+      const els = ensureMeasureEls();
+      const exp = collageExportDims();
+      const pxX = (sp) => Math.round((sp / c.width) * exp.w);
+      const pxY = (sp) => Math.round((sp / c.height) * exp.h);
+      const ml = Math.max(0, r.left - c.left), mr = Math.max(0, c.right - r.right);
+      const mt = Math.max(0, r.top - c.top), mb = Math.max(0, c.bottom - r.bottom);
+      const cyMid = (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2;
+      const cxMid = (Math.max(r.left, c.left) + Math.min(r.right, c.right)) / 2;
+      const symX = Math.abs(ml - mr) <= 1.5, symY = Math.abs(mt - mb) <= 1.5;
+      const line = (el, x, y, len, horiz, sym) => {
+        el.classList.toggle('sym', !!sym);
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        if (horiz) { el.style.width = Math.max(0, len) + 'px'; el.style.height = '1px'; }
+        else { el.style.height = Math.max(0, len) + 'px'; el.style.width = '1px'; }
+        el.style.display = len > 2 ? 'block' : 'none';
+      };
+      const badge = (el, x, y, val, sym) => {
+        el.classList.toggle('sym', !!sym);
+        el.style.left = x + 'px'; el.style.top = y + 'px';
+        el.textContent = String(val);
+        el.style.display = val > 0 ? 'block' : 'none';
+      };
+      line(els.lL, c.left - s.left, cyMid - s.top, ml, true, symX);
+      badge(els.bL, c.left + ml / 2 - s.left, cyMid - s.top, pxX(ml), symX);
+      line(els.lR, r.right - s.left, cyMid - s.top, mr, true, symX);
+      badge(els.bR, r.right + mr / 2 - s.left, cyMid - s.top, pxX(mr), symX);
+      line(els.lT, cxMid - s.left, c.top - s.top, mt, false, symY);
+      badge(els.bT, cxMid - s.left, c.top + mt / 2 - s.top, pxY(mt), symY);
+      line(els.lB, cxMid - s.left, r.bottom - s.top, mb, false, symY);
+      badge(els.bB, cxMid - s.left, r.bottom + mb / 2 - s.top, pxY(mb), symY);
+      collageChromeEl.classList.add('active');
+    }
     function positionSelectionChrome() {
       if (!collageChromeEl || !collageCanvasEl || !collageStageEl) return;
       // v2.1 round 289 (Terry) — a 2+ selection draws floating per-item rings + a group
@@ -10132,10 +10203,12 @@
         if (snap.dy && yLock === null) it.yFrac = Math.max(-ihFrac, Math.min(1 + ihFrac, it.yFrac + snap.dy / cRect.height));
         if (snap.dx || (snap.dy && yLock === null)) renderCollageItem(it);
         showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
+        try { showCollageMeasurements(it); } catch (_) {}   // v2.1 round 296 — live edge-to-page distances
       };
       const up = () => {
         it.el.classList.remove('dragging');
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
+        try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
         // multi-selection collapses to just that tile (Canva behaviour).
         if (dragGroup && !dragMoved) selectCollageItem(it);
@@ -10230,11 +10303,13 @@
         it.yFrac = (corner === 'tl' || corner === 'tr') ? (anchorYFrac - ihFrac) : anchorYFrac;
         renderCollageItem(it);
         showCollageSnapGuides(vGuide, hGuide);   // gold guide on whichever edge snapped (or both null = hidden)
+        try { showCollageMeasurements(it); } catch (_) {}   // v2.1 round 296 — live edge-to-page distances
       };
       // commit is handled by the global collage pointerup listener (one undo per
       // gesture) — same as startItemDrag / startItemRotate.
       const up = () => {
         hideCollageSnapGuides();   // v2.1 round 264 (Terry) — snap: clear guide on drop
+        try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
@@ -10403,9 +10478,11 @@
           }
         }
         showCollageSnapGuides(vGuide, hGuide);
+        try { showCollageMeasurements(it); } catch (_) {}   // v2.1 round 296 — live edge-to-page distances while cropping
       };
       const up = () => {
         hideCollageSnapGuides();   // v2.1 round 293 (Terry) — clear the crop guide on drop
+        try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
