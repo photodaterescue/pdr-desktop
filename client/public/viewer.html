@@ -11280,12 +11280,16 @@
         bgRemovedPath: null, bgRemoveStrength: 50,
         enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
       };
-      placeCenter(it);   // sensible default size + centred, like a normal tile
+      placeCenter(it);   // initial default (the grid below overrides the position)
       collageItems.push(it);
       buildCollageItemEl(it);
-      renderCollageItem(it);
+      // v2.1 round 288 (Terry) — GRID AS DEFAULT: re-tile the whole collage so an
+      // added photo joins a clean grid instead of stacking at the centre (the SS1
+      // problem where 4 added photos landed on top of each other). Re-arranging is
+      // still a deliberate post-step via drag or the Arrange menu.
+      gridArrange();
       // Paint via the shared apply path so the new tile shows immediately + its
-      // <img> loads the picked file (renderCollageItem already set the src, but
+      // <img> loads the picked file (gridArrange already rendered it, but
       // applyTileEnh keeps it consistent with the rest of the app's pipeline).
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
       selectCollageItem(it);
