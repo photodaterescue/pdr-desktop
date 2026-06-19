@@ -529,6 +529,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('photoPick:picked', handler);
       return () => ipcRenderer.removeListener('photoPick:picked', handler);
     },
+    // v2.1 round 299 (Terry) — when Collages is reopened while already open, main focuses the
+    // existing window (no reload, so work is kept) and forwards any newly-selected photos here
+    // to ADD to the current collage rather than replacing it.
+    onExternalAdd: (callback: (files: string[]) => void) => {
+      const handler = (_event: any, p: any) => { if (p && Array.isArray(p.files)) callback(p.files); };
+      ipcRenderer.on('collage:externalAdd', handler);
+      return () => ipcRenderer.removeListener('collage:externalAdd', handler);
+    },
     // v2.1 round 162 (Terry) — one-shot back-fill of existing collages into
     // the "PDR Collages" album.
     backfillAlbum: () =>

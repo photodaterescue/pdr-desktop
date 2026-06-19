@@ -11489,6 +11489,22 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     const existing = isCollage ? collageWindow : viewerWindow;
     // Reuse the existing window OF THIS KIND.
     if (existing && !existing.isDestroyed()) {
+      // v2.1 round 299 (Terry) — DATA-LOSS FIX: reopening Collages while one is already open
+      // must NOT reload the window — that wiped the in-progress, unsaved collage. For a
+      // collage we just FOCUS the existing window; if new photos were selected, we ADD them
+      // to the current collage (non-destructive) instead of replacing it. The Viewer keeps
+      // its reuse+reload below (a viewer has no editable state to lose).
+      if (isCollage) {
+        collageLoadInFlight = false;   // focus-only reuse — no load to wait on
+        if (Array.isArray(filePaths) && filePaths.length) {
+          try { existing.webContents.send('collage:externalAdd', { files: filePaths }); } catch { /* noop */ }
+        }
+        if (existing.isMinimized()) existing.restore();
+        existing.show();
+        existing.moveTop();
+        existing.focus();
+        return { success: true };
+      }
       pendingByWc.set(existing.webContents.id, payload);
       releaseOn(existing);
       // v2.1 round 234 (Terry) — crash recovery (wireCrashRecovery) is attached
