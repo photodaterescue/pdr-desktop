@@ -10201,12 +10201,29 @@
       window.addEventListener('pointerup', up);
     }
 
+    // v2.1 round 292 (Terry) — run cb on every OTHER selected editable tile (not the
+    // primary / bg / locked / off). The shared fan-out for edits that live OUTSIDE the enh
+    // path (rotate, background-remove), so "the edit applies to all selected" is universal.
+    function eachOtherSelected(cb) {
+      if (!collageSelected || collageSelected.isBg) return;
+      if (!collageSelection || collageSelection.length <= 1) return;
+      for (const t of collageSelection) {
+        if (!t || t === collageSelected || t.isBg || !t.on || t.locked) continue;
+        try { cb(t); } catch (_) {}
+      }
+    }
     function startItemRotate(it, e) {
       e.preventDefault(); e.stopPropagation();
       // v2.1 round 203 (Terry) — locked tile: select but don't rotate.
       if (it && it.locked) { selectCollageItem(it); return; }
       beginCollageChange();
-      selectCollageItem(it);
+      // v2.1 round 292 (Terry) — rotating a member of a multi-selection rotates the WHOLE
+      // group by the same delta (keep the selection rather than collapse to this tile).
+      const rotGroup = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)
+        ? collageSelection.filter(g => g && !g.isBg && !g.locked && g.on && g !== it).map(g => ({ g: g, r0: g.rot || 0 }))
+        : null;
+      const rotStart0 = it.rot || 0;
+      if (!rotGroup) selectCollageItem(it);
       bringFront(it);
       const rect = collageCanvasEl.getBoundingClientRect();
       const cw = rect.width, ch = rect.height;
@@ -10225,6 +10242,7 @@
         it.rot = deg;
         renderCollageItem(it);
         updateAngleSlider();
+        if (rotGroup) { const d = deg - rotStart0; rotGroup.forEach(m => { m.g.rot = m.r0 + d; renderCollageItem(m.g); }); }   // v2.1 round 292 — rotate the group by the same delta
       };
       const up = () => {
         window.removeEventListener('pointermove', move);
@@ -10241,11 +10259,12 @@
       if (!it || it.isBg) return;
       if (it.locked) { selectCollageItem(it); return; }
       beginCollageChange();
-      selectCollageItem(it);
-      let r = Math.round((it.rot || 0) / 90) * 90;
-      r = ((r % 360) + 360) % 360;
-      it.rot = r;
-      renderCollageItem(it);
+      // v2.1 round 292 (Terry) — snap EVERY selected tile to ITS OWN nearest 90° (keep the
+      // multi-selection); a single selection is unchanged.
+      const isGroup = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0);
+      if (!isGroup) selectCollageItem(it);
+      const snap90 = (x) => { if (!x || x.isBg || x.locked || !x.on) return; let r = Math.round((x.rot || 0) / 90) * 90; x.rot = ((r % 360) + 360) % 360; renderCollageItem(x); };
+      if (isGroup) collageSelection.forEach(snap90); else snap90(it);
       updateAngleSlider();
       commitCollageChange();
     }
@@ -13548,6 +13567,26 @@
     // v2.1 round 175 (Terry) — re-tune an existing cut-out to a new strength.
     // The worker caches the AI mask, so this is fast (no ~9s re-run). bgPending
     // coalesces drags that arrive while a re-tune is already in flight.
+    // v2.1 round 292 (Terry) — re-tune the cut-out strength for EVERY selected tile that has
+    // a cut-out (multi-select). Sequential (one worker call at a time); coalesces drags via
+    // bgMultiPending. Single-selection keeps using applyBgStrengthChange below.
+    let bgMultiBusy = false, bgMultiPending = null;
+    async function retuneSelectionStrength(strength) {
+      const tiles = (collageMode && collageSelection && collageSelection.length > 1)
+        ? collageSelection.filter(t => t && !t.isBg && t.on && !t.locked && t.bgRemovedPath) : [];
+      if (!tiles.length) return;
+      if (bgMultiBusy || bgRemoveBusy) { bgMultiPending = strength; return; }
+      bgMultiBusy = true; bgRemoveBusy = true; syncBgRemoveBtn();
+      beginCollageChange();
+      for (const t of tiles) {
+        setBgRemoveStatus('Re-tuning the cut-outs…');
+        let res; try { res = await window.pdr.viewer.removeBackground({ filePath: t.path, strength: strength }); } catch (_) { res = null; }
+        if (res && res.success && res.outputPath) { t.bgRemovedPath = res.outputPath; t.bgRemoveStrength = strength; if (t.imgEl) t.imgEl.src = getFileSrc(res.outputPath); renderCollageItem(t); }
+      }
+      bgMultiBusy = false; bgRemoveBusy = false;
+      commitCollageChange(); syncBgRemoveBtn(); setBgRemoveStatus('');
+      if (bgMultiPending != null && bgMultiPending !== strength) { const p = bgMultiPending; bgMultiPending = null; retuneSelectionStrength(p); } else bgMultiPending = null;
+    }
     let bgPendingStrength = null;
     async function applyBgStrengthChange(it, strength) {
       if (!it || !it.bgRemovedPath) return;
@@ -13590,42 +13629,50 @@
       // v2.1 round 173 (Terry) — Remove / restore the selected tile's background.
       const bgBtn = document.getElementById('tile-bgremove');
       if (bgBtn) bgBtn.addEventListener('click', async () => {
-        const it = getBgTarget();
-        if (!it || it.isBg || isVideoPath(it.path) || bgRemoveBusy) return;
-        if (collageMode && it.locked) return;   // v2.1 round 203 — appearance lock: a locked collage tile keeps its background as-is
-        // Already cut out → restore the original photo.
-        if (it.bgRemovedPath) {
+        const primary = getBgTarget();
+        if (!primary || primary.isBg || isVideoPath(primary.path) || bgRemoveBusy) return;
+        if (collageMode && primary.locked) return;   // v2.1 round 203 — appearance lock: a locked collage tile keeps its background as-is
+        // v2.1 round 292 (Terry) — multi-select: Remove/Restore acts on the WHOLE selection
+        // (he hit "only one had its background removed"). The primary picks the direction; a
+        // single selection is byte-identical to before. Locked / video / bg tiles excluded.
+        const targets = (collageMode && collageSelection && collageSelection.length > 1)
+          ? collageSelection.filter(t => t && !t.isBg && t.on && !t.locked && t.path && !isVideoPath(t.path))
+          : [primary];
+        // Already cut out (by the primary) → restore the originals across the selection.
+        if (primary.bgRemovedPath) {
           beginCollageChange();
-          it.bgRemovedPath = null;
-          if (it.imgEl) it.imgEl.src = getFileSrc(it.path);
-          renderCollageItem(it);
+          targets.forEach(t => { if (t.bgRemovedPath) { t.bgRemovedPath = null; if (t.imgEl) t.imgEl.src = getFileSrc(t.path); renderCollageItem(t); } });
           commitCollageChange();
           syncBgRemoveBtn();
           return;
         }
-        // Run the on-device cut-out (takes a few seconds the first time).
-        const s = (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50;
+        // Run the on-device cut-out for each target that doesn't have one yet (sequential —
+        // the worker handles one at a time; first run takes a few seconds each).
+        const todo = targets.filter(t => !t.bgRemovedPath);
+        if (!todo.length) { syncBgRemoveBtn(); return; }
         bgRemoveBusy = true; syncBgRemoveBtn();
-        setBgRemoveStatus('Removing background… this takes a few seconds.');
-        let res;
-        try { res = await window.pdr.viewer.removeBackground({ filePath: it.path, strength: s }); }
-        catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
-        bgRemoveBusy = false;
-        if (res && res.success && res.outputPath) {
-          beginCollageChange();
-          it.bgRemovedPath = res.outputPath;
-          it.bgRemoveStrength = s;
-          if (it.imgEl) it.imgEl.src = getFileSrc(res.outputPath);
-          renderCollageItem(it);
-          commitCollageChange();
-          syncBgRemoveBtn();
-        } else if (res && res.requiresInstall) {
-          syncBgRemoveBtn();
-          setBgRemoveStatus('First install the Background-remover model in Settings → AI.');
-        } else {
-          syncBgRemoveBtn();
-          setBgRemoveStatus("Couldn't remove the background" + (res && res.error ? ': ' + res.error : '.'));
+        beginCollageChange();
+        let anyOk = false, reqInstall = false, lastErr = null;
+        for (let i = 0; i < todo.length; i++) {
+          const t = todo[i];
+          setBgRemoveStatus(todo.length > 1 ? ('Removing background ' + (i + 1) + ' of ' + todo.length + '… a few seconds each.') : 'Removing background… this takes a few seconds.');
+          const s = (typeof t.bgRemoveStrength === 'number') ? t.bgRemoveStrength : 50;
+          let res;
+          try { res = await window.pdr.viewer.removeBackground({ filePath: t.path, strength: s }); }
+          catch (err) { res = { success: false, error: (err && err.message) ? err.message : String(err) }; }
+          if (res && res.success && res.outputPath) {
+            t.bgRemovedPath = res.outputPath; t.bgRemoveStrength = s;
+            if (t.imgEl) t.imgEl.src = getFileSrc(res.outputPath);
+            renderCollageItem(t); anyOk = true;
+          } else if (res && res.requiresInstall) { reqInstall = true; }
+          else { lastErr = res && res.error; }
         }
+        bgRemoveBusy = false;
+        commitCollageChange();
+        syncBgRemoveBtn();
+        if (reqInstall && !anyOk) setBgRemoveStatus('First install the Background-remover model in Settings → AI.');
+        else if (!anyOk) setBgRemoveStatus("Couldn't remove the background" + (lastErr ? ': ' + lastErr : '.'));
+        else setBgRemoveStatus('');
       });
       // v2.1 round 175 (Terry) — Cut-out strength slider: live label on input,
       // debounced re-tune (250ms) so dragging doesn't fire a call per pixel.
@@ -13640,11 +13687,16 @@
           if (bgSliderTimer) clearTimeout(bgSliderTimer);
           // NB: `parseInt(...) || 50` would turn a real 0 into 50 (0 is falsy) —
           // that was the "slider snaps back to the middle at 0" bug.
-          bgSliderTimer = setTimeout(() => { const v = parseInt(bgSlider.value, 10); applyBgStrengthChange(it, isNaN(v) ? 50 : v); }, 250);
+          bgSliderTimer = setTimeout(() => {
+            const v = parseInt(bgSlider.value, 10); const sv = isNaN(v) ? 50 : v;
+            if (collageMode && collageSelection && collageSelection.length > 1) retuneSelectionStrength(sv);   // v2.1 round 292 — re-tune the whole selection
+            else applyBgStrengthChange(it, sv);
+          }, 250);
         });
         bgSlider.addEventListener('dblclick', (e) => {
           e.preventDefault();
           bgSlider.value = '50'; if (bgValEl) bgValEl.textContent = '50';
+          if (collageMode && collageSelection && collageSelection.length > 1) { retuneSelectionStrength(50); return; }   // v2.1 round 292
           const it = getBgTarget();
           if (it && it.bgRemovedPath) applyBgStrengthChange(it, 50);
         });
@@ -13721,6 +13773,7 @@
         collageSelected.rot = ((collageSelected.rot || 0) + 90) % 360;
         renderCollageItem(collageSelected);
         updateAngleSlider();
+        eachOtherSelected(t => { t.rot = (((t.rot || 0) + 90) % 360 + 360) % 360; renderCollageItem(t); });   // v2.1 round 292 — +90 across the selection
       });
       // v2.1 round 182 (Terry) — Background-remover controls are SHARED with the
       // single-photo Viewer; their wiring lives in wireBgRemoveControls() so it
@@ -13735,9 +13788,13 @@
           // v2.1 round 203 (Terry) — a locked tile ignores the Angle slider too
           // (geometry lock). Re-sync the slider to the tile's frozen angle.
           if (!collageSelected || collageSelected.isBg || collageSelected.locked) { updateAngleSlider(); return; }
-          collageSelected.rot = parseInt(angleSlider.value, 10) || 0;
-          if (angleVal) angleVal.textContent = (parseInt(angleSlider.value, 10) || 0) + '°';
+          const prevRot = collageSelected.rot || 0;
+          const nextRot = parseInt(angleSlider.value, 10) || 0;
+          collageSelected.rot = nextRot;
+          if (angleVal) angleVal.textContent = nextRot + '°';
           renderCollageItem(collageSelected);
+          const dRot = nextRot - prevRot;   // v2.1 round 292 — rotate the whole selection by the same delta
+          if (dRot) eachOtherSelected(t => { t.rot = (((t.rot || 0) + dRot) % 360 + 360) % 360; renderCollageItem(t); });
         });
         // double-click → upright (0°), matching the other sliders' reset.
         angleSlider.addEventListener('dblclick', (e) => {
@@ -13746,6 +13803,7 @@
           collageSelected.rot = 0;
           renderCollageItem(collageSelected);
           updateAngleSlider();
+          eachOtherSelected(t => { t.rot = 0; renderCollageItem(t); });   // v2.1 round 292 — all upright
         });
       }
       // v2.1 round 144 — undo / redo / refresh on the TOOLBAR + Ctrl+Z/Y.
