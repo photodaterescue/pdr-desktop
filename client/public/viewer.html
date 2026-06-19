@@ -11624,6 +11624,37 @@
       collageAutosaveTimer = setTimeout(() => { collageAutosaveTimer = null; autosaveCollageProject(); }, 1200);
     }
 
+    // Reopen a saved project IN PLACE. The welcome screen always runs inside an already-open
+    // collage window, so reopening just swaps the source file set, rebuilds the originals, then
+    // restores the saved layout — the very same build+restore the editor already trusts for the
+    // initial load + every undo. The outgoing collage was autosaved as its own project, so
+    // replacing it on screen loses nothing.
+    async function reopenCollageProject(id) {
+      try {
+        if (!collageMode || !id) return false;
+        if (!(window.pdr && window.pdr.collage && window.pdr.collage.loadProject)) return false;
+        const r = await window.pdr.collage.loadProject(id);
+        if (!r || !r.success || !r.project) return false;
+        const p = r.project;
+        // Validate the snapshot BEFORE touching the live canvas, so a corrupt record can never
+        // leave a half-rebuilt collage on screen.
+        try { JSON.parse(p.snapshot); } catch (_) { return false; }
+        if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+        collageRestoring = true;
+        try {
+          files = Array.isArray(p.files) ? p.files.slice() : [];
+          collageUndo.length = 0; collageRedo.length = 0;   // fresh history for the reopened project
+          buildCollageItems();                 // rebuild the per-file originals from the new files[]
+          restoreCollageSnapshot(p.snapshot);  // geometry + clones + text + bg + canvas size
+        } finally { collageRestoring = false; }
+        // This window now IS this project — subsequent autosaves overwrite it in place.
+        currentCollageProjectId = p.id || id;
+        currentCollageProjectName = p.name || null;
+        try { updateUndoButtons(); } catch (_) {}
+        return true;
+      } catch (_) { return false; }
+    }
+
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
