@@ -560,50 +560,85 @@ export async function captureScreenshot(opts: {
   }
 }
 
-// ─── v2.1 round 303/304 (Terry) — collage "Take screenshot" = REGION capture ────
-// Round 303 grabbed a whole window; Terry: that's wrong — the user is usually
-// looking at ONE picture inside a window and wants just that bit. So this reuses
-// the EXACT region-capture flow behind PDR's title-bar "Capture region" button
-// (freeze the screen, drag a rectangle over the frozen frame, with click-a-window
-// snapping) and routes the CROPPED result into the collage instead of the Library.
-// Workflow: the user arranges their window (e.g. the right Chrome tab) behind PDR
-// first, clicks the chevron, PDR drops away, and they drag a box round the picture.
-export async function captureCollageRegion(): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }> {
-  if (captureInFlight) return { success: false, error: 'A capture is already in progress.' };
+// ─── v2.1 round 303→306 (Terry) — collage "Take screenshot" = PREPARE → REGION ──
+// Evolution: 303 grabbed a whole window (wrong — wanted just a picture in it); 304
+// switched to a region grab but froze the CURRENT screen, so you couldn't first get
+// to the right window/tab; 306 (Terry's pick) splits it in two — PREPARE then CAPTURE:
+//   1) PREPARE — minimise the collage window + float a small "Capture region" bar so
+//      the user can freely switch to the exact window and tab they want.
+//   2) CAPTURE — on the bar's button, freeze that screen + run the SAME region overlay
+//      as the title-bar Capture region (drag a box, click-a-window snap), crop, and add
+//      the crop to the collage. The crop is a collage ingredient (NOT added to Library).
+let prepBarWindow: BrowserWindow | null = null;
+let prepResolve: ((go: boolean) => void) | null = null;
+let prepMinimized: BrowserWindow | null = null;   // the collage window we minimised, to restore after
+
+function closePrepBar(): void {
+  if (prepBarWindow && !prepBarWindow.isDestroyed()) { try { prepBarWindow.close(); } catch { /* non-fatal */ } }
+  prepBarWindow = null;
+}
+function restorePrepWindow(): void {
+  if (prepMinimized && !prepMinimized.isDestroyed()) { try { prepMinimized.restore(); prepMinimized.focus(); } catch { /* non-fatal */ } }
+  prepMinimized = null;
+}
+
+export async function captureCollageRegion(
+  callingWin: BrowserWindow | null,
+): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }> {
+  if (captureInFlight || prepBarWindow) return { success: false, error: 'A screenshot is already being set up.' };
+  // ── PHASE 1: PREPARE ── minimise the collage window so the user can navigate, then
+  // wait for them to click Capture (or Cancel) on the floating bar.
+  prepMinimized = callingWin && !callingWin.isDestroyed() ? callingWin : null;
+  if (prepMinimized) { try { prepMinimized.minimize(); } catch { /* non-fatal */ } }
+  const go = await new Promise<boolean>((resolve) => {
+    prepResolve = resolve;
+    const disp = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+    const W = 470, H = 70;
+    const bx = Math.round(disp.bounds.x + (disp.bounds.width - W) / 2);
+    const by = Math.round(disp.bounds.y + disp.bounds.height - H - 56);
+    const bar = new BrowserWindow({
+      x: bx, y: by, width: W, height: H, frame: false, transparent: true, resizable: false,
+      movable: true, minimizable: false, maximizable: false, fullscreenable: false,
+      skipTaskbar: true, alwaysOnTop: true, show: false,
+      webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+    });
+    prepBarWindow = bar;
+    try { bar.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+    bar.once('closed', () => { const r = prepResolve; prepResolve = null; prepBarWindow = null; if (r) r(false); });
+    bar.webContents.once('did-finish-load', () => { if (!bar.isDestroyed()) bar.showInactive(); });   // showInactive: don't steal focus from the user's navigating
+    void bar.loadFile(path.join(__dirname, '../dist/public/capture-prep-bar.html'));
+  });
+  closePrepBar();
+  if (!go) { restorePrepWindow(); return { success: false, cancelled: true }; }
+  // ── PHASE 2: CAPTURE ── the user has navigated; freeze the screen under the cursor
+  // and run the region overlay, exactly like the title-bar Capture region.
   captureInFlight = true;
   try {
-    // Display under the cursor — the screen the user is working on. No display-pick
-    // step; the region overlay covers that one screen (same as a hotkey grab).
+    await sleep(160);   // let the prep bar fully disappear before the freeze, so it isn't in the frame
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    // Freeze NOW (PDR hidden), enumerate windows in the same frozen moment for snap.
     const grab = await grabDisplayPng(display, { includeWindows: true });
-    if (!grab) return { success: false, error: 'Could not capture the screen.' };
+    if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
     const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
     let rect: SelectionRect | null = null;
-    try {
-      rect = await openRegionOverlay(display, dataUrl, grab.windows, grab.restore);
-    } finally {
-      grab.restore();   // idempotent — belt-and-braces if the overlay never showed
-    }
-    if (!rect) return { success: false, cancelled: true };   // Esc / blur — caller stays silent
-    // Overlay coords are display CSS px; the frozen frame is native px — scale/clamp.
-    const scaleX = grab.width / display.bounds.width;
-    const scaleY = grab.height / display.bounds.height;
+    try { rect = await openRegionOverlay(display, dataUrl, grab.windows, grab.restore); }
+    finally { grab.restore(); }
+    if (!rect) { restorePrepWindow(); return { success: false, cancelled: true }; }
+    const scaleX = grab.width / display.bounds.width, scaleY = grab.height / display.bounds.height;
     const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
     const y = Math.max(0, Math.min(grab.height - 1, Math.round(rect.y * scaleY)));
     const width = Math.max(1, Math.min(grab.width - x, Math.round(rect.width * scaleX)));
     const height = Math.max(1, Math.min(grab.height - y, Math.round(rect.height * scaleY)));
     const cropped = nativeImage.createFromBuffer(grab.buffer).crop({ x, y, width, height });
-    if (cropped.isEmpty()) return { success: false, error: 'The selected area was empty.' };
-    // Persist to a stable per-user folder (survives OS temp sweeps; the collage tile
-    // references it by path). NOT added to the Library — it's a collage ingredient.
+    if (cropped.isEmpty()) { restorePrepWindow(); return { success: false, error: 'The selected area was empty.' }; }
     const dir = path.join(app.getPath('userData'), 'collage-captures');
     try { fs.mkdirSync(dir, { recursive: true }); } catch { /* non-fatal */ }
     const stamp = new Date().toISOString().replace(/[:.]/g, '-');
     const filePath = path.join(dir, `Screenshot_${stamp}.png`);
     fs.writeFileSync(toLongPath(filePath), cropped.toPNG());
+    restorePrepWindow();   // bring the collage window back; the renderer adds the tile
     return { success: true, filePath };
   } catch (err) {
+    restorePrepWindow();
     log.warn(`[capture] collage region capture failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
   } finally {
@@ -611,9 +646,12 @@ export async function captureCollageRegion(): Promise<{ success: boolean; filePa
   }
 }
 
-ipcMain.handle('collage:captureRegion', async () => {
-  return await captureCollageRegion();
+ipcMain.handle('collage:captureRegion', async (event) => {
+  return await captureCollageRegion(BrowserWindow.fromWebContents(event.sender) || null);
 });
+// Floating prep-bar buttons resolve PHASE 1.
+ipcMain.on('collage:prepCapture', () => { const r = prepResolve; prepResolve = null; if (r) r(true); });
+ipcMain.on('collage:prepCancel', () => { const r = prepResolve; prepResolve = null; if (r) r(false); });
 
 // ─── Region selection overlay ────────────────────────────────────────────────
 

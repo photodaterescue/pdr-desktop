@@ -548,6 +548,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:captureRegion') as Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>,
   },
 
+  // v2.1 round 306 (Terry) — the floating "Capture region" prep bar (its own tiny
+  // window, loaded with this preload). Its two buttons resolve the prepare phase.
+  captureBar: {
+    capture: () => ipcRenderer.send('collage:prepCapture'),
+    cancel: () => ipcRenderer.send('collage:prepCancel'),
+  },
+
   // v2.1 round 142 (Terry) — shared photo-picker mode (main React window
   // side). The main window enters pick mode when 'photoPick:start' fires,
   // delivers the chosen photo, or cancels.
