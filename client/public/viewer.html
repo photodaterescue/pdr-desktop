@@ -9947,6 +9947,40 @@
       ov.classList.toggle('open', open);
     }
 
+    // v2.1 round 291 (Terry) — group-move snapping. Like computeDragSnap but the snap
+    // SOURCE is the whole selection's bounding box (left/centre/right + top/centre/bottom),
+    // and the moving members are EXCLUDED from the candidate lines (they travel together).
+    // Candidates: canvas edges/centre, every OTHER tile/text edge + centre, and (carousel)
+    // page boundaries + page centres. dx/dy come back in SCREEN px (÷ rect → fraction by
+    // the caller); guides are canvas-relative screen px (showCollageSnapGuides converts).
+    function computeGroupDragSnap(movingEls, canvasEl, threshold) {
+      const T = threshold || 6;
+      const out = { dx: 0, dy: 0, vGuide: null, hGuide: null };
+      if (!movingEls || !movingEls.length || !canvasEl) return out;
+      const cRect = canvasEl.getBoundingClientRect();
+      if (!cRect.width || !cRect.height) return out;
+      const moving = new Set(movingEls);
+      let gl = Infinity, gt = Infinity, gr = -Infinity, gb = -Infinity;
+      movingEls.forEach((el) => { if (!el) return; const r = el.getBoundingClientRect(); gl = Math.min(gl, r.left - cRect.left); gt = Math.min(gt, r.top - cRect.top); gr = Math.max(gr, r.right - cRect.left); gb = Math.max(gb, r.bottom - cRect.top); });
+      if (!isFinite(gl)) return out;
+      const gcx = (gl + gr) / 2, gcy = (gt + gb) / 2;
+      const vCand = [cRect.width / 2, 0, cRect.width];
+      const hCand = [cRect.height / 2, 0, cRect.height];
+      if (carouselMode) {
+        const N = Math.max(1, carouselPageCount);
+        for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width);
+        for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
+      }
+      for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left); hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top); }
+      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el)) continue; const r = o.el.getBoundingClientRect(); vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left); hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top); }
+      let bV = T + 1; const dX = [gl, gcx, gr];
+      for (let c = 0; c < vCand.length; c++) for (let e = 0; e < dX.length; e++) { const g = Math.abs(dX[e] - vCand[c]); if (g < bV) { bV = g; out.dx = vCand[c] - dX[e]; out.vGuide = vCand[c]; } }
+      if (bV > T) { out.dx = 0; out.vGuide = null; }
+      let bH = T + 1; const dY = [gt, gcy, gb];
+      for (let c = 0; c < hCand.length; c++) for (let e = 0; e < dY.length; e++) { const g = Math.abs(dY[e] - hCand[c]); if (g < bH) { bH = g; out.dy = hCand[c] - dY[e]; out.hGuide = hCand[c]; } }
+      if (bH > T) { out.dy = 0; out.hGuide = null; }
+      return out;
+    }
     function startItemDrag(it, e) {
       e.preventDefault();
       // v2.1 round 203 (Terry) — a locked tile can't be moved: select it (so its
@@ -10007,10 +10041,26 @@
           if (!dragMoved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;   // below threshold → let a plain click collapse to one
           dragMoved = true;
           const dyEff = (yLock !== null) ? 0 : dy;
+          // Tentative move of the whole group by the same delta (render first so the
+          // group-bbox rects below are current).
           it.xFrac = sx + dx; it.yFrac = sy + dyEff; renderCollageItem(it);
           groupStarts.forEach(m => { m.g.xFrac = m.sx + dx; m.g.yFrac = m.sy + dyEff; renderCollageItem(m.g); });
+          // v2.1 round 291 (Terry) — GROUP SNAP: align the whole selection's bounding box
+          // to the canvas edges/centre, other (non-selected) tiles/text + their centres, and
+          // carousel page lines — then shift every member by that one offset so they move as
+          // a block. ALT bypasses (free drop). Shift still locks the Y axis + its guide.
+          let gv = null, gh = null;
+          if (!ev.altKey) {
+            const cRect = collageCanvasEl.getBoundingClientRect();
+            const movingEls = [it.el].concat(groupStarts.map(m => m.g.el));
+            const gs = computeGroupDragSnap(movingEls, collageCanvasEl, 6);
+            if (gs.dx && cRect.width) { const fdx = gs.dx / cRect.width; it.xFrac += fdx; groupStarts.forEach(m => { m.g.xFrac += fdx; }); }
+            if (gs.dy && yLock === null && cRect.height) { const fdy = gs.dy / cRect.height; it.yFrac += fdy; groupStarts.forEach(m => { m.g.yFrac += fdy; }); }
+            if (gs.dx || (gs.dy && yLock === null)) { renderCollageItem(it); groupStarts.forEach(m => renderCollageItem(m.g)); }
+            gv = gs.vGuide; gh = (yLock === null) ? gs.hGuide : null;
+          }
           try { positionSelectionChrome(); } catch (_) {}
-          hideCollageSnapGuides();
+          showCollageSnapGuides(gv, gh);
           return;
         }
         const ihFrac = itemHeightFrac(it);
@@ -16105,6 +16155,9 @@ function zoomTo(newZoom, centreX, centreY) {
             return;
           }
           if (collageTile && collageTile.imgEl) {
+            // v2.1 round 291 (Terry) — snapshot the pre-edit enh so multi-edit can
+            // propagate ONLY what just changed (keeping each other tile's untouched settings).
+            const prevEnh = collageTile.enh ? Object.assign({}, collageTile.enh) : null;
             applyFilterToEl(collageTile.imgEl, state, filterStr, collageTile.el);
             collageTile.enh = {
               brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
@@ -16115,21 +16168,28 @@ function zoomTo(newZoom, centreX, centreY) {
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
             if (!collageTile.isBg) renderCollageItem(collageTile);
-            // v2.1 round 290 (Terry) — MULTI-EDIT: with 2+ tiles selected, mirror this
-            // tile's LOOK (the filter / tone / colour fields) onto the other selected
-            // tiles so "make them all B&W" works in one click. Frame / corners / opacity /
-            // flip stay per-tile (those are layout, not a look). Single selection → no-op,
-            // so ordinary one-tile editing is byte-identical. Locked + bg tiles are skipped.
+            // v2.1 round 291 (Terry) — MULTI-EDIT: with 2+ tiles selected, apply WHATEVER
+            // just changed to every other selected tile — Fade/opacity, frame, corners,
+            // flip, blend, levels, Look — NOT a hand-picked list (Terry: "I don't want to
+            // tell you the individual edits"). Only fields that differ from the pre-edit enh
+            // propagate, so each tile keeps its untouched settings. Single selection (length
+            // 1) → no fan-out, so one-tile editing is byte-identical. Locked + bg skipped.
             try {
-              if (!collageTile.isBg && typeof collageSelection !== 'undefined' && collageSelection.length > 1) {
-                const LOOK = ['brightness', 'contrast', 'saturation', 'temperature', 'colour', 'tone'];
-                collageSelection.forEach((t) => {
-                  if (!t || t === collageTile || t.isBg || !t.on || t.locked || !t.imgEl) return;
-                  if (!t.enh) t.enh = {};
-                  LOOK.forEach((k) => { t.enh[k] = collageTile.enh[k]; });
-                  applyFilterToEl(t.imgEl, t.enh, composeFilterString(t.enh), t.el);
-                  renderCollageItem(t);
+              if (!collageTile.isBg && prevEnh && typeof collageSelection !== 'undefined' && collageSelection.length > 1) {
+                const ne = collageTile.enh;
+                const changed = Object.keys(ne).filter((k) => {
+                  const a = ne[k], b = prevEnh[k];
+                  return (Array.isArray(a) || Array.isArray(b)) ? (JSON.stringify(a) !== JSON.stringify(b)) : (a !== b);
                 });
+                if (changed.length) {
+                  collageSelection.forEach((t) => {
+                    if (!t || t === collageTile || t.isBg || !t.on || t.locked || !t.imgEl) return;
+                    if (!t.enh) t.enh = {};
+                    changed.forEach((k) => { t.enh[k] = Array.isArray(ne[k]) ? ne[k].slice() : ne[k]; });
+                    applyFilterToEl(t.imgEl, t.enh, composeFilterString(t.enh), t.el);
+                    renderCollageItem(t);
+                  });
+                }
               }
             } catch (_) {}
           }
