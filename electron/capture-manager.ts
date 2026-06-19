@@ -610,19 +610,24 @@ export async function captureCollageRegion(
   });
   closePrepBar();
   if (!go) { restorePrepWindow(); return { success: false, cancelled: true }; }
-  // ── PHASE 2: CAPTURE ── the user has navigated; freeze the screen under the cursor
-  // and run the region overlay, exactly like the title-bar Capture region.
+  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil over the real desktop and
+  // let them drag a box, then grab THAT region from a fresh capture.
   captureInFlight = true;
   try {
-    await sleep(160);   // let the prep bar fully disappear before the freeze, so it isn't in the frame
+    await sleep(160);   // let the prep bar fully disappear first
     const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    const grab = await grabDisplayPng(display, { includeWindows: true });
-    if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
-    const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-    let rect: SelectionRect | null = null;
-    try { rect = await openRegionOverlay(display, dataUrl, grab.windows, grab.restore); }
-    finally { grab.restore(); }
+    // v2.1 round 308 (Terry) — LIVE veil (not a frozen screenshot). The frozen overlay pasted a
+    // captured taskbar ON TOP of the real one ("two taskbars", and the real one stayed clickable
+    // beneath — Terry's report). A transparent veil over the REAL desktop shows just one taskbar
+    // and reads as the live screen. The content is static (they navigated to it), so we grab the
+    // selected region from a fresh capture once the box is drawn. enumerate windows for snap.
+    const windows = enumerateWindowRectsForDisplay(display);
+    const rect = await openRegionOverlay(display, null, windows, undefined, { live: true });
     if (!rect) { restorePrepWindow(); return { success: false, cancelled: true }; }
+    // Grab the live desktop AS-IS (the collage window is minimised; the user's content is on top).
+    const grab = await grabDisplayPng(display, { hideWindows: false });
+    if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
+    grab.restore();
     const scaleX = grab.width / display.bounds.width, scaleY = grab.height / display.bounds.height;
     const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
     const y = Math.max(0, Math.min(grab.height - 1, Math.round(rect.y * scaleY)));
