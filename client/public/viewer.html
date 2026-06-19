@@ -1342,91 +1342,68 @@
        Hidden in the single-photo viewer; shown only in collage mode. Sticky to
        the left edge so it stays put while the pool scrolls. Gold accent to match
        the collage chrome (the strip/title gold from round 179). */
-    /* v2.1 round 303 (Terry) — the Add-photos + Take-screenshot GROUP is the sticky-left
-       anchor now (was the Add-photos button itself); both children pin together while the
-       strip scrolls, and the added-photo thumbs append after the group. */
+    /* v2.1 round 304 (Terry) — Add-photos + Take-screenshot are now ONE pill (Canva
+       "Add page type" SS1): the GROUP carries the dashed-gold border, the two halves
+       sit inside it with NO gap, split by a dashed divider. Add-photos is stacked
+       (icon over label); the chevron half is directly to its right. The group is the
+       sticky-left anchor; added-photo thumbs append after it. */
     #collage-add-group { display: none; }
     body.collage-mode #collage-add-group {
       display: inline-flex;
       align-items: stretch;
-      gap: 6px;
       flex: 0 0 auto;
       position: sticky;
       left: 0;
       z-index: 12;
       align-self: stretch;
       margin-right: 6px;
-    }
-    #collage-add-photos { display: none; }
-    body.collage-mode #collage-add-photos {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      flex: 0 0 auto;
       min-height: 64px;
-      padding: 0 14px;
       border: 1.25px dashed rgba(254, 194, 66, 0.55);
       border-radius: 8px;
       background: #12122a;       /* opaque so scrolling thumbs don't show through */
+      overflow: hidden;          /* clip each half's hover fill to the rounded corners */
+    }
+    #collage-add-photos, #collage-shot-chev { display: none; }
+    body.collage-mode #collage-add-photos {
+      display: inline-flex;
+      flex-direction: column;     /* stacked: icon over label */
+      align-items: center;
+      justify-content: center;
+      gap: 3px;
+      flex: 0 0 auto;
+      padding: 0 14px;
+      border: none;
+      background: transparent;
       color: #FEC242;
-      font-size: 12px;
+      font-size: 11px;
       font-weight: 600;
       letter-spacing: 0.01em;
       white-space: nowrap;
       cursor: pointer;
-      transition: background 120ms, border-color 120ms, color 120ms;
+      transition: background 120ms, color 120ms;
     }
-    body.collage-mode #collage-add-photos:hover {
-      background: #1b1b3a;
-      border-color: rgba(254, 194, 66, 0.9);
-      color: #ffd778;
-    }
-    body.collage-mode #collage-add-photos svg { width: 16px; height: 16px; flex: 0 0 auto; }
-    /* The Take-screenshot chevron — same dashed-gold language, compact, flips on hover
-       (Canva "Add page type" feel). Click opens the window/screen picker. */
-    #collage-shot-chev { display: none; }
+    body.collage-mode #collage-add-photos:hover { background: #1b1b3a; color: #ffd778; }
+    body.collage-mode #collage-add-photos svg { width: 18px; height: 18px; flex: 0 0 auto; }
     body.collage-mode #collage-shot-chev {
       display: inline-flex;
       align-items: center;
       justify-content: center;
       flex: 0 0 auto;
-      width: 42px;
-      min-height: 64px;
+      width: 34px;
       padding: 0;
-      border: 1.25px dashed rgba(254, 194, 66, 0.55);
-      border-radius: 8px;
-      background: #12122a;
+      border: none;
+      border-left: 1.25px dashed rgba(254, 194, 66, 0.55);   /* divider between the two halves */
+      background: transparent;
       color: #FEC242;
       cursor: pointer;
-      transition: background 120ms, border-color 120ms, color 120ms;
+      transition: background 120ms, color 120ms;
     }
-    body.collage-mode #collage-shot-chev:hover {
-      background: #1b1b3a;
-      border-color: rgba(254, 194, 66, 0.9);
-      color: #ffd778;
-    }
+    body.collage-mode #collage-shot-chev:hover { background: #1b1b3a; color: #ffd778; }
     body.collage-mode #collage-shot-chev svg { width: 18px; height: 18px; flex: 0 0 auto; transition: transform 160ms ease; }
     body.collage-mode #collage-shot-chev:hover svg { transform: rotate(180deg); }
-    /* v2.1 round 303 (Terry) — Take-screenshot SOURCE PICKER: a grid of every screen +
-       open window (thumbnails), pick one → it's grabbed full-res and added as a tile. */
-    #collage-shot-picker { position: fixed; inset: 0; z-index: 200000; display: none; align-items: center; justify-content: center; background: rgba(8, 8, 20, 0.74); }
-    #collage-shot-picker.open { display: flex; }
-    #collage-shot-panel { width: min(900px, 92vw); max-height: 84vh; display: flex; flex-direction: column; background: #15152e; border: 1px solid rgba(254,194,66,0.22); border-radius: 14px; box-shadow: 0 18px 60px rgba(0,0,0,0.62); overflow: hidden; }
-    #collage-shot-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; padding: 16px 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-    #collage-shot-head h3 { margin: 0; font-size: 15px; font-weight: 700; color: #f3eefe; letter-spacing: 0.01em; }
-    #collage-shot-head p { margin: 3px 0 0; font-size: 11.5px; color: #9a93b8; }
-    #collage-shot-close { background: rgba(255,255,255,0.06); border: none; color: #cfc8e8; width: 30px; height: 30px; border-radius: 8px; cursor: pointer; font-size: 18px; line-height: 1; display: flex; align-items: center; justify-content: center; flex: 0 0 auto; }
-    #collage-shot-close:hover { background: rgba(255,255,255,0.12); color: #fff; }
-    #collage-shot-grid { padding: 18px 20px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(184px, 1fr)); gap: 14px; }
-    .shot-src { display: flex; flex-direction: column; gap: 8px; background: #1d1d3c; border: 1.5px solid transparent; border-radius: 10px; padding: 8px; cursor: pointer; transition: border-color 120ms, background 120ms, transform 120ms; text-align: left; font: inherit; }
-    .shot-src:hover { border-color: #FEC242; background: #232348; transform: translateY(-1px); }
-    .shot-thumb { width: 100%; aspect-ratio: 16 / 10; border-radius: 6px; background: #0c0c1c center / contain no-repeat; border: 1px solid rgba(255,255,255,0.06); }
-    .shot-meta { display: flex; align-items: center; gap: 7px; min-width: 0; }
-    .shot-icon { width: 16px; height: 16px; flex: 0 0 auto; object-fit: contain; }
-    .shot-name { font-size: 11.5px; color: #d8d2ee; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
-    .shot-badge { font-size: 9px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: #1a1830; background: #FEC242; padding: 1px 5px; border-radius: 5px; flex: 0 0 auto; }
-    #collage-shot-empty { padding: 44px 20px; text-align: center; color: #9a93b8; font-size: 13px; }
-    #collage-shot-busy { display: none; padding: 48px 20px; text-align: center; color: #cfc8e8; font-size: 13.5px; }
+    /* v2.1 round 304 (Terry) — Take-screenshot is now REGION capture (the OS-level
+       region overlay from PDR's Capture region), so the in-app source-picker grid
+       from round 303 is gone — no picker CSS needed. */
     /* v2.1 round 302 (Terry) — Canva-style index number on every collage strip thumb.
        A pure CSS counter (reset on the strip, incremented per .thumb) auto-renumbers as
        thumbs are added/removed, no JS. The sticky "Add photos" button isn't a .thumb so
@@ -1454,6 +1431,27 @@
       pointer-events: none;
       z-index: 3;
     }
+    /* v2.1 round 304 (Terry) — per-thumb X: drop this photo/screenshot from the collage
+       session (tile + thumb go; the file is NOT deleted from disk). Top-right, on hover. */
+    body.collage-mode .filmstrip .thumb .thumb-remove {
+      position: absolute;
+      top: 3px; right: 3px;
+      width: 16px; height: 16px;
+      padding: 0;
+      display: none;
+      align-items: center;
+      justify-content: center;
+      border: none;
+      border-radius: 50%;
+      background: rgba(10, 10, 24, 0.85);
+      color: #fff;
+      font-size: 13px;
+      line-height: 1;
+      cursor: pointer;
+      z-index: 5;
+    }
+    body.collage-mode .filmstrip .thumb:hover .thumb-remove { display: flex; }
+    body.collage-mode .filmstrip .thumb .thumb-remove:hover { background: #e5484d; }
   </style>
 </head>
 <body>
@@ -10092,6 +10090,30 @@
         if (!o || !o.el || o.el === draggedEl) continue;
         pushEdgesWithMirror(o.el.getBoundingClientRect());
       }
+      // v2.1 round 304 (Terry) — DISTRIBUTE snap. The measurement greens when the dragged
+      // tile's gaps to its NEAREST references (a neighbour's facing edge if one shares its
+      // band, else the page edge) are EQUAL — i.e. it's centred between them. Round 297 gave
+      // symmetry + edge snaps, but there was no snap for that "equal gaps / centred between"
+      // case, so the green showed yet the tile didn't stick (Terry: "not configured to do so
+      // from the centre"). Add the MIDPOINT of the nearest L/R (and T/B) refs as a CENTRE
+      // candidate, mirroring showCollageMeasurements' nearest-reference logic exactly.
+      let lRef = 0, rRef = cRect.width, tRef = 0, bRef = cRect.height;
+      for (let i = 0; i < collageItems.length; i++) {
+        const o = collageItems[i];
+        if (!o || !o.el || o.el === draggedEl || !o.on || o.isBg) continue;
+        const q = o.el.getBoundingClientRect();
+        const qL = q.left - cRect.left, qR = q.right - cRect.left, qT = q.top - cRect.top, qB = q.bottom - cRect.top;
+        if (qT < dBottom - 1 && qB > dTop + 1) {           // shares the dragged tile's horizontal band
+          if (qR <= dLeft + 1 && qR > lRef) lRef = qR;      // nearest neighbour to the left
+          if (qL >= dRight - 1 && qL < rRef) rRef = qL;     // nearest to the right
+        }
+        if (qL < dRight - 1 && qR > dLeft + 1) {            // shares the vertical band
+          if (qB <= dTop + 1 && qB > tRef) tRef = qB;       // nearest above
+          if (qT >= dBottom - 1 && qT < bRef) bRef = qT;    // nearest below
+        }
+      }
+      vCand.push((lRef + rRef) / 2);   // dragged CENTRE → midpoint of nearest L/R refs = equal gaps
+      hCand.push((tRef + bRef) / 2);
       // Best snap on X: test the dragged element's left / centre / right against
       // every vertical candidate; keep the smallest gap within threshold.
       let bestVGap = T + 1;
@@ -10786,16 +10808,19 @@
         // thumbs are owned by the chunked builder (touching them double-builds — Terry's 8 thumbs).
         for (let i = nFiles; i < collageItems.length; i++) {
           const it = collageItems[i];
-          if (!it || it.isBg || !it.path || have.has(i)) continue;
+          if (!it || it.isBg || it.removed || !it.path || have.has(i)) continue;   // round 304 — skip X-removed
           // v2.1 round 301 (Terry) — APPEND (don't insertBefore the Add-photos button): that
           // button is position:sticky;left:0 and must stay the FIRST child to pin left, so
           // added thumbs go at the END after the files[] thumbs (Add photos stays on the left).
           const thumb = makeCollageAddedThumb(i, it.path);
           filmstripEl.appendChild(thumb);
         }
+        // Prune thumbs for tiles that no longer exist (undo), backgrounds, OR were X-removed
+        // from this session (round 304) — applies to ORIGINAL files[] thumbs too, not just added.
         filmstripEl.querySelectorAll('[data-idx]').forEach((t) => {
           const i = parseInt(t.dataset.idx, 10);
-          if (i >= nFiles && (!collageItems[i] || collageItems[i].isBg)) t.remove();   // prune orphaned ADDED thumbs only
+          const it = collageItems[i];
+          if (!it || it.isBg || it.removed) t.remove();
         });
       } catch (_) {}
       const thumbs = filmstripEl.querySelectorAll('[data-idx]');
@@ -10803,7 +10828,35 @@
         const i = parseInt(t.dataset.idx, 10);
         const it = collageItems[i];
         t.classList.toggle('collage-off', !!(it && !it.on));
+        ensureCollageThumbX(t);   // round 304 (Terry) — each strip thumb gets an X to drop it from the session
       });
+    }
+    // v2.1 round 304 (Terry) — an X on each collage strip thumb to remove that photo/screenshot
+    // from THIS collage session (the tile + thumb go; the file is NOT deleted from disk — that's
+    // only ever from within PDR proper). Undoable. The X reads data-idx at click time.
+    function ensureCollageThumbX(thumb) {
+      if (!thumb || thumb.querySelector('.thumb-remove')) return;
+      const x = document.createElement('button');
+      x.type = 'button';
+      x.className = 'thumb-remove';
+      x.setAttribute('aria-label', 'Remove from this collage');
+      x.setAttribute('data-pdr-tooltip', 'Remove from this collage');
+      x.setAttribute('data-pdr-tooltip-side', 'top');
+      x.innerHTML = '&times;';
+      x.addEventListener('pointerdown', (e) => { e.stopPropagation(); });   // don't start a thumb drag
+      x.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const i = parseInt(thumb.dataset.idx || '-1', 10);
+        if (i >= 0) removeCollagePhotoFromStrip(i);
+      });
+      thumb.appendChild(x);
+    }
+    function removeCollagePhotoFromStrip(i) {
+      const it = collageItems[i];
+      if (!it || it.isBg) return;
+      setItemOn(it, false);    // snapshots (undo brings it back ON), turns the tile off, deselects, re-renders + strip
+      it.removed = true;       // now prune its thumb on the refresh below
+      updateCollageFilmstrip();
     }
     // v2.1 round 260 (Terry) — carousel wide: render the bottom filmstrip as one thumbnail
     // per SLICE of the live WIDE canvas, plus a trailing "+" add slot. The photo POOL (the
@@ -11471,7 +11524,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -11564,7 +11617,8 @@
       // Apply one snapshot item's geometry/enh/lock onto a live tile (shared by
       // the per-file originals and the rebuilt duplicates below).
       const applySnapItem = (it, si) => {
-        it.on = si.on; it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
+        it.on = si.on; it.removed = !!si.removed;   // round 304 (Terry) — X-removed-from-strip state round-trips
+        it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
         // lack both → a normal tile). boxAspect only matters for coverFill; default to the
         // canvas aspect if a coverFill snapshot somehow lacks it.
@@ -11940,101 +11994,24 @@
       updateCollageFilmstrip();
       commitCollageChange();
     }
-    // ─── v2.1 round 303 (Terry) — Take-screenshot source picker ──────────────────
-    // The "Add photos" chevron opens this: a grid of every screen + open window
-    // (thumbnails, PDR's own excluded). Pick one → main grabs it full-res → it's
-    // added to the collage as a normal tile. Window grabs work even behind PDR.
-    function ensureCollageShotPicker() {
-      let ov = document.getElementById('collage-shot-picker');
-      if (ov) return ov;
-      ov = document.createElement('div');
-      ov.id = 'collage-shot-picker';
-      ov.innerHTML =
-        '<div id="collage-shot-panel" role="dialog" aria-modal="true" aria-label="Take a screenshot">' +
-          '<div id="collage-shot-head">' +
-            '<div><h3>Take a screenshot</h3><p>Pick a window or screen — it\'ll be added to your collage. Windows behind PDR work too.</p></div>' +
-            '<button type="button" id="collage-shot-close" aria-label="Cancel">&times;</button>' +
-          '</div>' +
-          '<div id="collage-shot-err" style="display:none;margin:0 20px;margin-top:14px;padding:9px 12px;border-radius:8px;background:rgba(229,72,77,0.14);border:1px solid rgba(229,72,77,0.4);color:#ffb4b7;font-size:12px;"></div>' +
-          '<div id="collage-shot-busy">Capturing…</div>' +
-          '<div id="collage-shot-grid"></div>' +
-        '</div>';
-      document.body.appendChild(ov);
-      ov.addEventListener('pointerdown', (e) => { if (e.target === ov) closeCollageShotPicker(); });   // backdrop only
-      ov.querySelector('#collage-shot-close').addEventListener('click', closeCollageShotPicker);
-      return ov;
-    }
-    function collageShotKeyHandler(e) {
-      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); closeCollageShotPicker(); }
-    }
-    function closeCollageShotPicker() {
-      const ov = document.getElementById('collage-shot-picker');
-      if (ov) ov.classList.remove('open');
-      document.removeEventListener('keydown', collageShotKeyHandler, true);
-    }
-    async function openCollageShotPicker() {
-      if (!window.pdr || !window.pdr.collage || !window.pdr.collage.listCaptureSources) return;
-      const ov = ensureCollageShotPicker();
-      const grid = ov.querySelector('#collage-shot-grid');
-      const busy = ov.querySelector('#collage-shot-busy');
-      const err = ov.querySelector('#collage-shot-err');
-      err.style.display = 'none';
-      busy.style.display = 'none';
-      grid.style.display = 'grid';
-      grid.innerHTML = '<div id="collage-shot-empty">Finding your windows…</div>';
-      ov.classList.add('open');
-      document.addEventListener('keydown', collageShotKeyHandler, true);
-      let sources = [];
-      try { sources = await window.pdr.collage.listCaptureSources(); } catch (_) { sources = []; }
-      if (!ov.classList.contains('open')) return;   // user closed it while loading
-      if (!sources || !sources.length) {
-        grid.innerHTML = '<div id="collage-shot-empty">No windows or screens were found to capture.</div>';
-        return;
-      }
-      grid.innerHTML = '';
-      sources.forEach((s) => {
-        const tile = document.createElement('button');
-        tile.type = 'button';
-        tile.className = 'shot-src';
-        const thumb = document.createElement('div');
-        thumb.className = 'shot-thumb';
-        if (s.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + s.thumbnailDataUrl + '")';
-        const meta = document.createElement('div');
-        meta.className = 'shot-meta';
-        if (s.appIconDataUrl) { const ic = document.createElement('img'); ic.className = 'shot-icon'; ic.src = s.appIconDataUrl; ic.alt = ''; meta.appendChild(ic); }
-        if (s.type === 'screen') { const b = document.createElement('span'); b.className = 'shot-badge'; b.textContent = 'Screen'; meta.appendChild(b); }
-        const nm = document.createElement('span');
-        nm.className = 'shot-name';
-        nm.textContent = s.name || (s.type === 'screen' ? 'Screen' : 'Window');
-        meta.appendChild(nm);
-        tile.appendChild(thumb);
-        tile.appendChild(meta);
-        tile.addEventListener('click', () => captureCollageShotSource(s));
-        grid.appendChild(tile);
-      });
-    }
-    async function captureCollageShotSource(s) {
-      const ov = document.getElementById('collage-shot-picker');
-      if (!ov) return;
-      const grid = ov.querySelector('#collage-shot-grid');
-      const busy = ov.querySelector('#collage-shot-busy');
-      const err = ov.querySelector('#collage-shot-err');
-      err.style.display = 'none';
-      grid.style.display = 'none';
-      busy.style.display = 'block';
-      busy.textContent = 'Capturing "' + (s.name || 'screen') + '"…';
+    // ─── v2.1 round 304 (Terry) — "Take screenshot" = REGION capture ─────────────
+    // The Add-photos chevron triggers PDR's region capture (the SAME flow as the
+    // title-bar "Capture region"): the screen freezes, the user drags a box round
+    // the picture they want — in whatever window they'd arranged behind PDR (e.g.
+    // a Chrome tab) — and the crop is dropped into the collage as a tile. No in-app
+    // window grid (round 303's approach, which grabbed whole windows — Terry: wrong).
+    let collageShotInFlight = false;
+    async function takeCollageScreenshot() {
+      if (collageShotInFlight) return;
+      if (!window.pdr || !window.pdr.collage || !window.pdr.collage.captureRegion) return;
+      collageShotInFlight = true;
       let res = null;
-      try { res = await window.pdr.collage.captureSource(s.id); } catch (e) { res = { success: false, error: (e && e.message) || 'Capture failed.' }; }
+      try { res = await window.pdr.collage.captureRegion(); } catch (e) { res = { success: false, error: (e && e.message) || 'Capture failed.' }; }
+      collageShotInFlight = false;
       if (res && res.success && res.filePath) {
-        closeCollageShotPicker();
-        try { addPhotoToCollage(res.filePath, true); } catch (_) {}   // noGrid: cascade onto the in-progress layout
-        return;
+        try { addPhotoToCollage(res.filePath, true); } catch (_) {}   // noGrid: cascade onto the layout
       }
-      // Failure — keep the picker open so they can try another source.
-      busy.style.display = 'none';
-      grid.style.display = 'grid';
-      err.textContent = (res && res.error) || 'That window could not be captured. Try another.';
-      err.style.display = 'block';
+      // cancelled (Esc/blur) → silent, by design.
     }
     function deleteCollageSelection() {
       const items = selectedItemsForOp().filter(it => !it.locked);
@@ -14562,7 +14539,7 @@
       const shotChev = document.getElementById('collage-shot-chev');
       if (shotChev && !shotChev.dataset.wired) {
         shotChev.dataset.wired = '1';
-        shotChev.addEventListener('click', (e) => { e.stopPropagation(); openCollageShotPicker(); });
+        shotChev.addEventListener('click', (e) => { e.stopPropagation(); takeCollageScreenshot(); });
       }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
       // layer over it) → select the BACKGROUND so it can be reset/edited and
