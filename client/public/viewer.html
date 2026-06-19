@@ -10057,7 +10057,6 @@
     function computeDragSnap(draggedEl, canvasEl, threshold, opts) {
       const T = threshold || 6;
       const out = { dx: 0, dy: 0, vGuide: null, hGuide: null };
-      const axisLocked = !!(opts && (opts.lockX || opts.lockY));   // round 309 — Shift-drag locks an axis; the 2-axis corner-equal can't apply
       if (!draggedEl || !canvasEl) return out;
       const cRect = canvasEl.getBoundingClientRect();
       if (!cRect.width || !cRect.height) return out;
@@ -10174,12 +10173,26 @@
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
         const hVsPage = hIsLeft ? (lRef <= 0.5) : (rRef >= cRect.width - 0.5);   // chosen H ref is the page edge
         const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
-        if (!axisLocked && vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
-          const m = (vM + hM) / 2;
-          out.dx = hIsLeft ? (m - mL) : (mR - m);
-          out.dy = vIsTop ? (m - mT) : (mB - m);
-          out.vGuide = null; out.hGuide = null;
-          out.pageEq = true;
+        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
+          // v2.1 round 310 (Terry) — with Shift, one axis is LOCKED, so that margin is fixed and
+          // corner-equal becomes a ONE-axis snap: move only the free axis so its margin matches
+          // the fixed one. (Round 309 wrongly skipped it entirely → the lavender showed but it
+          // never snapped while Shift-dragging.) Free drag = move both to the average, as before.
+          if (opts && opts.lockY) {
+            out.dx = hIsLeft ? (vM - mL) : (mR - vM);   // X free → match the fixed V (top/bottom) margin
+            out.dy = 0; out.vGuide = null;
+            out.pageEq = true;
+          } else if (opts && opts.lockX) {
+            out.dy = vIsTop ? (hM - mT) : (mB - hM);     // Y free → match the fixed H (left/right) margin
+            out.dx = 0; out.hGuide = null;
+            out.pageEq = true;
+          } else {
+            const m = (vM + hM) / 2;
+            out.dx = hIsLeft ? (m - mL) : (mR - m);
+            out.dy = vIsTop ? (m - mT) : (mB - m);
+            out.vGuide = null; out.hGuide = null;
+            out.pageEq = true;
+          }
         }
       }
       return out;

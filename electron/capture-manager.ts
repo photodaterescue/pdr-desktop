@@ -610,27 +610,38 @@ export async function captureCollageRegion(
   });
   closePrepBar();
   if (!go) { restorePrepWindow(); return { success: false, cancelled: true }; }
-  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil over the real desktop and
-  // let them drag a box, then grab THAT region from a fresh capture.
+  // ── PHASE 2: CAPTURE ── the user has navigated; show a LIVE veil over EVERY screen and let
+  // them drag a box, then grab that region from a fresh capture of whichever screen it lands on.
   captureInFlight = true;
   try {
     await sleep(160);   // let the prep bar fully disappear first
-    const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
-    // v2.1 round 308 (Terry) — LIVE veil (not a frozen screenshot). The frozen overlay pasted a
-    // captured taskbar ON TOP of the real one ("two taskbars", and the real one stayed clickable
-    // beneath — Terry's report). A transparent veil over the REAL desktop shows just one taskbar
-    // and reads as the live screen. The content is static (they navigated to it), so we grab the
-    // selected region from a fresh capture once the box is drawn. enumerate windows for snap.
-    const windows = enumerateWindowRectsForDisplay(display);
-    const rect = await openRegionOverlay(display, null, windows, undefined, { live: true, adjustable: true });   // round 309 — drag → adjust handles → confirm
+    // v2.1 round 310 (Terry) — span ALL displays (was the cursor's screen only — annoying when
+    // the thing to grab is on another monitor). One overlay over the virtual desktop (the union
+    // of every display's bounds); window rects are enumerated in the same union space for snap.
+    const displays = screen.getAllDisplays();
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const d of displays) {
+      minX = Math.min(minX, d.bounds.x); minY = Math.min(minY, d.bounds.y);
+      maxX = Math.max(maxX, d.bounds.x + d.bounds.width); maxY = Math.max(maxY, d.bounds.y + d.bounds.height);
+    }
+    const sf = screen.getPrimaryDisplay().scaleFactor || 1;
+    const union = { bounds: { x: minX, y: minY, width: maxX - minX, height: maxY - minY }, scaleFactor: sf } as Electron.Display;
+    // v2.1 round 308 (Terry) — LIVE veil (not a frozen screenshot): a transparent dim over the
+    // REAL desktop, so just one (real) taskbar, no captured duplicate pasted on top.
+    const windows = enumerateWindowRectsForDisplay(union);   // union-relative rects (generic helper)
+    const rect = await openRegionOverlay(union, null, windows, undefined, { live: true, adjustable: true });   // round 309 — drag → adjust handles → confirm
     if (!rect) { restorePrepWindow(); return { success: false, cancelled: true }; }
-    // Grab the live desktop AS-IS (the collage window is minimised; the user's content is on top).
-    const grab = await grabDisplayPng(display, { hideWindows: false });
+    // The rect is union CSS px (relative to the union's top-left). Resolve to absolute screen
+    // coords, pick the display the box's CENTRE is on, and crop from a fresh grab of THAT display.
+    const absX = minX + rect.x, absY = minY + rect.y;
+    const target = screen.getDisplayNearestPoint({ x: Math.round(absX + rect.width / 2), y: Math.round(absY + rect.height / 2) });
+    const grab = await grabDisplayPng(target, { hideWindows: false });
     if (!grab) { restorePrepWindow(); return { success: false, error: 'Could not capture the screen.' }; }
     grab.restore();
-    const scaleX = grab.width / display.bounds.width, scaleY = grab.height / display.bounds.height;
-    const x = Math.max(0, Math.min(grab.width - 1, Math.round(rect.x * scaleX)));
-    const y = Math.max(0, Math.min(grab.height - 1, Math.round(rect.y * scaleY)));
+    const scaleX = grab.width / target.bounds.width, scaleY = grab.height / target.bounds.height;
+    const lx = absX - target.bounds.x, ly = absY - target.bounds.y;   // box position in the target display's CSS px
+    const x = Math.max(0, Math.min(grab.width - 1, Math.round(lx * scaleX)));
+    const y = Math.max(0, Math.min(grab.height - 1, Math.round(ly * scaleY)));
     const width = Math.max(1, Math.min(grab.width - x, Math.round(rect.width * scaleX)));
     const height = Math.max(1, Math.min(grab.height - y, Math.round(rect.height * scaleY)));
     const cropped = nativeImage.createFromBuffer(grab.buffer).crop({ x, y, width, height });

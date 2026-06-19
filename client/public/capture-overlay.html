@@ -44,12 +44,18 @@
     outline: 1.5px solid rgba(255, 255, 255, 0.95);
     box-shadow: 0 0 0 100000px rgba(0, 0, 0, 0.45);
   }
-  /* round 309 — resize handles (only while adjusting). */
-  .handle { position: absolute; width: 11px; height: 11px; margin: -6px 0 0 -6px;
-    background: #fff; border: 1px solid rgba(0,0,0,0.55); border-radius: 2px;
-    box-sizing: border-box; display: none; z-index: 5; pointer-events: none; }
+  /* round 309/310 — resize handles (only while adjusting). Match COLLAGE exactly: gold
+     circles at the corners, gold-bordered white bars at the edges. Visual only
+     (pointer-events:none); the cursor + hit-testing are driven from JS. */
+  .handle { position: absolute; display: none; box-sizing: border-box; z-index: 5;
+    pointer-events: none; box-shadow: 0 1px 3px rgba(0,0,0,0.35); }
   body.adjusting .handle { display: block; }
-  body.adjusting #selection { cursor: move; }
+  .h-nw, .h-ne, .h-sw, .h-se { width: 14px; height: 14px; margin: -7px 0 0 -7px;
+    background: #FEC242; border: 2px solid #fff; border-radius: 50%; }
+  .h-n, .h-s { width: 28px; height: 8px; margin: -4px 0 0 -14px;
+    background: #fff; border: 2px solid #FEC242; border-radius: 3px; }
+  .h-w, .h-e { width: 8px; height: 28px; margin: -14px 0 0 -4px;
+    background: #fff; border: 2px solid #FEC242; border-radius: 3px; }
   #sizeBadge {
     position: absolute; display: none;
     padding: 3px 8px; border-radius: 6px;
@@ -209,6 +215,7 @@
     snapRect = null; sel = null; op = null;
     mode = 'idle';
     document.body.classList.remove('adjusting');
+    document.body.style.cursor = 'crosshair';
   }
   function enterAdjustOrSelect(r) {
     if (adjustable) {
@@ -239,6 +246,12 @@
   }
   function insideSel(x, y) {
     return sel && x >= sel.x && x <= sel.x + sel.width && y >= sel.y && y <= sel.y + sel.height;
+  }
+  function handleCursor(h) {
+    if (h === 'nw' || h === 'se') return 'nwse-resize';
+    if (h === 'ne' || h === 'sw') return 'nesw-resize';
+    if (h === 'n' || h === 's') return 'ns-resize';
+    return 'ew-resize';
   }
 
   function applyOp(ev) {
@@ -286,7 +299,13 @@
       if (dragging) paintRect(rawRect(ev));
       return;
     }
-    if (mode === 'adjusting') return;   // hovering with the box up — leave it; handles drive changes
+    if (mode === 'adjusting') {
+      // round 310 (Terry) — show the proper resize/move cursor (was the bare crosshair "+",
+      // which felt unnatural after Collage). Hit-test handles → resize cursor; inside → move.
+      var hk2 = handleAt(ev.clientX, ev.clientY);
+      document.body.style.cursor = hk2 ? handleCursor(hk2) : (insideSel(ev.clientX, ev.clientY) ? 'move' : 'crosshair');
+      return;
+    }
     // Hover (idle) — highlight the window under the cursor.
     var w = windowUnder(ev.clientX, ev.clientY);
     if (w) { snapRect = w; paintRect(w); } else { restingState(); }
