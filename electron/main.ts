@@ -328,6 +328,9 @@ import {
   recoverOrphanRecordings,
   flushRecordingOnQuit,
 } from './capture-manager.js';
+// v2.1 round 315 (Terry) — editable "Work on Later" collage projects (side-effect import:
+// registers the collage:saveProject / listProjects / loadProject / deleteProject IPC handlers).
+import './collage-projects.js';
 // v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone" LAN server.
 import { startShare as phoneStartShare, stopShare as phoneStopShare, getStatus as phoneShareStatus } from './phone-share.js';
 // v2.1 round 280 (Terry) — Sharing Phase 3: Print + Print to PDF.

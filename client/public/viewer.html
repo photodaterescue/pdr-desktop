@@ -11560,6 +11560,70 @@
         updateUndoButtons();
       }
     }
+    // ===== v2.1 round 315 (Terry) — Editable "Work on Later" collage PROJECTS =====
+    // Option B (Canva-style "your designs"): a collage is a first-class EDITABLE project.
+    // The editable state (the source files[] + a snapshotCollage() JSON) is AUTO-SAVED to
+    // userData via the collage:saveProject IPC, and reopened later to keep editing. "Export"
+    // stays a SEPARATE action that bakes the flat image into the Library + the PDR Collages
+    // album. This block is the SAVE side; reopen + the projects gallery come next.
+    let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
+    let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
+    let collageAutosaveTimer = null;
+    let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
+
+    function collageBasename(p) {
+      try { const m = String(p || '').match(/[^\\/]+$/); return m ? m[0] : String(p || ''); }
+      catch (_) { return String(p || ''); }
+    }
+    function defaultCollageProjectName() {
+      // A date-stamped default so several un-renamed projects stay distinguishable in the
+      // gallery even before thumbnails land. Manual format avoids locale surprises.
+      try {
+        const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
+        return `Collage ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}`;
+      } catch (_) { return 'Untitled collage'; }
+    }
+    // Worth saving = at least one LIVE photo OR any text. A blank canvas (or one holding only
+    // the background tile / X-removed photos) must not spawn a phantom empty project.
+    function collageProjectHasContent() {
+      const anyPhoto = collageItems.some((it) => it && it.on && !it.isBg && !it.removed);
+      const anyText = Array.isArray(collageTexts) && collageTexts.length > 0;
+      return anyPhoto || anyText;
+    }
+    function serializeCollageProject() {
+      if (!currentCollageProjectName) currentCollageProjectName = defaultCollageProjectName();
+      // files[] = the photos this collage was opened with (originals, idx 0..n-1). Added photos
+      // + screenshots live as idx:-1 tiles whose `path` the snapshot already carries, so files[]
+      // + snapshot together fully reconstruct the canvas on reopen.
+      return {
+        id: currentCollageProjectId || undefined,
+        name: currentCollageProjectName,
+        savedAt: new Date().toISOString(),
+        files: files.slice(),
+        names: files.map(collageBasename),
+        snapshot: snapshotCollage(),
+        aspectKey: collageAspectKey,
+      };
+    }
+    async function autosaveCollageProject() {
+      // Carousels are multi-PAGE; a single snapshotCollage() only captures the active page, so
+      // their project save is a separate future effort — skip autosave in carousel mode for now.
+      if (!collageMode || collageRestoring || carouselMode) return;
+      if (!collageProjectHasContent()) return;
+      if (!(window.pdr && window.pdr.collage && window.pdr.collage.saveProject)) return;
+      try {
+        const res = await window.pdr.collage.saveProject(serializeCollageProject());
+        if (res && res.success && res.id) currentCollageProjectId = res.id;
+      } catch (_) { /* autosave is best-effort — a failed save must NEVER interrupt editing */ }
+    }
+    // Debounced: a drag/resize fires many commits; coalesce into one write ~1.2s after the last
+    // change (the Canva "saved a moment ago" feel, without hammering the disk every frame).
+    function scheduleCollageAutosave() {
+      if (!collageMode) return;
+      if (collageAutosaveTimer) clearTimeout(collageAutosaveTimer);
+      collageAutosaveTimer = setTimeout(() => { collageAutosaveTimer = null; autosaveCollageProject(); }, 1200);
+    }
+
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
@@ -11617,6 +11681,7 @@
         if (collageUndo.length > COLLAGE_UNDO_CAP) collageUndo.shift();
         collageRedo.length = 0;
         updateUndoButtons();
+        scheduleCollageAutosave();   // v2.1 round 315 (Terry) — persist this edit to the project (debounced)
       }
       collagePendingSnap = null;
       // v2.1 round 256 (Terry) — carousel P3: an edit to the live (active) page should be
@@ -11626,6 +11691,7 @@
     }
     function restoreCollageSnapshot(snapStr) {
       let s; try { s = JSON.parse(snapStr); } catch (_) { return; }
+      collageRestoring = true;   // v2.1 round 315 (Terry) — a restore must not itself trigger an autosave
       // v2.1 round 204 (Terry) — an undo/redo rebuilds all text layer objects
       // fresh (below), so abandon any in-progress in-canvas edit first (its
       // editEl is on an about-to-be-discarded layer).
@@ -11811,6 +11877,7 @@
       // so the overlays re-append as the canvas's top children (above any tiles/text
       // rebuilt above) and reflect the restored values.
       try { syncCollageTreatmentsUi(); } catch (_) {}
+      collageRestoring = false;   // v2.1 round 315 (Terry) — restore done; autosave may run again
     }
     function undoCollage() {
       if (!collageUndo.length) return;
@@ -11821,6 +11888,7 @@
       // also fired for this click — drop its pending snapshot so the
       // trailing commit can't re-push onto the undo stack.
       collagePendingSnap = null;
+      scheduleCollageAutosave();   // v2.1 round 315 (Terry) — persist the undone state too
     }
     function redoCollage() {
       if (!collageRedo.length) return;
@@ -11828,6 +11896,7 @@
       restoreCollageSnapshot(collageRedo.pop());
       updateUndoButtons();
       collagePendingSnap = null;
+      scheduleCollageAutosave();   // v2.1 round 315 (Terry)
     }
     function updateUndoButtons() {
       const u = document.getElementById('tb-collage-undo');
