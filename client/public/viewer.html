@@ -2502,8 +2502,12 @@
        #collage-chrome (un-clipped, over the stage). Opposite margins that MATCH turn green. */
     #collage-chrome .cm-line { position: absolute; background: rgba(254,194,66,0.8); pointer-events: none; display: none; z-index: 9; }
     #collage-chrome .cm-line.sym { background: rgba(91,224,160,0.9); }
+    /* v2.1 round 307 (Terry) — CORNER-EQUAL vs the page (top==left etc.) → PDR lavender,
+       distinct from tile-symmetry green. */
+    #collage-chrome .cm-line.pageEq { background: rgba(169,156,255,0.95); }
     #collage-chrome .cm-badge { position: absolute; transform: translate(-50%, -50%); background: #FEC242; color: #1a1830; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,0.4); display: none; z-index: 10; }
     #collage-chrome .cm-badge.sym { background: #5be0a0; }
+    #collage-chrome .cm-badge.pageEq { background: #A99CFF; color: #1a1830; }
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
@@ -8238,27 +8242,38 @@
         if (Math.abs(dBm - oTm) <= TOL || Math.abs(dBm - oBm) <= TOL) eB = true;   // symmetric to O's top, or bottoms level
       }
       const grL = balX || eL, grR = balX || eR, grT = balY || eT, grB = balY || eB;
-      const line = (el, x, y, len, horiz, sym) => {
-        el.classList.toggle('sym', !!sym);
+      // v2.1 round 307 (Terry) — CORNER-EQUAL vs the PAGE: the gaps to the two NEAREST
+      // perpendicular references are equal (e.g. top margin == left margin → equidistant from
+      // a corner). A DIFFERENT relationship from tile symmetry, so a DIFFERENT colour — PDR
+      // lavender. Only the nearest-V + nearest-H badge of the pair light up; lavender wins over
+      // green on those two. (The matching SNAP lives in computeDragSnap as out.pageEq.)
+      const vIsTop = mTop <= mBot, vM = vIsTop ? mTop : mBot;
+      const hIsLeft = mLeft <= mRight, hM = hIsLeft ? mLeft : mRight;
+      const pageEq = vM > 0 && hM > 0 && Math.abs(vM - hM) <= TOL;
+      const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
+      const line = (el, x, y, len, horiz, sym, pe) => {
+        el.classList.toggle('pageEq', !!pe);
+        el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         if (horiz) { el.style.width = Math.max(0, len) + 'px'; el.style.height = '1px'; }
         else { el.style.height = Math.max(0, len) + 'px'; el.style.width = '1px'; }
         el.style.display = len > 2 ? 'block' : 'none';
       };
-      const badge = (el, x, y, val, sym) => {
-        el.classList.toggle('sym', !!sym);
+      const badge = (el, x, y, val, sym, pe) => {
+        el.classList.toggle('pageEq', !!pe);
+        el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         el.textContent = String(val);
         el.style.display = val > 0 ? 'block' : 'none';
       };
-      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL);
-      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL);
-      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR);
-      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR);
-      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT);
-      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT);
-      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB);
-      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB);
+      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL, peL);
+      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL);
+      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR, peR);
+      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR, peR);
+      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT, peT);
+      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT, peT);
+      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB, peB);
+      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
       collageChromeEl.classList.add('active');
@@ -10082,7 +10097,7 @@
       };
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
-        if (!o || !o.el || o.el === draggedEl) continue;
+        if (!o || !o.el || o.el === draggedEl || !o.on || o.isBg) continue;   // round 307 — skip OFF/removed + background tiles (were phantom snap targets)
         pushEdgesWithMirror(o.el.getBoundingClientRect());
       }
       for (let i = 0; i < collageTexts.length; i++) {
@@ -10135,6 +10150,24 @@
         }
       }
       if (bestHGap > T) { out.dy = 0; out.hGuide = null; }
+      // v2.1 round 307 (Terry) — CORNER-EQUAL: symmetry vs the PAGE. When the dragged tile's
+      // gaps to its two NEAREST perpendicular references are equal (e.g. top margin == left
+      // margin — equidistant from a corner), snap them to exactly equal. This is a DIFFERENT
+      // relationship from tile symmetry/edges, so it only fires when no edge/tile/centre snap
+      // already claimed an axis, and the caller paints it PDR lavender (out.pageEq), not gold/
+      // green. Terry: equal top/left spacing stayed gold + never snapped — "needs a steady hand".
+      out.pageEq = false;
+      if (out.vGuide === null && out.hGuide === null) {
+        const mL = dLeft - lRef, mR = rRef - dRight, mT = dTop - tRef, mB = bRef - dBottom;
+        const vIsTop = mT <= mB, vM = vIsTop ? mT : mB;   // nearest horizontal-edge margin
+        const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
+        if (vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
+          const m = (vM + hM) / 2;
+          out.dx = hIsLeft ? (m - mL) : (mR - m);
+          out.dy = vIsTop ? (m - mT) : (mB - m);
+          out.pageEq = true;
+        }
+      }
       return out;
     }
     // Gold guide overlay lines, created lazily inside #collage-canvas and reused
