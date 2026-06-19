@@ -2439,6 +2439,10 @@
        cropped region while the frame border (on the .collage-item box)
        still surrounds it. */
     .collage-clip { position: absolute; inset: 0; overflow: hidden; }
+    /* v2.1 round 294 (Terry) — per-photo vignette + grain overlays, inside the clip so they
+       follow the tile's corners/shape; above the photo, below the selection chrome. */
+    .collage-clip > .ct-vig { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
+    .collage-clip > .ct-grain { position: absolute; inset: 0; pointer-events: none; z-index: 4; mix-blend-mode: overlay; background-repeat: repeat; }
     .collage-item img {
       display: block;
       pointer-events: none;
@@ -5370,7 +5374,7 @@
       // v2.1 round 150 (Terry) — a new background photo now fills fully
       // (opacity 1) so it "swaps" to the photo as he expected; the base
       // colour is kept underneath and revealed by lowering Fade.
-      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] };
+      return { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0], vignette: 0, vignetteShape: 'ellipse', grain: 0 };
     }
     function ensureCollageBgTile() {
       if (!collageBgTile) collageBgTile = { isBg: true, enh: defaultBgEnh() };
@@ -7700,6 +7704,41 @@
       if (typeof enh.borderPct === 'number') return enh.borderPct;
       return enh.borderWeight === 'mat' ? 0.08 : 0.035;
     }
+    // v2.1 round 294 (Terry) — PER-PHOTO vignette + grain. Two overlay layers INSIDE the
+    // tile's clip, so they're masked to the tile's corners/shape exactly like the photo,
+    // driven by the tile's own enh.vignette / vignetteShape / grain. Mirrors the look of the
+    // whole-collage applyCollageTreatments but per tile + clipped; the bake composites the
+    // same per tile (capture-manager). The background pseudo-tile is skipped (no clip).
+    function applyTileTreatments(it) {
+      if (!it || it.isBg || !it.clipEl) return;
+      const enh = it.enh || {};
+      const v = Math.max(0, Math.min(100, enh.vignette || 0));
+      const g = Math.max(0, Math.min(150, enh.grain || 0));
+      if (v > 0) {
+        let vig = it.vigEl;
+        if (!vig || vig.parentNode !== it.clipEl) { vig = document.createElement('div'); vig.className = 'ct-vig'; it.clipEl.appendChild(vig); it.vigEl = vig; }
+        const a = (v / 100) * 0.85;
+        const shape = enh.vignetteShape || 'ellipse';
+        if (shape === 'ellipse') {
+          vig.style.webkitMaskImage = 'none'; vig.style.maskImage = 'none';
+          vig.style.background = 'radial-gradient(ellipse at center, rgba(0,0,0,0) 55%, rgba(0,0,0,' + a.toFixed(3) + ') 100%)';
+        } else {
+          vig.style.background = 'rgba(0,0,0,' + a.toFixed(3) + ')';
+          const m = 'url("' + collageVignetteMaskUri(shape) + '")';
+          vig.style.webkitMaskImage = m; vig.style.maskImage = m;
+          vig.style.webkitMaskSize = '100% 100%'; vig.style.maskSize = '100% 100%';
+          vig.style.webkitMaskRepeat = 'no-repeat'; vig.style.maskRepeat = 'no-repeat';
+        }
+        vig.style.display = 'block';
+      } else if (it.vigEl) { it.vigEl.style.display = 'none'; }
+      if (g > 0) {
+        let grain = it.grainEl;
+        if (!grain || grain.parentNode !== it.clipEl) { grain = document.createElement('div'); grain.className = 'ct-grain'; grain.style.backgroundSize = COLLAGE_GRAIN_TILE_PX + 'px ' + COLLAGE_GRAIN_TILE_PX + 'px'; it.clipEl.appendChild(grain); it.grainEl = grain; }
+        grain.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+        grain.style.opacity = ((g / 100) * 0.5).toFixed(3);
+        grain.style.display = 'block';
+      } else if (it.grainEl) { it.grainEl.style.display = 'none'; }
+    }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
       if (!it.on) { it.el.style.display = 'none'; return; }
@@ -7804,6 +7843,7 @@
         // the preview matches the saved file.
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, innerW, innerH);
       }
+      try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 294 (Terry) — per-photo vignette + grain overlays
       // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
       // clipping under the titlebar when the tile is near the top (Terry SS2).
       refreshTileToolbar(it);
@@ -9715,6 +9755,7 @@
       if (it && selectedText) selectText(null);
       // Point the Enhance panel at this element (tile, background, or null).
       try { if (window.pdrEnhanceBridge) window.pdrEnhanceBridge.setTile(collageSelected); } catch (_) {}
+      try { syncTreatmentSlidersForSelection(); } catch (_) {}   // v2.1 round 294 — vignette/grain sliders track the selection (incl. deselect → globals)
       updateAngleSlider();
       try { syncBgRemoveBtn(); } catch (_) {}   // v2.1 round 173 — Remove/Restore label per selection
       // v2.1 round 208 (Terry) — every fresh tile/background selection starts with
@@ -12532,12 +12573,16 @@
       var vigVal = document.getElementById('collage-vignette-val');
       if (vigSlider) {
         vigSlider.addEventListener('input', function () {
-          collageVignette = Math.max(0, Math.min(100, parseInt(vigSlider.value, 10) || 0));
-          if (vigVal) vigVal.textContent = String(collageVignette);
-          applyCollageTreatments();
+          // v2.1 round 294 (Terry) — a PHOTO selection → per-photo vignette (via the enh
+          // path, so it fans out to a multi-selection + is undoable); else the whole-collage
+          // treatment as before (background / nothing selected).
+          var val = Math.max(0, Math.min(100, parseInt(vigSlider.value, 10) || 0));
+          if (vigVal) vigVal.textContent = String(val);
+          if (collageSelected && !collageSelected.isBg) { try { window.pdrEnhanceBridge.setVignette(val); } catch (_) {} }
+          else { collageVignette = val; applyCollageTreatments(); }
           // v2.1 round 240 (Terry) — reveal/hide the shape selector as it crosses 0.
           var shapesRow = document.getElementById('collage-vignette-shapes');
-          if (shapesRow) shapesRow.style.display = collageVignette > 0 ? 'flex' : 'none';
+          if (shapesRow) shapesRow.style.display = val > 0 ? 'flex' : 'none';
         });
       }
       // v2.1 round 240 (Terry) — VIGNETTE SHAPE selector buttons. Each click sets the
@@ -12546,8 +12591,9 @@
       // type toggles), so no per-button snapshot here.
       document.querySelectorAll('#collage-vignette-shapes .ec-vig-shape').forEach(function (btn) {
         btn.addEventListener('click', function () {
-          collageVignetteShape = btn.getAttribute('data-shape') || 'ellipse';
-          applyCollageTreatments();
+          var shape = btn.getAttribute('data-shape') || 'ellipse';
+          if (collageSelected && !collageSelected.isBg) { try { window.pdrEnhanceBridge.setVignetteShape(shape); } catch (_) {} }   // v2.1 round 294 — per-photo
+          else { collageVignetteShape = shape; applyCollageTreatments(); }
           syncCollageTreatmentsUi();
         });
       });
@@ -12555,9 +12601,10 @@
       var grainVal = document.getElementById('collage-grain-val');
       if (grainSlider) {
         grainSlider.addEventListener('input', function () {
-          collageGrain = Math.max(0, Math.min(150, parseInt(grainSlider.value, 10) || 0));   // v2.1 round 249 (Terry) — grain max 150
-          if (grainVal) grainVal.textContent = String(collageGrain);
-          applyCollageTreatments();
+          var val = Math.max(0, Math.min(150, parseInt(grainSlider.value, 10) || 0));   // v2.1 round 249 (Terry) — grain max 150
+          if (grainVal) grainVal.textContent = String(val);
+          if (collageSelected && !collageSelected.isBg) { try { window.pdrEnhanceBridge.setGrain(val); } catch (_) {} }   // v2.1 round 294 — per-photo
+          else { collageGrain = val; applyCollageTreatments(); }
         });
       }
       // v2.1 round 252 (Terry) — CUSTOM gradient slots: populate + wire once (inside the
@@ -12640,6 +12687,24 @@
       if (gs) gs.value = String(collageGrain || 0);
       if (gv) gv.textContent = String(collageGrain || 0);
       applyCollageTreatments();
+    }
+    // v2.1 round 294 (Terry) — reflect the SELECTION's vignette/grain onto the sliders: a
+    // selected PHOTO shows its own per-tile enh; the background / nothing falls back to the
+    // whole-collage globals (so the same sliders read the right source as you click around).
+    function syncTreatmentSlidersForSelection() {
+      var fromTile = collageSelected && !collageSelected.isBg && collageSelected.enh;
+      var v = fromTile ? (collageSelected.enh.vignette || 0) : (collageVignette || 0);
+      var g = fromTile ? (collageSelected.enh.grain || 0) : (collageGrain || 0);
+      var shape = fromTile ? (collageSelected.enh.vignetteShape || 'ellipse') : (collageVignetteShape || 'ellipse');
+      var vs = document.getElementById('collage-vignette'); var vv = document.getElementById('collage-vignette-val');
+      var gsl = document.getElementById('collage-grain'); var gv = document.getElementById('collage-grain-val');
+      if (vs) vs.value = String(v); if (vv) vv.textContent = String(v);
+      if (gsl) gsl.value = String(g); if (gv) gv.textContent = String(g);
+      var shapesRow = document.getElementById('collage-vignette-shapes');
+      if (shapesRow) {
+        shapesRow.style.display = v > 0 ? 'flex' : 'none';
+        shapesRow.querySelectorAll('.ec-vig-shape').forEach(function (b) { b.classList.toggle('active', (b.getAttribute('data-shape') || 'ellipse') === shape); });
+      }
     }
     // Reflect the current gradient state into the Background gradient controls:
     // active preset highlight, stop swatch colours + armed ring, kind toggle,
@@ -16128,6 +16193,9 @@ function zoomTo(newZoom, centreX, centreY) {
         borderPct: 0.035, // frame thickness as a fraction of the photo's shorter side (1%–15%)
         opacity: 1, // v2.1 round 143 — per-tile transparency (collage only); 1 = solid
         blend: 0, // v2.1 round 150 — edge feather % (collage only); 0 = crisp edge
+        vignette: 0, // v2.1 round 294 (Terry) — PER-PHOTO vignette 0..100 (collage only)
+        vignetteShape: 'ellipse', // v2.1 round 294 — vignette shape (ellipse/heart/star/…)
+        grain: 0, // v2.1 round 294 (Terry) — PER-PHOTO film grain 0..150 (collage only)
       };
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
@@ -16268,6 +16336,7 @@ function zoomTo(newZoom, centreX, centreY) {
               temperature: state.temperature, colour: state.colour, tone: state.tone,
               borderColor: state.borderColor, borderWeight: state.borderWeight, borderPct: state.borderPct,
               opacity: state.opacity, blend: state.blend, corners: (Array.isArray(state.corners) ? state.corners.slice() : [0, 0, 0, 0]), flipH: state.flipH, flipV: state.flipV,
+              vignette: state.vignette, vignetteShape: state.vignetteShape, grain: state.grain,   // v2.1 round 294 (Terry) — per-photo vignette + grain
             };
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
@@ -18484,7 +18553,11 @@ function zoomTo(newZoom, centreX, centreY) {
         state.opacity = e.opacity != null ? e.opacity : 1;
         state.blend = e.blend != null ? e.blend : 0;
         state.corners = Array.isArray(e.corners) ? e.corners.slice() : [0, 0, 0, 0];
+        state.vignette = e.vignette != null ? e.vignette : 0;            // v2.1 round 294 (Terry)
+        state.vignetteShape = e.vignetteShape || 'ellipse';
+        state.grain = e.grain != null ? e.grain : 0;
         updateUI();
+        try { syncTreatmentSlidersForSelection(); } catch (_) {}          // v2.1 round 294 — reflect this tile's vignette/grain on the sliders
         markActiveSwatchByColor(state.borderColor);
         markActiveWeight();
         try { clearActivePreset(); } catch (_) {}
@@ -18553,6 +18626,14 @@ function zoomTo(newZoom, centreX, centreY) {
         // active swatch.
         setFrameColor: function (color) { try { applyFrameColor(color || ''); } catch (_) {} },
         getFrameColor: function () { return state.borderColor || ''; },
+        // v2.1 round 294 (Terry) — PER-PHOTO vignette + grain. The collage-controls
+        // sliders call these when a PHOTO tile is selected, so the edit runs through
+        // applyEnhanceFilter → written to the tile's enh + fanned out to a multi-selection
+        // (R291) + undoable. (When the background is selected the sliders keep the old
+        // whole-canvas path.)
+        setVignette: function (v) { state.vignette = Math.max(0, Math.min(100, v || 0)); applyEnhanceFilter(); },
+        setVignetteShape: function (s) { state.vignetteShape = s || 'ellipse'; applyEnhanceFilter(); },
+        setGrain: function (g) { state.grain = Math.max(0, Math.min(150, g || 0)); applyEnhanceFilter(); },
       };
 
       // Initial state.

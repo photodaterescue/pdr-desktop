@@ -850,6 +850,9 @@ interface CollageEnhance {
   opacity?: number; // v2.1 round 143 — per-tile transparency (0.1–1)
   blend?: number; // v2.1 round 150 — edge feather %, 0–100 (0 = crisp)
   corners?: number[]; // v2.1 round 164 — curved corners [tl,tr,br,bl], 0–1 of half the short side
+  vignette?: number; // v2.1 round 294 — PER-PHOTO vignette 0..100
+  vignetteShape?: string; // v2.1 round 294 — vignette shape (ellipse/heart/star/…)
+  grain?: number; // v2.1 round 294 — PER-PHOTO film grain 0..150
 }
 // v2.1 round 164 (Terry) — CURVED CORNERS + Blend, in one rounded-rect
 // signed-distance mask. corners = [tl,tr,br,bl] (0–1 of half the short side);
@@ -1553,6 +1556,28 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         // No-op when neither corners nor blend are set.
         if (item.enh) {
           tile = await roundedFeatherMask(sharp, tile, rotW, rotH, item.enh.corners, item.enh.blend);
+        }
+        // v2.1 round 294 (Terry) — PER-PHOTO vignette + grain: composite the same SVGs the
+        // whole-collage finish uses, but sized to THIS tile, then re-clip to the tile's own
+        // alpha so a rounded / cut-out tile keeps its shape (no black corners). Mirrors the
+        // editor's per-tile .ct-vig / .ct-grain overlays. Before rotation so it turns with the photo.
+        if (item.enh) {
+          const tvig = Math.max(0, Math.min(100, Number(item.enh.vignette) || 0));
+          const tgrain = Math.max(0, Math.min(150, Number(item.enh.grain) || 0));
+          if (tvig > 0 || tgrain > 0) {
+            try {
+              const tLayers: Array<{ input: Buffer; blend: 'over' | 'overlay' }> = [];
+              if (tvig > 0) tLayers.push({ input: await sharp(Buffer.from(buildCollageVignetteSvg(rotW, rotH, tvig, String(item.enh.vignetteShape || 'ellipse')))).png().toBuffer(), blend: 'over' });
+              if (tgrain > 0) tLayers.push({ input: await sharp(Buffer.from(buildCollageGrainSvg(rotW, rotH, tgrain))).png().toBuffer(), blend: 'overlay' });
+              if (tLayers.length) {
+                const tileAlpha = tile;   // the shaped tile carries the correct alpha
+                const shaded = await sharp(tile).ensureAlpha().composite(tLayers).png().toBuffer();
+                tile = await sharp(shaded).composite([{ input: tileAlpha, blend: 'dest-in' }]).png().toBuffer();
+              }
+            } catch (vgErr) {
+              log.warn(`[collage] per-tile vignette/grain skipped (non-fatal): ${(vgErr as Error).message}`);
+            }
+          }
         }
         const rot = ((item.rot || 0) % 360 + 360) % 360;
         if (rot > 0.1 && rot < 359.9) {
