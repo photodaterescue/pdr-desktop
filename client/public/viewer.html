@@ -8056,9 +8056,9 @@
       var shortPx = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
       var parts = [];
       var bl = Math.max(0, Math.min(100, e.blur || 0));
-      if (bl > 0) parts.push('blur(' + (bl / 100 * 0.045 * shortPx).toFixed(2) + 'px)');
+      if (bl > 0) parts.push('blur(' + (bl / 100 * 0.0225 * shortPx).toFixed(2) + 'px)');   // v2.1 round 329 (Terry) — range halved (was 0.045)
       var px = Math.max(0, Math.min(100, e.pixelate || 0));
-      if (px > 0) parts.push('url(#' + ensureCollagePixFilter(px / 100 * 0.11 * shortPx) + ')');
+      if (px > 0) parts.push('url(#' + ensureCollagePixFilter(px / 100 * 0.055 * shortPx) + ')');   // v2.1 round 329 (Terry) — range halved (was 0.11)
       it.clipEl.style.filter = parts.length ? parts.join(' ') : '';
     }
     function renderCollageItem(it) {
@@ -8285,11 +8285,18 @@
       // (e.g. a background photo) doesn't yank it to the front. Stacked-layers icon.
       const tbLockLayer = document.createElement('button'); tbLockLayer.type = 'button'; tbLockLayer.className = 'ch-tb-btn chx-tb-locklayer'; tbLockLayer.setAttribute('data-pdr-tooltip', 'Lock layer (keep its front/back order when you move it)');
       tbLockLayer.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="12 3 21 8 12 13 3 8 12 3"/><polyline points="3 12.5 12 17.5 21 12.5"/></svg>';
+      // v2.1 round 329 (Terry) — layer up/down: nudge the selected tile forward / backward through
+      // the stack by ONE, EVEN when it (or its layer) is locked — so a background that got bumped
+      // to the front can be pushed back without unlocking. Adjoined to the right of Lock layer.
+      const tbLayerUp = document.createElement('button'); tbLayerUp.type = 'button'; tbLayerUp.className = 'ch-tb-btn chx-tb-layerup'; tbLayerUp.setAttribute('data-pdr-tooltip', 'Bring forward one layer');
+      tbLayerUp.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="6 14 12 8 18 14"/></svg>';
+      const tbLayerDown = document.createElement('button'); tbLayerDown.type = 'button'; tbLayerDown.className = 'ch-tb-btn chx-tb-layerdown'; tbLayerDown.setAttribute('data-pdr-tooltip', 'Send backward one layer');
+      tbLayerDown.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="6 10 12 16 18 10"/></svg>';
       const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn chx-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
       tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
       const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn chx-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
       tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
-      tbar.appendChild(tbLock); tbar.appendChild(tbLockLayer); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
+      tbar.appendChild(tbLock); tbar.appendChild(tbLockLayer); tbar.appendChild(tbLayerUp); tbar.appendChild(tbLayerDown); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
       box.appendChild(ring);
       box.appendChild(body);
       // v2.1 round 269 (Terry) — crop bars appended AFTER chx-body and alongside the
@@ -8319,7 +8326,12 @@
         // background underneath). Clicking an empty part of the background still drags the background.
         const target = topCollageItemAtPoint(e.clientX, e.clientY) || collageSelected;
         if (!target || target.isBg) return;
-        if (target !== collageSelected) selectCollageItem(target);
+        // v2.1 round 329 (Terry) — mirror the per-tile pointerdown so this surface doesn't eat the
+        // gestures it used to: Ctrl+drag on a ZOOMED tile pans within its frame, and Ctrl/Cmd+click
+        // toggles the tile in the multi-selection (so DON'T selectCollageItem first — that cleared
+        // it, breaking multi-select + the in-frame pan). Plain click selects then drags.
+        if (e.ctrlKey && (target.zoom || 1) > 1) { startItemPan(target, e); return; }
+        if (!e.ctrlKey && !e.metaKey && target !== collageSelected) selectCollageItem(target);
         startItemDrag(target, e);
       });
       rTL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tl'); });
@@ -8338,6 +8350,8 @@
       tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
       tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLock(collageSelected); });
       tbLockLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLockLayer(collageSelected); });
+      tbLayerUp.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) orderCollageSelection('forward'); });
+      tbLayerDown.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) orderCollageSelection('backward'); });
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) duplicateCollageItem(collageSelected); });
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
       collageChromeBox = box;
@@ -20412,7 +20426,7 @@ function zoomTo(newZoom, centreX, centreY) {
     (function () {
       const layer = document.createElement('div');
       layer.id = 'pdr-tooltip-layer';
-      layer.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:99999;';
+      layer.style.cssText = 'position:fixed;top:0;left:0;pointer-events:none;z-index:2147483000;';   // v2.1 round 329 (Terry) — above the collage grain/vignette overlays (z 2,000,000+) so tooltips never show tile edges through them
       document.body.appendChild(layer);
 
       let activeEl = null;

@@ -1721,13 +1721,13 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
           const tShort = Math.min(rotW, rotH);
           const tblur = Math.max(0, Math.min(100, Number(item.enh.blur) || 0));
           if (tblur > 0) {
-            try { tile = await sharp(tile).blur(Math.max(0.3, tblur / 100 * 0.045 * tShort)).png().toBuffer(); }
+            try { tile = await sharp(tile).blur(Math.max(0.3, tblur / 100 * 0.0225 * tShort)).png().toBuffer(); }   // v2.1 round 329 (Terry) — range halved
             catch (e) { log.warn(`[collage] tile blur skipped: ${(e as Error).message}`); }
           }
           const tpix = Math.max(0, Math.min(100, Number(item.enh.pixelate) || 0));
           if (tpix > 0) {
             try {
-              const cell = Math.max(2, Math.round(tpix / 100 * 0.11 * tShort));
+              const cell = Math.max(2, Math.round(tpix / 100 * 0.055 * tShort));   // v2.1 round 329 (Terry) — range halved
               const dw = Math.max(1, Math.round(rotW / cell)), dh = Math.max(1, Math.round(rotH / cell));
               tile = await sharp(tile).resize(dw, dh, { kernel: 'nearest' }).resize(rotW, rotH, { kernel: 'nearest' }).png().toBuffer();
             } catch (e) { log.warn(`[collage] tile pixelate skipped: ${(e as Error).message}`); }
