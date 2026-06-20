@@ -12517,6 +12517,15 @@
         // problem where 4 added photos landed on top of each other). Re-arranging is
         // still a deliberate post-step via drag or the Arrange menu.
         gridArrange();
+        // v2.1 round 322 (Terry) — SS1: the just-added photo's REAL aspect isn't known until its
+        // <img> loads, so gridArrange first sized it as a default SQUARE and gave it full width —
+        // then a tall photo ballooned PAST the page on load. Re-tile once the real aspect is in
+        // (one-shot load handler; or immediately if it was already cached), so it always fits.
+        const aimg = it.imgEl;
+        if (aimg) {
+          if (aimg.complete && aimg.naturalWidth) gridArrange();
+          else { const reGrid = () => { aimg.removeEventListener('load', reGrid); try { gridArrange(); } catch (_) {} }; aimg.addEventListener('load', reGrid); }
+        }
       }
       // Paint via the shared apply path so the new tile shows immediately + its
       // <img> loads the picked file (gridArrange already rendered it, but
