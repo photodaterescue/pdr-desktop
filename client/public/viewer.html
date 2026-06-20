@@ -11810,6 +11810,21 @@
       document.body.classList.remove('collage-panel-collapsed', 'cws-open');
     }
 
+    // v2.1 round 318 (Terry) — ONE collapse state for the collage panel, driven by the Enhance
+    // button + the E key + the ‹ handle alike (so the Enhance button mirrors the Viewer's toggle,
+    // just open-by-default). Folds the panel to a full-width canvas + keeps the ‹ handle tooltip
+    // in sync + re-fits the canvas.
+    function toggleCollagePanelCollapsed() {
+      const collapsed = document.body.classList.toggle('collage-panel-collapsed');
+      const pt = document.getElementById('collage-panel-toggle');
+      if (pt) {
+        pt.setAttribute('data-pdr-tooltip', collapsed ? 'Show the Enhance panel' : 'Hide the Enhance panel (view full width)');
+        pt.setAttribute('aria-label', collapsed ? 'Show the Enhance panel' : 'Hide the Enhance panel');
+      }
+      try { layoutCanvasSize(); } catch (_) {}
+      return collapsed;
+    }
+
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
@@ -17727,6 +17742,11 @@ function zoomTo(newZoom, centreX, centreY) {
       // "definitely keep it" click.
       openBtn.addEventListener('click', function () {
         cancelHoverOpen();
+        // v2.1 round 318 (Terry) — in COLLAGE the Enhance button MIRRORS the Viewer's: it
+        // toggles the panel open/closed, just OPEN BY DEFAULT. The panel is the editor so it
+        // never truly closes — "closed" folds it to full-width (the same collapsed state the
+        // ‹ handle uses), and clicking Enhance again brings it back.
+        if (collageMode) { toggleCollagePanelCollapsed(); return; }
         if (isPinned) {
           setPinned(false);
           closePanel();
@@ -17756,6 +17776,8 @@ function zoomTo(newZoom, centreX, centreY) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
+          // v2.1 round 318 (Terry) — collage: E mirrors the Enhance button (toggle collapse).
+          if (collageMode) { toggleCollagePanelCollapsed(); return; }
           if (isPinned) { setPinned(false); closePanel(); }
           else { setPinned(true); openPanel(); }
           try { if (pinBtn) pinBtn.blur(); } catch (_) {}
