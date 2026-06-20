@@ -12791,27 +12791,23 @@
       if (!it || !fp) return;
       if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can fill a frame.' }); return; }
       beginCollageChange();
-      // v2.1 round 325 (Terry) — fill via a cover-CROP on the NORMAL tile path (NOT coverFill).
-      // Keep the frame's box shape (it.aspect) and crop the photo to cover it. This way the photo
-      // can be ZOOMED + panned within its frame (Ctrl+scroll / Ctrl+drag) and bakes the same — the
-      // round-324 coverFill couldn't (it bypassed crop/zoom). The cover-crop needs the photo's real
-      // aspect, so it's computed on <img> load (via _coverFit) — or now, if the image is cached.
+      // v2.1 round 326 (Terry) — the photo FILLS the frame and the frame KEEPS its box size/shape:
+      // coverFill sizes the box by boxAspect (independent of the photo's aspect) and objectFit:cover
+      // crops the photo into it. (The round-325 cover-CROP changed the box because cropping a tile
+      // trims its box — that's why Terry's top-left frame resized. Reverted.) Zoom-within-frame is a
+      // separate careful pass: it needs coverFill render + gestures + the bake to all agree.
       const frameAspect = (typeof effectiveAspect === 'function') ? effectiveAspect(it) : (it.aspect || 1);
       it.placeholder = false;
       it.path = fp;
       it.bgRemovedPath = null;
-      it.coverFill = false;
-      it.aspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
-      it.crop = { l: 0, t: 0, r: 1, b: 1 };
+      it.coverFill = true;
+      it.boxAspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
+      it.framed = false;
       it.zoom = 1; it.panX = 0; it.panY = 0;
-      it.framed = true;   // persistent: a cover-cropped frame keeps its box aspect (img.onload won't overwrite it)
       if (it.phEl && it.phEl.parentNode) it.phEl.parentNode.removeChild(it.phEl);
       it.phEl = null;
       if (it.el) it.el.classList.remove('is-frame');
-      if (it.imgEl) {
-        it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(fp);
-        if (it.imgEl.complete && it.imgEl.naturalWidth) applyFrameCoverCrop(it, it.imgEl.naturalWidth / it.imgEl.naturalHeight);
-      }
+      if (it.imgEl) { it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(fp); }
       renderCollageItem(it);
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
       selectCollageItem(it);
@@ -13079,7 +13075,16 @@
         '<svg xmlns="http://www.w3.org/2000/svg" width="' + n + '" height="' + n + '">' +
         '<filter id="n" x="0" y="0" width="100%" height="100%">' +
         '<feTurbulence type="fractalNoise" baseFrequency="' + COLLAGE_GRAIN_BASE_FREQ + '" numOctaves="2" stitchTiles="stitch" result="t"/>' +
-        '<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1"/>' +
+        '<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="g"/>' +
+        // v2.1 round 326 (Terry) — DOUBLE the grain AGAIN. The overlay opacity already maxes at
+        // 1.0 (round 325), so extra strength now comes from CONTRAST: amplify the noise ~2x around
+        // mid-grey (slope 2, intercept -0.5 keeps 0.5 fixed) so each speck pushes twice as far
+        // lighter/darker under the overlay blend. Mirrored in buildCollageGrainSvg (the bake).
+        '<feComponentTransfer in="g">' +
+        '<feFuncR type="linear" slope="2" intercept="-0.5"/>' +
+        '<feFuncG type="linear" slope="2" intercept="-0.5"/>' +
+        '<feFuncB type="linear" slope="2" intercept="-0.5"/>' +
+        '</feComponentTransfer>' +
         '</filter>' +
         '<rect width="100%" height="100%" filter="url(#n)"/></svg>';
       _collageGrainDataUri = 'data:image/svg+xml;base64,' + btoa(svg);

@@ -1438,7 +1438,9 @@ function buildCollageGrainSvg(W: number, H: number, intensity: number): string {
     `<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}">` +
     `<filter id="n" x="0" y="0" width="100%" height="100%">` +
     `<feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" stitchTiles="stitch" result="t"/>` +
-    `<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1"/>` +
+    `<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="g"/>` +
+    // v2.1 round 326 (Terry) — double again via CONTRAST (opacity already maxes at 1.0); matches collageGrainDataUri.
+    `<feComponentTransfer in="g"><feFuncR type="linear" slope="2" intercept="-0.5"/><feFuncG type="linear" slope="2" intercept="-0.5"/><feFuncB type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>` +
     `</filter>` +
     `<rect width="${W}" height="${H}" filter="url(#n)" opacity="${op}"/></svg>`
   );
