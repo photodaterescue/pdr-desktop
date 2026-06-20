@@ -8132,20 +8132,28 @@
       if (!it || !it.el) return;
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
-      var p = [];
+      // v2.1 round 338 (Terry) — switched from filter:drop-shadow to BOX-SHADOW. The round-337
+      // outline used 8 chained drop-shadows + each effect re-rasterized the whole tile, which lagged
+      // badly (Terry: ">5s"). box-shadow is a cheap compositor effect: glow/neon/lift/shadow are blur
+      // shadows, and OUTLINE is a single crisp ring via spread (no blur, no 8 layers). Rounded via
+      // it.el border-radius (from Curved corners) so the shadow follows the corner rounding.
+      var sh = [];
       var glow = Math.max(0, Math.min(100, e.glow || 0));
-      if (glow > 0) p.push('drop-shadow(0 0 ' + (glow / 100 * 0.14 * s).toFixed(1) + 'px rgba(255,255,255,0.95))');
+      if (glow > 0) { var gb = glow / 100 * 0.14 * s; sh.push('0 0 ' + gb.toFixed(1) + 'px ' + (gb * 0.35).toFixed(1) + 'px rgba(255,255,255,0.9)'); }
       var neon = Math.max(0, Math.min(100, e.neon || 0));
-      if (neon > 0) { var nr = neon / 100 * 0.10 * s; p.push('drop-shadow(0 0 ' + nr.toFixed(1) + 'px #ff2bd6)', 'drop-shadow(0 0 ' + (nr * 2).toFixed(1) + 'px #ff2bd6)'); }
+      if (neon > 0) { var nb = neon / 100 * 0.10 * s; sh.push('0 0 ' + nb.toFixed(1) + 'px ' + (nb * 0.3).toFixed(1) + 'px #ff2bd6', '0 0 ' + (nb * 2).toFixed(1) + 'px #ff2bd6'); }
       var lift = Math.max(0, Math.min(100, e.lift || 0));
-      if (lift > 0) p.push('drop-shadow(0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px rgba(0,0,0,0.5))');
+      if (lift > 0) sh.push('0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px rgba(0,0,0,0.5)');
       var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
-      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); p.push('drop-shadow(' + d + 'px ' + d + 'px ' + d + 'px rgba(0,0,0,0.55))'); }
+      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); sh.push(d + 'px ' + d + 'px ' + d + 'px rgba(0,0,0,0.55)'); }
       var ol = Math.max(0, Math.min(100, e.outline || 0));
-      if (ol > 0) { var n = Math.max(1, ol / 100 * 0.045 * s), c = '#ffffff', dn = n.toFixed(1), dh = (n * 0.7).toFixed(1);
-        p.push('drop-shadow(' + dn + 'px 0 0 ' + c + ')', 'drop-shadow(-' + dn + 'px 0 0 ' + c + ')', 'drop-shadow(0 ' + dn + 'px 0 ' + c + ')', 'drop-shadow(0 -' + dn + 'px 0 ' + c + ')', 'drop-shadow(' + dh + 'px ' + dh + 'px 0 ' + c + ')', 'drop-shadow(-' + dh + 'px ' + dh + 'px 0 ' + c + ')', 'drop-shadow(' + dh + 'px -' + dh + 'px 0 ' + c + ')', 'drop-shadow(-' + dh + 'px -' + dh + 'px 0 ' + c + ')'); }
-      it.el.style.filter = p.length ? p.join(' ') : '';
-      if (p.length) it.el.style.boxShadow = 'none';   // these effects replace the subtle default depth shadow
+      if (ol > 0) sh.push('0 0 0 ' + Math.max(1, ol / 100 * 0.05 * s).toFixed(1) + 'px #ffffff');   // crisp ring via spread (cheap, no blur)
+      if (sh.length) it.el.style.boxShadow = sh.join(', ');   // else: leave renderCollageItem's depth shadow
+      it.el.style.filter = '';   // drop the round-337 drop-shadow filter (the laggy path)
+      var c = e.corners, half = s / 2;
+      if (sh.length && Array.isArray(c) && c.some(function (v) { return (v || 0) > 0.001; })) {
+        it.el.style.borderRadius = (c[0] * half).toFixed(1) + 'px ' + (c[1] * half).toFixed(1) + 'px ' + (c[2] * half).toFixed(1) + 'px ' + (c[3] * half).toFixed(1) + 'px';
+      } else { it.el.style.borderRadius = ''; }
     }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
@@ -8426,6 +8434,18 @@
           const single = !!(collageSelection && collageSelection.length === 1 && collageSelection[0] === target);
           if (single && (target.zoom || 1) > 1) { startItemPan(target, e); return; }   // v2.1 round 330 — pan only the lone selected zoomed photo
           toggleItemInSelection(target); return;                                        // v2.1 round 330 — else Ctrl+click toggles selection (works on zoomed tiles)
+        }
+        // v2.1 round 338 (Terry) — clicking a SELECTED empty frame should "Add photo". Its in-frame
+        // button sits UNDER this chrome surface, so it was unreachable until you first deselected the
+        // tile (annoying). A plain click now opens the picker for that frame; a drag still moves it.
+        if (target.placeholder) {
+          if (target !== collageSelected) selectCollageItem(target);
+          var psx = e.clientX, psy = e.clientY, ppid = e.pointerId, pStarted = false;
+          var pcleanup = function () { window.removeEventListener('pointermove', pmv); window.removeEventListener('pointerup', pup); };
+          var pmv = function (ev) { if (ev.pointerId !== ppid) return; if (!pStarted && Math.hypot(ev.clientX - psx, ev.clientY - psy) > 4) { pStarted = true; pcleanup(); startItemDrag(target, ev); } };
+          var pup = function (ev) { if (ev.pointerId !== ppid) return; pcleanup(); if (!pStarted) { try { requestFillFrame(target); } catch (_) {} } };
+          window.addEventListener('pointermove', pmv); window.addEventListener('pointerup', pup);
+          return;
         }
         if (target !== collageSelected) selectCollageItem(target);
         startItemDrag(target, e);
