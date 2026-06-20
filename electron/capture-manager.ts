@@ -1426,10 +1426,10 @@ function buildCollageVignetteSvg(W: number, H: number, intensity: number, shape?
 // equivalent subtle grain at print sizes — grain is texture, not registration-critical).
 // The whole layer's opacity scales 0..0.5 with the slider, exactly like the preview.
 function buildCollageGrainSvg(W: number, H: number, intensity: number): string {
-  // v2.1 round 249 (Terry) — grain range enlarged 50% (max 150, was 100) to match the
-  // preview slider; op stays (g/100)*0.5 so 150 → 0.75 (1.5× the value-100 strength).
-  const g = Math.max(0, Math.min(150, intensity || 0));
-  const op = ((g / 100) * 0.5).toFixed(3);
+  // v2.1 round 325 (Terry) — grain scale back to 0-100 but the effect DOUBLED (op coefficient
+  // 0.5 -> 1.0) so 100 → 1.0; matches the doubled preview (applyCollageTreatments).
+  const g = Math.max(0, Math.min(100, intensity || 0));
+  const op = ((g / 100) * 1.0).toFixed(3);
   // fractalNoise → collapse to GREY centred on ~0.5 (average the noise channels into
   // R=G=B) with FULL alpha. Mid-grey 0.5 under 'overlay' is a no-op, so lighter noise
   // LIGHTENS and darker noise DARKENS — proper filmic grain that pushes both ways
@@ -1889,8 +1889,8 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         log.warn(`[collage] vignette skipped (non-fatal): ${(vigErr as Error).message}`);
       }
     }
-    // v2.1 round 249 (Terry) — grain max 150 (was 100) so the bake matches the enlarged preview range.
-    const grain = Math.max(0, Math.min(150, Number(layout.canvas.grain) || 0));
+    // v2.1 round 325 (Terry) — grain 0-100 (doubled effect); bake matches the preview.
+    const grain = Math.max(0, Math.min(100, Number(layout.canvas.grain) || 0));
     if (grain > 0) {
       try {
         const grainBuf = await sharp(Buffer.from(buildCollageGrainSvg(W, H, grain))).png().toBuffer();

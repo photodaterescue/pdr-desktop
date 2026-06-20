@@ -4343,7 +4343,7 @@
             <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Fade</label>
             <span class="enhance-val" id="val-opacity">100</span>
           </div>
-          <input class="enhance-slider" id="slider-opacity" type="range" min="10" max="100" step="1" value="100">
+          <input class="enhance-slider" id="slider-opacity" type="range" min="0" max="100" step="1" value="100">
         </div>
         <!-- Blend: feather the photo's EDGES so it melts into whatever's
              behind it (CSS-mask preview; feathered-alpha bake on save). -->
@@ -4404,8 +4404,9 @@
             </div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="collage-grain" data-pdr-tooltip="Add a subtle film-grain texture over the whole collage. Double-click to reset.">Grain</label><span class="enhance-val" id="collage-grain-val">0</span></div>
-              <!-- v2.1 round 249 (Terry) — Grain range enlarged 50% (0-100 → 0-150) so it can be pushed stronger. -->
-              <input class="enhance-slider" type="range" id="collage-grain" min="0" max="150" step="1" value="0">
+              <!-- v2.1 round 325 (Terry) — Grain scale back to 0-100, but the EFFECT is doubled
+                   (render coefficient 0.5 -> 1.0) so the max is much grainier than before. -->
+              <input class="enhance-slider" type="range" id="collage-grain" min="0" max="100" step="1" value="0">
             </div>
           </div>
       </details>
@@ -12091,7 +12092,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -12169,7 +12170,7 @@
       // sliders + overlays after the canvas has been re-laid-out.
       collageVignette = Number.isFinite(s.vignette) ? Math.max(0, Math.min(100, s.vignette)) : 0;
       // v2.1 round 249 (Terry) — Grain range enlarged 50% (max 150, was 100).
-      collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(150, s.grain)) : 0;
+      collageGrain = Number.isFinite(s.grain) ? Math.max(0, Math.min(100, s.grain)) : 0;   // v2.1 round 325 (Terry) — grain 0..100
       // v2.1 round 240 (Terry) — restore vignette shape (old snapshots → 'ellipse').
       collageVignetteShape = ['ellipse','circle','heart','hearts','balloon','star'].indexOf(s.vignetteShape) >= 0 ? s.vignetteShape : 'ellipse';
       // v2.1 round 149 — restore the background's enh (fall back to the
@@ -12188,6 +12189,7 @@
       const applySnapItem = (it, si) => {
         it.on = si.on; it.removed = !!si.removed;   // round 304 (Terry) — X-removed-from-strip state round-trips
         it.placeholder = !!si.placeholder;   // v2.1 round 319 (Terry) — empty-frame state round-trips
+        it.framed = !!si.framed;   // v2.1 round 325 (Terry) — a filled frame keeps its box aspect (no balloon on reload)
         it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
         // lack both → a normal tile). boxAspect only matters for coverFill; default to the
@@ -12254,6 +12256,7 @@
             // clone) rebuilds correctly on undo/redo. applySnapItem re-asserts both below.
             coverFill: !!si.coverFill, boxAspect: (typeof si.boxAspect === 'number') ? si.boxAspect : undefined,
             placeholder: !!si.placeholder,   // v2.1 round 319 (Terry) — rebuild an empty frame (buildCollageItemEl reads this)
+            framed: !!si.framed,   // v2.1 round 325 (Terry) — filled-frame keeps its box aspect on rebuild
             z: si.z, el: null, imgEl: null, clipEl: null, locked: !!si.locked,
             crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
             bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
@@ -12359,7 +12362,13 @@
       let imgRetried = false;
       img.onerror = () => { if (!imgRetried) { imgRetried = true; img.src = getFileSrcFallback(it.path); } };
       img.onload = () => {
-        if (img.naturalWidth && img.naturalHeight) it.aspect = img.naturalWidth / img.naturalHeight;
+        if (img.naturalWidth && img.naturalHeight) {
+          // v2.1 round 325 (Terry) — a framed fill keeps the FRAME's box aspect + cover-crops the
+          // photo into it (so zoom/pan works + it survives reload); a normal tile takes the photo's
+          // own aspect.
+          if (it.framed) applyFrameCoverCrop(it, img.naturalWidth / img.naturalHeight);
+          else it.aspect = img.naturalWidth / img.naturalHeight;
+        }
         renderCollageItem(it);
       };
       // v2.1 round 173 — show the background-removed cut-out if this tile has one
@@ -12767,24 +12776,42 @@
       catch (_) { collagePickMode = 'bg'; collageFillTarget = null; }
     }
     // Drop a real photo into a frame: swap the empty-frame overlay out for the live <img>.
+    // v2.1 round 325 (Terry) — given a filled frame's photo aspect, set the crop that COVERS the
+    // frame's box (it.aspect): trim the long side so the cropped photo matches the box shape,
+    // centred. The normal render then fills the box and the user can zoom/pan within the frame.
+    function applyFrameCoverCrop(it, photoAspect) {
+      if (!it || !photoAspect || !isFinite(photoAspect) || photoAspect <= 0) return;
+      const ba = (it.aspect && isFinite(it.aspect) && it.aspect > 0) ? it.aspect : 1;
+      let l = 0, t = 0, r = 1, b = 1;
+      if (photoAspect > ba) { const cw = ba / photoAspect; l = (1 - cw) / 2; r = 1 - l; }       // photo wider → crop sides
+      else if (photoAspect < ba) { const ch = photoAspect / ba; t = (1 - ch) / 2; b = 1 - t; }  // photo taller → crop top/bottom
+      it.crop = { l: l, t: t, r: r, b: b };
+    }
     function fillCollageFrameWith(it, fp) {
       if (!it || !fp) return;
       if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can fill a frame.' }); return; }
       beginCollageChange();
-      // v2.1 round 324 (Terry) — the photo FILLS the frame: keep the frame's box size + shape and
-      // COVER the photo into it (cropped, Canva-style). Without this the loaded photo's aspect
-      // ballooned the box past the page. Capture the frame's current box aspect, then mark it
-      // coverFill so renderCollageItem sizes by boxAspect (not the photo's natural aspect).
+      // v2.1 round 325 (Terry) — fill via a cover-CROP on the NORMAL tile path (NOT coverFill).
+      // Keep the frame's box shape (it.aspect) and crop the photo to cover it. This way the photo
+      // can be ZOOMED + panned within its frame (Ctrl+scroll / Ctrl+drag) and bakes the same — the
+      // round-324 coverFill couldn't (it bypassed crop/zoom). The cover-crop needs the photo's real
+      // aspect, so it's computed on <img> load (via _coverFit) — or now, if the image is cached.
       const frameAspect = (typeof effectiveAspect === 'function') ? effectiveAspect(it) : (it.aspect || 1);
       it.placeholder = false;
       it.path = fp;
       it.bgRemovedPath = null;
-      it.coverFill = true;
-      it.boxAspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
+      it.coverFill = false;
+      it.aspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
+      it.crop = { l: 0, t: 0, r: 1, b: 1 };
+      it.zoom = 1; it.panX = 0; it.panY = 0;
+      it.framed = true;   // persistent: a cover-cropped frame keeps its box aspect (img.onload won't overwrite it)
       if (it.phEl && it.phEl.parentNode) it.phEl.parentNode.removeChild(it.phEl);
       it.phEl = null;
       if (it.el) it.el.classList.remove('is-frame');
-      if (it.imgEl) { it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(fp); }
+      if (it.imgEl) {
+        it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(fp);
+        if (it.imgEl.complete && it.imgEl.naturalWidth) applyFrameCoverCrop(it, it.imgEl.naturalWidth / it.imgEl.naturalHeight);
+      }
       renderCollageItem(it);
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
       selectCollageItem(it);
@@ -13147,7 +13174,7 @@
       if (!collageCanvasEl) return;
       var els = ensureCollageTreatmentOverlays();
       var v = Math.max(0, Math.min(100, collageVignette || 0));
-      var g = Math.max(0, Math.min(150, collageGrain || 0));   // v2.1 round 249 (Terry) — grain max 150
+      var g = Math.max(0, Math.min(100, collageGrain || 0));   // v2.1 round 325 (Terry) — grain 0..100
       if (els.vig) {
         if (v <= 0) { els.vig.style.display = 'none'; }
         else {
@@ -13179,7 +13206,7 @@
         else {
           els.grain.style.display = 'block';
           els.grain.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
-          els.grain.style.opacity = ((g / 100) * 0.5).toFixed(3);
+          els.grain.style.opacity = ((g / 100) * 1.0).toFixed(3);   // v2.1 round 325 (Terry) — doubled (was *0.5) so grain reads stronger
         }
       }
     }
@@ -14469,7 +14496,7 @@
         // v2.1 round 240 (Terry) — send the vignette SHAPE so the bake masks the dark
         // layer to the same shape (ellipse = the original radial-gradient look).
         if (collageVignette > 0) canvas.vignetteShape = collageVignetteShape || 'ellipse';
-        if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(150, collageGrain));   // v2.1 round 249 (Terry) — grain max 150 (bake matches preview)
+        if (collageGrain > 0) canvas.grain = Math.max(0, Math.min(100, collageGrain));   // v2.1 round 325 (Terry) — grain 0..100 (bake matches the doubled preview)
         // v2.1 round 235 (Terry) — GRADIENT bg: send the spec (kind/angle/stops) so
         // the bake builds a matching SVG gradient at W×H and composites it as the
         // bottom layer. Mutually exclusive with transparent + a bg photo (the setters
@@ -17846,7 +17873,7 @@ function zoomTo(newZoom, centreX, centreY) {
       // v2.1 round 143 (Terry) — per-tile Opacity (collage only).
       if (sOpacity) sOpacity.addEventListener('input', function () {
         const pct = clampOrDefault(sOpacity.value, 100);
-        state.opacity = Math.max(0.1, Math.min(1, pct / 100));
+        state.opacity = Math.max(0, Math.min(1, pct / 100));   // v2.1 round 325 (Terry) — Fade 0..100; 0 = fully transparent
         if (vOpacity) vOpacity.textContent = String(pct);
         applyEnhanceFilter();
       });
@@ -17966,7 +17993,7 @@ function zoomTo(newZoom, centreX, centreY) {
       attachClickToEditValue(vSat, sSat, function () { return state.saturation; }, function (n) { state.saturation = n; sSat.value = n; applyEnhanceFilter(); });
       attachClickToEditValue(vTemp, sTemp, function () { return state.temperature; }, function (n) { state.temperature = n; sTemp.value = n; applyEnhanceFilter(); }, function (v) { return (v > 0 ? '+' : '') + String(v); });
       attachClickToEditValue(vColour, sColour, function () { return state.colour == null ? 50 : state.colour; }, function (n) { state.colour = n; if (sColour) sColour.value = n; applyEnhanceFilter(); });
-      attachClickToEditValue(vOpacity, sOpacity, function () { return Math.round((state.opacity != null ? state.opacity : 1) * 100); }, function (n) { state.opacity = Math.max(0.1, Math.min(1, n / 100)); if (sOpacity) sOpacity.value = n; applyEnhanceFilter(); });
+      attachClickToEditValue(vOpacity, sOpacity, function () { return Math.round((state.opacity != null ? state.opacity : 1) * 100); }, function (n) { state.opacity = Math.max(0, Math.min(1, n / 100)); if (sOpacity) sOpacity.value = n; applyEnhanceFilter(); });
       attachClickToEditValue(vBlend, sBlend, function () { return Math.round(state.blend || 0); }, function (n) { state.blend = Math.max(0, Math.min(100, n)); if (sBlend) sBlend.value = n; applyEnhanceFilter(); });
       attachClickToEditValue(vCorners, sCorners, function () { return Array.isArray(state.corners) ? Math.round(Math.max.apply(null, state.corners.concat(0)) * 100) : 0; }, function (n) { const v = Math.max(0, Math.min(100, n)) / 100; state.corners = [v, v, v, v]; if (sCorners) sCorners.value = Math.round(v * 100); applyEnhanceFilter(); });
       // Angle = the selected tile's rotation (geometry, not in `state`).
