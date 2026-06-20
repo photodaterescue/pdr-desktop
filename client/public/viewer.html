@@ -2450,15 +2450,17 @@
       outline-offset: -2px;
     }
     .collage-frame-ph { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+    /* v2.1 round 324 (Terry) — a dark pill + white text so "Add photo" reads on ANY background
+       (white template canvas as well as a dark photo behind it). Hover = gold. */
     .collage-frame-ph-btn {
       pointer-events: auto; cursor: pointer;
       display: flex; flex-direction: column; align-items: center; gap: 6px;
-      padding: 12px 18px; border: none; background: transparent;
-      color: rgba(255,255,255,0.82); font-size: 12px; font-weight: 600;
+      padding: 11px 16px; border: none;
+      background: rgba(20,20,32,0.6); color: #fff; font-size: 12px; font-weight: 600;
       border-radius: 10px; transition: color .12s ease, background .12s ease;
     }
-    .collage-frame-ph-btn svg { width: 30px; height: 30px; opacity: 0.85; }
-    .collage-frame-ph-btn:hover { color: #FEC242; background: rgba(254,194,66,0.14); }
+    .collage-frame-ph-btn svg { width: 28px; height: 28px; opacity: 0.95; }
+    .collage-frame-ph-btn:hover { color: #1a1a2e; background: rgba(254,194,66,0.95); }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -11846,6 +11848,61 @@
       catch (_) { return false; }
     }
 
+    // v2.1 round 324 (Terry) — curated built-in STARTER templates: empty-frame layouts (NO photos),
+    // built LIVE on the current canvas so they fit any size. Each frame is a placeholder sized to
+    // fill its grid cell (aspect = the cell's aspect); dropping a photo covers the cell (the
+    // round-324 frame-fill). First cut = clean grids; richer layouts (hero + caption, etc.) follow
+    // once Terry approves this set.
+    const BUILTIN_TEMPLATES = [
+      { id: 'b_2across', name: 'Two side by side', cols: 2, rows: 1 },
+      { id: 'b_grid4', name: 'Four grid', cols: 2, rows: 2 },
+      { id: 'b_grid6', name: 'Six grid', cols: 3, rows: 2 },
+      { id: 'b_grid9', name: 'Nine grid', cols: 3, rows: 3 },
+    ];
+    function builtinThumbSvg(cols, rows) {
+      const W = 100, H = 76, g = 5; const cw = (W - g * (cols + 1)) / cols, ch = (H - g * (rows + 1)) / rows;
+      let cells = '';
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const x = g + c * (cw + g), y = g + r * (ch + g);
+        cells += '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + cw.toFixed(1) + '" height="' + ch.toFixed(1) + '" rx="2.5" fill="rgba(254,194,66,0.16)" stroke="rgba(254,194,66,0.55)" stroke-width="1.3"/>';
+      }
+      return '<svg viewBox="0 0 100 76" width="100%" height="100%" preserveAspectRatio="xMidYMid meet" style="padding:16px;box-sizing:border-box">' + cells + '</svg>';
+    }
+    function openBuiltinTemplate(spec) {
+      if (!collageMode || !spec) return false;
+      if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+      collageRestoring = true;
+      try {
+        // Reset to a blank canvas (the welcome screen's canvas is already empty — belt-and-braces),
+        // then build the empty frames on the LIVE canvas so they fit its current size/shape.
+        files = [];
+        collageUndo.length = 0; collageRedo.length = 0;
+        collageTexts = [];
+        buildCollageItems();
+        const ca = getCanvasAspect() || 1;
+        const cols = Math.max(1, spec.cols | 0), rows = Math.max(1, spec.rows | 0);
+        const gap = 0.03, cellW = 1 / cols, cellH = 1 / rows;
+        const fw = Math.max(0.05, cellW - gap * 2), fhFrac = Math.max(0.05, cellH - gap * 2);
+        const cellAspect = (fw / fhFrac) * ca;   // box aspect that makes the frame fill its cell
+        let z = collageZTop;
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+          const it = {
+            idx: -1, path: '', placeholder: true, on: true,
+            xFrac: c * cellW + gap, yFrac: r * cellH + gap, wFrac: fw, aspect: cellAspect, rot: 0,
+            z: ++z, el: null, imgEl: null, clipEl: null, locked: false,
+            crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+            bgRemovedPath: null, bgRemoveStrength: 50,
+            enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
+          };
+          collageItems.push(it); buildCollageItemEl(it); renderCollageItem(it);
+        }
+        collageZTop = z;
+      } finally { collageRestoring = false; }
+      currentCollageProjectId = null; currentCollageProjectName = null;
+      try { updateUndoButtons(); } catch (_) {}
+      return true;
+    }
+
     // ===== v2.1 round 317 (Terry) — Collages Welcome Screen (CWS) =====
     // Word-style start screen shown on a blank open: Blank + Recent (Templates next). It fills
     // ONLY the stage; the menu is collapsed + the empty filmstrip stays so the editor frame is
@@ -11906,10 +11963,24 @@
       const empty = document.getElementById('cws-templates-empty');
       if (!grid) return;
       grid.innerHTML = '';
+      // v2.1 round 324 (Terry) — curated built-in starter templates FIRST (always present), then
+      // the user's own saved templates.
+      BUILTIN_TEMPLATES.forEach((spec) => {
+        const card = document.createElement('div');
+        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = spec.name;
+        const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb'; thumb.innerHTML = builtinThumbSvg(spec.cols, spec.rows);
+        const meta = document.createElement('div'); meta.className = 'cws-card-meta';
+        const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = spec.name;
+        const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Template';
+        meta.appendChild(name); meta.appendChild(tag);
+        card.appendChild(thumb); card.appendChild(meta);
+        card.addEventListener('click', () => { try { if (openBuiltinTemplate(spec)) hideCollageWelcome(); } catch (_) {} });
+        grid.appendChild(card);
+      });
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       list = list.filter((p) => p.kind === 'template');
-      if (empty) empty.style.display = list.length ? 'none' : 'block';
+      if (empty) empty.style.display = 'none';   // built-ins are always present, so the row is never empty
       for (const p of list) {
         const card = document.createElement('div');
         card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Template';
@@ -12700,9 +12771,16 @@
       if (!it || !fp) return;
       if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can fill a frame.' }); return; }
       beginCollageChange();
+      // v2.1 round 324 (Terry) — the photo FILLS the frame: keep the frame's box size + shape and
+      // COVER the photo into it (cropped, Canva-style). Without this the loaded photo's aspect
+      // ballooned the box past the page. Capture the frame's current box aspect, then mark it
+      // coverFill so renderCollageItem sizes by boxAspect (not the photo's natural aspect).
+      const frameAspect = (typeof effectiveAspect === 'function') ? effectiveAspect(it) : (it.aspect || 1);
       it.placeholder = false;
       it.path = fp;
       it.bgRemovedPath = null;
+      it.coverFill = true;
+      it.boxAspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
       if (it.phEl && it.phEl.parentNode) it.phEl.parentNode.removeChild(it.phEl);
       it.phEl = null;
       if (it.el) it.el.classList.remove('is-frame');
