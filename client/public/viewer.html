@@ -8142,20 +8142,26 @@
         im.style.width = '100%'; im.style.height = '100%';
         im.style.objectFit = 'cover';
         im.style.objectPosition = 'center';
-        // v2.1 round 327 (Terry) — zoom + pan WITHIN a coverFill frame (frame-fill tiles).
-        // The box stays fixed (sized by boxAspect); zoom scales the cover-fit photo from its
-        // centre, pan slides it within the overflow. Mirrors the bake's cover-region zoom
-        // inset (capture-manager), so preview == saved. Ctrl+scroll sets zoom, Ctrl+drag pans.
+        // v2.1 round 327 (Terry) — zoom + pan WITHIN a coverFill frame; v2.1 round 335 (Terry) — ALSO
+        // honour Mirror/Flip here (a coverFill tile is still a real photo). One transform = flip ×
+        // (zoom+pan). Without the flip part, the zoom/clear-transform below clobbered the flip that
+        // applyFilterToEl set, so Mirror/Flip silently did nothing on frame/template tiles.
+        var _fx = (it.enh && it.enh.flipH) ? -1 : 1, _fy = (it.enh && it.enh.flipV) ? -1 : 1;
+        var _tp = [];
+        if (_fx !== 1 || _fy !== 1) _tp.push('scale(' + _fx + ', ' + _fy + ')');
         var _cz = Math.max(1, Math.min(2, it.zoom || 1));
         if (_cz > 1) {
           var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
           var _ctx = (_cpx * (_cz - 1) / (2 * _cz)) * 100, _cty = (_cpy * (_cz - 1) / (2 * _cz)) * 100;
-          im.style.transformOrigin = 'center center';
-          im.style.transform = 'scale(' + _cz + ') translate(' + (-_ctx).toFixed(3) + '%, ' + (-_cty).toFixed(3) + '%)';
-        } else { im.style.transform = ''; }
-        // Clear any shape mask a normal tile may have left on the clip.
-        applyShapeMask(it.clipEl, [0, 0, 0, 0], 0, iwPx, ihPx);
+          _tp.push('scale(' + _cz + ') translate(' + (-_ctx).toFixed(3) + '%, ' + (-_cty).toFixed(3) + '%)');
+        }
+        im.style.transformOrigin = 'center center';
+        im.style.transform = _tp.join(' ');
+        // v2.1 round 335 (Terry) — Blend edges + Curved corners now apply to coverFill tiles too (was
+        // force-cleared to [0,0,0,0]). Same shape mask the bake uses, so preview == saved.
+        applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, iwPx, ihPx);
         applyTileFx(it, iwPx, ihPx);   // v2.1 round 327 (Terry) — blur / pixelate
+        try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 335 (Terry) — per-photo Vignette + Grain on coverFill tiles
         refreshTileToolbar(it);
         // v2.1 round 266 (Terry) — Phase 4: keep the floating overlay glued to THIS tile
         // each frame it re-renders (covers drag/resize/rotate, undo/redo, enhance resizes).
