@@ -549,12 +549,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v2.1 round 315 (Terry) — editable "Work on Later" projects: save/list/load/delete the
     // editable collage (snapshot + source paths). saveProject overwrites when `id` is supplied
     // (that's autosave); the first save returns a new id to reuse.
-    saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string }, thumbnailDataUrl?: string) =>
+    saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }, thumbnailDataUrl?: string) =>
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
     listProjects: () =>
-      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null }>>,
+      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template' }>>,
     loadProject: (id: string) =>
-      ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string }; error?: string }>,
+      ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>
       ipcRenderer.invoke('collage:deleteProject', id) as Promise<{ success: boolean; error?: string }>,
   },

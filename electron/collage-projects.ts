@@ -23,6 +23,9 @@ export interface CollageProjectData {
   names: string[];          // matching display names
   snapshot: string;         // snapshotCollage() JSON
   aspectKey?: string;
+  // v2.1 round 323 (Terry) — 'template' = a reusable design (shown in the CWS Templates row,
+  // opened AS A NEW collage so the template stays pristine); default/absent = a normal project.
+  kind?: 'project' | 'template';
 }
 
 export interface CollageProjectSummary {
@@ -30,6 +33,7 @@ export interface CollageProjectSummary {
   name: string;
   savedAt: string;
   thumbnailDataUrl: string | null;
+  kind: 'project' | 'template';
 }
 
 // v2.1 round 315 (Terry) — distinct extension marks these as PDR collage PROJECTS (self-
@@ -82,7 +86,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         let thumb: string | null = null;
         const tp = path.join(dir, `${rec.id}.png`);
         try { if (fs.existsSync(tp)) thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; } catch { /* no thumb */ }
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project' });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));
