@@ -34,6 +34,28 @@ const LAYOUTS: { key: Layout; label: string; icon: typeof Square }[] = [
   { key: 'contact', label: 'Contact', icon: LayoutGrid },
 ];
 
+// v2.1 round 343 (Terry) — remember the print settings as the default (Terry: it defaulted to US
+// "Letter"; should default to A4 outside the US + let me save my choice). Paper's FIRST-RUN default is
+// locale-aware (Letter for the US / Canada / Mexico region, A4 for the rest of the world incl. the UK);
+// after that the last-used settings persist in localStorage and pre-fill the dialog every time.
+const PRINT_PREFS_KEY = 'pdr-print-settings';
+function localeDefaultPaper(): Paper {
+  try {
+    const region = ((navigator.language || '').split('-')[1] || '').toUpperCase();
+    if (['US', 'CA', 'MX', 'PH', 'CL', 'CO', 'VE', 'CR'].includes(region)) return 'Letter';
+  } catch { /* fall through to A4 */ }
+  return 'A4';
+}
+interface PrintPrefs { layout: Layout; fit: Fit; paper: Paper; orientation: Orientation; color: Color }
+function loadPrintPrefs(): PrintPrefs {
+  const d: PrintPrefs = { layout: '1', fit: 'fit', paper: localeDefaultPaper(), orientation: 'portrait', color: 'color' };
+  try {
+    const raw = localStorage.getItem(PRINT_PREFS_KEY);
+    if (raw) return { ...d, ...(JSON.parse(raw) as Partial<PrintPrefs>) };
+  } catch { /* use defaults */ }
+  return d;
+}
+
 /** Small segmented control (module scope = stable identity, no remounts). */
 function Segmented({ value, onChange, options }: {
   value: string;
@@ -70,11 +92,12 @@ function Segmented({ value, onChange, options }: {
 export function PrintModal({ paths, onClose }: PrintModalProps) {
   const isOpen = !!paths && paths.length > 0;
 
-  const [layout, setLayout] = useState<Layout>('1');
-  const [fit, setFit] = useState<Fit>('fit');
-  const [paper, setPaper] = useState<Paper>('Letter');
-  const [orientation, setOrientation] = useState<Orientation>('portrait');
-  const [color, setColor] = useState<Color>('color');
+  // v2.1 round 343 (Terry) — pre-fill from the saved defaults (locale-aware paper on first run).
+  const [layout, setLayout] = useState<Layout>(() => loadPrintPrefs().layout);
+  const [fit, setFit] = useState<Fit>(() => loadPrintPrefs().fit);
+  const [paper, setPaper] = useState<Paper>(() => loadPrintPrefs().paper);
+  const [orientation, setOrientation] = useState<Orientation>(() => loadPrintPrefs().orientation);
+  const [color, setColor] = useState<Color>(() => loadPrintPrefs().color);
   const [busy, setBusy] = useState<null | 'print' | 'pdf'>(null);
   const [thumbs, setThumbs] = useState<Record<string, string>>({});
 
@@ -96,6 +119,12 @@ export function PrintModal({ paths, onClose }: PrintModalProps) {
     })();
     return () => { cancelled = true; };
   }, [isOpen, paths]);
+
+  // v2.1 round 343 (Terry) — persist the settings so the current choices become the default next time
+  // (a one-time pick of A4 then sticks; no separate "set default" button needed).
+  useEffect(() => {
+    try { localStorage.setItem(PRINT_PREFS_KEY, JSON.stringify({ layout, fit, paper, orientation, color })); } catch { /* ignore */ }
+  }, [layout, fit, paper, orientation, color]);
 
   if (!isOpen || !paths) return null;
 
