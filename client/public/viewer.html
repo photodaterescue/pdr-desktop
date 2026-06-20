@@ -2380,6 +2380,66 @@
       box-shadow: 0 8px 40px rgba(0,0,0,0.45);
       overflow: hidden;
     }
+    /* ─── v2.1 round 317 (Terry) — Collages Welcome Screen (CWS) ─────────────────
+       Fills ONLY the stage (canvas area); the surrounding editor chrome stays. */
+    #collage-welcome {
+      position: absolute; inset: 0; z-index: 90000;
+      display: none; overflow: auto;
+      background:
+        radial-gradient(120% 80% at 50% -12%, rgba(254,194,66,0.07), transparent 60%),
+        #16161f;
+      -webkit-app-region: no-drag;
+    }
+    #collage-welcome.active { display: block; }
+    .cws-inner { max-width: 980px; margin: 0 auto; padding: 52px 40px 64px; }
+    .cws-head { margin-bottom: 30px; }
+    .cws-title { font-size: 30px; font-weight: 700; color: #f3f0ff; letter-spacing: 0.2px; }
+    .cws-sub { margin-top: 6px; font-size: 14px; color: #9a98ad; }
+    .cws-start { margin-bottom: 40px; }
+    .cws-blank {
+      display: inline-flex; align-items: center; gap: 16px;
+      padding: 18px 28px 18px 18px;
+      background: #1f1f2b; border: 1px solid rgba(255,255,255,0.09);
+      border-radius: 14px; cursor: pointer; text-align: left;
+      transition: transform .12s ease, border-color .12s ease, background .12s ease, box-shadow .12s ease;
+    }
+    .cws-blank:hover { transform: translateY(-2px); border-color: rgba(254,194,66,0.55); background: #24242f; box-shadow: 0 10px 30px rgba(0,0,0,0.35); }
+    .cws-blank-plus {
+      width: 52px; height: 52px; flex: 0 0 auto;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 30px; font-weight: 300; line-height: 1;
+      color: #16161f; background: #FEC242; border-radius: 11px;
+    }
+    .cws-blank-text { display: flex; flex-direction: column; gap: 3px; }
+    .cws-blank-title { font-size: 15px; font-weight: 600; color: #ece9f7; }
+    .cws-blank-hint { font-size: 12px; color: #8b8b9a; }
+    .cws-recent-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #7e7c8f; margin-bottom: 14px; }
+    .cws-recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
+    .cws-recent-empty { font-size: 13px; color: #6f6d80; padding: 6px 2px; }
+    .cws-card {
+      position: relative; display: flex; flex-direction: column;
+      background: #1f1f2b; border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; overflow: hidden; cursor: pointer;
+      transition: transform .12s ease, border-color .12s ease, box-shadow .12s ease;
+    }
+    .cws-card:hover { transform: translateY(-2px); border-color: rgba(254,194,66,0.55); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+    .cws-card-thumb {
+      aspect-ratio: 4 / 3; background: #14141c;
+      display: flex; align-items: center; justify-content: center;
+      background-size: cover; background-position: center; background-repeat: no-repeat;
+    }
+    .cws-card-meta { padding: 10px 12px 12px; }
+    .cws-card-name { font-size: 13px; font-weight: 600; color: #e6e3f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .cws-card-date { margin-top: 3px; font-size: 11px; color: #8b8b9a; }
+    .cws-card-del {
+      position: absolute; top: 8px; right: 8px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(18,18,26,0.82); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 7px; color: #d8d5e8; opacity: 0; cursor: pointer;
+      transition: opacity .12s ease, background .12s ease, border-color .12s ease;
+    }
+    .cws-card:hover .cws-card-del { opacity: 1; }
+    .cws-card-del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -3694,6 +3754,32 @@
            element; positioned over the canvas by JS. pointer-events toggle with
            visibility so it never blocks tile/canvas clicks when hidden. -->
       <div id="collage-grad-epicentre" aria-hidden="true" style="display:none"></div>
+      <!-- v2.1 round 317 (Terry) — Collages Welcome Screen (CWS). A Word-style start screen
+           that fills ONLY the stage (the canvas area). The titlebar (toolbar) above, the
+           right menu (collapsed) and the empty filmstrip below all stay framing it. Shown on a
+           blank open; Blank + Recent are wired now, Templates is the next increment. -->
+      <div id="collage-welcome" aria-hidden="true">
+        <div class="cws-inner">
+          <div class="cws-head">
+            <div class="cws-title">Collages</div>
+            <div class="cws-sub">Start something new — or pick up where you left off.</div>
+          </div>
+          <div class="cws-start">
+            <button type="button" id="cws-blank" class="cws-blank">
+              <span class="cws-blank-plus" aria-hidden="true">+</span>
+              <span class="cws-blank-text">
+                <span class="cws-blank-title">Blank collage</span>
+                <span class="cws-blank-hint">A fresh, empty canvas</span>
+              </span>
+            </button>
+          </div>
+          <div class="cws-recent">
+            <div class="cws-recent-title">Recent collages</div>
+            <div id="cws-recent-grid" class="cws-recent-grid" role="list"></div>
+            <div id="cws-recent-empty" class="cws-recent-empty">Your collages save themselves as you work — they'll show up here.</div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -11655,6 +11741,75 @@
       } catch (_) { return false; }
     }
 
+    // ===== v2.1 round 317 (Terry) — Collages Welcome Screen (CWS) =====
+    // Word-style start screen shown on a blank open: Blank + Recent (Templates next). It fills
+    // ONLY the stage; the menu is collapsed + the empty filmstrip stays so the editor frame is
+    // intact. Recent reuses listProjects + reopenCollageProject (the proven save/reopen engine).
+    function cwsFormatDate(iso) {
+      try {
+        const d = new Date(iso); if (isNaN(d.getTime())) return '';
+        const now = new Date(); const pad = (n) => String(n).padStart(2, '0');
+        if (d.toDateString() === now.toDateString()) return 'Today ' + pad(d.getHours()) + ':' + pad(d.getMinutes());
+        const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+        return M[d.getMonth()] + ' ' + d.getDate() + (d.getFullYear() === now.getFullYear() ? '' : ', ' + d.getFullYear());
+      } catch (_) { return ''; }
+    }
+    const CWS_THUMB_GLYPH = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#cfc9ec" stroke-width="1.4" style="opacity:.28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+    async function buildCwsRecent() {
+      const grid = document.getElementById('cws-recent-grid');
+      const empty = document.getElementById('cws-recent-empty');
+      if (!grid) return;
+      grid.innerHTML = '';
+      let list = [];
+      try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
+      if (empty) empty.style.display = list.length ? 'none' : 'block';
+      for (const p of list) {
+        const card = document.createElement('div');
+        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
+        const thumb = document.createElement('div');
+        thumb.className = 'cws-card-thumb';
+        if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
+        else thumb.innerHTML = CWS_THUMB_GLYPH;
+        const meta = document.createElement('div'); meta.className = 'cws-card-meta';
+        const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
+        const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
+        meta.appendChild(name); meta.appendChild(date);
+        const del = document.createElement('button');
+        del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.title = 'Delete this collage';
+        del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+        del.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const ok = await showPdrConfirm({ title: 'Delete collage?', body: 'Delete "' + (p.name || 'Untitled collage') + '"? This can\'t be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
+          if (!ok) return;
+          try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
+          buildCwsRecent();
+        });
+        card.addEventListener('click', async () => {
+          const ok = await reopenCollageProject(p.id);
+          if (ok) hideCollageWelcome();
+        });
+        card.appendChild(thumb); card.appendChild(meta); card.appendChild(del);
+        grid.appendChild(card);
+      }
+    }
+    function showCollageWelcome() {
+      const w = document.getElementById('collage-welcome');
+      if (!w) return;
+      // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
+      document.body.classList.add('collage-panel-collapsed', 'cws-open');
+      const blank = document.getElementById('cws-blank');
+      if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => hideCollageWelcome()); }
+      buildCwsRecent();
+      w.classList.add('active');
+      w.setAttribute('aria-hidden', 'false');
+    }
+    function hideCollageWelcome() {
+      const w = document.getElementById('collage-welcome');
+      if (w) { w.classList.remove('active'); w.setAttribute('aria-hidden', 'true'); }
+      // Restore the editing chrome (re-expand the menu for the work session).
+      document.body.classList.remove('collage-panel-collapsed', 'cws-open');
+    }
+
     function snapshotCollage() {
       return JSON.stringify({
         bg: collageBg, bgImagePath: collageBgImagePath, transparent: collageTransparent,
@@ -16207,6 +16362,9 @@
       gridArrange();
       setTimeout(() => { layoutCanvasSize(); gridArrange(); }, 120);
       setTimeout(() => { layoutCanvasSize(); }, 360);
+      // v2.1 round 317 (Terry) — a blank open (no preselected photos) lands on the Collages
+      // Welcome Screen; opening FROM selected photos skips it and goes straight to editing.
+      if (files.length === 0) { try { showCollageWelcome(); } catch (_) {} }
     }
 
     // v2.0.14 (Terry 2026-05-28) — filmstrip refresh on rotate. The
