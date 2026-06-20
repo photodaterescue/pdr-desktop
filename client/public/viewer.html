@@ -3074,6 +3074,13 @@
        pinned panel so nothing hides under it. */
     body.collage-mode.enhance-panel-open #collage-stage { padding-right: 398px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
     body.collage-mode.enhance-panel-open #filmstrip-wrap { padding-right: 382px; }   /* v2.1 round 247 — tracks 320->376 panel widen */
+    /* v2.1 round 320 (Terry) — the Collages Welcome Screen OWNS the window: editing chrome is
+       inert until you pick Blank / a recent / a template. (Add photos + Add frame still work —
+       they DISMISS the welcome screen and start a collage.) Enhance is greyed; the ‹ panel
+       handle + Save collage + Reset are hidden (nothing to enhance / save yet). */
+    body.cws-open #btn-enhance { opacity: 0.4; pointer-events: none; }
+    body.cws-open #collage-panel-toggle { display: none !important; }
+    body.cws-open #collage-save-wrap, body.cws-open #enhance-reset { display: none !important; }
     /* v2.1 round 300 (Terry) — collapse the Enhance panel for a full-width VIEW (a viewing
        toggle; editing still needs it open). A tab on the panel's left edge folds it away and
        the canvas re-fits into the freed width. Editing controls are untouched — re-expand to edit. */
@@ -12467,6 +12474,9 @@
       if (!fp || !collageMode) return;
       // v2.1 round 273 (Terry) — styled alert (no native dialog); fire-and-forget (return value unused, function not async).
       if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can be added to a collage.' }); return; }
+      // v2.1 round 320 (Terry) — adding a photo from the welcome screen STARTS the collage:
+      // dismiss the CWS first so the photo isn't dropped onto the (hidden) canvas behind it.
+      if (document.body.classList.contains('cws-open')) { try { hideCollageWelcome(); } catch (_) {} }
       beginCollageChange();
       // Build a fresh tile model with the same defaults buildCollageItems() uses
       // for a per-file tile, but with the picked path and a centred placement.
@@ -12513,6 +12523,8 @@
     // 'fill'; the same path doubles as "replace this photo" for reuse.
     function addFrameToCollage() {
       if (!collageMode) return;
+      // v2.1 round 320 (Terry) — adding a frame from the welcome screen STARTS the collage.
+      if (document.body.classList.contains('cws-open')) { try { hideCollageWelcome(); } catch (_) {} }
       beginCollageChange();
       const it = {
         idx: -1, path: '', placeholder: true, on: true,
@@ -17866,8 +17878,8 @@ function zoomTo(newZoom, centreX, centreY) {
         // v2.1 round 318 (Terry) — in COLLAGE the Enhance button MIRRORS the Viewer's: it
         // toggles the panel open/closed, just OPEN BY DEFAULT. The panel is the editor so it
         // never truly closes — "closed" folds it to full-width (the same collapsed state the
-        // ‹ handle uses), and clicking Enhance again brings it back.
-        if (collageMode) { toggleCollagePanelCollapsed(); return; }
+        // ‹ handle uses), and clicking Enhance again brings it back. Inert on the welcome screen.
+        if (collageMode) { if (!document.body.classList.contains('cws-open')) toggleCollagePanelCollapsed(); return; }
         if (isPinned) {
           setPinned(false);
           closePanel();
@@ -17898,7 +17910,8 @@ function zoomTo(newZoom, centreX, centreY) {
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
           // v2.1 round 318 (Terry) — collage: E mirrors the Enhance button (toggle collapse).
-          if (collageMode) { toggleCollagePanelCollapsed(); return; }
+          // v2.1 round 320 (Terry) — but inert on the welcome screen (nothing to enhance yet).
+          if (collageMode) { if (!document.body.classList.contains('cws-open')) toggleCollagePanelCollapsed(); return; }
           if (isPinned) { setPinned(false); closePanel(); }
           else { setPinned(true); openPanel(); }
           try { if (pinBtn) pinBtn.blur(); } catch (_) {}
