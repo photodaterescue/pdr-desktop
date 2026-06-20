@@ -11820,6 +11820,17 @@
     function showCollageWelcome() {
       const w = document.getElementById('collage-welcome');
       if (!w) return;
+      // v2.1 round 321 (Terry) — CRITICAL: the CWS is an overlay sitting OVER the editing canvas,
+      // and the canvas/stage marquee-select grabs the pointer on pointerdown (setPointerCapture).
+      // On a REAL click that capture swallowed the click on every CWS button (Blank / recent /
+      // templates) — they only "worked" under synthetic .click() in testing. Swallow pointerdown
+      // (+ mousedown) at the CWS so it never reaches the canvas handler beneath; the CWS buttons
+      // still get their own events (the stop fires as it bubbles UP, after the button).
+      if (!w.dataset.pdWired) {
+        w.dataset.pdWired = '1';
+        w.addEventListener('pointerdown', (e) => e.stopPropagation());
+        w.addEventListener('mousedown', (e) => e.stopPropagation());
+      }
       // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
       const blank = document.getElementById('cws-blank');
