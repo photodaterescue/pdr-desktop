@@ -2584,6 +2584,12 @@
     /* v2.1 round 331 (Terry) — collective floating toolbar for a multi-selection (mirrors the single-tile chrome toolbar). */
     #collage-group-box .cgb-toolbar { position: absolute; bottom: 100%; left: 50%; transform: translateX(-50%); margin-bottom: 18px; display: inline-flex; align-items: center; gap: 4px; padding: 4px; background: rgba(28,26,46,0.96); border: 1px solid rgba(255,255,255,0.14); border-radius: 9px; box-shadow: 0 4px 14px rgba(0,0,0,0.4); white-space: nowrap; pointer-events: auto; }
     #collage-group-box .cgb-toolbar.below { bottom: auto; top: 100%; margin-bottom: 0; margin-top: 18px; }
+    /* v2.1 round 332 (Terry) — × drawn as a centred SVG (the text glyph sat off-centre). */
+    #collage-group-box .cgb-count-x svg { width: 8px; height: 8px; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; fill: none; display: block; }
+    /* v2.1 round 332 (Terry) — "Group" / "Ungroup" text button at the FRONT of the bar (Canva-style) + a divider. */
+    #collage-group-box .cgb-tb-group { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: none; border-radius: 6px; background: transparent; color: #fff; font: 600 12px system-ui, sans-serif; cursor: pointer; pointer-events: auto; }
+    #collage-group-box .cgb-tb-group:hover { background: rgba(255,255,255,0.12); }
+    #collage-group-box .cgb-tb-divider { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255,255,255,0.16); }
     /* v2.1 round 296 (Terry) — MEASUREMENT badges: the px distance from a dragged/resized
        photo's edges to the page edges (Canva-style), for symmetry confidence. Drawn in
        #collage-chrome (un-clipped, over the stage). Opposite margins that MATCH turn green. */
@@ -8375,25 +8381,30 @@
     // fraction math for EACH tile (a floating ring that rotates with the tile) plus a
     // dashed bounding box around the union. Lives in #collage-chrome (un-clipped), and
     // HIDES the single-item handle box (group editing — drag any member to move all).
-    let collageGroupBox = null; const collageMultiRings = [];
+    let collageGroupBox = null; const collageMultiRings = []; let collageGroupBtn = null;
     function ensureGroupBox() {
       if (collageGroupBox || !collageChromeEl) return collageGroupBox;
       const gb = document.createElement('div'); gb.id = 'collage-group-box';
       // v2.1 round 331 (Terry) — count badge now has a × to deselect the whole selection.
       const cnt = document.createElement('div'); cnt.className = 'cgb-count';
       const cntText = document.createElement('span'); cntText.className = 'cgb-count-text';
-      const cntX = document.createElement('button'); cntX.type = 'button'; cntX.className = 'cgb-count-x'; cntX.textContent = '×'; cntX.setAttribute('data-pdr-tooltip', 'Deselect all');
+      const cntX = document.createElement('button'); cntX.type = 'button'; cntX.className = 'cgb-count-x'; cntX.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path d="M3 3 L9 9 M9 3 L3 9"/></svg>'; cntX.setAttribute('data-pdr-tooltip', 'Deselect all');
       cnt.appendChild(cntText); cnt.appendChild(cntX); gb.appendChild(cnt);
       // v2.1 round 331 (Terry) — collective floating toolbar for a 2+ selection (Canva's "Group" bar):
       // Lock all / Duplicate all / Delete all. The tiles already move together while selected.
       const tbar = document.createElement('div'); tbar.className = 'cgb-toolbar';
+      // v2.1 round 332 (Terry) — "Group" / "Ungroup" text button at the FRONT (Canva-style), then a divider + the actions.
+      const gGroup = document.createElement('button'); gGroup.type = 'button'; gGroup.className = 'cgb-tb-group'; gGroup.textContent = 'Group'; gGroup.setAttribute('data-pdr-tooltip', 'Group the selected photos so they move + edit as one (click again to ungroup)');
+      const gDiv = document.createElement('div'); gDiv.className = 'cgb-tb-divider';
       const mk = (cls, tip, svg) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-btn ' + cls; b.setAttribute('data-pdr-tooltip', tip); b.innerHTML = svg; return b; };
       const gLock = mk('cgb-tb-lock', 'Lock all selected (freeze position / size)', '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>');
       const gDup = mk('cgb-tb-dup', 'Duplicate all selected', '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>');
       const gRem = mk('cgb-tb-rem', 'Delete all selected', '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>');
-      tbar.appendChild(gLock); tbar.appendChild(gDup); tbar.appendChild(gRem); gb.appendChild(tbar);
+      tbar.appendChild(gGroup); tbar.appendChild(gDiv); tbar.appendChild(gLock); tbar.appendChild(gDup); tbar.appendChild(gRem); gb.appendChild(tbar);
+      collageGroupBtn = gGroup;
       cntX.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); clearCollageSelection(); });
       tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      gGroup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); groupOrUngroupSelection(); });
       gLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); lockSelection(); });
       gDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageSelection(); });
       gRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); deleteCollageSelection(); });
@@ -8439,6 +8450,8 @@
       box.style.height = (gb - gt) + 'px';
       box.style.display = 'block';
       const ct = box.querySelector('.cgb-count-text'); if (ct) ct.textContent = sel.length + ' selected';
+      // v2.1 round 332 (Terry) — the Group button reads "Ungroup" when the selection IS a whole group.
+      if (collageGroupBtn) collageGroupBtn.textContent = selectionIsOneGroup(sel) ? 'Ungroup' : 'Group';
       // v2.1 round 331 (Terry) — flip the group toolbar BELOW the box when its top is too near the
       // stage top (so it doesn't slide under the title bar). Mirrors the single chrome's below-flip.
       const gtb = box.querySelector('.cgb-toolbar');
@@ -10665,6 +10678,12 @@
       // multi-selection (no drag begins).
       if ((e.ctrlKey || e.metaKey) && !it.isBg) { toggleItemInSelection(it); return; }
       beginCollageChange();
+      // v2.1 round 332 (Terry) — clicking a GROUPED tile selects its whole group first, so the group
+      // then moves/edits as one (Canva). Gated on groupId → ungrouped tiles are completely unaffected.
+      if (it.groupId && !(collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)) {
+        const gm = collageItems.filter((x) => x && x.on && !x.isBg && x.groupId === it.groupId);
+        if (gm.length > 1) setCollageSelectionItems(gm);
+      }
       // If grabbing a member of a multi-selection (2+), move the WHOLE group
       // together — keep the selection instead of collapsing to just this tile.
       const dragGroup = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)
@@ -10758,7 +10777,7 @@
         try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
         // multi-selection collapses to just that tile (Canva behaviour).
-        if (dragGroup && !dragMoved) selectCollageItem(it);
+        if (dragGroup && !dragMoved && !it.groupId) selectCollageItem(it);   // v2.1 round 332 (Terry) — but NOT for a grouped tile: a plain click on a group keeps the WHOLE group selected
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
       };
@@ -12249,7 +12268,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -12360,6 +12379,7 @@
         it.enh = Object.assign({}, si.enh);
         it.locked = !!si.locked;   // v2.1 round 203 (Terry)
         it.lockLayer = !!si.lockLayer;   // v2.1 round 327 (Terry) — Lock-layer state round-trips
+        it.groupId = si.groupId || null;   // v2.1 round 332 (Terry) — group membership round-trips
         // v2.1 round 173 — restore the background-removed cut-out (or the
         // original). Setting the same src is a no-op in Chromium, so this only
         // reloads when undo/redo actually flips the cut-out on or off.
@@ -12766,6 +12786,24 @@
       const anyUnlocked = items.some((it) => !it.locked);
       items.forEach((it) => { it.locked = anyUnlocked; renderCollageItem(it); });
       commitCollageChange();
+    }
+    // v2.1 round 332 (Terry) — GROUP / UNGROUP the selection (Canva's Group). A group = tiles
+    // sharing a `groupId`; clicking any member then selects the whole group (see startItemDrag).
+    // Gated entirely on groupId, so tiles without one behave exactly as before.
+    function genGroupId() { return 'g_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7); }
+    function selectionIsOneGroup(items) {
+      const gid = items && items[0] && items[0].groupId;
+      if (!gid || !items.every((x) => x.groupId === gid)) return false;
+      const all = collageItems.filter((x) => x && x.on && !x.isBg && x.groupId === gid);
+      return all.length === items.length;   // the selection IS exactly that whole group
+    }
+    function groupOrUngroupSelection() {
+      const items = selectedItemsForOp(); if (items.length < 2) return;
+      beginCollageChange();
+      if (selectionIsOneGroup(items)) { items.forEach((x) => { x.groupId = null; }); }   // already a group → ungroup
+      else { const ng = genGroupId(); items.forEach((x) => { x.groupId = ng; }); }          // → group
+      commitCollageChange();
+      try { positionMultiSelectChrome(); } catch (_) {}
     }
     function duplicateCollageSelection() {
       const items = selectedItemsForOp(); if (!items.length) return;
