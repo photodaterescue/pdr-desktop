@@ -2465,16 +2465,17 @@
     }
     .collage-frame-ph-btn svg { width: 28px; height: 28px; opacity: 0.95; }
     .collage-frame-ph-btn:hover { color: #1a1a2e; background: rgba(254,194,66,0.95); }
-    /* v2.1 round 339 (Terry) — per-effect colour swatch + popover for Glow & shadow. The swatch
-       sits in the slider's label row (right side, beside the value); clicking it opens a popover
-       that reuses the Text colour palette (renderTextColorPalette). */
+    /* v2.1 round 339/340 (Terry) — per-effect colour for Glow & shadow. Each effect's slider has a
+       swatch in its label row (shows that effect's colour + acts as the target selector); the shared
+       Text colour palette is mounted INLINE below the sliders (round 340 — was a popover; Terry wanted
+       continuity with the Text one). Clicking a swatch points the inline palette at that effect. */
     .edge-lr-right { display: flex; align-items: center; gap: 7px; }
     .edge-swatch { width: 18px; height: 18px; border-radius: 4px; padding: 0; flex: 0 0 auto; cursor: pointer;
       border: 1px solid rgba(255,255,255,0.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3); background: #fff; }
     .edge-swatch:hover { border-color: rgba(254,194,66,0.95); }
-    .edge-color-pop { position: fixed; z-index: 2147482000; width: 230px; padding: 10px; border-radius: 10px;
-      background: #15151f; border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 14px 44px rgba(0,0,0,0.62); }
-    .edge-color-pop.hidden { display: none; }
+    .edge-swatch.active { border-color: #FEC242; box-shadow: 0 0 0 2px #FEC242, inset 0 0 0 1px rgba(0,0,0,0.3); }
+    .edge-color-head { font-size: 11px; color: #99a; text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 6px; }
+    #edge-color-inline.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -4503,6 +4504,10 @@
           <div class="enhance-label-row"><label for="slider-outline" data-pdr-tooltip="A solid outline hugging the photo's edge">Outline</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="outline" id="sw-outline" data-pdr-tooltip="Outline colour"></button><span class="enhance-val" id="val-outline">0</span></span></div>
           <input class="enhance-slider" id="slider-outline" type="range" min="0" max="100" step="1" value="0">
         </div>
+        <!-- v2.1 round 340 (Terry) — the shared colour palette, mounted INLINE below the sliders (like
+             the Text one). It colours the effect whose swatch is active; click a swatch to switch. -->
+        <div class="edge-color-head" id="edge-color-head">Colour — Glow</div>
+        <div id="edge-color-inline"></div>
       </details>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
            chevron to declutter ("largely pre-chosen by Looks; if someone
@@ -9420,9 +9425,20 @@
           else if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); exitTextEdit(); }
           else { e.stopPropagation(); }   // keep typing keys out of the collage key handler
         });
-        // Clicks inside the editable place the caret — don't let them bubble to
-        // the stage (which would deselect the background) or start a drag.
-        ed.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+        // v2.1 round 340 (Terry) — Canva-style: grab NEAR THE EDGE to MOVE the box while editing. A new
+        // text box enters edit mode immediately, so previously you had to click OUT before you could move
+        // it. Inside the edge band, clicks place the caret (and mustn't bubble to the stage / start a
+        // drag). The gold selection outline marks the grabbable edge; the cursor flips to a move arrow over it.
+        const ctEditEdgeBand = (ev) => {
+          const r = el.getBoundingClientRect();
+          const m = Math.min(14, Math.min(r.width, r.height) * 0.3);
+          return (ev.clientX - r.left < m || r.right - ev.clientX < m || ev.clientY - r.top < m || r.bottom - ev.clientY < m);
+        };
+        ed.addEventListener('pointerdown', (e) => {
+          if (!(layer && layer.locked) && ctEditEdgeBand(e)) { startTextDrag(layer, e); return; }   // edge → move the box
+          e.stopPropagation();   // inside → place the caret
+        });
+        ed.addEventListener('pointermove', (e) => { try { ed.style.cursor = ctEditEdgeBand(e) ? 'move' : 'text'; } catch (_) {} });
         ed.addEventListener('dblclick', (e) => { e.stopPropagation(); });
         ed.addEventListener('blur', () => { if (editingText === layer) exitTextEdit(); });
         el.appendChild(ed);
@@ -15833,13 +15849,22 @@
         // v2.1 round 266 (Terry) — Behaviour A: grab-pan at ANY zoom in carousel mode
         // (Terry: "grab the black screen and move ... should work zoomed out also").
         // Single-collage keeps the round-261 gate (only pan when zoomed past fit).
-        if (!carouselMode && collageUserZoom <= 1) return;   // nothing to pan at fit zoom
         const dx = e.clientX - collagePanDrag.sx, dy = e.clientY - collagePanDrag.sy;
         if (!collagePanDrag.moved && Math.hypot(dx, dy) < 4) return;   // click-vs-drag threshold
         collagePanDrag.moved = true;
         try { document.body.classList.add('collage-panning'); } catch (_) {}
         collagePanX = collagePanDrag.px + dx;
         collagePanY = collagePanDrag.py + dy;
+        // v2.1 round 340 (Terry) — fit-zoom grab-pan: dragging the dark MARGIN now shifts the view even at
+        // fit zoom, so you can reach a photo overhanging the canvas without zooming out. Clamp so the
+        // canvas stays mostly on-screen ("not out of view, just access the overlap sides"). Canvas-drag at
+        // fit is still the marquee (it returns before reaching here), so this path is margin-drag only.
+        if (!carouselMode && collageUserZoom <= 1) {
+          var _sr = collageStageEl.getBoundingClientRect();
+          var _mx = _sr.width * 0.5, _my = _sr.height * 0.6;
+          collagePanX = Math.max(-_mx, Math.min(_mx, collagePanX));
+          collagePanY = Math.max(-_my, Math.min(_my, collagePanY));
+        }
         applyCollageZoom();
       });
       const endCollagePan = (e) => {
@@ -17845,6 +17870,20 @@ function zoomTo(newZoom, centreX, centreY) {
       const EDGE_FX_KEYS = [['slider-glow', 'val-glow', 'glow'], ['slider-dropshadow', 'val-dropshadow', 'dropShadow'], ['slider-lift', 'val-lift', 'lift'], ['slider-neon', 'val-neon', 'neon'], ['slider-outline', 'val-outline', 'outline']];
       // v2.1 round 339 (Terry) — per-effect colour swatches: [swatchId, stateKey/enhKey(+'Color'), default].
       const EDGE_FX_COLORS = [['sw-glow', 'glow', '#ffffff'], ['sw-dropshadow', 'dropShadow', '#000000'], ['sw-lift', 'lift', '#000000'], ['sw-neon', 'neon', '#ff2bd6'], ['sw-outline', 'outline', '#ffffff']];
+      // v2.1 round 340 (Terry) — INLINE colour palette: it colours the ACTIVE effect; a swatch click switches it.
+      const EDGE_FX_LABELS = { glow: 'Glow', dropShadow: 'Drop shadow', lift: 'Lift', neon: 'Neon', outline: 'Outline' };
+      let activeEdgeFx = 'glow';
+      function edgeFxDefault(fx) { var f = EDGE_FX_COLORS.find(function (x) { return x[1] === fx; }); return f ? f[2] : '#ffffff'; }
+      function renderEdgeInline() {
+        var host = document.getElementById('edge-color-inline'); if (!host) return;
+        var fx = activeEdgeFx, def = edgeFxDefault(fx);
+        var head = document.getElementById('edge-color-head'); if (head) head.textContent = 'Colour — ' + (EDGE_FX_LABELS[fx] || '');
+        EDGE_FX_COLORS.forEach(function (f) { var sw = document.getElementById(f[0]); if (sw) sw.classList.toggle('active', f[1] === fx); });
+        renderTextColorPalette(host,
+          function () { return (state[fx + 'Color'] || def).toLowerCase(); },
+          function (hex) { if (!hex) return; state[fx + 'Color'] = hex; var f = EDGE_FX_COLORS.find(function (x) { return x[1] === fx; }); var sw = f && document.getElementById(f[0]); if (sw) sw.style.background = hex; applyEnhanceFilter(); renderEdgeInline(); },
+          {});
+      }
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
       // panel edits the SELECTED collage tile instead of the single
@@ -18067,6 +18106,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (vPixelate) vPixelate.textContent = String(Math.round(state.pixelate || 0));
         EDGE_FX_KEYS.forEach(function (f) { var s = document.getElementById(f[0]); var v = document.getElementById(f[1]); var val = Math.round(state[f[2]] || 0); if (s) s.value = String(val); if (v) v.textContent = String(val); });   // v2.1 round 337 (Terry)
         EDGE_FX_COLORS.forEach(function (f) { var sw = document.getElementById(f[0]); if (sw) sw.style.background = state[f[1] + 'Color'] || f[2]; });   // v2.1 round 339 (Terry) — sync swatch colours
+        try { renderEdgeInline(); } catch (_) {}   // v2.1 round 340 (Terry) — refresh the inline palette for the active effect
         // v2.1 round 155 — highlight Mirror/Flip when active.
         if (tileMirror) tileMirror.classList.toggle('active', !!state.flipH);
         if (tileFlip) tileFlip.classList.toggle('active', !!state.flipV);
@@ -18364,32 +18404,13 @@ function zoomTo(newZoom, centreX, centreY) {
         var v = document.getElementById(f[1]);
         s.addEventListener('input', function () { state[f[2]] = Math.max(0, Math.min(100, clampOrDefault(s.value, 0))); if (v) v.textContent = String(Math.round(state[f[2]])); applyEnhanceFilter(); });
       });
-      // v2.1 round 339 (Terry) — per-effect colour swatches → reuse the Text colour palette in a popover.
-      (function () {
-        var pop = document.getElementById('edge-color-pop');
-        if (!pop) { pop = document.createElement('div'); pop.id = 'edge-color-pop'; pop.className = 'edge-color-pop hidden'; document.body.appendChild(pop); }
-        function openPop(fx, anchor, def) {
-          var key = fx + 'Color';
-          var get = function () { return (state[key] || def || '#ffffff').toLowerCase(); };
-          var pick = function (hex) { if (!hex) return; state[key] = hex; if (anchor) anchor.style.background = hex; applyEnhanceFilter(); renderTextColorPalette(pop, get, pick, {}); };
-          renderTextColorPalette(pop, get, pick, {});
-          pop.classList.remove('hidden');
-          var r = anchor.getBoundingClientRect();
-          pop.style.left = Math.max(8, Math.min(r.right - 230, window.innerWidth - 240)) + 'px';
-          pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 240) + 'px';
-        }
-        EDGE_FX_COLORS.forEach(function (f) {
-          var sw = document.getElementById(f[0]); if (!sw) return;
-          sw.style.background = f[2];
-          sw.addEventListener('click', function (e) { e.stopPropagation(); openPop(f[1], sw, f[2]); });
-        });
-        document.addEventListener('pointerdown', function (e) {
-          if (pop.classList.contains('hidden')) return;
-          if (pop.contains(e.target)) return;
-          if (e.target && e.target.classList && e.target.classList.contains('edge-swatch')) return;
-          pop.classList.add('hidden');
-        });
-      })();
+      // v2.1 round 340 (Terry) — per-effect colour swatches now SELECT which effect the inline palette colours.
+      EDGE_FX_COLORS.forEach(function (f) {
+        var sw = document.getElementById(f[0]); if (!sw) return;
+        sw.style.background = f[2];
+        sw.addEventListener('click', function (e) { e.stopPropagation(); activeEdgeFx = f[1]; renderEdgeInline(); });
+      });
+      renderEdgeInline();
       sTemp.addEventListener('input', function () {
         state.temperature = clampOrDefault(sTemp.value, 0);
         vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
