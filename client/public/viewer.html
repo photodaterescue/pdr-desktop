@@ -11919,6 +11919,7 @@
         aspectKey: collageAspectKey,
       };
     }
+    let collageThumbBusy = false;
     async function autosaveCollageProject() {
       // Carousels are multi-PAGE; a single snapshotCollage() only captures the active page, so
       // their project save is a separate future effort — skip autosave in carousel mode for now.
@@ -11926,7 +11927,23 @@
       if (!collageProjectHasContent()) return;
       if (!(window.pdr && window.pdr.collage && window.pdr.collage.saveProject)) return;
       try {
-        const res = await window.pdr.collage.saveProject(serializeCollageProject());
+        // v2.1 round 333 (Terry) — generate a REAL thumbnail for the Welcome-screen cards (they were
+        // showing a generic icon — one was never made). Bake a small version through the export
+        // pipeline, scaled to ~600px so it's cheap, guarded so overlapping autosaves don't stack bakes.
+        let thumb;
+        if (!collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
+          collageThumbBusy = true;
+          try {
+            const layout = buildCollageLayout();
+            if (layout && layout.canvas) {
+              const lw = layout.canvas.w || 0, lh = layout.canvas.h || 0, mx = Math.max(lw, lh);
+              if (mx > 600) { const sc = 600 / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
+              thumb = await window.pdr.collage.renderThumb(layout);
+            }
+          } catch (_) { /* thumb is best-effort */ }
+          collageThumbBusy = false;
+        }
+        const res = await window.pdr.collage.saveProject(serializeCollageProject(), thumb || undefined);
         if (res && res.success && res.id) currentCollageProjectId = res.id;
       } catch (_) { /* autosave is best-effort — a failed save must NEVER interrupt editing */ }
     }

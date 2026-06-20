@@ -557,6 +557,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>
       ipcRenderer.invoke('collage:deleteProject', id) as Promise<{ success: boolean; error?: string }>,
+    // v2.1 round 333 (Terry) — bake a small thumbnail of a collage layout (no library save) for the
+    // Welcome Screen recent/template cards.
+    renderThumb: (layout: unknown) =>
+      ipcRenderer.invoke('collage:renderThumb', layout) as Promise<string | null>,
   },
 
   // v2.1 round 306 (Terry) — the floating "Capture region" prep bar (its own tiny

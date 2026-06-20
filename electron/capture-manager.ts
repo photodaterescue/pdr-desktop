@@ -1974,6 +1974,21 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
   }
 }
 
+// v2.1 round 333 (Terry) — render a small PNG THUMBNAIL of a collage layout for the Collages
+// Welcome Screen recent/template cards, WITHOUT saving to the library. Returns a data-URL (or
+// null on failure). The renderer scales the layout down first so this bake stays cheap.
+ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
+  try {
+    if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) return null;
+    const sharp = (await import('sharp')).default;
+    const buf = await bakeCollageLayout(layout);
+    const png = await sharp(buf).resize(360, 360, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+    return 'data:image/png;base64,' + png.toString('base64');
+  } catch (err) {
+    log.warn(`[collage] renderThumb failed (non-fatal): ${(err as Error).message}`);
+    return null;
+  }
+});
 ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
   try {
     // v2.1 round 258 (Terry) — carousel P4: bake via the shared helper, then the
