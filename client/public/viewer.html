@@ -3574,6 +3574,14 @@
        it when the background is selected. Mirror/Flip still apply. */
     body.collage-mode.collage-bg-selected #tile-rotate,
     body.collage-mode.collage-bg-selected #tile-angle-control { display: none; }
+    /* v2.1 round 336 (Terry) — EFFECTS tidy for a selected BACKGROUND. Blend edges, Curved corners,
+       Blur + Pixelate shape/process a photo TILE, not the canvas backdrop → hide them. Vignette +
+       Grain stay (whole-canvas). Fade stays ONLY for a background PHOTO (the collage-bg-photo class). */
+    body.collage-mode.collage-bg-selected .enhance-control:has(#slider-blend),
+    body.collage-mode.collage-bg-selected .enhance-control:has(#slider-corners),
+    body.collage-mode.collage-bg-selected .enhance-control:has(#slider-blur),
+    body.collage-mode.collage-bg-selected .enhance-control:has(#slider-pixelate) { display: none; }
+    body.collage-mode.collage-bg-selected:not(.collage-bg-photo) .enhance-control:has(#slider-opacity) { display: none; }
     .ec-color-toggle { display: flex; gap: 6px; margin: 4px 0 10px; }
     .ec-ctgl {
       flex: 1; background: transparent; border: 1px solid rgba(169,156,255,0.3);
@@ -13586,6 +13594,9 @@
     // by the shared syncTextColorPaletteRings(). Safe to call any time — it no-ops
     // when the locked specials aren't mounted (non-background target).
     function markBgLockedSpecialsActive() {
+      // v2.1 round 336 (Terry) — keep the Effects-for-bg gate live as the bg KIND changes: Fade
+      // applies only to a background PHOTO (Blend/Curved/Blur/Pixelate are hidden for any bg via CSS).
+      try { document.body.classList.toggle('collage-bg-photo', !!(collageSelected && collageSelected.isBg && collageBgImagePath)); } catch (_) {}
       const tSw = document.getElementById('collage-bg-locked-transparent');
       if (tSw) tSw.classList.toggle('active', !!collageTransparent);
       // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is now a STATELESS
@@ -20176,6 +20187,7 @@ function zoomTo(newZoom, centreX, centreY) {
             // v2.1 round 149 — hide the Frame chevron when the background
             // is the target (a background has no frame).
             document.body.classList.toggle('collage-bg-selected', !!collageTile.isBg);
+            document.body.classList.toggle('collage-bg-photo', !!(collageTile.isBg && collageBgImagePath));   // v2.1 round 336 (Terry) — Fade gate: keep Fade only for a bg PHOTO
             if (resetBtn) resetBtn.textContent = collageTile.isBg ? 'Reset background' : 'Reset photo';
             loadStateFromTile(collageTile);
             try { buildLooksStrip(); } catch (_) {}
@@ -20183,6 +20195,7 @@ function zoomTo(newZoom, centreX, centreY) {
           } else {
             document.body.classList.add('collage-no-tile');
             document.body.classList.remove('collage-bg-selected');
+            document.body.classList.remove('collage-bg-photo');   // v2.1 round 336 (Terry)
             if (resetBtn) resetBtn.textContent = 'Reset photo';
           }
         },
