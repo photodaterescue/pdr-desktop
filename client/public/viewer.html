@@ -8235,6 +8235,22 @@
     // Built ONCE (only one tile is selected at a time → at most one chrome group); every
     // call to positionSelectionChrome() just re-points it at the current selection.
     let collageChromeBox = null, collageChromeParts = null;
+    // v2.1 round 328 (Terry) — hit-test the TOP-MOST tile under a screen point (highest z whose
+    // box contains it). Used by the selection-chrome drag surface so clicking a framed photo that
+    // sits OVER a large selected background selects the PHOTO, not the background beneath it.
+    // (Unrotated boxes are exact; a rotated tile uses its bounding box — close enough.)
+    function topCollageItemAtPoint(clientX, clientY) {
+      let best = null;
+      for (let i = 0; i < collageItems.length; i++) {
+        const it = collageItems[i];
+        if (!it || !it.on || it.removed || !it.el) continue;
+        const r = it.el.getBoundingClientRect();
+        if (clientX >= r.left && clientX <= r.right && clientY >= r.top && clientY <= r.bottom) {
+          if (!best || (it.z || 0) > (best.z || 0)) best = it;
+        }
+      }
+      return best;
+    }
     function ensureChromeBox() {
       if (collageChromeBox || !collageChromeEl) return collageChromeBox;
       const box = document.createElement('div');
@@ -8295,7 +8311,17 @@
       // box (over the carousel OR the dark margin). startItemDrag routes locked→view-pan,
       // unlocked→move; stopPropagation stops the stage's pointerdown from ALSO starting a pan
       // (the fix for "the canvas is being moved with the photo" when grabbing over the black).
-      body.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemDrag(collageSelected, e); });
+      body.addEventListener('pointerdown', (e) => {
+        e.stopPropagation();
+        // v2.1 round 328 (Terry) — the chrome drag surface fills the SELECTED tile's box, so for a
+        // large selected background it sits OVER the framed photos in front of it. Re-target to the
+        // top-most tile actually under the cursor, so clicking a front photo selects THAT (not the
+        // background underneath). Clicking an empty part of the background still drags the background.
+        const target = topCollageItemAtPoint(e.clientX, e.clientY) || collageSelected;
+        if (!target || target.isBg) return;
+        if (target !== collageSelected) selectCollageItem(target);
+        startItemDrag(target, e);
+      });
       rTL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tl'); });
       rTR.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'tr'); });
       rBL.addEventListener('pointerdown', (e) => { e.stopPropagation(); if (collageSelected && !collageSelected.isBg) startItemResize(collageSelected, e, 'bl'); });
