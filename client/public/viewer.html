@@ -1363,8 +1363,8 @@
       background: #12122a;       /* opaque so scrolling thumbs don't show through */
       overflow: hidden;          /* clip each half's hover fill to the rounded corners */
     }
-    #collage-add-photos, #collage-shot-chev { display: none; }
-    body.collage-mode #collage-add-photos {
+    #collage-add-photos, #collage-shot-chev, #collage-add-frame { display: none; }
+    body.collage-mode #collage-add-photos, body.collage-mode #collage-add-frame {
       display: inline-flex;
       flex-direction: column;     /* stacked: icon over label */
       align-items: center;
@@ -1382,8 +1382,10 @@
       cursor: pointer;
       transition: background 120ms, color 120ms;
     }
-    body.collage-mode #collage-add-photos:hover { background: #1b1b3a; color: #ffd778; }
-    body.collage-mode #collage-add-photos svg { width: 18px; height: 18px; flex: 0 0 auto; }
+    body.collage-mode #collage-add-photos:hover, body.collage-mode #collage-add-frame:hover { background: #1b1b3a; color: #ffd778; }
+    body.collage-mode #collage-add-photos svg, body.collage-mode #collage-add-frame svg { width: 18px; height: 18px; flex: 0 0 auto; }
+    /* v2.1 round 319 (Terry) — "Add frame" sits after the screenshot chevron with the same dashed divider. */
+    body.collage-mode #collage-add-frame { border-left: 1.25px dashed rgba(254, 194, 66, 0.55); }
     body.collage-mode #collage-shot-chev {
       display: inline-flex;
       align-items: center;
@@ -2440,6 +2442,22 @@
     }
     .cws-card:hover .cws-card-del { opacity: 1; }
     .cws-card-del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+    /* ─── v2.1 round 319 (Terry) — empty photo FRAMES (templates foundation) ─── */
+    .collage-item.is-frame .collage-clip {
+      background: rgba(255,255,255,0.05);
+      outline: 2px dashed rgba(254,194,66,0.6);
+      outline-offset: -2px;
+    }
+    .collage-frame-ph { position: absolute; inset: 0; pointer-events: none; display: flex; align-items: center; justify-content: center; }
+    .collage-frame-ph-btn {
+      pointer-events: auto; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 12px 18px; border: none; background: transparent;
+      color: rgba(255,255,255,0.82); font-size: 12px; font-weight: 600;
+      border-radius: 10px; transition: color .12s ease, background .12s ease;
+    }
+    .collage-frame-ph-btn svg { width: 30px; height: 30px; opacity: 0.85; }
+    .collage-frame-ph-btn:hover { color: #FEC242; background: rgba(254,194,66,0.14); }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -3817,7 +3835,7 @@
       drops the chosen photo onto the canvas as a new tile. Carries no data-idx so
       the strip's index logic ignores it. --><div id="collage-add-group"><!-- v2.1 round 303 (Terry) — Add-photos + a Take-screenshot
       chevron, Canva "Add page type" style. Wrapped in one sticky-left group so both stay
-      pinned while the strip scrolls (the added-photo thumbs append after this group). --><button type="button" id="collage-add-photos" data-pdr-tooltip="Add another photo to this collage" data-pdr-tooltip-side="top" aria-label="Add photos to collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add photos</span></button><button type="button" id="collage-shot-chev" data-pdr-tooltip="Take screenshot" data-pdr-tooltip-side="top" aria-label="Take a screenshot to add to this collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button></div></div>
+      pinned while the strip scrolls (the added-photo thumbs append after this group). --><button type="button" id="collage-add-photos" data-pdr-tooltip="Add another photo to this collage" data-pdr-tooltip-side="top" aria-label="Add photos to collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add photos</span></button><button type="button" id="collage-shot-chev" data-pdr-tooltip="Take screenshot" data-pdr-tooltip-side="top" aria-label="Take a screenshot to add to this collage"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 15l6-6 6 6"/></svg></button><button type="button" id="collage-add-frame" data-pdr-tooltip="Add an empty photo frame (drop a photo in later)" data-pdr-tooltip-side="top" aria-label="Add an empty photo frame"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"></rect><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg><span>Add frame</span></button></div></div>
   </div>
 
 
@@ -11865,7 +11883,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -11961,6 +11979,7 @@
       // the per-file originals and the rebuilt duplicates below).
       const applySnapItem = (it, si) => {
         it.on = si.on; it.removed = !!si.removed;   // round 304 (Terry) — X-removed-from-strip state round-trips
+        it.placeholder = !!si.placeholder;   // v2.1 round 319 (Terry) — empty-frame state round-trips
         it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
         // lack both → a normal tile). boxAspect only matters for coverFill; default to the
@@ -11978,7 +11997,12 @@
         // reloads when undo/redo actually flips the cut-out on or off.
         it.bgRemovedPath = si.bgRemovedPath || null;
         it.bgRemoveStrength = (typeof si.bgRemoveStrength === 'number') ? si.bgRemoveStrength : 50;
-        if (it.imgEl) it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path);
+        // v2.1 round 319 (Terry) — an empty frame has no photo: keep its <img> blank + hidden
+        // (the placeholder overlay built by buildCollageItemEl stays); else (re)load the photo.
+        if (it.imgEl) {
+          if (it.placeholder) it.imgEl.style.display = 'none';
+          else { it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(it.bgRemovedPath || it.path); }
+        }
         if (si.z > maxZ) maxZ = si.z;
         if (si.z < minZ) minZ = si.z;   // v2.1 round 263 (Terry) — bg-tile: track the back-z floor
       };
@@ -12021,6 +12045,7 @@
             // background-photo tile (which lives past the per-file originals, like a
             // clone) rebuilds correctly on undo/redo. applySnapItem re-asserts both below.
             coverFill: !!si.coverFill, boxAspect: (typeof si.boxAspect === 'number') ? si.boxAspect : undefined,
+            placeholder: !!si.placeholder,   // v2.1 round 319 (Terry) — rebuild an empty frame (buildCollageItemEl reads this)
             z: si.z, el: null, imgEl: null, clipEl: null, locked: !!si.locked,
             crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
             bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
@@ -12131,8 +12156,30 @@
       };
       // v2.1 round 173 — show the background-removed cut-out if this tile has one
       // (a clone inherits it), else the original. (Initial tiles have none yet.)
-      img.src = getFileSrc(it.bgRemovedPath || it.path);
+      // v2.1 round 319 (Terry) — an empty FRAME (placeholder) has no photo: don't set a src,
+      // hide the <img>, and drop in a "drop a photo here" overlay. The overlay is pointer-
+      // transparent so the frame body still drags; only its button (which fills the frame)
+      // takes clicks. fillCollageFrameWith() swaps this overlay back out for the <img>.
+      if (it.placeholder) {
+        img.style.display = 'none';
+        el.classList.add('is-frame');
+      } else {
+        img.src = getFileSrc(it.bgRemovedPath || it.path);
+      }
       clip.appendChild(img);
+      if (it.placeholder) {
+        const ph = document.createElement('div');
+        ph.className = 'collage-frame-ph';
+        const phBtn = document.createElement('button');
+        phBtn.type = 'button'; phBtn.className = 'collage-frame-ph-btn';
+        phBtn.setAttribute('data-pdr-tooltip', 'Add a photo to this frame');
+        phBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg><span>Add photo</span>';
+        phBtn.addEventListener('pointerdown', (e) => e.stopPropagation());
+        phBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); requestFillFrame(it); });
+        ph.appendChild(phBtn);
+        clip.appendChild(ph);
+        it.phEl = ph;
+      }
       el.appendChild(clip);
       const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
       // v2.1 round 227 (Terry) — single clean CENTRED circular-arrow glyph (was the
@@ -12237,7 +12284,7 @@
       const nx = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, (it.xFrac || 0) + OFF));
       const ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
       const clone = {
-        idx: it.idx, path: it.path, on: true,
+        idx: it.idx, path: it.path, on: true, placeholder: !!it.placeholder,   // v2.1 round 319 (Terry) — duplicating a frame keeps it a frame
         xFrac: nx, yFrac: ny, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
         z: ++collageZTop, el: null, imgEl: null, clipEl: null,
         locked: false,
@@ -12398,7 +12445,8 @@
     // trade-off: the added photo is on the CANVAS but not in the bottom pool strip,
     // so it can't be toggled out via a thumb — it's removed via the tile's own ×.
     // (Same as a duplicated tile, which has lived without a strip thumb since r203.)
-    let collagePickMode = 'bg';   // 'bg' = background pick (default) | 'add' = add-a-tile
+    let collagePickMode = 'bg';   // 'bg' = background pick (default) | 'add' = add-a-tile | 'fill' = fill one empty frame
+    let collageFillTarget = null;  // v2.1 round 319 (Terry) — the frame tile awaiting a pick (mode 'fill')
     // v2.1 round 297 (Terry) — remove a photo from the canvas the same way it was added:
     // un-ticking it in the "Add photos" picker delivers a remove, which drops the matching
     // tile (the most-recently-added on-tile with that path). setItemOn handles undo + the
@@ -12455,6 +12503,63 @@
       try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
       selectCollageItem(it);
       updateCollageFilmstrip();   // harmless no-op for the new tile (no thumb); matches duplicateCollageItem
+      commitCollageChange();
+    }
+
+    // v2.1 round 319 (Terry) — EMPTY PHOTO FRAMES (templates foundation). A frame is a normal
+    // tile with NO photo (placeholder:true) — a styled "drop a photo here" box you position +
+    // resize like any tile, then fill. This is what lets a template hold a layout WITHOUT using
+    // any real photos. A single library pick is routed to the target frame via collagePickMode
+    // 'fill'; the same path doubles as "replace this photo" for reuse.
+    function addFrameToCollage() {
+      if (!collageMode) return;
+      beginCollageChange();
+      const it = {
+        idx: -1, path: '', placeholder: true, on: true,
+        xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
+        z: ++collageZTop, el: null, imgEl: null, clipEl: null,
+        locked: false,
+        crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+        bgRemovedPath: null, bgRemoveStrength: 50,
+        enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
+      };
+      placeCenter(it);
+      // Cascade off-centre by the live tile count so several frames don't stack exactly.
+      const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
+      const off = (((n - 1) % 6)) * 0.035;
+      it.xFrac = Math.max(0, Math.min(1 - it.wFrac, (it.xFrac || 0.35) + off));
+      it.yFrac = Math.max(0, Math.min(1 - itemHeightFrac(it), (it.yFrac || 0.35) + off));
+      collageItems.push(it);
+      buildCollageItemEl(it);
+      renderCollageItem(it);
+      selectCollageItem(it);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+    // Open the library picker to fill ONE frame (or replace a tile's photo).
+    function requestFillFrame(it) {
+      if (!it || !collageMode) return;
+      collageFillTarget = it;
+      collagePickMode = 'fill';
+      try { window.pdr.collage.pickBackground('this frame', false); }
+      catch (_) { collagePickMode = 'bg'; collageFillTarget = null; }
+    }
+    // Drop a real photo into a frame: swap the empty-frame overlay out for the live <img>.
+    function fillCollageFrameWith(it, fp) {
+      if (!it || !fp) return;
+      if (isVideoPath(fp)) { showPdrAlert({ title: 'Can\'t add that', body: 'Only photos can fill a frame.' }); return; }
+      beginCollageChange();
+      it.placeholder = false;
+      it.path = fp;
+      it.bgRemovedPath = null;
+      if (it.phEl && it.phEl.parentNode) it.phEl.parentNode.removeChild(it.phEl);
+      it.phEl = null;
+      if (it.el) it.el.classList.remove('is-frame');
+      if (it.imgEl) { it.imgEl.style.display = ''; it.imgEl.src = getFileSrc(fp); }
+      renderCollageItem(it);
+      try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
+      selectCollageItem(it);
+      updateCollageFilmstrip();
       commitCollageChange();
     }
 
@@ -14086,7 +14191,9 @@
     // byte-identical to before, and each carousel page bakes from its own restored
     // state. Returns the { canvas, items, texts } object (or null if no on-tiles).
     function buildCollageLayout() {
-      const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
+      // v2.1 round 319 (Terry) — empty FRAMES (placeholder, no photo) are never baked: they're
+      // a layout aid, not content. They simply don't appear in the exported image.
+      const on = collageItems.filter((it) => it.on && !it.placeholder && it.path && !isVideoPath(it.path));
       if (on.length === 0) return null;
       const a = getCanvasAspect();
         // v2.1 round 226 (Terry) — Canvas Size export resolution. If a preset (or
@@ -14835,6 +14942,14 @@
             // collagePickMode='bg' before launching, ~below) and a fresh "+ Add photos"
             // click (sets 'add') keep the flag correct for the NEXT pick session, so a
             // later background pick can never misroute here. Only the bg branch resets.
+            // v2.1 round 319 (Terry) — 'fill' = drop the single pick into the awaiting frame
+            // (or replace that tile's photo), then return to the default mode.
+            if (mode === 'fill') {
+              collagePickMode = 'bg';
+              const target = collageFillTarget; collageFillTarget = null;
+              if (fp && target) fillCollageFrameWith(target, fp);
+              return;
+            }
             if (mode === 'add') {
               if (remove) { if (fp) removeCollagePhotoByPath(fp); return; }   // v2.1 round 297 (Terry) — toggle-off in the picker removes that photo's tile
               if (fp) addPhotoToCollage(fp); return;
@@ -14886,6 +15001,12 @@
       if (shotChev && !shotChev.dataset.wired) {
         shotChev.dataset.wired = '1';
         shotChev.addEventListener('click', (e) => { e.stopPropagation(); takeCollageScreenshot(); });
+      }
+      // v2.1 round 319 (Terry) — "Add frame": drop an empty photo frame onto the canvas.
+      const addFrameBtn = document.getElementById('collage-add-frame');
+      if (addFrameBtn && !addFrameBtn.dataset.wired) {
+        addFrameBtn.dataset.wired = '1';
+        addFrameBtn.addEventListener('click', (e) => { e.stopPropagation(); addFrameToCollage(); });
       }
       // v2.1 round 152 (Terry) — click the CANVAS (the backdrop, no photo
       // layer over it) → select the BACKGROUND so it can be reset/edited and
