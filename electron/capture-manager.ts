@@ -989,6 +989,9 @@ interface CollageEnhance {
   grain?: number; // v2.1 round 294 — PER-PHOTO film grain 0..150
   blur?: number; // v2.1 round 327 — PER-PHOTO blur 0..100
   pixelate?: number; // v2.1 round 327 — PER-PHOTO pixelate 0..100
+  // v2.1 round 341 — PER-PHOTO Glow & shadow edge/depth effects (0..100) + their colours (hex).
+  glow?: number; dropShadow?: number; lift?: number; neon?: number; outline?: number;
+  glowColor?: string; dropShadowColor?: string; liftColor?: string; neonColor?: string; outlineColor?: string;
 }
 // v2.1 round 164 (Terry) — CURVED CORNERS + Blend, in one rounded-rect
 // signed-distance mask. corners = [tl,tr,br,bl] (0–1 of half the short side);
@@ -1522,6 +1525,72 @@ function buildCollageTilePipeline(sharp: any, srcLong: string, iw: number, ih: n
   return p;
 }
 
+// v2.1 round 341 (Terry) — Glow & shadow edge-effect EXTENT (padding) for a tile of short side `s`.
+// Single source of truth used by BOTH the PAD pre-scan (so a glowing tile near the page edge still
+// fits the base) and buildTileEdgeFx (the canvas it builds on). Mirrors applyTileEdgeFx's sizing:
+// 3σ Gaussian reach + offset (+ dilate for outline), per active effect; the max wins.
+function edgeFxExtent(enh: CollageEnhance | undefined, s: number): number {
+  if (!enh) return 0;
+  const cl = (v: unknown) => Math.max(0, Math.min(100, Number(v) || 0));
+  const glow = cl(enh.glow), neon = cl(enh.neon), lift = cl(enh.lift), ds = cl(enh.dropShadow), ol = cl(enh.outline);
+  let ext = 0;
+  if (glow > 0) { const gb = (glow / 100) * 0.14 * s; ext = Math.max(ext, ((gb + gb * 0.35) / 2) * 3); }
+  if (neon > 0) { const nb = (neon / 100) * 0.10 * s; ext = Math.max(ext, nb * 3); }
+  if (lift > 0) { const sg = ((lift / 100) * 0.16 * s) / 2; ext = Math.max(ext, sg * 3 + (lift / 100) * 0.06 * s); }
+  if (ds > 0) { const d = (ds / 100) * 0.07 * s; ext = Math.max(ext, (d / 2) * 3 + d); }
+  if (ol > 0) ext = Math.max(ext, Math.max(1, (ol / 100) * 0.05 * s));
+  return ext > 0 ? Math.ceil(ext) + 8 : 0;
+}
+
+// v2.1 round 341 (Terry) — EXPORT BAKE for the Glow & shadow edge effects. Mirrors the editor's
+// box-shadow preview (applyTileEdgeFx): for each active effect, a coloured silhouette of the
+// (un-rotated, already-shaped) tile is blurred (glow/neon/lift/drop-shadow) or dilated (outline),
+// offset, and composited BEHIND the tile on a padded canvas. The caller then rotates the whole thing
+// as one, so the effects turn WITH the tile (the preview's box-shadow rotates with the element). Sizes
+// scale by the tile's short side `s` (same fractions as the preview) → matches at any export size.
+// Returns the combined buffer + dims (tile centred), or null when no effect is active.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function buildTileEdgeFx(sharp: any, tile: Buffer, w: number, h: number, enh: CollageEnhance): Promise<{ buf: Buffer; w: number; h: number } | null> {
+  const s = Math.min(w, h);
+  const P = edgeFxExtent(enh, s);
+  if (P <= 0) return null;
+  const cl = (v: unknown) => Math.max(0, Math.min(100, Number(v) || 0));
+  const glow = cl(enh.glow), neon = cl(enh.neon), lift = cl(enh.lift), ds = cl(enh.dropShadow), ol = cl(enh.outline);
+  // Layers in CSS paint order BACK→FRONT (outline furthest back; glow nearest the tile); the tile is
+  // composited last, on top. { color, alpha, sigma (blur), dilate (outline only), dx, dy (offset) }.
+  const layers: Array<{ color: string; alpha: number; sigma: number; dilate: number; dx: number; dy: number }> = [];
+  if (ol > 0) layers.push({ color: enh.outlineColor || '#ffffff', alpha: 1, sigma: 0, dilate: Math.max(1, (ol / 100) * 0.05 * s), dx: 0, dy: 0 });
+  if (ds > 0) { const d = (ds / 100) * 0.07 * s; layers.push({ color: enh.dropShadowColor || '#000000', alpha: 0.55, sigma: d / 2, dilate: 0, dx: d, dy: d }); }
+  if (lift > 0) layers.push({ color: enh.liftColor || '#000000', alpha: 0.5, sigma: ((lift / 100) * 0.16 * s) / 2, dilate: 0, dx: 0, dy: (lift / 100) * 0.06 * s });
+  if (neon > 0) { const nb = (neon / 100) * 0.10 * s; const nc = enh.neonColor || '#ff2bd6'; layers.push({ color: nc, alpha: 1, sigma: (nb + nb * 0.3) / 2, dilate: 0, dx: 0, dy: 0 }); layers.push({ color: nc, alpha: 1, sigma: nb, dilate: 0, dx: 0, dy: 0 }); }
+  if (glow > 0) { const gb = (glow / 100) * 0.14 * s; layers.push({ color: enh.glowColor || '#ffffff', alpha: 0.9, sigma: (gb + gb * 0.35) / 2, dilate: 0, dx: 0, dy: 0 }); }
+  const W2 = w + P * 2, H2 = h + P * 2;
+  const composites: Array<{ input: Buffer; left: number; top: number }> = [];
+  for (const l of layers) {
+    const c = hexToRgb(l.color);
+    // The tile's alpha placed on a W2×H2 canvas at this layer's offset.
+    const tileOnBase = await sharp({ create: { width: W2, height: H2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+      .composite([{ input: tile, left: Math.round(P + l.dx), top: Math.round(P + l.dy) }]).png().toBuffer();
+    if (l.dilate > 0) {
+      // OUTLINE: dilate the tile's alpha (isotropic blur + threshold ≈ morphological grow), colour it.
+      const dilatedAlpha = await sharp(tileOnBase).extractChannel('alpha').blur(Math.max(0.3, l.dilate)).threshold(38).raw().toBuffer();
+      const ring = await sharp({ create: { width: W2, height: H2, channels: 3, background: { r: c.r, g: c.g, b: c.b } } })
+        .joinChannel(dilatedAlpha, { raw: { width: W2, height: H2, channels: 1 } }).png().toBuffer();
+      composites.push({ input: ring, left: 0, top: 0 });
+    } else {
+      // GLOW / NEON / LIFT / DROP-SHADOW: coloured silhouette (alpha = tileAlpha × effect opacity), blurred.
+      let sil = await sharp({ create: { width: W2, height: H2, channels: 4, background: { r: c.r, g: c.g, b: c.b, alpha: l.alpha } } })
+        .composite([{ input: tileOnBase, blend: 'dest-in' }]).png().toBuffer();
+      if (l.sigma > 0.3) sil = await sharp(sil).blur(l.sigma).png().toBuffer();
+      composites.push({ input: sil, left: 0, top: 0 });
+    }
+  }
+  composites.push({ input: tile, left: P, top: P });   // the tile itself, on top of its shadows
+  const buf = await sharp({ create: { width: W2, height: H2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
+    .composite(composites).png().toBuffer();
+  return { buf, w: W2, h: H2 };
+}
+
 // v2.1 round 258 (Terry) — carousel P4: extracted the layout→final-image-Buffer
 // bake out of collage:saveLayout so a carousel can bake N pages with the SAME
 // compositing pipeline. Pure function of `layout`; the single-collage handler and
@@ -1584,8 +1653,11 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
       // Rotated bbox dims: rW = iw·|cos|+ih·|sin|, rH = iw·|sin|+ih·|cos|.
       const _rad = (((it.rot || 0) % 360) * Math.PI) / 180;
       const _c = Math.abs(Math.cos(_rad)), _s = Math.abs(Math.sin(_rad));
-      const _hw = ((_iw * _c + _ih * _s) / 2) * FRAME_SLOP;
-      const _hh = ((_iw * _s + _ih * _c) / 2) * FRAME_SLOP;
+      // v2.1 round 341 (Terry) — add the Glow & shadow edge-effect spread so a glowing / outlined tile
+      // near the page edge still fits the padded base (else its bbox overruns the base → sharp throws).
+      const _efx = edgeFxExtent(it.enh, Math.min(_iw, _ih));
+      const _hw = ((_iw * _c + _ih * _s) / 2) * FRAME_SLOP + _efx;
+      const _hh = ((_iw * _s + _ih * _c) / 2) * FRAME_SLOP + _efx;
       // Box centre in page px (matches cx/cy used at composite time below).
       const _cx = clampTileX(it.xFrac) * W + _iw / 2;
       const _cy = clampTileY(it.yFrac) * H + _ih / 2;
@@ -1761,6 +1833,17 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
             } catch (vgErr) {
               log.warn(`[collage] per-tile vignette/grain skipped (non-fatal): ${(vgErr as Error).message}`);
             }
+          }
+        }
+        // v2.1 round 341 (Terry) — EXPORT BAKE the Glow & shadow edge effects onto the un-rotated tile
+        // (so the rotation below turns them WITH the tile, matching the preview's box-shadow). Built from
+        // the already-shaped tile, so a rounded / feathered tile gets a rounded glow / outline.
+        if (item.enh) {
+          try {
+            const _ef = await buildTileEdgeFx(sharp, tile, rotW, rotH, item.enh);
+            if (_ef) { tile = _ef.buf; rotW = _ef.w; rotH = _ef.h; }
+          } catch (efErr) {
+            log.warn(`[collage] tile edge effects skipped (non-fatal): ${(efErr as Error).message}`);
           }
         }
         const rot = ((item.rot || 0) % 360 + 360) % 360;
