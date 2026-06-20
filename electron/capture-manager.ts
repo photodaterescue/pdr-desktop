@@ -987,6 +987,8 @@ interface CollageEnhance {
   vignette?: number; // v2.1 round 294 — PER-PHOTO vignette 0..100
   vignetteShape?: string; // v2.1 round 294 — vignette shape (ellipse/heart/star/…)
   grain?: number; // v2.1 round 294 — PER-PHOTO film grain 0..150
+  blur?: number; // v2.1 round 327 — PER-PHOTO blur 0..100
+  pixelate?: number; // v2.1 round 327 — PER-PHOTO pixelate 0..100
 }
 // v2.1 round 164 (Terry) — CURVED CORNERS + Blend, in one rounded-rect
 // signed-distance mask. corners = [tl,tr,br,bl] (0–1 of half the short side);
@@ -1439,8 +1441,8 @@ function buildCollageGrainSvg(W: number, H: number, intensity: number): string {
     `<filter id="n" x="0" y="0" width="100%" height="100%">` +
     `<feTurbulence type="fractalNoise" baseFrequency="0.7" numOctaves="2" stitchTiles="stitch" result="t"/>` +
     `<feColorMatrix in="t" type="matrix" values="0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0.33 0.33 0.33 0 0  0 0 0 0 1" result="g"/>` +
-    // v2.1 round 326 (Terry) — double again via CONTRAST (opacity already maxes at 1.0); matches collageGrainDataUri.
-    `<feComponentTransfer in="g"><feFuncR type="linear" slope="2" intercept="-0.5"/><feFuncG type="linear" slope="2" intercept="-0.5"/><feFuncB type="linear" slope="2" intercept="-0.5"/></feComponentTransfer>` +
+    // v2.1 round 327 (Terry) — double again (3rd) via CONTRAST (opacity maxed); matches collageGrainDataUri.
+    `<feComponentTransfer in="g"><feFuncR type="linear" slope="4" intercept="-1.5"/><feFuncG type="linear" slope="4" intercept="-1.5"/><feFuncB type="linear" slope="4" intercept="-1.5"/></feComponentTransfer>` +
     `</filter>` +
     `<rect width="${W}" height="${H}" filter="url(#n)" opacity="${op}"/></svg>`
   );
@@ -1677,6 +1679,32 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
             };
           }
         }
+        // v2.1 round 327 (Terry) — ZOOM-IN-FRAME for coverFill (frame-fill) tiles: the box
+        // stays fixed; zoom shows a smaller centred (pan-shifted) sub-rect of the COVER region,
+        // mirroring the editor's scale()+translate() on the cover-fit <img> (renderCollageItem).
+        if (isCover && _zoom > 1) {
+          try {
+            const cmeta = await sharp(toLongPath(item.path), { failOnError: false }).metadata();
+            let cow = cmeta.width || 0, coh = cmeta.height || 0;
+            if (cmeta.orientation && cmeta.orientation >= 5) { const tmp = cow; cow = coh; coh = tmp; }
+            if (cow > 0 && coh > 0) {
+              const boxAspect = iw / ih;
+              let cReg: { left: number; top: number; width: number; height: number };
+              if (cow / coh > boxAspect) { const ccw = Math.round(coh * boxAspect); cReg = { left: Math.round((cow - ccw) / 2), top: 0, width: ccw, height: coh }; }
+              else { const cch = Math.round(cow / boxAspect); cReg = { left: 0, top: Math.round((coh - cch) / 2), width: cow, height: cch }; }
+              const cInsetX = cReg.width * (1 - 1 / _zoom) / 2;
+              const cInsetY = cReg.height * (1 - 1 / _zoom) / 2;
+              const cpsx = Math.max(-1, Math.min(1, item.panX || 0)) * cInsetX;
+              const cpsy = Math.max(-1, Math.min(1, item.panY || 0)) * cInsetY;
+              cropRect = {
+                left: Math.round(cReg.left + cInsetX + cpsx),
+                top: Math.round(cReg.top + cInsetY + cpsy),
+                width: Math.max(1, Math.round(cReg.width / _zoom)),
+                height: Math.max(1, Math.round(cReg.height / _zoom)),
+              };
+            }
+          } catch { /* zoom-in-frame best-effort; fall back to plain cover */ }
+        }
         // Bake the tile (crop + resize + its own Enhance state + frame).
         // The result may be larger than iw×ih if a frame was added, so
         // read its real dims back.
@@ -1685,6 +1713,26 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;
         let rotW = baked.info.width, rotH = baked.info.height;
+        // v2.1 round 327 (Terry) — per-photo BLUR + PIXELATE (mirror the editor's clip filter).
+        // Applied BEFORE the corner/blend mask, matching the preview order (CSS filter, then
+        // mask). Both scale with the tile's short side (same fraction applyTileFx uses) so the
+        // saved image matches the preview at any export size. Blur then pixelate (preview order).
+        if (item.enh) {
+          const tShort = Math.min(rotW, rotH);
+          const tblur = Math.max(0, Math.min(100, Number(item.enh.blur) || 0));
+          if (tblur > 0) {
+            try { tile = await sharp(tile).blur(Math.max(0.3, tblur / 100 * 0.045 * tShort)).png().toBuffer(); }
+            catch (e) { log.warn(`[collage] tile blur skipped: ${(e as Error).message}`); }
+          }
+          const tpix = Math.max(0, Math.min(100, Number(item.enh.pixelate) || 0));
+          if (tpix > 0) {
+            try {
+              const cell = Math.max(2, Math.round(tpix / 100 * 0.11 * tShort));
+              const dw = Math.max(1, Math.round(rotW / cell)), dh = Math.max(1, Math.round(rotH / cell));
+              tile = await sharp(tile).resize(dw, dh, { kernel: 'nearest' }).resize(rotW, rotH, { kernel: 'nearest' }).png().toBuffer();
+            } catch (e) { log.warn(`[collage] tile pixelate skipped: ${(e as Error).message}`); }
+          }
+        }
         // v2.1 round 150 (Terry) — Blend: feather the (framed) tile's edges
         // BEFORE rotation, so the soft band aligns with the tile rectangle.
         // v2.1 round 164 (Terry) — round corners + feather the (framed) tile's
