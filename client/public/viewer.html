@@ -4468,6 +4468,32 @@
             </div>
           </div>
       </details>
+      <!-- v2.1 round 337 (Terry) — GLOW & SHADOW: per-photo edge / depth effects, each a slider.
+           Live preview = stacked CSS drop-shadows on the tile box (it doesn't clip, so they show
+           BEYOND the tile and follow the photo's masked shape). Export-matching bake comes next. -->
+      <details class="enhance-collapse" id="enhance-edge">
+        <summary>Glow &amp; shadow</summary>
+        <div class="enhance-control">
+          <div class="enhance-label-row"><label for="slider-glow" data-pdr-tooltip="A soft luminous glow around the photo">Glow</label><span class="enhance-val" id="val-glow">0</span></div>
+          <input class="enhance-slider" id="slider-glow" type="range" min="0" max="100" step="1" value="0">
+        </div>
+        <div class="enhance-control">
+          <div class="enhance-label-row"><label for="slider-dropshadow" data-pdr-tooltip="A drop shadow behind the photo for a 3D, lifted look">Drop shadow / 3D</label><span class="enhance-val" id="val-dropshadow">0</span></div>
+          <input class="enhance-slider" id="slider-dropshadow" type="range" min="0" max="100" step="1" value="0">
+        </div>
+        <div class="enhance-control">
+          <div class="enhance-label-row"><label for="slider-lift" data-pdr-tooltip="A soft shadow underneath so the photo appears to float off the page">Lift</label><span class="enhance-val" id="val-lift">0</span></div>
+          <input class="enhance-slider" id="slider-lift" type="range" min="0" max="100" step="1" value="0">
+        </div>
+        <div class="enhance-control">
+          <div class="enhance-label-row"><label for="slider-neon" data-pdr-tooltip="A bright neon glow around the photo">Neon</label><span class="enhance-val" id="val-neon">0</span></div>
+          <input class="enhance-slider" id="slider-neon" type="range" min="0" max="100" step="1" value="0">
+        </div>
+        <div class="enhance-control">
+          <div class="enhance-label-row"><label for="slider-outline" data-pdr-tooltip="A solid outline hugging the photo's edge">Outline</label><span class="enhance-val" id="val-outline">0</span></div>
+          <input class="enhance-slider" id="slider-outline" type="range" min="0" max="100" step="1" value="0">
+        </div>
+      </details>
       <!-- v2.1 round 143 (Terry) — manual Levels collapsed under a
            chevron to declutter ("largely pre-chosen by Looks; if someone
            wants to manually do it, then they can"). Open by default in
@@ -8099,6 +8125,28 @@
       if (px > 0) parts.push('url(#' + ensureCollagePixFilter(px / 100 * 0.044 * shortPx) + ')');   // v2.1 round 330 (Terry) — a further 20% less than the r329 halving (0.055 -> 0.044)
       it.clipEl.style.filter = parts.length ? parts.join(' ') : '';
     }
+    // v2.1 round 337 (Terry) — Glow & shadow EDGE effects: stacked drop-shadows on the tile BOX
+    // (it.el, which doesn't clip → they show beyond it + follow the photo's masked shape). Sizes
+    // scale with the tile's short side so the look is resolution-independent. (Export bake next.)
+    function applyTileEdgeFx(it, iwPx, ihPx) {
+      if (!it || !it.el) return;
+      var e = it.enh || {};
+      var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
+      var p = [];
+      var glow = Math.max(0, Math.min(100, e.glow || 0));
+      if (glow > 0) p.push('drop-shadow(0 0 ' + (glow / 100 * 0.14 * s).toFixed(1) + 'px rgba(255,255,255,0.95))');
+      var neon = Math.max(0, Math.min(100, e.neon || 0));
+      if (neon > 0) { var nr = neon / 100 * 0.10 * s; p.push('drop-shadow(0 0 ' + nr.toFixed(1) + 'px #ff2bd6)', 'drop-shadow(0 0 ' + (nr * 2).toFixed(1) + 'px #ff2bd6)'); }
+      var lift = Math.max(0, Math.min(100, e.lift || 0));
+      if (lift > 0) p.push('drop-shadow(0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px rgba(0,0,0,0.5))');
+      var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
+      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); p.push('drop-shadow(' + d + 'px ' + d + 'px ' + d + 'px rgba(0,0,0,0.55))'); }
+      var ol = Math.max(0, Math.min(100, e.outline || 0));
+      if (ol > 0) { var n = Math.max(1, ol / 100 * 0.045 * s), c = '#ffffff', dn = n.toFixed(1), dh = (n * 0.7).toFixed(1);
+        p.push('drop-shadow(' + dn + 'px 0 0 ' + c + ')', 'drop-shadow(-' + dn + 'px 0 0 ' + c + ')', 'drop-shadow(0 ' + dn + 'px 0 ' + c + ')', 'drop-shadow(0 -' + dn + 'px 0 ' + c + ')', 'drop-shadow(' + dh + 'px ' + dh + 'px 0 ' + c + ')', 'drop-shadow(-' + dh + 'px ' + dh + 'px 0 ' + c + ')', 'drop-shadow(' + dh + 'px -' + dh + 'px 0 ' + c + ')', 'drop-shadow(-' + dh + 'px -' + dh + 'px 0 ' + c + ')'); }
+      it.el.style.filter = p.length ? p.join(' ') : '';
+      if (p.length) it.el.style.boxShadow = 'none';   // these effects replace the subtle default depth shadow
+    }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
       if (!it.on) { it.el.style.display = 'none'; return; }
@@ -8169,6 +8217,7 @@
         // force-cleared to [0,0,0,0]). Same shape mask the bake uses, so preview == saved.
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, iwPx, ihPx);
         applyTileFx(it, iwPx, ihPx);   // v2.1 round 327 (Terry) — blur / pixelate
+        applyTileEdgeFx(it, iwPx, ihPx);   // v2.1 round 337 (Terry) — glow / shadow / lift / neon / outline
         try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 335 (Terry) — per-photo Vignette + Grain on coverFill tiles
         refreshTileToolbar(it);
         // v2.1 round 266 (Terry) — Phase 4: keep the floating overlay glued to THIS tile
@@ -8222,6 +8271,7 @@
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, innerW, innerH);
       }
       applyTileFx(it, iwPx, ihPx);   // v2.1 round 327 (Terry) — blur / pixelate (clip filter)
+      applyTileEdgeFx(it, iwPx, ihPx);   // v2.1 round 337 (Terry) — glow / shadow / lift / neon / outline
       try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 294 (Terry) — per-photo vignette + grain overlays
       // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
       // clipping under the titlebar when the tile is near the top (Terry SS2).
@@ -17751,7 +17801,10 @@ function zoomTo(newZoom, centreX, centreY) {
         grain: 0, // v2.1 round 294 (Terry) — PER-PHOTO film grain 0..150 (collage only)
         blur: 0, // v2.1 round 327 (Terry) — PER-PHOTO blur 0..100 (collage only)
         pixelate: 0, // v2.1 round 327 (Terry) — PER-PHOTO pixelate 0..100 (collage only)
+        glow: 0, dropShadow: 0, lift: 0, neon: 0, outline: 0, // v2.1 round 337 (Terry) — edge/depth effects 0..100 (collage only)
       };
+      // v2.1 round 337 (Terry) — Glow & shadow edge-effect sliders: [inputId, valId, stateKey/enhKey].
+      const EDGE_FX_KEYS = [['slider-glow', 'val-glow', 'glow'], ['slider-dropshadow', 'val-dropshadow', 'dropShadow'], ['slider-lift', 'val-lift', 'lift'], ['slider-neon', 'val-neon', 'neon'], ['slider-outline', 'val-outline', 'outline']];
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
       // panel edits the SELECTED collage tile instead of the single
@@ -17893,6 +17946,7 @@ function zoomTo(newZoom, centreX, centreY) {
               opacity: state.opacity, blend: state.blend, corners: (Array.isArray(state.corners) ? state.corners.slice() : [0, 0, 0, 0]), flipH: state.flipH, flipV: state.flipV,
               vignette: state.vignette, vignetteShape: state.vignetteShape, grain: state.grain,   // v2.1 round 294 (Terry) — per-photo vignette + grain
               blur: state.blur, pixelate: state.pixelate,   // v2.1 round 327 (Terry) — per-photo blur + pixelate
+              glow: state.glow, dropShadow: state.dropShadow, lift: state.lift, neon: state.neon, outline: state.outline,   // v2.1 round 337 (Terry) — edge/depth effects
             };
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
@@ -17970,6 +18024,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (vBlur) vBlur.textContent = String(Math.round(state.blur || 0));
         if (sPixelate) sPixelate.value = String(Math.round(state.pixelate || 0));    // v2.1 round 327 (Terry)
         if (vPixelate) vPixelate.textContent = String(Math.round(state.pixelate || 0));
+        EDGE_FX_KEYS.forEach(function (f) { var s = document.getElementById(f[0]); var v = document.getElementById(f[1]); var val = Math.round(state[f[2]] || 0); if (s) s.value = String(val); if (v) v.textContent = String(val); });   // v2.1 round 337 (Terry)
         // v2.1 round 155 — highlight Mirror/Flip when active.
         if (tileMirror) tileMirror.classList.toggle('active', !!state.flipH);
         if (tileFlip) tileFlip.classList.toggle('active', !!state.flipV);
@@ -18260,6 +18315,12 @@ function zoomTo(newZoom, centreX, centreY) {
         state.pixelate = Math.max(0, Math.min(100, clampOrDefault(sPixelate.value, 0)));
         if (vPixelate) vPixelate.textContent = String(Math.round(state.pixelate));
         applyEnhanceFilter();
+      });
+      // v2.1 round 337 (Terry) — Glow & shadow edge effects (compact wiring; all five identical).
+      EDGE_FX_KEYS.forEach(function (f) {
+        var s = document.getElementById(f[0]); if (!s) return;
+        var v = document.getElementById(f[1]);
+        s.addEventListener('input', function () { state[f[2]] = Math.max(0, Math.min(100, clampOrDefault(s.value, 0))); if (v) v.textContent = String(Math.round(state[f[2]])); applyEnhanceFilter(); });
       });
       sTemp.addEventListener('input', function () {
         state.temperature = clampOrDefault(sTemp.value, 0);
@@ -20140,6 +20201,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.grain = e.grain != null ? e.grain : 0;
         state.blur = e.blur != null ? e.blur : 0;             // v2.1 round 327 (Terry)
         state.pixelate = e.pixelate != null ? e.pixelate : 0; // v2.1 round 327 (Terry)
+        EDGE_FX_KEYS.forEach(function (f) { state[f[2]] = (e[f[2]] != null) ? e[f[2]] : 0; });   // v2.1 round 337 (Terry) — edge/depth effects
         updateUI();
         try { syncTreatmentSlidersForSelection(); } catch (_) {}          // v2.1 round 294 — reflect this tile's vignette/grain on the sliders
         markActiveSwatchByColor(state.borderColor);
