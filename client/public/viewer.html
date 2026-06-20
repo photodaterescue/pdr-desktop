@@ -2465,6 +2465,16 @@
     }
     .collage-frame-ph-btn svg { width: 28px; height: 28px; opacity: 0.95; }
     .collage-frame-ph-btn:hover { color: #1a1a2e; background: rgba(254,194,66,0.95); }
+    /* v2.1 round 339 (Terry) — per-effect colour swatch + popover for Glow & shadow. The swatch
+       sits in the slider's label row (right side, beside the value); clicking it opens a popover
+       that reuses the Text colour palette (renderTextColorPalette). */
+    .edge-lr-right { display: flex; align-items: center; gap: 7px; }
+    .edge-swatch { width: 18px; height: 18px; border-radius: 4px; padding: 0; flex: 0 0 auto; cursor: pointer;
+      border: 1px solid rgba(255,255,255,0.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.3); background: #fff; }
+    .edge-swatch:hover { border-color: rgba(254,194,66,0.95); }
+    .edge-color-pop { position: fixed; z-index: 2147482000; width: 230px; padding: 10px; border-radius: 10px;
+      background: #15151f; border: 1px solid rgba(255,255,255,0.16); box-shadow: 0 14px 44px rgba(0,0,0,0.62); }
+    .edge-color-pop.hidden { display: none; }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -4474,23 +4484,23 @@
       <details class="enhance-collapse" id="enhance-edge">
         <summary>Glow &amp; shadow</summary>
         <div class="enhance-control">
-          <div class="enhance-label-row"><label for="slider-glow" data-pdr-tooltip="A soft luminous glow around the photo">Glow</label><span class="enhance-val" id="val-glow">0</span></div>
+          <div class="enhance-label-row"><label for="slider-glow" data-pdr-tooltip="A soft luminous glow around the photo">Glow</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="glow" id="sw-glow" data-pdr-tooltip="Glow colour"></button><span class="enhance-val" id="val-glow">0</span></span></div>
           <input class="enhance-slider" id="slider-glow" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="enhance-control">
-          <div class="enhance-label-row"><label for="slider-dropshadow" data-pdr-tooltip="A drop shadow behind the photo for a 3D, lifted look">Drop shadow / 3D</label><span class="enhance-val" id="val-dropshadow">0</span></div>
+          <div class="enhance-label-row"><label for="slider-dropshadow" data-pdr-tooltip="A drop shadow behind the photo for a 3D, lifted look">Drop shadow / 3D</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="dropShadow" id="sw-dropshadow" data-pdr-tooltip="Drop shadow colour"></button><span class="enhance-val" id="val-dropshadow">0</span></span></div>
           <input class="enhance-slider" id="slider-dropshadow" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="enhance-control">
-          <div class="enhance-label-row"><label for="slider-lift" data-pdr-tooltip="A soft shadow underneath so the photo appears to float off the page">Lift</label><span class="enhance-val" id="val-lift">0</span></div>
+          <div class="enhance-label-row"><label for="slider-lift" data-pdr-tooltip="A soft shadow underneath so the photo appears to float off the page">Lift</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="lift" id="sw-lift" data-pdr-tooltip="Lift shadow colour"></button><span class="enhance-val" id="val-lift">0</span></span></div>
           <input class="enhance-slider" id="slider-lift" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="enhance-control">
-          <div class="enhance-label-row"><label for="slider-neon" data-pdr-tooltip="A bright neon glow around the photo">Neon</label><span class="enhance-val" id="val-neon">0</span></div>
+          <div class="enhance-label-row"><label for="slider-neon" data-pdr-tooltip="A bright neon glow around the photo">Neon</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="neon" id="sw-neon" data-pdr-tooltip="Neon colour"></button><span class="enhance-val" id="val-neon">0</span></span></div>
           <input class="enhance-slider" id="slider-neon" type="range" min="0" max="100" step="1" value="0">
         </div>
         <div class="enhance-control">
-          <div class="enhance-label-row"><label for="slider-outline" data-pdr-tooltip="A solid outline hugging the photo's edge">Outline</label><span class="enhance-val" id="val-outline">0</span></div>
+          <div class="enhance-label-row"><label for="slider-outline" data-pdr-tooltip="A solid outline hugging the photo's edge">Outline</label><span class="edge-lr-right"><button type="button" class="edge-swatch" data-fx="outline" id="sw-outline" data-pdr-tooltip="Outline colour"></button><span class="enhance-val" id="val-outline">0</span></span></div>
           <input class="enhance-slider" id="slider-outline" type="range" min="0" max="100" step="1" value="0">
         </div>
       </details>
@@ -8128,6 +8138,13 @@
     // v2.1 round 337 (Terry) — Glow & shadow EDGE effects: stacked drop-shadows on the tile BOX
     // (it.el, which doesn't clip → they show beyond it + follow the photo's masked shape). Sizes
     // scale with the tile's short side so the look is resolution-independent. (Export bake next.)
+    // v2.1 round 339 (Terry) — hex (+ fallback) → rgba string for the alpha-blended edge shadows.
+    function edgeRgba(hex, fallback, a) {
+      hex = (hex || fallback || '#000000').replace('#', '');
+      if (hex.length === 3) hex = hex[0] + hex[0] + hex[1] + hex[1] + hex[2] + hex[2];
+      var n = parseInt(hex, 16); if (isNaN(n)) n = 0;
+      return 'rgba(' + ((n >> 16) & 255) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + a + ')';
+    }
     function applyTileEdgeFx(it, iwPx, ihPx) {
       if (!it || !it.el) return;
       var e = it.enh || {};
@@ -8139,15 +8156,15 @@
       // it.el border-radius (from Curved corners) so the shadow follows the corner rounding.
       var sh = [];
       var glow = Math.max(0, Math.min(100, e.glow || 0));
-      if (glow > 0) { var gb = glow / 100 * 0.14 * s; sh.push('0 0 ' + gb.toFixed(1) + 'px ' + (gb * 0.35).toFixed(1) + 'px rgba(255,255,255,0.9)'); }
+      if (glow > 0) { var gb = glow / 100 * 0.14 * s; sh.push('0 0 ' + gb.toFixed(1) + 'px ' + (gb * 0.35).toFixed(1) + 'px ' + edgeRgba(e.glowColor, '#ffffff', 0.9)); }
       var neon = Math.max(0, Math.min(100, e.neon || 0));
-      if (neon > 0) { var nb = neon / 100 * 0.10 * s; sh.push('0 0 ' + nb.toFixed(1) + 'px ' + (nb * 0.3).toFixed(1) + 'px #ff2bd6', '0 0 ' + (nb * 2).toFixed(1) + 'px #ff2bd6'); }
+      if (neon > 0) { var nb = neon / 100 * 0.10 * s, nc = e.neonColor || '#ff2bd6'; sh.push('0 0 ' + nb.toFixed(1) + 'px ' + (nb * 0.3).toFixed(1) + 'px ' + nc, '0 0 ' + (nb * 2).toFixed(1) + 'px ' + nc); }
       var lift = Math.max(0, Math.min(100, e.lift || 0));
-      if (lift > 0) sh.push('0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px rgba(0,0,0,0.5)');
+      if (lift > 0) sh.push('0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px ' + edgeRgba(e.liftColor, '#000000', 0.5));
       var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
-      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); sh.push(d + 'px ' + d + 'px ' + d + 'px rgba(0,0,0,0.55)'); }
+      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); sh.push(d + 'px ' + d + 'px ' + d + 'px ' + edgeRgba(e.dropShadowColor, '#000000', 0.55)); }
       var ol = Math.max(0, Math.min(100, e.outline || 0));
-      if (ol > 0) sh.push('0 0 0 ' + Math.max(1, ol / 100 * 0.05 * s).toFixed(1) + 'px #ffffff');   // crisp ring via spread (cheap, no blur)
+      if (ol > 0) sh.push('0 0 0 ' + Math.max(1, ol / 100 * 0.05 * s).toFixed(1) + 'px ' + (e.outlineColor || '#ffffff'));   // crisp ring via spread (cheap, no blur)
       if (sh.length) it.el.style.boxShadow = sh.join(', ');   // else: leave renderCollageItem's depth shadow
       it.el.style.filter = '';   // drop the round-337 drop-shadow filter (the laggy path)
       var c = e.corners, half = s / 2;
@@ -17822,9 +17839,12 @@ function zoomTo(newZoom, centreX, centreY) {
         blur: 0, // v2.1 round 327 (Terry) — PER-PHOTO blur 0..100 (collage only)
         pixelate: 0, // v2.1 round 327 (Terry) — PER-PHOTO pixelate 0..100 (collage only)
         glow: 0, dropShadow: 0, lift: 0, neon: 0, outline: 0, // v2.1 round 337 (Terry) — edge/depth effects 0..100 (collage only)
+        glowColor: '#ffffff', dropShadowColor: '#000000', liftColor: '#000000', neonColor: '#ff2bd6', outlineColor: '#ffffff', // v2.1 round 339 (Terry) — per-effect colour
       };
       // v2.1 round 337 (Terry) — Glow & shadow edge-effect sliders: [inputId, valId, stateKey/enhKey].
       const EDGE_FX_KEYS = [['slider-glow', 'val-glow', 'glow'], ['slider-dropshadow', 'val-dropshadow', 'dropShadow'], ['slider-lift', 'val-lift', 'lift'], ['slider-neon', 'val-neon', 'neon'], ['slider-outline', 'val-outline', 'outline']];
+      // v2.1 round 339 (Terry) — per-effect colour swatches: [swatchId, stateKey/enhKey(+'Color'), default].
+      const EDGE_FX_COLORS = [['sw-glow', 'glow', '#ffffff'], ['sw-dropshadow', 'dropShadow', '#000000'], ['sw-lift', 'lift', '#000000'], ['sw-neon', 'neon', '#ff2bd6'], ['sw-outline', 'outline', '#ffffff']];
 
       // v2.1 round 140 (Terry) — collage mode. When active, this same
       // panel edits the SELECTED collage tile instead of the single
@@ -17967,6 +17987,7 @@ function zoomTo(newZoom, centreX, centreY) {
               vignette: state.vignette, vignetteShape: state.vignetteShape, grain: state.grain,   // v2.1 round 294 (Terry) — per-photo vignette + grain
               blur: state.blur, pixelate: state.pixelate,   // v2.1 round 327 (Terry) — per-photo blur + pixelate
               glow: state.glow, dropShadow: state.dropShadow, lift: state.lift, neon: state.neon, outline: state.outline,   // v2.1 round 337 (Terry) — edge/depth effects
+              glowColor: state.glowColor, dropShadowColor: state.dropShadowColor, liftColor: state.liftColor, neonColor: state.neonColor, outlineColor: state.outlineColor,   // v2.1 round 339 (Terry) — per-effect colour
             };
             // v2.1 round 161 (Terry) — re-fit the image inside the (possibly
             // changed) matte frame so a frame never clips the photo's edges.
@@ -18045,6 +18066,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (sPixelate) sPixelate.value = String(Math.round(state.pixelate || 0));    // v2.1 round 327 (Terry)
         if (vPixelate) vPixelate.textContent = String(Math.round(state.pixelate || 0));
         EDGE_FX_KEYS.forEach(function (f) { var s = document.getElementById(f[0]); var v = document.getElementById(f[1]); var val = Math.round(state[f[2]] || 0); if (s) s.value = String(val); if (v) v.textContent = String(val); });   // v2.1 round 337 (Terry)
+        EDGE_FX_COLORS.forEach(function (f) { var sw = document.getElementById(f[0]); if (sw) sw.style.background = state[f[1] + 'Color'] || f[2]; });   // v2.1 round 339 (Terry) — sync swatch colours
         // v2.1 round 155 — highlight Mirror/Flip when active.
         if (tileMirror) tileMirror.classList.toggle('active', !!state.flipH);
         if (tileFlip) tileFlip.classList.toggle('active', !!state.flipV);
@@ -18342,6 +18364,32 @@ function zoomTo(newZoom, centreX, centreY) {
         var v = document.getElementById(f[1]);
         s.addEventListener('input', function () { state[f[2]] = Math.max(0, Math.min(100, clampOrDefault(s.value, 0))); if (v) v.textContent = String(Math.round(state[f[2]])); applyEnhanceFilter(); });
       });
+      // v2.1 round 339 (Terry) — per-effect colour swatches → reuse the Text colour palette in a popover.
+      (function () {
+        var pop = document.getElementById('edge-color-pop');
+        if (!pop) { pop = document.createElement('div'); pop.id = 'edge-color-pop'; pop.className = 'edge-color-pop hidden'; document.body.appendChild(pop); }
+        function openPop(fx, anchor, def) {
+          var key = fx + 'Color';
+          var get = function () { return (state[key] || def || '#ffffff').toLowerCase(); };
+          var pick = function (hex) { if (!hex) return; state[key] = hex; if (anchor) anchor.style.background = hex; applyEnhanceFilter(); renderTextColorPalette(pop, get, pick, {}); };
+          renderTextColorPalette(pop, get, pick, {});
+          pop.classList.remove('hidden');
+          var r = anchor.getBoundingClientRect();
+          pop.style.left = Math.max(8, Math.min(r.right - 230, window.innerWidth - 240)) + 'px';
+          pop.style.top = Math.min(r.bottom + 6, window.innerHeight - 240) + 'px';
+        }
+        EDGE_FX_COLORS.forEach(function (f) {
+          var sw = document.getElementById(f[0]); if (!sw) return;
+          sw.style.background = f[2];
+          sw.addEventListener('click', function (e) { e.stopPropagation(); openPop(f[1], sw, f[2]); });
+        });
+        document.addEventListener('pointerdown', function (e) {
+          if (pop.classList.contains('hidden')) return;
+          if (pop.contains(e.target)) return;
+          if (e.target && e.target.classList && e.target.classList.contains('edge-swatch')) return;
+          pop.classList.add('hidden');
+        });
+      })();
       sTemp.addEventListener('input', function () {
         state.temperature = clampOrDefault(sTemp.value, 0);
         vTemp.textContent = (state.temperature > 0 ? '+' : '') + String(state.temperature);
@@ -20222,6 +20270,7 @@ function zoomTo(newZoom, centreX, centreY) {
         state.blur = e.blur != null ? e.blur : 0;             // v2.1 round 327 (Terry)
         state.pixelate = e.pixelate != null ? e.pixelate : 0; // v2.1 round 327 (Terry)
         EDGE_FX_KEYS.forEach(function (f) { state[f[2]] = (e[f[2]] != null) ? e[f[2]] : 0; });   // v2.1 round 337 (Terry) — edge/depth effects
+        EDGE_FX_COLORS.forEach(function (f) { state[f[1] + 'Color'] = e[f[1] + 'Color'] || f[2]; });   // v2.1 round 339 (Terry) — per-effect colour
         updateUI();
         try { syncTreatmentSlidersForSelection(); } catch (_) {}          // v2.1 round 294 — reflect this tile's vignette/grain on the sliders
         markActiveSwatchByColor(state.borderColor);
