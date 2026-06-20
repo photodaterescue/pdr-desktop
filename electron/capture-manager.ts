@@ -1727,7 +1727,7 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
           const tpix = Math.max(0, Math.min(100, Number(item.enh.pixelate) || 0));
           if (tpix > 0) {
             try {
-              const cell = Math.max(2, Math.round(tpix / 100 * 0.055 * tShort));   // v2.1 round 329 (Terry) — range halved
+              const cell = Math.max(2, Math.round(tpix / 100 * 0.044 * tShort));   // v2.1 round 330 (Terry) — a further 20% less (0.055 -> 0.044)
               const dw = Math.max(1, Math.round(rotW / cell)), dh = Math.max(1, Math.round(rotH / cell));
               tile = await sharp(tile).resize(dw, dh, { kernel: 'nearest' }).resize(rotW, rotH, { kernel: 'nearest' }).png().toBuffer();
             } catch (e) { log.warn(`[collage] tile pixelate skipped: ${(e as Error).message}`); }
