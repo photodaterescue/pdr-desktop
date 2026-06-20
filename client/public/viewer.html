@@ -2419,6 +2419,10 @@
     .cws-recent-title { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 1px; color: #7e7c8f; margin-bottom: 14px; }
     .cws-recent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 16px; }
     .cws-recent-empty { font-size: 13px; color: #6f6d80; padding: 6px 2px; }
+    /* v2.1 round 334 (Terry) — "Clear all" for recent collages. */
+    .cws-recent-titlerow { display: flex; align-items: baseline; justify-content: space-between; }
+    .cws-recent-clear { background: none; border: none; color: #8b88a0; font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
+    .cws-recent-clear:hover { color: #ff6b6b; background: rgba(255,107,107,0.1); }
     .cws-card {
       position: relative; display: flex; flex-direction: column;
       background: #1f1f2b; border: 1px solid rgba(255,255,255,0.08);
@@ -2590,6 +2594,18 @@
     #collage-group-box .cgb-tb-group { display: inline-flex; align-items: center; height: 26px; padding: 0 10px; border: none; border-radius: 6px; background: transparent; color: #fff; font: 600 12px system-ui, sans-serif; cursor: pointer; pointer-events: auto; }
     #collage-group-box .cgb-tb-group:hover { background: rgba(255,255,255,0.12); }
     #collage-group-box .cgb-tb-divider { width: 1px; align-self: stretch; margin: 4px 3px; background: rgba(255,255,255,0.16); }
+    /* v2.1 round 334 (Terry) — GROUP resize/rotate handles, shown only when the selection is a real group (.grouped) + a solid box. */
+    #collage-group-box.grouped { border-style: solid; background: rgba(254,194,66,0.06); }
+    #collage-group-box .cgb-res, #collage-group-box .cgb-rot { display: none; }
+    #collage-group-box.grouped .cgb-res, #collage-group-box.grouped .cgb-rot { display: block; }
+    #collage-group-box .cgb-res { position: absolute; width: 12px; height: 12px; background: #FEC242; border: 1.5px solid #5a4a12; border-radius: 2px; pointer-events: auto; }
+    #collage-group-box .cgb-res-tl { left: -7px; top: -7px; cursor: nwse-resize; }
+    #collage-group-box .cgb-res-tr { right: -7px; top: -7px; cursor: nesw-resize; }
+    #collage-group-box .cgb-res-bl { left: -7px; bottom: -7px; cursor: nesw-resize; }
+    #collage-group-box .cgb-res-br { right: -7px; bottom: -7px; cursor: nwse-resize; }
+    #collage-group-box .cgb-rot { position: absolute; left: 50%; bottom: -36px; transform: translateX(-50%); width: 26px; height: 26px; border-radius: 50%; background: #FEC242; border: 1.5px solid #5a4a12; align-items: center; justify-content: center; cursor: grab; pointer-events: auto; }
+    #collage-group-box.grouped .cgb-rot { display: flex; }
+    #collage-group-box .cgb-rot svg { width: 16px; height: 16px; fill: none; stroke: #5a4a12; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; pointer-events: none; }
     /* v2.1 round 296 (Terry) — MEASUREMENT badges: the px distance from a dragged/resized
        photo's edges to the page edges (Canva-style), for symmetry confidence. Drawn in
        #collage-chrome (un-clipped, over the stage). Opposite margins that MATCH turn green. */
@@ -3836,7 +3852,7 @@
             <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
           </div>
           <div class="cws-recent">
-            <div class="cws-recent-title">Recent collages</div>
+            <div class="cws-recent-titlerow"><div class="cws-recent-title">Recent collages</div><button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button></div>
             <div id="cws-recent-grid" class="cws-recent-grid" role="list"></div>
             <div id="cws-recent-empty" class="cws-recent-empty">Your collages save themselves as you work — they'll show up here.</div>
           </div>
@@ -8408,6 +8424,21 @@
       gLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); lockSelection(); });
       gDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageSelection(); });
       gRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); deleteCollageSelection(); });
+      // v2.1 round 334 (Terry) — GROUP transform handles (shown only when the selection is a real
+      // group, via the .grouped class): 4 corner resizers (uniform scale of the whole group) + a
+      // rotate handle (orbits every member around the group centre). Mirrors Canva's group box.
+      const mkGH = (cls) => { const d = document.createElement('div'); d.className = cls; gb.appendChild(d); return d; };
+      const grTL = mkGH('cgb-res cgb-res-tl'); grTL.setAttribute('data-pdr-tooltip', 'Resize group');
+      const grTR = mkGH('cgb-res cgb-res-tr'); grTR.setAttribute('data-pdr-tooltip', 'Resize group');
+      const grBL = mkGH('cgb-res cgb-res-bl'); grBL.setAttribute('data-pdr-tooltip', 'Resize group');
+      const grBR = mkGH('cgb-res cgb-res-br'); grBR.setAttribute('data-pdr-tooltip', 'Resize group');
+      const grRot = mkGH('cgb-rot'); grRot.setAttribute('data-pdr-tooltip', 'Rotate group');
+      grRot.innerHTML = '<svg viewBox="0 0 24 24"><path d="M8.5 5.94A7 7 0 1 0 15.5 5.94"/><polyline points="15.5 2.5 15.5 5.94 12.1 5.94"/></svg>';
+      grTL.addEventListener('pointerdown', (e) => startGroupResize(e, 'tl'));
+      grTR.addEventListener('pointerdown', (e) => startGroupResize(e, 'tr'));
+      grBL.addEventListener('pointerdown', (e) => startGroupResize(e, 'bl'));
+      grBR.addEventListener('pointerdown', (e) => startGroupResize(e, 'br'));
+      grRot.addEventListener('pointerdown', (e) => startGroupRotate(e));
       collageChromeEl.appendChild(gb); collageGroupBox = gb; return gb;
     }
     function ensureMultiRing(i) {
@@ -8429,6 +8460,7 @@
       const canvasRect = collageCanvasEl.getBoundingClientRect();
       const stageRect = collageStageEl.getBoundingClientRect();
       if (!canvasRect.width || !canvasRect.height) { hideMultiSelectChrome(); return true; }
+      const grouped = selectionIsOneGroup(sel);   // v2.1 round 334 (Terry) — grouped → one collective box + handles; else individual rings
       let gl = Infinity, gt = Infinity, gr = -Infinity, gb = -Infinity;
       sel.forEach((it, i) => {
         const ring = ensureMultiRing(i);
@@ -8438,7 +8470,7 @@
         ring.style.top = (canvasRect.top + it.yFrac * canvasRect.height - stageRect.top) + 'px';
         ring.style.width = w + 'px'; ring.style.height = h + 'px';
         ring.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
-        ring.style.display = 'block';
+        ring.style.display = grouped ? 'none' : 'block';   // grouped: hide individual rings (the collective box + handles show instead)
         const r = it.el.getBoundingClientRect();   // true AABB (incl. rotation) → group box
         gl = Math.min(gl, r.left); gt = Math.min(gt, r.top); gr = Math.max(gr, r.right); gb = Math.max(gb, r.bottom);
       });
@@ -8449,9 +8481,10 @@
       box.style.width = (gr - gl) + 'px';
       box.style.height = (gb - gt) + 'px';
       box.style.display = 'block';
+      box.classList.toggle('grouped', grouped);   // v2.1 round 334 (Terry) — solid box + resize/rotate handles when grouped
       const ct = box.querySelector('.cgb-count-text'); if (ct) ct.textContent = sel.length + ' selected';
       // v2.1 round 332 (Terry) — the Group button reads "Ungroup" when the selection IS a whole group.
-      if (collageGroupBtn) collageGroupBtn.textContent = selectionIsOneGroup(sel) ? 'Ungroup' : 'Group';
+      if (collageGroupBtn) collageGroupBtn.textContent = grouped ? 'Ungroup' : 'Group';
       // v2.1 round 331 (Terry) — flip the group toolbar BELOW the box when its top is too near the
       // stage top (so it doesn't slide under the title bar). Mirrors the single chrome's below-flip.
       const gtb = box.querySelector('.cgb-toolbar');
@@ -12148,6 +12181,25 @@
         card.appendChild(thumb); card.appendChild(meta); card.appendChild(del);
         grid.appendChild(card);
       }
+      // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
+      // once; hidden when there are none.
+      const clearBtn = document.getElementById('cws-recent-clear');
+      if (clearBtn) {
+        clearBtn.style.display = list.length ? '' : 'none';
+        if (!clearBtn.dataset.wired) {
+          clearBtn.dataset.wired = '1';
+          clearBtn.addEventListener('click', async (e) => {
+            e.stopPropagation();
+            let all = []; try { all = (window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) {}
+            const recents = all.filter((p) => p.kind !== 'template');
+            if (!recents.length) return;
+            const ok = await showPdrConfirm({ title: 'Clear all collages?', body: 'Delete all ' + recents.length + ' recent collages? This can’t be undone. (Templates are kept.)', confirmLabel: 'Clear all', cancelLabel: 'Cancel' });
+            if (!ok) return;
+            for (const p of recents) { try { await window.pdr.collage.deleteProject(p.id); } catch (_) {} }
+            buildCwsRecent();
+          });
+        }
+      }
     }
     // v2.1 round 323 (Terry) — the Templates row: your saved templates (kind:'template'). Clicking
     // one starts a NEW collage from it (openTemplateById → applyCollageRecordAsNew), leaving the
@@ -12821,6 +12873,70 @@
       else { const ng = genGroupId(); items.forEach((x) => { x.groupId = ng; }); }          // → group
       commitCollageChange();
       try { positionMultiSelectChrome(); } catch (_) {}
+    }
+    // v2.1 round 334 (Terry) — resize a GROUP as one (Canva): a corner drag uniformly scales every
+    // member's position + size around the OPPOSITE corner, keeping the layout + each photo's aspect.
+    function startGroupResize(e, corner) {
+      e.preventDefault(); e.stopPropagation();
+      const sel = selectedItemsForOp().filter((it) => !it.locked);
+      if (sel.length < 2) return;
+      beginCollageChange();
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const cw = rect.width, ch = rect.height;
+      let glF = Infinity, gtF = Infinity, grF = -Infinity, gbF = -Infinity;
+      sel.forEach((it) => { const h = itemHeightFrac(it); glF = Math.min(glF, it.xFrac); gtF = Math.min(gtF, it.yFrac); grF = Math.max(grF, it.xFrac + it.wFrac); gbF = Math.max(gbF, it.yFrac + h); });
+      const anchorXFrac = (corner === 'tl' || corner === 'bl') ? grF : glF;
+      const anchorYFrac = (corner === 'tl' || corner === 'tr') ? gbF : gtF;
+      const origDX = ((corner === 'tl' || corner === 'bl') ? glF : grF) - anchorXFrac;
+      const origDY = ((corner === 'tl' || corner === 'tr') ? gtF : gbF) - anchorYFrac;
+      const start = sel.map((it) => ({ it, x: it.xFrac, y: it.yFrac, w: it.wFrac }));
+      const move = (ev) => {
+        const sX = origDX ? ((ev.clientX - rect.left) / cw - anchorXFrac) / origDX : 1;
+        const sY = origDY ? ((ev.clientY - rect.top) / ch - anchorYFrac) / origDY : 1;
+        const scale = Math.max(0.1, (sX + sY) / 2);   // uniform (avg of both axes) → keeps aspect
+        start.forEach((s) => {
+          s.it.xFrac = anchorXFrac + (s.x - anchorXFrac) * scale;
+          s.it.yFrac = anchorYFrac + (s.y - anchorYFrac) * scale;
+          s.it.wFrac = s.w * scale;
+          renderCollageItem(s.it);
+        });
+        try { positionMultiSelectChrome(); } catch (_) {}
+      };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); commitCollageChange(); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
+    }
+    // v2.1 round 334 (Terry) — rotate a GROUP as one (Canva): every member ORBITS the group centre by
+    // the drag delta AND spins on its own axis by the same delta. Shift snaps to 15°.
+    function startGroupRotate(e) {
+      e.preventDefault(); e.stopPropagation();
+      const sel = selectedItemsForOp().filter((it) => !it.locked);
+      if (sel.length < 2) return;
+      beginCollageChange();
+      const rect = collageCanvasEl.getBoundingClientRect();
+      const cw = rect.width, ch = rect.height;
+      let glF = Infinity, gtF = Infinity, grF = -Infinity, gbF = -Infinity;
+      sel.forEach((it) => { const h = itemHeightFrac(it); glF = Math.min(glF, it.xFrac); gtF = Math.min(gtF, it.yFrac); grF = Math.max(grF, it.xFrac + it.wFrac); gbF = Math.max(gbF, it.yFrac + h); });
+      const gcx = rect.left + ((glF + grF) / 2) * cw, gcy = rect.top + ((gtF + gbF) / 2) * ch;
+      const startAng = Math.atan2(e.clientY - gcy, e.clientX - gcx);
+      const start = sel.map((it) => { const h = itemHeightFrac(it); return { it, cx: rect.left + (it.xFrac + it.wFrac / 2) * cw, cy: rect.top + (it.yFrac + h / 2) * ch, h, rot: it.rot || 0 }; });
+      const move = (ev) => {
+        let dDeg = (Math.atan2(ev.clientY - gcy, ev.clientX - gcx) - startAng) * 180 / Math.PI;
+        if (ev.shiftKey) dDeg = Math.round(dDeg / 15) * 15;
+        const r = dDeg * Math.PI / 180, cos = Math.cos(r), sin = Math.sin(r);
+        start.forEach((s) => {
+          const ox = s.cx - gcx, oy = s.cy - gcy;
+          const nx = ox * cos - oy * sin + gcx, ny = ox * sin + oy * cos + gcy;
+          s.it.xFrac = (nx - rect.left) / cw - s.it.wFrac / 2;
+          s.it.yFrac = (ny - rect.top) / ch - s.h / 2;
+          s.it.rot = s.rot + dDeg;
+          renderCollageItem(s.it);
+        });
+        try { positionMultiSelectChrome(); } catch (_) {}
+      };
+      const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); commitCollageChange(); };
+      window.addEventListener('pointermove', move);
+      window.addEventListener('pointerup', up);
     }
     function duplicateCollageSelection() {
       const items = selectedItemsForOp(); if (!items.length) return;
