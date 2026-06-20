@@ -1792,10 +1792,21 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
             }
           } catch { /* zoom-in-frame best-effort; fall back to plain cover */ }
         }
+        // v2.1 round 344 (Terry) — keepAlpha (the cut-out path that uses 4-element per-channel .linear()
+        // to protect the alpha) is only valid when the source ACTUALLY decodes to an alpha channel.
+        // Some "cut-outs" are <4-band (e.g. a 3-band PNG/JPEG), and the 4-element linear then throws
+        // "Band expansion using linear is unsupported" → the whole tile was silently skipped from the
+        // bake. Gate keepAlpha on the real alpha so a non-alpha cut-out falls back to the normal path
+        // (it has no transparency to protect anyway) instead of vanishing.
+        let keepAlphaTile = false;
+        if (item.bgRemoved) {
+          try { const _m = await sharp(toLongPath(item.path), { failOnError: false }).metadata(); keepAlphaTile = !!_m.hasAlpha; }
+          catch { keepAlphaTile = false; }
+        }
         // Bake the tile (crop + resize + its own Enhance state + frame).
         // The result may be larger than iw×ih if a frame was added, so
         // read its real dims back.
-        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect, isCover ? 'centre' : 'attention', !!item.bgRemoved)
+        const baked = await buildCollageTilePipeline(sharp, toLongPath(item.path), iw, ih, item.enh, cropRect, isCover ? 'centre' : 'attention', keepAlphaTile)
           .png()
           .toBuffer({ resolveWithObject: true });
         let tile = baked.data;

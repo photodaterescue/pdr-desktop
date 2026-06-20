@@ -3127,6 +3127,7 @@
     body.cws-open #btn-enhance { opacity: 0.4; pointer-events: none; }
     body.cws-open #collage-panel-toggle { display: none !important; }
     body.cws-open #collage-save-wrap, body.cws-open #enhance-reset { display: none !important; }
+    body.cws-open #tb-collage-home { display: none !important; }   /* v2.1 round 344 — already on the welcome screen */
     /* v2.1 round 300 (Terry) — collapse the Enhance panel for a full-width VIEW (a viewing
        toggle; editing still needs it open). A tab on the panel's left edge folds it away and
        the canvas re-fits into the freed width. Editing controls are untouched — re-expand to edit. */
@@ -3782,6 +3783,10 @@
            undo/redo". Left of the filename they're always visible.
            Refresh = shuffle into a fresh arrangement (NOT a reset).
            Collage mode only. -->
+      <!-- v2.1 round 344 (Terry) — "All collages": from the editor, go back to the welcome screen
+           (Blank / Templates / Recent) to start a fresh collage or open a recent one WITHOUT closing the
+           window. Autosaves the current collage first so it lands in Recent. -->
+      <button class="toolbar-btn tb-collage" id="tb-collage-home" data-pdr-tooltip="All collages — start a new one or open a recent" aria-label="All collages"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)"><span style="display:inline-block;transform:rotate(-90deg)">&#8634;</span></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)"><span style="display:inline-block;transform:rotate(90deg)">&#8635;</span></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-refresh" data-pdr-tooltip="Shuffle into a fresh arrangement">&#10227;</button>
@@ -15510,6 +15515,13 @@
       // v2.1 round 144 — undo / redo / refresh on the TOOLBAR + Ctrl+Z/Y.
       const undoBtn = document.getElementById('tb-collage-undo');
       if (undoBtn) undoBtn.addEventListener('click', () => undoCollage());
+      // v2.1 round 344 (Terry) — "All collages": autosave the current work (so it's in Recent), then
+      // re-show the welcome screen to start a fresh collage or open a recent — no window close needed.
+      const homeBtn = document.getElementById('tb-collage-home');
+      if (homeBtn) homeBtn.addEventListener('click', async () => {
+        try { await autosaveCollageProject(); } catch (_) {}
+        try { showCollageWelcome(); } catch (_) {}
+      });
       const redoBtn = document.getElementById('tb-collage-redo');
       if (redoBtn) redoBtn.addEventListener('click', () => redoCollage());
       const refreshBtn = document.getElementById('tb-collage-refresh');
