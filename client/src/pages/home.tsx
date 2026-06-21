@@ -567,7 +567,7 @@ export default function Home() {
                 amber accent mirror the side-menu's gold-as-collage-chrome
                 identity (round 243). */}
             <ShowcaseCard
-              accent="amber"
+              accent="navy"
               icon={<LayoutGrid className="w-5 h-5" />}
               title="Collages"
               description="Create professional collages for print and social media, ready for posting."
@@ -725,12 +725,15 @@ function SecondaryCard({ icon, title, description, onClick, locked }: { icon: Re
 // Values picked from Tailwind v3 defaults (see
 // feedback_tailwind_v4_pale_palette: v4's oklch tokens read too pale
 // on the light background, so we use explicit hex throughout).
-type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'pink';
+type AppAccent = 'lavender' | 'blue' | 'amber' | 'emerald' | 'pink' | 'navy';
 const APP_ACCENT: Record<AppAccent, { iconBg: string; iconFg: string; topBar: string; hoverBorder: string }> = {
   lavender: { iconBg: '#ede9fe', iconFg: '#6d28d9', topBar: '#a99cff', hoverBorder: '#8b5cf6' },
   blue:     { iconBg: '#dbeafe', iconFg: '#1e40af', topBar: '#3b82f6', hoverBorder: '#2563eb' },
   amber:    { iconBg: '#fef3c7', iconFg: '#78350f', topBar: '#FEC242', hoverBorder: '#F0B226' },
   emerald:  { iconBg: '#d1fae5', iconFg: '#065f46', topBar: '#10b981', hoverBorder: '#059669' },
+  // v2.1 round 357 (Terry) — navy for the Collages tile, matching the rest of the PDR-app Collages
+  // identity (#283593). The collage app itself keeps its gold branding.
+  navy:     { iconBg: '#e0e4f6', iconFg: '#283593', topBar: '#283593', hoverBorder: '#1f2a72' },
   // Pink, not rose — rose-500 (#f43f5e) was reading red on the bright
   // top bar. Swapped to Tailwind v3 pink-500 (#ec4899) so it's
   // unambiguously pink.
