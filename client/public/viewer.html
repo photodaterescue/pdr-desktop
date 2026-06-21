@@ -2459,6 +2459,9 @@
     .cnw-chip.active { background: #FEC242; border-color: #FEC242; color: #1a1a2e; font-weight: 600; }
     .cnw-custom-toggle { border-style: dashed; color: #9a98ad; }
     .cnw-custom-toggle:hover { border-style: solid; color: #fff; }
+    .cnw-suggest { margin-top: 6px; border: 1px solid rgba(169,156,255,0.25); border-radius: 6px; background: rgba(30,28,48,0.98); overflow: hidden; }
+    .cnw-suggest-item { display: block; width: 100%; text-align: left; padding: 7px 11px; background: transparent; border: none; color: #cfc9e8; font-size: 13px; cursor: pointer; }
+    .cnw-suggest-item:hover { background: rgba(169,156,255,0.14); color: #fff; }
     .cnw-input { width: 100%; padding: 8px 10px; background: rgba(169,156,255,0.10); border: 1px solid rgba(169,156,255,0.30); color: #e8e6ff; font-size: 13px; border-radius: 6px; outline: none; box-sizing: border-box; }
     .cnw-input:focus { border-color: rgba(254,194,66,0.6); }
     .cnw-nudge { margin-top: 8px; font-size: 12.5px; color: #cbb56a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -12160,6 +12163,15 @@
       list.unshift(cat); list = list.slice(0, 24);
       try { localStorage.setItem(COLLAGE_CAT_KEY, JSON.stringify(list)); } catch (_) {}
     }
+    // round 350 — remember past "What's it for?" entries for autofill suggestions.
+    const COLLAGE_WHATFOR_KEY = 'pdr-collage-whatfor';
+    function loadWhatForHistory() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_WHATFOR_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch (_) { return []; } }
+    function rememberWhatFor(v) {
+      v = String(v || '').trim(); if (!v) return;
+      let list = loadWhatForHistory().filter((x) => x.toLowerCase() !== v.toLowerCase());
+      list.unshift(v); list = list.slice(0, 30);
+      try { localStorage.setItem(COLLAGE_WHATFOR_KEY, JSON.stringify(list)); } catch (_) {}
+    }
     function collageLevenshtein(a, b) {
       a = a.toLowerCase(); b = b.toLowerCase(); const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
       const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j;
@@ -12186,10 +12198,10 @@
         + '<div class="enhance-ai-warning-title">Name this collage project</div>'
         + '<p class="cnw-sub">Optional — a name to find it again here in Collages. Your exported images keep their original filenames in the library.</p>'
         + '<div class="cnw-label">Category</div><div class="cnw-chips" id="cnw-chips"></div>'
-        + '<button id="cnw-custom-toggle" class="cnw-chip cnw-custom-toggle" type="button">+ Custom…</button>'
         + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom category…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
         + '<div class="cnw-label">What’s it for?</div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. v3.0 launch, Mum’s 60th" autocomplete="off" />'
+        + '<div id="cnw-name-suggest" class="cnw-suggest" style="display:none"></div>'
         + '<div class="cnw-label">Version <span class="cnw-opt">(optional)</span></div><input id="cnw-ver" class="cnw-input" type="text" placeholder="e.g. 2" autocomplete="off" />'
         + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
@@ -12197,8 +12209,21 @@
       document.body.appendChild(overlay);
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
-      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), customToggle = $('#cnw-custom-toggle'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
+      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
+      let customRevealed = false;
       const allCats = () => COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
+      // round 350 — seed "What's it for?" suggestions from the user's EXISTING project names so the
+      // autofill works straight away (not only after the first new save). Best-effort + async.
+      let seededWhatFor = [];
+      function whatForFromName(name) {
+        if (!name || name.indexOf(' · ') < 0) return '';
+        let parts = name.split(' · ').map((s) => s.trim()).filter(Boolean);
+        const cats = allCats().map((c) => c.toLowerCase());
+        if (parts.length && cats.indexOf(parts[0].toLowerCase()) >= 0) parts.shift();
+        if (parts.length > 1 && /^v?\d/i.test(parts[parts.length - 1])) parts.pop();
+        return parts.join(' · ').trim();
+      }
+      try { if (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) { Promise.resolve(window.pdr.collage.listProjects()).then((list) => { try { (list || []).forEach((p) => { const w = whatForFromName(p && p.name); if (w) seededWhatFor.push(w); }); } catch (_) {} }).catch(() => {}); } } catch (_) {}
       function refreshPreview() { previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—'; saveBtn.disabled = !nameEl.value.trim(); }
       function buildChips(filter) {
         chipsEl.innerHTML = ''; const f = (filter || '').trim().toLowerCase();
@@ -12208,13 +12233,29 @@
           b.addEventListener('click', () => { selectedCat = (selectedCat === c ? '' : c); customEl.value = ''; nudgeEl.style.display = 'none'; buildChips(); refreshPreview(); });
           chipsEl.appendChild(b);
         });
+        // round 350 — the "+ Custom…" toggle flows as the LAST chip (fills the gap after the
+        // category chips — no separate row); click reveals the hidden custom field.
+        if (!customRevealed) {
+          const t = document.createElement('button'); t.type = 'button'; t.className = 'cnw-chip cnw-custom-toggle'; t.textContent = '+ Custom…';
+          t.addEventListener('click', () => { customRevealed = true; customEl.style.display = ''; buildChips(); try { customEl.focus(); } catch (_) {} });
+          chipsEl.appendChild(t);
+        }
       }
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
-      // round 349 — Custom is a BUTTON that expands the field (hidden by default), so the bare field
-      // doesn't entice granular one-off categories (Terry); reuse is nudged via the chips instead.
-      customToggle.addEventListener('click', () => { customEl.style.display = ''; customToggle.style.display = 'none'; try { customEl.focus(); } catch (_) {} });
+      // round 350 — "What's it for?" autofill: suggest the user's PAST entries (Terry expected this).
+      function nameHistory() { const out = [], seen = new Set(); loadWhatForHistory().concat(seededWhatFor).forEach((h) => { const k = (h || '').toLowerCase(); if (h && !seen.has(k)) { seen.add(k); out.push(h); } }); return out; }
+      function buildNameSuggest() {
+        const typed = nameEl.value.trim().toLowerCase();
+        const hist = nameHistory().filter((h) => h.toLowerCase() !== typed && (!typed || h.toLowerCase().indexOf(typed) >= 0)).slice(0, 6);
+        suggestEl.innerHTML = '';
+        if (!hist.length) { suggestEl.style.display = 'none'; return; }
+        hist.forEach((h) => { const it = document.createElement('button'); it.type = 'button'; it.className = 'cnw-suggest-item'; it.textContent = h; it.addEventListener('mousedown', (e) => { e.preventDefault(); nameEl.value = h; suggestEl.style.display = 'none'; refreshPreview(); }); suggestEl.appendChild(it); });
+        suggestEl.style.display = 'block';
+      }
+      nameEl.addEventListener('focus', buildNameSuggest);
+      nameEl.addEventListener('blur', () => { setTimeout(() => { suggestEl.style.display = 'none'; }, 150); });
       function setCat(c) { selectedCat = c; customEl.value = ''; nudgeEl.style.display = 'none'; buildChips(); refreshPreview(); }
       function commitCustom() {
         const typed = customEl.value.trim(); if (!typed) return;
@@ -12230,12 +12271,13 @@
         rememberCustomCategory(typed); setCat(typed);
       }
       customEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitCustom(); } });
-      nameEl.addEventListener('input', refreshPreview); verEl.addEventListener('input', refreshPreview);
+      nameEl.addEventListener('input', () => { refreshPreview(); buildNameSuggest(); }); verEl.addEventListener('input', refreshPreview);
       function close() { window.removeEventListener('keydown', onKey, true); overlay.remove(); }
       function doSave() {
         if (!nameEl.value.trim()) return;
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
         const nm = assembleCollageName(selectedCat, nameEl.value, verEl.value);
+        try { rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
         if (nm) { currentCollageProjectName = nm; if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} } try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
         close();
       }
