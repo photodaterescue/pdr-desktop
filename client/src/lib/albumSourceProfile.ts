@@ -77,15 +77,17 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     label: 'Google Photos Takeout',
     badgeLabel: 'Google Photos',
   },
-  // v2.1 round 353 (Terry) — exported collages get their OWN source "PDR Collages",
-  // with the wizard's albums (Personal/Business/…/General) as albums inside it. Amber
-  // echoes the collage editor's gold accent; the grid icon reads as a collage of tiles.
+  // v2.1 round 353/355 (Terry) — exported collages get their OWN source "PDR Collages", with the
+  // wizard's albums (Personal/Business/…/General) as albums inside it. Uses the EXACT PDR gold
+  // #FEC242 (SIDEBAR_ACCENT.amber — the same gold as the collage editor + the Memories rail icon)
+  // so it matches the app's gold; Tailwind amber-500 was a different, more-orange shade. The grid
+  // icon (LayoutGrid) is the same one the side-menu Collages entry uses.
   pdr_collages: {
     Icon: LayoutGrid,
-    cardBgClass: 'bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60',
-    badgeBgClass: 'bg-amber-50 dark:bg-amber-950/80',
-    iconColorClass: 'text-amber-500 dark:text-amber-400',
-    badgeTextClass: 'text-amber-700 dark:text-amber-300',
+    cardBgClass: 'bg-[#FEC242]/10 dark:bg-[#FEC242]/15 border-2 border-[#FEC242]/50',
+    badgeBgClass: 'bg-[#FEC242]/20 dark:bg-[#FEC242]/25',
+    iconColorClass: 'text-[#FEC242]',
+    badgeTextClass: 'text-[#8a6d12] dark:text-[#FEC242]',
     label: 'PDR Collages',
     badgeLabel: 'PDR Collages',
   },
