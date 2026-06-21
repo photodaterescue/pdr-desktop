@@ -8291,9 +8291,17 @@
         var _tp = [];
         if (_fx !== 1 || _fy !== 1) _tp.push('scale(' + _fx + ', ' + _fy + ')');
         var _cz = Math.max(1, Math.min(2.8, it.zoom || 1));
-        if (_cz > 1) {
+        // v2.1 round 358 (Terry) — Ctrl+drag pan must reach the objectFit:cover CROP, not just the zoom
+        // slack. A frame photo overflows its box by its aspect even at zoom 1 (that's the cropped-off
+        // part), so the pannable overflow per axis = coverScale·zoom − 1. Was only (zoom − 1), so the
+        // cover-crop could never be brought into view even when zoomed.
+        var _pa = (im.naturalWidth && im.naturalHeight) ? (im.naturalWidth / im.naturalHeight) : (effectiveAspect(it) || 1);
+        var _ba = effectiveAspect(it) || 1;
+        var _csx = Math.max(1, _pa / _ba), _csy = Math.max(1, _ba / _pa);
+        var _ovx = _csx * _cz - 1, _ovy = _csy * _cz - 1;
+        if (_cz > 1 || _ovx > 0.001 || _ovy > 0.001) {
           var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
-          var _ctx = (_cpx * (_cz - 1) / (2 * _cz)) * 100, _cty = (_cpy * (_cz - 1) / (2 * _cz)) * 100;
+          var _ctx = (_ovx > 0 ? _cpx * _ovx / (2 * _cz) : 0) * 100, _cty = (_ovy > 0 ? _cpy * _ovy / (2 * _cz) : 0) * 100;
           _tp.push('scale(' + _cz + ') translate(' + (-_ctx).toFixed(3) + '%, ' + (-_cty).toFixed(3) + '%)');
         }
         im.style.transformOrigin = 'center center';
@@ -11300,7 +11308,11 @@
       const innerW = Math.max(2, iwPx - frameInset * 2);
       const innerH = Math.max(2, ihPx - frameInset * 2);
       const z = Math.max(1, Math.min(2.8, it.zoom || 1));
-      const rangeXpx = innerW * (z - 1), rangeYpx = innerH * (z - 1);   // slack the zoom created
+      // v2.1 round 358 (Terry) — include the objectFit:cover overflow (coverScale·z − 1), not just the
+      // zoom slack (z − 1), so a frame photo can be dragged to reveal its cropped-off part at any zoom.
+      let _csxP = 1, _csyP = 1;
+      if (it.coverFill) { const _paP = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (effectiveAspect(it) || 1); const _baP = effectiveAspect(it) || 1; _csxP = Math.max(1, _paP / _baP); _csyP = Math.max(1, _baP / _paP); }
+      const rangeXpx = innerW * (_csxP * z - 1), rangeYpx = innerH * (_csyP * z - 1);   // cover overflow + zoom slack
       const rad = (it.rot || 0) * Math.PI / 180, cosR = Math.cos(rad), sinR = Math.sin(rad);
       const move = (ev) => {
         // v2.1 round 253 (Terry) — screen delta → content-px delta (÷ effective scale).
