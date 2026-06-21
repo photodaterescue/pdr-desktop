@@ -8344,28 +8344,35 @@
       if (it.coverFill && it.imgEl) {
         it.el.style.boxShadow = '';   // no depth shadow on a backdrop fill
         const im = it.imgEl;
-        im.style.position = 'absolute';
-        im.style.left = '0px'; im.style.top = '0px';
-        im.style.width = '100%'; im.style.height = '100%';
-        im.style.objectFit = 'cover';
-        im.style.objectPosition = 'center';
-        // v2.1 round 327 (Terry) — zoom + pan WITHIN a coverFill frame; v2.1 round 335 (Terry) — ALSO
-        // honour Mirror/Flip here (a coverFill tile is still a real photo). One transform = flip ×
-        // (zoom+pan). Without the flip part, the zoom/clear-transform below clobbered the flip that
-        // applyFilterToEl set, so Mirror/Flip silently did nothing on frame/template tiles.
-        var _fx = (it.enh && it.enh.flipH) ? -1 : 1, _fy = (it.enh && it.enh.flipV) ? -1 : 1;
-        var _tp = [];
-        if (_fx !== 1 || _fy !== 1) _tp.push('scale(' + _fx + ', ' + _fy + ')');
+        // v2.1 round 367 (Terry) — SIZE the photo to cover the box × zoom, then POSITION it by pan, so
+        // panX/panY move the visible window across the FULL overflow (cover crop + zoom). The old
+        // objectFit:cover + object-position (round 359) could only pan the COVER crop — a ZOOMED frame's
+        // zoom overflow is centred by scale() and was un-pannable, so Terry "couldn't move up/down even
+        // after zooming". This one sizing model matches startItemPan's range math exactly
+        // (rangeXpx/Ypx = inner × (coverScale·zoom − 1)). The image is sized ≥ the box, so panning never
+        // reveals white (the round-358 bug that pushed us to object-position in the first place).
         var _cz = Math.max(1, Math.min(2.8, it.zoom || 1));
-        // v2.1 round 359 (Terry) — pan the cover-crop via OBJECT-POSITION, not a transform translate.
-        // The img is exactly the frame box, so translating it just slid the whole element off and showed
-        // WHITE (round 358's bug); object-position instead moves WHICH part of the objectFit:cover photo
-        // is visible, so the cropped-off part is brought into view — at zoom 1 too. Zoom stays a scale().
+        var _fbc2 = ((it.enh && it.enh.borderColor) || '').trim();
+        var _ins2 = _fbc2 ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * frameFrac(it.enh))) : 0;
+        var _inW = Math.max(2, iwPx - _ins2 * 2), _inH = Math.max(2, ihPx - _ins2 * 2);
+        var _paP = (im.naturalWidth && im.naturalHeight) ? (im.naturalWidth / im.naturalHeight) : (effectiveAspect(it) || 1);
+        var _baP = effectiveAspect(it) || 1;
+        var _dW, _dH;
+        if (_paP > _baP) { _dH = _inH; _dW = _inH * _paP; } else { _dW = _inW; _dH = _inW / _paP; }
+        _dW *= _cz; _dH *= _cz;
+        var _ovX = _dW - _inW, _ovY = _dH - _inH;
         var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
-        im.style.objectPosition = ((_cpx + 1) / 2 * 100).toFixed(2) + '% ' + ((_cpy + 1) / 2 * 100).toFixed(2) + '%';
-        if (_cz > 1) _tp.push('scale(' + _cz + ')');
+        im.style.position = 'absolute';
+        im.style.objectFit = 'fill';   // the img is sized to the cover box exactly → fill = no distortion
+        im.style.objectPosition = '';
+        im.style.width = _dW.toFixed(2) + 'px';
+        im.style.height = _dH.toFixed(2) + 'px';
+        im.style.left = ((_inW - _dW) / 2 - _cpx * _ovX / 2).toFixed(2) + 'px';
+        im.style.top = ((_inH - _dH) / 2 - _cpy * _ovY / 2).toFixed(2) + 'px';
+        // v2.1 round 335 (Terry) — Mirror/Flip, applied to the sized photo in place.
+        var _fx = (it.enh && it.enh.flipH) ? -1 : 1, _fy = (it.enh && it.enh.flipV) ? -1 : 1;
         im.style.transformOrigin = 'center center';
-        im.style.transform = _tp.join(' ');
+        im.style.transform = (_fx !== 1 || _fy !== 1) ? ('scale(' + _fx + ', ' + _fy + ')') : '';
         // v2.1 round 335 (Terry) — Blend edges + Curved corners now apply to coverFill tiles too (was
         // force-cleared to [0,0,0,0]). Same shape mask the bake uses, so preview == saved.
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, iwPx, ihPx);
