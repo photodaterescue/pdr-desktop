@@ -1089,6 +1089,7 @@
     .toolbar-caption-btn.pinned { outline: 2px solid #a99cff; outline-offset: 1px; background: rgba(169,156,255,0.12); }   /* v2.1 round 362 (Terry) — click to pin: lavender outline (Viewer brand) + popover stays */
     #btn-enhance.enhance-active { outline: 2px solid #a99cff; outline-offset: 2px; border-radius: 6px; }   /* v2.1 round 363 (Terry) — same lavender outline as the caption pin, shown while Enhance is active */
     body.collage-mode #btn-enhance.enhance-active { outline-color: #FEC242; }   /* v2.1 round 364 (Terry) — in the Collage editor the active-Enhance outline is GOLD (Collages brand), not lavender */
+    body.collage-mode.collage-panel-collapsed #btn-enhance.enhance-active { outline: none; }   /* v2.1 round 365 (Terry) — Enhance panel collapsed = not activated → dim the gold ring */
     .toolbar-caption-btn:hover { background: rgba(169,156,255,0.12); }
     .toolbar-caption-btn svg { width: 16px; height: 16px; }
     .caption-pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 7px; min-width: 200px; max-width: 380px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.25); border-radius: 9px; padding: 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 200; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: default; }
@@ -3865,7 +3866,7 @@
            This is the user's NOTE (not the collage name); it travels to the library when you export. -->
       <div class="toolbar-caption-btn tb-collage" id="btn-collage-caption" data-pdr-tooltip="Add a caption — a note that travels to your library on export">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
-        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-label">Caption</span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" placeholder="A note about this collage — shows in your library"></textarea></span>
+        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-label">Caption</span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="A note about this collage — shows in your library"></textarea></span>
       </div>
     </div>
     <!-- v2.1 round 148 (Terry) — the title bar keeps ONLY a slim set so
@@ -15298,9 +15299,18 @@
     // render (no sharp re-draw drift).
     function waitForCollageImages() {
       const imgs = Array.prototype.slice.call(document.querySelectorAll('#collage-canvas img'));
-      return Promise.all(imgs.map((im) => (im.complete && im.naturalWidth > 0)
-        ? Promise.resolve()
-        : new Promise((res) => { im.addEventListener('load', res, { once: true }); im.addEventListener('error', res, { once: true }); })));
+      // v2.1 round 365 (Terry) — wait for LOAD *and* DECODE. The off-screen export grabs a paint frame
+      // right after this resolves; for large camera JPEGs the pixels finish LOADING (naturalWidth>0) well
+      // before they finish DECODING, so capturePage caught a half-painted image (top decoded, bottom dark)
+      // — Terry's "pictures all fucked up" export. img.decode() resolves only once the bitmap is ready to
+      // paint, so the captured frame is complete. (A tiny synthetic test image decoded instantly + hid this;
+      // real photos triggered it.)
+      return Promise.all(imgs.map((im) => {
+        const loaded = (im.complete && im.naturalWidth > 0)
+          ? Promise.resolve()
+          : new Promise((res) => { im.addEventListener('load', res, { once: true }); im.addEventListener('error', res, { once: true }); });
+        return loaded.then(() => { try { return im.decode ? im.decode().catch(() => {}) : undefined; } catch (_) { return undefined; } });
+      }));
     }
     window.__collageExportRender = async function (opts) {
       opts = opts || {};
@@ -15533,7 +15543,11 @@
         // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
         // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
         const _exp = collageExportDims();
-        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined, caption: collageCaptionText || undefined });   // v2.1 round 364 (Terry) — name = pseudonym (→ EXIF title shown by the filename), caption = the user's note (→ file caption)
+        // v2.1 round 365 (Terry) — read the caption NOTE straight off the textarea at export time (the
+        // collageCaptionText var didn't make it into the file on Terry's export). name = pseudonym
+        // (→ EXIF title shown by the filename); caption = the user's note (→ file caption).
+        const _capNote = (function () { try { const _t = document.getElementById('collageCaptionInput'); return (_t && typeof _t.value === 'string') ? _t.value.trim() : (collageCaptionText || '').trim(); } catch (_) { return (collageCaptionText || '').trim(); } })();
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined, caption: _capNote || undefined });
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
           // saved result opens in the SEPARATE Viewer window and this collage
