@@ -3162,6 +3162,11 @@
     body.cws-open #collage-panel-toggle { display: none !important; }
     body.cws-open #collage-save-wrap, body.cws-open #enhance-reset { display: none !important; }
     body.cws-open #tb-collage-home { display: none !important; }   /* v2.1 round 344 — already on the welcome screen */
+    /* v2.1 round 360 (Terry) — the welcome/home view shows NO editing chrome: the filmstrip + the floating
+       tile chrome relate to a PROJECT, and none is open. Hide the filmstrip (project thumbs / carousel
+       pages) + any tile chrome that would seep over the welcome (selection toolbar, handles, frame overlay). */
+    body.cws-open #filmstrip { display: none !important; }
+    body.cws-open .ch, body.cws-open .ch-toolbar, body.cws-open .collage-frame-ph { display: none !important; }
     /* v2.1 round 346 (Terry) — WYSIWYG export render: the off-screen export window shows ONLY the canvas
        at full export px, so capturePage captures the REAL collage exactly. The stage fills the window
        (above all chrome) and the canvas (sized to export px by layoutCanvasSize) fills the stage. */
@@ -12172,6 +12177,7 @@
     // Recent first). Keeps the current canvas SIZE.
     function newBlankCollage() {
       if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+      try { if (carouselMode) exitCarouselMode(); } catch (_) {}   // v2.1 round 360 (Terry) — Blank must LEAVE carousel mode, not drop you back into the stale carousel
       collageRestoring = true;
       try {
         let s; try { s = JSON.parse(snapshotCollage()); } catch (_) { s = {}; }
@@ -12720,11 +12726,14 @@
       }
       // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
+      try { selectCollageItem(null); } catch (_) {}   // v2.1 round 360 (Terry) — deselect so no tile chrome seeps onto the welcome screen
       const blank = document.getElementById('cws-blank');
       if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => { newBlankCollage(); hideCollageWelcome(); }); }
       // v2.1 round 359 (Terry) — IG Carousel quick-start tile: jump straight into a multi-page carousel.
       const cwsCar = document.getElementById('cws-carousel');
-      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', () => { hideCollageWelcome(); try { enterCarouselFromMenu({ id: 'ig-carousel' }); } catch (_) {} }); }
+      // v2.1 round 360 (Terry) — ALWAYS start a FRESH 2-page carousel (the old enterCarouselFromMenu
+      // early-returned when already in carousel mode, so it reused the stale 6-page one).
+      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', () => { hideCollageWelcome(); try { if (carouselMode) exitCarouselMode(); enterCarouselMode(CAROUSEL_DEFAULT); } catch (_) {} }); }
       buildCwsTemplates();
       buildCwsRecent();
       w.classList.add('active');
