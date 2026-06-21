@@ -1085,11 +1085,12 @@
     .caption-bar .caption-text { vertical-align: middle; }
     /* v2.1 round 361 (Terry) — caption as a small toolbar button + hover popover (replaces the
        oversized, filmstrip-sized caption bar). Sits by Share; hovering shows it in a compact in-app window. */
-    .toolbar-caption-btn { position: relative; display: none; align-items: center; gap: 5px; padding: 4px 8px; margin-left: 2px; background: transparent; border: none; color: #cfc9e8; cursor: default; border-radius: 6px; -webkit-app-region: no-drag; }
+    .toolbar-caption-btn { position: relative; display: none; align-items: center; gap: 5px; padding: 4px 8px; margin-left: 2px; background: transparent; border: none; color: #cfc9e8; cursor: pointer; border-radius: 6px; -webkit-app-region: no-drag; }
+    .toolbar-caption-btn.pinned { outline: 2px solid #a99cff; outline-offset: 1px; background: rgba(169,156,255,0.12); }   /* v2.1 round 362 (Terry) — click to pin: lavender outline (Viewer brand) + popover stays */
     .toolbar-caption-btn:hover { background: rgba(169,156,255,0.12); }
     .toolbar-caption-btn svg { width: 16px; height: 16px; }
     .caption-pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 7px; min-width: 200px; max-width: 380px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.25); border-radius: 9px; padding: 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 200; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: default; }
-    .toolbar-caption-btn:hover .caption-pop { display: block; }
+    .toolbar-caption-btn:hover .caption-pop, .toolbar-caption-btn.pinned .caption-pop { display: block; }
     .caption-pop-label { display: block; color: #A99CFF; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
     .caption-pop-text { display: block; color: #d4d0e8; font-size: 13px; line-height: 1.45; }
     .no-image {
@@ -7248,6 +7249,9 @@
       if (has && cPop) cPop.textContent = lastCaptionForCurrent;
       try { captionBarEl.classList.remove('has-caption'); } catch (_) {}   // old oversized bar retired
     }
+    // v2.1 round 362 (Terry) — click the caption button to PIN it (persistent lavender outline + the
+    // popover stays open) until clicked again; hover still previews. Lavender = the Viewer brand colour.
+    try { var _capBtn = document.getElementById('btn-caption'); if (_capBtn) _capBtn.addEventListener('click', function () { _capBtn.classList.toggle('pinned'); }); } catch (_) {}
     try {
       if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
         window.pdr.settings.get().then((s) => {
@@ -13177,7 +13181,7 @@
         // in the multi-selection. (Round 169 in-frame pan kept, but scoped to the single selection.)
         if ((e.ctrlKey || e.metaKey) && !it.isBg) {
           const single = !!(collageSelection && collageSelection.length === 1 && collageSelection[0] === it);
-          if (single && (it.zoom || 1) > 1) { startItemPan(it, e); return; }
+          if (single && ((it.zoom || 1) > 1 || it.coverFill)) { startItemPan(it, e); return; }   // v2.1 round 362 (Terry) — a coverFill frame pans at zoom 1 too (don't force a zoom-in first to slide the photo)
           toggleItemInSelection(it); return;
         }
         startItemDrag(it, e);
@@ -13644,6 +13648,10 @@
       it.boxAspect = (frameAspect && isFinite(frameAspect) && frameAspect > 0) ? frameAspect : 1;
       it.framed = false;
       it.zoom = 1; it.panX = 0; it.panY = 0;
+      // v2.1 round 362 (Terry) — dismiss the "Add a photo to this frame" tooltip BEFORE removing the
+      // placeholder button, else the orphaned pill lingers until the next mouse-move. mouseout bubbles
+      // to the global tooltip manager → hide().
+      try { var _phb = it.phEl && it.phEl.querySelector('.collage-frame-ph-btn'); if (_phb) _phb.dispatchEvent(new MouseEvent('mouseout', { bubbles: true })); } catch (_) {}
       if (it.phEl && it.phEl.parentNode) it.phEl.parentNode.removeChild(it.phEl);
       it.phEl = null;
       if (it.el) it.el.classList.remove('is-frame');
