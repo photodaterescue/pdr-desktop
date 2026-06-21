@@ -2457,6 +2457,8 @@
     .cnw-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(169,156,255,0.3); background: rgba(169,156,255,0.08); color: #cfc9e8; font-size: 12.5px; cursor: pointer; transition: all 0.12s; }
     .cnw-chip:hover { border-color: rgba(254,194,66,0.6); color: #fff; }
     .cnw-chip.active { background: #FEC242; border-color: #FEC242; color: #1a1a2e; font-weight: 600; }
+    .cnw-custom-toggle { border-style: dashed; color: #9a98ad; }
+    .cnw-custom-toggle:hover { border-style: solid; color: #fff; }
     .cnw-input { width: 100%; padding: 8px 10px; background: rgba(169,156,255,0.10); border: 1px solid rgba(169,156,255,0.30); color: #e8e6ff; font-size: 13px; border-radius: 6px; outline: none; box-sizing: border-box; }
     .cnw-input:focus { border-color: rgba(254,194,66,0.6); }
     .cnw-nudge { margin-top: 8px; font-size: 12.5px; color: #cbb56a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -11368,6 +11370,23 @@
       try { fetchThumb(fp).then((url) => { if (url) thumb.style.backgroundImage = 'url("' + url + '")'; }).catch(() => {}); } catch (_) {}
       return thumb;
     }
+    // v2.1 round 349 (Terry) — starting a NEW collage (Blank / template / open-as-new) must wipe the
+    // strip too. updateCollageFilmstrip leaves the originally-opened files[] thumbs to the chunked
+    // builder and never clears them when files[] is reset, so a new collage showed the PREVIOUS
+    // collage's strip thumbs (Terry: "2 unrelated photos in a new collage"). Clear + rebuild from
+    // the live collageItems (few items → no chunking needed; uses the same maker as added photos).
+    function rebuildCollageFilmstripFromScratch() {
+      if (!collageMode) return;
+      if (carouselMode) { try { updateCarouselFilmstrip(); } catch (_) {} return; }
+      try {
+        filmstripEl.querySelectorAll('[data-idx]').forEach((t) => t.remove());
+        for (let i = 0; i < collageItems.length; i++) {
+          const it = collageItems[i];
+          if (!it || it.isBg || it.removed || !it.path) continue;
+          filmstripEl.appendChild(makeCollageAddedThumb(i, it.path));
+        }
+      } catch (_) {}
+    }
     function updateCollageFilmstrip() {
       if (!collageMode) return;
       // v2.1 round 256 (Terry) — carousel: in carousel mode the bottom strip shows one
@@ -12122,6 +12141,7 @@
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { updateUndoButtons(); } catch (_) {}
+      try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       updateCollageTitle();
     }
     // v2.1 round 348 (Terry) — NAME-THIS-COLLAGE wizard. PDR still auto-names by default (zero effort);
@@ -12163,10 +12183,11 @@
       const overlay = document.createElement('div');
       overlay.className = 'enhance-ai-warning cnw-overlay'; overlay.style.display = 'flex';
       overlay.innerHTML = '<div class="enhance-ai-warning-card cnw-card">'
-        + '<div class="enhance-ai-warning-title">Name this collage</div>'
-        + '<p class="cnw-sub">Optional — a name you’ll recognise in Collages. Skip it and the auto-name stays.</p>'
+        + '<div class="enhance-ai-warning-title">Name this collage project</div>'
+        + '<p class="cnw-sub">Optional — a name to find it again here in Collages. Your exported images keep their original filenames in the library.</p>'
         + '<div class="cnw-label">Category</div><div class="cnw-chips" id="cnw-chips"></div>'
-        + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom category…" autocomplete="off" />'
+        + '<button id="cnw-custom-toggle" class="cnw-chip cnw-custom-toggle" type="button">+ Custom…</button>'
+        + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom category…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
         + '<div class="cnw-label">What’s it for?</div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. v3.0 launch, Mum’s 60th" autocomplete="off" />'
         + '<div class="cnw-label">Version <span class="cnw-opt">(optional)</span></div><input id="cnw-ver" class="cnw-input" type="text" placeholder="e.g. 2" autocomplete="off" />'
@@ -12176,7 +12197,7 @@
       document.body.appendChild(overlay);
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
-      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
+      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), customToggle = $('#cnw-custom-toggle'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
       const allCats = () => COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
       function refreshPreview() { previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—'; saveBtn.disabled = !nameEl.value.trim(); }
       function buildChips(filter) {
@@ -12191,6 +12212,9 @@
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
+      // round 349 — Custom is a BUTTON that expands the field (hidden by default), so the bare field
+      // doesn't entice granular one-off categories (Terry); reuse is nudged via the chips instead.
+      customToggle.addEventListener('click', () => { customEl.style.display = ''; customToggle.style.display = 'none'; try { customEl.focus(); } catch (_) {} });
       function setCat(c) { selectedCat = c; customEl.value = ''; nudgeEl.style.display = 'none'; buildChips(); refreshPreview(); }
       function commitCustom() {
         const typed = customEl.value.trim(); if (!typed) return;
@@ -12355,6 +12379,7 @@
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { updateUndoButtons(); } catch (_) {}
+      try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
     }
     async function openTemplateById(id) {
@@ -12415,6 +12440,7 @@
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { updateUndoButtons(); } catch (_) {}
+      try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
     }
 
