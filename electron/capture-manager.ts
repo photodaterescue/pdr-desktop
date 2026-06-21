@@ -1740,7 +1740,7 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
         // centre of the visible region by insetting the extract rect to its
         // centre 1/zoom (defaulting to the full photo when there's no crop).
         // One extract → resize, so the saved file matches the editor preview.
-        const _zoom = Math.max(1, Math.min(2, item.zoom || 1));
+        const _zoom = Math.max(1, Math.min(2.8, item.zoom || 1));   // v2.1 round 347 (Terry) — tile zoom max 2 → 2.8 (+40%); fallback-bake only (WYSIWYG export uses the live DOM)
         if (!isCover && _zoom > 1) {
           let region = cropRect;
           if (!region) {

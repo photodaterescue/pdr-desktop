@@ -8256,7 +8256,7 @@
         var _fx = (it.enh && it.enh.flipH) ? -1 : 1, _fy = (it.enh && it.enh.flipV) ? -1 : 1;
         var _tp = [];
         if (_fx !== 1 || _fy !== 1) _tp.push('scale(' + _fx + ', ' + _fy + ')');
-        var _cz = Math.max(1, Math.min(2, it.zoom || 1));
+        var _cz = Math.max(1, Math.min(2.8, it.zoom || 1));
         if (_cz > 1) {
           var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
           var _ctx = (_cpx * (_cz - 1) / (2 * _cz)) * 100, _cty = (_cpy * (_cz - 1) / (2 * _cz)) * 100;
@@ -8298,7 +8298,7 @@
         // zoom 1 this equals the plain crop fill (the offset below reduces to
         // −crop.l×fullW). Done via image SIZING, not a CSS transform, so it
         // never collides with the Mirror/Flip transform on the same <img>.
-        const zoom = Math.max(1, Math.min(2, it.zoom || 1));
+        const zoom = Math.max(1, Math.min(2.8, it.zoom || 1));
         const fullW = (innerW / cropW) * zoom;
         const fullH = fullW / (it.aspect || 1);
         const ccx = (c.l + c.r) / 2, ccy = (c.t + c.b) / 2;
@@ -11265,7 +11265,7 @@
       const frameInset = fbc ? Math.max(4, Math.round(Math.min(iwPx, ihPx) * frameFrac(it.enh))) : 0;
       const innerW = Math.max(2, iwPx - frameInset * 2);
       const innerH = Math.max(2, ihPx - frameInset * 2);
-      const z = Math.max(1, Math.min(2, it.zoom || 1));
+      const z = Math.max(1, Math.min(2.8, it.zoom || 1));
       const rangeXpx = innerW * (z - 1), rangeYpx = innerH * (z - 1);   // slack the zoom created
       const rad = (it.rot || 0) * Math.PI / 180, cosR = Math.cos(rad), sinR = Math.sin(rad);
       const move = (ev) => {
@@ -12071,9 +12071,39 @@
     // Worth saving = at least one LIVE photo OR any text. A blank canvas (or one holding only
     // the background tile / X-removed photos) must not spawn a phantom empty project.
     function collageProjectHasContent() {
-      const anyPhoto = collageItems.some((it) => it && it.on && !it.isBg && !it.removed);
+      // v2.1 round 347 (Terry) — only a FILLED photo counts (has a `path`, not an empty template frame /
+      // placeholder), so an untouched template / blank canvas is NOT autosaved to Recent. Was clutter:
+      // opening a template + doing nothing still saved it. Text + emoji layers (collageTexts) count too.
+      const anyPhoto = collageItems.some((it) => it && it.on && !it.isBg && !it.removed && !it.placeholder && it.path);
       const anyText = Array.isArray(collageTexts) && collageTexts.length > 0;
       return anyPhoto || anyText;
+    }
+    // v2.1 round 347 (Terry) — the top-left title shows the project NAME (or "Untitled collage"), not
+    // the stale "Empty collage" that lingered even after photos were added.
+    function updateCollageTitle() {
+      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = currentCollageProjectName || 'Untitled collage'; } catch (_) {}
+    }
+    // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
+    // hid the welcome screen, revealing the SAME collage underneath. Clears tiles / text / bg and starts
+    // a NEW project (id + name null) so it never overwrites the previous one (which Home autosaved to
+    // Recent first). Keeps the current canvas SIZE.
+    function newBlankCollage() {
+      if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+      collageRestoring = true;
+      try {
+        let s; try { s = JSON.parse(snapshotCollage()); } catch (_) { s = {}; }
+        s.items = []; if (s.texts) s.texts = [];
+        s.bg = '#ffffff'; s.bgImagePath = null; s.transparent = false;
+        s.gradient = null; s.texture = null; s.bgEnh = null; s.bgOpacity = null;
+        s.vignette = 0; s.grain = 0;
+        files = [];
+        collageUndo.length = 0; collageRedo.length = 0;
+        buildCollageItems();
+        restoreCollageSnapshot(JSON.stringify(s));
+      } finally { collageRestoring = false; }
+      currentCollageProjectId = null; currentCollageProjectName = null;
+      try { updateUndoButtons(); } catch (_) {}
+      updateCollageTitle();
     }
     function serializeCollageProject() {
       if (!currentCollageProjectName) currentCollageProjectName = defaultCollageProjectName();
@@ -12116,6 +12146,7 @@
         }
         const res = await window.pdr.collage.saveProject(serializeCollageProject(), thumb || undefined);
         if (res && res.success && res.id) currentCollageProjectId = res.id;
+        updateCollageTitle();   // v2.1 round 347 (Terry) — reflect the (now-defaulted) project name
       } catch (_) { /* autosave is best-effort — a failed save must NEVER interrupt editing */ }
     }
     // Debounced: a drag/resize fires many commits; coalesce into one write ~1.2s after the last
@@ -12153,6 +12184,7 @@
         currentCollageProjectId = p.id || id;
         currentCollageProjectName = p.name || null;
         try { updateUndoButtons(); } catch (_) {}
+        updateCollageTitle();   // v2.1 round 347 (Terry) — show the reopened project's name
         return true;
       } catch (_) { return false; }
     }
@@ -12407,7 +12439,7 @@
       // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
       const blank = document.getElementById('cws-blank');
-      if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => hideCollageWelcome()); }
+      if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => { newBlankCollage(); hideCollageWelcome(); }); }
       buildCwsTemplates();
       buildCwsRecent();
       w.classList.add('active');
@@ -15983,7 +16015,7 @@
         if (topCollageItemAtPoint(e.clientX, e.clientY) !== it) return;
         e.preventDefault();
         if (!collageZoomGesture) { collageZoomGesture = true; beginCollageChange(); }
-        it.zoom = Math.max(1, Math.min(2, (it.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)));
+        it.zoom = Math.max(1, Math.min(2.8, (it.zoom || 1) + (e.deltaY < 0 ? 0.1 : -0.1)));   // v2.1 round 347 (Terry) — tile zoom max 2 → 2.8 (+40%)
         if (it.zoom <= 1) { it.panX = 0; it.panY = 0; }   // back to original → recentre
         renderCollageItem(it);
         if (collageZoomTimer) clearTimeout(collageZoomTimer);
@@ -17285,7 +17317,7 @@
       // v2.1 round 241 (Terry) — empty-collage launch: with 0 preselected
       // photos the count label would read "0 photos"; show "Empty collage"
       // instead so a freshly-opened standalone collage reads naturally.
-      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = files.length === 0 ? 'Empty collage' : (files.length + (files.length === 1 ? ' photo' : ' photos')); } catch (_) {}
+      updateCollageTitle();   // v2.1 round 347 (Terry) — project name / "Untitled collage" (not the stale "Empty collage")
       // v2.1 round 241 (Terry) — make the filmstrip pool (which hosts the
       // sticky "Add photos" button) visible in EVERY collage, including an
       // empty / single-photo one. The chunked filmstrip build below only
