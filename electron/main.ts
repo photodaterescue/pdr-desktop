@@ -11229,6 +11229,25 @@ ipcMain.handle('captions:set', async (_event, args: { fileId: number; caption: s
   }
 });
 
+// v2.1 round 368 (Terry) — set a caption BY PATH (the standalone Viewer knows only file paths, not
+// indexed_files ids — mirrors captions:getByPath). Lets the Viewer's caption be edited in place.
+ipcMain.handle('captions:setByPath', async (_event, args: { filePath: string; caption: string; writeExif?: boolean }) => {
+  try {
+    const { filePath, caption, writeExif } = args;
+    if (typeof filePath !== 'string' || !filePath) return { success: false, error: 'No file path.' };
+    const db = getDb();
+    const trimmed = (caption ?? '').trim();
+    const value = trimmed.length === 0 ? null : trimmed;
+    const row = db.prepare(`SELECT id FROM indexed_files WHERE file_path = ? LIMIT 1`).get(filePath) as { id: number } | undefined;
+    if (!row) return { success: false, error: 'File not found in index.' };
+    db.prepare(`UPDATE indexed_files SET caption = ? WHERE id = ?`).run(value, row.id);
+    if (writeExif && value) scheduleCaptionExifWrite(filePath, value);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('captions:clear', async (_event, args: { fileId: number; writeExif?: boolean }) => {
   try {
     const { fileId, writeExif } = args;

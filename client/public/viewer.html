@@ -1107,6 +1107,19 @@
     #btn-collage-caption .caption-pop-label { color: #FEC242; }
     .caption-edit-area { display: block; width: 248px; min-height: 64px; margin-top: 2px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #fff; font: inherit; font-size: 12px; line-height: 1.4; padding: 6px 8px; resize: vertical; outline: none; }
     .caption-edit-area:focus { border-color: #FEC242; }
+    #viewerCaptionInput:focus { border-color: #a99cff; }   /* v2.1 round 368 — Viewer caption focus = lavender (brand) */
+    /* v2.1 round 368 (Terry) — caption popover header row (label + emoji trigger) + shared emoji picker. */
+    .caption-pop-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 4px; }
+    .pdr-emoji-trigger { background: transparent; border: none; cursor: pointer; font-size: 15px; line-height: 1; padding: 1px 4px; border-radius: 5px; opacity: 0.85; }
+    .pdr-emoji-trigger:hover { background: rgba(255,255,255,0.12); opacity: 1; }
+    #pdr-emoji-picker { position: fixed; display: none; z-index: 200002; width: 250px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.3); border-radius: 10px; padding: 8px; box-shadow: 0 14px 40px rgba(0,0,0,0.55); }
+    #pdr-emoji-picker .emoji-tabs { display: flex; gap: 2px; margin-bottom: 6px; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 5px; }
+    #pdr-emoji-picker .emoji-tab { flex: 1; background: transparent; border: none; cursor: pointer; font-size: 16px; padding: 3px 0; border-radius: 5px; }
+    #pdr-emoji-picker .emoji-tab:hover { background: rgba(255,255,255,0.08); }
+    #pdr-emoji-picker .emoji-tab.active { background: rgba(169,156,255,0.22); }
+    #pdr-emoji-picker .emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; max-height: 168px; overflow-y: auto; }
+    #pdr-emoji-picker .emoji-cell { background: transparent; border: none; cursor: pointer; font-size: 18px; width: 36px; height: 34px; border-radius: 5px; }
+    #pdr-emoji-picker .emoji-cell:hover { background: rgba(255,255,255,0.12); }
     .no-image {
       display: flex;
       flex-direction: column;
@@ -3846,10 +3859,12 @@
         Share
       </button>
       <!-- v2.1 round 361 (Terry) — caption as a compact button + hover popover (was an oversized bar). -->
-      <button class="toolbar-caption-btn" id="btn-caption" type="button" aria-label="Caption">
+      <!-- v2.1 round 368 (Terry) — EDITABLE caption: a <div> (textarea can't live in a <button>) with an
+           editable textarea + emoji picker, saved straight to the file via captions.setByPath. -->
+      <div class="toolbar-caption-btn" id="btn-caption" aria-label="Caption" data-pdr-tooltip="Caption — click to add or edit">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
-        <span class="caption-pop" id="caption-pop"><span class="caption-pop-label">Caption</span><span class="caption-pop-text" id="captionPopText"></span></span>
-      </button>
+        <span class="caption-pop caption-pop-edit" id="caption-pop"><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="viewerCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="viewerCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="Add a caption…"></textarea></span>
+      </div>
       <!-- v2.1 round 146 (Terry) — collage Undo/Redo/Refresh on the LEFT
            of the toolbar. They were on the right before, but the pinned
            Enhance panel (fixed, top-right) covered them — "there's no
@@ -3866,7 +3881,7 @@
            This is the user's NOTE (not the collage name); it travels to the library when you export. -->
       <div class="toolbar-caption-btn tb-collage" id="btn-collage-caption" data-pdr-tooltip="Add a caption — a note that travels to your library on export">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
-        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-label">Caption</span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="A note about this collage — shows in your library"></textarea></span>
+        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="collageCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="A note about this collage — shows in your library"></textarea></span>
       </div>
     </div>
     <!-- v2.1 round 148 (Terry) — the title bar keeps ONLY a slim set so
@@ -7262,16 +7277,49 @@
     function applyCaptionVisibility() {
       // v2.1 round 361 (Terry) — the caption lives in a small button + hover popover by Share, NOT a
       // big filmstrip-sized bar. Show the button only when there's a caption; hovering reveals it.
+      // v2.1 round 368 (Terry) — the Viewer caption is now EDITABLE. Show the button whenever a single
+      // photo is open (so the user can ADD a caption, not only view one); hidden in collage mode + when
+      // captions are turned off. The textarea reflects the current caption unless the user is mid-edit.
       var cBtn = document.getElementById('btn-caption');
-      var cPop = document.getElementById('captionPopText');
-      var has = !(captionsHidden || !lastCaptionForCurrent || lastCaptionForCurrent.length === 0);
-      if (cBtn) cBtn.style.display = has ? 'inline-flex' : 'none';
-      if (has && cPop) cPop.textContent = lastCaptionForCurrent;
+      var cInput = document.getElementById('viewerCaptionInput');
+      var single = !document.body.classList.contains('collage-mode');
+      var show = single && !captionsHidden && (typeof files !== 'undefined' && files.length > 0);
+      if (cBtn) cBtn.style.display = show ? 'inline-flex' : 'none';
+      if (cInput && document.activeElement !== cInput) cInput.value = lastCaptionForCurrent || '';
       try { captionBarEl.classList.remove('has-caption'); } catch (_) {}   // old oversized bar retired
     }
     // v2.1 round 362 (Terry) — click the caption button to PIN it (persistent lavender outline + the
     // popover stays open) until clicked again; hover still previews. Lavender = the Viewer brand colour.
-    try { var _capBtn = document.getElementById('btn-caption'); if (_capBtn) _capBtn.addEventListener('click', function () { _capBtn.classList.toggle('pinned'); }); } catch (_) {}
+    try {
+      var _capBtn = document.getElementById('btn-caption');
+      var _capInput = document.getElementById('viewerCaptionInput');
+      if (_capBtn) {
+        _capBtn.addEventListener('click', function (e) {
+          if (e.target && e.target.closest && e.target.closest('.caption-pop')) return;   // clicks inside the popover (textarea/emoji) don't toggle the pin
+          var willOpen = !_capBtn.classList.contains('pinned');
+          _capBtn.classList.toggle('pinned');
+          if (willOpen && _capInput) setTimeout(function () { try { _capInput.focus(); } catch (_) {} }, 0);
+        });
+      }
+      if (_capInput) {
+        _capInput.addEventListener('click', function (e) { e.stopPropagation(); });
+        _capInput.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Escape') { if (_capBtn) _capBtn.classList.remove('pinned'); try { window.__pdrHideEmojiPicker && window.__pdrHideEmojiPicker(); } catch (_) {} try { _capInput.blur(); } catch (_) {} } });
+        var _capSaveTimer = null;
+        _capInput.addEventListener('input', function () { if (_capSaveTimer) clearTimeout(_capSaveTimer); _capSaveTimer = setTimeout(function () { _capSaveTimer = null; saveViewerCaption(); }, 600); });
+        _capInput.addEventListener('blur', function () { if (_capSaveTimer) { clearTimeout(_capSaveTimer); _capSaveTimer = null; } saveViewerCaption(); });
+      }
+    } catch (_) {}
+    function saveViewerCaption() {
+      try {
+        var _ta = document.getElementById('viewerCaptionInput'); if (!_ta) return;
+        var val = (_ta.value || '').trim();
+        if (val === (lastCaptionForCurrent || '')) return;   // unchanged → skip
+        var fp = (typeof files !== 'undefined' && typeof currentIndex === 'number' && currentIndex >= 0) ? files[currentIndex] : null;
+        if (!fp || !window.pdr || !window.pdr.captions || !window.pdr.captions.setByPath) return;
+        lastCaptionForCurrent = val;   // v2.1 round 368 (Terry) — Viewer caption is editable; save straight to the file (DB + EXIF)
+        window.pdr.captions.setByPath(fp, val, true).catch(function () {});
+      } catch (_) {}
+    }
     // v2.1 round 364 (Terry) — Collages caption button: click toggles the editor popover; the textarea
     // drives collageCaptionText (written to the exported file's caption so it carries to Albums).
     try {
@@ -7282,9 +7330,78 @@
         _ccInput.value = collageCaptionText || '';
         _ccInput.addEventListener('input', function () { collageCaptionText = _ccInput.value; });
         _ccInput.addEventListener('click', function (e) { e.stopPropagation(); });
-        _ccInput.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Escape') { _ccBtn.classList.remove('pinned'); } });
+        _ccInput.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Escape') { _ccBtn.classList.remove('pinned'); try { window.__pdrHideEmojiPicker && window.__pdrHideEmojiPicker(); } catch (_) {} } });
       }
     } catch (_) {}
+    // v2.1 round 368 (Terry) — shared vanilla emoji picker (port of the React EmojiPickerPopover) for the
+    // caption textareas (Collages + Viewer). Curated 6 tabs; clicking an emoji inserts it at the cursor
+    // and keeps the picker open so several can be stacked. Same emoji set as the main app's caption editor.
+    (function setupCaptionEmojiPicker() {
+      var TABS = [
+        { label: '😀', emojis: ['😀','😃','😄','😁','😆','😅','🤣','😂','🙂','😉','😊','😇','😍','🥰','😘','😋','😜','🤩','🥳','😎','🤔','😴','😢','😭','😡','😱'] },
+        { label: '❤️', emojis: ['❤️','🧡','💛','💚','💙','💜','🖤','🤍','🤎','💖','💗','💓','💞','💕','💝','💘','💌','💟','♥️','💯','✨','⭐','🌟','💫','🔥','🎉'] },
+        { label: '👍', emojis: ['👍','👎','👌','✌️','🤞','🤟','🤘','👏','🙌','🤝','🙏','💪','🫶','👋','🤗','🫂','👶','👧','👦','👩','👨','👵','👴','👨‍👩‍👧','👨‍👩‍👦','👪'] },
+        { label: '🌿', emojis: ['🌿','🌳','🌲','🌴','🌵','🌷','🌹','🌻','🌼','🌸','🌺','🍀','🍂','🍁','🌍','🌞','🌝','🌚','🌙','☀️','⛅','🌧️','❄️','🌈','🐶','🐱'] },
+        { label: '🍕', emojis: ['🍕','🍔','🍟','🌭','🥪','🌮','🌯','🥗','🍣','🍱','🍝','🍜','🍲','🍛','🍤','🥘','🍰','🎂','🧁','🍪','🍫','🍩','☕','🍵','🍺','🍷'] },
+        { label: '✈️', emojis: ['✈️','🚗','🚕','🚙','🚌','🚎','🏎️','🚓','🚑','🚒','🚐','🚚','🚛','🚜','🚲','🛵','🏍️','🛶','⛵','🚤','🛳️','⛴️','🚢','🏖️','🏔️','🗻'] }
+      ];
+      var picker = document.createElement('div'); picker.id = 'pdr-emoji-picker';
+      var tabsEl = document.createElement('div'); tabsEl.className = 'emoji-tabs';
+      var gridEl = document.createElement('div'); gridEl.className = 'emoji-grid';
+      picker.appendChild(tabsEl); picker.appendChild(gridEl); document.body.appendChild(picker);
+      var activeTextarea = null;
+      function insertEmoji(em) {
+        var el = activeTextarea; if (!el) return;
+        var s = (typeof el.selectionStart === 'number') ? el.selectionStart : el.value.length;
+        var e = (typeof el.selectionEnd === 'number') ? el.selectionEnd : el.value.length;
+        el.value = el.value.slice(0, s) + em + el.value.slice(e);
+        var pos = s + em.length; try { el.setSelectionRange(pos, pos); } catch (_) {}
+        el.focus(); el.dispatchEvent(new Event('input', { bubbles: true }));
+      }
+      function renderGrid(tab) {
+        gridEl.innerHTML = '';
+        tab.emojis.forEach(function (em) {
+          var b = document.createElement('button'); b.type = 'button'; b.className = 'emoji-cell'; b.textContent = em;
+          b.addEventListener('mousedown', function (e) { e.preventDefault(); });   // keep the textarea's focus + selection
+          b.addEventListener('click', function (e) { e.stopPropagation(); insertEmoji(em); });
+          gridEl.appendChild(b);
+        });
+      }
+      TABS.forEach(function (tab, i) {
+        var t = document.createElement('button'); t.type = 'button'; t.className = 'emoji-tab' + (i === 0 ? ' active' : ''); t.textContent = tab.label;
+        t.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        t.addEventListener('click', function (e) { e.stopPropagation(); Array.prototype.forEach.call(tabsEl.children, function (c) { c.classList.remove('active'); }); t.classList.add('active'); renderGrid(tab); });
+        tabsEl.appendChild(t);
+      });
+      renderGrid(TABS[0]);
+      window.__pdrShowEmojiPicker = function (btn, textarea) {
+        activeTextarea = textarea; picker.style.display = 'block';
+        var r = btn.getBoundingClientRect(), w = 250;
+        var left = Math.max(6, Math.min(window.innerWidth - w - 6, r.right - w));
+        var top = r.bottom + 6; if (top + 232 > window.innerHeight) top = Math.max(6, r.top - 238);
+        picker.style.left = left + 'px'; picker.style.top = top + 'px';
+      };
+      window.__pdrHideEmojiPicker = function () { picker.style.display = 'none'; };
+      document.addEventListener('mousedown', function (e) {
+        if (picker.style.display !== 'block') return;
+        if (picker.contains(e.target)) return;
+        if (e.target.closest && e.target.closest('.pdr-emoji-trigger')) return;
+        picker.style.display = 'none';
+      });
+      function wireTrigger(triggerId, textareaId) {
+        var trg = document.getElementById(triggerId), ta = document.getElementById(textareaId);
+        if (!trg || !ta) return;
+        trg.addEventListener('mousedown', function (e) { e.preventDefault(); });
+        trg.addEventListener('click', function (e) {
+          e.stopPropagation();
+          var holder = trg.closest('.toolbar-caption-btn'); if (holder) holder.classList.add('pinned');   // keep the caption popover open while picking
+          if (picker.style.display === 'block' && activeTextarea === ta) { picker.style.display = 'none'; return; }
+          window.__pdrShowEmojiPicker(trg, ta);
+        });
+      }
+      wireTrigger('collageCaptionEmoji', 'collageCaptionInput');
+      wireTrigger('viewerCaptionEmoji', 'viewerCaptionInput');
+    })();
     try {
       if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
         window.pdr.settings.get().then((s) => {
@@ -12201,7 +12318,7 @@
     // album. This block is the SAVE side; reopen + the projects gallery come next.
     let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
     let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
-    let collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption
+    var collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption. v2.1 round 368: VAR (hoisted) not let — the caption setup block runs earlier in the script + referenced this; a `let` here put it in the TDZ so the setup threw + the input-sync handler never attached.
     let collageAutosaveTimer = null;
     let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
 
