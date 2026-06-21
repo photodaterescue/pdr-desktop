@@ -139,7 +139,7 @@ function onlineLibraryRoot(): string | null {
  * Mirrors the viewer:saveEnhanced exiftool pattern — failure only
  * costs the embedded metadata, never the capture itself.
  */
-async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabel: string = 'screenshot'): Promise<void> {
+async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabel: string = 'screenshot', caption?: string): Promise<void> {
   try {
     const { ExifTool } = await import('exiftool-vendored');
     const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
@@ -157,6 +157,15 @@ async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabe
         'XMP-xmpMM:HistoryWhen': isoLocal,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       } as any;
+      // v2.1 round 363 (Terry) — write the collage's project NAME into the standard caption tags so
+      // it TRAVELS with the exported file (EXIF ImageDescription + IPTC + XMP dc:description), the same
+      // fields PDR uses for user captions.
+      if (caption && caption.trim()) {
+        const _cap = caption.trim();
+        tags['EXIF:ImageDescription'] = _cap;
+        tags['IPTC:Caption-Abstract'] = _cap;
+        tags['XMP-dc:Description'] = _cap;
+      }
       await exiftool.write(filePath, tags, ['-overwrite_original']);
     } finally {
       try { await exiftool.end(); } catch { /* non-fatal */ }
@@ -2160,7 +2169,7 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     return null;
   }
 });
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string }) => {
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string }) => {
   try {
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
@@ -2191,13 +2200,19 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
     const outPath = uniqueCapturePath(destDir, `${date}_${time}_CO`, transparent ? '.png' : '.jpg');
     fs.writeFileSync(toLongPath(outPath), collageBuf);
     const filename = path.basename(outPath);
-    await stampCaptureMetadata(outPath, capturedAt, 'collage');
+    await stampCaptureMetadata(outPath, capturedAt, 'collage', opts && opts.name ? opts.name : undefined);
 
     let fileId: number | null = null;
     if (libRoot) {
       try {
         fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
         if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
+        // v2.1 round 363 (Terry) — the collage's project NAME auto-populates the caption so it surfaces
+        // in the Albums caption dialog + the Viewer (and travels via the EXIF write above). Editable
+        // afterwards like any caption. Non-fatal.
+        if (fileId != null && opts && opts.name && opts.name.trim()) {
+          try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.name.trim()); } catch (capErr) { log.warn(`[collage] set caption from name failed (non-fatal): ${(capErr as Error).message}`); }
+        }
         // v2.1 round 161 (Terry) — every saved collage joins a "PDR Collages"
         // album (created on first save), so they're all gathered in one place
         // in the Albums view. Non-fatal: a failure here never blocks the save.

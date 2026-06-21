@@ -11753,7 +11753,7 @@ function createPeopleWindow(opts: { show: boolean }): BrowserWindow {
     // suspend painting and our pre-warm becomes useless.
     paintWhenInitiallyHidden: true,
     backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
-    title: 'People Manager — Photo Date Rescue',
+    title: 'PDR — People Manager',   // v2.1 round 363 (Terry) — clean, consistent taskbar name
     // Custom-frame title bar to match the main PDR window. Lets the
     // Fix-status chip sit IN the title bar (consistent with the main
     // window) rather than below it. titleBarOverlay gives us native

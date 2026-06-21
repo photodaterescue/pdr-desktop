@@ -496,7 +496,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     saveLayout: (layout: {
       canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: unknown } };
       items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: unknown }>;
-    }, opts?: { snapshot?: string; w?: number; h?: number; album?: string }) =>
+    }, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string }) =>
       ipcRenderer.invoke('collage:saveLayout', layout, opts) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
       }>,

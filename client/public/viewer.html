@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PDR Viewer</title>
+  <title>PDR — Viewer</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     /* v2.1 round 190 (Terry) — 6 vendored decorative fonts for the collage Text
@@ -1087,6 +1087,7 @@
        oversized, filmstrip-sized caption bar). Sits by Share; hovering shows it in a compact in-app window. */
     .toolbar-caption-btn { position: relative; display: none; align-items: center; gap: 5px; padding: 4px 8px; margin-left: 2px; background: transparent; border: none; color: #cfc9e8; cursor: pointer; border-radius: 6px; -webkit-app-region: no-drag; }
     .toolbar-caption-btn.pinned { outline: 2px solid #a99cff; outline-offset: 1px; background: rgba(169,156,255,0.12); }   /* v2.1 round 362 (Terry) — click to pin: lavender outline (Viewer brand) + popover stays */
+    #btn-enhance.enhance-active { outline: 2px solid #a99cff; outline-offset: 2px; border-radius: 6px; }   /* v2.1 round 363 (Terry) — same lavender outline as the caption pin, shown while Enhance is active */
     .toolbar-caption-btn:hover { background: rgba(169,156,255,0.12); }
     .toolbar-caption-btn svg { width: 16px; height: 16px; }
     .caption-pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 7px; min-width: 200px; max-width: 380px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.25); border-radius: 9px; padding: 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 200; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: default; }
@@ -1574,9 +1575,9 @@
     #enhance-pin[aria-pressed="true"]:hover,
     #enhance-pin[aria-pressed="true"]:focus,
     #enhance-pin[aria-pressed="true"]:focus-visible {
-      background: rgba(251, 191, 36, 0.18);
-      color: #fbbf24;  /* gold-400 — same as the lock/license amber elsewhere in PDR */
-      box-shadow: 0 0 0 2px #fbbf24;
+      background: rgba(169, 156, 255, 0.18);
+      color: #a99cff;  /* v2.1 round 363 (Terry) — lavender to match the caption-button pin (Viewer brand), was gold */
+      box-shadow: 0 0 0 2px #a99cff;
       outline: none !important;
     }
     /* Old outline-based rules removed — gold ring now lives in
@@ -7515,7 +7516,7 @@
 
       const name = getFilename(filePath);
       filenameEl.textContent = name;
-      document.title = name + ' \u2014 PDR Viewer';
+      document.title = 'PDR \u2014 Viewer';   // v2.1 round 363 (Terry) \u2014 clean, consistent taskbar name (not the filename)
 
       // Update counter (+ the divider that separates it from the zoom %)
       if (files.length > 1) {
@@ -15497,7 +15498,7 @@
         // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
         // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
         const _exp = collageExportDims();
-        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined });
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined });   // v2.1 round 363 (Terry) — send the collage's NAME so the export auto-captions the file with it
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
           // saved result opens in the SEPARATE Viewer window and this collage
@@ -17636,7 +17637,7 @@
       if (container) container.style.display = 'none';
       if (collageRootEl) collageRootEl.classList.add('active');
       // v2.1 round 241 (Terry) — user-facing rename Collage → Collages.
-      document.title = 'Collages (' + files.length + ') — PDR Collages';
+      document.title = 'PDR — Collages';   // v2.1 round 363 (Terry) — clean, consistent taskbar name (not the file count)
       // v2.1 round 161 (Terry) — the window is now named "Collages" centred in
       // the title bar, so the left label just carries the photo count (no
       // redundant "Collage" word).
@@ -18996,6 +18997,7 @@ function zoomTo(newZoom, centreX, centreY) {
       function openPanel() {
         panel.classList.add('open');
         panel.setAttribute('aria-hidden', 'false');
+        try { if (openBtn) openBtn.classList.add('enhance-active'); } catch (_) {}   // v2.1 round 363 (Terry) — lavender outline on the Enhance button while the panel is active
         // v2.0.15 — body class lets the next-photo arrow CSS shift
         // left of the panel so it stays clickable.
         document.body.classList.add('enhance-panel-open');
@@ -19015,6 +19017,7 @@ function zoomTo(newZoom, centreX, centreY) {
         if (collageActive) return;
         panel.classList.remove('open');
         panel.setAttribute('aria-hidden', 'true');
+        try { if (openBtn) openBtn.classList.remove('enhance-active'); } catch (_) {}   // v2.1 round 363 (Terry) — outline off when Enhance is inactive
         document.body.classList.remove('enhance-panel-open');
       }
       // v2.1 (Terry 2026-06-07) — hover-to-show + pin behaviour.

@@ -7734,6 +7734,17 @@ export function applyTakeoutSidecarMetadata(
 }
 
 /**
+ * v2.1 round 363 (Terry) — set a file's caption directly. Used by the collage EXPORT so the
+ * collage's project NAME auto-populates the caption, surfacing in the Albums caption dialog +
+ * the Viewer. The user can edit/clear it afterwards like any caption.
+ */
+export function setFileCaption(fileId: number, caption: string): boolean {
+  const db = getDb();
+  const r = db.prepare(`UPDATE indexed_files SET caption = ? WHERE id = ?`).run(caption, fileId);
+  return r.changes > 0;
+}
+
+/**
  * Look up indexed_files.id by destination file_path within a specific run.
  * Used by the Takeout importer to match Fix-output paths back to the freshly
  * inserted DB rows after indexFixRun.
