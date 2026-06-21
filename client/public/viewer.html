@@ -1083,6 +1083,15 @@
       vertical-align: middle;
     }
     .caption-bar .caption-text { vertical-align: middle; }
+    /* v2.1 round 361 (Terry) — caption as a small toolbar button + hover popover (replaces the
+       oversized, filmstrip-sized caption bar). Sits by Share; hovering shows it in a compact in-app window. */
+    .toolbar-caption-btn { position: relative; display: none; align-items: center; gap: 5px; padding: 4px 8px; margin-left: 2px; background: transparent; border: none; color: #cfc9e8; cursor: default; border-radius: 6px; -webkit-app-region: no-drag; }
+    .toolbar-caption-btn:hover { background: rgba(169,156,255,0.12); }
+    .toolbar-caption-btn svg { width: 16px; height: 16px; }
+    .caption-pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 7px; min-width: 200px; max-width: 380px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.25); border-radius: 9px; padding: 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 200; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: default; }
+    .toolbar-caption-btn:hover .caption-pop { display: block; }
+    .caption-pop-label { display: block; color: #A99CFF; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
+    .caption-pop-text { display: block; color: #d4d0e8; font-size: 13px; line-height: 1.45; }
     .no-image {
       display: flex;
       flex-direction: column;
@@ -3820,6 +3829,11 @@
           <path d="M19 14l.7 1.9L22 17l-2.3.6L19 20l-.7-1.9L16 17l2.3-.6L19 14z" />
         </svg>
         Share
+      </button>
+      <!-- v2.1 round 361 (Terry) — caption as a compact button + hover popover (was an oversized bar). -->
+      <button class="toolbar-caption-btn" id="btn-caption" type="button" aria-label="Caption">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+        <span class="caption-pop" id="caption-pop"><span class="caption-pop-label">Caption</span><span class="caption-pop-text" id="captionPopText"></span></span>
       </button>
       <!-- v2.1 round 146 (Terry) — collage Undo/Redo/Refresh on the LEFT
            of the toolbar. They were on the right before, but the pinned
@@ -7225,12 +7239,14 @@
     let captionsHidden = false;
     let lastCaptionForCurrent = '';
     function applyCaptionVisibility() {
-      if (captionsHidden || !lastCaptionForCurrent || lastCaptionForCurrent.length === 0) {
-        captionBarEl.classList.remove('has-caption');
-      } else {
-        captionTextEl.textContent = lastCaptionForCurrent;
-        captionBarEl.classList.add('has-caption');
-      }
+      // v2.1 round 361 (Terry) — the caption lives in a small button + hover popover by Share, NOT a
+      // big filmstrip-sized bar. Show the button only when there's a caption; hovering reveals it.
+      var cBtn = document.getElementById('btn-caption');
+      var cPop = document.getElementById('captionPopText');
+      var has = !(captionsHidden || !lastCaptionForCurrent || lastCaptionForCurrent.length === 0);
+      if (cBtn) cBtn.style.display = has ? 'inline-flex' : 'none';
+      if (has && cPop) cPop.textContent = lastCaptionForCurrent;
+      try { captionBarEl.classList.remove('has-caption'); } catch (_) {}   // old oversized bar retired
     }
     try {
       if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
