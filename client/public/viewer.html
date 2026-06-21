@@ -3905,6 +3905,14 @@
                 <span class="cws-blank-hint">A fresh, empty canvas</span>
               </span>
             </button>
+            <!-- v2.1 round 359 (Terry) — IG Carousel quick-start (next to Blank). -->
+            <button type="button" id="cws-carousel" class="cws-blank">
+              <span class="cws-blank-plus" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:26px;height:26px"><rect x="7" y="4" width="10" height="16" rx="1.6"/><path d="M3 8v8M21 8v8"/></svg></span>
+              <span class="cws-blank-text">
+                <span class="cws-blank-title">IG Carousel</span>
+                <span class="cws-blank-hint">Multi-page · 1080 × 1350</span>
+              </span>
+            </button>
           </div>
           <!-- v2.1 round 323 (Terry) — Templates row (Word-style). Your saved templates; click one
                to start a NEW collage from it. The curated built-in starter set lands here next. -->
@@ -8291,19 +8299,13 @@
         var _tp = [];
         if (_fx !== 1 || _fy !== 1) _tp.push('scale(' + _fx + ', ' + _fy + ')');
         var _cz = Math.max(1, Math.min(2.8, it.zoom || 1));
-        // v2.1 round 358 (Terry) — Ctrl+drag pan must reach the objectFit:cover CROP, not just the zoom
-        // slack. A frame photo overflows its box by its aspect even at zoom 1 (that's the cropped-off
-        // part), so the pannable overflow per axis = coverScale·zoom − 1. Was only (zoom − 1), so the
-        // cover-crop could never be brought into view even when zoomed.
-        var _pa = (im.naturalWidth && im.naturalHeight) ? (im.naturalWidth / im.naturalHeight) : (effectiveAspect(it) || 1);
-        var _ba = effectiveAspect(it) || 1;
-        var _csx = Math.max(1, _pa / _ba), _csy = Math.max(1, _ba / _pa);
-        var _ovx = _csx * _cz - 1, _ovy = _csy * _cz - 1;
-        if (_cz > 1 || _ovx > 0.001 || _ovy > 0.001) {
-          var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
-          var _ctx = (_ovx > 0 ? _cpx * _ovx / (2 * _cz) : 0) * 100, _cty = (_ovy > 0 ? _cpy * _ovy / (2 * _cz) : 0) * 100;
-          _tp.push('scale(' + _cz + ') translate(' + (-_ctx).toFixed(3) + '%, ' + (-_cty).toFixed(3) + '%)');
-        }
+        // v2.1 round 359 (Terry) — pan the cover-crop via OBJECT-POSITION, not a transform translate.
+        // The img is exactly the frame box, so translating it just slid the whole element off and showed
+        // WHITE (round 358's bug); object-position instead moves WHICH part of the objectFit:cover photo
+        // is visible, so the cropped-off part is brought into view — at zoom 1 too. Zoom stays a scale().
+        var _cpx = Math.max(-1, Math.min(1, it.panX || 0)), _cpy = Math.max(-1, Math.min(1, it.panY || 0));
+        im.style.objectPosition = ((_cpx + 1) / 2 * 100).toFixed(2) + '% ' + ((_cpy + 1) / 2 * 100).toFixed(2) + '%';
+        if (_cz > 1) _tp.push('scale(' + _cz + ')');
         im.style.transformOrigin = 'center center';
         im.style.transform = _tp.join(' ');
         // v2.1 round 335 (Terry) — Blend edges + Curved corners now apply to coverFill tiles too (was
@@ -11478,9 +11480,27 @@
     function removeCollagePhotoFromStrip(i) {
       const it = collageItems[i];
       if (!it || it.isBg) return;
+      // v2.1 round 359 (Terry) — the × on a FILLED FRAME empties the frame (keeps the empty slot) rather
+      // than deleting the whole tile, so you can swap the photo without losing your layout.
+      if (it.isFrame && !it.placeholder) { emptyCollageFrame(it); return; }
       setItemOn(it, false);    // snapshots (undo brings it back ON), turns the tile off, deselects, re-renders + strip
       it.removed = true;       // now prune its thumb on the refresh below
       updateCollageFilmstrip();
+    }
+    // v2.1 round 359 (Terry) — empty a filled frame back to its placeholder (reverse of fillCollageFrameWith):
+    // drop the photo, restore the "Add photo" overlay, keep the box exactly where/what it was.
+    function emptyCollageFrame(it) {
+      if (!it) return;
+      beginCollageChange();
+      it.placeholder = true; it.path = ''; it.bgRemovedPath = null; it.coverFill = false;
+      it.zoom = 1; it.panX = 0; it.panY = 0;
+      if (it.el && it.el.parentNode) it.el.parentNode.removeChild(it.el);
+      it.el = null; it.imgEl = null; it.clipEl = null; it.phEl = null;
+      buildCollageItemEl(it);   // rebuilds the tile WITH the "Add photo" placeholder overlay
+      renderCollageItem(it);
+      selectCollageItem(it);
+      updateCollageFilmstrip();
+      commitCollageChange();
     }
     // v2.1 round 260 (Terry) — carousel wide: render the bottom filmstrip as one thumbnail
     // per SLICE of the live WIDE canvas, plus a trailing "+" add slot. The photo POOL (the
@@ -12540,7 +12560,7 @@
         let z = collageZTop;
         for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
           const it = {
-            idx: -1, path: '', placeholder: true, on: true,
+            idx: -1, path: '', placeholder: true, on: true, isFrame: true,
             xFrac: c * cellW + gap, yFrac: r * cellH + gap, wFrac: fw, aspect: cellAspect, rot: 0,
             z: ++z, el: null, imgEl: null, clipEl: null, locked: false,
             crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
@@ -12702,6 +12722,9 @@
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
       const blank = document.getElementById('cws-blank');
       if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => { newBlankCollage(); hideCollageWelcome(); }); }
+      // v2.1 round 359 (Terry) — IG Carousel quick-start tile: jump straight into a multi-page carousel.
+      const cwsCar = document.getElementById('cws-carousel');
+      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', () => { hideCollageWelcome(); try { enterCarouselFromMenu({ id: 'ig-carousel' }); } catch (_) {} }); }
       buildCwsTemplates();
       buildCwsRecent();
       w.classList.add('active');
@@ -13101,7 +13124,11 @@
       tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
       const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn ch-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
       tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
-      tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
+      // v2.1 round 359 (Terry) — "Replace photo": swap this tile/frame's photo for another (from the PDR
+      // tray, via the picker) WITHOUT losing the frame/box. On an empty frame it just fills it.
+      const tbRep = document.createElement('button'); tbRep.type = 'button'; tbRep.className = 'ch-tb-btn ch-tb-rep'; tbRep.setAttribute('data-pdr-tooltip', 'Replace photo');
+      tbRep.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><polyline points="21 3 21 8 16 8"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><polyline points="3 21 3 16 8 16"/></svg>';
+      tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRep); tbar.appendChild(tbRem);
       // v2.1 round 145 — crop edge handles (drag inward to trim a side).
       const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
       const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
@@ -13116,7 +13143,7 @@
       // this list so a pointerdown on any of them is excluded from the tile
       // drag (the guard below). tbar itself + its three buttons are included so
       // clicking padlock/duplicate/trash never drags the tile.
-      const handles = [hRot, hResTL, hResTR, hResBL, hResBR, hRem, hCropL, hCropR, hCropT, hCropB, tbar, tbLock, tbDup, tbRem];
+      const handles = [hRot, hResTL, hResTR, hResBL, hResBR, hRem, hCropL, hCropR, hCropT, hCropB, tbar, tbLock, tbDup, tbRep, tbRem];
       el.addEventListener('pointerdown', (e) => {
         if (handles.indexOf(e.target) !== -1) return;
         // v2.1 round 330 (Terry) — Ctrl/Cmd: MULTI-SELECT takes priority so you can keep adding
@@ -13152,6 +13179,7 @@
       tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
       tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleItemLock(it); });
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageItem(it); });
+      tbRep.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); requestFillFrame(it); });   // v2.1 round 359 (Terry) — swap the photo
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
       it.el = el; it.imgEl = img; it.clipEl = clip;
       collageCanvasEl.appendChild(el);
@@ -13533,7 +13561,7 @@
       if (document.body.classList.contains('cws-open')) { try { hideCollageWelcome(); } catch (_) {} }
       beginCollageChange();
       const it = {
-        idx: -1, path: '', placeholder: true, on: true,
+        idx: -1, path: '', placeholder: true, on: true, isFrame: true,
         xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
         z: ++collageZTop, el: null, imgEl: null, clipEl: null,
         locked: false,
