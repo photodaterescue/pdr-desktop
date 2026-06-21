@@ -2447,6 +2447,15 @@
     }
     .cws-card:hover .cws-card-del { opacity: 1; }
     .cws-card-del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+    .cws-card-rename {
+      position: absolute; top: 8px; right: 40px; width: 26px; height: 26px;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(18,18,26,0.82); border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 7px; color: #d8d5e8; opacity: 0; cursor: pointer;
+      transition: opacity .12s ease, background .12s ease, border-color .12s ease;
+    }
+    .cws-card:hover .cws-card-rename { opacity: 1; }
+    .cws-card-rename:hover { background: rgba(254,194,66,0.92); border-color: #FEC242; color: #1a1a2e; }
     /* v2.1 round 348 (Terry) — Name-this-collage wizard (opt-in, reached by clicking the editor title). */
     .cnw-overlay { z-index: 200000; }   /* above the collage panel-toggle chevron (z 130000) so it can't poke through */
     .cnw-card { max-width: 460px; text-align: left; }
@@ -12190,7 +12199,26 @@
       if (ver && ver.trim()) { const v = ver.trim(); parts.push(/^\d/.test(v) ? ('v' + v) : v); }
       return parts.join(' · ');
     }
-    function openCollageNameWizard() {
+    // round 351 — parse a structured name back into its parts (for the rename-from-gallery prefill).
+    function parseCollageName(nm) {
+      const out = { category: '', name: '', version: '' };
+      if (!nm) return out;
+      let parts = String(nm).split(' · ').map((s) => s.trim()).filter(Boolean);
+      const cats = COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
+      if (parts.length && cats.some((c) => c.toLowerCase() === parts[0].toLowerCase())) out.category = parts.shift();
+      if (parts.length > 1 && /^v?\d/i.test(parts[parts.length - 1])) out.version = parts.pop().replace(/^v/i, '');
+      out.name = parts.join(' · ');
+      if (/^Collage \d{4}-\d{2}-\d{2}/.test(out.name)) out.name = '';   // auto-names aren't meaningful — don't prefill
+      return out;
+    }
+    // round 351 — rename a gallery project WITHOUT opening it: load → set name → save (the .png
+    // thumbnail is untouched because saveProject only rewrites it when a new one is passed).
+    async function doRenameProject(id, newName) {
+      try { const r = await window.pdr.collage.loadProject(id); if (r && r.success && r.project) { r.project.name = newName; await window.pdr.collage.saveProject(r.project); } } catch (_) {}
+      try { if (typeof currentCollageProjectId !== 'undefined' && currentCollageProjectId === id) { currentCollageProjectName = newName; updateCollageTitle(); } } catch (_) {}
+      try { buildCwsRecent(); } catch (_) {}
+    }
+    function openCollageNameWizard(renameTarget) {
       if (!collageMode) return;
       const overlay = document.createElement('div');
       overlay.className = 'enhance-ai-warning cnw-overlay'; overlay.style.display = 'flex';
@@ -12207,6 +12235,7 @@
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
         + '</div>';
       document.body.appendChild(overlay);
+      if (renameTarget) { try { overlay.querySelector('.enhance-ai-warning-title').textContent = 'Rename collage project'; } catch (_) {} }
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
       const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
@@ -12242,6 +12271,8 @@
         }
       }
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
+      // round 351 — rename mode: prefill from the project's existing name (overrides the last-used default)
+      if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verEl.value = pp.version; }
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
       // round 350 — "What's it for?" autofill: suggest the user's PAST entries (Terry expected this).
@@ -12278,7 +12309,11 @@
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
         const nm = assembleCollageName(selectedCat, nameEl.value, verEl.value);
         try { rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
-        if (nm) { currentCollageProjectName = nm; if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} } try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
+        if (nm) {
+          if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
+          if (renameTarget && renameTarget.id) { doRenameProject(renameTarget.id, nm); }   // round 351 — rename the gallery project
+          else { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
+        }
         close();
       }
       $('[data-action="skip"]').onclick = close; saveBtn.onclick = doSave;
@@ -12530,11 +12565,16 @@
           try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
           buildCwsRecent();
         });
+        // round 351 (Terry, naming #2) — rename straight from the card (opens the wizard in rename mode).
+        const ren = document.createElement('button');
+        ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
+        ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+        ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
         card.addEventListener('click', async () => {
           const ok = await reopenCollageProject(p.id);
           if (ok) hideCollageWelcome();
         });
-        card.appendChild(thumb); card.appendChild(meta); card.appendChild(del);
+        card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del);
         grid.appendChild(card);
       }
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
