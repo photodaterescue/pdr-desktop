@@ -2447,6 +2447,25 @@
     }
     .cws-card:hover .cws-card-del { opacity: 1; }
     .cws-card-del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+    /* v2.1 round 348 (Terry) — Name-this-collage wizard (opt-in, reached by clicking the editor title). */
+    .cnw-overlay { z-index: 200000; }   /* above the collage panel-toggle chevron (z 130000) so it can't poke through */
+    .cnw-card { max-width: 460px; text-align: left; }
+    .cnw-sub { font-size: 12.5px; color: #9a98ad; margin: 4px 0 14px; }
+    .cnw-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #8b88a0; margin: 13px 0 7px; }
+    .cnw-opt { text-transform: none; font-weight: 400; color: #6f6d80; }
+    .cnw-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
+    .cnw-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(169,156,255,0.3); background: rgba(169,156,255,0.08); color: #cfc9e8; font-size: 12.5px; cursor: pointer; transition: all 0.12s; }
+    .cnw-chip:hover { border-color: rgba(254,194,66,0.6); color: #fff; }
+    .cnw-chip.active { background: #FEC242; border-color: #FEC242; color: #1a1a2e; font-weight: 600; }
+    .cnw-input { width: 100%; padding: 8px 10px; background: rgba(169,156,255,0.10); border: 1px solid rgba(169,156,255,0.30); color: #e8e6ff; font-size: 13px; border-radius: 6px; outline: none; box-sizing: border-box; }
+    .cnw-input:focus { border-color: rgba(254,194,66,0.6); }
+    .cnw-nudge { margin-top: 8px; font-size: 12.5px; color: #cbb56a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .cnw-nudge-btn { padding: 4px 10px; border-radius: 6px; border: 1px solid rgba(254,194,66,0.6); background: rgba(254,194,66,0.15); color: #ffd778; font-size: 12px; cursor: pointer; }
+    .cnw-nudge-btn.cnw-nudge-keep { border-color: rgba(169,156,255,0.4); background: rgba(169,156,255,0.1); color: #cfc9e8; }
+    .cnw-preview { margin-top: 16px; font-size: 13px; color: #9a98ad; }
+    .cnw-preview-val { color: #f3f0ff; font-weight: 600; }
+    body.collage-mode #filename { -webkit-app-region: no-drag; cursor: pointer; }
+    body.collage-mode #filename:hover { text-decoration: underline; text-decoration-color: rgba(254,194,66,0.65); text-underline-offset: 3px; }
     /* ─── v2.1 round 319 (Terry) — empty photo FRAMES (templates foundation) ─── */
     .collage-item.is-frame .collage-clip {
       background: rgba(255,255,255,0.05);
@@ -12081,7 +12100,7 @@
     // v2.1 round 347 (Terry) — the top-left title shows the project NAME (or "Untitled collage"), not
     // the stale "Empty collage" that lingered even after photos were added.
     function updateCollageTitle() {
-      try { const fn = document.getElementById('filename'); if (fn) fn.textContent = currentCollageProjectName || 'Untitled collage'; } catch (_) {}
+      try { const fn = document.getElementById('filename'); if (fn) { fn.textContent = currentCollageProjectName || 'Untitled collage'; fn.setAttribute('data-pdr-tooltip', 'Click to name this collage'); } } catch (_) {}
     }
     // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
     // hid the welcome screen, revealing the SAME collage underneath. Clears tiles / text / bg and starts
@@ -12104,6 +12123,105 @@
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { updateUndoButtons(); } catch (_) {}
       updateCollageTitle();
+    }
+    // v2.1 round 348 (Terry) — NAME-THIS-COLLAGE wizard. PDR still auto-names by default (zero effort);
+    // this OPT-IN wizard (click the title) builds a CONSISTENT, readable name from a Category + a short
+    // label + an optional version — so names stay tidy ("Business · v3.0 launch") not freeform mush.
+    // Mitigations against duplicate custom categories: (1) show existing categories as chips, (2)
+    // type-ahead filters them, (3) case/space-normalise on save, (5) soft near-match nudge.
+    const COLLAGE_FIXED_CATEGORIES = ['Personal', 'Business', 'Family', 'Friends', 'Gift', 'Event', 'Travel'];
+    const COLLAGE_CAT_KEY = 'pdr-collage-categories';
+    const COLLAGE_LASTCAT_KEY = 'pdr-collage-last-category';
+    function loadCustomCategories() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_CAT_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch (_) { return []; } }
+    function rememberCustomCategory(cat) {
+      cat = String(cat || '').trim(); if (!cat) return;
+      if (COLLAGE_FIXED_CATEGORIES.some((f) => f.toLowerCase() === cat.toLowerCase())) return;   // already a built-in
+      let list = loadCustomCategories().filter((c) => c.toLowerCase() !== cat.toLowerCase());     // (3) dedup, case-insensitive
+      list.unshift(cat); list = list.slice(0, 24);
+      try { localStorage.setItem(COLLAGE_CAT_KEY, JSON.stringify(list)); } catch (_) {}
+    }
+    function collageLevenshtein(a, b) {
+      a = a.toLowerCase(); b = b.toLowerCase(); const m = a.length, n = b.length; if (!m) return n; if (!n) return m;
+      const d = []; for (let i = 0; i <= m; i++) d[i] = [i]; for (let j = 0; j <= n; j++) d[0][j] = j;
+      for (let i = 1; i <= m; i++) for (let j = 1; j <= n; j++) d[i][j] = Math.min(d[i - 1][j] + 1, d[i][j - 1] + 1, d[i - 1][j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      return d[m][n];
+    }
+    function closestCollageCategory(typed, pool) {
+      typed = String(typed || '').trim(); if (!typed) return null; let best = null, bestD = Infinity;
+      for (const c of pool) { if (c.toLowerCase() === typed.toLowerCase()) return null; const dist = collageLevenshtein(typed, c); if (dist < bestD) { bestD = dist; best = c; } }
+      return (best && bestD <= Math.max(1, Math.floor(typed.length / 3))) ? best : null;   // (5) ~1 edit per 3 chars
+    }
+    function assembleCollageName(cat, name, ver) {
+      const parts = [];
+      if (cat && cat.trim()) parts.push(cat.trim());
+      if (name && name.trim()) parts.push(name.trim());
+      if (ver && ver.trim()) { const v = ver.trim(); parts.push(/^\d/.test(v) ? ('v' + v) : v); }
+      return parts.join(' · ');
+    }
+    function openCollageNameWizard() {
+      if (!collageMode) return;
+      const overlay = document.createElement('div');
+      overlay.className = 'enhance-ai-warning cnw-overlay'; overlay.style.display = 'flex';
+      overlay.innerHTML = '<div class="enhance-ai-warning-card cnw-card">'
+        + '<div class="enhance-ai-warning-title">Name this collage</div>'
+        + '<p class="cnw-sub">Optional — a name you’ll recognise in Collages. Skip it and the auto-name stays.</p>'
+        + '<div class="cnw-label">Category</div><div class="cnw-chips" id="cnw-chips"></div>'
+        + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom category…" autocomplete="off" />'
+        + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
+        + '<div class="cnw-label">What’s it for?</div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. v3.0 launch, Mum’s 60th" autocomplete="off" />'
+        + '<div class="cnw-label">Version <span class="cnw-opt">(optional)</span></div><input id="cnw-ver" class="cnw-input" type="text" placeholder="e.g. 2" autocomplete="off" />'
+        + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
+        + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
+        + '</div>';
+      document.body.appendChild(overlay);
+      let selectedCat = '';
+      const $ = (s) => overlay.querySelector(s);
+      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
+      const allCats = () => COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
+      function refreshPreview() { previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—'; saveBtn.disabled = !nameEl.value.trim(); }
+      function buildChips(filter) {
+        chipsEl.innerHTML = ''; const f = (filter || '').trim().toLowerCase();
+        allCats().forEach((c) => {
+          if (f && c.toLowerCase().indexOf(f) < 0) return;
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'cnw-chip' + (c === selectedCat ? ' active' : ''); b.textContent = c;
+          b.addEventListener('click', () => { selectedCat = (selectedCat === c ? '' : c); customEl.value = ''; nudgeEl.style.display = 'none'; buildChips(); refreshPreview(); });
+          chipsEl.appendChild(b);
+        });
+      }
+      try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
+      buildChips(); refreshPreview();
+      customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
+      function setCat(c) { selectedCat = c; customEl.value = ''; nudgeEl.style.display = 'none'; buildChips(); refreshPreview(); }
+      function commitCustom() {
+        const typed = customEl.value.trim(); if (!typed) return;
+        const exact = allCats().find((c) => c.toLowerCase() === typed.toLowerCase()); if (exact) { setCat(exact); return; }
+        const near = closestCollageCategory(typed, allCats());
+        if (near) {
+          nudgeEl.innerHTML = '';
+          const txt = document.createElement('span'); txt.textContent = 'Similar to “' + near + '”. ';
+          const useB = document.createElement('button'); useB.type = 'button'; useB.className = 'cnw-nudge-btn'; useB.textContent = 'Use “' + near + '”'; useB.addEventListener('click', () => setCat(near));
+          const keepB = document.createElement('button'); keepB.type = 'button'; keepB.className = 'cnw-nudge-btn cnw-nudge-keep'; keepB.textContent = 'Keep “' + typed + '”'; keepB.addEventListener('click', () => { rememberCustomCategory(typed); setCat(typed); });
+          nudgeEl.appendChild(txt); nudgeEl.appendChild(useB); nudgeEl.appendChild(keepB); nudgeEl.style.display = 'block'; return;
+        }
+        rememberCustomCategory(typed); setCat(typed);
+      }
+      customEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitCustom(); } });
+      nameEl.addEventListener('input', refreshPreview); verEl.addEventListener('input', refreshPreview);
+      function close() { window.removeEventListener('keydown', onKey, true); overlay.remove(); }
+      function doSave() {
+        if (!nameEl.value.trim()) return;
+        if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
+        const nm = assembleCollageName(selectedCat, nameEl.value, verEl.value);
+        if (nm) { currentCollageProjectName = nm; if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} } try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
+        close();
+      }
+      $('[data-action="skip"]').onclick = close; saveBtn.onclick = doSave;
+      const onKey = function (e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
+        else if (e.key === 'Enter' && (document.activeElement === nameEl || document.activeElement === verEl)) { e.preventDefault(); e.stopPropagation(); doSave(); }
+      };
+      window.addEventListener('keydown', onKey, true);
+      setTimeout(() => { try { nameEl.focus(); } catch (_) {} }, 30);
     }
     function serializeCollageProject() {
       if (!currentCollageProjectName) currentCollageProjectName = defaultCollageProjectName();
@@ -15616,6 +15734,9 @@
         try { await autosaveCollageProject(); } catch (_) {}
         try { showCollageWelcome(); } catch (_) {}
       });
+      // v2.1 round 348 (Terry) — click the editor title to NAME the collage (the naming wizard).
+      const fnEl = document.getElementById('filename');
+      if (fnEl) fnEl.addEventListener('click', () => { if (collageMode) { try { openCollageNameWizard(); } catch (_) {} } });
       const redoBtn = document.getElementById('tb-collage-redo');
       if (redoBtn) redoBtn.addEventListener('click', () => redoCollage());
       // v2.1 round 345 (Terry) — Shuffle now lives in the Arrange section (was the titlebar refresh).
