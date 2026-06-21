@@ -887,9 +887,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // pass (listAlbums + groups + memberships) so freshly-imported
   // albums show up without navigating away.
   useEffect(() => {
-    const handler = () => { void refreshAll(); };
+    // v2.1 round 366 (Terry) — also reload the OPEN album's photos (refreshAll alone only reloads the
+    // tree, so a just-exported collage didn't appear on the album until you switched away + back).
+    const handler = () => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); };
     window.addEventListener('pdr:refreshActiveView', handler as EventListener);
     return () => window.removeEventListener('pdr:refreshActiveView', handler as EventListener);
+  }, [refreshAll]);
+
+  // v2.1 round 366 (Terry) — a file landing in the library (e.g. a just-exported collage filed into a
+  // PDR Collages album) now refreshes the open album LIVE — no manual Refresh needed.
+  useEffect(() => {
+    const off = (window as { pdr?: { library?: { onFilesAdded?: (cb: (info: { reason?: string }) => void) => (() => void) } } })
+      .pdr?.library?.onFilesAdded?.(() => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); });
+    return () => { if (typeof off === 'function') off(); };
   }, [refreshAll]);
 
   useEffect(() => {
@@ -2243,7 +2253,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                One useful action — refresh — for symmetry with the
                toolbar refresh button. */
             <ContextMenuContent>
-              <ContextMenuItem onSelect={() => refreshAll()}>
+              <ContextMenuItem onSelect={() => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); }}>
                 <RefreshCw className="w-3.5 h-3.5 mr-2" />
                 Refresh
               </ContextMenuItem>
@@ -4252,7 +4262,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 to the right edge (Terry 2026-05-18: "should remain
                 static"). */}
             <IconTooltip label="Refresh albums" side="bottom">
-              <Button variant="secondary" size="sm" onClick={() => refreshAll()} disabled={loading} className="px-1.5 py-0.5 h-auto" data-testid="button-refresh-albums">
+              <Button variant="secondary" size="sm" onClick={() => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); }} disabled={loading} className="px-1.5 py-0.5 h-auto" data-testid="button-refresh-albums">
                 <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
               </Button>
             </IconTooltip>

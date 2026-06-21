@@ -2215,7 +2215,6 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
     if (libRoot) {
       try {
         fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
-        if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
         // v2.1 round 364 (Terry) — the user's caption NOTE (from the Collages caption button), if any,
         // becomes the exported file's caption so it carries to Albums. The collage NAME is a SEPARATE
         // pseudonym written to the title tags (above), NOT the caption. Non-fatal.
@@ -2240,6 +2239,10 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
             log.warn(`[collage] add to PDR Collages source failed (non-fatal): ${(albErr as Error).message}`);
           }
         }
+        // v2.1 round 366 (Terry) — broadcast AFTER the album filing so the open Albums view (which now
+        // auto-reloads on this event) sees the new file's album membership. Broadcasting before the filing
+        // raced the membership write, so the export didn't appear until you switched albums + back.
+        if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
       } catch (idxErr) {
         log.warn(`[collage] composite index pass failed (file saved): ${(idxErr as Error).message}`);
       }
