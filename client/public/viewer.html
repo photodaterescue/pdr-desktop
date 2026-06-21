@@ -2471,6 +2471,7 @@
     .cnw-suggest { margin-top: 6px; border: 1px solid rgba(169,156,255,0.25); border-radius: 6px; background: rgba(30,28,48,0.98); overflow: hidden; }
     .cnw-suggest-item { display: block; width: 100%; text-align: left; padding: 7px 11px; background: transparent; border: none; color: #cfc9e8; font-size: 13px; cursor: pointer; }
     .cnw-suggest-item:hover { background: rgba(169,156,255,0.14); color: #fff; }
+    .cnw-export-note { margin-top: 11px; font-size: 12px; color: #b9b3d6; line-height: 1.4; }
     .cnw-input { width: 100%; padding: 8px 10px; background: rgba(169,156,255,0.10); border: 1px solid rgba(169,156,255,0.30); color: #e8e6ff; font-size: 13px; border-radius: 6px; outline: none; box-sizing: border-box; }
     .cnw-input:focus { border-color: rgba(254,194,66,0.6); }
     .cnw-nudge { margin-top: 8px; font-size: 12.5px; color: #cbb56a; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -12218,27 +12219,31 @@
       try { if (typeof currentCollageProjectId !== 'undefined' && currentCollageProjectId === id) { currentCollageProjectName = newName; updateCollageTitle(); } } catch (_) {}
       try { buildCwsRecent(); } catch (_) {}
     }
-    function openCollageNameWizard(renameTarget) {
+    function openCollageNameWizard(opts) {
+      opts = opts || {};
+      const renameTarget = opts.id ? opts : null;          // {id,name} → rename a gallery project
+      const exportMode = !!opts.exportMode;                // true → Export flow (pick album, then export)
       if (!collageMode) return;
       const overlay = document.createElement('div');
       overlay.className = 'enhance-ai-warning cnw-overlay'; overlay.style.display = 'flex';
       overlay.innerHTML = '<div class="enhance-ai-warning-card cnw-card">'
         + '<div class="enhance-ai-warning-title">Name this collage project</div>'
         + '<p class="cnw-sub">Optional — a name to find it again here in Collages. Your exported images keep their original filenames in the library.</p>'
-        + '<div class="cnw-label">Category</div><div class="cnw-chips" id="cnw-chips"></div>'
-        + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom category…" autocomplete="off" style="display:none;margin-top:8px" />'
+        + '<div class="cnw-label">Album</div><div class="cnw-chips" id="cnw-chips"></div>'
+        + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom album…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
         + '<div class="cnw-label">What’s it for?</div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. v3.0 launch, Mum’s 60th" autocomplete="off" />'
         + '<div id="cnw-name-suggest" class="cnw-suggest" style="display:none"></div>'
         + '<div class="cnw-label">Version <span class="cnw-opt">(optional)</span></div><input id="cnw-ver" class="cnw-input" type="text" placeholder="e.g. 2" autocomplete="off" />'
         + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
+        + '<div id="cnw-export-note" class="cnw-export-note" style="display:none"></div>'
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
         + '</div>';
       document.body.appendChild(overlay);
-      if (renameTarget) { try { overlay.querySelector('.enhance-ai-warning-title').textContent = 'Rename collage project'; } catch (_) {} }
+      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Export collage' : 'Name this collage project'); } catch (_) {}
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
-      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), saveBtn = $('[data-action="save"]');
+      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), exportNoteEl = $('#cnw-export-note'), saveBtn = $('[data-action="save"]');
       let customRevealed = false;
       const allCats = () => COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
       // round 350 — seed "What's it for?" suggestions from the user's EXISTING project names so the
@@ -12253,7 +12258,11 @@
         return parts.join(' · ').trim();
       }
       try { if (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) { Promise.resolve(window.pdr.collage.listProjects()).then((list) => { try { (list || []).forEach((p) => { const w = whatForFromName(p && p.name); if (w) seededWhatFor.push(w); }); } catch (_) {} }).catch(() => {}); } } catch (_) {}
-      function refreshPreview() { previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—'; saveBtn.disabled = !nameEl.value.trim(); }
+      function refreshPreview() {
+        previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—';
+        saveBtn.disabled = exportMode ? false : !nameEl.value.trim();   // export can go to General with no name
+        if (exportMode && exportNoteEl) { exportNoteEl.textContent = 'This collage will be saved to the “' + (selectedCat || 'General') + '” album in PDR Collages.'; exportNoteEl.style.display = 'block'; }
+      }
       function buildChips(filter) {
         chipsEl.innerHTML = ''; const f = (filter || '').trim().toLowerCase();
         allCats().forEach((c) => {
@@ -12273,6 +12282,13 @@
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
       // round 351 — rename mode: prefill from the project's existing name (overrides the last-used default)
       if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verEl.value = pp.version; }
+      // round 353 — export mode: default to General (clear the last-used default) unless the project is
+      // already named (then prefill its album/name); relabel the buttons for the export action.
+      if (exportMode) {
+        selectedCat = '';
+        if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verEl.value = ep.version; }
+        try { saveBtn.textContent = 'Export'; const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
+      }
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
       // round 350 — "What's it for?" autofill: suggest the user's PAST entries (Terry expected this).
@@ -12305,12 +12321,20 @@
       nameEl.addEventListener('input', () => { refreshPreview(); buildNameSuggest(); }); verEl.addEventListener('input', refreshPreview);
       function close() { window.removeEventListener('keydown', onKey, true); overlay.remove(); }
       function doSave() {
-        if (!nameEl.value.trim()) return;
+        if (!exportMode && !nameEl.value.trim()) return;   // export allows a blank name (→ General + auto-name)
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
         const nm = assembleCollageName(selectedCat, nameEl.value, verEl.value);
-        try { rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
+        try { if (nameEl.value.trim()) rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
+        if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
+        if (exportMode) {
+          // round 353 — name the project to match (if named), then EXPORT into the chosen album (blank → General)
+          if (nm) { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
+          const albumForExport = selectedCat || 'General';
+          close();
+          try { saveCollage(albumForExport); } catch (_) {}
+          return;
+        }
         if (nm) {
-          if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
           if (renameTarget && renameTarget.id) { doRenameProject(renameTarget.id, nm); }   // round 351 — rename the gallery project
           else { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
         }
@@ -15385,7 +15409,7 @@
         return layout;
     }
 
-    async function saveCollage() {
+    async function saveCollage(album) {
       // v2.1 round 258 (Terry) — carousel P4: in carousel mode, Save exports the
       // whole carousel as numbered slides instead of one collage file.
       if (carouselMode) return saveCarousel();
@@ -15400,7 +15424,7 @@
         // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
         // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
         const _exp = collageExportDims();
-        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h });
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined });
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
           // saved result opens in the SEPARATE Viewer window and this collage
@@ -20635,7 +20659,13 @@ function zoomTo(newZoom, centreX, centreY) {
         try { clearActivePreset(); } catch (_) {}
       }
       const collageSaveBtn = document.getElementById('collage-save');
-      if (collageSaveBtn) collageSaveBtn.addEventListener('click', function () { if (collageSaveFn) collageSaveFn(); });
+      if (collageSaveBtn) collageSaveBtn.addEventListener('click', function () {
+        // v2.1 round 353 (Terry) — Export opens the naming wizard (pick an Album), then exports into it.
+        // Carousels keep their direct export (they file into "PDR Carousels", not the album picker).
+        if (carouselMode) { if (collageSaveFn) collageSaveFn(); return; }
+        try { if (!collageProjectHasContent()) { showPdrAlert({ title: 'Nothing to export', body: 'Add at least one photo to the collage first.' }); return; } } catch (_) {}
+        try { openCollageNameWizard({ exportMode: true }); } catch (_) { if (collageSaveFn) collageSaveFn(); }
+      });
       // v2.1 round 323 (Terry) — "Save as template" → store the current design as a reusable template.
       const collageTemplateBtn = document.getElementById('collage-save-template');
       if (collageTemplateBtn) collageTemplateBtn.addEventListener('click', function () { try { saveAsTemplate(); } catch (_) {} });
