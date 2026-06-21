@@ -4571,20 +4571,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             stable across collapse/expand. Opens a fresh empty collage in
             its own window (no active-highlight state, like People
             Manager). LayoutGrid = the shared collage icon. */}
-        {/* v2.1 round 243 (Terry) — drop the amber accent here. In the
-            collapsed rail the accent ONLY tints the icon (no crescent),
-            and the pale logo-gold (#FEC242) renders far too faint on the
-            light rail to read. With no accent the icon falls back to the
-            standard dark rail colour (text-muted-foreground /
-            hover:text-foreground) — same as Settings / About / the other
-            un-accented rail icons — and reads clearly. Matches the
-            expanded item's now-dark icon treatment. */}
+        {/* v2.1 round 356 (Terry) — Collages identity in the PDR app is NAVY (the collage APP
+            keeps its gold). Round 243 had dropped the accent because the pale gold (#FEC242) was
+            too faint on the light rail; navy (#283593) is dark + saturated, so it reads clearly
+            here AND distinguishes Collages from Memories' gold. */}
         {iconBtn(
           'Collages',
           <LayoutGrid className="w-4 h-4" />,
           () => onOpenCollages(),
           false,
           false,
+          'navy',
         )}
         {/* v2.1 round 81 (Terry 2026-06-09) — Date Editor entry
             removed. The standalone Date Editor window is replaced by
@@ -5033,10 +5030,12 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
                   the accent wrapper's colour, so the icon is now dark and
                   clearly readable while the crescent stays gold. Only the
                   menu item's colour styling changes. */}
+              {/* v2.1 round 356 (Terry) — navy crescent + navy grid icon (was a gold crescent +
+                  dark icon). Navy is the Collages identity in the PDR app; the collage app stays gold. */}
               <SidebarItem
-                icon={<LayoutGrid className="w-4 h-4 text-sidebar-foreground" />}
+                icon={<LayoutGrid className="w-4 h-4 text-[#283593] dark:text-[#9aa8ec]" />}
                 label="Collages"
-                accent="amber"
+                accent="navy"
                 onClick={() => { onOpenCollages(); }}
                 selectable={false}
               />
@@ -5151,6 +5150,10 @@ const SIDEBAR_ACCENT: Record<string, string> = {
   // hue and saturation, so the eye separates them instantly.
   pink: '#d946ef',  // fuchsia/magenta for People Manager
   rose: '#fda4af',  // pastel rose for Recycle Bin
+  // v2.1 round 356 (Terry) — NAVY for Collages in the PDR app (the collage APP keeps its gold
+  // branding). Gold read too pale on the light side menu + clashed with Memories' gold; navy is
+  // the collage chrome colour (#1a1a2e family) lifted to a readable, saturated indigo-navy.
+  navy: '#283593',
 };
 
 function SidebarItem({ icon, label, active = false, selected = false, selectable = false, onClick, disabled = false, locked = false, accent }: { icon: React.ReactNode, label: string, active?: boolean, selected?: boolean, selectable?: boolean, onClick?: (e?: React.MouseEvent) => void, disabled?: boolean, locked?: boolean, accent?: keyof typeof SIDEBAR_ACCENT }) {

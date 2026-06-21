@@ -77,17 +77,17 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     label: 'Google Photos Takeout',
     badgeLabel: 'Google Photos',
   },
-  // v2.1 round 353/355 (Terry) — exported collages get their OWN source "PDR Collages", with the
-  // wizard's albums (Personal/Business/…/General) as albums inside it. Uses the EXACT PDR gold
-  // #FEC242 (SIDEBAR_ACCENT.amber — the same gold as the collage editor + the Memories rail icon)
-  // so it matches the app's gold; Tailwind amber-500 was a different, more-orange shade. The grid
-  // icon (LayoutGrid) is the same one the side-menu Collages entry uses.
+  // v2.1 round 353/355/356 (Terry) — exported collages get their OWN source "PDR Collages", with
+  // the wizard's albums (Personal/Business/…/General) as albums inside it. NAVY #283593 (an indigo-
+  // navy lifted from the collage chrome #1a1a2e) — matches the Collages identity in the side menu;
+  // gold read too pale on the light Albums surface + clashed with Memories' gold. The collage APP
+  // keeps its gold branding. Grid icon (LayoutGrid) = a collage of tiles (same as the side menu).
   pdr_collages: {
     Icon: LayoutGrid,
-    cardBgClass: 'bg-[#FEC242]/10 dark:bg-[#FEC242]/15 border-2 border-[#FEC242]/50',
-    badgeBgClass: 'bg-[#FEC242]/20 dark:bg-[#FEC242]/25',
-    iconColorClass: 'text-[#FEC242]',
-    badgeTextClass: 'text-[#8a6d12] dark:text-[#FEC242]',
+    cardBgClass: 'bg-[#283593]/10 dark:bg-[#283593]/20 border-2 border-[#283593]/45',
+    badgeBgClass: 'bg-[#283593]/15 dark:bg-[#283593]/30',
+    iconColorClass: 'text-[#283593] dark:text-[#9aa8ec]',
+    badgeTextClass: 'text-[#283593] dark:text-[#9aa8ec]',
     label: 'PDR Collages',
     badgeLabel: 'PDR Collages',
   },
