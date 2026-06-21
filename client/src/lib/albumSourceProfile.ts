@@ -18,7 +18,7 @@
  */
 
 import {
-  Sparkles, Home, Cloud, FolderClosed, Aperture, HardDriveDownload,
+  Sparkles, Home, Cloud, FolderClosed, Aperture, HardDriveDownload, LayoutGrid,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { AlbumGroupRecord, AlbumSummary } from './electron-bridge';
@@ -76,6 +76,18 @@ const AUTO_PROFILES: Record<string, AlbumSourceProfile> = {
     badgeTextClass: 'text-red-700 dark:text-red-300',
     label: 'Google Photos Takeout',
     badgeLabel: 'Google Photos',
+  },
+  // v2.1 round 353 (Terry) — exported collages get their OWN source "PDR Collages",
+  // with the wizard's albums (Personal/Business/…/General) as albums inside it. Amber
+  // echoes the collage editor's gold accent; the grid icon reads as a collage of tiles.
+  pdr_collages: {
+    Icon: LayoutGrid,
+    cardBgClass: 'bg-amber-50 dark:bg-amber-950/40 border-2 border-amber-300 dark:border-amber-700/60',
+    badgeBgClass: 'bg-amber-50 dark:bg-amber-950/80',
+    iconColorClass: 'text-amber-500 dark:text-amber-400',
+    badgeTextClass: 'text-amber-700 dark:text-amber-300',
+    label: 'PDR Collages',
+    badgeLabel: 'PDR Collages',
   },
   // ── Future sources (importers don't exist yet; profiles stubbed
   //    so they slot in cleanly when added) ───────────────────────────
@@ -189,5 +201,5 @@ export function isGroupDroppable(group: AlbumGroupRecord): boolean {
  *  in terms of contents (the snapshot must stay factual); only PDR-
  *  created albums accept new photos. */
 export function isAlbumSourceUserEditable(albumSource: string): boolean {
-  return albumSource === 'user_created';
+  return albumSource === 'user_created' || albumSource === 'pdr_collages';
 }

@@ -2160,7 +2160,7 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     return null;
   }
 });
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number }) => {
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string }) => {
   try {
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
@@ -2205,14 +2205,15 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
         const wantCollagesAlbum = (() => { try { return getSettings().saveCollagesToAlbum !== false; } catch { return true; } })();
         if (fileId != null && wantCollagesAlbum) {
           try {
-            const { listAlbums, createUserAlbum, addPhotosToAlbum } = await import('./search-database.js');
-            const ALBUM_TITLE = 'PDR Collages';
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const existing = (listAlbums() as any[]).find((a) => (a && a.title || '').toLowerCase() === ALBUM_TITLE.toLowerCase());
-            const albumId = existing ? existing.id : createUserAlbum(ALBUM_TITLE);
+            // v2.1 round 353 (Terry) — collages now file into the "PDR Collages" SOURCE, into the
+            // album the user picked in the export wizard (its category), defaulting to "General".
+            const { findCollageAlbumByTitle, createCollageAlbum, addPhotosToAlbum } = await import('./search-database.js');
+            const albumTitle = (opts && typeof opts.album === 'string' && opts.album.trim()) ? opts.album.trim() : 'General';
+            let albumId = findCollageAlbumByTitle(albumTitle);
+            if (albumId == null) albumId = createCollageAlbum(albumTitle);
             if (albumId != null) addPhotosToAlbum(albumId, [fileId]);
           } catch (albErr) {
-            log.warn(`[collage] add to "PDR Collages" album failed (non-fatal): ${(albErr as Error).message}`);
+            log.warn(`[collage] add to PDR Collages source failed (non-fatal): ${(albErr as Error).message}`);
           }
         }
       } catch (idxErr) {

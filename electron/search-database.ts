@@ -759,11 +759,23 @@ export function initDatabase(): { success: boolean; error?: string } {
       const ALBUM_SOURCE_PROFILES: Record<string, { title: string; icon_key: string; palette_key: string }> = {
         user_created:     { title: 'PDR',                   icon_key: 'home',      palette_key: 'violet'   },
         takeout_imported: { title: 'Google Photos',         icon_key: 'sparkles',  palette_key: 'red'      },
+        pdr_collages:     { title: 'PDR Collages',          icon_key: 'grid',      palette_key: 'amber'    },  // v2.1 round 353 (Terry)
         // Future sources (apple_photos, icloud, onedrive, google_drive,
         // dropbox, amazon_photos) will be added to this table as their
         // importers land. Any source value not in this table falls back
         // to a neutral cloud icon + sky palette in the renderer.
       };
+      // v2.1 round 353 (Terry) — migrate the legacy single "PDR Collages" album (source
+      // 'user_created') into the new "PDR Collages" SOURCE as its "General" catch-all album.
+      // One-time + idempotent (after the rename there's no user_created "PDR Collages" left to
+      // re-match); its old auto-membership to the PDR group is dropped so it doesn't double-show.
+      try {
+        const oldCollages = db.prepare(`SELECT id FROM albums WHERE source = 'user_created' AND lower(title) = 'pdr collages' LIMIT 1`).get() as { id: number } | undefined;
+        if (oldCollages && oldCollages.id) {
+          db.prepare(`DELETE FROM album_group_memberships WHERE album_id = ? AND is_auto = 1`).run(oldCollages.id);
+          db.prepare(`UPDATE albums SET source = 'pdr_collages', title = 'General', updated_at = datetime('now') WHERE id = ?`).run(oldCollages.id);
+        }
+      } catch { /* non-fatal */ }
       const distinctSources = db.prepare(
         `SELECT DISTINCT source FROM albums WHERE source IS NOT NULL AND source != ''`
       ).all() as { source: string }[];
@@ -7647,6 +7659,7 @@ export function reconcileAutoSourceMemberships(): number {
   const ALBUM_SOURCE_PROFILES: Record<string, { title: string; icon_key: string; palette_key: string }> = {
     user_created:     { title: 'PDR',                   icon_key: 'home',      palette_key: 'violet'   },
     takeout_imported: { title: 'Google Photos',         icon_key: 'sparkles',  palette_key: 'red'      },
+    pdr_collages:     { title: 'PDR Collages',          icon_key: 'grid',      palette_key: 'amber'    },  // v2.1 round 353 (Terry)
   };
   const distinctSources = db.prepare(
     `SELECT DISTINCT source FROM albums WHERE source IS NOT NULL AND source != ''`
@@ -7869,6 +7882,32 @@ export function createUserAlbum(title: string): number {
     return albumId;
   });
   return txn();
+}
+
+// v2.1 round 353 (Terry) — like createUserAlbum but for the "PDR Collages" SOURCE: its albums are
+// the collage wizard's categories (Personal/Business/…/General). source='pdr_collages' so they
+// group under their own auto source, separate from hand-made PDR albums.
+export function createCollageAlbum(title: string): number {
+  const db = getDb();
+  const trimmed = title.trim() || 'General';
+  const txn = db.transaction(() => {
+    const result = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'pdr_collages')`).run(trimmed);
+    const albumId = Number(result.lastInsertRowid);
+    db.prepare(`INSERT OR IGNORE INTO album_groups (title, source_kind, source_key, icon_key, palette_key, parent_id)
+                  VALUES ('PDR Collages', 'auto', 'pdr_collages', 'grid', 'amber', NULL)`).run();
+    db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+                  SELECT ?, g.id, 1 FROM album_groups g WHERE g.source_kind = 'auto' AND g.source_key = 'pdr_collages'`).run(albumId);
+    return albumId;
+  });
+  return txn();
+}
+
+/** Find a "PDR Collages" album by title (case-insensitive), scoped to the pdr_collages source so a
+ *  collage album "Personal" is distinct from a hand-made PDR album of the same name. */
+export function findCollageAlbumByTitle(title: string): number | null {
+  const db = getDb();
+  const row = db.prepare(`SELECT id FROM albums WHERE source = 'pdr_collages' AND lower(title) = lower(?) LIMIT 1`).get(String(title || '').trim()) as { id: number } | undefined;
+  return row ? row.id : null;
 }
 
 /** Rename an album. Always bumps updated_at so the list re-sorts. */
