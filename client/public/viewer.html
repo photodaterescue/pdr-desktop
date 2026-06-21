@@ -3128,6 +3128,11 @@
     body.cws-open #collage-panel-toggle { display: none !important; }
     body.cws-open #collage-save-wrap, body.cws-open #enhance-reset { display: none !important; }
     body.cws-open #tb-collage-home { display: none !important; }   /* v2.1 round 344 — already on the welcome screen */
+    /* v2.1 round 346 (Terry) — WYSIWYG export render: the off-screen export window shows ONLY the canvas
+       at full export px, so capturePage captures the REAL collage exactly. The stage fills the window
+       (above all chrome) and the canvas (sized to export px by layoutCanvasSize) fills the stage. */
+    body.collage-export-mode #collage-stage { position: fixed !important; inset: 0 !important; padding: 0 !important; z-index: 2147483600 !important; background: transparent !important; overflow: hidden !important; }
+    body.collage-export-mode #collage-canvas { margin: 0 !important; }
     /* v2.1 round 300 (Terry) — collapse the Enhance panel for a full-width VIEW (a viewing
        toggle; editing still needs it open). A tab on the panel's left edge folds it away and
        the canvas re-fits into the freed width. Editing controls are untouched — re-expand to edit. */
@@ -5516,6 +5521,7 @@
     // long-edge default, preserving old-collage behaviour).
     let collageSizeId = '';
     let collageExportPx = null;   // { w, h } | null
+    let collageExportTarget = null;   // v2.1 round 346 (Terry) — {w,h} for the WYSIWYG export render: canvas at 1:1 export px (no fit-scale), so capturePage of the off-screen window IS the full-res collage
     let collageZTop = 1;
     // v2.1 round 263 (Terry) — bg-tile: a DECREMENTING floor counter, the mirror of
     // collageZTop. A background-photo tile is pushed at z = --collageZBottom so it sits
@@ -5860,6 +5866,10 @@
     const filesReady = (async () => {
       const params = new URLSearchParams(window.location.search);
       const legacyFile = params.get('file');
+      // v2.1 round 346 (Terry) — the off-screen WYSIWYG export window loads with ?collageExport=1; it has
+      // NO payload (capture-manager drives it via window.__collageExportRender), so skip the normal
+      // payload pull + viewer init here.
+      if (params.get('collageExport')) return;
       if (legacyFile) {
         files = [legacyFile];
         return;
@@ -14891,8 +14901,51 @@
       document.querySelectorAll('.ec-shape-btn[data-aspect]').forEach((b) => b.classList.toggle('active', b.dataset.aspect === collageAspectKey));
       try { updateCanvasSizeIndicator(); } catch (_) {}   // v2.1 round 289 — keep the current-size chip live
     }
+    // v2.1 round 346 (Terry) — WYSIWYG EXPORT. The off-screen export window (capture-manager
+    // captureCollageExport) calls window.__collageExportRender, which renders the REAL collage DOM at
+    // full export px and returns the canvas rect for capturePage — so the saved image IS the editor
+    // render (no sharp re-draw drift).
+    function waitForCollageImages() {
+      const imgs = Array.prototype.slice.call(document.querySelectorAll('#collage-canvas img'));
+      return Promise.all(imgs.map((im) => (im.complete && im.naturalWidth > 0)
+        ? Promise.resolve()
+        : new Promise((res) => { im.addEventListener('load', res, { once: true }); im.addEventListener('error', res, { once: true }); })));
+    }
+    window.__collageExportRender = async function (opts) {
+      opts = opts || {};
+      const W = Math.round(opts.w || 1080), H = Math.round(opts.h || 1350);
+      document.body.classList.add('collage-mode', 'collage-export-mode');
+      collageMode = true;
+      // Activate the collage UI — without this #collage-root stays display:none and the canvas is 0×0
+      // (mirrors enterCollageMode: hide the single-image area, .active the collage root).
+      try { if (typeof container !== 'undefined' && container) container.style.display = 'none'; } catch (_) {}
+      if (collageRootEl) collageRootEl.classList.add('active');
+      collageExportTarget = { w: W, h: H };
+      collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
+      try { restoreCollageSnapshot(opts.snapshot); } catch (e) { return { error: String((e && e.message) || e) }; }
+      collageExportTarget = { w: W, h: H };   // restore loads the snapshot's exportPx into collageExportPx; re-assert the render target
+      try { layoutCanvasSize(); } catch (_) {}
+      try { applyCollageZoom(); } catch (_) {}
+      try { await waitForCollageImages(); } catch (_) {}
+      try { await document.fonts.ready; } catch (_) {}
+      await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+      const cr = collageCanvasEl.getBoundingClientRect();
+      const _imgs = document.querySelectorAll('#collage-canvas img');
+      let _loaded = 0; _imgs.forEach((im) => { if (im.complete && im.naturalWidth > 0) _loaded++; });
+      return { x: Math.round(cr.left), y: Math.round(cr.top), w: Math.round(cr.width), h: Math.round(cr.height),
+        dbg: { cw: collageCanvasEl.offsetWidth, ch: collageCanvasEl.offsetHeight, nImgs: _imgs.length, nLoaded: _loaded, items: (typeof collageItems !== 'undefined' ? collageItems.length : -1) } };
+    };
     function layoutCanvasSize() {
       if (!collageStageEl) return;
+      if (collageExportTarget) {
+        // v2.1 round 346 (Terry) — WYSIWYG export: canvas at the EXACT export px (1:1), no fit-scale.
+        collageCanvasEl.style.width = collageExportTarget.w + 'px';
+        collageCanvasEl.style.height = collageExportTarget.h + 'px';
+        applyCanvasBgVisual();
+        renderAllCollage();
+        renderAllTexts();
+        return;
+      }
       // v2.1 round 260 (Terry) — carousel wide: NO carousel early-return. The carousel is
       // a single wide #collage-canvas now, so this one fit path sizes it for ANY aspect —
       // getCanvasAspect() returns the wide aspect in carousel mode, and a wide aspect is
@@ -15086,7 +15139,10 @@
       try {
         const layout = buildCollageLayout();
         if (!layout) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; } return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
-        const res = await window.pdr.collage.saveLayout(layout);
+        // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
+        // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
+        const _exp = collageExportDims();
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h });
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
           // saved result opens in the SEPARATE Viewer window and this collage

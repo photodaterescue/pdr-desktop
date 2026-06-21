@@ -496,8 +496,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     saveLayout: (layout: {
       canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: unknown } };
       items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: unknown }>;
-    }) =>
-      ipcRenderer.invoke('collage:saveLayout', layout) as Promise<{
+    }, opts?: { snapshot?: string; w?: number; h?: number }) =>
+      ipcRenderer.invoke('collage:saveLayout', layout, opts) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
       }>,
     // v2.1 round 260 (Terry) — carousel wide: SLICED EXPORT. The carousel is now ONE
@@ -561,6 +561,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // Welcome Screen recent/template cards.
     renderThumb: (layout: unknown) =>
       ipcRenderer.invoke('collage:renderThumb', layout) as Promise<string | null>,
+    // v2.1 round 346 (Terry) — WYSIWYG export TEST: capture the real collage DOM at full res (off-screen
+    // window + capturePage) from a snapshotCollage() string; writes a temp PNG, returns its path.
+    captureExportTest: (snapshot: string, w: number, h: number) =>
+      ipcRenderer.invoke('collage:captureExportTest', snapshot, w, h) as Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>,
   },
 
   // v2.1 round 306 (Terry) — the floating "Capture region" prep bar (its own tiny

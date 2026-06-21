@@ -2090,6 +2090,64 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
 // v2.1 round 333 (Terry) — render a small PNG THUMBNAIL of a collage layout for the Collages
 // Welcome Screen recent/template cards, WITHOUT saving to the library. Returns a data-URL (or
 // null on failure). The renderer scales the layout down first so this bake stays cheap.
+// v2.1 round 346 (Terry) — WYSIWYG EXPORT. Render the REAL collage DOM (viewer.html — the SAME code as
+// the editor) at full export px in an off-screen window, then capturePage it. The saved image is the
+// exact editor render, ending the sharp re-draw drift (bg / faded glow / coverFill mismatches). Takes a
+// snapshotCollage() JSON string; the off-screen window restores it via window.__collageExportRender and
+// returns the canvas rect to clip. The window is shown with opacity 0 (off-screen-invisible) only so
+// Chromium paints a frame for capturePage — the user never sees it.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+async function captureCollageExport(snapshot: string, w: number, h: number): Promise<Buffer> {
+  const W = Math.max(16, Math.min(8000, Math.round(w || 1080)));
+  const H = Math.max(16, Math.min(8000, Math.round(h || 1350)));
+  // OFFSCREEN rendering: the page renders to a bitmap with no visible window (no flash), and the
+  // 'paint' event delivers full-window frames. (capturePage on a hidden / opacity-0 window came back
+  // blank — Chromium doesn't paint an invisible window; offscreen always produces frames.) The window
+  // content is W×H and the export-mode CSS makes the canvas fill it, so each frame IS the collage.
+  const win = new BrowserWindow({
+    show: false, width: W, height: H, useContentSize: true, frame: false, enableLargerThanScreen: true,
+    webPreferences: { offscreen: true, contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') },
+  });
+  try { win.setContentSize(W, H); } catch { /* noop */ }   // enforce the FULL export size (a window is otherwise clamped to the screen work-area, which cropped tall exports)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let lastPaint: any = null;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  win.webContents.on('paint', (_e: any, _dirty: any, image: any) => { lastPaint = image; });
+  try {
+    win.webContents.setFrameRate(30);
+    const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
+    await win.loadFile(viewerHtml, { query: { collageExport: '1' } });
+    try { win.setContentSize(W, H); } catch { /* noop */ }   // re-assert after load (before the render)
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rect: any = await win.webContents.executeJavaScript(`window.__collageExportRender(${JSON.stringify({ snapshot, w: W, h: H })})`);
+    if (!rect || rect.error) throw new Error('export render failed: ' + (rect && rect.error ? rect.error : 'no rect'));
+    if (rect.dbg) log.info(`[collage] wysiwyg render dbg: ${JSON.stringify(rect.dbg)}`);
+    // OFFSCREEN renders to a bitmap at the FULL W×H — no screen-size clamp (a VISIBLE window taller than
+    // the monitor gets cropped to the screen, which clipped the export). The 'paint' event delivers
+    // full-window frames; grab the latest after the render + image loads settle (invalidate nudges a
+    // frame for an otherwise-static page).
+    await new Promise((r) => setTimeout(r, 250));
+    try { win.webContents.invalidate(); } catch { /* noop */ }
+    await new Promise((r) => setTimeout(r, 300));
+    if (!lastPaint) throw new Error('no paint frame from the offscreen export window');
+    return (lastPaint as { toPNG: () => Buffer }).toPNG();
+  } finally {
+    try { win.destroy(); } catch { /* noop */ }
+  }
+}
+
+// v2.1 round 346 (Terry) — TEMP test handler for the WYSIWYG capture: writes a temp PNG, returns its
+// path so the result can be inspected + compared to the editor before wiring Save over to it.
+ipcMain.handle('collage:captureExportTest', async (_e, snapshot: string, w: number, h: number) => {
+  try {
+    const buf = await captureCollageExport(snapshot, w, h);
+    const p = path.join(app.getPath('temp'), 'pdr-wysiwyg-test.png');
+    fs.writeFileSync(p, buf);
+    return { ok: true, path: p, bytes: buf.length };
+  } catch (err) {
+    return { ok: false, error: (err as Error).message };
+  }
+});
 ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
   try {
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) return null;
@@ -2102,15 +2160,28 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     return null;
   }
 });
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout) => {
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number }) => {
   try {
-    // v2.1 round 258 (Terry) — carousel P4: bake via the shared helper, then the
-    // unchanged write/index/album tail. W/H/transparent are pure fns of the canvas
-    // (same clamp as inside the bake), so recomputing them here is exact.
-    const collageBuf = await bakeCollageLayout(layout);
-    const W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
-    const H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
+    // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
+    // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
+    // the file is EXACTLY what's on screen. Falls back to the sharp re-draw (bakeCollageLayout) when
+    // there's no snapshot, on capture failure, or for a transparent collage (capture has no alpha yet).
     const transparent = !!layout.canvas.transparent;
+    let collageBuf: Buffer | null = null;
+    let W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
+    let H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
+    if (opts && opts.snapshot && !transparent) {
+      try {
+        const png = await captureCollageExport(opts.snapshot, opts.w || W, opts.h || H);
+        const sharpLib = (await import('sharp')).default;
+        const meta = await sharpLib(png).metadata();
+        if (meta.width && meta.height) { W = meta.width; H = meta.height; }
+        collageBuf = await sharpLib(png).jpeg({ quality: 92 }).toBuffer();
+      } catch (capErr) {
+        log.warn(`[collage] WYSIWYG capture failed, falling back to re-draw: ${(capErr as Error).message}`);
+      }
+    }
+    if (!collageBuf) collageBuf = await bakeCollageLayout(layout);
 
     const capturedAt = new Date();
     const { date, time, month } = timestampParts(capturedAt);
