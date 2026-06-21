@@ -11152,6 +11152,32 @@ ipcMain.handle('captions:getByPath', async (_event, filePath: string) => {
   }
 });
 
+// v2.1 round 364 (Terry) — read a file's TITLE (the collage's project NAME / pseudonym) from its
+// metadata. Collages write their name into the EXIF/IPTC/XMP title tags on export; the Albums caption
+// dialog shows it next to the filename so the user can identify the collage without it polluting the
+// caption text. Returns null for files without a title (ordinary photos).
+ipcMain.handle('captions:getName', async (_event, fileId: number) => {
+  try {
+    const db = getDb();
+    const row = db.prepare(`SELECT file_path FROM indexed_files WHERE id = ?`).get(fileId) as { file_path: string } | undefined;
+    if (!row || !row.file_path || !fs.existsSync(row.file_path)) return { success: true, data: null };
+    const { ExifTool } = await import('exiftool-vendored');
+    const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
+    const exiftool = new ExifTool({ exiftoolPath: fs.existsSync(exiftoolPath) ? exiftoolPath : undefined });
+    try {
+      const tags = await exiftool.read(row.file_path);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const t = tags as any;
+      const title = t.Title || t.ObjectName || t.XPTitle || null;
+      return { success: true, data: title ? String(title).trim() : null };
+    } finally {
+      try { await exiftool.end(); } catch { /* non-fatal */ }
+    }
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // v2.0.13 (Terry 2026-05-27) — DB write is synchronous and fast;
 // the EXIF write is async but goes through exiftool-vendored's
 // single subprocess, which serialises against any other exiftool

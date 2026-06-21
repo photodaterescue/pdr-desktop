@@ -22,6 +22,7 @@ import { toast } from 'sonner';
 
 interface CaptionsApi {
   get: (fileId: number) => Promise<{ success: boolean; data?: string | null; error?: string }>;
+  getName?: (fileId: number) => Promise<{ success: boolean; data?: string | null; error?: string }>;
   set: (fileId: number, caption: string, writeExif?: boolean) => Promise<{ success: boolean; error?: string }>;
   clear: (fileId: number, writeExif?: boolean) => Promise<{ success: boolean; error?: string }>;
 }
@@ -49,14 +50,23 @@ export async function editPhotoCaption(args: {
     return undefined;
   }
   let initial = '';
+  let pseudonym: string | undefined;
   try {
-    const res = await api.get(args.fileId);
-    if (res.success && typeof res.data === 'string') initial = res.data;
+    // v2.1 round 364 (Terry) — fetch the caption AND the file's pseudonym/title (the collage's project
+    // NAME, written on export) in parallel. The name shows next to the filename so the user can identify
+    // the collage; it is NOT the caption (the caption stays free for the user's own note).
+    const [capRes, nameRes] = await Promise.all([
+      api.get(args.fileId),
+      api.getName ? api.getName(args.fileId) : Promise.resolve(null),
+    ]);
+    if (capRes && capRes.success && typeof capRes.data === 'string') initial = capRes.data;
+    if (nameRes && nameRes.success && typeof nameRes.data === 'string' && nameRes.data.trim()) pseudonym = nameRes.data.trim();
   } catch { /* default to empty */ }
 
   const value = await promptInput({
     eyebrow: initial.length > 0 ? 'EDIT CAPTION' : 'ADD CAPTION',
     title: args.filename ? args.filename : 'Caption',
+    subtitle: pseudonym,
     message: 'Captions are saved in your PDR library and (when possible) written into the photo’s EXIF ImageDescription so they travel with the file when you export it.',
     placeholder: 'Type a caption…',
     initialValue: initial,

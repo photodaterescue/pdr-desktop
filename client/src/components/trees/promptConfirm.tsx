@@ -605,6 +605,7 @@ export function promptInput(options: InputOptions): Promise<string | null> {
     root.render(
       <InputDialog
         title={options.title}
+        subtitle={options.subtitle}
         eyebrow={options.eyebrow}
         message={options.message}
         placeholder={options.placeholder}
@@ -627,6 +628,9 @@ export interface InputOptions {
   eyebrow?: string;
   /** Headline. */
   title?: string;
+  /** v2.1 round 364 (Terry) — a pseudonym shown just below the title (e.g. a collage's project
+   *  NAME next to its filename) so the user can identify the file without it polluting the caption. */
+  subtitle?: string;
   /** Body — explains what the user's editing. */
   message?: React.ReactNode;
   /** Placeholder text when the field is empty. */
@@ -650,7 +654,7 @@ export interface InputOptions {
 }
 
 function InputDialog({
-  eyebrow, title, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, enableEmoji, onConfirm, onCancel, onDismiss,
+  eyebrow, title, subtitle, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, enableEmoji, onConfirm, onCancel, onDismiss,
 }: InputOptions & { onConfirm: (v: string) => void; onCancel: () => void; onDismiss: () => void }) {
   const [mounted, setMounted] = useState(false);
   const [value, setValue] = useState(initialValue ?? '');
@@ -775,6 +779,9 @@ function InputDialog({
           )}
           {title && (
             <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
+          )}
+          {subtitle && (
+            <p className="text-sm font-medium text-foreground text-center mb-3 -mt-1 leading-snug">{subtitle}</p>
           )}
           {message && (
             <p className="text-sm text-muted-foreground text-center leading-relaxed mb-4">{message}</p>

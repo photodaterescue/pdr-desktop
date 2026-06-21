@@ -1088,12 +1088,24 @@
     .toolbar-caption-btn { position: relative; display: none; align-items: center; gap: 5px; padding: 4px 8px; margin-left: 2px; background: transparent; border: none; color: #cfc9e8; cursor: pointer; border-radius: 6px; -webkit-app-region: no-drag; }
     .toolbar-caption-btn.pinned { outline: 2px solid #a99cff; outline-offset: 1px; background: rgba(169,156,255,0.12); }   /* v2.1 round 362 (Terry) — click to pin: lavender outline (Viewer brand) + popover stays */
     #btn-enhance.enhance-active { outline: 2px solid #a99cff; outline-offset: 2px; border-radius: 6px; }   /* v2.1 round 363 (Terry) — same lavender outline as the caption pin, shown while Enhance is active */
+    body.collage-mode #btn-enhance.enhance-active { outline-color: #FEC242; }   /* v2.1 round 364 (Terry) — in the Collage editor the active-Enhance outline is GOLD (Collages brand), not lavender */
     .toolbar-caption-btn:hover { background: rgba(169,156,255,0.12); }
     .toolbar-caption-btn svg { width: 16px; height: 16px; }
     .caption-pop { display: none; position: absolute; top: 100%; left: 0; margin-top: 7px; min-width: 200px; max-width: 380px; background: #1b1b34; border: 1px solid rgba(169,156,255,0.25); border-radius: 9px; padding: 9px 12px; box-shadow: 0 10px 30px rgba(0,0,0,0.45); z-index: 200; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: default; }
     .toolbar-caption-btn:hover .caption-pop, .toolbar-caption-btn.pinned .caption-pop { display: block; }
     .caption-pop-label { display: block; color: #A99CFF; font-weight: 600; font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 4px; }
     .caption-pop-text { display: block; color: #d4d0e8; font-size: 13px; line-height: 1.45; }
+    /* v2.1 round 364 (Terry) — Collages caption button (titlebar, right of Redo): editable, click-to-open,
+       gold-accented to match the Collages brand. */
+    body.collage-mode #btn-collage-caption { display: flex; }
+    body.cws-open #btn-collage-caption { display: none; }   /* v2.1 round 364 — hide on the welcome screen (no active collage to caption yet) */
+    #btn-collage-caption:hover .caption-pop { display: none; }   /* click-to-open only (it's an editable field, not a hover preview) */
+    #btn-collage-caption.pinned .caption-pop { display: block; }
+    #btn-collage-caption.pinned { outline-color: #FEC242; background: rgba(254,194,66,0.12); }
+    #btn-collage-caption .caption-pop { border-color: rgba(254,194,66,0.3); }
+    #btn-collage-caption .caption-pop-label { color: #FEC242; }
+    .caption-edit-area { display: block; width: 248px; min-height: 64px; margin-top: 2px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.18); border-radius: 6px; color: #fff; font: inherit; font-size: 12px; line-height: 1.4; padding: 6px 8px; resize: vertical; outline: none; }
+    .caption-edit-area:focus { border-color: #FEC242; }
     .no-image {
       display: flex;
       flex-direction: column;
@@ -3849,6 +3861,12 @@
       <button class="toolbar-btn tb-collage" id="tb-collage-home" data-pdr-tooltip="All collages — start a new one or open a recent" aria-label="All collages"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m3 9 9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-undo" disabled data-pdr-tooltip="Undo (Ctrl+Z)"><span style="display:inline-block;transform:rotate(-90deg)">&#8634;</span></button>
       <button class="toolbar-btn tb-collage" id="tb-collage-redo" disabled data-pdr-tooltip="Redo (Ctrl+Y)"><span style="display:inline-block;transform:rotate(90deg)">&#8635;</span></button>
+      <!-- v2.1 round 364 (Terry) — Collages caption button, right of Redo, same style/icon as the Viewer's.
+           This is the user's NOTE (not the collage name); it travels to the library when you export. -->
+      <div class="toolbar-caption-btn tb-collage" id="btn-collage-caption" data-pdr-tooltip="Add a caption — a note that travels to your library on export">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
+        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-label">Caption</span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" placeholder="A note about this collage — shows in your library"></textarea></span>
+      </div>
     </div>
     <!-- v2.1 round 148 (Terry) — the title bar keeps ONLY a slim set so
          there's room to grab + drag the window: filename, copy, D&D,
@@ -7253,6 +7271,19 @@
     // v2.1 round 362 (Terry) — click the caption button to PIN it (persistent lavender outline + the
     // popover stays open) until clicked again; hover still previews. Lavender = the Viewer brand colour.
     try { var _capBtn = document.getElementById('btn-caption'); if (_capBtn) _capBtn.addEventListener('click', function () { _capBtn.classList.toggle('pinned'); }); } catch (_) {}
+    // v2.1 round 364 (Terry) — Collages caption button: click toggles the editor popover; the textarea
+    // drives collageCaptionText (written to the exported file's caption so it carries to Albums).
+    try {
+      var _ccBtn = document.getElementById('btn-collage-caption');
+      var _ccInput = document.getElementById('collageCaptionInput');
+      if (_ccBtn && _ccInput) {
+        _ccBtn.addEventListener('click', function (e) { if (_ccInput.contains(e.target)) return; var willOpen = !_ccBtn.classList.contains('pinned'); _ccBtn.classList.toggle('pinned'); if (willOpen) setTimeout(function () { try { _ccInput.focus(); } catch (_) {} }, 0); });
+        _ccInput.value = collageCaptionText || '';
+        _ccInput.addEventListener('input', function () { collageCaptionText = _ccInput.value; });
+        _ccInput.addEventListener('click', function (e) { e.stopPropagation(); });
+        _ccInput.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Escape') { _ccBtn.classList.remove('pinned'); } });
+      }
+    } catch (_) {}
     try {
       if (window.pdr && window.pdr.settings && window.pdr.settings.get) {
         window.pdr.settings.get().then((s) => {
@@ -12162,6 +12193,7 @@
     // album. This block is the SAVE side; reopen + the projects gallery come next.
     let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
     let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
+    let collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption
     let collageAutosaveTimer = null;
     let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
 
@@ -12212,6 +12244,7 @@
         restoreCollageSnapshot(JSON.stringify(s));
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
+      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       updateCollageTitle();
@@ -12538,6 +12571,7 @@
         restoreCollageSnapshot(p.snapshot);
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
+      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
@@ -12599,6 +12633,7 @@
         collageZTop = z;
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
+      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
@@ -15498,7 +15533,7 @@
         // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
         // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
         const _exp = collageExportDims();
-        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined });   // v2.1 round 363 (Terry) — send the collage's NAME so the export auto-captions the file with it
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined, caption: collageCaptionText || undefined });   // v2.1 round 364 (Terry) — name = pseudonym (→ EXIF title shown by the filename), caption = the user's note (→ file caption)
         if (res && res.success && res.filePath) {
           // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
           // saved result opens in the SEPARATE Viewer window and this collage

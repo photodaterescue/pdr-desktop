@@ -139,7 +139,7 @@ function onlineLibraryRoot(): string | null {
  * Mirrors the viewer:saveEnhanced exiftool pattern — failure only
  * costs the embedded metadata, never the capture itself.
  */
-async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabel: string = 'screenshot', caption?: string): Promise<void> {
+async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabel: string = 'screenshot', caption?: string, title?: string): Promise<void> {
   try {
     const { ExifTool } = await import('exiftool-vendored');
     const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
@@ -165,6 +165,15 @@ async function stampCaptureMetadata(filePath: string, capturedAt: Date, kindLabe
         tags['EXIF:ImageDescription'] = _cap;
         tags['IPTC:Caption-Abstract'] = _cap;
         tags['XMP-dc:Description'] = _cap;
+      }
+      // v2.1 round 364 (Terry) — the collage's NAME is a PSEUDONYM (separate from the caption note); write
+      // it to the TITLE tags so it travels with the file + can be shown next to the filename in the Albums
+      // caption dialog.
+      if (title && title.trim()) {
+        const _tit = title.trim();
+        tags['XMP-dc:Title'] = _tit;
+        tags['IPTC:ObjectName'] = _tit;
+        tags['XPTitle'] = _tit;
       }
       await exiftool.write(filePath, tags, ['-overwrite_original']);
     } finally {
@@ -2169,7 +2178,7 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     return null;
   }
 });
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string }) => {
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string }) => {
   try {
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
@@ -2200,18 +2209,18 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
     const outPath = uniqueCapturePath(destDir, `${date}_${time}_CO`, transparent ? '.png' : '.jpg');
     fs.writeFileSync(toLongPath(outPath), collageBuf);
     const filename = path.basename(outPath);
-    await stampCaptureMetadata(outPath, capturedAt, 'collage', opts && opts.name ? opts.name : undefined);
+    await stampCaptureMetadata(outPath, capturedAt, 'collage', opts && opts.caption ? opts.caption : undefined, opts && opts.name ? opts.name : undefined);
 
     let fileId: number | null = null;
     if (libRoot) {
       try {
         fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
         if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
-        // v2.1 round 363 (Terry) — the collage's project NAME auto-populates the caption so it surfaces
-        // in the Albums caption dialog + the Viewer (and travels via the EXIF write above). Editable
-        // afterwards like any caption. Non-fatal.
-        if (fileId != null && opts && opts.name && opts.name.trim()) {
-          try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.name.trim()); } catch (capErr) { log.warn(`[collage] set caption from name failed (non-fatal): ${(capErr as Error).message}`); }
+        // v2.1 round 364 (Terry) — the user's caption NOTE (from the Collages caption button), if any,
+        // becomes the exported file's caption so it carries to Albums. The collage NAME is a SEPARATE
+        // pseudonym written to the title tags (above), NOT the caption. Non-fatal.
+        if (fileId != null && opts && opts.caption && opts.caption.trim()) {
+          try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.caption.trim()); } catch (capErr) { log.warn(`[collage] set caption failed (non-fatal): ${(capErr as Error).message}`); }
         }
         // v2.1 round 161 (Terry) — every saved collage joins a "PDR Collages"
         // album (created on first save), so they're all gathered in one place
