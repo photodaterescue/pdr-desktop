@@ -874,6 +874,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     get: (fileId: number) => ipcRenderer.invoke('captions:get', fileId),
     getName: (fileId: number) => ipcRenderer.invoke('captions:getName', fileId),
     getByPath: (filePath: string) => ipcRenderer.invoke('captions:getByPath', filePath),
+    // v3.0 (Terry) — indexed_files metadata by path (collage right-click "Photo info").
+    getInfoByPath: (filePath: string) => ipcRenderer.invoke('files:getInfoByPath', filePath),
     setByPath: (filePath: string, caption: string, writeExif?: boolean) => ipcRenderer.invoke('captions:setByPath', { filePath, caption, writeExif }),
     set: (fileId: number, caption: string, writeExif?: boolean) =>
       ipcRenderer.invoke('captions:set', { fileId, caption, writeExif }),

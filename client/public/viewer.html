@@ -16638,6 +16638,153 @@
       };
       collageStageEl.addEventListener('pointerup', endCollagePan);
       collageStageEl.addEventListener('pointercancel', endCollagePan);
+      // ===== v3.0 round 381 (Terry) — COLLAGE RIGHT-CLICK CONTEXT MENU + PHOTO INFO (task #23) =====
+      // Per-item menu: Canva-style core (replace / duplicate / delete / arrange / centre / flip / rotate /
+      // lock) PLUS PDR-only wins — Copy/Paste STYLE across the whole enhance set, Reset edits, and a Photo
+      // Info card with the real library metadata (capture date / camera / place) a generic editor can't know.
+      // Reuses the exact action functions the floating toolbar already calls.
+      (function () {
+        var st = document.createElement('style');
+        st.textContent =
+          '.cctx{position:fixed;z-index:2147483600;min-width:210px;max-width:280px;background:#1f1d2e;border:1px solid rgba(255,255,255,.1);border-radius:10px;padding:5px;box-shadow:0 14px 44px rgba(0,0,0,.55);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;}' +
+          '.cctx-item{display:flex;align-items:center;gap:10px;width:100%;padding:7px 10px;border:0;background:transparent;color:#e9e6f7;font-size:12.5px;text-align:left;border-radius:6px;cursor:pointer;}' +
+          '.cctx-item:hover{background:rgba(255,255,255,.09);}' +
+          '.cctx-item svg{width:15px;height:15px;flex:0 0 15px;stroke:#b9b2e0;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;}' +
+          '.cctx-item.dng{color:#ff8c8c;}.cctx-item.dng svg{stroke:#ff8c8c;}' +
+          '.cctx-item .cctx-k{margin-left:auto;font-size:10.5px;color:#8c86ad;letter-spacing:.02em;}' +
+          '.cctx-sep{height:1px;margin:5px 8px;background:rgba(255,255,255,.09);}' +
+          '.cctx-info{position:fixed;z-index:2147483601;width:250px;background:#1f1d2e;border:1px solid rgba(255,255,255,.1);border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,.55);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;}' +
+          '.cctx-info h4{margin:0;padding:10px 12px;font-size:12.5px;font-weight:600;color:#e9e6f7;border-bottom:1px solid rgba(255,255,255,.09);display:flex;align-items:center;gap:7px;}' +
+          '.cctx-info h4 svg{width:14px;height:14px;stroke:#FEC242;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;}' +
+          '.cctx-info dl{margin:0;padding:9px 12px;display:grid;grid-template-columns:auto 1fr;gap:6px 14px;}' +
+          '.cctx-info dt{font-size:10px;color:#8c86ad;text-transform:uppercase;letter-spacing:.05em;align-self:center;}' +
+          '.cctx-info dd{margin:0;font-size:12px;color:#e9e6f7;text-align:right;word-break:break-word;}';
+        document.head.appendChild(st);
+        function ic(p) { return '<svg viewBox="0 0 24 24">' + p + '</svg>'; }
+        var I = {
+          replace: '<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="m16 11-4-4-4 4"/><path d="M12 7v9"/>',
+          add: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/>',
+          dup: '<rect x="8" y="8" width="13" height="13" rx="2"/><path d="M4 16V4a2 2 0 0 1 2-2h10"/>',
+          del: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m1 0v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/>',
+          front: '<path d="M12 19V5M5 12l7-7 7 7"/><path d="M5 21h14"/>',
+          fwd: '<path d="M12 19V5M5 12l7-7 7 7"/>',
+          bwd: '<path d="M12 5v14M5 12l7 7 7-7"/>',
+          back: '<path d="M12 5v14M5 12l7 7 7-7"/><path d="M5 3h14"/>',
+          ctrh: '<path d="M12 3v18M8 9H4l2-2M4 9l2 2m12-2h4l-2-2m2 2-2 2"/>',
+          ctrv: '<path d="M3 12h18M9 8V4L7 6m2-2 2 2m-2 12v4l2-2m-2 2-2-2"/>',
+          fliph: '<path d="M12 3v18M16 7l4 5-4 5M8 7l-4 5 4 5"/>',
+          flipv: '<path d="M3 12h18M7 8l5-4 5 4M7 16l5 4 5-4"/>',
+          rot: '<path d="M21 12a9 9 0 1 1-2.7-6.4"/><path d="M21 4v5h-5"/>',
+          lock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
+          unlock: '<rect x="4" y="11" width="16" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/>',
+          enh: '<path d="M12 3l1.8 4.9L19 9.7l-4.9 1.8L12 17l-1.8-4.9L5 9.7l5-1.8z"/>',
+          copy: '<rect x="9" y="3" width="12" height="12" rx="2"/><path d="M5 9H4a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2v-1"/>',
+          paste: '<path d="M9 4h6v2H9z"/><path d="M16 5h2a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2"/>',
+          reset: '<path d="M3 12a9 9 0 1 0 2.7-6.4"/><path d="M3 4v5h5"/>',
+          info: '<circle cx="12" cy="12" r="9"/><path d="M12 11v5M12 7.5h.01"/>',
+          empty: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m21 15-5-5L5 21"/><circle cx="8.5" cy="8.5" r="1.5"/>',
+        };
+        var copiedStyle = null, menuEl = null, infoEl = null;
+        function hideAll() {
+          if (menuEl) { menuEl.remove(); menuEl = null; }
+          if (infoEl) { infoEl.remove(); infoEl = null; }
+          document.removeEventListener('pointerdown', onOutside, true);
+          document.removeEventListener('keydown', onEsc, true);
+          window.removeEventListener('blur', hideAll);
+        }
+        function onOutside(e) { if (menuEl && menuEl.contains(e.target)) return; if (infoEl && infoEl.contains(e.target)) return; hideAll(); }
+        function onEsc(e) { if (e.key === 'Escape') hideAll(); }
+        function armDismiss() { document.addEventListener('pointerdown', onOutside, true); document.addEventListener('keydown', onEsc, true); window.addEventListener('blur', hideAll); }
+        function sync(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
+        function flip(it, ax) { if (!it || it.locked) return; beginCollageChange(); it.enh = it.enh || defaultBgEnh(); if (ax === 'h') it.enh.flipH = !it.enh.flipH; else it.enh.flipV = !it.enh.flipV; renderCollageItem(it); commitCollageChange(); sync(it); }
+        function centre(it, ax) { if (!it || it.locked) return; beginCollageChange(); if (ax === 'h') it.xFrac = Math.max(0, (1 - it.wFrac) / 2); else { var ih = itemHeightFrac(it); it.yFrac = Math.max(0, (1 - ih) / 2); } renderCollageItem(it); commitCollageChange(); }
+        function copyStyle(it) { try { copiedStyle = JSON.parse(JSON.stringify(it.enh || defaultBgEnh())); } catch (_) {} }
+        function pasteStyle(it) { if (!it || !copiedStyle || it.locked) return; beginCollageChange(); it.enh = JSON.parse(JSON.stringify(copiedStyle)); renderCollageItem(it); commitCollageChange(); sync(it); }
+        function resetEdits(it) { if (!it || it.locked) return; beginCollageChange(); it.enh = defaultBgEnh(); it.zoom = 1; it.panX = 0; it.panY = 0; it.rot = 0; renderCollageItem(it); commitCollageChange(); sync(it); }
+        function fmtDate(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return iso || '—'; return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso || '—'; } }
+        function fmtSize(n) { if (!n) return null; var u = ['B', 'KB', 'MB', 'GB']; var i = 0; while (n >= 1024 && i < 3) { n /= 1024; i++; } return n.toFixed(i ? 1 : 0) + ' ' + u[i]; }
+        function srcLabel(s) { return ({ embedded: 'EXIF capture date', exif: 'EXIF capture date', takeout: 'Google Takeout', filename: 'Filename pattern', marked: 'PDR-marked', unknown: 'Unknown' })[s] || s || '—'; }
+        async function showInfo(it, x, y) {
+          hideAll();
+          var data = null;
+          try { var r = await window.pdr.captions.getInfoByPath(it.path); if (r && r.success) data = r.data; } catch (_) {}
+          infoEl = document.createElement('div'); infoEl.className = 'cctx-info';
+          var rows = '';
+          function row(k, v) { if (v == null || v === '') return; rows += '<dt>' + k + '</dt><dd>' + String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</dd>'; }
+          if (!data) { rows = '<dt>Status</dt><dd>Not found in the library index</dd>'; }
+          else {
+            row('File', data.filename);
+            if (data.width && data.height) row('Pixels', data.width + ' × ' + data.height + (data.megapixels ? '  ·  ' + (+data.megapixels).toFixed(1) + ' MP' : ''));
+            var fs = fmtSize(data.fileSize); if (fs) row('On disk', fs);
+            row('Date', fmtDate(data.derivedDate));
+            row('Date from', srcLabel(data.dateSource));
+            row('Camera', [data.cameraMake, data.cameraModel].filter(Boolean).join(' '));
+            row('Exposure', [data.focalLength, data.aperture ? 'f/' + data.aperture : null, data.shutterSpeed, data.iso ? 'ISO ' + data.iso : null].filter(Boolean).join('  ·  '));
+            row('Place', [data.city, data.country].filter(Boolean).join(', '));
+          }
+          infoEl.innerHTML = '<h4>' + ic(I.info) + 'Photo info</h4><dl>' + rows + '</dl>';
+          document.body.appendChild(infoEl);
+          var w = 250, vw = window.innerWidth, vh = window.innerHeight;
+          infoEl.style.left = Math.max(8, Math.min(x, vw - w - 8)) + 'px';
+          infoEl.style.top = Math.max(8, Math.min(y, vh - infoEl.offsetHeight - 8)) + 'px';
+          armDismiss();
+        }
+        function show(it, x, y) {
+          hideAll();
+          var isFrame = !!(it.placeholder || it.isFrame);
+          var filled = !isFrame && !!it.path;
+          var n = (collageSelection && collageSelection.length > 1) ? collageSelection.length : 0;
+          var rows = [];
+          if (isFrame) rows.push({ ic: I.add, label: 'Add photo…', fn: function () { requestFillFrame(it); } });
+          else if (filled) rows.push({ ic: I.replace, label: 'Replace photo…', fn: function () { requestFillFrame(it); } });
+          rows.push({ ic: I.dup, label: n > 1 ? 'Duplicate ' + n : 'Duplicate', k: 'Ctrl+D', fn: function () { if (n > 1) { collageSelection.slice().forEach(function (x2) { try { duplicateCollageItem(x2); } catch (_) {} }); } else { duplicateCollageItem(it); } } });
+          rows.push({ ic: I.del, label: n > 1 ? 'Delete ' + n : 'Delete', k: 'Del', dng: true, fn: function () { deleteCollageSelection(); } });
+          rows.push({ sep: true });
+          rows.push({ ic: I.front, label: 'Bring to front', fn: function () { orderCollageSelection('front'); } });
+          rows.push({ ic: I.fwd, label: 'Bring forward', fn: function () { orderCollageSelection('forward'); } });
+          rows.push({ ic: I.bwd, label: 'Send backward', fn: function () { orderCollageSelection('backward'); } });
+          rows.push({ ic: I.back, label: 'Send to back', fn: function () { orderCollageSelection('back'); } });
+          rows.push({ sep: true });
+          rows.push({ ic: I.ctrh, label: 'Centre across page', fn: function () { centre(it, 'h'); } });
+          rows.push({ ic: I.ctrv, label: 'Centre down page', fn: function () { centre(it, 'v'); } });
+          if (filled) { rows.push({ ic: I.fliph, label: 'Flip horizontal', fn: function () { flip(it, 'h'); } }); rows.push({ ic: I.flipv, label: 'Flip vertical', fn: function () { flip(it, 'v'); } }); }
+          rows.push({ ic: I.rot, label: 'Rotate 90°', fn: function () { snapItemRot90(it); } });
+          rows.push({ ic: it.locked ? I.unlock : I.lock, label: it.locked ? 'Unlock' : 'Lock position', fn: function () { toggleItemLock(it); } });
+          if (filled) {
+            rows.push({ sep: true });
+            rows.push({ ic: I.enh, label: 'Enhance…', fn: function () { selectCollageItem(it); try { openPanel(); } catch (_) {} } });
+            rows.push({ ic: I.copy, label: 'Copy style', fn: function () { copyStyle(it); } });
+            if (copiedStyle) rows.push({ ic: I.paste, label: 'Paste style', fn: function () { pasteStyle(it); } });
+            rows.push({ ic: I.reset, label: 'Reset edits', fn: function () { resetEdits(it); } });
+            rows.push({ sep: true });
+            rows.push({ ic: I.info, label: 'Photo info', fn: function () { showInfo(it, x, y); } });
+          } else if (isFrame) {
+            rows.push({ sep: true });
+            rows.push({ ic: I.empty, label: 'Empty this frame', fn: function () { emptyCollageFrame(it); } });
+          }
+          menuEl = document.createElement('div'); menuEl.className = 'cctx';
+          rows.forEach(function (r) {
+            if (r.sep) { var s = document.createElement('div'); s.className = 'cctx-sep'; menuEl.appendChild(s); return; }
+            var b = document.createElement('button'); b.type = 'button'; b.className = 'cctx-item' + (r.dng ? ' dng' : '');
+            b.innerHTML = ic(r.ic) + '<span>' + r.label + '</span>' + (r.k ? '<span class="cctx-k">' + r.k + '</span>' : '');
+            b.addEventListener('click', function (ev) { ev.stopPropagation(); var keepInfo = (r.label === 'Photo info'); if (keepInfo) { if (menuEl) { menuEl.remove(); menuEl = null; } } else { hideAll(); } try { r.fn(); } catch (e2) {} });
+            menuEl.appendChild(b);
+          });
+          document.body.appendChild(menuEl);
+          var w = menuEl.offsetWidth || 220, h = menuEl.offsetHeight || 320, vw = window.innerWidth, vh = window.innerHeight;
+          menuEl.style.left = Math.max(8, Math.min(x, vw - w - 8)) + 'px';
+          menuEl.style.top = Math.max(8, Math.min(y, vh - h - 8)) + 'px';
+          armDismiss();
+        }
+        collageStageEl.addEventListener('contextmenu', function (e) {
+          if (!collageMode) return;
+          e.preventDefault();
+          var it = topCollageItemAtPoint(e.clientX, e.clientY);
+          if (!it || it.isBg) { hideAll(); return; }
+          if (!(collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)) selectCollageItem(it);
+          show(it, e.clientX, e.clientY);
+        });
+      })();
       // v2.1 round 265 (Terry) — expose startViewPan so startItemDrag's locked branch can
       // route a grab on a full-bleed locked tile into a view-pan (defined inside this DOM
       // wiring closure; hoisted to the outer scope here for that one caller).

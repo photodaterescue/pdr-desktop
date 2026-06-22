@@ -11156,6 +11156,27 @@ ipcMain.handle('captions:getByPath', async (_event, filePath: string) => {
 // metadata. Collages write their name into the EXIF/IPTC/XMP title tags on export; the Albums caption
 // dialog shows it next to the filename so the user can identify the collage without it polluting the
 // caption text. Returns null for files without a title (ordinary photos).
+// v3.0 (Terry 2026-06-22) — file metadata by PATH for the collage right-click "Photo info" card. The
+// renderer only knows a tile's file path; this returns the indexed_files row's useful fields (dimensions,
+// derived capture date + its source, camera, exposure, place) — library knowledge a generic editor lacks.
+ipcMain.handle('files:getInfoByPath', async (_event, filePath: string) => {
+  try {
+    const db = getDb();
+    const row = db.prepare('SELECT * FROM indexed_files WHERE file_path = ? LIMIT 1').get(filePath) as Record<string, unknown> | undefined;
+    if (!row) return { success: true, data: null };
+    const g = (k: string) => row[k];
+    return { success: true, data: {
+      filename: g('filename'), width: g('width'), height: g('height'), megapixels: g('megapixels'),
+      cameraMake: g('camera_make'), cameraModel: g('camera_model'), lens: g('lens_model'),
+      derivedDate: g('derived_date'), dateSource: g('date_source'),
+      city: g('geo_city'), country: g('geo_country'), gpsLat: g('gps_lat'), gpsLon: g('gps_lon'),
+      fileSize: g('file_size') ?? g('size') ?? null,
+      iso: g('iso'), aperture: g('aperture'), shutterSpeed: g('shutter_speed'), focalLength: g('focal_length'),
+    } };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
 ipcMain.handle('captions:getName', async (_event, fileId: number) => {
   try {
     const db = getDb();
