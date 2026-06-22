@@ -1120,6 +1120,7 @@
     #pdr-emoji-picker .emoji-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 1px; max-height: 168px; overflow-y: auto; }
     #pdr-emoji-picker .emoji-cell { background: transparent; border: none; cursor: pointer; font-size: 18px; width: 36px; height: 34px; border-radius: 5px; }
     #pdr-emoji-picker .emoji-cell:hover { background: rgba(255,255,255,0.12); }
+    .collage-item.collage-drop-target { outline: 3px dashed #FEC242 !important; outline-offset: -3px; }   /* v2.1 round 370 (Terry) — drag a strip photo onto a frame to fill it */
     .no-image {
       display: flex;
       flex-direction: column;
@@ -7923,7 +7924,16 @@
       };
 
       const onFilmstripThumbDragStart = (e) => {
-        if (collageMode) { return; }   // collage owns the strip; no OS drag
+        if (collageMode) {
+          // v2.1 round 370 (Terry) — INTERNAL fill-drag: carry the photo's idx/path so dropping it on a
+          // FRAME fills the frame. NOT an OS file drag (no startDrag below) — the library file is never touched.
+          try {
+            const _fid = (e.currentTarget && e.currentTarget.dataset) ? e.currentTarget.dataset.idx : '';
+            const _ffp = (e.currentTarget && e.currentTarget.dataset) ? e.currentTarget.dataset.fp : '';
+            if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('application/x-pdr-collage-fill', JSON.stringify({ idx: _fid, fp: _ffp })); }
+          } catch (_) {}
+          return;
+        }
         const fp = e.currentTarget && e.currentTarget.dataset ? e.currentTarget.dataset.fp : '';
         if (!fp) { e.preventDefault(); return; }
         try { e.dataTransfer.effectAllowed = 'copy'; } catch (_) { /* readonly in some contexts */ }
@@ -11573,6 +11583,9 @@
       thumb.setAttribute('data-pdr-tooltip-side', 'top');
       thumb.dataset.idx = String(i);
       thumb.dataset.fp = fp;
+      // v2.1 round 370 (Terry) — drag this strip photo onto a frame to fill it (internal drag, not a file).
+      thumb.setAttribute('draggable', 'true');
+      thumb.addEventListener('dragstart', (e) => { try { if (e.dataTransfer) { e.dataTransfer.effectAllowed = 'copy'; e.dataTransfer.setData('application/x-pdr-collage-fill', JSON.stringify({ idx: String(i), fp: fp })); } } catch (_) {} });
       thumb.addEventListener('click', (e) => {
         const idx = parseInt(e.currentTarget.dataset.idx || '0', 10);
         if (handleFilmstripModifierSelect(e, idx)) return;
@@ -12580,6 +12593,7 @@
         names: files.map(collageBasename),
         snapshot: snapshotCollage(),
         aspectKey: collageAspectKey,
+        caption: collageCaptionText || '',   // v2.1 round 370 (Terry) — persist the caption NOTE so reopening the project keeps it
       };
     }
     let collageThumbBusy = false;
@@ -12645,6 +12659,10 @@
         // This window now IS this project — subsequent autosaves overwrite it in place.
         currentCollageProjectId = p.id || id;
         currentCollageProjectName = p.name || null;
+        // v2.1 round 370 (Terry) — restore the caption note so a reopened collage keeps it (+ reflect it
+        // in the caption textarea).
+        collageCaptionText = (typeof p.caption === 'string') ? p.caption : '';
+        try { var _cciR = document.getElementById('collageCaptionInput'); if (_cciR) _cciR.value = collageCaptionText; } catch (_) {}
         try { updateUndoButtons(); } catch (_) {}
         updateCollageTitle();   // v2.1 round 347 (Terry) — show the reopened project's name
         return true;
@@ -13247,6 +13265,24 @@
       const el = document.createElement('div');
       el.className = 'collage-item';
       el.dataset.idx = String(it.idx);
+      // v2.1 round 370 (Terry) — drop a filmstrip photo onto this FRAME to fill it (internal drag from the
+      // PDR strip; the library file is never touched). Only frames accept the drop.
+      el.addEventListener('dragover', (e) => {
+        if (!collageMode || !it.isFrame) return;
+        const t = e.dataTransfer && e.dataTransfer.types;
+        if (!t || Array.prototype.indexOf.call(t, 'application/x-pdr-collage-fill') < 0) return;
+        e.preventDefault(); try { e.dataTransfer.dropEffect = 'copy'; } catch (_) {}
+        el.classList.add('collage-drop-target');
+      });
+      el.addEventListener('dragleave', () => { el.classList.remove('collage-drop-target'); });
+      el.addEventListener('drop', (e) => {
+        el.classList.remove('collage-drop-target');
+        if (!collageMode || !it.isFrame) return;
+        const raw = e.dataTransfer && e.dataTransfer.getData('application/x-pdr-collage-fill');
+        if (!raw) return;
+        e.preventDefault(); e.stopPropagation();
+        try { const d = JSON.parse(raw); let fp = d.fp; if (!fp && d.idx != null) { const src = collageItems[parseInt(d.idx, 10)]; if (src) fp = src.path; } if (fp) fillCollageFrameWith(it, fp); } catch (_) {}
+      });
       // v2.1 round 145 — image in a clip wrapper so crop can enlarge +
       // offset it without spilling past the frame.
       const clip = document.createElement('div');
