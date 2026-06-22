@@ -16302,7 +16302,12 @@
         // div (not a TEXTAREA), so exempt isContentEditable too. The old
         // #collage-text-input id is gone (side-panel field removed).
         const t = e.target;
-        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'INPUT' || t.isContentEditable)) return;
+        // v3.0 r382 (Terry — undo "felt like twice") — only TEXT-entry fields own Ctrl+Z/Y for native
+        // in-field undo. A range slider / checkbox / colour input has NO native undo, so it must NOT
+        // swallow the collage undo press (a focused slider was eating the first Ctrl+Z).
+        const _tag = t && t.tagName;
+        const _isText = (_tag === 'TEXTAREA') || (t && t.isContentEditable) || (_tag === 'INPUT' && !['range', 'checkbox', 'radio', 'button', 'submit', 'reset', 'color', 'file'].includes((t.type || 'text').toLowerCase()));
+        if (_isText) return;
         const k = (e.key || '').toLowerCase();
         if ((e.ctrlKey || e.metaKey) && k === 'z' && !e.shiftKey) { e.preventDefault(); undoCollage(); }
         else if ((e.ctrlKey || e.metaKey) && (k === 'y' || (k === 'z' && e.shiftKey))) { e.preventDefault(); redoCollage(); }
@@ -16698,6 +16703,16 @@
         function sync(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
         function flip(it, ax) { if (!it || it.locked) return; beginCollageChange(); it.enh = it.enh || defaultBgEnh(); if (ax === 'h') it.enh.flipH = !it.enh.flipH; else it.enh.flipV = !it.enh.flipV; renderCollageItem(it); commitCollageChange(); sync(it); }
         function centre(it, ax) { if (!it || it.locked) return; beginCollageChange(); if (ax === 'h') it.xFrac = Math.max(0, (1 - it.wFrac) / 2); else { var ih = itemHeightFrac(it); it.yFrac = Math.max(0, (1 - ih) / 2); } renderCollageItem(it); commitCollageChange(); }
+        // ADD 90° (snapItemRot90 only SNAPS to the nearest 90° — a no-op on a tile already at 0°).
+        function rotate90(it) {
+          if (!it || it.isBg) return;
+          var targets = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0) ? collageSelection.slice() : [it];
+          if (targets.every(function (x) { return !x || x.locked; })) return;
+          beginCollageChange();
+          targets.forEach(function (x) { if (x && !x.isBg && !x.locked && x.on) { x.rot = ((((x.rot || 0) + 90) % 360) + 360) % 360; renderCollageItem(x); } });
+          try { updateAngleSlider(); } catch (_) {}
+          commitCollageChange(); sync(it);
+        }
         function copyStyle(it) { try { copiedStyle = JSON.parse(JSON.stringify(it.enh || defaultBgEnh())); } catch (_) {} }
         function pasteStyle(it) { if (!it || !copiedStyle || it.locked) return; beginCollageChange(); it.enh = JSON.parse(JSON.stringify(copiedStyle)); renderCollageItem(it); commitCollageChange(); sync(it); }
         function resetEdits(it) { if (!it || it.locked) return; beginCollageChange(); it.enh = defaultBgEnh(); it.zoom = 1; it.panX = 0; it.panY = 0; it.rot = 0; renderCollageItem(it); commitCollageChange(); sync(it); }
@@ -16718,7 +16733,9 @@
             var fs = fmtSize(data.fileSize); if (fs) row('On disk', fs);
             row('Date', fmtDate(data.derivedDate));
             row('Date from', srcLabel(data.dateSource));
-            row('Camera', [data.cameraMake, data.cameraModel].filter(Boolean).join(' '));
+            if (data.people && data.people.length) row('People', data.people.join(', '));
+            var _mk = (data.cameraMake || '').trim(), _md = (data.cameraModel || '').trim();
+            row('Camera', (_md && _mk && _md.toLowerCase().indexOf(_mk.toLowerCase()) === 0) ? _md : [_mk, _md].filter(Boolean).join(' '));
             row('Exposure', [data.focalLength, data.aperture ? 'f/' + data.aperture : null, data.shutterSpeed, data.iso ? 'ISO ' + data.iso : null].filter(Boolean).join('  ·  '));
             row('Place', [data.city, data.country].filter(Boolean).join(', '));
           }
@@ -16731,12 +16748,13 @@
         }
         function show(it, x, y) {
           hideAll();
-          var isFrame = !!(it.placeholder || it.isFrame);
-          var filled = !isFrame && !!it.path;
+          var frameLike = !!(it.placeholder || it.isFrame);
+          var hasPhoto = !!it.path;            // a FILLED frame keeps isFrame=true — gate photo ops on the photo, not the frame flag
+          var isEmptyFrame = frameLike && !hasPhoto;
           var n = (collageSelection && collageSelection.length > 1) ? collageSelection.length : 0;
           var rows = [];
-          if (isFrame) rows.push({ ic: I.add, label: 'Add photo…', fn: function () { requestFillFrame(it); } });
-          else if (filled) rows.push({ ic: I.replace, label: 'Replace photo…', fn: function () { requestFillFrame(it); } });
+          if (isEmptyFrame) rows.push({ ic: I.add, label: 'Add photo…', fn: function () { requestFillFrame(it); } });
+          else if (hasPhoto) rows.push({ ic: I.replace, label: 'Replace photo…', fn: function () { requestFillFrame(it); } });
           rows.push({ ic: I.dup, label: n > 1 ? 'Duplicate ' + n : 'Duplicate', k: 'Ctrl+D', fn: function () { if (n > 1) { collageSelection.slice().forEach(function (x2) { try { duplicateCollageItem(x2); } catch (_) {} }); } else { duplicateCollageItem(it); } } });
           rows.push({ ic: I.del, label: n > 1 ? 'Delete ' + n : 'Delete', k: 'Del', dng: true, fn: function () { deleteCollageSelection(); } });
           rows.push({ sep: true });
@@ -16747,20 +16765,18 @@
           rows.push({ sep: true });
           rows.push({ ic: I.ctrh, label: 'Centre across page', fn: function () { centre(it, 'h'); } });
           rows.push({ ic: I.ctrv, label: 'Centre down page', fn: function () { centre(it, 'v'); } });
-          if (filled) { rows.push({ ic: I.fliph, label: 'Flip horizontal', fn: function () { flip(it, 'h'); } }); rows.push({ ic: I.flipv, label: 'Flip vertical', fn: function () { flip(it, 'v'); } }); }
-          rows.push({ ic: I.rot, label: 'Rotate 90°', fn: function () { snapItemRot90(it); } });
+          if (hasPhoto) { rows.push({ ic: I.fliph, label: 'Flip horizontal', fn: function () { flip(it, 'h'); } }); rows.push({ ic: I.flipv, label: 'Flip vertical', fn: function () { flip(it, 'v'); } }); }
+          rows.push({ ic: I.rot, label: 'Rotate 90°', fn: function () { rotate90(it); } });
           rows.push({ ic: it.locked ? I.unlock : I.lock, label: it.locked ? 'Unlock' : 'Lock position', fn: function () { toggleItemLock(it); } });
-          if (filled) {
+          if (hasPhoto) {
             rows.push({ sep: true });
-            rows.push({ ic: I.enh, label: 'Enhance…', fn: function () { selectCollageItem(it); try { openPanel(); } catch (_) {} } });
+            rows.push({ ic: I.enh, label: 'Enhance…', fn: function () { selectCollageItem(it); document.body.classList.remove('collage-panel-collapsed'); try { layoutCanvasSize(); } catch (_) {} try { var ep = document.getElementById('enhance-panel'); if (ep) ep.scrollTop = 0; } catch (_) {} } });
             rows.push({ ic: I.copy, label: 'Copy style', fn: function () { copyStyle(it); } });
             if (copiedStyle) rows.push({ ic: I.paste, label: 'Paste style', fn: function () { pasteStyle(it); } });
             rows.push({ ic: I.reset, label: 'Reset edits', fn: function () { resetEdits(it); } });
+            if (frameLike) rows.push({ ic: I.empty, label: 'Empty this frame', fn: function () { emptyCollageFrame(it); } });
             rows.push({ sep: true });
             rows.push({ ic: I.info, label: 'Photo info', fn: function () { showInfo(it, x, y); } });
-          } else if (isFrame) {
-            rows.push({ sep: true });
-            rows.push({ ic: I.empty, label: 'Empty this frame', fn: function () { emptyCollageFrame(it); } });
           }
           menuEl = document.createElement('div'); menuEl.className = 'cctx';
           rows.forEach(function (r) {

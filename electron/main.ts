@@ -11165,6 +11165,15 @@ ipcMain.handle('files:getInfoByPath', async (_event, filePath: string) => {
     const row = db.prepare('SELECT * FROM indexed_files WHERE file_path = ? LIMIT 1').get(filePath) as Record<string, unknown> | undefined;
     if (!row) return { success: true, data: null };
     const g = (k: string) => row[k];
+    // Named people in this photo (PeopleManager-verified only) — the "who" a generic editor can't know.
+    let people: string[] = [];
+    try {
+      const fid = (row as Record<string, unknown>).id as number | undefined;
+      if (fid != null) {
+        const prows = db.prepare("SELECT DISTINCT p.name AS name FROM face_detections fd JOIN persons p ON fd.person_id = p.id WHERE fd.file_id = ? AND fd.person_id IS NOT NULL AND p.discarded_at IS NULL AND p.name IS NOT NULL AND TRIM(p.name) <> '' ORDER BY p.name").all(fid) as Array<{ name: string }>;
+        people = prows.map((r) => r.name);
+      }
+    } catch { /* faces optional — older DBs may lack these tables */ }
     return { success: true, data: {
       filename: g('filename'), width: g('width'), height: g('height'), megapixels: g('megapixels'),
       cameraMake: g('camera_make'), cameraModel: g('camera_model'), lens: g('lens_model'),
@@ -11172,6 +11181,7 @@ ipcMain.handle('files:getInfoByPath', async (_event, filePath: string) => {
       city: g('geo_city'), country: g('geo_country'), gpsLat: g('gps_lat'), gpsLon: g('gps_lon'),
       fileSize: g('file_size') ?? g('size') ?? null,
       iso: g('iso'), aperture: g('aperture'), shutterSpeed: g('shutter_speed'), focalLength: g('focal_length'),
+      people,
     } };
   } catch (err) {
     return { success: false, error: (err as Error).message };
