@@ -37,6 +37,8 @@ import {
   // toolbar ported from MemoriesView (Dates). ChevronDown + FolderPlus
   // already imported above; PlayCircle is new (Open-in-viewer item).
   PlayCircle,
+  Copy,
+  FolderInput,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/custom-button';
@@ -110,6 +112,7 @@ import {
   getSourceProfileForGroup,
   getSourceProfileForAlbum,
   isGroupDroppable,
+  isAlbumSourceUserEditable,
 } from '../lib/albumSourceProfile';
 
 const DRAG_MIME_ALBUM = 'application/x-pdr-album-id';
@@ -1860,6 +1863,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const actionsGrace = usePopoverGraceClose(1500);
   const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
   const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
+  // v3.0 (Terry 2026-06-22) — opens the MOVE-mode AddToAlbumPopover anchor (add to dest + remove from this album).
+  const [addToAlbumMoveTick, setAddToAlbumMoveTick] = useState(0);
   // v2.1 round 275 (Terry) — albumPhotosRefreshTick (the RISK-1 recycle-refresh tick) is
   // declared up with `albumPhotos`, because the loader effect references it in its dep array
   // and must therefore be initialized before that effect (avoids a TDZ blank-screen).
@@ -3356,11 +3361,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
-                            data-testid="albums-actions-add-to-album"
+                            data-testid="albums-actions-copy-to-album"
                           >
-                            <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                            Add to album…
+                            <Copy className="w-3.5 h-3.5 mr-2" />
+                            Copy to album…
                           </DropdownMenuItem>
+                          {/* v3.0 (Terry) — MOVE to another album = add to dest + remove from THIS album.
+                              Shown only when THIS album is user-editable — never move OUT of a Takeout/iCloud
+                              snapshot (it would corrupt the factual source membership; Copy out is still fine). */}
+                          {selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source) && (
+                            <DropdownMenuItem
+                              onSelect={() => { setAddToAlbumMoveTick(t => t + 1); }}
+                              data-testid="albums-actions-move-to-album"
+                            >
+                              <FolderInput className="w-3.5 h-3.5 mr-2" />
+                              Move to album…
+                            </DropdownMenuItem>
+                          )}
                           {/* v2.1 round 275 (Terry) — NEW: create a fresh
                               album straight from the selection. Opens the
                               AddToAlbumPopover directly in create mode via
@@ -3542,6 +3559,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           onAdded={clearAlbumSelection}
                           openTrigger={addToAlbumOpenTick}
                           openCreateTrigger={addToAlbumCreateTick}
+                        />
+                        {/* v3.0 (Terry) — MOVE anchor: same picker with moveFromAlbumId set, so a pick adds
+                            to the dest AND removes from THIS album. Opened by addToAlbumMoveTick. */}
+                        <AddToAlbumPopover
+                          fileIds={Array.from(selectedAlbumPhotoIds)}
+                          onAdded={clearAlbumSelection}
+                          openTrigger={addToAlbumMoveTick}
+                          moveFromAlbumId={selectedAlbum?.id ?? null}
                         />
                       </div>
                     </>

@@ -24,6 +24,7 @@ import {
   listAlbums,
   createAlbum,
   addPhotosToAlbum,
+  removePhotosFromAlbum,
   type AlbumSummary,
 } from '../lib/electron-bridge';
 import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
@@ -56,9 +57,13 @@ interface AddToAlbumPopoverProps {
    *  clicking the inline "Create new" footer button. Each bump
    *  opens once; close behaviour identical to `openTrigger`. */
   openCreateTrigger?: number;
+  /** v3.0 (Terry 2026-06-22) — MOVE mode. When set to a source album id, a successful add to a
+   *  DIFFERENT album also REMOVES the photos from this album → a MOVE (vs the default copy/add).
+   *  The header + toasts switch to "Move" wording and the source album is hidden from the dest list. */
+  moveFromAlbumId?: number | null;
 }
 
-export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger, openCreateTrigger }: AddToAlbumPopoverProps) {
+export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger, openCreateTrigger, moveFromAlbumId }: AddToAlbumPopoverProps) {
   const [open, setOpen] = useState(false);
   // v2.0.15 (Terry 2026-06-01) — bridge for openTrigger. Watching
   // the value (skip null/undefined) lets the parent reopen the
@@ -156,23 +161,34 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
   // drop the source album link into the same folder — both visible
   // in one basket, each carrying its own source identity. (Terry
   // 2026-05-18.)
-  const addressable = albums.filter((a) => isAlbumSourceUserEditable(a.source));
+  // v3.0 (Terry) — MOVE mode (moveFromAlbumId set): a pick adds to the dest AND removes from the source
+  // album. Hide the source album from the destination list (can't move into where they already live).
+  const isMove = typeof moveFromAlbumId === 'number';
+  const addressable = albums.filter((a) => isAlbumSourceUserEditable(a.source) && (!isMove || a.id !== moveFromAlbumId));
   const filtered = search.trim()
     ? addressable.filter((a) => a.title.toLowerCase().includes(search.toLowerCase()))
     : addressable;
 
   const handleAddToExisting = async (album: AlbumSummary) => {
     if (busy) return;
+    // v3.0 (Terry) — moving INTO the same album is a no-op; just close.
+    if (isMove && album.id === moveFromAlbumId) { setOpen(false); return; }
     setBusy(true);
     const r = await addPhotosToAlbum(album.id, fileIds);
-    setBusy(false);
     if (!r.success) {
-      toast.error(`Couldn't add to "${album.title}"`, { description: r.error });
+      setBusy(false);
+      toast.error(`Couldn't ${isMove ? 'move' : 'add'} to "${album.title}"`, { description: r.error });
       return;
     }
+    // v3.0 (Terry) — MOVE = also remove from the source album. The add already succeeded; if the remove
+    // fails the photos are in both (a harmless copy), so it's best-effort and never blocks the toast.
+    if (isMove) { try { await removePhotosFromAlbum(moveFromAlbumId as number, fileIds); } catch (_) { /* leaves a copy */ } }
+    setBusy(false);
     const inserted = r.inserted ?? 0;
     const total = fileIds.length;
-    if (inserted === 0) {
+    if (isMove) {
+      toast.success(total === 1 ? `Photo moved to "${album.title}"` : `${total} photos moved to "${album.title}"`);
+    } else if (inserted === 0) {
       toast.message(
         `Already in "${album.title}"`,
         { description: total === 1 ? 'This photo is already in the album.' : `All ${total} photos are already in the album.` }
@@ -268,14 +284,19 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
       return;
     }
     const addR = await addPhotosToAlbum(createR.id, fileIds);
-    setBusy(false);
     if (!addR.success) {
+      setBusy(false);
       toast.error(`Album created but couldn't add photos`, { description: addR.error });
       return;
     }
+    // v3.0 (Terry) — MOVE into the new album = also remove from the source album (best-effort).
+    if (isMove) { try { await removePhotosFromAlbum(moveFromAlbumId as number, fileIds); } catch (_) { /* leaves a copy */ } }
+    setBusy(false);
     const inserted = addR.inserted ?? 0;
     toast.success(
-      inserted === 1 ? `Created "${title}" with 1 photo` : `Created "${title}" with ${inserted} photos`
+      isMove
+        ? (inserted === 1 ? `Moved 1 photo to new "${title}"` : `Moved ${inserted} photos to new "${title}"`)
+        : (inserted === 1 ? `Created "${title}" with 1 photo` : `Created "${title}" with ${inserted} photos`)
     );
     setOpen(false);
     window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
@@ -300,7 +321,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
         {/* Header */}
         <div className="px-4 py-3 border-b border-border">
           <p className="text-sm font-medium text-foreground">
-            Add {fileIds.length} photo{fileIds.length === 1 ? '' : 's'} to…
+            {isMove ? 'Move' : 'Add'} {fileIds.length} photo{fileIds.length === 1 ? '' : 's'} to…
           </p>
           {albums.length > 0 && !creating && (
             <div className="relative mt-2">
