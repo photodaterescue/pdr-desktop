@@ -10278,7 +10278,7 @@
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 6);
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 10);   // v3.0 r386 (Terry) — wider catch-zone so a small emoji/text snaps as readily as a photo
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -10862,9 +10862,11 @@
       // from the centre"). Add the MIDPOINT of the nearest L/R (and T/B) refs as a CENTRE
       // candidate, mirroring showCollageMeasurements' nearest-reference logic exactly.
       let lRef = 0, rRef = cRect.width, tRef = 0, bRef = cRect.height;
-      for (let i = 0; i < collageItems.length; i++) {
-        const o = collageItems[i];
-        if (!o || !o.el || o.el === draggedEl || !o.on || o.isBg) continue;
+      // v3.0 r386 (Terry) — the distribute / "centre-between" snap now considers BOTH photo tiles AND
+      // text/emoji layers (matches showCollageMeasurements), so the snap STICKS wherever the green shows.
+      const distCands = collageItems.filter(function (o) { return o && o.el && o.el !== draggedEl && o.on && !o.isBg; }).concat(collageTexts.filter(function (o) { return o && o.el && o.el !== draggedEl; }));
+      for (let di = 0; di < distCands.length; di++) {
+        const o = distCands[di];
         const q = o.el.getBoundingClientRect();
         const qL = q.left - cRect.left, qR = q.right - cRect.left, qT = q.top - cRect.top, qB = q.bottom - cRect.top;
         if (qT < dBottom - 1 && qB > dTop + 1) {           // shares the dragged tile's horizontal band
@@ -11168,7 +11170,7 @@
           if (!ev.altKey) {
             const cRect = collageCanvasEl.getBoundingClientRect();
             const movingEls = [it.el].concat(groupStarts.map(m => m.g.el));
-            const gs = computeGroupDragSnap(movingEls, collageCanvasEl, 6);
+            const gs = computeGroupDragSnap(movingEls, collageCanvasEl, 10);   // v3.0 r386 (Terry) — wider catch-zone
             if (gs.dx && cRect.width) { const fdx = gs.dx / cRect.width; it.xFrac += fdx; groupStarts.forEach(m => { m.g.xFrac += fdx; }); }
             if (gs.dy && yLock === null && cRect.height) { const fdy = gs.dy / cRect.height; it.yFrac += fdy; groupStarts.forEach(m => { m.g.yFrac += fdy; }); }
             if (gs.dx || (gs.dy && yLock === null)) { renderCollageItem(it); groupStarts.forEach(m => renderCollageItem(m.g)); }
@@ -11195,7 +11197,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 6, { lockY: yLock !== null });   // round 309 — Shift locks Y; tell the snapper so the X edge/centre snaps still work (corner-equal is skipped)
+        const snap = computeDragSnap(it.el, collageCanvasEl, 10, { lockY: yLock !== null });   // round 309 — Shift locks Y; tell the snapper so the X edge/centre snaps still work (corner-equal is skipped); r386 — wider catch-zone
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
