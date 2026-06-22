@@ -13737,9 +13737,21 @@
       updateCollageFilmstrip();
       commitCollageChange();
     }
+    let collageTextClipboard = null;   // v3.0 r384 (Terry) — text/emoji clipboard (tiles use collageClipboard)
+    let collageLastClip = null;        // 'tiles' | 'text' — which clipboard Paste consumes
+    function collageCopyTextLayer(t) { if (t) { collageTextClipboard = t; collageLastClip = 'text'; } }
+    function collagePasteAny(x, y) {
+      if (collageLastClip === 'text' && collageTextClipboard) {
+        if (editingText) exitTextEdit();
+        duplicateTextLayer(collageTextClipboard);
+        const nt = collageTexts[collageTexts.length - 1];
+        if (nt && typeof x === 'number') { try { const cr = collageCanvasEl.getBoundingClientRect(); nt.xFrac = (x - cr.left) / cr.width; nt.yFrac = (y - cr.top) / cr.height; renderTextLayer(nt); } catch (_) {} }
+      } else { pasteCollageClipboard(); }
+    }
+    function collageHasClip() { return !!((collageLastClip === 'text' && collageTextClipboard) || (collageClipboard && collageClipboard.length)); }
     function copyCollageSelection() {
       const items = selectedItemsForOp();
-      if (items.length) collageClipboard = items.slice();
+      if (items.length) { collageClipboard = items.slice(); collageLastClip = 'tiles'; }
     }
     function pasteCollageClipboard() {
       const src = (collageClipboard || []).filter(it => it && it.path);
@@ -16319,9 +16331,10 @@
         else if (k === 'delete' || k === 'backspace') {
           if (selectedItemsForOp().length) { e.preventDefault(); deleteCollageSelection(); }
         }
-        else if ((e.ctrlKey || e.metaKey) && k === 'c') { e.preventDefault(); copyCollageSelection(); }
-        else if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); pasteCollageClipboard(); }
-        else if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); duplicateCollageSelection(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'c') { e.preventDefault(); if (selectedText) collageCopyTextLayer(selectedText); else copyCollageSelection(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'x') { e.preventDefault(); if (selectedText) { collageCopyTextLayer(selectedText); deleteTextLayer(selectedText); } else if (selectedItemsForOp().length) { copyCollageSelection(); deleteCollageSelection(); } }
+        else if ((e.ctrlKey || e.metaKey) && k === 'v') { e.preventDefault(); collagePasteAny(); }
+        else if ((e.ctrlKey || e.metaKey) && k === 'd') { e.preventDefault(); if (selectedText) duplicateTextLayer(selectedText); else duplicateCollageSelection(); }
         else if ((e.ctrlKey || e.metaKey) && k === 'a') { e.preventDefault(); selectAllCollageItems(); }
         else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'BracketRight') { e.preventDefault(); orderCollageSelection('front'); }
         else if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'BracketLeft') { e.preventDefault(); orderCollageSelection('back'); }
@@ -16658,6 +16671,12 @@
           '.cctx-item.dng{color:#ff8c8c;}.cctx-item.dng svg{stroke:#ff8c8c;}' +
           '.cctx-item .cctx-k{margin-left:auto;font-size:10.5px;color:#8c86ad;letter-spacing:.02em;}' +
           '.cctx-sep{height:1px;margin:5px 8px;background:rgba(255,255,255,.09);}' +
+          '.cctx-chev{margin-left:auto;display:flex;align-items:center;}' +
+          '.cctx-chev svg{width:13px;height:13px;stroke:#8c86ad;}' +
+          '.cctx-on{margin-left:auto;color:#FEC242;font-size:13px;line-height:1;}' +
+          '.cctx-sw{width:15px;height:15px;flex:0 0 15px;border-radius:4px;border:1px solid rgba(255,255,255,.35);}' +
+          '.cctx-sub{}' +
+          '.cctx-toast{position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:2147483602;background:#1f1d2e;color:#e9e6f7;padding:9px 16px;border-radius:9px;border:1px solid rgba(255,255,255,.12);box-shadow:0 10px 32px rgba(0,0,0,.5);font:12.5px system-ui,-apple-system,"Segoe UI",sans-serif;}' +
           '.cctx-info{position:fixed;z-index:2147483601;width:250px;background:#1f1d2e;border:1px solid rgba(255,255,255,.1);border-radius:10px;box-shadow:0 14px 44px rgba(0,0,0,.55);font-family:system-ui,-apple-system,"Segoe UI",sans-serif;overflow:hidden;}' +
           '.cctx-info h4{margin:0;padding:10px 12px;font-size:12.5px;font-weight:600;color:#e9e6f7;border-bottom:1px solid rgba(255,255,255,.09);display:flex;align-items:center;gap:7px;}' +
           '.cctx-info h4 svg{width:14px;height:14px;stroke:#FEC242;stroke-width:2;fill:none;stroke-linecap:round;stroke-linejoin:round;}' +
@@ -16690,16 +16709,36 @@
           empty: '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="m21 15-5-5L5 21"/><circle cx="8.5" cy="8.5" r="1.5"/>',
           edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>',
           bg: '<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-4.5-4.5L7 20"/>',
+          cut: '<circle cx="6" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M20 4 8.5 15.5M14.5 14.5 20 20M8.5 8.5 12 12"/>',
+          removebg: '<path d="M3 3v4M3 3h4M21 3h-4M21 3v4M3 21v-4M3 21h4M21 21h-4M21 21v-4"/><circle cx="12" cy="12" r="3.4"/>',
+          restore: '<path d="M3 7v6h6"/><path d="M3.5 13a9 9 0 1 0 2.3-9.3L3 7"/>',
+          align: '<path d="M3 4h18M3 9h12M3 14h18M3 19h12"/>',
+          alL: '<path d="M4 5v14M8 8h10M8 12h6M8 16h10"/>',
+          alC: '<path d="M12 5v14M7 8h10M9 12h6M7 16h10"/>',
+          alR: '<path d="M20 5v14M6 8h10M10 12h6M6 16h10"/>',
+          alT: '<path d="M5 4h14M8 8v10M12 8v6M16 8v10"/>',
+          alM: '<path d="M5 12h14M8 7v10M12 9v6M16 7v10"/>',
+          alB: '<path d="M5 20h14M8 6v10M12 10v6M16 6v10"/>',
+          arrange: '<rect x="3" y="3" width="12" height="12" rx="2"/><path d="M9 21h10a2 2 0 0 0 2-2V9"/>',
+          bold: '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>',
+          italic: '<path d="M10 4h8M6 20h8M14 4 10 20"/>',
+          underline: '<path d="M6 4v6a6 6 0 0 0 12 0V4M5 21h14"/>',
+          palette: '<path d="M12 2a10 10 0 1 0 0 20c1.1 0 2-.9 2-2 0-.5-.2-1-.5-1.3-.3-.4-.5-.8-.5-1.2 0-1 .8-1.5 1.5-1.5H17a5 5 0 0 0 5-5c0-5-4.5-9-10-9z"/><circle cx="7.5" cy="11.5" r="1.1"/><circle cx="12" cy="7.5" r="1.1"/><circle cx="16.5" cy="11.5" r="1.1"/>',
+          fmt: '<path d="M5 6V5h9v1M9.5 5v13M7.5 18h4"/><path d="M16 13h5M18.5 13v6"/>',
         };
-        var copiedStyle = null, menuEl = null, infoEl = null;
+        var copiedStyle = null, menuEl = null, subEl = null, infoEl = null, subTimer = null;
+        var CHEV = '<svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg>';
         function hideAll() {
+          if (subEl) { subEl.remove(); subEl = null; }
           if (menuEl) { menuEl.remove(); menuEl = null; }
           if (infoEl) { infoEl.remove(); infoEl = null; }
+          if (subTimer) { clearTimeout(subTimer); subTimer = null; }
           document.removeEventListener('pointerdown', onOutside, true);
           document.removeEventListener('keydown', onEsc, true);
           window.removeEventListener('blur', hideAll);
         }
-        function onOutside(e) { if (menuEl && menuEl.contains(e.target)) return; if (infoEl && infoEl.contains(e.target)) return; hideAll(); }
+        function onOutside(e) { if (menuEl && menuEl.contains(e.target)) return; if (subEl && subEl.contains(e.target)) return; if (infoEl && infoEl.contains(e.target)) return; hideAll(); }
+        function cctxToast(msg, ms) { var d = document.createElement('div'); d.className = 'cctx-toast'; d.textContent = msg; document.body.appendChild(d); if (ms !== 0) setTimeout(function () { try { d.remove(); } catch (_) {} }, ms || 1600); return d; }
         function onEsc(e) { if (e.key === 'Escape') hideAll(); }
         function armDismiss() { document.addEventListener('pointerdown', onOutside, true); document.addEventListener('keydown', onEsc, true); window.addEventListener('blur', hideAll); }
         function sync(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
@@ -16718,6 +16757,71 @@
         function copyStyle(it) { try { copiedStyle = JSON.parse(JSON.stringify(it.enh || defaultBgEnh())); } catch (_) {} }
         function pasteStyle(it) { if (!it || !copiedStyle || it.locked) return; beginCollageChange(); it.enh = JSON.parse(JSON.stringify(copiedStyle)); renderCollageItem(it); commitCollageChange(); sync(it); }
         function resetEdits(it) { if (!it || it.locked) return; beginCollageChange(); it.enh = defaultBgEnh(); it.zoom = 1; it.panX = 0; it.panY = 0; it.rot = 0; renderCollageItem(it); commitCollageChange(); sync(it); }
+        // ---- align to page (tiles: xFrac/wFrac are LEFT/TOP; text: xFrac/yFrac are the CENTRE) ----
+        function boxFrac(it) {
+          if (typeof it.wFrac === 'number') return { w: it.wFrac, h: itemHeightFrac(it) };
+          try { var cr = collageCanvasEl.getBoundingClientRect(), er = it.el.getBoundingClientRect(); return { w: er.width / cr.width, h: er.height / cr.height }; } catch (_) { return { w: 0, h: 0 }; }
+        }
+        function alignToPage(it, edge) {
+          if (!it || it.locked) return;
+          var isText = (typeof it.wFrac !== 'number');
+          var f = boxFrac(it);
+          beginCollageChange();
+          if (isText) {
+            if (edge === 'left') it.xFrac = f.w / 2; else if (edge === 'center') it.xFrac = 0.5; else if (edge === 'right') it.xFrac = 1 - f.w / 2;
+            else if (edge === 'top') it.yFrac = f.h / 2; else if (edge === 'middle') it.yFrac = 0.5; else if (edge === 'bottom') it.yFrac = 1 - f.h / 2;
+            renderTextLayer(it);
+          } else {
+            if (edge === 'left') it.xFrac = 0; else if (edge === 'center') it.xFrac = Math.max(0, (1 - f.w) / 2); else if (edge === 'right') it.xFrac = Math.max(0, 1 - f.w);
+            else if (edge === 'top') it.yFrac = 0; else if (edge === 'middle') it.yFrac = Math.max(0, (1 - f.h) / 2); else if (edge === 'bottom') it.yFrac = Math.max(0, 1 - f.h);
+            renderCollageItem(it);
+          }
+          commitCollageChange();
+        }
+        function alignRows(it) {
+          return [
+            { ic: I.alL, label: 'Left', fn: function () { alignToPage(it, 'left'); } },
+            { ic: I.alC, label: 'Centre', fn: function () { alignToPage(it, 'center'); } },
+            { ic: I.alR, label: 'Right', fn: function () { alignToPage(it, 'right'); } },
+            { sep: true },
+            { ic: I.alT, label: 'Top', fn: function () { alignToPage(it, 'top'); } },
+            { ic: I.alM, label: 'Middle', fn: function () { alignToPage(it, 'middle'); } },
+            { ic: I.alB, label: 'Bottom', fn: function () { alignToPage(it, 'bottom'); } },
+          ];
+        }
+        // ---- one-click background removal (toggle) for a photo tile ----
+        async function removeBgItem(it) {
+          if (!it || !it.path || it.locked) return;
+          if (it.bgRemovedPath) { beginCollageChange(); it.bgRemovedPath = null; if (it.imgEl) it.imgEl.src = getFileSrc(it.path); renderCollageItem(it); commitCollageChange(); try { syncBgRemoveBtn(); } catch (_) {} return; }
+          var strength = it.bgRemoveStrength || 50;
+          var to = cctxToast('Removing background…', 0);
+          var res; try { res = await window.pdr.viewer.removeBackground({ filePath: it.path, strength: strength }); } catch (_) { res = null; }
+          try { to.remove(); } catch (_) {}
+          if (res && res.success && res.outputPath) { beginCollageChange(); it.bgRemovedPath = res.outputPath; it.bgRemoveStrength = strength; if (it.imgEl) it.imgEl.src = getFileSrc(res.outputPath); renderCollageItem(it); commitCollageChange(); try { syncBgRemoveBtn(); } catch (_) {} cctxToast('Background removed'); }
+          else { cctxToast('Couldn’t remove the background'); }
+        }
+        // ---- text formatting (fields exist on the layer; renderTextLayer repaints) ----
+        function textFmt(t, key) { if (!t || t.locked) return; beginCollageChange(); t[key] = !t[key]; renderTextLayer(t); commitCollageChange(); }
+        function textAlign(t, al) { if (!t || t.locked) return; beginCollageChange(); t.align = al; renderTextLayer(t); commitCollageChange(); }
+        function textColor(t, hex) { if (!t || t.locked) return; beginCollageChange(); t.color = hex; renderTextLayer(t); commitCollageChange(); }
+        function formatRows(t) {
+          return [
+            { ic: I.bold, label: 'Bold', on: !!t.bold, fn: function () { textFmt(t, 'bold'); } },
+            { ic: I.italic, label: 'Italic', on: !!t.italic, fn: function () { textFmt(t, 'italic'); } },
+            { ic: I.underline, label: 'Underline', on: !!t.underline, fn: function () { textFmt(t, 'underline'); } },
+            { sep: true },
+            { ic: I.alL, label: 'Align left', on: (t.align === 'left'), fn: function () { textAlign(t, 'left'); } },
+            { ic: I.alC, label: 'Align centre', on: (t.align === 'center' || t.align === 'centre' || !t.align), fn: function () { textAlign(t, 'center'); } },
+            { ic: I.alR, label: 'Align right', on: (t.align === 'right'), fn: function () { textAlign(t, 'right'); } },
+          ];
+        }
+        var TEXT_SWATCHES = [['White', '#ffffff'], ['Black', '#111111'], ['Gold', '#FEC242'], ['Red', '#ff5d5d'], ['Blue', '#5db4ff'], ['Green', '#7CFF9B'], ['Purple', '#c08bff'], ['Pink', '#ff9ad5']];
+        function colourRows(t) {
+          var rows = TEXT_SWATCHES.map(function (s) { return { swatch: s[1], label: s[0], on: ((t.color || '').toLowerCase() === s[1].toLowerCase()), fn: function () { textColor(t, s[1]); } }; });
+          rows.push({ sep: true });
+          rows.push({ ic: I.palette, label: 'More colours…', fn: function () { openTextPanel(t); } });
+          return rows;
+        }
         function fmtDate(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return iso || '—'; return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso || '—'; } }
         function fmtSize(n) { if (!n) return null; var u = ['B', 'KB', 'MB', 'GB']; var i = 0; while (n >= 1024 && i < 3) { n /= 1024; i++; } return n.toFixed(i ? 1 : 0) + ' ' + u[i]; }
         function srcLabel(s) { return ({ embedded: 'EXIF capture date', exif: 'EXIF capture date', takeout: 'Google Takeout', filename: 'Filename pattern', marked: 'PDR-marked', unknown: 'Unknown' })[s] || s || '—'; }
@@ -16757,41 +16861,79 @@
           var rows = [];
           if (isEmptyFrame) rows.push({ ic: I.add, label: 'Add photo…', fn: function () { requestFillFrame(it); } });
           else if (hasPhoto) rows.push({ ic: I.replace, label: 'Replace photo…', fn: function () { requestFillFrame(it); } });
+          rows.push({ ic: I.copy, label: 'Copy', k: 'Ctrl+C', fn: function () { copyCollageSelection(); } });
+          rows.push({ ic: I.cut, label: 'Cut', k: 'Ctrl+X', fn: function () { copyCollageSelection(); deleteCollageSelection(); } });
+          if (collageHasClip()) rows.push({ ic: I.paste, label: 'Paste', k: 'Ctrl+V', fn: function () { collagePasteAny(x, y); } });
           rows.push({ ic: I.dup, label: n > 1 ? 'Duplicate ' + n : 'Duplicate', k: 'Ctrl+D', fn: function () { if (n > 1) { collageSelection.slice().forEach(function (x2) { try { duplicateCollageItem(x2); } catch (_) {} }); } else { duplicateCollageItem(it); } } });
           rows.push({ ic: I.del, label: n > 1 ? 'Delete ' + n : 'Delete', k: 'Del', dng: true, fn: function () { deleteCollageSelection(); } });
           rows.push({ sep: true });
-          rows.push({ ic: I.front, label: 'Bring to front', fn: function () { orderCollageSelection('front'); } });
-          rows.push({ ic: I.fwd, label: 'Bring forward', fn: function () { orderCollageSelection('forward'); } });
-          rows.push({ ic: I.bwd, label: 'Send backward', fn: function () { orderCollageSelection('backward'); } });
-          rows.push({ ic: I.back, label: 'Send to back', fn: function () { orderCollageSelection('back'); } });
-          rows.push({ sep: true });
-          rows.push({ ic: I.ctrh, label: 'Centre across page', fn: function () { centre(it, 'h'); } });
-          rows.push({ ic: I.ctrv, label: 'Centre down page', fn: function () { centre(it, 'v'); } });
-          if (hasPhoto) { rows.push({ ic: I.fliph, label: 'Flip horizontal', fn: function () { flip(it, 'h'); } }); rows.push({ ic: I.flipv, label: 'Flip vertical', fn: function () { flip(it, 'v'); } }); }
+          rows.push({ ic: I.align, label: 'Align to page', children: function () { return alignRows(it); } });
+          rows.push({ ic: I.arrange, label: 'Arrange', children: [
+            { ic: I.front, label: 'Bring to front', fn: function () { orderCollageSelection('front'); } },
+            { ic: I.fwd, label: 'Bring forward', fn: function () { orderCollageSelection('forward'); } },
+            { ic: I.bwd, label: 'Send backward', fn: function () { orderCollageSelection('backward'); } },
+            { ic: I.back, label: 'Send to back', fn: function () { orderCollageSelection('back'); } },
+          ] });
+          if (hasPhoto) rows.push({ ic: I.fliph, label: 'Flip', children: [
+            { ic: I.fliph, label: 'Horizontal', fn: function () { flip(it, 'h'); } },
+            { ic: I.flipv, label: 'Vertical', fn: function () { flip(it, 'v'); } },
+          ] });
           rows.push({ ic: I.rot, label: 'Rotate 90°', fn: function () { rotate90(it); } });
           rows.push({ ic: it.locked ? I.unlock : I.lock, label: it.locked ? 'Unlock' : 'Lock position', fn: function () { toggleItemLock(it); } });
           if (hasPhoto) {
             rows.push({ sep: true });
             rows.push({ ic: I.enh, label: 'Enhance…', fn: function () { selectCollageItem(it); document.body.classList.remove('collage-panel-collapsed'); try { layoutCanvasSize(); } catch (_) {} try { var ep = document.getElementById('enhance-panel'); if (ep) ep.scrollTop = 0; } catch (_) {} } });
-            rows.push({ ic: I.copy, label: 'Copy style', fn: function () { copyStyle(it); } });
-            if (copiedStyle) rows.push({ ic: I.paste, label: 'Paste style', fn: function () { pasteStyle(it); } });
-            rows.push({ ic: I.reset, label: 'Reset edits', fn: function () { resetEdits(it); } });
+            rows.push({ ic: I.removebg, label: it.bgRemovedPath ? 'Restore background' : 'Remove background', fn: function () { removeBgItem(it); } });
+            rows.push({ ic: I.enh, label: 'Style', children: [
+              { ic: I.copy, label: 'Copy style', fn: function () { copyStyle(it); } },
+              { ic: I.paste, label: 'Paste style', fn: function () { pasteStyle(it); } },
+              { ic: I.reset, label: 'Reset edits', fn: function () { resetEdits(it); } },
+            ] });
             if (frameLike) rows.push({ ic: I.empty, label: 'Empty this frame', fn: function () { emptyCollageFrame(it); } });
             rows.push({ sep: true });
             rows.push({ ic: I.info, label: 'Photo info', keepOpen: true, fn: function () { showInfo(it, x, y); } });
           }
           renderMenu(rows, x, y);
         }
-        // Shared DOM builder for ALL menu types (tile / text / emoji / background).
-        function renderMenu(rows, x, y) {
-          menuEl = document.createElement('div'); menuEl.className = 'cctx';
+        // Shared DOM builder for ALL menu types (tile / text / emoji / background), with chevron submenus.
+        function closeSub() { if (subEl) { subEl.remove(); subEl = null; } if (subTimer) { clearTimeout(subTimer); subTimer = null; } }
+        function scheduleSubClose() { clearTimeout(subTimer); subTimer = setTimeout(closeSub, 280); }
+        function openSub(parentBtn, childRows) {
+          if (subEl && subEl.__parent === parentBtn) { clearTimeout(subTimer); return; }
+          closeSub();
+          subEl = buildMenu(childRows, true);
+          subEl.__parent = parentBtn;
+          document.body.appendChild(subEl);
+          var pr = parentBtn.getBoundingClientRect(), w = subEl.offsetWidth, h = subEl.offsetHeight, vw = window.innerWidth, vh = window.innerHeight;
+          var left = pr.right - 3; if (left + w > vw - 6) left = Math.max(6, pr.left - w + 3);
+          var top = pr.top - 5; if (top + h > vh - 6) top = Math.max(6, vh - h - 6);
+          subEl.style.left = left + 'px'; subEl.style.top = top + 'px';
+          subEl.addEventListener('mouseenter', function () { clearTimeout(subTimer); });
+          subEl.addEventListener('mouseleave', scheduleSubClose);
+        }
+        function buildMenu(rows, isSub) {
+          var el = document.createElement('div'); el.className = 'cctx' + (isSub ? ' cctx-sub' : '');
           rows.forEach(function (r) {
-            if (r.sep) { var s = document.createElement('div'); s.className = 'cctx-sep'; menuEl.appendChild(s); return; }
+            if (r.sep) { var s = document.createElement('div'); s.className = 'cctx-sep'; el.appendChild(s); return; }
             var b = document.createElement('button'); b.type = 'button'; b.className = 'cctx-item' + (r.dng ? ' dng' : '');
-            b.innerHTML = ic(r.ic) + '<span>' + r.label + '</span>' + (r.k ? '<span class="cctx-k">' + r.k + '</span>' : '');
-            b.addEventListener('click', function (ev) { ev.stopPropagation(); if (r.keepOpen) { if (menuEl) { menuEl.remove(); menuEl = null; } } else { hideAll(); } try { r.fn(); } catch (e2) {} });
-            menuEl.appendChild(b);
+            var lead = r.swatch ? '<span class="cctx-sw" style="background:' + r.swatch + '"></span>' : ic(r.ic);
+            var right = r.children ? '<span class="cctx-chev">' + CHEV + '</span>' : (r.on ? '<span class="cctx-on">✓</span>' : (r.k ? '<span class="cctx-k">' + r.k + '</span>' : ''));
+            b.innerHTML = lead + '<span>' + r.label + '</span>' + right;
+            if (r.children) {
+              var kids = function () { return (typeof r.children === 'function') ? r.children() : r.children; };
+              b.addEventListener('mouseenter', function () { openSub(b, kids()); });
+              b.addEventListener('click', function (ev) { ev.stopPropagation(); openSub(b, kids()); });
+              b.addEventListener('mouseleave', scheduleSubClose);
+            } else {
+              if (!isSub) b.addEventListener('mouseenter', scheduleSubClose);
+              b.addEventListener('click', function (ev) { ev.stopPropagation(); if (r.keepOpen) { closeSub(); if (menuEl) { menuEl.remove(); menuEl = null; } } else { hideAll(); } try { r.fn(); } catch (e2) {} });
+            }
+            el.appendChild(b);
           });
+          return el;
+        }
+        function renderMenu(rows, x, y) {
+          menuEl = buildMenu(rows, false);
           document.body.appendChild(menuEl);
           var w = menuEl.offsetWidth || 220, h = menuEl.offsetHeight || 320, vw = window.innerWidth, vh = window.innerHeight;
           menuEl.style.left = Math.max(8, Math.min(x, vw - w - 8)) + 'px';
@@ -16816,14 +16958,20 @@
           hideAll();
           var rows = [];
           if (!t.isEmoji) rows.push({ ic: I.edit, label: 'Edit text', fn: function () { try { enterTextEdit(t, true); } catch (_) {} } });
-          rows.push({ ic: I.enh, label: t.isEmoji ? 'Emoji options…' : 'Edit style…', fn: function () { openTextPanel(t); } });
-          rows.push({ ic: I.dup, label: 'Duplicate', fn: function () { duplicateTextLayer(t); } });
-          rows.push({ ic: I.del, label: 'Delete', dng: true, fn: function () { deleteTextLayer(t); } });
+          rows.push({ ic: I.copy, label: 'Copy', k: 'Ctrl+C', fn: function () { collageCopyTextLayer(t); } });
+          rows.push({ ic: I.cut, label: 'Cut', k: 'Ctrl+X', fn: function () { collageCopyTextLayer(t); deleteTextLayer(t); } });
+          if (collageHasClip()) rows.push({ ic: I.paste, label: 'Paste', k: 'Ctrl+V', fn: function () { collagePasteAny(x, y); } });
+          rows.push({ ic: I.dup, label: 'Duplicate', k: 'Ctrl+D', fn: function () { duplicateTextLayer(t); } });
+          rows.push({ ic: I.del, label: 'Delete', k: 'Del', dng: true, fn: function () { deleteTextLayer(t); } });
           rows.push({ sep: true });
-          rows.push({ ic: I.front, label: 'Bring to front', fn: function () { textFront(t); } });
-          rows.push({ ic: I.back, label: 'Send to back', fn: function () { textBack(t); } });
-          rows.push({ ic: I.ctrh, label: 'Centre across page', fn: function () { textCentre(t, 'h'); } });
-          rows.push({ ic: I.ctrv, label: 'Centre down page', fn: function () { textCentre(t, 'v'); } });
+          if (!t.isEmoji) rows.push({ ic: I.fmt, label: 'Format', children: function () { return formatRows(t); } });
+          if (!t.isEmoji) rows.push({ ic: I.palette, label: 'Colour', children: function () { return colourRows(t); } });
+          rows.push({ ic: I.align, label: 'Align to page', children: function () { return alignRows(t); } });
+          rows.push({ ic: I.arrange, label: 'Arrange', children: [
+            { ic: I.front, label: 'Bring to front', fn: function () { textFront(t); } },
+            { ic: I.back, label: 'Send to back', fn: function () { textBack(t); } },
+          ] });
+          rows.push({ ic: I.enh, label: t.isEmoji ? 'Emoji options…' : 'Edit style…', fn: function () { openTextPanel(t); } });
           rows.push({ sep: true });
           rows.push({ ic: t.locked ? I.unlock : I.lock, label: t.locked ? 'Unlock' : 'Lock position', fn: function () { toggleTextLock(t); } });
           renderMenu(rows, x, y);
@@ -16840,6 +16988,7 @@
         function showBgMenu(x, y) {
           hideAll();
           var rows = [];
+          if (collageHasClip()) rows.push({ ic: I.paste, label: 'Paste here', k: 'Ctrl+V', fn: function () { collagePasteAny(x, y); } });
           rows.push({ ic: I.bg, label: 'Edit background…', fn: function () { openBgPanel(); } });
           rows.push({ ic: I.reset, label: 'Reset background', fn: function () { bgReset(); } });
           renderMenu(rows, x, y);
