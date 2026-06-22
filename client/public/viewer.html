@@ -7329,7 +7329,16 @@
       if (_ccBtn && _ccInput) {
         _ccBtn.addEventListener('click', function (e) { if (_ccInput.contains(e.target)) return; var willOpen = !_ccBtn.classList.contains('pinned'); _ccBtn.classList.toggle('pinned'); if (willOpen) setTimeout(function () { try { _ccInput.focus(); } catch (_) {} }, 0); });
         _ccInput.value = collageCaptionText || '';
-        _ccInput.addEventListener('input', function () { collageCaptionText = _ccInput.value; });
+        var _ccFileTimer = null;
+        _ccInput.addEventListener('input', function () {
+          collageCaptionText = _ccInput.value;
+          // v2.1 round 371 (Terry) — if this collage has an exported photo, keep ITS caption in sync so the
+          // SAME caption shows in Viewer / Albums / Dates / S&D (one caption everywhere). Debounced.
+          if (collageExportedFileId && window.pdr && window.pdr.captions && window.pdr.captions.set) {
+            if (_ccFileTimer) clearTimeout(_ccFileTimer);
+            _ccFileTimer = setTimeout(function () { _ccFileTimer = null; window.pdr.captions.set(collageExportedFileId, collageCaptionText, true).catch(function () {}); }, 600);
+          }
+        });
         _ccInput.addEventListener('click', function (e) { e.stopPropagation(); });
         _ccInput.addEventListener('keydown', function (e) { e.stopPropagation(); if (e.key === 'Escape') { _ccBtn.classList.remove('pinned'); try { window.__pdrHideEmojiPicker && window.__pdrHideEmojiPicker(); } catch (_) {} } });
       }
@@ -12333,6 +12342,7 @@
     // album. This block is the SAVE side; reopen + the projects gallery come next.
     let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
     let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
+    var collageExportedFileId = null;   // v2.1 round 371 (Terry) — fileId of this collage's EXPORTED photo; the link that keeps the caption SHARED (edits here update the photo; reopen syncs from it)
     var collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption. v2.1 round 368: VAR (hoisted) not let — the caption setup block runs earlier in the script + referenced this; a `let` here put it in the TDZ so the setup threw + the input-sync handler never attached.
     let collageAutosaveTimer = null;
     let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
@@ -12384,7 +12394,7 @@
         restoreCollageSnapshot(JSON.stringify(s));
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       updateCollageTitle();
@@ -12594,6 +12604,7 @@
         snapshot: snapshotCollage(),
         aspectKey: collageAspectKey,
         caption: collageCaptionText || '',   // v2.1 round 370 (Terry) — persist the caption NOTE so reopening the project keeps it
+        exportedFileId: (collageExportedFileId != null) ? collageExportedFileId : undefined,   // v2.1 round 371 — link to the exported photo for the shared caption
       };
     }
     let collageThumbBusy = false;
@@ -12662,6 +12673,12 @@
         // v2.1 round 370 (Terry) — restore the caption note so a reopened collage keeps it (+ reflect it
         // in the caption textarea).
         collageCaptionText = (typeof p.caption === 'string') ? p.caption : '';
+        collageExportedFileId = (p.exportedFileId != null) ? p.exportedFileId : null;
+        // v2.1 round 371 (Terry) — if this project exported a photo, THAT photo's caption is the live shared
+        // one (it may have been edited in Viewer/Albums/Dates/S&D) → sync it into the editor on reopen.
+        if (collageExportedFileId && window.pdr && window.pdr.captions && window.pdr.captions.get) {
+          window.pdr.captions.get(collageExportedFileId).then(function (cr) { if (cr && cr.success && typeof cr.data === 'string') { collageCaptionText = cr.data; var _ce = document.getElementById('collageCaptionInput'); if (_ce) _ce.value = collageCaptionText; } }).catch(function () {});
+        }
         try { var _cciR = document.getElementById('collageCaptionInput'); if (_cciR) _cciR.value = collageCaptionText; } catch (_) {}
         try { updateUndoButtons(); } catch (_) {}
         updateCollageTitle();   // v2.1 round 347 (Terry) — show the reopened project's name
@@ -12716,7 +12733,7 @@
         restoreCollageSnapshot(p.snapshot);
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
@@ -12778,7 +12795,7 @@
         collageZTop = z;
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       return true;
@@ -15715,6 +15732,10 @@
           // saved result opens in the SEPARATE Viewer window and this collage
           // window stays open for more edits. Re-enable Save + briefly confirm
           // (the window no longer reloads, which previously reset the button).
+          // v2.1 round 371 (Terry) — remember which photo this collage exported (set BEFORE opening the
+          // Viewer so the link lands the instant the export succeeds, not gated on openViewer) so the
+          // caption stays ONE shared thing across Collages / Viewer / Albums / Dates / S&D. Via autosave.
+          if (res.fileId != null) { collageExportedFileId = res.fileId; try { scheduleCollageAutosave(); } catch (_) {} }
           const name = res.filename || res.filePath.split(/[\\/]/).pop();
           await window.pdr.search.openViewer([res.filePath], [name], 0, false);
           if (saveBtn) {
