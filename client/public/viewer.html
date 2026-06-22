@@ -11264,7 +11264,9 @@
         // height track the cursor's X + Y independently; the opposite (anchor) corner stays pinned. The
         // box aspect is set so the height matches the drag (filled frames re-cover via objectFit:cover).
         // Non-frame photos keep the aspect-locked uniform resize + edge-snapping below.
-        if (it.isFrame) {
+        // v2.1 round 374 (Terry) — HOLD Shift (or Ctrl) while dragging a corner to KEEP the current shape
+        // (enlarge a square AS a square): the modifier falls through to the aspect-locked uniform path below.
+        if (it.isFrame && !ev.shiftKey && !ev.ctrlKey) {
           const _nwF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
           const _nhF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientY - anchorY) / ch));
           it.wFrac = _nwF;
@@ -12694,6 +12696,9 @@
         // leave a half-rebuilt collage on screen.
         try { JSON.parse(p.snapshot); } catch (_) { return false; }
         if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+        // v2.1 round 374 (Terry) — leaving a carousel: a reopened (non-carousel) project must DROP carousel
+        // mode, else its photos render on the leaked wide N-page canvas (squished / landscape — the SS1 bug).
+        try { if (carouselMode) exitCarouselMode(); } catch (_) {}
         collageRestoring = true;
         try {
           files = Array.isArray(p.files) ? p.files.slice() : [];
@@ -12759,6 +12764,8 @@
       if (!p || typeof p.snapshot !== 'string') return false;
       try { JSON.parse(p.snapshot); } catch (_) { return false; }
       if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+      // v2.1 round 374 (Terry) — applying a template/record AS NEW must also drop a leaked carousel canvas.
+      try { if (carouselMode) exitCarouselMode(); } catch (_) {}
       collageRestoring = true;
       try {
         files = Array.isArray(p.files) ? p.files.slice() : [];
@@ -12770,6 +12777,7 @@
       try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
+      try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
       return true;
     }
     async function openTemplateById(id) {
@@ -12801,14 +12809,26 @@
     function openBuiltinTemplate(spec) {
       if (!collageMode || !spec) return false;
       if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
+      // v2.1 round 374 (Terry) — a built-in template must drop a leaked carousel canvas FIRST, else the frames
+      // build on the wide N-page strip (the SS3 bug — a fresh template came up as a 5-page carousel).
+      try { if (carouselMode) exitCarouselMode(); } catch (_) {}
       collageRestoring = true;
       try {
-        // Reset to a blank canvas (the welcome screen's canvas is already empty — belt-and-braces),
-        // then build the empty frames on the LIVE canvas so they fit its current size/shape.
+        // Reset to a TRULY blank canvas, then build the empty frames on the LIVE canvas so they fit its
+        // current size/shape. v2.1 round 374 (Terry) — also clear any leaked background/gradient/texture/
+        // vignette from the previous collage (SS3 showed a gold gradient bleeding into a fresh template).
         files = [];
         collageUndo.length = 0; collageRedo.length = 0;
         collageTexts = [];
         buildCollageItems();
+        try {
+          const _blank = JSON.parse(snapshotCollage());
+          _blank.items = []; if (_blank.texts) _blank.texts = [];
+          _blank.bg = '#ffffff'; _blank.bgImagePath = null; _blank.transparent = false;
+          _blank.gradient = null; _blank.texture = null; _blank.bgEnh = null; _blank.bgOpacity = null;
+          _blank.vignette = 0; _blank.grain = 0;
+          restoreCollageSnapshot(JSON.stringify(_blank));
+        } catch (_) { /* best-effort bg reset */ }
         const ca = getCanvasAspect() || 1;
         const cols = Math.max(1, spec.cols | 0), rows = Math.max(1, spec.rows | 0);
         const gap = 0.03, cellW = 1 / cols, cellH = 1 / rows;
@@ -12832,6 +12852,7 @@
       try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
+      try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
       return true;
     }
 
