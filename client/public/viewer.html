@@ -12641,13 +12641,18 @@
         aspectKey: collageAspectKey,
         caption: collageCaptionText || '',   // v2.1 round 370 (Terry) — persist the caption NOTE so reopening the project keeps it
         exportedFileId: (collageExportedFileId != null) ? collageExportedFileId : undefined,   // v2.1 round 371 — link to the exported photo for the shared caption
+        // v2.1 round 376 (Terry) — a carousel is now a single WIDE canvas (round 260), so snapshotCollage()
+        // captures it fully; flag it + its page count so reopen re-enters carousel mode (guides + slice thumbs).
+        carousel: !!carouselMode,
+        carouselPages: carouselMode ? carouselPageCount : undefined,
       };
     }
     let collageThumbBusy = false;
     async function autosaveCollageProject() {
-      // Carousels are multi-PAGE; a single snapshotCollage() only captures the active page, so
-      // their project save is a separate future effort — skip autosave in carousel mode for now.
-      if (!collageMode || collageRestoring || carouselMode) return;
+      // v2.1 round 376 (Terry) — carousels now AUTOSAVE to Recent too: the wide-canvas model (round 260)
+      // means one snapshotCollage() captures the whole carousel, so the old "only the active page" reason is
+      // obsolete. serializeCollageProject flags carousel + page count; reopen re-enters carousel mode.
+      if (!collageMode || collageRestoring) return;
       if (!collageProjectHasContent()) return;
       if (!(window.pdr && window.pdr.collage && window.pdr.collage.saveProject)) return;
       try {
@@ -12696,9 +12701,21 @@
         // leave a half-rebuilt collage on screen.
         try { JSON.parse(p.snapshot); } catch (_) { return false; }
         if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
-        // v2.1 round 374 (Terry) — leaving a carousel: a reopened (non-carousel) project must DROP carousel
-        // mode, else its photos render on the leaked wide N-page canvas (squished / landscape — the SS1 bug).
-        try { if (carouselMode) exitCarouselMode(); } catch (_) {}
+        // v2.1 round 374/376 (Terry) — match the project's mode: a CAROUSEL project re-enters carousel mode
+        // (the wide canvas + page guides + slice thumbnails come back; the snapshot below restores its content),
+        // while a non-carousel project DROPS any leaked carousel mode (else its photos render on the wide
+        // N-page canvas — squished / landscape, the SS1 bug).
+        var _reCar = !!p.carousel;
+        try {
+          if (_reCar) {
+            carouselMode = true;
+            carouselPageCount = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, p.carouselPages || CAROUSEL_DEFAULT));
+            carouselFocusPage = 0;
+            try { document.body.classList.add('carousel-mode'); } catch (_) {}
+          } else if (carouselMode) {
+            exitCarouselMode();
+          }
+        } catch (_) {}
         collageRestoring = true;
         try {
           files = Array.isArray(p.files) ? p.files.slice() : [];
@@ -12706,6 +12723,8 @@
           buildCollageItems();                 // rebuild the per-file originals from the new files[]
           restoreCollageSnapshot(p.snapshot);  // geometry + clones + text + bg + canvas size
         } finally { collageRestoring = false; }
+        // v2.1 round 376 (Terry) — a reopened carousel: redraw the page guides + slice thumbnails + fit the wide canvas.
+        if (_reCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }
         // This window now IS this project — subsequent autosaves overwrite it in place.
         currentCollageProjectId = p.id || id;
         currentCollageProjectName = p.name || null;
@@ -12764,8 +12783,19 @@
       if (!p || typeof p.snapshot !== 'string') return false;
       try { JSON.parse(p.snapshot); } catch (_) { return false; }
       if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; }
-      // v2.1 round 374 (Terry) — applying a template/record AS NEW must also drop a leaked carousel canvas.
-      try { if (carouselMode) exitCarouselMode(); } catch (_) {}
+      // v2.1 round 374/376 (Terry) — match the record's mode: a carousel record re-enters carousel mode; a
+      // non-carousel record drops any leaked carousel canvas.
+      var _arCar = !!p.carousel;
+      try {
+        if (_arCar) {
+          carouselMode = true;
+          carouselPageCount = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, p.carouselPages || CAROUSEL_DEFAULT));
+          carouselFocusPage = 0;
+          try { document.body.classList.add('carousel-mode'); } catch (_) {}
+        } else if (carouselMode) {
+          exitCarouselMode();
+        }
+      } catch (_) {}
       collageRestoring = true;
       try {
         files = Array.isArray(p.files) ? p.files.slice() : [];
@@ -12773,6 +12803,7 @@
         buildCollageItems();
         restoreCollageSnapshot(p.snapshot);
       } finally { collageRestoring = false; }
+      if (_arCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
