@@ -16563,7 +16563,10 @@
         if (!onCanvas && !onMargin) return;   // a tile/text inside the canvas → its own handler
         // v2.1 round 286 Tier 2 — empty-canvas drag at fit-zoom (single collage,
         // where pan no-ops) = marquee select; otherwise keep the existing pan.
-        if (onCanvas && !carouselMode && collageUserZoom <= 1) { startMarquee(e); return; }
+        // v2.1 round 375 (Terry) — in CAROUSEL mode, an inside-canvas drag MARQUEE-selects at ANY zoom
+        // (you're always zoomed into a page), and panning is grab-the-dark-MARGIN only — "select inside,
+        // pan outside". Single collages keep marquee only at fit-zoom (zoomed-in still pans to navigate).
+        if (onCanvas && (carouselMode || collageUserZoom <= 1)) { startMarquee(e); return; }
         startViewPan(e, { onCanvas });
       });
       collageStageEl.addEventListener('pointermove', (e) => {
