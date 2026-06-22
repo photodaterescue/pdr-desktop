@@ -11243,6 +11243,24 @@
       const isLeftCorner = (corner === 'tl' || corner === 'bl');   // grabbed edge is the tile's LEFT
       const isTopCorner = (corner === 'tl' || corner === 'tr');    // v2.1 round 290 — grabbed edge is the tile's TOP
       const move = (ev) => {
+        // v2.1 round 372 (Terry) — FRAMES resize FREE-ASPECT: drag a corner into ANY rectangle (incl. a
+        // tall one), so an empty/filled frame isn't locked to a square or the photo's aspect. Width +
+        // height track the cursor's X + Y independently; the opposite (anchor) corner stays pinned. The
+        // box aspect is set so the height matches the drag (filled frames re-cover via objectFit:cover).
+        // Non-frame photos keep the aspect-locked uniform resize + edge-snapping below.
+        if (it.isFrame) {
+          const _nwF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
+          const _nhF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientY - anchorY) / ch));
+          it.wFrac = _nwF;
+          const _caF = getCanvasAspect();
+          const _aspF = (_nhF > 0) ? ((_nwF * _caF) / _nhF) : (it.boxAspect || it.aspect || 1);
+          if (it.coverFill) it.boxAspect = _aspF; else it.aspect = _aspF;
+          it.xFrac = (corner === 'tl' || corner === 'bl') ? (anchorXFrac - _nwF) : anchorXFrac;
+          it.yFrac = (corner === 'tl' || corner === 'tr') ? (anchorYFrac - _nhF) : anchorYFrac;
+          renderCollageItem(it);
+          try { showCollageMeasurements(it); } catch (_) {}
+          return;
+        }
         const dist = Math.hypot(ev.clientX - anchorX, ev.clientY - anchorY);
         let nw = startW * (dist / startDist);
         // v2.1 round 266 (Terry) — Phase 3: allow a tile LARGER than the page (ceiling
