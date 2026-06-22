@@ -89,6 +89,7 @@ import {
   // v2.1 round 275 (Terry) — recycle handler for the new Albums
   // multi-select toolbar + per-photo menu (parity with Dates).
   moveToRecycleBin,
+  removePhotosFromAlbum,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
@@ -1776,6 +1777,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // inside a folder context was calling handleDeleteAlbum, which
   // killed the whole album. That's now reserved for the trash icon
   // when viewing the album under its source group.
+  // v3.0 (Terry 2026-06-22) — UNLINK selected photos from THIS album only (a membership delete, NOT a file
+  // delete). The file stays in your library, in Dates, and in every other album it's in. This is the
+  // "remove from this album" users expect — distinct from "Move to Recycle Bin", which deletes the file
+  // everywhere. Albums are many-to-many membership links, so removing one link never touches the others.
+  const handleRemoveFromAlbum = async (ids: number[]) => {
+    if (!selectedAlbum || ids.length === 0) return;
+    const r = await removePhotosFromAlbum(selectedAlbum.id, ids);
+    if (r.success) {
+      toast.success(ids.length === 1 ? `Removed from "${selectedAlbum.title}" — still in your library` : `Removed ${ids.length} from "${selectedAlbum.title}" — still in your library`);
+      clearAlbumSelection();
+      setAlbumPhotosRefreshTick((t) => t + 1);
+      void refreshAll();
+    } else {
+      toast.error("Couldn't remove from album", { description: r.error });
+    }
+  };
   const handleRemoveFromFolder = async (albumId: number, folderId: number, albumTitle: string, folderTitle: string) => {
     const ok = await promptConfirm({
       title: 'Remove from folder?',
@@ -2828,7 +2845,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const albumTitle = selectedAlbum.title;
     return (
       <Popover open={addFilesPopoverOpen} onOpenChange={setAddFilesPopoverOpen}>
-        <IconTooltip label="Pick more photos from Search & Discovery or By Date" side="bottom">
+        <IconTooltip label="Pick more photos from Search & Discovery or Dates" side="bottom">
           <PopoverTrigger asChild>
             <Button
               variant="secondary"
@@ -3487,6 +3504,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             <Copy className="w-3.5 h-3.5 mr-2" />
                             {selectedAlbumPhotoIds.size === 1 ? 'Copy filename' : `Copy ${selectedAlbumPhotoIds.size} filenames`}
                           </DropdownMenuItem>
+                          {/* v3.0 (Terry) — UNLINK from THIS album only (membership; the file + Dates + other albums are untouched). Editable albums only. */}
+                          {selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source) && (
+                            <DropdownMenuItem
+                              onSelect={() => { handleRemoveFromAlbum(Array.from(selectedAlbumPhotoIds)); }}
+                              data-testid="albums-actions-remove-from-album"
+                            >
+                              <FolderMinus className="w-3.5 h-3.5 mr-2" />
+                              Remove {selectedAlbumPhotoIds.size} from "{selectedAlbum.title}"
+                            </DropdownMenuItem>
+                          )}
                           <DropdownMenuSeparator />
                           <DropdownMenuItem
                             onSelect={async () => {
@@ -3689,7 +3716,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 </div>
                 <p className="text-base text-foreground font-semibold mb-1.5">This album is empty</p>
                 <p className="text-xs text-muted-foreground max-w-sm mb-6 leading-relaxed">
-                  Pick photos from <strong className="text-foreground">Memories By Date</strong> or <strong className="text-foreground">Search &amp; Discovery</strong>, then use <em>Add to Album</em> to drop them in here.
+                  Pick photos from <strong className="text-foreground">Memories — Dates</strong> or <strong className="text-foreground">Search &amp; Discovery</strong>, then use <em>Add to Album</em> to drop them in here.
                 </p>
                 <div className="flex flex-wrap items-center justify-center gap-2.5">
                   <Button
@@ -3702,7 +3729,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     data-testid="button-empty-album-go-bydate"
                   >
                     <CalendarRange className="w-3.5 h-3.5" />
-                    Go to By Date
+                    Go to Dates
                   </Button>
                   <Button
                     variant="secondary"
@@ -4162,6 +4189,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         Set as album thumbnail
                       </ContextMenuItem>
                       )}
+                      {/* v3.0 (Terry) — Remove from THIS album only (unlink — the file stays in your library, in Dates, and in every other album). Editable albums only. */}
+                      {selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source) && (
+                        <ContextMenuItem
+                          onSelect={() => {
+                            const ids = (selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)) ? Array.from(selectedAlbumPhotoIds) : [p.id];
+                            handleRemoveFromAlbum(ids);
+                          }}
+                          data-testid={`album-photo-remove-from-album-${p.id}`}
+                        >
+                          <FolderMinus className="w-3.5 h-3.5 mr-2" />
+                          Remove from "{selectedAlbum.title}"{selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id) ? ` (${selectedAlbumPhotoIds.size})` : ''}
+                        </ContextMenuItem>
+                      )}
                       {/* v2.1 round 275 (Terry) — Move to Recycle Bin,
                           parity with Dates. Recycles the whole active
                           multi-select if the clicked tile is part of it,
@@ -4239,7 +4279,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     data-testid="album-context-menu-add-from-bydate"
                   >
                     <CalendarRange className="w-3.5 h-3.5 mr-2" />
-                    Add photos from By Date
+                    Add photos from Dates
                   </ContextMenuItem>
                 </>
               ) : (

@@ -11116,12 +11116,12 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   {/* Memories - By Date */}
                   <AccordionItem value="memories-by-date" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
-                      Memories — By Date
+                      Memories — Dates
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
                         <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
-                          <p>By Date is the payoff of every Fix you've ever run. Once PDR has restored dates on your library, your timeline finally <span className="font-medium text-foreground">works</span> — year by year, month by month, day by day.</p>
+                          <p>Dates is the payoff of every Fix you've ever run. Once PDR has restored dates on your library, your timeline finally <span className="font-medium text-foreground">works</span> — year by year, month by month, day by day.</p>
                         </div>
 
                         <div>
@@ -11135,7 +11135,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
                         <div>
                           <p className="font-medium text-foreground mb-2">Where the dates come from</p>
-                          <p>Every photo's date in By Date is the one PDR settled on during analysis — EXIF capture date when it was trustworthy, Takeout JSON when EXIF was missing, filename pattern when neither was available, and a fallback Marked date only when nothing reliable existed.</p>
+                          <p>Every photo's date in Dates is the one PDR settled on during analysis — EXIF capture date when it was trustworthy, Takeout JSON when EXIF was missing, filename pattern when neither was available, and a fallback Marked date only when nothing reliable existed.</p>
                           <p className="mt-2">That's why running a Fix matters before relying on this view: it's the difference between "everything is dated 2024 because that's when you copied it" and "everything is dated when it actually happened".</p>
                         </div>
 
@@ -11143,7 +11143,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <p className="font-medium text-foreground mb-2">Tips</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li>If a year looks unexpectedly full, it's usually a Marked-date bucket — those photos didn't have a real date and fell back. The Reports page tells you which.</li>
-                            <li>By Date is one of the strongest ways to find a photo when you remember <em>roughly when</em> but not what it's called.</li>
+                            <li>Dates is one of the strongest ways to find a photo when you remember <em>roughly when</em> but not what it's called.</li>
                             <li>It updates live as you run more Fixes — no rebuild step needed.</li>
                           </ul>
                         </div>
