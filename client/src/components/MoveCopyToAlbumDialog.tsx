@@ -1,17 +1,18 @@
 /**
  * MoveCopyToAlbumDialog (v3.0, Terry 2026-06-22).
  *
- * ONE centered modal for both MOVE and COPY of selected photos between albums,
+ * ONE centred modal for both MOVE and COPY of selected photos between albums,
  * opened from the Albums Actions dropdown AND the per-photo right-click menu via a
  * single "Move/Copy to album…" line. Copy = add to the destination, keep them here.
  * Move = add to the destination + remove from the source album.
  *
- * It is a centred Dialog (NOT a popover anchored to a hidden off-screen element),
- * so it reliably appears wherever it was triggered from — the off-screen-anchor
- * popover this replaces did nothing when launched from the Actions dropdown.
+ * The destination list is GROUPED BY SOURCE and ordered to mirror the left album
+ * tree (PDR, then PDR Collages), each under its source header — not a flat jumble.
+ * Typography uses the PDR tier classes (text-h2 / text-body / text-body-muted /
+ * text-label / text-caption); no freehand sizes.
  */
 import { useEffect, useState } from 'react';
-import { Search, Plus, Check, X, ImageIcon, Copy as CopyIcon, FolderInput, Sparkles, PencilLine } from 'lucide-react';
+import { Search, Plus, Check, X, Copy as CopyIcon, FolderInput } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/custom-button';
@@ -23,20 +24,21 @@ import {
   removePhotosFromAlbum,
   type AlbumSummary,
 } from '../lib/electron-bridge';
-import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
+import { isAlbumSourceUserEditable, getSourceProfileForAlbum } from '../lib/albumSourceProfile';
 
 interface Props {
   open: boolean;
   onOpenChange: (o: boolean) => void;
-  /** indexed_files.id list to move/copy. */
   fileIds: number[];
-  /** The album the photos currently live in (the source for a MOVE). */
   sourceAlbumId: number | null;
-  /** false → the source album is a read-only source (Takeout/iCloud) → MOVE disabled (Copy still fine). */
   sourceEditable: boolean;
-  /** Fired after a successful move/copy (clear the selection). */
   onDone?: () => void;
 }
+
+// Source display order — mirrors the left album tree (Google Photos is read-only so
+// it never appears here; PDR before PDR Collages). Any future editable source falls
+// through to an alphabetical tail.
+const SOURCE_ORDER = ['user_created', 'pdr_collages'];
 
 export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sourceAlbumId, sourceEditable, onDone }: Props) {
   const [mode, setMode] = useState<'copy' | 'move'>('copy');
@@ -57,16 +59,26 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
 
   const isMove = mode === 'move';
   const total = fileIds.length;
-  // Destinations: user-editable albums, excluding the source (can't move/copy into where they already are).
-  const addressable = albums.filter((a) => isAlbumSourceUserEditable(a.source) && a.id !== sourceAlbumId);
-  const filtered = search.trim() ? addressable.filter((a) => a.title.toLowerCase().includes(search.toLowerCase())) : addressable;
 
-  // Core add (+ remove for move). Returns true on success. No busy-guard — callers own busy.
+  // Destinations: user-editable albums, excluding the source. Group by source +
+  // order to mirror the tree; sort albums alphabetically within each source.
+  const matched = albums
+    .filter((a) => isAlbumSourceUserEditable(a.source) && a.id !== sourceAlbumId)
+    .filter((a) => (search.trim() ? a.title.toLowerCase().includes(search.toLowerCase()) : true));
+  const grouped: Record<string, AlbumSummary[]> = {};
+  for (const a of matched) { (grouped[a.source] = grouped[a.source] || []).push(a); }
+  Object.values(grouped).forEach((list) => list.sort((x, y) => x.title.localeCompare(y.title)));
+  const orderedSources = [
+    ...SOURCE_ORDER.filter((s) => grouped[s]),
+    ...Object.keys(grouped).filter((s) => !SOURCE_ORDER.includes(s)).sort(),
+  ];
+
+  // Core add (+ remove for move). No busy-guard — callers own busy.
   async function doAction(destId: number, destTitle: string): Promise<boolean> {
     const addR = await addPhotosToAlbum(destId, fileIds);
     if (!addR.success) { toast.error(`Couldn't ${isMove ? 'move' : 'copy'} to "${destTitle}"`, { description: addR.error }); return false; }
     if (isMove && sourceAlbumId != null) {
-      try { await removePhotosFromAlbum(sourceAlbumId, fileIds); } catch (_) { /* add succeeded → leaves a harmless copy */ }
+      try { await removePhotosFromAlbum(sourceAlbumId, fileIds); } catch (_) { /* add succeeded → harmless copy left */ }
     }
     if (isMove) {
       toast.success(total === 1 ? `Photo moved to "${destTitle}"` : `${total} photos moved to "${destTitle}"`);
@@ -98,38 +110,32 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
     if (ok) { onOpenChange(false); onDone?.(); }
   }
 
-  const moveBtnClass = `px-3 py-1 text-xs rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${isMove ? 'bg-background shadow-sm font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`;
+  const segBtn = (active: boolean) =>
+    `px-3 py-1 rounded text-label transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${active ? 'bg-background shadow-sm text-foreground' : 'text-muted-foreground hover:text-foreground'}`;
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="w-[26rem] max-w-[26rem] p-0 overflow-hidden gap-0">
-        <DialogHeader className="px-4 py-3 border-b border-border space-y-0">
-          <DialogTitle className="text-sm font-medium text-foreground">
-            Move or copy {total} photo{total === 1 ? '' : 's'}
-          </DialogTitle>
-          {/* Copy / Move toggle (Move disabled for read-only source albums) */}
+        <DialogHeader className="px-4 py-3 border-b border-border space-y-0 text-left">
+          <DialogTitle className="text-h2">Move or copy {total} photo{total === 1 ? '' : 's'}</DialogTitle>
+          {/* Copy / Move segmented toggle (Move disabled for read-only source albums). */}
           <div className="flex items-center gap-1 mt-2 p-0.5 bg-muted/60 rounded-md w-fit">
-            <button
-              type="button"
-              onClick={() => setMode('copy')}
-              className={`px-3 py-1 text-xs rounded transition-colors ${!isMove ? 'bg-background shadow-sm font-medium text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-              data-testid="movecopy-mode-copy"
-            >
+            <button type="button" onClick={() => setMode('copy')} className={segBtn(!isMove)} data-testid="movecopy-mode-copy">
               <CopyIcon className="w-3 h-3 inline mr-1 -mt-0.5" />Copy
             </button>
             {sourceEditable ? (
-              <button type="button" onClick={() => setMode('move')} className={moveBtnClass} data-testid="movecopy-mode-move">
+              <button type="button" onClick={() => setMode('move')} className={segBtn(isMove)} data-testid="movecopy-mode-move">
                 <FolderInput className="w-3 h-3 inline mr-1 -mt-0.5" />Move
               </button>
             ) : (
               <IconTooltip content="Can't move out of a read-only source album (Google Photos / iCloud). Copy instead.">
-                <button type="button" disabled className={moveBtnClass} data-testid="movecopy-mode-move">
+                <button type="button" disabled className={segBtn(isMove)} data-testid="movecopy-mode-move">
                   <FolderInput className="w-3 h-3 inline mr-1 -mt-0.5" />Move
                 </button>
               </IconTooltip>
             )}
           </div>
-          <p className="text-[11px] text-muted-foreground mt-1.5 leading-snug">
+          <p className="text-body-muted mt-1.5">
             {isMove ? 'Adds them to the album you pick and removes them from here.' : 'Adds them to the album you pick — they stay here too.'}
           </p>
           {albums.length > 0 && !creating && (
@@ -141,7 +147,7 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => { if (e.key === 'Enter' || e.key === 'Escape') e.stopPropagation(); }}
                 placeholder="Find an album"
-                className="w-full pl-7 pr-2 py-1.5 rounded-md border border-border bg-background text-xs text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                className="w-full pl-7 pr-2 py-1.5 rounded-md border border-border bg-background text-body focus:outline-none focus:ring-2 focus:ring-primary"
                 data-testid="movecopy-search"
               />
             </div>
@@ -150,7 +156,7 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
 
         {creating ? (
           <div className="p-3 border-b border-border">
-            <label className="block text-xs font-medium text-foreground mb-1.5">New album name</label>
+            <label className="block text-label mb-1.5">New album name</label>
             <input
               type="text"
               value={newTitle}
@@ -161,7 +167,7 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
               }}
               autoFocus
               placeholder="e.g. Summer 2024"
-              className="w-full px-2.5 py-1.5 rounded-md border border-border bg-background text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              className="w-full px-2.5 py-1.5 rounded-md border border-border bg-background text-body focus:outline-none focus:ring-2 focus:ring-primary"
               data-testid="movecopy-new-name"
             />
             <div className="flex justify-end gap-2 mt-2">
@@ -170,34 +176,38 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
             </div>
           </div>
         ) : (
-          <div className="max-h-72 overflow-y-auto">
+          <div className="max-h-72 overflow-y-auto py-1">
             {loading ? (
-              <p className="px-4 py-6 text-xs text-muted-foreground text-center">Loading albums…</p>
-            ) : filtered.length === 0 ? (
-              <p className="px-4 py-6 text-xs text-muted-foreground text-center">{search ? `No albums match "${search}"` : 'No other albums yet — create one below.'}</p>
+              <p className="px-4 py-6 text-caption text-center">Loading albums…</p>
+            ) : matched.length === 0 ? (
+              <p className="px-4 py-6 text-caption text-center">{search ? `No albums match "${search}"` : 'No other albums yet — create one below.'}</p>
             ) : (
-              <ul className="py-1" role="listbox">
-                {filtered.map((album) => (
-                  <li key={album.id}>
-                    <button
-                      type="button"
-                      onClick={() => pick(album)}
-                      disabled={busy}
-                      className="w-full flex items-center gap-3 px-4 py-2 text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-                      data-testid={`movecopy-row-${album.id}`}
-                    >
-                      <div className="w-8 h-8 rounded shrink-0 bg-muted flex items-center justify-center overflow-hidden"><ImageIcon className="w-4 h-4 text-muted-foreground/40" /></div>
-                      <div className="flex-1 min-w-0">
-                        <IconTooltip content={album.title}><p className="text-sm text-foreground truncate">{album.title}</p></IconTooltip>
-                        <p className="text-xs text-muted-foreground">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
-                      </div>
-                      {album.source === 'takeout_imported'
-                        ? <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0" />
-                        : <PencilLine className="w-3.5 h-3.5 text-muted-foreground shrink-0" />}
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              orderedSources.map((src) => {
+                const prof = getSourceProfileForAlbum({ source: src });
+                const SrcIcon = prof.Icon;
+                return (
+                  <div key={src} className="pb-1">
+                    {/* Source header — mirrors the left album tree's source rows. */}
+                    <div className="flex items-center gap-1.5 px-4 pt-2 pb-1">
+                      <SrcIcon className={`w-3.5 h-3.5 ${prof.iconColorClass}`} />
+                      <span className="text-caption uppercase tracking-wide">{prof.label}</span>
+                    </div>
+                    {grouped[src].map((album) => (
+                      <button
+                        key={album.id}
+                        type="button"
+                        onClick={() => pick(album)}
+                        disabled={busy}
+                        className="w-full flex items-center justify-between gap-3 pl-9 pr-4 py-1.5 text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+                        data-testid={`movecopy-row-${album.id}`}
+                      >
+                        <span className="text-body truncate">{album.title}</span>
+                        <span className="text-caption shrink-0">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</span>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })
             )}
           </div>
         )}
@@ -211,8 +221,8 @@ export default function MoveCopyToAlbumDialog({ open, onOpenChange, fileIds, sou
               className="w-full flex items-center gap-2 px-4 py-2.5 text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
               data-testid="movecopy-create-new"
             >
-              <div className="w-8 h-8 rounded shrink-0 bg-primary/10 flex items-center justify-center"><Plus className="w-4 h-4 text-primary" /></div>
-              <span className="text-sm font-medium text-foreground">{isMove ? 'Move to a new album…' : 'Copy to a new album…'}</span>
+              <div className="w-6 h-6 rounded shrink-0 bg-primary/10 flex items-center justify-center"><Plus className="w-3.5 h-3.5 text-primary" /></div>
+              <span className="text-label">{isMove ? 'Move to a new album…' : 'Copy to a new album…'}</span>
             </button>
           </div>
         )}
