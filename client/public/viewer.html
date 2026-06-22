@@ -8897,7 +8897,7 @@
     }
     function showCollageMeasurements(it) {
       if (!it || it.isBg || !it.el || !collageChromeEl || !collageCanvasEl || !collageStageEl) { hideCollageMeasurements(); return; }
-      if (collageSelection && collageSelection.length > 1) { hideCollageMeasurements(); return; }   // single only
+      if (typeof it.wFrac === 'number' && collageSelection && collageSelection.length > 1) { hideCollageMeasurements(); return; }   // single only (tiles; a text/emoji layer always measures)
       const cFull = collageCanvasEl.getBoundingClientRect();
       // v2.1 round 373 (Terry) — #10: in CAROUSEL mode the measurement reference is the PAGE the tile sits
       // on (one 1080-wide slice of the wide canvas), NOT the whole N-page strip — so a tile shows the gap to
@@ -8934,9 +8934,11 @@
       const overlapV = (q) => q.top < r.bottom - 1 && q.bottom > r.top + 1;
       const overlapH = (q) => q.left < r.right - 1 && q.right > r.left + 1;
       let leftRef = c.left, rightRef = c.right, topRef = c.top, botRef = c.bottom;
-      for (let i = 0; i < collageItems.length; i++) {
-        const o = collageItems[i];
-        if (!o || !o.el || o.el === it.el || !o.on || o.isBg) continue;
+      // v3.0 r385 (Terry) — measure against BOTH photo tiles AND text/emoji layers (was tiles only), so
+      // every layer type shows the same distance/spacing badges. Text layers have .el but no .on/.isBg.
+      const measureCands = collageItems.filter(function (o) { return o && o.el && o.el !== it.el && o.on && !o.isBg; }).concat((collageTexts || []).filter(function (o) { return o && o.el && o.el !== it.el; }));
+      for (let mi = 0; mi < measureCands.length; mi++) {
+        const o = measureCands[mi];
         const q = o.el.getBoundingClientRect();
         if (overlapV(q)) {
           if (q.right <= r.left + 1 && q.right > leftRef) leftRef = q.right;     // nearest neighbour to the left
@@ -8957,9 +8959,8 @@
       // green (edge alignment). dLm/dRm/dTm/dBm = this photo's own margins to the page.
       const dLm = r.left - c.left, dRm = c.right - r.right, dTm = r.top - c.top, dBm = c.bottom - r.bottom;
       let eL = false, eR = false, eT = false, eB = false;
-      for (let i = 0; i < collageItems.length; i++) {
-        const o = collageItems[i];
-        if (!o || !o.el || o.el === it.el || !o.on || o.isBg) continue;
+      for (let mi = 0; mi < measureCands.length; mi++) {
+        const o = measureCands[mi];
         const q = o.el.getBoundingClientRect();
         const oLm = q.left - c.left, oRm = c.right - q.right, oTm = q.top - c.top, oBm = c.bottom - q.bottom;
         if (Math.abs(dLm - oRm) <= TOL || Math.abs(dLm - oLm) <= TOL) eL = true;   // symmetric to O's right, or left edges level
@@ -9126,7 +9127,7 @@
         // Symmetric pad on all 4 sides → the glyph centre stays at the canvas
         // centre == the xFrac/yFrac bake anchor (same invariant as the text path).
         // Emoji have no overshooting effects, so a small pad is plenty.
-        const ePad = Math.ceil(fontPx * 0.14);
+        const ePad = Math.ceil(fontPx * 0.06);   // v3.0 r385 (Terry) — tighter so the emoji box hugs the glyph (Canva-style)
         const eFont = fontPx + 'px "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif';
         ctx.font = eFont;
         ctx.textBaseline = 'alphabetic';
@@ -9486,7 +9487,7 @@
       const _inkW = (typeof canvas._inkW === 'number') ? canvas._inkW : Math.max(1, canvas.width - 2 * _pad);
       const _inkH = (typeof canvas._inkH === 'number') ? canvas._inkH : Math.max(1, canvas.height - 2 * _pad);
       const _fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
-      const _g = Math.round(_fontPx * 0.16);   // uniform gap (Canva SS3): snug, clearly not touching the letters, same on all 4 sides
+      const _g = Math.round(_fontPx * (layer.isEmoji ? 0.04 : 0.16));   // v3.0 r385 (Terry) — EMOJI box hugs the glyph tight (Canva SS1); text keeps its snug gap
       // v2.1 round 222 (Terry) — NON-UNIFORM STRETCH via the SIDE handles. scaleX/
       // scaleY (default 1) stretch the ink one axis WITHOUT touching renderTextToCanvas
       // (the base canvas is always rendered at sizeFrac, i.e. unstretched) — the stretch
@@ -10284,9 +10285,11 @@
         if (snap.dy && yLock === null) layer.yFrac = Math.max(0, Math.min(1, layer.yFrac + snap.dy / cRect.height));
         if (snap.dx || (snap.dy && yLock === null)) renderTextLayer(layer);
         showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
+        showCollageMeasurements(layer);   // v3.0 r385 (Terry) — distance/spacing badges for text+emoji too
       };
       const up = () => {
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
+        hideCollageMeasurements();   // v3.0 r385 (Terry)
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
         commitCollageChange();
