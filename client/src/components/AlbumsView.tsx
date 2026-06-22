@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import AddToAlbumPopover from './AddToAlbumPopover';
+import MoveCopyToAlbumDialog from './MoveCopyToAlbumDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -1863,8 +1864,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const actionsGrace = usePopoverGraceClose(1500);
   const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
   const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
-  // v3.0 (Terry 2026-06-22) — opens the MOVE-mode AddToAlbumPopover anchor (add to dest + remove from this album).
-  const [addToAlbumMoveTick, setAddToAlbumMoveTick] = useState(0);
+  // v3.0 (Terry 2026-06-22) — Move/Copy to album modal target. Replaces the off-screen popover-anchor that
+  // did nothing from the Actions dropdown. null = closed; set {fileIds, sourceAlbumId, sourceEditable} to open.
+  const [moveCopyState, setMoveCopyState] = useState<{ fileIds: number[]; sourceAlbumId: number | null; sourceEditable: boolean } | null>(null);
   // v2.1 round 275 (Terry) — albumPhotosRefreshTick (the RISK-1 recycle-refresh tick) is
   // declared up with `albumPhotos`, because the loader effect references it in its dep array
   // and must therefore be initialized before that effect (avoids a TDZ blank-screen).
@@ -3359,25 +3361,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             Add {selectedAlbumPhotoIds.size} to S&amp;D pile
                           </DropdownMenuItem>
                           <DropdownMenuSeparator />
+                          {/* v3.0 (Terry) — ONE "Move/Copy to album…" line → centred modal (Copy/Move toggle +
+                              album picker). Replaces the two separate items + the off-screen popover anchor that
+                              did nothing from this dropdown. */}
                           <DropdownMenuItem
-                            onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
-                            data-testid="albums-actions-copy-to-album"
+                            onSelect={() => { setMoveCopyState({ fileIds: Array.from(selectedAlbumPhotoIds), sourceAlbumId: selectedAlbum?.id ?? null, sourceEditable: !!(selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source)) }); }}
+                            data-testid="albums-actions-move-copy-to-album"
                           >
-                            <Copy className="w-3.5 h-3.5 mr-2" />
-                            Copy to album…
+                            <FolderInput className="w-3.5 h-3.5 mr-2" />
+                            Move/Copy to album…
                           </DropdownMenuItem>
-                          {/* v3.0 (Terry) — MOVE to another album = add to dest + remove from THIS album.
-                              Shown only when THIS album is user-editable — never move OUT of a Takeout/iCloud
-                              snapshot (it would corrupt the factual source membership; Copy out is still fine). */}
-                          {selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source) && (
-                            <DropdownMenuItem
-                              onSelect={() => { setAddToAlbumMoveTick(t => t + 1); }}
-                              data-testid="albums-actions-move-to-album"
-                            >
-                              <FolderInput className="w-3.5 h-3.5 mr-2" />
-                              Move to album…
-                            </DropdownMenuItem>
-                          )}
                           {/* v2.1 round 275 (Terry) — NEW: create a fresh
                               album straight from the selection. Opens the
                               AddToAlbumPopover directly in create mode via
@@ -3560,17 +3553,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                           openTrigger={addToAlbumOpenTick}
                           openCreateTrigger={addToAlbumCreateTick}
                         />
-                        {/* v3.0 (Terry) — MOVE anchor: same picker with moveFromAlbumId set, so a pick adds
-                            to the dest AND removes from THIS album. Opened by addToAlbumMoveTick. */}
-                        <AddToAlbumPopover
-                          fileIds={Array.from(selectedAlbumPhotoIds)}
-                          onAdded={clearAlbumSelection}
-                          openTrigger={addToAlbumMoveTick}
-                          moveFromAlbumId={selectedAlbum?.id ?? null}
-                        />
                       </div>
                     </>
                   )}
+                  {/* v3.0 (Terry) — Move/Copy to album modal. OUTSIDE the selection gate so it survives the
+                      selection clearing after a successful move; inert (closed) when moveCopyState is null. */}
+                  <MoveCopyToAlbumDialog
+                    open={!!moveCopyState}
+                    onOpenChange={(o) => { if (!o) setMoveCopyState(null); }}
+                    fileIds={moveCopyState?.fileIds ?? []}
+                    sourceAlbumId={moveCopyState?.sourceAlbumId ?? null}
+                    sourceEditable={moveCopyState?.sourceEditable ?? false}
+                    onDone={clearAlbumSelection}
+                  />
                   {/* v2.1 round 276 (Terry) — COLLAPSIBLE view controls.
                       Three responsive states driven by the
                       headerToolbarRef ResizeObserver:
@@ -4046,16 +4041,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={() => {
-                          if (!(selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id))) {
-                            setSelectedAlbumPhotoIds(new Set([p.id]));
-                            lastAlbumClickedIndexRef.current = null;
-                          }
-                          setAddToAlbumOpenTick(t => t + 1);
+                          const ids = (selectedAlbumPhotoIds.size > 0 && selectedAlbumPhotoIds.has(p.id)) ? Array.from(selectedAlbumPhotoIds) : [p.id];
+                          setMoveCopyState({ fileIds: ids, sourceAlbumId: selectedAlbum?.id ?? null, sourceEditable: !!(selectedAlbum && isAlbumSourceUserEditable(selectedAlbum.source)) });
                         }}
-                        data-testid={`album-photo-add-to-album-${p.id}`}
+                        data-testid={`album-photo-move-copy-${p.id}`}
                       >
-                        <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                        Add to album…
+                        <FolderInput className="w-3.5 h-3.5 mr-2" />
+                        Move/Copy to album…
                       </ContextMenuItem>
                       <ContextMenuSeparator />
                       <ContextMenuItem
