@@ -2275,7 +2275,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
 // unchanged: { success, files, folderPath, count, pending }.
 const CAROUSEL_SLICE_W = 1080;
 const CAROUSEL_SLICE_H = 1350;
-ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number) => {
+ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string }) => {
   try {
     const n = Math.max(1, Math.round(Number(pageCount) || 0));
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
@@ -2347,7 +2347,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
       const filename = `slide_${String(i + 1).padStart(2, '0')}${transparent ? '.png' : '.jpg'}`;
       const outPath = path.join(folderPath, filename);
       fs.writeFileSync(toLongPath(outPath), buf);
-      await stampCaptureMetadata(outPath, capturedAt, 'collage');
+      await stampCaptureMetadata(outPath, capturedAt, 'collage', opts && opts.caption ? opts.caption : undefined, opts && opts.name ? opts.name : undefined);
 
       let fileId: number | null = null;
       if (libRoot) {
@@ -2355,6 +2355,11 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
           // Each slide is indexed at its true 1080×1350 (not the wide canvas dims).
           fileId = await indexCapturedFile(outPath, libRoot, capturedAt, CAROUSEL_SLICE_W, CAROUSEL_SLICE_H, 'photo');
           if (fileId != null) broadcast('library:filesAdded', { reason: 'collage', newFilePath: outPath, fileId });
+          // v2.1 round 373 (Terry) — carousel slides carry the collage's caption NOTE (+ the NAME travels
+          // via the title tags written by stampCaptureMetadata above), like a single-collage export.
+          if (fileId != null && opts && opts.caption && opts.caption.trim()) {
+            try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.caption.trim()); } catch (capErr) { log.warn(`[collage] carousel slide ${i + 1} set caption failed (non-fatal): ${(capErr as Error).message}`); }
+          }
           if (fileId != null && albumId != null && addPhotosToAlbum) {
             try { addPhotosToAlbum(albumId, [fileId]); }
             catch (albErr) { log.warn(`[collage] carousel slide ${i + 1} album-add failed (non-fatal): ${(albErr as Error).message}`); }

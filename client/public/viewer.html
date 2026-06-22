@@ -8898,13 +8898,29 @@
     function showCollageMeasurements(it) {
       if (!it || it.isBg || !it.el || !collageChromeEl || !collageCanvasEl || !collageStageEl) { hideCollageMeasurements(); return; }
       if (collageSelection && collageSelection.length > 1) { hideCollageMeasurements(); return; }   // single only
-      const c = collageCanvasEl.getBoundingClientRect();
+      const cFull = collageCanvasEl.getBoundingClientRect();
+      // v2.1 round 373 (Terry) — #10: in CAROUSEL mode the measurement reference is the PAGE the tile sits
+      // on (one 1080-wide slice of the wide canvas), NOT the whole N-page strip — so a tile shows the gap to
+      // ITS page's edges and the px readout uses the single-page export width. Cross-page tiles fall outside
+      // this [pageLeft, pageRight] range so they don't pull a reference. Single collages: c === cFull.
+      let c = cFull;
+      if (carouselMode && carouselPageCount > 1) {
+        const _N = Math.max(1, carouselPageCount);
+        const _rc = it.el.getBoundingClientRect();
+        const _cx = (_rc.left + _rc.right) / 2;
+        let _pg = Math.floor(((_cx - cFull.left) / Math.max(1, cFull.width)) * _N);
+        _pg = Math.max(0, Math.min(_N - 1, _pg));
+        const _pw = cFull.width / _N;
+        c = { left: cFull.left + _pg * _pw, right: cFull.left + (_pg + 1) * _pw, top: cFull.top, bottom: cFull.bottom, width: _pw, height: cFull.height };
+      }
       const s = collageStageEl.getBoundingClientRect();
       const r = it.el.getBoundingClientRect();
       if (!c.width || !c.height) { hideCollageMeasurements(); return; }
       const els = ensureMeasureEls();
       const exp = collageExportDims();
-      const pxX = (sp) => Math.round((sp / c.width) * exp.w);
+      // round 373 — #10: per-PAGE px readout in carousel mode (the wide export is N×1080; one page is ~1080).
+      const _expW = (carouselMode && carouselPageCount > 1) ? (exp.w / Math.max(1, carouselPageCount)) : exp.w;
+      const pxX = (sp) => Math.round((sp / c.width) * _expW);
       const pxY = (sp) => Math.round((sp / c.height) * exp.h);
       const TOL = 1.5;
       const cyMid = (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2;
@@ -15794,7 +15810,9 @@
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
           return;
         }
-        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount);
+        // v2.1 round 373 (Terry) — carousel export carries the NAME + caption note (like a single collage).
+        const _carNote = (function () { try { const _t = document.getElementById('collageCaptionInput'); return (_t && typeof _t.value === 'string') ? _t.value.trim() : (collageCaptionText || '').trim(); } catch (_) { return (collageCaptionText || '').trim(); } })();
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined });
         if (res && res.success && res.count > 0) {
           // v2.1 round 270 (Terry) — open ALL the slides in the Viewer (like a normal collage
           // save), instead of only revealing the folder. res.files = [{filePath,filename,..}] in
