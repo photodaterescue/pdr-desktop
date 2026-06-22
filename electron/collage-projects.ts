@@ -6,11 +6,10 @@
 // Collages album (the managed-library edge: the output is instantly indexed + filed, not just
 // dumped to Downloads).
 //
-// Storage: one <id>.pdrcollage record (JSON inside) + a thumbnail PNG under userData/collage-projects
-// (the WORKING copy — collages still open with the library drive unplugged). v3.0 r388 (Terry, #7): each
-// project is ALSO written through to the LIBRARY DRIVE at <LibraryRoot>\.pdr\collages\ so it survives a
-// reinstall / new machine and travels with the photos; a list-time newer-wins merge restores everything
-// once the library is re-attached.
+// Storage: one record file + a thumbnail PNG under userData/collage-projects (the WORKING copy — collages
+// still open with the library drive unplugged). v3.0 (Terry, #7): each project is ALSO written through to
+// the LIBRARY DRIVE at <LibraryRoot>\.pdr\collages\ so it survives a reinstall / new machine and travels
+// with the photos; a list-time newer-wins merge restores everything once the library is re-attached.
 import { app, ipcMain } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -38,11 +37,14 @@ export interface CollageProjectSummary {
   kind: 'project' | 'template';
 }
 
-// v2.1 round 315 (Terry) — distinct extension marks these as PDR collage PROJECTS (self-
-// documenting, like .psd/.fig). NOT a 2-letter suffix — that style is reserved for enhanced
-// IMAGE variants (_CF/_RC/_E). The friendly name lives INSIDE the file, so the on-disk name is
-// just the id (renaming a project never moves files).
 const PROJECT_EXT = '.pdrcollage';
+// v3.0 (Terry) — the on-disk file follows PDR's STANDARD naming convention, like every other file: the
+// creation timestamp <YYYY-MM-DD>_<HH-MM-SS> + a type suffix. _CP = Collage Project, sitting alongside _CO
+// (the collage OUTPUT / exported image) and the _CF/_RC/_E image variants. The friendly Category·Name·vN
+// lives INSIDE the file (and in the exported image's caption), exactly like the JPG. The id IS that
+// timestamp base, so there's no separate cryptic code. The timestamp is stamped once at creation, so
+// renaming a collage never moves the file.
+const PROJECT_SUFFIX = '_CP';
 
 function projectsDir(): string {
   const dir = path.join(app.getPath('userData'), 'collage-projects');
@@ -93,9 +95,53 @@ function syncCollagesWithSidecar(): void {
 }
 // -------------------------------------------------------------------------------------------------
 
-function genProjectId(): string {
-  // main-process code, so Date.now()/Math.random() are fine here (unlike workflow scripts).
-  return `c_${Date.now().toString(36)}_${Math.floor(Math.random() * 1e9).toString(36)}`;
+// ---- v3.0 (Terry) — PDR naming convention for the project files ----------------------------------
+function pad2(n: number): string { return (n < 10 ? '0' : '') + n; }
+function tsBase(d: Date): string { return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}_${pad2(d.getHours())}-${pad2(d.getMinutes())}-${pad2(d.getSeconds())}`; }
+function recPath(dir: string, id: string): string { return path.join(dir, `${id}${PROJECT_SUFFIX}${PROJECT_EXT}`); }
+function thumbPath(dir: string, id: string): string { return path.join(dir, `${id}${PROJECT_SUFFIX}.png`); }
+// Unique id = the creation timestamp, with a -2/-3 tiebreak if two projects are created in the same second.
+function dedupeId(dir: string, base: string): string {
+  if (!fs.existsSync(toLongPath(recPath(dir, base)))) return base;
+  for (let n = 2; n < 1000; n++) { const c = `${base}-${n}`; if (!fs.existsSync(toLongPath(recPath(dir, c)))) return c; }
+  return `${base}-${Date.now().toString(36)}`;
+}
+function genProjectId(): string { return dedupeId(projectsDir(), tsBase(new Date())); }
+
+// One-time migration: convert the original random-code files (<c_id>.pdrcollage) to the timestamp
+// convention (<YYYY-MM-DD>_<HH-MM-SS>_CP.pdrcollage). Idempotent (already-converted _CP files are skipped),
+// per-file non-fatal, and ALWAYS writes the new file before deleting the old, so a project can never be lost.
+function migrateOldProjects(): void {
+  const dir = projectsDir();
+  let files: string[] = [];
+  try { files = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT) && !f.endsWith(`${PROJECT_SUFFIX}${PROJECT_EXT}`)); } catch { return; }
+  if (!files.length) return;
+  const sc = sidecarCollagesDir();
+  for (const f of files) {
+    try {
+      const oldId = f.slice(0, -PROJECT_EXT.length);
+      const oldFull = path.join(dir, f);
+      let rec: CollageProjectData;
+      try { rec = JSON.parse(fs.readFileSync(toLongPath(oldFull), 'utf8')) as CollageProjectData; } catch { continue; }  // skip a corrupt record
+      // Creation time: prefer the timestamp encoded in the old "c_<base36ms>_..." id; else savedAt; else file mtime.
+      let ms = 0;
+      const m = /^c_([0-9a-z]+)_/.exec(oldId);
+      if (m) { const v = parseInt(m[1], 36); if (v > 1e12 && v < 4e12) ms = v; }
+      if (!ms && rec.savedAt) { const t = Date.parse(rec.savedAt); if (!isNaN(t)) ms = t; }
+      if (!ms) { try { ms = fs.statSync(toLongPath(oldFull)).mtimeMs; } catch { ms = Date.now(); } }
+      const newId = dedupeId(dir, tsBase(new Date(ms)));
+      rec.id = newId;
+      // Write the NEW file first (crash-safe), then drop the old one.
+      fs.writeFileSync(toLongPath(recPath(dir, newId)), JSON.stringify(rec), 'utf8');
+      const oldThumb = path.join(dir, `${oldId}.png`);
+      try { if (fs.existsSync(toLongPath(oldThumb))) fs.copyFileSync(toLongPath(oldThumb), toLongPath(thumbPath(dir, newId))); } catch { /* thumb best-effort */ }
+      try { fs.unlinkSync(toLongPath(oldFull)); } catch { /* leave it — harmless dup */ }
+      try { fs.unlinkSync(toLongPath(oldThumb)); } catch { /* none */ }
+      // Drop the OLD-named copies from the drive too so they don't linger as duplicates (the list-time sync
+      // mirrors the new-named files up).
+      if (sc) { try { fs.unlinkSync(toLongPath(path.join(sc, f))); } catch { /* none */ } try { fs.unlinkSync(toLongPath(path.join(sc, `${oldId}.png`))); } catch { /* none */ } }
+    } catch { /* per-file non-fatal */ }
+  }
 }
 
 // Save (or overwrite, when `project.id` is supplied — that's what autosave does).
@@ -105,18 +151,18 @@ ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, th
     const dir = projectsDir();
     const id = project.id || genProjectId();
     const rec: CollageProjectData = { ...project, id };
-    fs.writeFileSync(toLongPath(path.join(dir, `${id}${PROJECT_EXT}`)), JSON.stringify(rec), 'utf8');
+    fs.writeFileSync(toLongPath(recPath(dir, id)), JSON.stringify(rec), 'utf8');
     if (typeof thumbnailDataUrl === 'string' && thumbnailDataUrl.startsWith('data:image')) {
       const b64 = thumbnailDataUrl.split(',')[1] || '';
-      if (b64) { try { fs.writeFileSync(toLongPath(path.join(dir, `${id}.png`)), Buffer.from(b64, 'base64')); } catch { /* thumb is best-effort */ } }
+      if (b64) { try { fs.writeFileSync(toLongPath(thumbPath(dir, id)), Buffer.from(b64, 'base64')); } catch { /* thumb is best-effort */ } }
     }
     // v3.0 r388 (Terry) — write-through to the library drive (best-effort; AppData stays the working copy).
     try {
       const sc = sidecarCollagesDir();
       if (sc) {
-        copyPreservingMtime(path.join(dir, `${id}${PROJECT_EXT}`), path.join(sc, `${id}${PROJECT_EXT}`));
-        const tp = path.join(dir, `${id}.png`);
-        if (fs.existsSync(toLongPath(tp))) { try { copyPreservingMtime(tp, path.join(sc, `${id}.png`)); } catch { /* thumb best-effort */ } }
+        copyPreservingMtime(recPath(dir, id), recPath(sc, id));
+        const tp = thumbPath(dir, id);
+        if (fs.existsSync(toLongPath(tp))) { try { copyPreservingMtime(tp, thumbPath(sc, id)); } catch { /* thumb best-effort */ } }
       }
     } catch { /* drive offline — the next list-time sync catches up */ }
     return { success: true, id };
@@ -130,7 +176,8 @@ ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, th
 ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]> => {
   try {
     const dir = projectsDir();
-    try { syncCollagesWithSidecar(); } catch { /* merge is best-effort; AppData still lists */ }   // v3.0 r388 (Terry) — restore-after-reinstall + offline-save catch-up
+    try { migrateOldProjects(); } catch { /* migration is best-effort; the list still works */ }   // v3.0 (Terry) — old random-code files → timestamp convention
+    try { syncCollagesWithSidecar(); } catch { /* merge is best-effort; AppData still lists */ }      // v3.0 r388 (Terry) — restore-after-reinstall + offline-save catch-up
     let recs: string[] = [];
     try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return []; }
     const out: CollageProjectSummary[] = [];
@@ -139,8 +186,9 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         const rec = JSON.parse(fs.readFileSync(toLongPath(path.join(dir, f)), 'utf8')) as CollageProjectData;
         if (!rec || !rec.id) continue;
         let thumb: string | null = null;
-        const tp = path.join(dir, `${rec.id}.png`);
-        try { if (fs.existsSync(tp)) thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; } catch { /* no thumb */ }
+        for (const tp of [thumbPath(dir, rec.id), path.join(dir, `${rec.id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
+          try { if (fs.existsSync(toLongPath(tp))) { thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; break; } } catch { /* no thumb */ }
+        }
         out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project' });
       } catch { /* skip a corrupt record */ }
     }
@@ -156,18 +204,21 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
 ipcMain.handle('collage:loadProject', async (_e, id: string) => {
   try {
     if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
-    const local = path.join(projectsDir(), `${id}${PROJECT_EXT}`);
-    let raw: string;
-    try {
-      raw = fs.readFileSync(toLongPath(local), 'utf8');
-    } catch {
+    const dir = projectsDir();
+    let raw: string | null = null;
+    for (const p of [recPath(dir, id), path.join(dir, `${id}${PROJECT_EXT}`)]) {   // new, then legacy
+      try { raw = fs.readFileSync(toLongPath(p), 'utf8'); break; } catch { /* try next */ }
+    }
+    if (raw == null) {
       // v3.0 r388 (Terry) — not in AppData (e.g. straight after a reinstall): pull it from the library sidecar.
       const sc = sidecarCollagesDir();
-      if (!sc) throw new Error('Project not found.');
-      const sp = path.join(sc, `${id}${PROJECT_EXT}`);
-      raw = fs.readFileSync(toLongPath(sp), 'utf8');
-      try { copyPreservingMtime(sp, local); const stp = path.join(sc, `${id}.png`); if (fs.existsSync(toLongPath(stp))) copyPreservingMtime(stp, path.join(projectsDir(), `${id}.png`)); } catch { /* restore best-effort */ }
+      if (sc) {
+        for (const p of [recPath(sc, id), path.join(sc, `${id}${PROJECT_EXT}`)]) {
+          try { raw = fs.readFileSync(toLongPath(p), 'utf8'); try { copyPreservingMtime(p, p.endsWith(`${PROJECT_SUFFIX}${PROJECT_EXT}`) ? recPath(dir, id) : path.join(dir, `${id}${PROJECT_EXT}`)); } catch { /* restore best-effort */ } break; } catch { /* try next */ }
+        }
+      }
     }
+    if (raw == null) return { success: false, error: 'Project not found.' };
     const rec = JSON.parse(raw) as CollageProjectData;
     return { success: true, project: rec };
   } catch (err) {
@@ -180,9 +231,11 @@ ipcMain.handle('collage:deleteProject', async (_e, id: string) => {
     if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
     const dir = projectsDir();
     const sc = sidecarCollagesDir();   // v3.0 r388 (Terry) — delete from the library drive too, so a delete doesn't resurrect on the next sync
-    for (const ext of [PROJECT_EXT, '.png']) {
-      try { fs.unlinkSync(toLongPath(path.join(dir, id + ext))); } catch { /* already gone */ }
-      if (sc) { try { fs.unlinkSync(toLongPath(path.join(sc, id + ext))); } catch { /* already gone */ } }
+    // new (<id>_CP.pdrcollage / _CP.png) + legacy (<id>.pdrcollage / .png), in both AppData and the drive.
+    const names = [`${id}${PROJECT_SUFFIX}${PROJECT_EXT}`, `${id}${PROJECT_SUFFIX}.png`, `${id}${PROJECT_EXT}`, `${id}.png`];
+    for (const nm of names) {
+      try { fs.unlinkSync(toLongPath(path.join(dir, nm))); } catch { /* already gone */ }
+      if (sc) { try { fs.unlinkSync(toLongPath(path.join(sc, nm))); } catch { /* already gone */ } }
     }
     return { success: true };
   } catch (err) {
