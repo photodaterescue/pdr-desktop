@@ -3863,7 +3863,7 @@
            editable textarea + emoji picker, saved straight to the file via captions.setByPath. -->
       <div class="toolbar-caption-btn" id="btn-caption" aria-label="Caption" data-pdr-tooltip="Caption — click to add or edit">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
-        <span class="caption-pop caption-pop-edit" id="caption-pop"><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="viewerCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="viewerCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="Add a caption…"></textarea></span>
+        <span class="caption-pop caption-pop-edit" id="caption-pop" data-pdr-tooltip=""><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="viewerCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="viewerCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="Add a caption…"></textarea></span>
       </div>
       <!-- v2.1 round 146 (Terry) — collage Undo/Redo/Refresh on the LEFT
            of the toolbar. They were on the right before, but the pinned
@@ -3881,7 +3881,7 @@
            This is the user's NOTE (not the collage name); it travels to the library when you export. -->
       <div class="toolbar-caption-btn tb-collage" id="btn-collage-caption" data-pdr-tooltip="Add a caption — a note that travels to your library on export">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="8" y1="13" x2="16" y2="13"></line><line x1="8" y1="17" x2="13" y2="17"></line></svg>
-        <span class="caption-pop caption-pop-edit" id="collage-caption-pop"><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="collageCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="A note about this collage — shows in your library"></textarea></span>
+        <span class="caption-pop caption-pop-edit" id="collage-caption-pop" data-pdr-tooltip=""><span class="caption-pop-row"><span class="caption-pop-label">Caption</span><button type="button" class="pdr-emoji-trigger" id="collageCaptionEmoji" aria-label="Insert emoji" data-pdr-tooltip="Insert emoji">🙂</button></span><textarea id="collageCaptionInput" class="caption-edit-area" rows="3" maxlength="1000" placeholder="A note about this collage — shows in your library"></textarea></span>
       </div>
     </div>
     <!-- v2.1 round 148 (Terry) — the title bar keeps ONLY a slim set so
@@ -7376,8 +7376,10 @@
       renderGrid(TABS[0]);
       window.__pdrShowEmojiPicker = function (btn, textarea) {
         activeTextarea = textarea; picker.style.display = 'block';
-        var r = btn.getBoundingClientRect(), w = 250;
-        var left = Math.max(6, Math.min(window.innerWidth - w - 6, r.right - w));
+        // v2.1 round 369 (Terry) — drop the picker BELOW the textarea (not the trigger), so it never
+        // covers the text being typed.
+        var r = (textarea || btn).getBoundingClientRect(), w = 250;
+        var left = Math.max(6, Math.min(window.innerWidth - w - 6, r.left));
         var top = r.bottom + 6; if (top + 232 > window.innerHeight) top = Math.max(6, r.top - 238);
         picker.style.left = left + 'px'; picker.style.top = top + 'px';
       };

@@ -686,7 +686,13 @@ function InputDialog({
         const el = inputRef.current;
         if (el) {
           el.focus();
-          if (initialValue && initialValue.length > 0) el.select();
+          // v2.1 round 369 (Terry) — multiline fields (captions): cursor at the END so typing APPENDS to
+          // the existing note rather than replacing it (el.select() highlighted everything). Single-line
+          // fields (names) still select-all so a rename can be typed straight over.
+          if (initialValue && initialValue.length > 0) {
+            if (multiline) { const n = el.value.length; try { el.setSelectionRange(n, n); } catch { /* noop */ } }
+            else el.select();
+          }
         }
       });
     });

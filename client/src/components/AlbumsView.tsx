@@ -902,6 +902,15 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => { if (typeof off === 'function') off(); };
   }, [refreshAll]);
 
+  // v2.1 round 369 (Terry) — also refresh when the main window regains focus (e.g. returning from the
+  // Collage window after an export). onFilesAdded only catches the export if Albums is already mounted on
+  // that album when it happens; this covers "have it refreshed by the time I get there" for any nav order.
+  useEffect(() => {
+    const onFocus = () => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); };
+    window.addEventListener('focus', onFocus);
+    return () => window.removeEventListener('focus', onFocus);
+  }, [refreshAll]);
+
   useEffect(() => {
     if (expandedGroups.size === 0 && groups.length > 0) {
       const all = new Set(groups.map((g) => g.id));
