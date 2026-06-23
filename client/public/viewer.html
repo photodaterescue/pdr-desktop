@@ -4302,6 +4302,11 @@
               <!-- v2.1 round 239 (Terry) — MESH preset grid (shown only when Mesh is the
                  selected type; the buildCollageGradientUi wiring populates + toggles it). -->
               <div id="collage-gradient-mesh-presets" class="ec-grad-presets" style="display:none;margin-top:8px"></div>
+              <!-- v3.0 (Terry) — Mesh's own 6 custom slots (separate from the blended custom). -->
+              <div id="collage-gradient-mesh-custom-wrap" style="display:none">
+                <div class="ec-grad-section-label" style="margin-top:10px">Custom meshes</div>
+                <div id="collage-gradient-mesh-custom-slots" class="ec-grad-presets"></div>
+              </div>
               <!-- LINEAR-only: Angle + Blend -->
               <div class="enhance-control" id="collage-gradient-angle-row" style="margin-top:8px">
                 <div class="enhance-label-row"><label for="collage-gradient-angle">Angle</label><span class="enhance-val" id="collage-gradient-angle-val">135°</span></div>
@@ -5491,18 +5496,13 @@
     //   name  — tooltip label
     //   grad  — a gradient spec (kind/angle/stops) applied verbatim on click
     // Tasteful 2–3 stop combos; angles use the CSS convention (135deg = down-right).
+    // v3.0 (Terry) — trimmed 12 → 6 (a clean spread across the spectrum + the radial glow).
     const COLLAGE_GRADIENT_PRESETS = [
       { id: 'sunset',   name: 'Sunset',    grad: { kind: 'linear', angle: 135, stops: [{ color: '#ff9966', pos: 0 }, { color: '#ff5e62', pos: 100 }] } },
-      { id: 'peach',    name: 'Peach',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffecd2', pos: 0 }, { color: '#fcb69f', pos: 100 }] } },
-      { id: 'gold',     name: 'Gold',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#f6d365', pos: 0 }, { color: '#fda085', pos: 100 }] } },
       { id: 'ocean',    name: 'Ocean',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#2193b0', pos: 0 }, { color: '#6dd5ed', pos: 100 }] } },
       { id: 'mint',     name: 'Mint',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#a8edea', pos: 0 }, { color: '#84fab0', pos: 100 }] } },
-      { id: 'forest',   name: 'Forest',    grad: { kind: 'linear', angle: 135, stops: [{ color: '#5a9367', pos: 0 }, { color: '#2c5364', pos: 100 }] } },
       { id: 'lavender', name: 'Lavender',  grad: { kind: 'linear', angle: 135, stops: [{ color: '#a18cd1', pos: 0 }, { color: '#fbc2eb', pos: 100 }] } },
-      { id: 'dusk',     name: 'Dusk',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#4e54c8', pos: 0 }, { color: '#8f94fb', pos: 100 }] } },
       { id: 'berry',    name: 'Berry',     grad: { kind: 'linear', angle: 135, stops: [{ color: '#cc2b5e', pos: 0 }, { color: '#753a88', pos: 100 }] } },
-      { id: 'rose',     name: 'Rose',      grad: { kind: 'linear', angle: 135, stops: [{ color: '#ffafbd', pos: 0 }, { color: '#ffc3a0', pos: 100 }] } },
-      { id: 'mono',     name: 'Mono gray', grad: { kind: 'linear', angle: 135, stops: [{ color: '#e0e0e0', pos: 0 }, { color: '#9a9a9a', pos: 100 }] } },
       { id: 'glow',     name: 'Soft glow', grad: { kind: 'radial', angle: 0,   stops: [{ color: '#ffffff', pos: 0 }, { color: '#cfd9e8', pos: 100 }] } },
     ];
     // v2.1 round 239 (Terry) — MESH gradient presets. A mesh = a base colour + a few
@@ -5521,27 +5521,15 @@
       { id: 'm-lavender', name: 'Lavender mesh', grad: { kind: 'mesh', base: '#3a2e5c', blobs: [
         { color: '#a18cd1', x: 20, y: 20, r: 70 }, { color: '#fbc2eb', x: 85, y: 35, r: 65 },
         { color: '#8ec5fc', x: 60, y: 95, r: 70 }, { color: '#e0c3fc', x: 5, y: 85, r: 55 } ] } },
-      { id: 'm-candy',    name: 'Candy mesh',    grad: { kind: 'mesh', base: '#2d0b3a', blobs: [
-        { color: '#ff6ec4', x: 18, y: 22, r: 68 }, { color: '#7873f5', x: 82, y: 25, r: 68 },
-        { color: '#ffd86f', x: 75, y: 92, r: 60 }, { color: '#ff9a9e', x: 12, y: 90, r: 60 } ] } },
       { id: 'm-aurora',   name: 'Aurora mesh',   grad: { kind: 'mesh', base: '#05203c', blobs: [
         { color: '#43e97b', x: 22, y: 30, r: 75 }, { color: '#38f9d7', x: 78, y: 22, r: 70 },
         { color: '#6a82fb', x: 60, y: 92, r: 72 }, { color: '#a8ff78', x: 8, y: 95, r: 50 } ] } },
-      { id: 'm-flamingo', name: 'Flamingo mesh', grad: { kind: 'mesh', base: '#3a0d2a', blobs: [
-        { color: '#ff6a88', x: 20, y: 22, r: 70 }, { color: '#ff99ac', x: 85, y: 30, r: 62 },
-        { color: '#ffba6b', x: 55, y: 92, r: 68 } ] } },
       { id: 'm-citrus',   name: 'Citrus mesh',   grad: { kind: 'mesh', base: '#1f3d0c', blobs: [
         { color: '#f9d423', x: 22, y: 25, r: 70 }, { color: '#ff8008', x: 82, y: 28, r: 65 },
         { color: '#a8e063', x: 60, y: 92, r: 70 }, { color: '#56ab2f', x: 8, y: 90, r: 55 } ] } },
       { id: 'm-twilight', name: 'Twilight mesh', grad: { kind: 'mesh', base: '#0f0c29', blobs: [
         { color: '#7028e4', x: 20, y: 25, r: 72 }, { color: '#e5b2ca', x: 82, y: 30, r: 60 },
         { color: '#24c6dc', x: 65, y: 92, r: 68 }, { color: '#514a9d', x: 6, y: 90, r: 60 } ] } },
-      { id: 'm-emerald',  name: 'Emerald mesh',  grad: { kind: 'mesh', base: '#04261f', blobs: [
-        { color: '#11998e', x: 22, y: 25, r: 72 }, { color: '#38ef7d', x: 80, y: 28, r: 66 },
-        { color: '#0ba360', x: 60, y: 92, r: 70 } ] } },
-      { id: 'm-mono',     name: 'Mono mesh',     grad: { kind: 'mesh', base: '#1c1c1c', blobs: [
-        { color: '#6b6b6b', x: 20, y: 22, r: 72 }, { color: '#9a9a9a', x: 82, y: 30, r: 62 },
-        { color: '#4a4a4a', x: 60, y: 92, r: 70 }, { color: '#bdbdbd', x: 8, y: 90, r: 48 } ] } },
     ];
     // v2.1 round 244 (Terry) — CLOSE-UP MATERIAL SURFACES as a Texture background KIND.
     // REDO of round 242: those were zoomed-OUT repeating geometric PATTERNS (a brick
@@ -15173,6 +15161,9 @@
     // kind; setCollageGradient / setCollageMeshGradient apply it.
     var collageCustomGradients = (function(){ try{ var a=JSON.parse(localStorage.getItem('pdr-collage-custom-gradients')||'[]'); if(!Array.isArray(a)) a=[]; while(a.length<6) a.push(null); return a.slice(0,6);}catch(_){ return [null,null,null,null,null,null]; } })();
     function saveCustomGradients(){ try{ localStorage.setItem('pdr-collage-custom-gradients', JSON.stringify(collageCustomGradients)); }catch(_){} }
+    // v3.0 (Terry) — Mesh gets its OWN 6 custom slots, stored separately from the blended custom.
+    var collageCustomMesh = (function(){ try{ var a=JSON.parse(localStorage.getItem('pdr-collage-custom-mesh')||'[]'); if(!Array.isArray(a)) a=[]; while(a.length<6) a.push(null); return a.slice(0,6);}catch(_){ return [null,null,null,null,null,null]; } })();
+    function saveCustomMesh(){ try{ localStorage.setItem('pdr-collage-custom-mesh', JSON.stringify(collageCustomMesh)); }catch(_){} }
     function renderCustomGradientSlots(){
       var host=document.getElementById('collage-gradient-custom-slots'); if(!host) return;
       host.innerHTML='';
@@ -15182,6 +15173,18 @@
         b.className='ec-grad-swatch ec-grad-custom-slot'+(g?'':' ec-grad-empty');
         if (g){ b.style.background=collageGradientCss(g); b.setAttribute('data-pdr-tooltip','Your saved gradient — click to apply'); b.innerHTML='<span class="ec-grad-slot-x" aria-label="Remove saved gradient" data-pdr-tooltip="Remove">&times;</span>'; }
         else { b.setAttribute('data-pdr-tooltip','Empty slot — set up a gradient above, then click here to save it'); b.innerHTML='<span class="ec-grad-slot-plus" aria-hidden="true">+</span>'; }
+        host.appendChild(b);
+      }
+    }
+    function renderMeshCustomSlots(){
+      var host=document.getElementById('collage-gradient-mesh-custom-slots'); if(!host) return;
+      host.innerHTML='';
+      for (var i=0;i<6;i++){
+        var g=collageCustomMesh[i];
+        var b=document.createElement('button'); b.type='button'; b.dataset.slot=i;
+        b.className='ec-grad-swatch ec-grad-custom-slot ec-mesh-custom-slot'+(g?'':' ec-grad-empty');
+        if (g){ b.style.background=collageMeshCss(g); b.setAttribute('data-pdr-tooltip','Your saved mesh — click to apply'); b.innerHTML='<span class="ec-grad-slot-x" aria-label="Remove saved mesh" data-pdr-tooltip="Remove">&times;</span>'; }
+        else { b.setAttribute('data-pdr-tooltip','Empty slot — set up a mesh above, then click here to save it'); b.innerHTML='<span class="ec-grad-slot-plus" aria-hidden="true">+</span>'; }
         host.appendChild(b);
       }
     }
@@ -15382,7 +15385,24 @@
           if (x){ e.stopPropagation(); collageCustomGradients[i]=null; saveCustomGradients(); renderCustomGradientSlots(); return; }
           var g = collageCustomGradients[i];
           if (g){ try{ beginCollageChange(); }catch(_){}; if (g.kind==='mesh') setCollageMeshGradient(g); else setCollageGradient(g); try{ commitCollageChange(); }catch(_){}; }
-          else { if (!collageBgGradient) return; collageCustomGradients[i]=JSON.parse(JSON.stringify(collageBgGradient)); saveCustomGradients(); renderCustomGradientSlots(); }
+          else { if (!collageBgGradient || collageBgGradient.kind==='mesh') return; collageCustomGradients[i]=JSON.parse(JSON.stringify(collageBgGradient)); saveCustomGradients(); renderCustomGradientSlots(); }
+        });
+      }
+      // v3.0 (Terry) — MESH custom slots (6), separate from the blended custom: an empty slot saves
+      // the CURRENT mesh; a filled slot applies it; the × clears it. Shown only when Mesh is selected.
+      renderMeshCustomSlots();
+      var meshCustomHost=document.getElementById('collage-gradient-mesh-custom-slots');
+      if (meshCustomHost && !meshCustomHost.dataset.wired){
+        meshCustomHost.dataset.wired='1';
+        meshCustomHost.addEventListener('click', function(e){
+          var x = e.target.closest && e.target.closest('.ec-grad-slot-x');
+          var slot = e.target.closest && e.target.closest('.ec-mesh-custom-slot');
+          if (!slot) return;
+          var i = parseInt(slot.dataset.slot,10)||0;
+          if (x){ e.stopPropagation(); collageCustomMesh[i]=null; saveCustomMesh(); renderMeshCustomSlots(); return; }
+          var g = collageCustomMesh[i];
+          if (g){ try{ beginCollageChange(); }catch(_){}; setCollageMeshGradient(g); try{ commitCollageChange(); }catch(_){}; }
+          else { if (!collageBgGradient || collageBgGradient.kind!=='mesh') return; collageCustomMesh[i]=JSON.parse(JSON.stringify(collageBgGradient)); saveCustomMesh(); renderMeshCustomSlots(); }
         });
       }
       syncCollageGradientUi();
@@ -15503,6 +15523,12 @@
       if (meshPresetsEl) meshPresetsEl.style.display = isMesh ? '' : 'none';
       const lrPresetsEl = document.getElementById('collage-gradient-presets');
       if (lrPresetsEl) lrPresetsEl.style.display = isMesh ? 'none' : '';
+      // v3.0 (Terry) — Mesh has its OWN 6 custom slots; the blended custom slots are for linear/radial.
+      const meshCustomWrap = document.getElementById('collage-gradient-mesh-custom-wrap');
+      if (meshCustomWrap) meshCustomWrap.style.display = isMesh ? '' : 'none';
+      const blendedCustomEl = document.getElementById('collage-gradient-custom-slots');
+      if (blendedCustomEl) blendedCustomEl.style.display = isMesh ? 'none' : '';
+      try { renderMeshCustomSlots(); } catch (_) {}
       document.querySelectorAll('#collage-gradient-mesh-presets .ec-grad-swatch').forEach((sw) => {
         const p = COLLAGE_MESH_PRESETS.find((x) => x.id === sw.dataset.meshId);
         const match = !!(g && isMesh && p && meshGradientsEqual(g, p.grad));
