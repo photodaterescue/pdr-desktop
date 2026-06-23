@@ -437,6 +437,23 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                   </dl>
                 </div>
+                <div>
+                  <p className="font-medium text-foreground mb-2">Collages</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Collage project</dt>
+                      <dd className="text-muted-foreground mt-0.5">Your editable collage. It auto-saves as you work and lives under &ldquo;Your Collage Projects&rdquo; on the Collages screen, so you can reopen it and keep editing any time.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Save (a collage)</dt>
+                      <dd className="text-muted-foreground mt-0.5">Turns the project into a finished JPG in your library — Memories › Albums › PDR Collages › the album you chose. It doesn&apos;t leave PDR; it becomes a real photo you can view, share and print.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Update vs Save as new version</dt>
+                      <dd className="text-muted-foreground mt-0.5"><span className="font-medium text-foreground">Update</span> re-saves over the same library photo (no duplicates). <span className="font-medium text-foreground">Save as new version</span> keeps the old one and adds a fresh copy (v2, v3…).</dd>
+                    </div>
+                  </dl>
+                </div>
               </div>
             </AccordionContent>
           </AccordionItem>
@@ -451,6 +468,11 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                   <p className="font-medium text-foreground text-sm mb-1">Will this overwrite or damage my original files?</p>
                   <p className="text-sm text-muted-foreground">No. Originals are never modified. All changes are written to a new Library Drive you choose.</p>
+                </div>
+
+                <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                  <p className="font-medium text-foreground text-sm mb-1">Where do my collages go when I save one?</p>
+                  <p className="text-sm text-muted-foreground">Into your library, as a normal photo — <strong className="text-foreground font-medium">Memories › Albums › PDR Collages › the album you chose</strong> — so you can view, share and print it like any other. The editable design also stays under <strong className="text-foreground font-medium">Your Collage Projects</strong> on the Collages screen, so you can reopen and tweak it any time. &ldquo;Update&rdquo; re-saves over the same photo; &ldquo;Save as new version&rdquo; keeps the old one and adds a fresh copy.</p>
                 </div>
 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">

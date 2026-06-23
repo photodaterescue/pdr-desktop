@@ -10832,6 +10832,30 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 </div>
               </section>
 
+              {/* v3.0 (Terry) — Collages: the project-vs-finished-photo mental model + Save/Update/New version. */}
+              <section>
+                <h3 className="text-lg font-medium text-foreground mb-4">Collages</h3>
+                <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-3">
+                  <p className="text-sm text-muted-foreground">A collage has two lives, and knowing the difference is the whole trick:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    <div className="p-3 bg-primary/5 border border-primary/10 rounded-lg">
+                      <p className="text-sm font-medium text-foreground mb-1">The project</p>
+                      <p className="text-xs text-muted-foreground">Your editable design. It <span className="text-foreground font-medium">saves itself</span> as you work — reopen it any time under <span className="text-foreground font-medium">Your Collage Projects</span> on the Collages start screen. Nothing to remember.</p>
+                    </div>
+                    <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
+                      <p className="text-sm font-medium text-foreground mb-1">The finished photo</p>
+                      <p className="text-xs text-muted-foreground"><span className="text-foreground font-medium">Save</span> turns the project into a real JPG in your library — <span className="text-foreground font-medium">Memories › Albums › PDR Collages › your album</span> — to view, share and print like any other photo.</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">So <span className="text-foreground font-medium">Save doesn&apos;t send anything out of PDR</span> — it files a finished photo into your library. After the first save, the button becomes:</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    <div className="flex items-start gap-2 text-sm"><span className="font-mono text-xs px-2 py-0.5 rounded bg-primary/10 text-foreground border border-primary/20 shrink-0 mt-0.5">Update</span><span className="text-muted-foreground">Re-saves over the <span className="text-foreground font-medium">same</span> photo — one tidy copy in your album, not a pile of near-duplicates.</span></div>
+                    <div className="flex items-start gap-2 text-sm"><span className="font-mono text-xs px-2 py-0.5 rounded bg-secondary text-foreground border border-border shrink-0 mt-0.5">New version</span><span className="text-muted-foreground">Saves a fresh v2 and <span className="text-foreground font-medium">keeps the previous one</span> — for milestones worth holding on to.</span></div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Name a project by the <span className="text-foreground font-medium">occasion, person or moment</span> — &ldquo;1st Holiday Together&rdquo;, &ldquo;Mum&apos;s 60th&rdquo;. The version is handled for you, so you never type one. Projects group by album and date; once you&apos;ve made collages across two or more years, a year list appears down the left to jump between them.</p>
+                </div>
+              </section>
+
               {/* Expandable Accordion Sections */}
               <div className="pt-6 border-t border-border">
                 <h3 className="text-lg font-medium text-foreground mb-4">Detailed Guidance</h3>
