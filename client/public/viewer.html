@@ -2474,6 +2474,16 @@
     .cws-month-sum::before { content: '▸'; font-size: 10px; color: #7e7c8f; transition: transform .12s; }
     .cws-month[open] .cws-month-sum::before { transform: rotate(90deg); }
     .cws-month-count { margin-left: auto; background: rgba(255,255,255,0.08); color: #b7b3d0; border-radius: 9px; padding: 1px 9px; font-size: 11px; font-weight: 600; letter-spacing: 0; }
+    /* v3.0 (Terry) — Dates-style year navigation: a left year rail (shown at 2+ years) + year sections. */
+    .cws-projects-body { display: flex; gap: 14px; align-items: flex-start; }
+    .cws-projects-body .cws-projects-list { flex: 1 1 auto; min-width: 0; gap: 20px; }
+    .cws-year-rail { flex: 0 0 auto; width: 56px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px; align-self: flex-start; }
+    .cws-year-btn { width: 100%; padding: 6px 4px; border-radius: 6px; background: none; border: none; font: 600 12px ui-monospace, 'Cascadia Code', Consolas, monospace; color: #8b88a0; cursor: pointer; transition: color .12s, background .12s; }
+    .cws-year-btn:hover { color: #c7a3ff; background: rgba(167,139,250,0.12); }
+    .cws-year-sec { scroll-margin-top: 8px; }
+    .cws-year-head { display: flex; align-items: baseline; gap: 10px; position: sticky; top: 0; z-index: 5; background: rgba(20,18,32,0.92); backdrop-filter: blur(5px); padding: 4px 2px 8px; font-size: 17px; font-weight: 700; color: #ece9f7; }
+    .cws-year-count { font-size: 11px; font-weight: 600; color: #9a96b5; }
+    .cws-month-sub { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: #8b88a0; margin: 4px 2px 10px; }
     .cws-card {
       position: relative; display: flex; flex-direction: column;
       background: #1f1f2b; border: 1px solid rgba(255,255,255,0.08);
@@ -4028,11 +4038,13 @@
               <div class="cws-recent-title">Your Collage Projects</div>
               <div class="cws-recent-tools">
                 <select id="cws-filter-album" class="cws-filter" aria-label="Filter by album"><option value="">All albums</option></select>
-                <select id="cws-filter-year" class="cws-filter" aria-label="Filter by date"><option value="">All dates</option></select>
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
               </div>
             </div>
-            <div id="cws-recent-grid" class="cws-projects-list" role="list"></div>
+            <div class="cws-projects-body">
+              <aside id="cws-year-rail" class="cws-year-rail" style="display:none" aria-label="Jump to year"></aside>
+              <div id="cws-recent-grid" class="cws-projects-list" role="list"></div>
+            </div>
             <div id="cws-recent-empty" class="cws-recent-empty">Your collages save themselves as you work — they'll show up here.</div>
           </div>
         </div>
@@ -13019,45 +13031,60 @@
         albumSel.value = cwsFilterAlbum;
         if (!albumSel.dataset.wired) { albumSel.dataset.wired = '1'; albumSel.addEventListener('change', () => { cwsFilterAlbum = albumSel.value; buildCwsRecent(); }); }
       }
-      if (yearSel) {
-        const years = Array.from(new Set(list.map((p) => { const d = cwsProjectDate(p); return d ? String(d.getFullYear()) : ''; }).filter(Boolean))).sort().reverse();
-        yearSel.innerHTML = ''; const oY = document.createElement('option'); oY.value = ''; oY.textContent = 'All dates'; yearSel.appendChild(oY);
-        years.forEach((y) => { const o = document.createElement('option'); o.value = y; o.textContent = y; yearSel.appendChild(o); });
-        yearSel.value = cwsFilterYear;
-        if (!yearSel.dataset.wired) { yearSel.dataset.wired = '1'; yearSel.addEventListener('change', () => { cwsFilterYear = yearSel.value; buildCwsRecent(); }); }
-      }
-      // Apply the filters.
+      // Apply the album filter (date navigation is the year rail, not a dropdown).
       const filtered = list.filter((p) => {
         if (cwsFilterAlbum && cwsProjectAlbum(p).toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
-        if (cwsFilterYear) { const d = cwsProjectDate(p); if (!d || String(d.getFullYear()) !== cwsFilterYear) return false; }
         return true;
       });
       if (empty) {
         if (!list.length) { empty.style.display = 'block'; empty.textContent = 'Your collages save themselves as you work — they’ll show up here.'; }
-        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = 'No projects match these filters.'; }
+        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = 'No projects in this album.'; }
         else { empty.style.display = 'none'; }
       }
-      // Group by month — newest month first, newest project first within a month, each month collapsible.
+      // Group by YEAR (newest first), then MONTH within (newest first) — mirrors Memories › Dates.
       const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      const groups = {};
+      const byYear = {};
       filtered.forEach((p) => {
         const d = cwsProjectDate(p);
-        const key = d ? (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')) : '0000-00';
-        const label = d ? (MN[d.getMonth()] + ' ' + d.getFullYear()) : 'Undated';
-        if (!groups[key]) groups[key] = { label: label, items: [] };
-        groups[key].items.push(p);
+        const y = d ? d.getFullYear() : 0;
+        const mk = d ? String(d.getMonth() + 1).padStart(2, '0') : '00';
+        const ml = d ? MN[d.getMonth()] : 'Undated';
+        if (!byYear[y]) byYear[y] = { count: 0, months: {} };
+        if (!byYear[y].months[mk]) byYear[y].months[mk] = { label: ml, items: [] };
+        byYear[y].months[mk].items.push(p);
+        byYear[y].count++;
       });
-      Object.keys(groups).sort().reverse().forEach((key) => {
-        const g = groups[key];
-        g.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-        const det = document.createElement('details'); det.className = 'cws-month'; det.open = true;
-        const sum = document.createElement('summary'); sum.className = 'cws-month-sum';
-        sum.innerHTML = '<span>' + g.label + '</span><span class="cws-month-count">' + g.items.length + '</span>';
-        det.appendChild(sum);
-        const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
-        g.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
-        det.appendChild(mgrid);
-        grid.appendChild(det);
+      const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
+      // Year rail (left) — only when there are 2+ years, exactly like the Dates view; click jumps to that year.
+      const rail = document.getElementById('cws-year-rail');
+      if (rail) {
+        rail.innerHTML = '';
+        if (years.length >= 2) {
+          rail.style.display = '';
+          years.forEach((y) => {
+            const yb = document.createElement('button'); yb.type = 'button'; yb.className = 'cws-year-btn'; yb.textContent = (y || 'Undated');
+            yb.addEventListener('click', () => { const sec = document.getElementById('cws-year-' + y); if (sec) sec.scrollIntoView({ block: 'start' }); });
+            rail.appendChild(yb);
+          });
+        } else { rail.style.display = 'none'; }
+      }
+      // Year sections → month sub-groups → cards (newest first throughout).
+      years.forEach((y) => {
+        const yd = byYear[y];
+        const sec = document.createElement('div'); sec.className = 'cws-year-sec'; sec.id = 'cws-year-' + y;
+        const yh = document.createElement('div'); yh.className = 'cws-year-head';
+        yh.innerHTML = '<span>' + (y || 'Undated') + '</span><span class="cws-year-count">' + yd.count + '</span>';
+        sec.appendChild(yh);
+        const mkeys = Object.keys(yd.months).sort().reverse();
+        mkeys.forEach((mk) => {
+          const m = yd.months[mk];
+          m.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+          if (mkeys.length > 1) { const mh = document.createElement('div'); mh.className = 'cws-month-sub'; mh.textContent = m.label; sec.appendChild(mh); }
+          const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
+          m.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
+          sec.appendChild(mgrid);
+        });
+        grid.appendChild(sec);
       });
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
       // once; hidden when there are none.
