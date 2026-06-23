@@ -3901,6 +3901,10 @@
     .bgfx-color-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
     .bgfx-color-row label { font-size: 12px; color: #cfcbe0; }
     .bgel-color { width: 30px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; background: none; cursor: pointer; }
+    /* v3.0 (Terry) — Base / Texture & Effects section headers + the Picture group row. */
+    .bg-section-head { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FEC242; opacity: 0.85; margin: 14px 0 6px; padding-left: 2px; }
+    .bg-section-head:first-child { margin-top: 4px; }
+    .bg-picture-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   </style>
 
   <div class="toolbar" id="toolbar">
@@ -4232,7 +4236,7 @@
                background, and the in-use group auto-EXPANDS (round 246). NOT
                .enhance-collapse / no managed id → invisible to the round-231 accordion. -->
           <details class="ec-bg-grp" id="collage-bg-grad-grp" data-bg-style="gradient">
-            <summary data-pdr-tooltip="Gradient backgrounds — preset sweeps plus linear / radial / mesh custom controls"><span>Gradient</span><span class="ec-bg-grp-inuse">In use</span></summary>
+            <summary data-pdr-tooltip="Blended colours — preset sweeps plus linear / radial / mesh custom controls"><span>Blended</span><span class="ec-bg-grp-inuse">In use</span></summary>
             <div class="ec-bg-grp-body">
           <!-- v2.1 round 235 (Terry) — GRADIENT backgrounds (phase 1 of "Background
                textures"). A curated preset strip + a small custom panel. Built +
@@ -4346,7 +4350,7 @@
                moved in on selection. v2.1 round 246 (Terry) — open state is now driven
                by which style is in use (expanded when this is the active bg), not sticky. -->
           <details class="ec-bg-grp" id="collage-bg-palette-grp" data-bg-style="palette">
-            <summary data-pdr-tooltip="Solid colors, a photo background, transparent, and the color collections"><span>Color / Photo</span><span class="ec-bg-grp-inuse">In use</span></summary><!-- v2.1 round 272 (Terry) — renamed "Colour Palette" → "Colour / Photo" so the photo (+ transparent) options read as belonging here -->
+            <summary data-pdr-tooltip="Solid colours and the colour collections"><span>Solid</span><span class="ec-bg-grp-inuse">In use</span></summary>
             <div class="ec-bg-grp-body" id="collage-bg-palette-grp-body"></div>
           </details>
           <!-- v3.0 (Terry) — TEXTURE & EFFECTS: ONE Glow circle + ONE Blur circle. Click a chip to
@@ -14597,6 +14601,43 @@
       mk('Grain size', 'grainSize', 1, 100, false, 50);
       mk('Pixelate', 'pixelate', 0, 100, false, 0);
     }
+    // v3.0 (Terry) — BASE reorg: group the base-fill sub-groups under a "Base" header (Solid /
+    // Blended / Picture / Texture) and the glow/blur group under a "Texture & Effects" header, and
+    // build the Picture group (photo + transparent, moved out of the Solid palette). Runs once.
+    function buildBgPictureGroup() {
+      var d = document.createElement('details'); d.className = 'ec-bg-grp'; d.id = 'collage-bg-picture-grp'; d.setAttribute('data-bg-style', 'picture');
+      d.innerHTML = '<summary data-pdr-tooltip="Use one of your photos as a full-canvas background, or make the background transparent (a see-through PNG)"><span>Picture</span><span class="ec-bg-grp-inuse">In use</span></summary><div class="ec-bg-grp-body" id="collage-bg-picture-body"></div>';
+      var body = d.querySelector('#collage-bg-picture-body');
+      var row = document.createElement('div'); row.className = 'bg-picture-row';
+      try { buildBgLockedSpecials().forEach(function (n) { if (n) row.appendChild(n); }); } catch (_) {}
+      body.appendChild(row);
+      var hint = document.createElement('div'); hint.className = 'ec-frame-hint'; hint.style.marginTop = '8px';
+      hint.textContent = 'Add one of your photos as a full-canvas backdrop, or go transparent for a see-through PNG.';
+      body.appendChild(hint);
+      var fade = document.getElementById('collage-bg-fade-row'); if (fade) body.appendChild(fade);
+      return d;
+    }
+    function setupBgBaseLayout() {
+      var list = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
+      if (!list || list.dataset.based) return;
+      var solid = document.getElementById('collage-bg-palette-grp');
+      var blended = document.getElementById('collage-bg-grad-grp');
+      var texture = document.getElementById('collage-bg-texture-grp');
+      var fx = document.getElementById('collage-bgel-grp');
+      if (!(solid && blended && texture && fx)) return;
+      var picture = document.getElementById('collage-bg-picture-grp') || buildBgPictureGroup();
+      var hBase = document.createElement('div'); hBase.className = 'bg-section-head'; hBase.textContent = 'Base';
+      var hFx = document.createElement('div'); hFx.className = 'bg-section-head'; hFx.textContent = 'Texture & Effects';
+      // Order: [Base] Solid · Blended · Picture · Texture   then   [Texture & Effects] glow/blur.
+      list.appendChild(hBase);
+      list.appendChild(solid);
+      list.appendChild(blended);
+      list.appendChild(picture);
+      list.appendChild(texture);
+      list.appendChild(hFx);
+      list.appendChild(fx);
+      list.dataset.based = '1';
+    }
     function applyCanvasBgVisual() {
       if (!collageCanvasEl) return;
       try { applyCanvasBgElements(); } catch (_) {}
@@ -14859,9 +14900,10 @@
     // groups' open/closed state when the style actually CHANGES (see below).
     let collageBgLastActiveStyle = null;
     function syncCollageBgStyleGroupActive() {
-      let active = 'palette';   // solid colour / photo / transparent all live in Colour Palette
-      if (collageBgGradient) active = 'gradient';      // linear / radial / mesh
+      let active = 'palette';   // v3.0 (Terry) — solid colour → Solid; transparent → Picture
+      if (collageBgGradient) active = 'gradient';      // linear / radial / mesh → Blended
       else if (collageBgTexture) active = 'texture';
+      else if (collageTransparent) active = 'picture';
       // v2.1 round 272 (Terry) — only re-drive open/closed state when the active style
       // CHANGED. Round 246 forced grp.open = isActive on EVERY sync, which re-closed a group
       // the user had just MANUALLY opened (e.g. opening Colour Palette to add a photo while a
@@ -14871,7 +14913,9 @@
       const styleChanged = (active !== collageBgLastActiveStyle);
       collageBgLastActiveStyle = active;
       document.querySelectorAll('#collage-bg-collapse .ec-bg-grp[data-bg-style]').forEach((grp) => {
-        const isActive = grp.getAttribute('data-bg-style') === active;
+        const st = grp.getAttribute('data-bg-style');
+        if (st === 'elements') return;   // Texture & Effects isn't a base style — leave its open state alone
+        const isActive = st === active;
         grp.classList.toggle('is-inuse', isActive);
         // Always ensure the in-use group is OPEN (so the active style's controls are visible),
         // but only force the OTHERS closed when the style just changed — never slam shut a
@@ -16905,8 +16949,10 @@
       buildCollageGradientUi();
       // v2.1 round 242 (Terry) — build the procedural Texture swatch grid (idempotent).
       buildCollageTextureUi();
-      // v3.0 (Terry) — build the Glow & Blur (texture elements) panel (idempotent).
+      // v3.0 (Terry) — build the Texture & Effects panel (idempotent).
       try { buildCollageBgElementsUi(); } catch (_) {}
+      // v3.0 (Terry) — group the background sub-groups under Base / Texture & Effects headers (once).
+      try { setupBgBaseLayout(); } catch (_) {}
       // v2.1 round 246 (Terry) — the three Background STYLE groups (Gradient / Texture /
       // Colour Palette) no longer carry sticky per-group open state (round 245). Their
       // open/closed state is driven by which style is IN USE: the call below expands the
@@ -18454,7 +18500,7 @@
           // in Row 1 is the default base.
           // v2.1 round 250 (Terry) — while editing a gradient STOP the photo + transparent
           // locked specials don't apply (a stop is a plain colour), so hide them.
-          { lockedSpecials: (collageGradStopEdit != null) ? [] : buildBgLockedSpecials() },
+          { lockedSpecials: [] },   // v3.0 (Terry) — photo + transparent moved out to the Picture group
         );
         // Freshly-built locked swatches: set their initial ring + photo thumbnail.
         markBgLockedSpecialsActive();
