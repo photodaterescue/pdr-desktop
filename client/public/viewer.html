@@ -3904,6 +3904,7 @@
     /* v3.0 (Terry) — Base / Texture & Effects section headers + the Picture group row. */
     .bg-section-head { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FEC242; opacity: 0.85; margin: 14px 0 6px; padding-left: 2px; }
     .bg-section-head:first-child { margin-top: 4px; }
+    .bg-section-sub { text-transform: none; font-weight: 500; opacity: 0.6; font-size: 10px; letter-spacing: 0; }
     .bg-picture-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   </style>
 
@@ -14589,22 +14590,16 @@
       mk('Grain size', 'grainSize', 1, 100, false, 50);
       mk('Pixelate', 'pixelate', 0, 100, false, 0);
     }
-    // v3.0 (Terry) — BASE reorg: group the base-fill sub-groups under a "Base" header (Solid /
-    // Blended / Picture / Texture) and the glow/blur group under a "Texture & Effects" header, and
-    // build the Picture group (photo + transparent, moved out of the Solid palette). Runs once.
-    function buildBgPictureGroup() {
-      var d = document.createElement('details'); d.className = 'ec-bg-grp'; d.id = 'collage-bg-picture-grp'; d.setAttribute('data-bg-style', 'picture');
-      d.innerHTML = '<summary data-pdr-tooltip="Use one of your photos as a full-canvas background, or make the background transparent (a see-through PNG)"><span>Picture</span><span class="ec-bg-grp-inuse">In use</span></summary><div class="ec-bg-grp-body" id="collage-bg-picture-body"></div>';
-      var body = d.querySelector('#collage-bg-picture-body');
+    // v3.0 (Terry) — a small row of the Photo + Transparent base options, shown at the TOP of BOTH
+    // Solid and Blended (Terry: they belong to either base). Stateless actions; ids stripped so the
+    // two copies don't collide — active state is marked by class in markBgLockedSpecialsActive.
+    function buildBgPhotoTransparentRow() {
       var row = document.createElement('div'); row.className = 'bg-picture-row';
-      try { buildBgLockedSpecials().forEach(function (n) { if (n) row.appendChild(n); }); } catch (_) {}
-      body.appendChild(row);
-      var hint = document.createElement('div'); hint.className = 'ec-frame-hint'; hint.style.marginTop = '8px';
-      hint.textContent = 'Add one of your photos as a full-canvas backdrop, or go transparent for a see-through PNG.';
-      body.appendChild(hint);
-      var fade = document.getElementById('collage-bg-fade-row'); if (fade) body.appendChild(fade);
-      return d;
+      try { buildBgLockedSpecials().forEach(function (n) { if (n) { n.removeAttribute('id'); row.appendChild(n); } }); } catch (_) {}
+      return row;
     }
+    // BASE = only ONE of Solid / Blended; Texture & Effects = optional. The procedural Texture group
+    // and the old Picture group are removed; Photo + Transparent live inside both base groups instead.
     function setupBgBaseLayout() {
       var list = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
       if (!list || list.dataset.based) return;
@@ -14612,16 +14607,21 @@
       var blended = document.getElementById('collage-bg-grad-grp');
       var texture = document.getElementById('collage-bg-texture-grp');
       var fx = document.getElementById('collage-bgel-grp');
-      if (!(solid && blended && texture && fx)) return;
-      var picture = document.getElementById('collage-bg-picture-grp') || buildBgPictureGroup();
-      var hBase = document.createElement('div'); hBase.className = 'bg-section-head'; hBase.textContent = 'Base';
-      var hFx = document.createElement('div'); hFx.className = 'bg-section-head'; hFx.textContent = 'Texture & Effects';
-      // Order: [Base] Solid · Blended · Picture · Texture   then   [Texture & Effects] glow/blur.
+      if (!(solid && blended && fx)) return;
+      if (texture && texture.parentNode) texture.parentNode.removeChild(texture);   // Texture dropped (Terry)
+      var hBase = document.createElement('div'); hBase.className = 'bg-section-head';
+      hBase.innerHTML = 'Base <span class="bg-section-sub">· only one of Solid or Blended</span>';
+      var hFx = document.createElement('div'); hFx.className = 'bg-section-head';
+      hFx.innerHTML = 'Texture &amp; Effects <span class="bg-section-sub">· optional</span>';
+      // Photo + Transparent at the top of BOTH base groups.
+      [solid, blended].forEach(function (grp) {
+        var sm = grp.querySelector('summary');
+        if (sm && !grp.querySelector('.bg-picture-row')) sm.insertAdjacentElement('afterend', buildBgPhotoTransparentRow());
+      });
+      // Order: [Base] Solid · Blended   then   [Texture & Effects] glow/blur.
       list.appendChild(hBase);
       list.appendChild(solid);
       list.appendChild(blended);
-      list.appendChild(picture);
-      list.appendChild(texture);
       list.appendChild(hFx);
       list.appendChild(fx);
       list.dataset.based = '1';
@@ -14862,8 +14862,9 @@
       // v2.1 round 336 (Terry) — keep the Effects-for-bg gate live as the bg KIND changes: Fade
       // applies only to a background PHOTO (Blend/Curved/Blur/Pixelate are hidden for any bg via CSS).
       try { document.body.classList.toggle('collage-bg-photo', !!(collageSelected && collageSelected.isBg && collageBgImagePath)); } catch (_) {}
-      const tSw = document.getElementById('collage-bg-locked-transparent');
-      if (tSw) tSw.classList.toggle('active', !!collageTransparent);
+      // v3.0 (Terry) — Photo + Transparent now appear in BOTH Solid and Blended, so mark ALL
+      // transparent chips by class (not a single id).
+      document.querySelectorAll('#collage-bg-collapse .frame-bg-transparent').forEach(function (el) { el.classList.toggle('active', !!collageTransparent); });
       // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is now a STATELESS
       // ACTION button, not a stateful bg indicator — so there's no thumbnail / .has-photo
       // / .active state to maintain here any more (a background photo is a normal tile,
@@ -14888,10 +14889,8 @@
     // groups' open/closed state when the style actually CHANGES (see below).
     let collageBgLastActiveStyle = null;
     function syncCollageBgStyleGroupActive() {
-      let active = 'palette';   // v3.0 (Terry) — solid colour → Solid; transparent → Picture
+      let active = 'palette';   // v3.0 (Terry) — solid colour / photo / transparent → Solid
       if (collageBgGradient) active = 'gradient';      // linear / radial / mesh → Blended
-      else if (collageBgTexture) active = 'texture';
-      else if (collageTransparent) active = 'picture';
       // v2.1 round 272 (Terry) — only re-drive open/closed state when the active style
       // CHANGED. Round 246 forced grp.open = isActive on EVERY sync, which re-closed a group
       // the user had just MANUALLY opened (e.g. opening Colour Palette to add a photo while a
