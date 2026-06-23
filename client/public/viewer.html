@@ -3884,7 +3884,8 @@
     .cwc-got { flex: 0 0 auto; background: linear-gradient(135deg, #8b5cf6, #6d49d6); color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; padding: 8px 14px; cursor: pointer; }
     .cwc-got:hover { filter: brightness(1.08); }
     /* v3.0 (Terry) — Glow & Blur (texture elements) panel controls. */
-    .bgel-add { width: 100%; padding: 9px; border: 1px dashed rgba(167,139,250,0.5); border-radius: 8px; background: rgba(167,139,250,0.08); color: #c7b8ff; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .12s, border-color .12s; }
+    .bgel-add-row { display: flex; gap: 8px; }
+    .bgel-add { flex: 1; min-width: 0; padding: 9px; border: 1px dashed rgba(167,139,250,0.5); border-radius: 8px; background: rgba(167,139,250,0.08); color: #c7b8ff; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .12s, border-color .12s; }
     .bgel-add:hover { background: rgba(167,139,250,0.16); border-color: rgba(167,139,250,0.8); }
     .bgel-card { padding: 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 8px; background: rgba(255,255,255,0.03); }
     .bgel-head { display: flex; align-items: center; gap: 8px; }
@@ -4344,8 +4345,11 @@
           <details class="ec-bg-grp" id="collage-bgel-grp" data-bg-style="elements">
             <summary data-pdr-tooltip="Soft glow circles layered on top of your background — pick a colour, size, position and opacity"><span>Glow &amp; Blur</span></summary>
             <div class="ec-bg-grp-body">
-              <button type="button" id="collage-bgel-add-glow" class="bgel-add">+ Add glow</button>
-              <div id="collage-bgel-empty" class="ec-grad-hint" style="margin-top:8px">No glow yet — add one to layer a soft light over your background.</div>
+              <div class="bgel-add-row">
+                <button type="button" id="collage-bgel-add-glow" class="bgel-add">+ Add glow</button>
+                <button type="button" id="collage-bgel-add-blur" class="bgel-add">+ Add blur</button>
+              </div>
+              <div id="collage-bgel-empty" class="ec-grad-hint" style="margin-top:8px">No glow or blur yet — add one to layer soft light or a soft blur over your background.</div>
               <div id="collage-bgel-list"></div>
             </div>
           </details>
@@ -13296,7 +13300,7 @@
         texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
-        backgroundElements: (collageBackgroundElements || []).map((e) => ({ id: e.id, kind: e.kind, color: e.color, posX: e.posX, posY: e.posY, strength: e.strength, opacity: e.opacity })),
+        backgroundElements: (collageBackgroundElements || []).map((e) => ({ id: e.id, kind: e.kind, color: e.color, posX: e.posX, posY: e.posY, strength: e.strength, opacity: e.opacity, stretch: e.stretch, grain: e.grain, grainSize: e.grainSize })),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -13363,12 +13367,15 @@
       try {
         collageBackgroundElements = Array.isArray(s.backgroundElements) ? s.backgroundElements.map((e, i) => ({
           id: e.id || ('g' + i),
-          kind: e.kind || 'glow',
+          kind: (e.kind === 'blur' ? 'blur' : 'glow'),
           color: /^#[0-9a-fA-F]{3,6}$/.test(String(e.color || '')) ? e.color : '#3aa0ff',
           posX: Number.isFinite(e.posX) ? e.posX : 0.5,
           posY: Number.isFinite(e.posY) ? e.posY : 0.5,
           strength: Number.isFinite(e.strength) ? Math.max(2, Math.min(150, e.strength)) : 55,
           opacity: Number.isFinite(e.opacity) ? Math.max(0, Math.min(100, e.opacity)) : 85,
+          stretch: Number.isFinite(e.stretch) ? Math.max(-100, Math.min(100, e.stretch)) : 0,
+          grain: Number.isFinite(e.grain) ? Math.max(0, Math.min(100, e.grain)) : 0,
+          grainSize: Number.isFinite(e.grainSize) ? Math.max(1, Math.min(100, e.grainSize)) : 50,
         })) : [];
       } catch (_) { collageBackgroundElements = []; }
       try { renderCollageBgElementsList(); } catch (_) {}
@@ -14367,46 +14374,97 @@
         return 'rgba(' + r + ',' + g + ',' + b + ',' + Math.max(0, Math.min(1, a)) + ')';
       } catch (_) { return 'rgba(139,92,246,' + Math.max(0, Math.min(1, a)) + ')'; }
     }
-    function bgElementToCss(el) {
-      if (!el) return '';
+    // Shared geometry for an element: centre %, the two radii (Stretch elongates one axis
+    // into an ellipse — +s widens X, -s heightens Y, 0 = circle), and the alpha.
+    function bgElGeom(el) {
       var a = (el.opacity == null ? 100 : el.opacity) / 100;
-      var rgba = _bgElRgba(el.color, a);
       var rr = Math.max(2, Math.min(150, (el.strength == null ? 50 : el.strength)));
+      var s = Math.max(-100, Math.min(100, (el.stretch == null ? 0 : el.stretch)));
+      var rrX = Math.max(2, Math.min(400, rr * (1 + Math.max(0, s) / 100 * 1.8)));
+      var rrY = Math.max(2, Math.min(400, rr * (1 + Math.max(0, -s) / 100 * 1.8)));
       var px = (el.posX == null ? 0.5 : el.posX) * 100;
       var py = (el.posY == null ? 0.5 : el.posY) * 100;
-      return 'radial-gradient(' + rr + '% ' + rr + '% at ' + px + '% ' + py + '%, ' + rgba + ' 0%, transparent 100%)';
+      return { a: a, rrX: rrX, rrY: rrY, px: px, py: py };
+    }
+    function bgElementToCss(el) {
+      if (!el) return '';
+      var g = bgElGeom(el);
+      var at = g.rrX + '% ' + g.rrY + '% at ' + g.px + '% ' + g.py + '%';
+      if (el.kind === 'blur') {
+        // Blur circle: a soft, fuller out-of-focus blob — a solid-ish core that fades out.
+        return 'radial-gradient(' + at + ', ' + _bgElRgba(el.color, g.a) + ' 0%, ' + _bgElRgba(el.color, g.a * 0.78) + ' 38%, transparent 100%)';
+      }
+      // Glow circle: an airy soft light fading from the centre.
+      return 'radial-gradient(' + at + ', ' + _bgElRgba(el.color, g.a) + ' 0%, transparent 100%)';
+    }
+    // An alpha mask matching the element's footprint, so per-element grain clips to it
+    // (the grain only appears where the glow/blur is, fading with it).
+    function bgElementMaskCss(el) {
+      var g = bgElGeom(el);
+      var at = g.rrX + '% ' + g.rrY + '% at ' + g.px + '% ' + g.py + '%';
+      if (el.kind === 'blur') return 'radial-gradient(' + at + ', #000 0%, #000 38%, transparent 100%)';
+      return 'radial-gradient(' + at + ', #000 0%, transparent 100%)';
+    }
+    // Grain bit SIZE on screen — bigger grainSize = chunkier specks (Terry: the Canva bits
+    // are far bigger than pixels). We reuse the one noise tile + scale it via background-size.
+    function bgElGrainPx(grainSize) {
+      var s = Math.max(1, Math.min(100, (grainSize == null ? 50 : grainSize)));
+      return Math.round(90 + s * 4.2);   // ~94px (fine) .. ~510px (chunky)
     }
     function applyCanvasBgElements() {
       if (!collageCanvasEl) return;
       var ov = document.getElementById('collage-bg-elements');
       var els = collageBackgroundElements || [];
-      if (!els.length) { if (ov) ov.style.display = 'none'; return; }
+      if (!els.length) { if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } return; }
       if (!ov) {
         ov = document.createElement('div');
         ov.id = 'collage-bg-elements';
-        ov.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;background-repeat:no-repeat;background-size:100% 100%;';
+        ov.style.cssText = 'position:absolute;inset:0;z-index:0;pointer-events:none;';
         var photo = document.getElementById('collage-bg-layer');
         if (photo && photo.parentNode === collageCanvasEl) collageCanvasEl.insertBefore(ov, photo.nextSibling);
         else collageCanvasEl.insertBefore(ov, collageCanvasEl.firstChild);
       }
       ov.style.display = '';
-      // First element = bottom of the stack → listed LAST in background-image (first-listed paints on top).
-      ov.style.backgroundImage = els.map(bgElementToCss).filter(Boolean).reverse().join(', ');
+      ov.innerHTML = '';
+      // One node per element. Array order = stacking: els[0] is the first child (bottom),
+      // els[last] is the last child (top). Each node = the glow/blur gradient, plus an
+      // optional grain layer masked to the element's own shape.
+      els.forEach(function (el) {
+        var node = document.createElement('div');
+        node.style.cssText = 'position:absolute;inset:0;background-repeat:no-repeat;background-size:100% 100%;';
+        node.style.backgroundImage = bgElementToCss(el);
+        var gv = Math.max(0, Math.min(100, (el.grain == null ? 0 : el.grain)));
+        if (gv > 0) {
+          var gn = document.createElement('div');
+          var sz = bgElGrainPx(el.grainSize);
+          gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;';
+          gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+          gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+          gn.style.backgroundRepeat = 'repeat';
+          gn.style.opacity = String(gv / 100);
+          var mask = bgElementMaskCss(el);
+          gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
+          gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
+          gn.style.webkitMaskRepeat = 'no-repeat'; gn.style.maskRepeat = 'no-repeat';
+          node.appendChild(gn);
+        }
+        ov.appendChild(node);
+      });
     }
-    // The Glow & Blur panel UI: a "+ Add glow" button + a per-element control card.
+    // The Glow & Blur panel UI: "+ Add glow" / "+ Add blur" buttons + a per-element card.
     let collageBgElSeq = 0;
+    function addBgElement(kind) {
+      try { beginCollageChange(); } catch (_) {}
+      collageBackgroundElements.push({ id: (kind === 'blur' ? 'b' : 'g') + (++collageBgElSeq), kind: (kind === 'blur' ? 'blur' : 'glow'), color: '#3aa0ff', posX: 0.5, posY: 0.45, strength: 55, opacity: 85, stretch: 0, grain: 0, grainSize: 50 });
+      try { applyCanvasBgVisual(); } catch (_) {}
+      renderCollageBgElementsList();
+      try { commitCollageChange(); } catch (_) {}
+    }
     function buildCollageBgElementsUi() {
-      var add = document.getElementById('collage-bgel-add-glow');
-      if (add && !add.dataset.wired) {
-        add.dataset.wired = '1';
-        add.addEventListener('click', function () {
-          try { beginCollageChange(); } catch (_) {}
-          collageBackgroundElements.push({ id: 'g' + (++collageBgElSeq), kind: 'glow', color: '#3aa0ff', posX: 0.5, posY: 0.45, strength: 55, opacity: 85 });
-          try { applyCanvasBgVisual(); } catch (_) {}
-          renderCollageBgElementsList();
-          try { commitCollageChange(); } catch (_) {}
-        });
-      }
+      var ag = document.getElementById('collage-bgel-add-glow');
+      if (ag && !ag.dataset.wired) { ag.dataset.wired = '1'; ag.addEventListener('click', function () { addBgElement('glow'); }); }
+      var ab = document.getElementById('collage-bgel-add-blur');
+      if (ab && !ab.dataset.wired) { ab.dataset.wired = '1'; ab.addEventListener('click', function () { addBgElement('blur'); }); }
       renderCollageBgElementsList();
     }
     function renderCollageBgElementsList() {
@@ -14419,17 +14477,21 @@
       els.forEach(function (el, i) {
         var card = document.createElement('div'); card.className = 'bgel-card';
         var head = document.createElement('div'); head.className = 'bgel-head';
-        var title = document.createElement('span'); title.className = 'bgel-title'; title.textContent = 'Glow ' + (i + 1); head.appendChild(title);
-        var color = document.createElement('input'); color.type = 'color'; color.value = el.color || '#3aa0ff'; color.className = 'bgel-color'; color.title = 'Glow colour';
+        var kind = (el.kind === 'blur' ? 'blur' : 'glow');
+        var typeLabel = kind === 'blur' ? 'Blur' : 'Glow';
+        var kIdx = els.slice(0, i + 1).filter(function (e) { return (e.kind === 'blur' ? 'blur' : 'glow') === kind; }).length;
+        var title = document.createElement('span'); title.className = 'bgel-title'; title.textContent = typeLabel + ' ' + kIdx; head.appendChild(title);
+        var color = document.createElement('input'); color.type = 'color'; color.value = el.color || '#3aa0ff'; color.className = 'bgel-color'; color.title = 'Colour';
         color.addEventListener('input', function () { el.color = color.value; try { applyCanvasBgVisual(); } catch (_) {} });
         color.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
         head.appendChild(color);
-        var del = document.createElement('button'); del.type = 'button'; del.className = 'bgel-del'; del.title = 'Remove this glow'; del.textContent = '×';
+        var del = document.createElement('button'); del.type = 'button'; del.className = 'bgel-del'; del.title = 'Remove'; del.textContent = '×';
         del.addEventListener('click', function () { try { beginCollageChange(); } catch (_) {} collageBackgroundElements.splice(i, 1); try { applyCanvasBgVisual(); } catch (_) {} renderCollageBgElementsList(); try { commitCollageChange(); } catch (_) {} });
         head.appendChild(del);
         card.appendChild(head);
-        var mk = function (label, key, min, max, isFrac) {
-          var cur = isFrac ? Math.round((el[key] == null ? 0.5 : el[key]) * 100) : Math.round(el[key] == null ? 50 : el[key]);
+        var mk = function (label, key, min, max, isFrac, def) {
+          if (def == null) def = isFrac ? 0.5 : 50;
+          var cur = isFrac ? Math.round((el[key] == null ? def : el[key]) * 100) : Math.round(el[key] == null ? def : el[key]);
           var row = document.createElement('div'); row.className = 'enhance-control'; row.style.marginTop = '6px';
           var lr = document.createElement('div'); lr.className = 'enhance-label-row';
           var lab = document.createElement('label'); lab.textContent = label; lr.appendChild(lab);
@@ -14439,10 +14501,13 @@
           inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
           row.appendChild(lr); row.appendChild(inp); card.appendChild(row);
         };
-        mk('Size', 'strength', 5, 150, false);
-        mk('Opacity', 'opacity', 0, 100, false);
-        mk('Position X', 'posX', 0, 100, true);
-        mk('Position Y', 'posY', 0, 100, true);
+        mk('Size', 'strength', 5, 150, false, 55);
+        mk('Stretch', 'stretch', -100, 100, false, 0);
+        mk('Opacity', 'opacity', 0, 100, false, 85);
+        mk('Position X', 'posX', 0, 100, true, 0.5);
+        mk('Position Y', 'posY', 0, 100, true, 0.45);
+        mk('Grain', 'grain', 0, 100, false, 0);
+        mk('Grain size', 'grainSize', 1, 100, false, 50);
         list.appendChild(card);
       });
     }
