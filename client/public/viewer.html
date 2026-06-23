@@ -3884,15 +3884,23 @@
     .cwc-got { flex: 0 0 auto; background: linear-gradient(135deg, #8b5cf6, #6d49d6); color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; padding: 8px 14px; cursor: pointer; }
     .cwc-got:hover { filter: brightness(1.08); }
     /* v3.0 (Terry) — Glow & Blur (texture elements) panel controls. */
-    .bgel-add-row { display: flex; gap: 8px; }
-    .bgel-add { flex: 1; min-width: 0; padding: 9px; border: 1px dashed rgba(167,139,250,0.5); border-radius: 8px; background: rgba(167,139,250,0.08); color: #c7b8ff; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: background .12s, border-color .12s; }
-    .bgel-add:hover { background: rgba(167,139,250,0.16); border-color: rgba(167,139,250,0.8); }
-    .bgel-card { padding: 10px; border: 1px solid rgba(255,255,255,0.1); border-radius: 8px; margin-top: 8px; background: rgba(255,255,255,0.03); }
-    .bgel-head { display: flex; align-items: center; gap: 8px; }
-    .bgel-title { font-size: 12px; font-weight: 600; color: #d8d4ee; }
-    .bgel-color { width: 30px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; background: none; cursor: pointer; margin-left: auto; }
-    .bgel-del { background: none; border: none; color: #8b88a0; font-size: 18px; line-height: 1; cursor: pointer; padding: 0 4px; }
-    .bgel-del:hover { color: #ff6b6b; }
+    /* v3.0 (Terry) — Texture & Effects: selectable Glow/Blur chips + shared controls. */
+    .bgfx-chips { display: flex; gap: 8px; }
+    .bgfx-chip { flex: 1; min-width: 0; display: flex; align-items: center; gap: 7px; padding: 8px 10px; border: 1px solid rgba(255,255,255,0.14); border-radius: 8px; background: rgba(255,255,255,0.03); color: #b9b4cf; font-size: 12.5px; font-weight: 600; cursor: pointer; transition: border-color .12s, background .12s, color .12s, box-shadow .12s; }
+    .bgfx-chip:hover { background: rgba(255,255,255,0.06); }
+    .bgfx-chip.on { color: #e7e3f6; background: rgba(167,139,250,0.10); border-color: rgba(167,139,250,0.35); }
+    .bgfx-chip.sel { border-color: #FEC242; box-shadow: 0 0 0 1px #FEC242 inset; color: #fff; }
+    .bgfx-chip-dot { width: 10px; height: 10px; border-radius: 50%; flex: none; background: rgba(255,255,255,0.25); }
+    .bgfx-chip.on .bgfx-chip-dot { background: #3aa0ff; }
+    .bgfx-chip-label { flex: 1; min-width: 0; text-align: left; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .bgfx-chip-x { flex: none; font-size: 15px; line-height: 1; opacity: 0.6; padding: 0 2px; }
+    .bgfx-chip-x:hover { opacity: 1; color: #ff6b6b; }
+    .bgfx-shape { display: flex; gap: 6px; margin-top: 10px; }
+    .bgfx-shape-btn { flex: 1; padding: 6px; border: 1px solid rgba(255,255,255,0.14); border-radius: 6px; background: rgba(255,255,255,0.03); color: #b9b4cf; font-size: 12px; font-weight: 600; cursor: pointer; }
+    .bgfx-shape-btn.active { border-color: #FEC242; color: #fff; background: rgba(254,194,66,0.12); }
+    .bgfx-color-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+    .bgfx-color-row label { font-size: 12px; color: #cfcbe0; }
+    .bgel-color { width: 30px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; background: none; cursor: pointer; }
   </style>
 
   <div class="toolbar" id="toolbar">
@@ -4341,16 +4349,13 @@
             <summary data-pdr-tooltip="Solid colors, a photo background, transparent, and the color collections"><span>Color / Photo</span><span class="ec-bg-grp-inuse">In use</span></summary><!-- v2.1 round 272 (Terry) — renamed "Colour Palette" → "Colour / Photo" so the photo (+ transparent) options read as belonging here -->
             <div class="ec-bg-grp-body" id="collage-bg-palette-grp-body"></div>
           </details>
-          <!-- v3.0 (Terry) — STYLE GROUP 4: Glow & Blur texture elements, layered ON TOP of the base bg. -->
+          <!-- v3.0 (Terry) — TEXTURE & EFFECTS: ONE Glow circle + ONE Blur circle. Click a chip to
+               select it (gold outline) — the shared sliders below configure it. Both can be on at once. -->
           <details class="ec-bg-grp" id="collage-bgel-grp" data-bg-style="elements">
-            <summary data-pdr-tooltip="Soft glow circles layered on top of your background — pick a colour, size, position and opacity"><span>Glow &amp; Blur</span></summary>
+            <summary data-pdr-tooltip="Glow and blur circles layered on top of your background. Click one to select it (gold outline); the sliders below configure it. Both can be on at once."><span>Texture &amp; Effects</span></summary>
             <div class="ec-bg-grp-body">
-              <div class="bgel-add-row">
-                <button type="button" id="collage-bgel-add-glow" class="bgel-add">+ Add glow</button>
-                <button type="button" id="collage-bgel-add-blur" class="bgel-add">+ Add blur</button>
-              </div>
-              <div id="collage-bgel-empty" class="ec-grad-hint" style="margin-top:8px">No glow or blur yet — add one to layer soft light or a soft blur over your background.</div>
-              <div id="collage-bgel-list"></div>
+              <div id="collage-bgfx-chips" class="bgfx-chips"></div>
+              <div id="collage-bgfx-controls"></div>
             </div>
           </details>
           </div>
@@ -13300,7 +13305,8 @@
         texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
-        backgroundElements: (collageBackgroundElements || []).map((e) => ({ id: e.id, kind: e.kind, color: e.color, posX: e.posX, posY: e.posY, strength: e.strength, opacity: e.opacity, stretch: e.stretch, grain: e.grain, grainSize: e.grainSize })),
+        bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur) }; })(),
+        bgFxSel: collageBgFxSel,
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -13363,21 +13369,30 @@
       // snapshots, or when the snapshot's bg was a different kind). Validate the id
       // against the table so a stale/unknown id falls back to no texture.
       collageBgTexture = (s.texture && collageTextureById(s.texture.id)) ? { id: s.texture.id } : null;
-      // v3.0 (Terry) — restore the layered-bg texture ELEMENTS (glow/blur); old snapshots lack it → [].
+      // v3.0 (Terry) — restore Texture & Effects (Glow + Blur). Old snapshots lack bgFx → defaults (off).
       try {
-        collageBackgroundElements = Array.isArray(s.backgroundElements) ? s.backgroundElements.map((e, i) => ({
-          id: e.id || ('g' + i),
-          kind: (e.kind === 'blur' ? 'blur' : 'glow'),
-          color: /^#[0-9a-fA-F]{3,6}$/.test(String(e.color || '')) ? e.color : '#3aa0ff',
-          posX: Number.isFinite(e.posX) ? e.posX : 0.5,
-          posY: Number.isFinite(e.posY) ? e.posY : 0.5,
-          strength: Number.isFinite(e.strength) ? Math.max(2, Math.min(150, e.strength)) : 55,
-          opacity: Number.isFinite(e.opacity) ? Math.max(0, Math.min(100, e.opacity)) : 85,
-          stretch: Number.isFinite(e.stretch) ? Math.max(-100, Math.min(100, e.stretch)) : 0,
-          grain: Number.isFinite(e.grain) ? Math.max(0, Math.min(100, e.grain)) : 0,
-          grainSize: Number.isFinite(e.grainSize) ? Math.max(1, Math.min(100, e.grainSize)) : 50,
-        })) : [];
-      } catch (_) { collageBackgroundElements = []; }
+        collageBgFx = { glow: defaultBgFxItem('glow'), blur: defaultBgFxItem('blur') };
+        if (s.bgFx) {
+          ['glow', 'blur'].forEach(function (k) {
+            var src = s.bgFx[k]; if (!src) return; var d = collageBgFx[k];
+            d.on = !!src.on;
+            d.shape = (src.shape === 'linear' ? 'linear' : 'radial');
+            if (/^#[0-9a-fA-F]{3,6}$/.test(String(src.color || ''))) d.color = src.color;
+            if (Number.isFinite(src.size)) d.size = Math.max(2, Math.min(150, src.size));
+            if (Number.isFinite(src.stretch)) d.stretch = Math.max(-100, Math.min(100, src.stretch));
+            if (Number.isFinite(src.angle)) d.angle = ((src.angle % 360) + 360) % 360;
+            if (Number.isFinite(src.blend)) d.blend = Math.max(0, Math.min(100, src.blend));
+            if (Number.isFinite(src.opacity)) d.opacity = Math.max(0, Math.min(100, src.opacity));
+            if (Number.isFinite(src.posX)) d.posX = src.posX;
+            if (Number.isFinite(src.posY)) d.posY = src.posY;
+            if (Number.isFinite(src.blur)) d.blur = Math.max(0, Math.min(100, src.blur));
+            if (Number.isFinite(src.grain)) d.grain = Math.max(0, Math.min(100, src.grain));
+            if (Number.isFinite(src.grainSize)) d.grainSize = Math.max(1, Math.min(100, src.grainSize));
+            if (Number.isFinite(src.pixelate)) d.pixelate = Math.max(0, Math.min(100, src.pixelate));
+          });
+        }
+        collageBgFxSel = (s.bgFxSel === 'blur') ? 'blur' : 'glow';
+      } catch (_) { collageBgFx = { glow: defaultBgFxItem('glow'), blur: defaultBgFxItem('blur') }; collageBgFxSel = 'glow'; }
       try { renderCollageBgElementsList(); } catch (_) {}
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
       // snapshots predate these: sizeId '' = no highlight, exportPx null = legacy 2000px).
@@ -14361,11 +14376,25 @@
       const list = [first.color + ' ' + first.pos + '%', blend + '%', ...rest].join(', ');
       return 'linear-gradient(' + angle + 'deg, ' + list + ')';
     }
-    // v3.0 (Terry) — LAYERED backgrounds, stage 1: texture ELEMENTS (glow/blur circles) stacked ON TOP
-    // of the base bg, BELOW the tiles. Each is a radial-gradient blob (reusing the mesh-blob pattern):
-    // live = stacked radial-gradients on a #collage-bg-elements overlay; bake = matching radialGradient
-    // SVGs (capture-manager). Model: { id, kind:'glow', color, posX, posY, strength, opacity }.
-    let collageBackgroundElements = [];
+    // v3.0 (Terry) — TEXTURE & EFFECTS: exactly ONE Glow circle + ONE Blur circle, layered ON TOP of
+    // the base bg, BELOW the tiles. Both can be ON at once; the shared slider panel edits the SELECTED
+    // one (collageBgFxSel). Each: shape radial (size+stretch+position) / linear (angle+blend), colour,
+    // opacity, blur, grain (+size), pixelate. Live = CSS gradient nodes; the off-screen WYSIWYG bake
+    // re-renders this same DOM, so the export matches.
+    let collageBgFx = null;          // { glow:{...}, blur:{...} }
+    let collageBgFxSel = 'glow';     // which element the shared sliders configure
+    function defaultBgFxItem(kind) {
+      return { kind: kind, on: false, shape: 'radial', color: (kind === 'blur' ? '#7f9cff' : '#3aa0ff'),
+        size: 55, stretch: 0, angle: 135, blend: 50, opacity: 85, posX: 0.5, posY: 0.45,
+        blur: (kind === 'blur' ? 35 : 0), grain: 0, grainSize: 50, pixelate: 0 };
+    }
+    function ensureCollageBgFx() {
+      if (!collageBgFx) collageBgFx = {};
+      if (!collageBgFx.glow) collageBgFx.glow = defaultBgFxItem('glow');
+      if (!collageBgFx.blur) collageBgFx.blur = defaultBgFxItem('blur');
+      return collageBgFx;
+    }
+    function activeBgFxItems() { var f = ensureCollageBgFx(); return [f.glow, f.blur].filter(function (e) { return e && e.on; }); }
     function _bgElRgba(hex, a) {
       try {
         var h = String(hex || '#8b5cf6').replace('#', '');
@@ -14374,11 +14403,11 @@
         return 'rgba(' + r + ',' + g + ',' + b + ',' + Math.max(0, Math.min(1, a)) + ')';
       } catch (_) { return 'rgba(139,92,246,' + Math.max(0, Math.min(1, a)) + ')'; }
     }
-    // Shared geometry for an element: centre %, the two radii (Stretch elongates one axis
-    // into an ellipse — +s widens X, -s heightens Y, 0 = circle), and the alpha.
-    function bgElGeom(el) {
+    // Shared geometry for an element: centre %, the two radii (Stretch elongates one axis into an
+    // ellipse — +s widens X, -s heightens Y, 0 = circle), and the alpha.
+    function bgFxGeom(el) {
       var a = (el.opacity == null ? 100 : el.opacity) / 100;
-      var rr = Math.max(2, Math.min(150, (el.strength == null ? 50 : el.strength)));
+      var rr = Math.max(2, Math.min(150, (el.size == null ? 55 : el.size)));
       var s = Math.max(-100, Math.min(100, (el.stretch == null ? 0 : el.stretch)));
       var rrX = Math.max(2, Math.min(400, rr * (1 + Math.max(0, s) / 100 * 1.8)));
       var rrY = Math.max(2, Math.min(400, rr * (1 + Math.max(0, -s) / 100 * 1.8)));
@@ -14386,36 +14415,68 @@
       var py = (el.posY == null ? 0.5 : el.posY) * 100;
       return { a: a, rrX: rrX, rrY: rrY, px: px, py: py };
     }
-    function bgElementToCss(el) {
-      if (!el) return '';
-      var g = bgElGeom(el);
-      var at = g.rrX + '% ' + g.rrY + '% at ' + g.px + '% ' + g.py + '%';
-      if (el.kind === 'blur') {
-        // Blur circle: a soft, fuller out-of-focus blob — a solid-ish core that fades out.
-        return 'radial-gradient(' + at + ', ' + _bgElRgba(el.color, g.a) + ' 0%, ' + _bgElRgba(el.color, g.a * 0.78) + ' 38%, transparent 100%)';
+    // The element's gradient. asMask=true → an opaque-black version used to clip its own grain.
+    // Radial = a soft circle/ellipse; Linear = a directional sweep (angle + blend), like the base
+    // gradient's Linear/Radial. Blur circles get a fuller solid-ish core; glow circles fade airily.
+    function bgFxImage(el, asMask) {
+      var g = bgFxGeom(el);
+      var c0 = asMask ? '#000' : _bgElRgba(el.color, g.a);
+      var cMid = asMask ? '#000' : _bgElRgba(el.color, g.a * 0.78);
+      if (el.shape === 'linear') {
+        var ang = Number.isFinite(el.angle) ? el.angle : 135;
+        var blend = Math.max(1, Math.min(99, Number.isFinite(el.blend) ? el.blend : 50));
+        if (el.kind === 'blur') return 'linear-gradient(' + ang + 'deg, ' + c0 + ' 0%, ' + cMid + ' ' + blend + '%, transparent 100%)';
+        return 'linear-gradient(' + ang + 'deg, ' + c0 + ' 0%, ' + blend + '%, transparent 100%)';
       }
-      // Glow circle: an airy soft light fading from the centre.
-      return 'radial-gradient(' + at + ', ' + _bgElRgba(el.color, g.a) + ' 0%, transparent 100%)';
-    }
-    // An alpha mask matching the element's footprint, so per-element grain clips to it
-    // (the grain only appears where the glow/blur is, fading with it).
-    function bgElementMaskCss(el) {
-      var g = bgElGeom(el);
       var at = g.rrX + '% ' + g.rrY + '% at ' + g.px + '% ' + g.py + '%';
-      if (el.kind === 'blur') return 'radial-gradient(' + at + ', #000 0%, #000 38%, transparent 100%)';
-      return 'radial-gradient(' + at + ', #000 0%, transparent 100%)';
+      if (el.kind === 'blur') return 'radial-gradient(' + at + ', ' + c0 + ' 0%, ' + cMid + ' 38%, transparent 100%)';
+      return 'radial-gradient(' + at + ', ' + c0 + ' 0%, transparent 100%)';
     }
-    // Grain bit SIZE on screen — bigger grainSize = chunkier specks (Terry: the Canva bits
-    // are far bigger than pixels). We reuse the one noise tile + scale it via background-size.
-    function bgElGrainPx(grainSize) {
+    // Grain bit SIZE on screen — bigger grainSize = chunkier specks. Reuses the one noise tile.
+    function bgFxGrainPx(grainSize) {
       var s = Math.max(1, Math.min(100, (grainSize == null ? 50 : grainSize)));
       return Math.round(90 + s * 4.2);   // ~94px (fine) .. ~510px (chunky)
+    }
+    // A hidden <svg> holding the per-element pixelate filter defs (so filter:url(#id) works live AND
+    // in the off-screen WYSIWYG bake, which re-renders this same DOM).
+    function ensureBgFxSvg() {
+      var s = document.getElementById('collage-bgfx-svg');
+      if (!s) {
+        var ns = 'http://www.w3.org/2000/svg';
+        s = document.createElementNS(ns, 'svg');
+        s.setAttribute('id', 'collage-bgfx-svg');
+        s.setAttribute('width', '0'); s.setAttribute('height', '0');
+        s.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;';
+        (collageCanvasEl || document.body).appendChild(s);
+      }
+      return s;
+    }
+    // Build/update a pixelate filter for an element; returns its id (or null when pixelate=0). The
+    // feFlood+feTile samples one pixel per block, feMorphology dilates it to fill the block.
+    function bgFxPixelateFilter(el) {
+      var p = Math.max(0, Math.min(100, (el.pixelate == null ? 0 : el.pixelate)));
+      var fid = 'collage-bgfx-px-' + el.kind;
+      var f = document.getElementById(fid);
+      if (p <= 0) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
+      var host = ensureBgFxSvg();
+      var block = Math.round(3 + p * 0.7);
+      var half = Math.max(1, Math.round(block / 2));
+      var ns = 'http://www.w3.org/2000/svg';
+      if (!f) { f = document.createElementNS(ns, 'filter'); f.setAttribute('id', fid); host.appendChild(f); }
+      f.setAttribute('x', '0'); f.setAttribute('y', '0'); f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
+      f.innerHTML =
+        '<feFlood x="0" y="0" width="1" height="1"/>' +
+        '<feComposite width="' + block + '" height="' + block + '"/>' +
+        '<feTile result="a"/>' +
+        '<feComposite in="SourceGraphic" in2="a" operator="in"/>' +
+        '<feMorphology operator="dilate" radius="' + half + '"/>';
+      return fid;
     }
     function applyCanvasBgElements() {
       if (!collageCanvasEl) return;
       var ov = document.getElementById('collage-bg-elements');
-      var els = collageBackgroundElements || [];
-      if (!els.length) { if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } return; }
+      var items = activeBgFxItems();
+      if (!items.length) { if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } return; }
       if (!ov) {
         ov = document.createElement('div');
         ov.id = 'collage-bg-elements';
@@ -14426,23 +14487,30 @@
       }
       ov.style.display = '';
       ov.innerHTML = '';
-      // One node per element. Array order = stacking: els[0] is the first child (bottom),
-      // els[last] is the last child (top). Each node = the glow/blur gradient, plus an
-      // optional grain layer masked to the element's own shape.
-      els.forEach(function (el) {
+      var f = ensureCollageBgFx();
+      // Glow renders first (bottom), blur on top. Each = the gradient node + Blur (CSS) + Pixelate
+      // (SVG filter) + an optional grain layer masked to the element's own shape.
+      [f.glow, f.blur].forEach(function (el) {
+        if (!el || !el.on) return;
         var node = document.createElement('div');
         node.style.cssText = 'position:absolute;inset:0;background-repeat:no-repeat;background-size:100% 100%;';
-        node.style.backgroundImage = bgElementToCss(el);
+        node.style.backgroundImage = bgFxImage(el, false);
+        var fx = [];
+        var bl = Math.max(0, Math.min(100, (el.blur == null ? 0 : el.blur)));
+        if (bl > 0) fx.push('blur(' + Math.round(bl * 0.6) + 'px)');
+        var pxid = bgFxPixelateFilter(el);
+        if (pxid) fx.push('url(#' + pxid + ')');
+        if (fx.length) node.style.filter = fx.join(' ');
         var gv = Math.max(0, Math.min(100, (el.grain == null ? 0 : el.grain)));
         if (gv > 0) {
           var gn = document.createElement('div');
-          var sz = bgElGrainPx(el.grainSize);
+          var sz = bgFxGrainPx(el.grainSize);
           gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;';
           gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
           gn.style.backgroundSize = sz + 'px ' + sz + 'px';
           gn.style.backgroundRepeat = 'repeat';
           gn.style.opacity = String(gv / 100);
-          var mask = bgElementMaskCss(el);
+          var mask = bgFxImage(el, true);
           gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
           gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
           gn.style.webkitMaskRepeat = 'no-repeat'; gn.style.maskRepeat = 'no-repeat';
@@ -14451,65 +14519,83 @@
         ov.appendChild(node);
       });
     }
-    // The Glow & Blur panel UI: "+ Add glow" / "+ Add blur" buttons + a per-element card.
-    let collageBgElSeq = 0;
-    function addBgElement(kind) {
-      try { beginCollageChange(); } catch (_) {}
-      collageBackgroundElements.push({ id: (kind === 'blur' ? 'b' : 'g') + (++collageBgElSeq), kind: (kind === 'blur' ? 'blur' : 'glow'), color: '#3aa0ff', posX: 0.5, posY: 0.45, strength: 55, opacity: 85, stretch: 0, grain: 0, grainSize: 50 });
-      try { applyCanvasBgVisual(); } catch (_) {}
-      renderCollageBgElementsList();
-      try { commitCollageChange(); } catch (_) {}
-    }
-    function buildCollageBgElementsUi() {
-      var ag = document.getElementById('collage-bgel-add-glow');
-      if (ag && !ag.dataset.wired) { ag.dataset.wired = '1'; ag.addEventListener('click', function () { addBgElement('glow'); }); }
-      var ab = document.getElementById('collage-bgel-add-blur');
-      if (ab && !ab.dataset.wired) { ab.dataset.wired = '1'; ab.addEventListener('click', function () { addBgElement('blur'); }); }
-      renderCollageBgElementsList();
-    }
+    // The Texture & Effects panel: two selectable chips (Glow circle / Blur circle) + ONE shared
+    // slider set that edits whichever chip is SELECTED (collageBgFxSel). Both chips can be ON at once;
+    // the gold outline marks the one being configured. (renderCollageBgElementsList keeps its name so
+    // the restore + panel-setup call-sites are unchanged.)
+    function buildCollageBgElementsUi() { renderCollageBgElementsList(); }
     function renderCollageBgElementsList() {
-      var list = document.getElementById('collage-bgel-list');
-      var empty = document.getElementById('collage-bgel-empty');
-      if (!list) return;
-      list.innerHTML = '';
-      var els = collageBackgroundElements || [];
-      if (empty) empty.style.display = els.length ? 'none' : 'block';
-      els.forEach(function (el, i) {
-        var card = document.createElement('div'); card.className = 'bgel-card';
-        var head = document.createElement('div'); head.className = 'bgel-head';
-        var kind = (el.kind === 'blur' ? 'blur' : 'glow');
-        var typeLabel = kind === 'blur' ? 'Blur' : 'Glow';
-        var kIdx = els.slice(0, i + 1).filter(function (e) { return (e.kind === 'blur' ? 'blur' : 'glow') === kind; }).length;
-        var title = document.createElement('span'); title.className = 'bgel-title'; title.textContent = typeLabel + ' ' + kIdx; head.appendChild(title);
-        var color = document.createElement('input'); color.type = 'color'; color.value = el.color || '#3aa0ff'; color.className = 'bgel-color'; color.title = 'Colour';
-        color.addEventListener('input', function () { el.color = color.value; try { applyCanvasBgVisual(); } catch (_) {} });
-        color.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
-        head.appendChild(color);
-        var del = document.createElement('button'); del.type = 'button'; del.className = 'bgel-del'; del.title = 'Remove'; del.textContent = '×';
-        del.addEventListener('click', function () { try { beginCollageChange(); } catch (_) {} collageBackgroundElements.splice(i, 1); try { applyCanvasBgVisual(); } catch (_) {} renderCollageBgElementsList(); try { commitCollageChange(); } catch (_) {} });
-        head.appendChild(del);
-        card.appendChild(head);
-        var mk = function (label, key, min, max, isFrac, def) {
-          if (def == null) def = isFrac ? 0.5 : 50;
-          var cur = isFrac ? Math.round((el[key] == null ? def : el[key]) * 100) : Math.round(el[key] == null ? def : el[key]);
-          var row = document.createElement('div'); row.className = 'enhance-control'; row.style.marginTop = '6px';
-          var lr = document.createElement('div'); lr.className = 'enhance-label-row';
-          var lab = document.createElement('label'); lab.textContent = label; lr.appendChild(lab);
-          var vv = document.createElement('span'); vv.className = 'enhance-val'; vv.textContent = cur; lr.appendChild(vv);
-          var inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = 1; inp.value = cur;
-          inp.addEventListener('input', function () { var n = parseInt(inp.value, 10); el[key] = isFrac ? (n / 100) : n; vv.textContent = inp.value; try { applyCanvasBgVisual(); } catch (_) {} });
-          inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
-          row.appendChild(lr); row.appendChild(inp); card.appendChild(row);
-        };
-        mk('Size', 'strength', 5, 150, false, 55);
-        mk('Stretch', 'stretch', -100, 100, false, 0);
-        mk('Opacity', 'opacity', 0, 100, false, 85);
-        mk('Position X', 'posX', 0, 100, true, 0.5);
-        mk('Position Y', 'posY', 0, 100, true, 0.45);
-        mk('Grain', 'grain', 0, 100, false, 0);
-        mk('Grain size', 'grainSize', 1, 100, false, 50);
-        list.appendChild(card);
+      var f = ensureCollageBgFx();
+      var chips = document.getElementById('collage-bgfx-chips');
+      var ctrls = document.getElementById('collage-bgfx-controls');
+      if (!chips || !ctrls) return;
+      chips.innerHTML = '';
+      [['glow', 'Glow circle'], ['blur', 'Blur circle']].forEach(function (pair) {
+        var kind = pair[0], el = f[kind];
+        var chip = document.createElement('button'); chip.type = 'button';
+        chip.className = 'bgfx-chip' + (el.on ? ' on' : '') + (collageBgFxSel === kind ? ' sel' : '');
+        chip.innerHTML = '<span class="bgfx-chip-dot"></span><span class="bgfx-chip-label">' + pair[1] + '</span>' + (el.on ? '<span class="bgfx-chip-x" title="Turn off">×</span>' : '');
+        chip.addEventListener('click', function (ev) {
+          var other = (kind === 'glow') ? 'blur' : 'glow';
+          if (ev.target && ev.target.classList && ev.target.classList.contains('bgfx-chip-x')) {
+            ev.stopPropagation();
+            try { beginCollageChange(); } catch (_) {}
+            el.on = false;
+            if (collageBgFxSel === kind && f[other].on) collageBgFxSel = other;
+            try { applyCanvasBgVisual(); } catch (_) {}
+            renderCollageBgElementsList();
+            try { commitCollageChange(); } catch (_) {}
+            return;
+          }
+          try { beginCollageChange(); } catch (_) {}
+          el.on = true; collageBgFxSel = kind;
+          try { applyCanvasBgVisual(); } catch (_) {}
+          renderCollageBgElementsList();
+          try { commitCollageChange(); } catch (_) {}
+        });
+        chips.appendChild(chip);
       });
+      ctrls.innerHTML = '';
+      var sel = f[collageBgFxSel] || f.glow;
+      if (!sel.on) {
+        var hint = document.createElement('div'); hint.className = 'ec-grad-hint'; hint.style.margin = '10px 0 2px';
+        hint.textContent = (collageBgFxSel === 'blur' ? 'Blur circle' : 'Glow circle') + ' is off — click it above to add it to your background.';
+        ctrls.appendChild(hint);
+      }
+      var shapeRow = document.createElement('div'); shapeRow.className = 'bgfx-shape';
+      [['radial', 'Radial'], ['linear', 'Linear']].forEach(function (sh) {
+        var b = document.createElement('button'); b.type = 'button'; b.className = 'bgfx-shape-btn' + (sel.shape === sh[0] ? ' active' : '');
+        b.textContent = sh[1];
+        b.addEventListener('click', function () { try { beginCollageChange(); } catch (_) {} sel.shape = sh[0]; try { applyCanvasBgVisual(); } catch (_) {} renderCollageBgElementsList(); try { commitCollageChange(); } catch (_) {} });
+        shapeRow.appendChild(b);
+      });
+      ctrls.appendChild(shapeRow);
+      var colRow = document.createElement('div'); colRow.className = 'bgfx-color-row';
+      var colLab = document.createElement('label'); colLab.textContent = 'Colour'; colRow.appendChild(colLab);
+      var col = document.createElement('input'); col.type = 'color'; col.value = sel.color || '#3aa0ff'; col.className = 'bgel-color';
+      col.addEventListener('input', function () { sel.color = col.value; try { applyCanvasBgVisual(); } catch (_) {} });
+      col.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
+      colRow.appendChild(col); ctrls.appendChild(colRow);
+      var mk = function (label, key, min, max, isFrac, def) {
+        if (def == null) def = isFrac ? 0.5 : 50;
+        var cur = isFrac ? Math.round((sel[key] == null ? def : sel[key]) * 100) : Math.round(sel[key] == null ? def : sel[key]);
+        var row = document.createElement('div'); row.className = 'enhance-control'; row.style.marginTop = '6px';
+        var lr = document.createElement('div'); lr.className = 'enhance-label-row';
+        var lab = document.createElement('label'); lab.textContent = label; lr.appendChild(lab);
+        var vv = document.createElement('span'); vv.className = 'enhance-val'; vv.textContent = cur; lr.appendChild(vv);
+        var inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = 1; inp.value = cur;
+        inp.addEventListener('input', function () { var n = parseInt(inp.value, 10); sel[key] = isFrac ? (n / 100) : n; vv.textContent = inp.value; try { applyCanvasBgVisual(); } catch (_) {} });
+        inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
+        row.appendChild(lr); row.appendChild(inp); ctrls.appendChild(row);
+      };
+      if (sel.shape === 'linear') { mk('Angle', 'angle', 0, 360, false, 135); mk('Blend', 'blend', 0, 100, false, 50); }
+      else { mk('Size', 'size', 5, 150, false, 55); mk('Stretch', 'stretch', -100, 100, false, 0); }
+      mk('Opacity', 'opacity', 0, 100, false, 85);
+      if (sel.shape !== 'linear') { mk('Position X', 'posX', 0, 100, true, 0.5); mk('Position Y', 'posY', 0, 100, true, 0.45); }
+      mk('Blur', 'blur', 0, 100, false, 0);
+      mk('Grain', 'grain', 0, 100, false, 0);
+      mk('Grain size', 'grainSize', 1, 100, false, 50);
+      mk('Pixelate', 'pixelate', 0, 100, false, 0);
     }
     function applyCanvasBgVisual() {
       if (!collageCanvasEl) return;
