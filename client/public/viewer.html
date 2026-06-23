@@ -17306,10 +17306,10 @@
           rows.push({ sep: true });
           rows.push({ ic: I.align, label: 'Align to page', children: function () { return alignRows(it); } });
           rows.push({ ic: I.arrange, label: 'Arrange', children: [
-            { ic: I.front, label: 'Bring to front', fn: function () { orderCollageSelection('front'); } },
-            { ic: I.fwd, label: 'Bring forward', fn: function () { orderCollageSelection('forward'); } },
-            { ic: I.bwd, label: 'Send backward', fn: function () { orderCollageSelection('backward'); } },
-            { ic: I.back, label: 'Send to back', fn: function () { orderCollageSelection('back'); } },
+            { ic: I.front, label: 'Bring to front', k: 'Ctrl+Shift+]', fn: function () { orderCollageSelection('front'); } },
+            { ic: I.fwd, label: 'Bring forward', k: 'Ctrl+]', fn: function () { orderCollageSelection('forward'); } },
+            { ic: I.bwd, label: 'Send backward', k: 'Ctrl+[', fn: function () { orderCollageSelection('backward'); } },
+            { ic: I.back, label: 'Send to back', k: 'Ctrl+Shift+[', fn: function () { orderCollageSelection('back'); } },
           ] });
           if (hasPhoto) rows.push({ ic: I.fliph, label: 'Flip', children: [
             { ic: I.fliph, label: 'Horizontal', fn: function () { flip(it, 'h'); } },
