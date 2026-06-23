@@ -2178,7 +2178,7 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     return null;
   }
 });
-ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string }) => {
+ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string; replaceFileId?: number }) => {
   try {
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
@@ -2237,6 +2237,22 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
             if (albumId != null) addPhotosToAlbum(albumId, [fileId]);
           } catch (albErr) {
             log.warn(`[collage] add to PDR Collages source failed (non-fatal): ${(albErr as Error).message}`);
+          }
+        }
+        // v3.0 (Terry) — "Update" a collage: the renderer passes the PREVIOUS export's fileId. We've just
+        // written the new export; now delete the old file + its row so the album keeps ONE current photo
+        // per collage (not a pile of near-identical copies). The new file has a fresh path, so its
+        // thumbnail regenerates on its own (no cache busting needed). Non-fatal + self-delete guarded.
+        if (fileId != null && opts && typeof opts.replaceFileId === 'number' && opts.replaceFileId !== fileId) {
+          try {
+            const { getFileById, deleteIndexedFiles } = await import('./search-database.js');
+            const old = getFileById(opts.replaceFileId);
+            if (old && old.file_path && path.resolve(old.file_path) !== path.resolve(outPath)) {
+              try { fs.unlinkSync(toLongPath(old.file_path)); } catch (_) {}
+              deleteIndexedFiles([opts.replaceFileId]);
+            }
+          } catch (repErr) {
+            log.warn(`[collage] replace previous export failed (non-fatal): ${(repErr as Error).message}`);
           }
         }
         // v2.1 round 366 (Terry) — broadcast AFTER the album filing so the open Albums view (which now

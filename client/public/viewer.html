@@ -2461,6 +2461,19 @@
     .cws-recent-titlerow { display: flex; align-items: baseline; justify-content: space-between; }
     .cws-recent-clear { background: none; border: none; color: #8b88a0; font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
     .cws-recent-clear:hover { color: #ff6b6b; background: rgba(255,107,107,0.1); }
+    /* v3.0 (Terry) — Your Collage Projects: Album/Date filters + collapsible month groups. */
+    .cws-recent-titlerow { align-items: center; }
+    .cws-recent-tools { display: flex; align-items: center; gap: 8px; }
+    .cws-filter { background: #2a2740; color: #d8d4ee; border: 1px solid rgba(255,255,255,0.14); border-radius: 7px; font-size: 12px; font-weight: 600; padding: 5px 8px; cursor: pointer; outline: none; }
+    .cws-filter:hover { border-color: rgba(255,194,66,0.5); }
+    .cws-projects-list { display: flex; flex-direction: column; gap: 14px; }
+    .cws-month { border: 0; }
+    .cws-month + .cws-month { border-top: 1px solid rgba(255,255,255,0.06); padding-top: 12px; }
+    .cws-month-sum { list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #9a96b5; padding: 2px 2px 12px; user-select: none; }
+    .cws-month-sum::-webkit-details-marker { display: none; }
+    .cws-month-sum::before { content: '▸'; font-size: 10px; color: #7e7c8f; transition: transform .12s; }
+    .cws-month[open] .cws-month-sum::before { transform: rotate(90deg); }
+    .cws-month-count { margin-left: auto; background: rgba(255,255,255,0.08); color: #b7b3d0; border-radius: 9px; padding: 1px 9px; font-size: 11px; font-weight: 600; letter-spacing: 0; }
     .cws-card {
       position: relative; display: flex; flex-direction: column;
       background: #1f1f2b; border: 1px solid rgba(255,255,255,0.08);
@@ -3827,6 +3840,39 @@
     }
     .collage-template-btn:hover { background: rgba(254,194,66,0.10); border-color: rgba(254,194,66,0.5); color: #ffd778; }
     .collage-template-btn svg { width: 14px; height: 14px; }
+    /* v3.0 (Terry) — Save flow: split "Save / Update" button with a chevron for more options. */
+    .collage-save-row { display: flex; gap: 6px; align-items: stretch; }
+    .collage-save-row .collage-save-btn { flex: 1; width: auto; }
+    .collage-save-more-btn {
+      flex: 0 0 auto; padding: 0 11px; border-radius: 8px;
+      background: linear-gradient(135deg, #8b5cf6, #6d49d6);
+      border: none; color: #fff; cursor: pointer;
+      display: flex; align-items: center; justify-content: center; transition: filter 120ms;
+    }
+    .collage-save-more-btn:hover { filter: brightness(1.08); }
+    .collage-save-more-btn svg { width: 15px; height: 15px; }
+    .collage-save-menu {
+      position: fixed; z-index: 2147483646;
+      background: #2a2740; border: 1px solid rgba(255,255,255,0.14); border-radius: 9px;
+      box-shadow: 0 12px 34px rgba(0,0,0,0.5); padding: 5px; min-width: 218px;
+    }
+    .collage-save-menu button {
+      display: block; width: 100%; text-align: left; background: none; border: none;
+      color: #e9e6f7; font: 600 13px system-ui,-apple-system,"Segoe UI",sans-serif;
+      padding: 8px 11px; border-radius: 6px; cursor: pointer;
+    }
+    .collage-save-menu button:hover { background: rgba(255,255,255,0.08); }
+    .collage-save-menu .csm-sub { display: block; font-weight: 400; font-size: 11px; color: #9b97b5; margin-top: 2px; }
+    /* v3.0 (Terry) — first-few-times "your work saves itself" explainer card. */
+    .collage-welcome-card { position: fixed; bottom: 90px; left: 24px; transform: translateY(8px); z-index: 2147483600; display: flex; align-items: center; gap: 12px; max-width: 430px; padding: 13px 14px; background: linear-gradient(135deg, #2b2740, #241f38); color: #ece9f8; border: 1px solid rgba(167,139,250,0.4); border-radius: 12px; box-shadow: 0 14px 40px rgba(0,0,0,0.5); opacity: 0; transition: opacity .18s, transform .18s; }
+    .collage-welcome-card.show { opacity: 1; transform: translateY(0); }
+    .cwc-icon { flex: 0 0 auto; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; background: linear-gradient(135deg, #8b5cf6, #6d49d6); color: #fff; }
+    .cwc-body { flex: 1 1 auto; min-width: 0; }
+    .cwc-title { font-size: 13px; font-weight: 700; margin-bottom: 3px; }
+    .cwc-text { font-size: 12px; line-height: 1.45; color: #c9c4e4; }
+    .cwc-text b { color: #ece9f8; font-weight: 600; }
+    .cwc-got { flex: 0 0 auto; background: linear-gradient(135deg, #8b5cf6, #6d49d6); color: #fff; border: none; border-radius: 8px; font-size: 12px; font-weight: 600; padding: 8px 14px; cursor: pointer; }
+    .cwc-got:hover { filter: brightness(1.08); }
   </style>
 
   <div class="toolbar" id="toolbar">
@@ -3978,8 +4024,15 @@
             <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
           </div>
           <div class="cws-recent">
-            <div class="cws-recent-titlerow"><div class="cws-recent-title">Recent collages</div><button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button></div>
-            <div id="cws-recent-grid" class="cws-recent-grid" role="list"></div>
+            <div class="cws-recent-titlerow">
+              <div class="cws-recent-title">Your Collage Projects</div>
+              <div class="cws-recent-tools">
+                <select id="cws-filter-album" class="cws-filter" aria-label="Filter by album"><option value="">All albums</option></select>
+                <select id="cws-filter-year" class="cws-filter" aria-label="Filter by date"><option value="">All dates</option></select>
+                <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
+              </div>
+            </div>
+            <div id="cws-recent-grid" class="cws-projects-list" role="list"></div>
             <div id="cws-recent-empty" class="cws-recent-empty">Your collages save themselves as you work — they'll show up here.</div>
           </div>
         </div>
@@ -4854,10 +4907,16 @@
            the full-res originals with each tile's own enhancements baked
            in, then reopens the finished collage as a normal photo. -->
       <div id="collage-save-wrap">
-        <button class="collage-save-btn" id="collage-save" type="button">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><polyline points="8 8 12 4 16 8"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
-          Export
-        </button>
+        <div class="collage-save-row">
+          <button class="collage-save-btn" id="collage-save" type="button">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><polyline points="8 8 12 4 16 8"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg>
+            <span id="collage-save-label">Save</span>
+          </button>
+          <!-- v3.0 (Terry) — chevron: Update / Save as new version / Save to another album (shown after first save). -->
+          <button class="collage-save-more-btn" id="collage-save-more" type="button" data-pdr-tooltip="More save options" data-pdr-tooltip-side="top" style="display:none">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+          </button>
+        </div>
         <!-- v2.1 round 323 (Terry) — save the current design as a reusable template. -->
         <button class="collage-template-btn" id="collage-save-template" type="button" data-pdr-tooltip="Save this design as a reusable template (find it on the welcome screen)" data-pdr-tooltip-side="top">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>
@@ -12435,7 +12494,7 @@
         restoreCollageSnapshot(JSON.stringify(s));
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       updateCollageTitle();
@@ -12515,18 +12574,18 @@
         + '<div class="cnw-label">Album</div><div class="cnw-chips" id="cnw-chips"></div>'
         + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom album…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
-        + '<div class="cnw-label">What’s it for?</div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. v3.0 launch, Mum’s 60th" autocomplete="off" />'
+        + '<div class="cnw-label">What’s it for? <span class="cnw-opt">— the occasion / person / moment</span></div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. 1st Holiday Together, Mum’s 60th" autocomplete="off" />'
         + '<div id="cnw-name-suggest" class="cnw-suggest" style="display:none"></div>'
-        + '<div class="cnw-label">Version <span class="cnw-opt">(optional)</span></div><input id="cnw-ver" class="cnw-input" type="text" placeholder="e.g. 2" autocomplete="off" />'
         + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
         + '<div id="cnw-export-note" class="cnw-export-note" style="display:none"></div>'
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
         + '</div>';
       document.body.appendChild(overlay);
-      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Export collage' : 'Name this collage project'); } catch (_) {}
+      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Save collage to your library' : 'Name this collage project'); } catch (_) {}
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
-      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), verEl = $('#cnw-ver'), previewEl = $('#cnw-preview'), exportNoteEl = $('#cnw-export-note'), saveBtn = $('[data-action="save"]');
+      const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), previewEl = $('#cnw-preview'), exportNoteEl = $('#cnw-export-note'), saveBtn = $('[data-action="save"]');
+      let verVal = '';   // v3.0 (Terry) — version is auto-managed (set by "Save as new version"); no longer a user-typed field
       let customRevealed = false;
       const allCats = () => COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
       // round 350 — seed "What's it for?" suggestions from the user's EXISTING project names so the
@@ -12542,9 +12601,10 @@
       }
       try { if (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) { Promise.resolve(window.pdr.collage.listProjects()).then((list) => { try { (list || []).forEach((p) => { const w = whatForFromName(p && p.name); if (w) seededWhatFor.push(w); }); } catch (_) {} }).catch(() => {}); } } catch (_) {}
       function refreshPreview() {
-        previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verEl.value) || '—';
+        previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verVal) || '—';
         saveBtn.disabled = exportMode ? false : !nameEl.value.trim();   // export can go to General with no name
-        if (exportMode && exportNoteEl) { exportNoteEl.textContent = 'This collage will be saved to the “' + (selectedCat || 'General') + '” album in PDR Collages.'; exportNoteEl.style.display = 'block'; }
+        if (exportMode && exportNoteEl) { exportNoteEl.textContent = 'Saves a JPG to Memories › Albums › PDR Collages › ' + (selectedCat || 'General') + ' — safe in your library.'; exportNoteEl.style.display = 'block'; }
+        if (exportMode) { try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); } catch (_) {} }
       }
       function buildChips(filter) {
         chipsEl.innerHTML = ''; const f = (filter || '').trim().toLowerCase();
@@ -12564,13 +12624,13 @@
       }
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
       // round 351 — rename mode: prefill from the project's existing name (overrides the last-used default)
-      if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verEl.value = pp.version; }
+      if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verVal = pp.version; }
       // round 353 — export mode: default to General (clear the last-used default) unless the project is
       // already named (then prefill its album/name); relabel the buttons for the export action.
       if (exportMode) {
         selectedCat = '';
-        if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verEl.value = ep.version; }
-        try { saveBtn.textContent = 'Export'; const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
+        if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verVal = ep.version; }
+        try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
       }
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
@@ -12601,12 +12661,12 @@
         rememberCustomCategory(typed); setCat(typed);
       }
       customEl.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); commitCustom(); } });
-      nameEl.addEventListener('input', () => { refreshPreview(); buildNameSuggest(); }); verEl.addEventListener('input', refreshPreview);
+      nameEl.addEventListener('input', () => { refreshPreview(); buildNameSuggest(); });
       function close() { window.removeEventListener('keydown', onKey, true); overlay.remove(); }
       function doSave() {
         if (!exportMode && !nameEl.value.trim()) return;   // export allows a blank name (→ General + auto-name)
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
-        const nm = assembleCollageName(selectedCat, nameEl.value, verEl.value);
+        const nm = assembleCollageName(selectedCat, nameEl.value, verVal);
         try { if (nameEl.value.trim()) rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
         if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
         if (exportMode) {
@@ -12626,7 +12686,7 @@
       $('[data-action="skip"]').onclick = close; saveBtn.onclick = doSave;
       const onKey = function (e) {
         if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); }
-        else if (e.key === 'Enter' && (document.activeElement === nameEl || document.activeElement === verEl)) { e.preventDefault(); e.stopPropagation(); doSave(); }
+        else if (e.key === 'Enter' && document.activeElement === nameEl) { e.preventDefault(); e.stopPropagation(); doSave(); }
       };
       window.addEventListener('keydown', onKey, true);
       setTimeout(() => { try { nameEl.focus(); } catch (_) {} }, 30);
@@ -12737,6 +12797,7 @@
         // in the caption textarea).
         collageCaptionText = (typeof p.caption === 'string') ? p.caption : '';
         collageExportedFileId = (p.exportedFileId != null) ? p.exportedFileId : null;
+        try { updateCollageSaveButton(); } catch (_) {}
         // v2.1 round 371 (Terry) — if this project exported a photo, THAT photo's caption is the live shared
         // one (it may have been edited in Viewer/Albums/Dates/S&D) → sync it into the editor on reopen.
         if (collageExportedFileId && window.pdr && window.pdr.captions && window.pdr.captions.get) {
@@ -12810,7 +12871,7 @@
       } finally { collageRestoring = false; }
       if (_arCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
@@ -12885,7 +12946,7 @@
         collageZTop = z;
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
@@ -12906,6 +12967,40 @@
       } catch (_) { return ''; }
     }
     const CWS_THUMB_GLYPH = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#cfc9ec" stroke-width="1.4" style="opacity:.28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+    // v3.0 (Terry) — "Your Collage Projects": filter state + helpers (one card; a project's album/date).
+    let cwsFilterAlbum = '';
+    let cwsFilterYear = '';
+    function cwsProjectAlbum(p) { try { return parseCollageName((p && p.name) || '').category || ''; } catch (_) { return ''; } }
+    function cwsProjectDate(p) { try { var d = new Date(p && p.savedAt); return isNaN(d.getTime()) ? null : d; } catch (_) { return null; } }
+    function cwsMakeCard(p) {
+      const card = document.createElement('div');
+      card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
+      const thumb = document.createElement('div');
+      thumb.className = 'cws-card-thumb';
+      if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
+      else thumb.innerHTML = CWS_THUMB_GLYPH;
+      const meta = document.createElement('div'); meta.className = 'cws-card-meta';
+      const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
+      const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
+      meta.appendChild(name); meta.appendChild(date);
+      const del = document.createElement('button');
+      del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.title = 'Delete this collage';
+      del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        const ok = await showPdrConfirm({ title: 'Delete collage?', body: 'Delete "' + (p.name || 'Untitled collage') + '"? This can\'t be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
+        if (!ok) return;
+        try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
+        buildCwsRecent();
+      });
+      const ren = document.createElement('button');
+      ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
+      ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
+      ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
+      card.addEventListener('click', async () => { const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome(); });
+      card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del);
+      return card;
+    }
     async function buildCwsRecent() {
       const grid = document.getElementById('cws-recent-grid');
       const empty = document.getElementById('cws-recent-empty');
@@ -12914,40 +13009,56 @@
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       list = list.filter((p) => p.kind !== 'template');   // v2.1 round 323 (Terry) — templates have their OWN row
-      if (empty) empty.style.display = list.length ? 'none' : 'block';
-      for (const p of list) {
-        const card = document.createElement('div');
-        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
-        const thumb = document.createElement('div');
-        thumb.className = 'cws-card-thumb';
-        if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
-        else thumb.innerHTML = CWS_THUMB_GLYPH;
-        const meta = document.createElement('div'); meta.className = 'cws-card-meta';
-        const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
-        const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
-        meta.appendChild(name); meta.appendChild(date);
-        const del = document.createElement('button');
-        del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.title = 'Delete this collage';
-        del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
-        del.addEventListener('click', async (e) => {
-          e.stopPropagation();
-          const ok = await showPdrConfirm({ title: 'Delete collage?', body: 'Delete "' + (p.name || 'Untitled collage') + '"? This can\'t be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
-          if (!ok) return;
-          try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
-          buildCwsRecent();
-        });
-        // round 351 (Terry, naming #2) — rename straight from the card (opens the wizard in rename mode).
-        const ren = document.createElement('button');
-        ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
-        ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
-        ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
-        card.addEventListener('click', async () => {
-          const ok = await reopenCollageProject(p.id);
-          if (ok) hideCollageWelcome();
-        });
-        card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del);
-        grid.appendChild(card);
+      // Populate the Album + Date filters from ALL projects (preserve the current selection).
+      const albumSel = document.getElementById('cws-filter-album');
+      const yearSel = document.getElementById('cws-filter-year');
+      if (albumSel) {
+        const albums = Array.from(new Set(list.map(cwsProjectAlbum).filter(Boolean))).sort();
+        albumSel.innerHTML = ''; const oA = document.createElement('option'); oA.value = ''; oA.textContent = 'All albums'; albumSel.appendChild(oA);
+        albums.forEach((a) => { const o = document.createElement('option'); o.value = a; o.textContent = a; albumSel.appendChild(o); });
+        albumSel.value = cwsFilterAlbum;
+        if (!albumSel.dataset.wired) { albumSel.dataset.wired = '1'; albumSel.addEventListener('change', () => { cwsFilterAlbum = albumSel.value; buildCwsRecent(); }); }
       }
+      if (yearSel) {
+        const years = Array.from(new Set(list.map((p) => { const d = cwsProjectDate(p); return d ? String(d.getFullYear()) : ''; }).filter(Boolean))).sort().reverse();
+        yearSel.innerHTML = ''; const oY = document.createElement('option'); oY.value = ''; oY.textContent = 'All dates'; yearSel.appendChild(oY);
+        years.forEach((y) => { const o = document.createElement('option'); o.value = y; o.textContent = y; yearSel.appendChild(o); });
+        yearSel.value = cwsFilterYear;
+        if (!yearSel.dataset.wired) { yearSel.dataset.wired = '1'; yearSel.addEventListener('change', () => { cwsFilterYear = yearSel.value; buildCwsRecent(); }); }
+      }
+      // Apply the filters.
+      const filtered = list.filter((p) => {
+        if (cwsFilterAlbum && cwsProjectAlbum(p).toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
+        if (cwsFilterYear) { const d = cwsProjectDate(p); if (!d || String(d.getFullYear()) !== cwsFilterYear) return false; }
+        return true;
+      });
+      if (empty) {
+        if (!list.length) { empty.style.display = 'block'; empty.textContent = 'Your collages save themselves as you work — they’ll show up here.'; }
+        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = 'No projects match these filters.'; }
+        else { empty.style.display = 'none'; }
+      }
+      // Group by month — newest month first, newest project first within a month, each month collapsible.
+      const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+      const groups = {};
+      filtered.forEach((p) => {
+        const d = cwsProjectDate(p);
+        const key = d ? (d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0')) : '0000-00';
+        const label = d ? (MN[d.getMonth()] + ' ' + d.getFullYear()) : 'Undated';
+        if (!groups[key]) groups[key] = { label: label, items: [] };
+        groups[key].items.push(p);
+      });
+      Object.keys(groups).sort().reverse().forEach((key) => {
+        const g = groups[key];
+        g.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+        const det = document.createElement('details'); det.className = 'cws-month'; det.open = true;
+        const sum = document.createElement('summary'); sum.className = 'cws-month-sum';
+        sum.innerHTML = '<span>' + g.label + '</span><span class="cws-month-count">' + g.items.length + '</span>';
+        det.appendChild(sum);
+        const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
+        g.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
+        det.appendChild(mgrid);
+        grid.appendChild(det);
+      });
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
       // once; hidden when there are none.
       const clearBtn = document.getElementById('cws-recent-clear');
@@ -13053,6 +13164,29 @@
       if (w) { w.classList.remove('active'); w.setAttribute('aria-hidden', 'true'); }
       // Restore the editing chrome (re-expand the menu for the work session).
       document.body.classList.remove('collage-panel-collapsed', 'cws-open');
+      try { setTimeout(maybeShowCollageWelcomeCard, 450); } catch (_) {}
+    }
+    // v3.0 (Terry) — a gentle one-card explainer of project-vs-photo, shown the first few times you enter
+    // the editor (the post-Fix AI card's philosophy): appears up to a few times so it sinks in, and "Got it"
+    // stops it for good. localStorage keeps the count + the dismissal.
+    function maybeShowCollageWelcomeCard() {
+      try {
+        if (document.body.classList.contains('cws-open')) return;
+        if (localStorage.getItem('pdr-collage-welcome-dismissed') === '1') return;
+        var n = parseInt(localStorage.getItem('pdr-collage-welcome-count') || '0', 10) || 0;
+        if (n >= 4) return;
+        if (document.getElementById('collage-welcome-card')) return;
+        localStorage.setItem('pdr-collage-welcome-count', String(n + 1));
+        var card = document.createElement('div');
+        card.id = 'collage-welcome-card'; card.className = 'collage-welcome-card';
+        card.innerHTML = '<div class="cwc-icon"><svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"></path><polyline points="8 8 12 4 16 8"></polyline><line x1="12" y1="4" x2="12" y2="16"></line></svg></div>'
+          + '<div class="cwc-body"><div class="cwc-title">Your work saves itself</div><div class="cwc-text">Reopen any project anytime from Collages. When it\'s ready, <b>Save</b> turns it into a finished photo in your library.</div></div>'
+          + '<button type="button" class="cwc-got">Got it</button>';
+        document.body.appendChild(card);
+        var hideT = setTimeout(function () { try { card.remove(); } catch (_) {} }, 14000);
+        card.querySelector('.cwc-got').addEventListener('click', function () { try { localStorage.setItem('pdr-collage-welcome-dismissed', '1'); } catch (_) {} try { clearTimeout(hideT); } catch (_) {} try { card.remove(); } catch (_) {} });
+        requestAnimationFrame(function () { card.classList.add('show'); });
+      } catch (_) {}
     }
 
     // v2.1 round 318 (Terry) — ONE collapse state for the collage panel, driven by the Enhance
@@ -15810,18 +15944,91 @@
         return layout;
     }
 
-    async function saveCollage(album) {
+    // v3.0 (Terry) — Save flow helpers: a brief toast, the Save/Update button state, the chevron
+    // menu (Save as new version / Save to another album), and the new-version action.
+    function collageToast(msg, ms) {
+      try {
+        var d = document.createElement('div');
+        d.textContent = msg;
+        d.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1f1d2e;color:#e9e6f7;padding:10px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 32px rgba(0,0,0,.5);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;max-width:82vw;text-align:center;';
+        document.body.appendChild(d);
+        setTimeout(function () { try { d.remove(); } catch (_) {} }, ms || 3600);
+      } catch (_) {}
+    }
+    // The album this collage saves into = the category part of its name (defaults to General).
+    function collageCurrentAlbum() {
+      try { var p = parseCollageName(currentCollageProjectName || ''); return (p && p.category) ? p.category : 'General'; } catch (_) { return 'General'; }
+    }
+    // Reflect whether this collage has been saved yet: "Save" (first time) vs "Update", and reveal the chevron.
+    function updateCollageSaveButton() {
+      try {
+        var saved = (collageExportedFileId != null) && !carouselMode;
+        var lbl = document.getElementById('collage-save-label');
+        if (lbl) lbl.textContent = carouselMode ? 'Save slides' : (saved ? 'Update' : 'Save');
+        var btn = document.getElementById('collage-save');
+        if (btn) btn.setAttribute('data-pdr-tooltip', saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library');
+        var more = document.getElementById('collage-save-more');
+        if (more) more.style.display = saved ? '' : 'none';
+      } catch (_) {}
+    }
+    // "Save as new version": bump the version in the name, then save a NEW file (the previous version
+    // stays in the album untouched). The project then tracks the new version.
+    function collageSaveNewVersion() {
+      try {
+        if (collageExportedFileId == null) { saveCollage(collageCurrentAlbum()); return; }
+        var p = parseCollageName(currentCollageProjectName || '');
+        var cur = p.version ? parseInt(p.version, 10) : 1;
+        if (!isFinite(cur) || cur < 1) cur = 1;
+        var next = cur + 1;
+        var nm = assembleCollageName(p.category, p.name, String(next));
+        // Unnamed / auto-named collage: keep a meaningful base so the version isn't a bare "v2".
+        if (!p.category && !p.name) { var _b = (currentCollageProjectName || 'Collage').replace(/\s*·\s*v\d+\s*$/i, '').trim() || 'Collage'; nm = _b + ' · v' + next; }
+        if (nm) { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
+        saveCollage(p.category || 'General', { action: 'version', version: next });
+      } catch (_) {}
+    }
+    // The chevron menu next to Save/Update.
+    function showCollageSaveMenu() {
+      try {
+        var existing = document.querySelector('.collage-save-menu'); if (existing) { existing.remove(); return; }
+        var anchor = document.getElementById('collage-save-more'); if (!anchor) return;
+        var menu = document.createElement('div'); menu.className = 'collage-save-menu';
+        var nextV = (function () { try { var p = parseCollageName(currentCollageProjectName || ''); var c = p.version ? parseInt(p.version, 10) : 1; if (!isFinite(c) || c < 1) c = 1; return c + 1; } catch (_) { return 2; } })();
+        function close() { try { menu.remove(); } catch (_) {} window.removeEventListener('mousedown', onDown, true); window.removeEventListener('keydown', onKey, true); }
+        function row(title, sub, fn) {
+          var b = document.createElement('button'); b.type = 'button';
+          b.innerHTML = title + '<span class="csm-sub">' + sub + '</span>';
+          b.addEventListener('click', function (e) { e.stopPropagation(); close(); try { fn(); } catch (_) {} });
+          menu.appendChild(b);
+        }
+        row('Save as new version', 'Keeps this one — makes a fresh v' + nextV, collageSaveNewVersion);
+        document.body.appendChild(menu);
+        var r = anchor.getBoundingClientRect();
+        var mw = menu.offsetWidth, mh = menu.offsetHeight;
+        var left = Math.max(8, Math.min(r.right - mw, window.innerWidth - mw - 8));
+        var top = r.top - mh - 6; if (top < 8) top = r.bottom + 6;
+        menu.style.left = left + 'px'; menu.style.top = top + 'px';
+        function onDown(e) { if (!menu.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) close(); }
+        function onKey(e) { if (e.key === 'Escape') { e.preventDefault(); close(); } }
+        setTimeout(function () { window.addEventListener('mousedown', onDown, true); window.addEventListener('keydown', onKey, true); }, 0);
+      } catch (_) {}
+    }
+
+    async function saveCollage(album, saveOpts) {
+      saveOpts = saveOpts || {};
       // v2.1 round 258 (Terry) — carousel P4: in carousel mode, Save exports the
       // whole carousel as numbered slides instead of one collage file.
       if (carouselMode) return saveCarousel();
       const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
       if (on.length === 0) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
       const saveBtn = document.getElementById('collage-save');
-      const originalHtml = saveBtn ? saveBtn.innerHTML : '';
-      if (saveBtn) { saveBtn.disabled = true; saveBtn.textContent = 'Saving…'; }
+      const saveLbl = document.getElementById('collage-save-label');
+      const originalLbl = saveLbl ? saveLbl.textContent : 'Save';
+      if (saveBtn) saveBtn.disabled = true;
+      if (saveLbl) saveLbl.textContent = 'Saving…';
       try {
         const layout = buildCollageLayout();
-        if (!layout) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; } return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
+        if (!layout) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); if (saveBtn) saveBtn.disabled = false; if (saveLbl) saveLbl.textContent = originalLbl; return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
         // v2.1 round 346 (Terry) — also send the editor SNAPSHOT + export dims so the save captures the
         // REAL collage render (WYSIWYG) instead of re-drawing it; `layout` stays for the fallback.
         const _exp = collageExportDims();
@@ -15829,30 +16036,35 @@
         // collageCaptionText var didn't make it into the file on Terry's export). name = pseudonym
         // (→ EXIF title shown by the filename); caption = the user's note (→ file caption).
         const _capNote = (function () { try { const _t = document.getElementById('collageCaptionInput'); return (_t && typeof _t.value === 'string') ? _t.value.trim() : (collageCaptionText || '').trim(); } catch (_) { return (collageCaptionText || '').trim(); } })();
-        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined, caption: _capNote || undefined });
+        const res = await window.pdr.collage.saveLayout(layout, { snapshot: snapshotCollage(), w: _exp.w, h: _exp.h, album: album || undefined, name: currentCollageProjectName || undefined, caption: _capNote || undefined, replaceFileId: (saveOpts.replaceFileId != null) ? saveOpts.replaceFileId : undefined });
         if (res && res.success && res.filePath) {
-          // v2.1 round 159 (Terry) — the collage now has its OWN window, so the
-          // saved result opens in the SEPARATE Viewer window and this collage
-          // window stays open for more edits. Re-enable Save + briefly confirm
-          // (the window no longer reloads, which previously reset the button).
           // v2.1 round 371 (Terry) — remember which photo this collage exported (set BEFORE opening the
-          // Viewer so the link lands the instant the export succeeds, not gated on openViewer) so the
-          // caption stays ONE shared thing across Collages / Viewer / Albums / Dates / S&D. Via autosave.
+          // Viewer) so the caption stays ONE shared thing across Collages / Viewer / Albums / Dates / S&D.
+          // v3.0 (Terry) — Update overwrites this same photo; New version makes a fresh one + repoints here.
           if (res.fileId != null) { collageExportedFileId = res.fileId; try { scheduleCollageAutosave(); } catch (_) {} }
-          const name = res.filename || res.filePath.split(/[\\/]/).pop();
-          await window.pdr.search.openViewer([res.filePath], [name], 0, false);
-          if (saveBtn) {
-            saveBtn.disabled = false;
-            saveBtn.innerHTML = '✓ Saved — opened in Viewer';
-            setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2200);
+          const _alb = album || 'General';
+          const _act = saveOpts.action || 'save';
+          const _where = 'Memories › Albums › PDR Collages › ' + _alb;
+          const _msg = (_act === 'update') ? ('Updated in ' + _where + ' — safe in your library')
+            : (_act === 'version') ? ('Saved v' + (saveOpts.version || '') + ' to ' + _where + ' — safe in your library')
+            : ('Saved to ' + _where + ' — safe in your library');
+          collageToast(_msg);
+          // First save + New version open the finished photo in the Viewer; a quick Update stays in the editor.
+          if (_act !== 'update') {
+            const name = res.filename || res.filePath.split(/[\\/]/).pop();
+            try { await window.pdr.search.openViewer([res.filePath], [name], 0, false); } catch (_) {}
           }
+          if (saveBtn) saveBtn.disabled = false;
+          if (saveLbl) saveLbl.textContent = (_act === 'update') ? '✓ Updated' : '✓ Saved';
+          try { var _more = document.getElementById('collage-save-more'); if (_more) _more.style.display = ''; } catch (_) {}
+          setTimeout(() => { try { updateCollageSaveButton(); } catch (_) {} }, 2200);
         } else {
           await showPdrAlert({ title: 'Save failed', body: 'Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
-          if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+          if (saveBtn) saveBtn.disabled = false; if (saveLbl) saveLbl.textContent = originalLbl;
         }
       } catch (err) {
         await showPdrAlert({ title: 'Save failed', body: 'Collage save error:\n\n' + (err && err.message ? err.message : String(err)) });  // v2.1 round 273 (Terry) — styled alert, no native dialog
-        if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
+        if (saveBtn) saveBtn.disabled = false; if (saveLbl) saveLbl.textContent = originalLbl;
       }
     }
 
@@ -21435,12 +21647,20 @@ function zoomTo(newZoom, centreX, centreY) {
       }
       const collageSaveBtn = document.getElementById('collage-save');
       if (collageSaveBtn) collageSaveBtn.addEventListener('click', function () {
-        // v2.1 round 353 (Terry) — Export opens the naming wizard (pick an Album), then exports into it.
-        // Carousels keep their direct export (they file into "PDR Carousels", not the album picker).
+        // v3.0 (Terry) — first time: the naming wizard (pick an Album, then Save). Once it's been saved,
+        // the button reads "Update" → re-save over the SAME library photo, no wizard. Carousels keep their
+        // direct slide export.
         if (carouselMode) { if (collageSaveFn) collageSaveFn(); return; }
-        try { if (!collageProjectHasContent()) { showPdrAlert({ title: 'Nothing to export', body: 'Add at least one photo to the collage first.' }); return; } } catch (_) {}
-        try { openCollageNameWizard({ exportMode: true }); } catch (_) { if (collageSaveFn) collageSaveFn(); }
+        try { if (!collageProjectHasContent()) { showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); return; } } catch (_) {}
+        if (collageExportedFileId != null) {
+          try { saveCollage(collageCurrentAlbum(), { action: 'update', replaceFileId: collageExportedFileId }); } catch (_) {}
+        } else {
+          try { openCollageNameWizard({ exportMode: true }); } catch (_) { if (collageSaveFn) collageSaveFn(); }
+        }
       });
+      // v3.0 (Terry) — the chevron next to Save/Update: Save as new version / Save to another album.
+      const collageSaveMoreBtn = document.getElementById('collage-save-more');
+      if (collageSaveMoreBtn) collageSaveMoreBtn.addEventListener('click', function (e) { e.stopPropagation(); try { showCollageSaveMenu(); } catch (_) {} });
       // v2.1 round 323 (Terry) — "Save as template" → store the current design as a reusable template.
       const collageTemplateBtn = document.getElementById('collage-save-template');
       if (collageTemplateBtn) collageTemplateBtn.addEventListener('click', function () { try { saveAsTemplate(); } catch (_) {} });
