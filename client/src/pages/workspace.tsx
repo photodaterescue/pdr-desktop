@@ -11685,6 +11685,106 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionContent>
                   </AccordionItem>
 
+                  {/* v3.0 (Terry) — broader refresh: the collage editor in depth. */}
+                  <AccordionItem value="collages-editor" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Collages &mdash; the editor
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Collages is a built-in design studio &mdash; turn your photos into shareable layouts without leaving PDR. Every collage <span className="font-medium text-foreground">auto-saves as a project</span> you can reopen; <span className="font-medium text-foreground">Save</span> turns the finished design into a real photo in your library (the Collages section above has the full Save / Update / new-version story).</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Starting one</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Blank canvas</span> &mdash; pick a size (square, story, poster and more)</li>
+                            <li><span className="font-medium text-foreground">Template</span> &mdash; a ready grid (two-up, four, six, nine&hellip;) you fill with your photos</li>
+                            <li><span className="font-medium text-foreground">Carousel</span> &mdash; a multi-page Instagram layout that exports as numbered slides</li>
+                            <li>Or select photos anywhere in PDR and send them straight into a new collage</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Building the layout</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Add photos</span> from your library, or drag one from the filmstrip onto an empty <span className="font-medium text-foreground">frame</span></li>
+                            <li>Drag tiles to arrange &mdash; alignment guides and spacing badges snap things into place (the way Canva does)</li>
+                            <li>Select several at once (marquee-drag or Ctrl+click) to move or align them together</li>
+                            <li><span className="font-medium text-foreground">Right-click any tile</span> for copy / paste, align to page, bring-to-front / send-to-back, replace, rotate, and a Photo Info panel</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Making it look good</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li><span className="font-medium text-foreground">Per-photo enhance</span> &mdash; brightness, contrast, colour / tone, vignette, grain, curved corners, blur</li>
+                            <li><span className="font-medium text-foreground">Effects</span> &mdash; glow, drop-shadow / 3-D lift, and blend</li>
+                            <li><span className="font-medium text-foreground">Background</span> &mdash; a solid colour, a gradient, a texture, or one of your own photos</li>
+                            <li><span className="font-medium text-foreground">Text &amp; emojis</span> &mdash; captions in real fonts with Instagram-style effects, plus emoji stickers</li>
+                            <li>A <span className="font-medium text-foreground">caption</span> on a collage carries through to the saved photo everywhere in PDR</li>
+                          </ul>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* v3.0 (Terry) — broader refresh: Sharing. */}
+                  <AccordionItem value="sharing" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Sharing your photos
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Getting a photo (or a finished collage) out of PDR is all <span className="font-medium text-foreground">local and direct</span> &mdash; nothing routes through the cloud, and your originals never leave your machine unless you send them.</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Drag and drop</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>Drag one or several photos straight out of PDR into WhatsApp, an email, Photoshop, or any folder &mdash; the receiver gets the real files</li>
+                            <li>A <span className="font-medium text-foreground">&ldquo;Share (N)&rdquo;</span> badge shows how many you&apos;re carrying as you drag</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Send to Phone</p>
+                          <p>PDR shows a Wi-Fi <span className="font-medium text-foreground">QR code</span> &mdash; scan it with a phone on the same network and the photos transfer across. No cable, no cloud, no account.</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Print</p>
+                          <p>Send to a local or network printer, or choose <span className="font-medium text-foreground">Print to PDF</span> for a print-ready file.</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Copy</p>
+                          <p>Copy a photo to the clipboard to paste it straight into another app.</p>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
+                  {/* v3.0 (Terry) — broader refresh: Screen capture. */}
+                  <AccordionItem value="screen-capture" className="border border-primary/40 dark:border-primary/40 rounded-lg px-4 bg-secondary/30 hover:bg-secondary/50 hover:border-primary/60 transition-all duration-200">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      Screen capture
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <div className="space-y-6 text-sm text-muted-foreground leading-relaxed">
+                        <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
+                          <p>Grab a <span className="font-medium text-foreground">screenshot or screen recording</span> straight into your library &mdash; a receipt, a chat, a moment from a video call &mdash; filed in Memories like any other photo, dated when you grabbed it.</p>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">How to capture</p>
+                          <ul className="list-disc ml-5 space-y-1">
+                            <li>The <span className="font-medium text-foreground">camera icon</span> in the title bar</li>
+                            <li>Or the <span className="font-medium text-foreground">Ctrl+Shift+S</span> shortcut from anywhere &mdash; remap it under <span className="font-medium text-foreground">Settings &rarr; Capture</span> if it clashes with another app</li>
+                          </ul>
+                        </div>
+                        <div>
+                          <p className="font-medium text-foreground mb-2">Where it lands</p>
+                          <p>In your library, alongside your photos in Memories &mdash; searchable and shareable like everything else. (Windows first; more platforms to follow.)</p>
+                        </div>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+
                 </Accordion>
               </div>
 

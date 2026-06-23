@@ -452,6 +452,31 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                       <dt className="font-medium text-foreground">Update vs Save as new version</dt>
                       <dd className="text-muted-foreground mt-0.5"><span className="font-medium text-foreground">Update</span> re-saves over the same library photo (no duplicates). <span className="font-medium text-foreground">Save as new version</span> keeps the old one and adds a fresh copy (v2, v3…).</dd>
                     </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Carousel</dt>
+                      <dd className="text-muted-foreground mt-0.5">A multi-page collage (Instagram&apos;s swipeable format) — you build the pages side by side and it exports as numbered slides.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Template</dt>
+                      <dd className="text-muted-foreground mt-0.5">A reusable layout (e.g. a four- or nine-photo grid). Pick one on the Collages start screen and drop your own photos into the empty frames.</dd>
+                    </div>
+                  </dl>
+                </div>
+                <div>
+                  <p className="font-medium text-foreground mb-2">Sharing &amp; capture</p>
+                  <dl className="space-y-2">
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Send to Phone</dt>
+                      <dd className="text-muted-foreground mt-0.5">Transfers selected photos to a phone on the same Wi-Fi by showing a QR code to scan — no cable, no cloud, no account.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Print / Print to PDF</dt>
+                      <dd className="text-muted-foreground mt-0.5">Send a photo to a local or network printer, or save a print-ready PDF.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">Screen capture</dt>
+                      <dd className="text-muted-foreground mt-0.5">Grab a screenshot or screen recording straight into your library (the camera icon in the title bar, or Ctrl+Shift+S) so it&apos;s filed in Memories like any photo.</dd>
+                    </div>
                   </dl>
                 </div>
               </div>
@@ -473,6 +498,11 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                   <p className="font-medium text-foreground text-sm mb-1">Where do my collages go when I save one?</p>
                   <p className="text-sm text-muted-foreground">Into your library, as a normal photo — <strong className="text-foreground font-medium">Memories › Albums › PDR Collages › the album you chose</strong> — so you can view, share and print it like any other. The editable design also stays under <strong className="text-foreground font-medium">Your Collage Projects</strong> on the Collages screen, so you can reopen and tweak it any time. &ldquo;Update&rdquo; re-saves over the same photo; &ldquo;Save as new version&rdquo; keeps the old one and adds a fresh copy.</p>
+                </div>
+
+                <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                  <p className="font-medium text-foreground text-sm mb-1">How do I get a photo out of PDR to share it?</p>
+                  <p className="text-sm text-muted-foreground">Several ways, all local: <strong className="text-foreground font-medium">drag</strong> one or more photos straight into another app or a folder; <strong className="text-foreground font-medium">Send to Phone</strong> shows a Wi-Fi QR code to scan from a phone on the same network; <strong className="text-foreground font-medium">Print</strong> goes to a printer or a PDF; and <strong className="text-foreground font-medium">Copy</strong> puts it on the clipboard. Nothing routes through the cloud.</p>
                 </div>
 
                 <div className="p-4 bg-secondary/30 border border-border rounded-lg">
