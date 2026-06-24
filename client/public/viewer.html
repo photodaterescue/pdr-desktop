@@ -10381,7 +10381,8 @@
         // Text is centre-anchored, but xFrac/yFrac still move linearly with the
         // element rect, so adding the px snap delta as a fraction works the same.
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
-        if (ev.altKey) { hideCollageSnapGuides(); return; }
+        // v3.0 (Terry) — under ALT still SHOW the gap numbers (snap + guides off only), for precise free placement.
+        if (ev.altKey) { hideCollageSnapGuides(); try { showCollageMeasurements(layer); } catch (_) {} return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(layer.el, collageCanvasEl, 14);   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate.
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
@@ -11305,7 +11306,9 @@
         // axis onto the nearest alignment line within threshold. ALT = free drop
         // (no snap, no guides). One undo step still: we only adjust xFrac/yFrac
         // inside this existing begin/commit gesture — no extra snapshot.
-        if (ev.altKey) { hideCollageSnapGuides(); return; }
+        // v3.0 (Terry) — ALT = free drop (snap bypassed), but STILL show the gap numbers so you can
+        // place the tile precisely by eye; only the snap + its gold guides are suppressed, not the readout.
+        if (ev.altKey) { hideCollageSnapGuides(); try { showCollageMeasurements(it); } catch (_) {} return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
