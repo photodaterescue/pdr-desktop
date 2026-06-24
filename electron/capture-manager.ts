@@ -2997,8 +2997,15 @@ function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | n
     const start = (s.startMs / 1000).toFixed(3);
     // Open segment (never unblurred) runs to end-of-clip.
     const end = s.endMs === null ? '999999' : (s.endMs / 1000).toFixed(3);
+    // v3.0 round 417 (Terry) — STRONG, smooth obscuring (was boxblur=10, which
+    // left text faintly legible — read as "not covered"). Downscale the region
+    // to ~1/20, upscale it back smoothly, then a light boxblur: content is fully
+    // hidden at any region size. Position is unchanged (verified: the blur lands
+    // exactly on the drawn box).
+    const dw = Math.max(1, Math.ceil(s.width / 20));
+    const dh = Math.max(1, Math.ceil(s.height / 20));
     parts.push(`[${cur}]split=2[a${i}][b${i}]`);
-    parts.push(`[b${i}]crop=${s.width}:${s.height}:${s.x}:${s.y},boxblur=10[bb${i}]`);
+    parts.push(`[b${i}]crop=${s.width}:${s.height}:${s.x}:${s.y},scale=${dw}:${dh},scale=${s.width}:${s.height},boxblur=10[bb${i}]`);
     parts.push(`[a${i}][bb${i}]overlay=${s.x}:${s.y}:enable='between(t,${start},${end})'[v${i}]`);
     cur = `v${i}`;
   });
