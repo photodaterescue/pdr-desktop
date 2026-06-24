@@ -69,6 +69,26 @@
     0%, 100% { opacity: 1; }
     50% { opacity: 0.35; }
   }
+  /* v3.0 round 413 (Terry) — PAUSED must be unmistakable (esp. during Blur
+     config, which auto-pauses): the Resume button glows + pulses gold, the
+     timer pulses gold, and the status reads "Paused". */
+  #pause.pausing {
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.85);
+    animation: pausePulse 1.3s ease-in-out infinite;
+  }
+  @keyframes pausePulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(212, 175, 55, 0); }
+    50% { box-shadow: 0 0 9px 2px rgba(212, 175, 55, 0.8); }
+  }
+  #time.pausing {
+    color: #f5d98a;
+    animation: pulse 1.3s ease-in-out infinite;
+  }
+  #size.paused-status {
+    color: #f5d98a;
+    font-weight: 600;
+  }
   #time {
     font-variant-numeric: tabular-nums;
     min-width: 40px;
@@ -105,28 +125,30 @@
      button out of the window). */
   #pause { width: 62px; padding: 0; }
   #mute { width: 60px; padding: 0; display: none; }
+  /* v3.0 round 413 (Terry) — EVERY engaged/active button is gold + gold
+     text, uniform across the whole bar (Cam/Mic were blue, muted was red —
+     the mix was confusing). State that used to be colour-coded (a muted mic)
+     now reads from the button's LABEL, not its colour. */
   #mute.muted {
-    color: #f2b8ba;
-    border-color: rgba(229, 72, 77, 0.55);
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
   }
   #blur.active {
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
   #cam.active {
-    color: #a8d8ff;
-    border-color: rgba(110, 168, 254, 0.6);
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
   }
-  /* v3.0 round 410 — Mic (voiceover). Same family as Cam: blue 'on' when armed,
-     red when live-muted. */
   #mic { width: 56px; padding: 0; }
   #mic.on {
-    color: #a8d8ff;
-    border-color: rgba(110, 168, 254, 0.6);
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
   }
   #mic.muted {
-    color: #f2b8ba;
-    border-color: rgba(229, 72, 77, 0.55);
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
   }
   #micSel {
     -webkit-app-region: no-drag;
@@ -415,6 +437,12 @@
     pauseBtn.textContent = 'Resume';
     pauseBtn.title = 'Resume recording';
     dot.classList.add('paused');
+    // v3.0 round 413 (Terry) — make PAUSED obvious: pulse Resume + the timer
+    // gold and flag the status, so blur-config can't be mistaken for live.
+    pauseBtn.classList.add('pausing');
+    timeEl.classList.add('pausing');
+    sizeEl.textContent = 'Paused';
+    sizeEl.classList.add('paused-status');
   }
   function doResume() {
     if (!recorder || !paused || recorder.state !== 'paused') return;
@@ -424,6 +452,11 @@
     pauseBtn.textContent = 'Pause';
     pauseBtn.title = 'Pause recording';
     dot.classList.remove('paused');
+    // v3.0 round 413 — clear the paused pulse + restore the live size readout.
+    pauseBtn.classList.remove('pausing');
+    timeEl.classList.remove('pausing');
+    sizeEl.classList.remove('paused-status');
+    sizeEl.textContent = fmtBytes(capturedBytes);
   }
 
   async function start(init) {
@@ -745,6 +778,42 @@
   });
   stopBtn.addEventListener('click', function () { finish(false); });
   cancelBtn.addEventListener('click', function () { finish(true); });
+
+  // v3.0 round 413 (Terry) — PDR-style tooltips. The bar is its own tiny window
+  // so a bubble can't overflow above the buttons; main shows a separate tooltip
+  // window just above the hovered control. We read each control's existing
+  // title, suppress the native tooltip (remove it while hovering, restore on
+  // leave) and forward the text + the control's centre/top to main.
+  (function () {
+    if (!(pdr && pdr.capture && pdr.capture.recordTip)) return;
+    var tipTimer = null, tipEl = null;
+    function clearTip() {
+      if (tipTimer) { clearTimeout(tipTimer); tipTimer = null; }
+      if (tipEl) {
+        if (tipEl._tipText != null && !tipEl.hasAttribute('title')) tipEl.setAttribute('title', tipEl._tipText);
+        tipEl._tipText = null; tipEl = null;
+      }
+      try { pdr.capture.recordTip({ text: null }); } catch (e) {}
+    }
+    allButtons.forEach(function (el) {
+      if (!el) return;
+      el.addEventListener('mouseenter', function () {
+        var text = el.getAttribute('title') || el.getAttribute('aria-label');
+        if (!text) return;
+        clearTip();
+        tipEl = el;
+        tipEl._tipText = el.getAttribute('title');
+        if (tipEl._tipText != null) el.removeAttribute('title');   // suppress the native tooltip
+        tipTimer = setTimeout(function () {
+          tipTimer = null;
+          var r = el.getBoundingClientRect();
+          try { pdr.capture.recordTip({ text: text, x: r.left + r.width / 2, y: r.top }); } catch (e) {}
+        }, 360);
+      });
+      el.addEventListener('mouseleave', clearTip);
+      el.addEventListener('click', clearTip);
+    });
+  })();
 
   if (pdr && pdr.capture) {
     if (pdr.capture.onRecordInit) {

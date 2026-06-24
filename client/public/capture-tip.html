@@ -1,0 +1,63 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!--
+  v3.0 round 413 (Terry) — PDR-style tooltip for the screen-recorder bar.
+  The bar is its own 64px chromeless window, so a tooltip bubble can't
+  overflow above its buttons. This is a separate transparent, click-through,
+  content-protected window the main process positions just above whichever
+  bar control the cursor is on. Matches PDR's dark tooltip look.
+  Self-contained vanilla HTML/JS — OS chrome, not app UI.
+-->
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: transparent;
+    -webkit-user-select: none; user-select: none;
+    font: 500 12px/1.4 system-ui, 'Segoe UI', sans-serif;
+  }
+  /* The bubble + caret sit at the BOTTOM-CENTRE of the window, so the window's
+     bottom edge lands just above the hovered button and the caret points at it. */
+  #wrap {
+    position: absolute; left: 0; right: 0; bottom: 0;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  #wrap.hidden { display: none; }
+  #tip {
+    max-width: 250px;
+    background: #1f1f24;
+    color: #fff;
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    border-radius: 8px;
+    padding: 7px 10px;
+    text-align: center;
+    white-space: normal;
+    box-shadow: 0 8px 22px rgba(0, 0, 0, 0.5);
+  }
+  #caret {
+    width: 0; height: 0; margin-top: -1px;
+    border-left: 6px solid transparent;
+    border-right: 6px solid transparent;
+    border-top: 6px solid #1f1f24;
+    filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.35));
+  }
+</style>
+</head>
+<body>
+  <div id="wrap" class="hidden">
+    <div id="tip"></div>
+    <div id="caret"></div>
+  </div>
+  <script>
+    var wrap = document.getElementById('wrap');
+    var tip = document.getElementById('tip');
+    if (window.pdr && window.pdr.capture && window.pdr.capture.onTip) {
+      window.pdr.capture.onTip(function (d) {
+        if (d && d.text) { tip.textContent = d.text; wrap.classList.remove('hidden'); }
+        else { wrap.classList.add('hidden'); }
+      });
+    }
+  </script>
+</body>
+</html>

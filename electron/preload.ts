@@ -447,6 +447,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:ripple-click', handler);
       return () => ipcRenderer.removeListener('capture:ripple-click', handler);
     },
+    // v3.0 round 413 (Terry) — PDR-style tooltips on the bar. The widget asks
+    // main to show a tooltip (text + the hovered control's centre, in widget
+    // coords) above the bar; null text hides it. capture-tip.html receives the
+    // text via onTip.
+    recordTip: (info: { text: string | null; x?: number; y?: number }) => ipcRenderer.send('capture:record-tip', info),
+    onTip: (callback: (d: { text: string | null }) => void) => {
+      const handler = (_event: any, d: any) => callback(d);
+      ipcRenderer.on('capture:tip-text', handler);
+      return () => ipcRenderer.removeListener('capture:tip-text', handler);
+    },
     // Round 130 — re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
     // Round 131 — change the recorded screen from the bar's dropdown.

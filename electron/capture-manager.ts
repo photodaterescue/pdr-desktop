@@ -2721,6 +2721,7 @@ function ffmpegPath(): string | null {
 function teardownRecording(opts: { discardTemp: boolean }): void {
   closeCamBubble();
   closeRippleOverlay();
+  closeTooltipWindow();
   closeRegionMarker();
   unregisterCamHotkey();
   recordRegionCrop = null;
@@ -2890,9 +2891,13 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       try { return getSettings().captureCamEnabled === true; } catch { return false; }
     })();
     if (camEnabled) createCamBubble(display);
-    // v3.0 round 411 — click-ripple overlay if enabled.
-    const rippleEnabled = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
-    if (rippleEnabled) createRippleOverlay(display);
+    // v3.0 round 413 (Terry) — the click-ripple overlay + its global mouse
+    // hook are DEFERRED to capture:record-started (NOT armed). A global
+    // low-level input hook plus a fullscreen transparent always-on-top
+    // overlay running during the armed/setup phase needlessly loaded the
+    // system ("lag when the bar appears, before recording"). Ripples only
+    // matter inside the footage, so they now spin up the instant Record is
+    // pressed and tear down on stop/cancel.
     registerCamHotkey();
     log.info(`[capture] recording ARMED on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'}, full screen) — waiting for Record`);
     return { success: true };
@@ -3130,6 +3135,7 @@ async function finalizeRecording(): Promise<void> {
   recordRegionCssRect = null;
   closeCamBubble();
   closeRippleOverlay();
+  closeTooltipWindow();
   closeRegionMarker();
   unregisterCamHotkey();
   // Close the widget + stream, keep the temp file.
@@ -3209,6 +3215,10 @@ ipcMain.on('capture:record-started', (event, info: { width?: number; height?: nu
       if (recordRegionCrop) persistBlurSidecar();
       recordingState = 'recording';
       broadcastRecordingState();
+      // v3.0 round 413 (Terry) — NOW start the click-ripple overlay + global
+      // hook (deferred from arm, so the armed/setup phase stays lag-free).
+      const rippleOn = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
+      if (rippleOn && recordDisplay) createRippleOverlay(recordDisplay);
     }
     log.info(`[capture] recorder running ${recordMeta.width}×${recordMeta.height}, audio: ${recordMeta.hasAudio ? 'yes' : 'no'}`);
   }
@@ -3527,6 +3537,76 @@ function closeRippleOverlay(): void {
   rippleWindow = null;
 }
 
+// ─── v3.0 round 413 (Terry): PDR-style tooltips for the recorder bar ─────────
+// The bar is its own 64px chromeless window, so a tooltip bubble can't overflow
+// above its buttons. This separate transparent, click-through, content-protected
+// window (so it's never in the footage) is positioned just above whichever bar
+// control the cursor is on. Created lazily on first hover; closed on teardown.
+let tooltipWindow: BrowserWindow | null = null;
+let tooltipReady = false;
+let tooltipPending: { text: string; x: number; y: number } | null = null;
+const TIP_W = 300, TIP_H = 104;
+
+function ensureTooltipWindow(): void {
+  if (tooltipWindow && !tooltipWindow.isDestroyed()) return;
+  tooltipReady = false;
+  const win = new BrowserWindow({
+    width: TIP_W, height: TIP_H, show: false, frame: false, transparent: true, hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  tooltipWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  try { win.setIgnoreMouseEvents(true); } catch { /* non-fatal */ }   // never intercept the user's clicks
+  try { win.setContentProtection(true); } catch { /* non-fatal */ }   // never appears in the recording
+  win.setMenu(null);
+  win.on('closed', () => {
+    if (tooltipWindow === win) { tooltipWindow = null; tooltipReady = false; tooltipPending = null; }
+  });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    tooltipReady = true;
+    if (tooltipPending) { const p = tooltipPending; tooltipPending = null; showRecorderTip(p.text, p.x, p.y); }
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-tip.html'));
+}
+function showRecorderTip(text: string, localX: number, localY: number): void {
+  if (!tooltipWindow || tooltipWindow.isDestroyed()) return;
+  if (!recordWidget || recordWidget.isDestroyed()) return;
+  const wb = recordWidget.getBounds();
+  const disp = recordDisplay ? recordDisplay.bounds : screen.getPrimaryDisplay().bounds;
+  // localX = the control's centre, localY = its top, both in widget-window coords.
+  let x = Math.round(wb.x + localX - TIP_W / 2);
+  let y = Math.round(wb.y + localY - TIP_H);
+  x = Math.max(disp.x, Math.min(x, disp.x + disp.width - TIP_W));
+  y = Math.max(disp.y, y);
+  try { tooltipWindow.setBounds({ x, y, width: TIP_W, height: TIP_H }); } catch { /* non-fatal */ }
+  try { tooltipWindow.webContents.send('capture:tip-text', { text }); } catch { /* non-fatal */ }
+  try { tooltipWindow.showInactive(); } catch { /* non-fatal */ }
+}
+function hideRecorderTip(): void {
+  tooltipPending = null;
+  if (tooltipWindow && !tooltipWindow.isDestroyed()) { try { tooltipWindow.hide(); } catch { /* non-fatal */ } }
+}
+function closeTooltipWindow(): void {
+  tooltipPending = null;
+  if (tooltipWindow && !tooltipWindow.isDestroyed()) { try { tooltipWindow.close(); } catch { /* non-fatal */ } }
+  tooltipWindow = null;
+}
+ipcMain.on('capture:record-tip', (event, info: { text?: string | null; x?: number; y?: number }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const text = info?.text;
+  if (!text) { hideRecorderTip(); return; }
+  ensureTooltipWindow();
+  if (tooltipReady) showRecorderTip(text, info?.x ?? 0, info?.y ?? 0);
+  else tooltipPending = { text, x: info?.x ?? 0, y: info?.y ?? 0 };
+});
+
 /** Show/hide the bubble with the page-side fade. Creates it on first
  *  toggle if the recording started without one. */
 function toggleCamBubble(): void {
@@ -3736,8 +3816,11 @@ ipcMain.on('capture:record-ripple-toggle', (event, info: { enabled?: boolean }) 
   if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
   const on = info?.enabled === true;
   try { setSetting('captureRippleEnabled', on); } catch { /* non-fatal */ }
-  if (on && recordDisplay) createRippleOverlay(recordDisplay);
-  else closeRippleOverlay();
+  // v3.0 round 413 (Terry) — only spin up the overlay/hook if recording is
+  // actually underway; while armed we just persist the choice (record-started
+  // honours it) so the setup phase never carries the hook's overhead.
+  if (on && recordDisplay && recordingState === 'recording') createRippleOverlay(recordDisplay);
+  else if (!on) closeRippleOverlay();
   for (const win of BrowserWindow.getAllWindows()) {
     if (win.isDestroyed()) continue;
     try { win.webContents.send('settings:changed', { key: 'captureRippleEnabled', value: on }); } catch { /* non-fatal */ }
