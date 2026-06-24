@@ -3782,17 +3782,20 @@
        that sits over the canvas (positioned by JS within the stage); grabbable on its
        whole face. z-index above the canvas + tiles so it's always catchable while
        editing the background. Hidden (display:none) unless radial + bg-focused. */
-    #collage-grad-epicentre {
+    #collage-grad-epicentre, #collage-bgfx-epicentre {
       position: absolute; width: 22px; height: 22px; margin: -11px 0 0 -11px;
       border-radius: 50%; cursor: grab; z-index: 60; touch-action: none;
       background: radial-gradient(circle, rgba(255,255,255,0.95) 0 35%, rgba(255,255,255,0) 38%);
       box-shadow: 0 0 0 2px rgba(0,0,0,0.55), 0 0 0 4px rgba(254,194,66,0.95), 0 1px 6px rgba(0,0,0,0.5);
     }
-    #collage-grad-epicentre:active { cursor: grabbing; }
-    #collage-grad-epicentre::after {
+    #collage-grad-epicentre:active, #collage-bgfx-epicentre:active { cursor: grabbing; }
+    #collage-grad-epicentre::after, #collage-bgfx-epicentre::after {
       content: ''; position: absolute; inset: 7px; border-radius: 50%;
       background: #FEC242; box-shadow: 0 0 0 1px rgba(0,0,0,0.5);
     }
+    /* v3.0 (Terry) — the glow/blur epicentre uses a BLUE accent so it's distinct from the gradient's gold. */
+    #collage-bgfx-epicentre { box-shadow: 0 0 0 2px rgba(0,0,0,0.55), 0 0 0 4px rgba(58,160,255,0.95), 0 1px 6px rgba(0,0,0,0.5); }
+    #collage-bgfx-epicentre::after { background: #3aa0ff; }
     /* v2.1 round 143 (Terry) — collapsible sections (chevron) to keep
        the Enhance panel from getting "chocka block". */
     .enhance-collapse { padding: 0; }
@@ -4025,6 +4028,8 @@
            element; positioned over the canvas by JS. pointer-events toggle with
            visibility so it never blocks tile/canvas clicks when hidden. -->
       <div id="collage-grad-epicentre" aria-hidden="true" style="display:none"></div>
+      <!-- v3.0 (Terry) — Texture & Effects: the glow/blur RADIAL epicentre handle (blue), mirroring the gradient's. -->
+      <div id="collage-bgfx-epicentre" aria-hidden="true" style="display:none"></div>
       <!-- v2.1 round 317 (Terry) — Collages Welcome Screen (CWS). A Word-style start screen
            that fills ONLY the stage (the canvas area). The titlebar (toolbar) above, the
            right menu (collapsed) and the empty filmstrip below all stay framing it. Shown on a
@@ -5797,6 +5802,7 @@
       collageCanvasEl.style.transform =
         'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')';
       try { positionGradEpicentre(); } catch (_) {}
+      try { positionBgFxEpicentre(); } catch (_) {}
       // v2.1 round 266 (Terry) — Phase 4: re-glue the floating selection chrome AFTER the
       // canvas transform is written, so pan/zoom (incl. Behaviour A below-fit centring)
       // keep the ring/handles on the tile. positionSelectionChrome reads the LIVE rect.
@@ -14519,7 +14525,7 @@
     // slider set that edits whichever chip is SELECTED (collageBgFxSel). Both chips can be ON at once;
     // the gold outline marks the one being configured. (renderCollageBgElementsList keeps its name so
     // the restore + panel-setup call-sites are unchanged.)
-    function buildCollageBgElementsUi() { renderCollageBgElementsList(); }
+    function buildCollageBgElementsUi() { try { wireBgFxEpicentre(); } catch (_) {} renderCollageBgElementsList(); }
     function renderCollageBgElementsList() {
       var f = ensureCollageBgFx();
       var chips = document.getElementById('collage-bgfx-chips');
@@ -14584,14 +14590,21 @@
         inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
         row.appendChild(lr); row.appendChild(inp); ctrls.appendChild(row);
       };
+      // v3.0 (Terry) — RADIAL is positioned by dragging the blue epicentre dot on the canvas (same as
+      // Blended radial), so no Position X/Y sliders here; the radius slider is "Strength" to match Blended.
+      if (sel.shape !== 'linear' && sel.on) {
+        var ph = document.createElement('div'); ph.className = 'ec-grad-hint'; ph.style.margin = '2px 0 6px';
+        ph.textContent = 'Drag the blue dot on the canvas to position this circle.';
+        ctrls.appendChild(ph);
+      }
       if (sel.shape === 'linear') { mk('Angle', 'angle', 0, 360, false, 135); mk('Blend', 'blend', 0, 100, false, 50); }
-      else { mk('Size', 'size', 5, 150, false, 55); mk('Stretch', 'stretch', -100, 100, false, 0); }
+      else { mk('Strength', 'size', 5, 150, false, 55); mk('Stretch', 'stretch', -100, 100, false, 0); }
       mk('Opacity', 'opacity', 0, 100, false, 85);
-      if (sel.shape !== 'linear') { mk('Position X', 'posX', 0, 100, true, 0.5); mk('Position Y', 'posY', 0, 100, true, 0.45); }
       mk('Blur', 'blur', 0, 100, false, 0);
       mk('Grain', 'grain', 0, 100, false, 0);
       mk('Grain size', 'grainSize', 1, 100, false, 50);
       mk('Pixelate', 'pixelate', 0, 100, false, 0);
+      try { updateBgFxEpicentreVisibility(); } catch (_) {}
     }
     // v3.0 (Terry) — a small row of the Photo + Transparent base options, shown at the TOP of BOTH
     // Solid and Blended (Terry: they belong to either base). Stateless actions; ids stripped so the
@@ -14653,6 +14666,7 @@
       // bg repaint (covers canvas resize, gradient kind/stop changes, transparent
       // toggles). It self-hides when not radial / not bg-focused.
       try { updateGradEpicentreVisibility(); } catch (_) {}
+      try { updateBgFxEpicentreVisibility(); } catch (_) {}
       if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
       // v2.1 round 244 (Terry) — TEXTURE: paint the close-up MATERIAL SURFACE as ONE
       // continuous full-canvas image (NOT tiled). The surface SVG uses a FIXED viewBox
@@ -15722,6 +15736,77 @@
         e.stopPropagation();   // never let the stage/canvas deselect or select-bg fire
         dragging = true;
         preSnap = snapshotCollage();   // snapshot before the move (begin one undo step)
+        try { document.body.style.userSelect = 'none'; } catch (_) {}
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+      });
+    }
+    // v3.0 (Terry) — Texture & Effects RADIAL: a draggable epicentre on the canvas (blue), exactly like the
+    // Blended-radial gradient's, that positions the SELECTED glow/blur (writes its posX/posY). Mirrors
+    // gradEpicentre*: shows when the bg is selected + the selected element is on + radial.
+    function bgFxEpicentreShouldShow() {
+      var grp = document.getElementById('collage-bgel-grp');
+      var sec = document.getElementById('collage-bg-collapse');
+      if (!grp || !grp.open || !sec || !sec.open) return false;   // only while the Texture & Effects panel is open
+      var f = (typeof collageBgFx !== 'undefined') ? collageBgFx : null;
+      var el = f ? f[collageBgFxSel] : null;
+      return !!(el && el.on && el.shape === 'radial');
+    }
+    function positionBgFxEpicentre() {
+      var dot = document.getElementById('collage-bgfx-epicentre');
+      if (!dot || dot.style.display === 'none') return;
+      if (!collageCanvasEl || !collageStageEl) return;
+      var f = collageBgFx; var el = f ? f[collageBgFxSel] : null; if (!el) return;
+      var cRect = collageCanvasEl.getBoundingClientRect();
+      var sRect = collageStageEl.getBoundingClientRect();
+      var cx = Number.isFinite(el.posX) ? el.posX : 0.5;
+      var cy = Number.isFinite(el.posY) ? el.posY : 0.45;
+      dot.style.left = ((cRect.left - sRect.left) + collageStageEl.scrollLeft + cx * cRect.width) + 'px';
+      dot.style.top = ((cRect.top - sRect.top) + collageStageEl.scrollTop + cy * cRect.height) + 'px';
+    }
+    function updateBgFxEpicentreVisibility() {
+      var dot = document.getElementById('collage-bgfx-epicentre');
+      if (!dot) return;
+      var show = bgFxEpicentreShouldShow();
+      dot.style.display = show ? 'block' : 'none';
+      dot.style.pointerEvents = show ? 'auto' : 'none';
+      if (show) positionBgFxEpicentre();
+    }
+    let collageBgFxEpiWired = false;
+    function wireBgFxEpicentre() {
+      if (collageBgFxEpiWired) return;
+      var dot = document.getElementById('collage-bgfx-epicentre');
+      if (!dot) return;
+      collageBgFxEpiWired = true;
+      ['collage-bgel-grp', 'collage-bg-collapse'].forEach(function (id) {
+        var g = document.getElementById(id);
+        if (g && !g.dataset.bgfxEpiTgl) { g.dataset.bgfxEpiTgl = '1'; g.addEventListener('toggle', function () { try { updateBgFxEpicentreVisibility(); } catch (_) {} }); }
+      });
+      var dragging = false, preSnap = null;
+      var onMove = function (e) {
+        if (!dragging || !collageCanvasEl) return;
+        var f = collageBgFx; var el = f ? f[collageBgFxSel] : null; if (!el) return;
+        var cRect = collageCanvasEl.getBoundingClientRect();
+        if (!cRect.width || !cRect.height) return;
+        el.posX = Math.max(-0.5, Math.min(1.5, (e.clientX - cRect.left) / cRect.width));
+        el.posY = Math.max(-0.5, Math.min(1.5, (e.clientY - cRect.top) / cRect.height));
+        try { applyCanvasBgVisual(); } catch (_) {}
+        positionBgFxEpicentre();
+      };
+      var onUp = function () {
+        if (!dragging) return;
+        dragging = false;
+        window.removeEventListener('pointermove', onMove);
+        window.removeEventListener('pointerup', onUp);
+        try { document.body.style.userSelect = ''; } catch (_) {}
+        try { pushCollageUndoIfChanged(preSnap); } catch (_) {}
+        preSnap = null;
+      };
+      dot.addEventListener('pointerdown', function (e) {
+        if (!bgFxEpicentreShouldShow()) return;
+        e.preventDefault(); e.stopPropagation();
+        dragging = true;
+        try { preSnap = snapshotCollage(); } catch (_) {}
         try { document.body.style.userSelect = 'none'; } catch (_) {}
         window.addEventListener('pointermove', onMove);
         window.addEventListener('pointerup', onUp);
