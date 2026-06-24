@@ -12257,12 +12257,12 @@
     function expandBgGroups() {
       const host = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
       if (!host) return;
-      host.querySelectorAll(':scope > details.ec-bg-grp').forEach((d) => { if (!d.open) d.open = true; });
+      host.querySelectorAll('details.ec-bg-grp').forEach((d) => { if (!d.open) d.open = true; });
     }
     function collapseBgGroups() {
       const host = document.querySelector('#collage-bg-collapse .ec-bg-grp-list');
       if (!host) return;
-      host.querySelectorAll(':scope > details.ec-bg-grp').forEach((d) => { if (d.open) d.open = false; });
+      host.querySelectorAll('details.ec-bg-grp').forEach((d) => { if (d.open) d.open = false; });
     }
     // ─── v2.1 round 289 (Terry) — CURRENT SIZE indicator + default ───────────
     // Terry: "How do I even know what canvas size I'm starting with? … It should be
@@ -14598,6 +14598,19 @@
       try { buildBgLockedSpecials().forEach(function (n) { if (n) { n.removeAttribute('id'); row.appendChild(n); } }); } catch (_) {}
       return row;
     }
+    // v3.0 (Terry) — a COLLAPSIBLE Background sub-group (Base / Texture & Effects) that NESTS its
+    // children one indent level in, so the panel cascades like Text → Palettes → Neon (each rung a
+    // chevron node stepping in under its parent). No data-bg-style → the in-use sync leaves it alone.
+    function makeBgParent(label, sub, openByDefault) {
+      var d = document.createElement('details'); d.className = 'ec-bg-grp bg-parent-grp';
+      if (openByDefault) d.open = true;
+      var sum = document.createElement('summary');
+      sum.innerHTML = '<span>' + label + '</span><span class="bg-section-sub">' + sub + '</span>';
+      d.appendChild(sum);
+      var body = document.createElement('div'); body.className = 'ec-bg-grp-body';
+      d.appendChild(body);
+      return d;
+    }
     // BASE = only ONE of Solid / Blended; Texture & Effects = optional. The procedural Texture group
     // and the old Picture group are removed; Photo + Transparent live inside both base groups instead.
     function setupBgBaseLayout() {
@@ -14609,21 +14622,20 @@
       var fx = document.getElementById('collage-bgel-grp');
       if (!(solid && blended && fx)) return;
       if (texture && texture.parentNode) texture.parentNode.removeChild(texture);   // Texture dropped (Terry)
-      var hBase = document.createElement('div'); hBase.className = 'bg-section-head';
-      hBase.innerHTML = 'Base <span class="bg-section-sub">· only one of Solid or Blended</span>';
-      var hFx = document.createElement('div'); hFx.className = 'bg-section-head';
-      hFx.innerHTML = 'Texture &amp; Effects <span class="bg-section-sub">· optional</span>';
       // Photo + Transparent at the top of BOTH base groups.
       [solid, blended].forEach(function (grp) {
         var sm = grp.querySelector('summary');
         if (sm && !grp.querySelector('.bg-picture-row')) sm.insertAdjacentElement('afterend', buildBgPhotoTransparentRow());
       });
-      // Order: [Base] Solid · Blended   then   [Texture & Effects] glow/blur.
-      list.appendChild(hBase);
-      list.appendChild(solid);
-      list.appendChild(blended);
-      list.appendChild(hFx);
-      list.appendChild(fx);
+      // Base NESTS Solid + Blended; Texture & Effects NESTS the glow/blur group — each steps in one
+      // indent level, so it cascades like Text. Base open by default; Texture & Effects collapsed.
+      var base = makeBgParent('Base', '· only one of Solid or Blended', true);
+      var baseBody = base.querySelector('.ec-bg-grp-body');
+      baseBody.appendChild(solid); baseBody.appendChild(blended);
+      var tfx = makeBgParent('Texture &amp; Effects', '· optional', false);
+      tfx.querySelector('.ec-bg-grp-body').appendChild(fx);
+      list.appendChild(base);
+      list.appendChild(tfx);
       list.dataset.based = '1';
     }
     function applyCanvasBgVisual() {
