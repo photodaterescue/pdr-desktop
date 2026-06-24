@@ -24,11 +24,12 @@
     position: absolute; box-sizing: border-box;
     border: 2px dashed rgba(212, 175, 55, 0.95);
     border-radius: 6px;
-    background: rgba(8, 10, 16, 0.42);
-    /* Best-effort live frosting; harmless where it isn't supported (the scrim
-       + border + tag still clearly mark the region). */
-    backdrop-filter: blur(9px);
-    -webkit-backdrop-filter: blur(9px);
+    /* v3.0 round 416 (Terry) — a plain frosted scrim, NOT backdrop-filter:blur.
+       A live backdrop blur on a fullscreen always-on-top overlay is very
+       GPU-heavy and made the app behind it lag with several regions up. The
+       scrim + gold dashed border + the "Blurred" tag still clearly mark each
+       region, at no compositing cost. */
+    background: rgba(10, 12, 18, 0.55);
   }
   .blurtag {
     position: absolute; top: 5px; left: 5px;

@@ -6406,7 +6406,18 @@
       function seekBarTo(clientX) {
         const r = seekBar.getBoundingClientRect();
         const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-        try { video.currentTime = pct * (video.duration || 0); } catch (_) {}
+        const dur = video.duration || 0;
+        try { video.currentTime = pct * dur; } catch (_) {}
+        // v3.0 round 416 (Terry) — move the ball + fill + time readout to the
+        // CURSOR position immediately, so they track smoothly during the drag
+        // instead of waiting on the video's timeupdate (which lags a fast
+        // scrub and made the ball look like it wasn't following). Same idea as
+        // the trim handles, which position themselves directly on every move.
+        try {
+          seekPlayed.style.width = (pct * 100) + '%';
+          seekHandle.style.left = (pct * 100) + '%';
+          timeCur.textContent = fmt(pct * dur);
+        } catch (_) {}
       }
       let seekScrubWasPlaying = false;
       seekBar.addEventListener('mousedown', (e) => {
