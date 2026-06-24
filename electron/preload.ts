@@ -437,6 +437,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // toggle + chosen device so they persist for future recordings.
     recordMicToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-mic-toggle', info),
     recordSetMic: (deviceId: string) => ipcRenderer.send('capture:record-set-mic', deviceId),
+    // v3.0 round 411 — click-ripple. The widget toggles it; the ripple overlay
+    // page (capture-ripple.html) receives each forwarded click position.
+    recordRippleToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-ripple-toggle', info),
+    onRippleClick: (callback: (p: { x: number; y: number }) => void) => {
+      const handler = (_event: any, p: any) => callback(p);
+      ipcRenderer.on('capture:ripple-click', handler);
+      return () => ipcRenderer.removeListener('capture:ripple-click', handler);
+    },
     // Round 130 — re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
     // Round 131 — change the recorded screen from the bar's dropdown.

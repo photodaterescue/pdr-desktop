@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Clicks</title>
+<!--
+  v3.0 round 411 (Terry 2026-06-24) — PDR click-ripple overlay.
+
+  A fullscreen TRANSPARENT, click-through, always-on-top window covering the
+  recorded display. Deliberately NOT content-protected — like the cam bubble,
+  it exists to BE captured: the ripples are on the screen, so they're in the
+  footage (no canvas compositing in the recorder pipeline). Main owns a global
+  mouse hook and forwards each click position (in this window's CSS px); we draw
+  an expanding gold ring there. The window is click-through (setIgnoreMouseEvents)
+  so it never blocks the user. Self-contained vanilla — OS chrome, not app UI.
+-->
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+  canvas { display: block; width: 100%; height: 100%; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+(function () {
+  var pdr = window.pdr;
+  var cv = document.getElementById('c');
+  var ctx = cv.getContext('2d');
+  var dpr = Math.max(1, window.devicePixelRatio || 1);
+  function resize() {
+    cv.width = Math.round(window.innerWidth * dpr);
+    cv.height = Math.round(window.innerHeight * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  }
+  resize();
+  window.addEventListener('resize', resize);
+
+  var ripples = [];
+  var DURATION = 520;        // ms per ripple
+  var R0 = 9, R1 = 46;       // start / end radius (CSS px)
+  var raf = 0;
+
+  function tick() {
+    raf = 0;
+    var t = performance.now();
+    ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    var alive = false;
+    for (var i = 0; i < ripples.length; i++) {
+      var rp = ripples[i];
+      var k = (t - rp.t0) / DURATION;
+      if (k >= 1) continue;
+      alive = true;
+      var ease = 1 - Math.pow(1 - k, 2);          // ease-out
+      var r = R0 + (R1 - R0) * ease;
+      var a = 0.85 * (1 - k);                       // fade
+      ctx.beginPath();
+      ctx.arc(rp.x, rp.y, r, 0, Math.PI * 2);
+      ctx.lineWidth = 3.5 * (1 - k) + 1;
+      ctx.strokeStyle = 'rgba(254, 194, 66, ' + a.toFixed(3) + ')';   // PDR gold
+      ctx.shadowColor = 'rgba(0, 0, 0, 0.35)';
+      ctx.shadowBlur = 6;
+      ctx.stroke();
+      if (t - rp.t0 < 130) {                         // brief centre dot
+        ctx.beginPath();
+        ctx.arc(rp.x, rp.y, 5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(254, 194, 66, ' + (0.9 * (1 - (t - rp.t0) / 130)).toFixed(3) + ')';
+        ctx.shadowBlur = 0;
+        ctx.fill();
+      }
+    }
+    ctx.shadowBlur = 0;
+    ripples = ripples.filter(function (rp) { return (t - rp.t0) < DURATION; });
+    if (alive) raf = requestAnimationFrame(tick);
+    else ctx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+  }
+  function addRipple(x, y) {
+    ripples.push({ x: x, y: y, t0: performance.now() });
+    if (!raf) raf = requestAnimationFrame(tick);
+  }
+
+  if (pdr && pdr.capture && pdr.capture.onRippleClick) {
+    pdr.capture.onRippleClick(function (p) {
+      if (p && typeof p.x === 'number' && typeof p.y === 'number') addRipple(p.x, p.y);
+    });
+  }
+})();
+</script>
+</body>
+</html>

@@ -144,6 +144,11 @@
   }
   #micSel:hover { background: rgba(255, 255, 255, 0.14); }
   #micSel option { background: #16161a; color: #fff; }
+  /* v3.0 round 411 — Clicks (click-ripple) toggle; gold 'on' like Blur. */
+  #clicks.on {
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
+  }
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
      discoverable). Styled to sit in the button family; the open list
      itself is OS-rendered. */
@@ -228,6 +233,7 @@
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
     <button id="mic" type="button" title="Record your microphone (voiceover) — turn it on before recording; while recording this mutes/unmutes your voice">Mic</button>
     <select id="micSel" title="Which microphone to record"></select>
+    <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
@@ -254,6 +260,7 @@
   var camBtn = document.getElementById('cam');
   var micBtn = document.getElementById('mic');
   var micSel = document.getElementById('micSel');
+  var clicksBtn = document.getElementById('clicks');
   var blurBtn = document.getElementById('blur');
   var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
@@ -262,7 +269,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -294,6 +301,7 @@
   var sysAudioTrack = null;   // the system-audio track (Mute target, also feeds the mix)
   var audioCtx = null;        // Web Audio mixer: system + mic → one track
   var micMuted = false;       // live mic mute while recording
+  var rippleOn = false;       // v3.0 round 411 — click-ripple overlay on
 
   var bar = document.getElementById('bar');
   // Round 130 — size the WINDOW to the bar's real content so no
@@ -639,6 +647,15 @@
     micDeviceId = micSel.value || '';
     try { if (pdr && pdr.capture && pdr.capture.recordSetMic) pdr.capture.recordSetMic(micDeviceId); } catch (e) {}
   });
+  // v3.0 round 411 — click-ripple toggle (works armed or recording; main owns the
+  // overlay + the global hook). Persisted for future recordings.
+  clicksBtn.addEventListener('click', function () {
+    if (finished) return;
+    rippleOn = !rippleOn;
+    clicksBtn.classList.toggle('on', rippleOn);
+    clicksBtn.title = rippleOn ? 'Click ripples are ON — a gold ring shows where you click; click to turn off' : 'Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials';
+    try { if (pdr && pdr.capture && pdr.capture.recordRippleToggle) pdr.capture.recordRippleToggle({ enabled: rippleOn }); } catch (e) {}
+  });
 
   // ── Round 130: Area pick (armed only). Main shows a live veil over
   // the screen as it now stands and opens the selector; Esc keeps the
@@ -713,6 +730,10 @@
         micBtn.classList.toggle('on', micOn);
         micBtn.title = micOn ? 'Microphone ON — your voice will be recorded; click to turn off' : 'Record your microphone (voiceover) — click to turn on before recording';
         enumerateMics();
+        // v3.0 round 411 — restore the click-ripple preference + light the button.
+        rippleOn = storedInit.ripple === true;
+        clicksBtn.classList.toggle('on', rippleOn);
+        clicksBtn.title = rippleOn ? 'Click ripples are ON — a gold ring shows where you click; click to turn off' : 'Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials';
         // Round 131 — populate the Screen dropdown from the display
         // list (already sorted left→right with position labels).
         if (storedInit.screens && storedInit.screens.length) {

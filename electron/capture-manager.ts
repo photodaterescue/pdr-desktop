@@ -38,6 +38,9 @@ import { toLongPath } from './long-path.js';
 import { getLibraryStatus } from './library-sidecar.js';
 import { getSettings, setSetting } from './settings-store.js';
 import { indexCapturedFile } from './search-database.js';
+// v3.0 round 411 (Terry) — global mouse hook for click-ripple. N-API (ABI-stable
+// across Electron, no rebuild); the .node binary needs asarUnpack when packaging.
+import { uIOhook } from 'uiohook-napi';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -2711,6 +2714,7 @@ function ffmpegPath(): string | null {
 
 function teardownRecording(opts: { discardTemp: boolean }): void {
   closeCamBubble();
+  closeRippleOverlay();
   closeRegionMarker();
   unregisterCamHotkey();
   recordRegionCrop = null;
@@ -2849,6 +2853,8 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         // v3.0 round 410 (Terry) — microphone/voiceover preference for the bar.
         mic: (() => { try { return getSettings().captureMicEnabled === true; } catch { return false; } })(),
         micDevice: (() => { try { return getSettings().captureMicDevice || ''; } catch { return ''; } })(),
+        // v3.0 round 411 (Terry) — click-ripple preference for the bar.
+        ripple: (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })(),
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
@@ -2877,6 +2883,9 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       try { return getSettings().captureCamEnabled === true; } catch { return false; }
     })();
     if (camEnabled) createCamBubble(display);
+    // v3.0 round 411 — click-ripple overlay if enabled.
+    const rippleEnabled = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
+    if (rippleEnabled) createRippleOverlay(display);
     registerCamHotkey();
     log.info(`[capture] recording ARMED on display ${display.id} (audio: ${recordAudio ? 'system' : 'off'}, cam: ${camEnabled ? 'on' : 'off'}, full screen) — waiting for Record`);
     return { success: true };
@@ -3082,6 +3091,7 @@ async function finalizeRecording(): Promise<void> {
   recordRegionCrop = null;
   recordRegionCssRect = null;
   closeCamBubble();
+  closeRippleOverlay();
   closeRegionMarker();
   unregisterCamHotkey();
   // Close the widget + stream, keep the temp file.
@@ -3409,6 +3419,74 @@ function createCamBubble(display: Electron.Display): void {
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
 }
 
+// ─── v3.0 round 411 (Terry): click-ripple overlay ───────────────────────────
+// A fullscreen, transparent, CLICK-THROUGH, always-on-top window on the recorded
+// display (NOT content-protected, so the rings appear in the footage). A global
+// mouse hook reports each click; we map it to the overlay's CSS px and draw a ring.
+let rippleWindow: BrowserWindow | null = null;
+let rippleDisplay: Electron.Display | null = null;
+let rippleHookOn = false;
+
+function onGlobalMouseDown(): void {
+  if (!rippleWindow || rippleWindow.isDestroyed() || !rippleDisplay) return;
+  try {
+    const p = screen.getCursorScreenPoint();   // DIP — same space as display.bounds + the overlay
+    const b = rippleDisplay.bounds;
+    const x = p.x - b.x, y = p.y - b.y;
+    if (x < 0 || y < 0 || x > b.width || y > b.height) return;   // a click on another display
+    rippleWindow.webContents.send('capture:ripple-click', { x, y });
+  } catch { /* non-fatal */ }
+}
+function startRippleHook(): void {
+  if (rippleHookOn) return;
+  try {
+    uIOhook.on('mousedown', onGlobalMouseDown);
+    uIOhook.start();
+    rippleHookOn = true;
+  } catch (e) { log.warn(`[capture] click hook failed: ${(e as Error).message}`); }
+}
+function stopRippleHook(): void {
+  if (!rippleHookOn) return;
+  try { uIOhook.removeListener('mousedown', onGlobalMouseDown); } catch { /* non-fatal */ }
+  try { uIOhook.stop(); } catch { /* non-fatal */ }
+  rippleHookOn = false;
+}
+function createRippleOverlay(display: Electron.Display): void {
+  if (rippleWindow && !rippleWindow.isDestroyed()) return;
+  rippleDisplay = display;
+  const b = display.bounds;
+  const win = new BrowserWindow({
+    x: b.x, y: b.y, width: b.width, height: b.height,
+    frame: false, show: false, transparent: true, hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  rippleWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  // Click-through — the overlay must never intercept the user's clicks; the global
+  // hook still sees them.
+  try { win.setIgnoreMouseEvents(true, { forward: true }); } catch { /* non-fatal */ }
+  // NO setContentProtection — the rings MUST appear in the footage.
+  win.setMenu(null);
+  win.on('closed', () => { if (rippleWindow === win) { rippleWindow = null; stopRippleHook(); } });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.showInactive();
+    startRippleHook();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-ripple.html'));
+}
+function closeRippleOverlay(): void {
+  stopRippleHook();
+  if (rippleWindow && !rippleWindow.isDestroyed()) { try { rippleWindow.close(); } catch { /* non-fatal */ } }
+  rippleWindow = null;
+}
+
 /** Show/hide the bubble with the page-side fade. Creates it on first
  *  toggle if the recording started without one. */
 function toggleCamBubble(): void {
@@ -3611,6 +3689,20 @@ ipcMain.on('capture:record-set-mic', (event, deviceId: string) => {
     try { win.webContents.send('settings:changed', { key: 'captureMicDevice', value: id }); } catch { /* non-fatal */ }
   }
   log.info('[capture] microphone device set (persisted for future recordings)');
+});
+// v3.0 round 411 (Terry) — click-ripple on/off from the recording bar: persist +
+// create/close the overlay (which starts/stops the global mouse hook).
+ipcMain.on('capture:record-ripple-toggle', (event, info: { enabled?: boolean }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const on = info?.enabled === true;
+  try { setSetting('captureRippleEnabled', on); } catch { /* non-fatal */ }
+  if (on && recordDisplay) createRippleOverlay(recordDisplay);
+  else closeRippleOverlay();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key: 'captureRippleEnabled', value: on }); } catch { /* non-fatal */ }
+  }
+  log.info(`[capture] click-ripple → ${on ? 'on' : 'off'}`);
 });
 ipcMain.on('capture:cam-fadedout', (event) => {
   if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents && !camVisible) {

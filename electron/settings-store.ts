@@ -180,6 +180,11 @@ export interface PDRSettings {
   /** Microphone deviceId ('' = system default mic). Chosen from the Mic
    *  dropdown on the recording bar; persisted for future recordings. */
   captureMicDevice: string;
+  /** v3.0 round 411 (Terry 2026-06-24) — CLICK-RIPPLE: draw an expanding ring
+   *  wherever you click during a recording (so tutorial viewers can follow the
+   *  cursor). A transparent click-through overlay on the recorded display, filmed
+   *  like the cam bubble; click positions come from a global mouse hook. Default OFF. */
+  captureRippleEnabled: boolean;
   /** v2.1 round 162 (Terry 2026-06-13) — when ON (default), every saved
    *  collage is added to a "PDR Collages" album so they're gathered in one
    *  place. Toggle OFF in Settings → Capture to keep saved collages out of
@@ -363,6 +368,8 @@ export const optimisedDefaults: PDRSettings = {
   // v3.0 round 410 — microphone/voiceover off until asked for, system-default mic.
   captureMicEnabled: false,
   captureMicDevice: '',
+  // v3.0 round 411 — click-ripple off until asked for.
+  captureRippleEnabled: false,
   // v2.1 round 162 — saved collages join a "PDR Collages" album by default.
   saveCollagesToAlbum: true,
   // v2.1 round 167 — tooltips on by default (helps the learning curve).
@@ -457,6 +464,7 @@ export function getSettings(): PDRSettings {
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
     captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),
+    captureRippleEnabled: store.get('captureRippleEnabled', optimisedDefaults.captureRippleEnabled),
     saveCollagesToAlbum: store.get('saveCollagesToAlbum', optimisedDefaults.saveCollagesToAlbum),
     showTooltips: store.get('showTooltips', optimisedDefaults.showTooltips),
     showViewerTooltips: store.get('showViewerTooltips', optimisedDefaults.showViewerTooltips),
