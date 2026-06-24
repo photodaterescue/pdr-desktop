@@ -10382,7 +10382,7 @@
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 10);   // v3.0 r386 (Terry) — 10px catch-zone (small emoji/text snaps as readily as a photo)
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 22);   // v3.0 (Terry asked) — generous 22px snap magnet (snap range only; colour tolerance stays exact)
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -11306,7 +11306,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 10, { lockY: yLock !== null });   // round 309 — Shift locks Y; r386 — 10px catch-zone
+        const snap = computeDragSnap(it.el, collageCanvasEl, 22, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry asked) — generous 22px snap MAGNET so a normal-speed drag magnetises onto the exact match; the colour/number "equal" tolerance stays exact (separate range)
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
