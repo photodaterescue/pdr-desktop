@@ -1858,7 +1858,7 @@
     .ec-bg-grp { padding: 0; }
     .ec-bg-grp > summary {
       list-style: none; cursor: pointer; outline: none;
-      font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: #9a93c8;
+      font-size: 11px; letter-spacing: 0.05em; text-transform: uppercase; color: #FEC242;
       display: flex; align-items: center; gap: 6px; padding: 3px 0; user-select: none;
     }
     .ec-bg-grp > summary::-webkit-details-marker { display: none; }
@@ -3904,7 +3904,10 @@
     /* v3.0 (Terry) — Base / Texture & Effects section headers + the Picture group row. */
     .bg-section-head { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FEC242; opacity: 0.85; margin: 14px 0 6px; padding-left: 2px; }
     .bg-section-head:first-child { margin-top: 4px; }
-    .bg-section-sub { text-transform: none; font-weight: 500; opacity: 0.6; font-size: 10px; letter-spacing: 0; }
+    .bg-section-sub { text-transform: none; font-weight: 600; opacity: 1; font-size: 10.5px; letter-spacing: 0.01em; }
+    /* v3.0 (Terry) — leaf groups (Solid / Blended) are GOLD (set on .ec-bg-grp summary above); the
+       Base / Texture & Effects PARENT bands stay lavender, so it reads gold → lavender → gold like Text. */
+    .bg-parent-grp > summary { color: #9a93c8; }
     .bg-picture-row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
   </style>
 
@@ -14627,15 +14630,16 @@
         var sm = grp.querySelector('summary');
         if (sm && !grp.querySelector('.bg-picture-row')) sm.insertAdjacentElement('afterend', buildBgPhotoTransparentRow());
       });
-      // Base NESTS Solid + Blended; Texture & Effects NESTS the glow/blur group — each steps in one
-      // indent level, so it cascades like Text. Base open by default; Texture & Effects collapsed.
-      var base = makeBgParent('Base', '· only one of Solid or Blended', true);
+      // Base NESTS Solid + Blended (each a gold leaf). Texture & Effects IS the glow/blur group itself
+      // as a level-1 lavender band (no redundant inner "Texture & Effects" wrapper).
+      var base = makeBgParent('Base', '· Only one', true);
       var baseBody = base.querySelector('.ec-bg-grp-body');
       baseBody.appendChild(solid); baseBody.appendChild(blended);
-      var tfx = makeBgParent('Texture &amp; Effects', '· optional', false);
-      tfx.querySelector('.ec-bg-grp-body').appendChild(fx);
       list.appendChild(base);
-      list.appendChild(tfx);
+      fx.classList.add('bg-parent-grp');
+      var fxSum = fx.querySelector('summary');
+      if (fxSum) fxSum.innerHTML = '<span>Texture &amp; Effects</span><span class="bg-section-sub">· optional</span>';
+      list.appendChild(fx);
       list.dataset.based = '1';
     }
     function applyCanvasBgVisual() {
