@@ -2722,6 +2722,7 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   closeCamBubble();
   closeRippleOverlay();
   closeTooltipWindow();
+  closeBlurOverlay();
   closeRegionMarker();
   unregisterCamHotkey();
   recordRegionCrop = null;
@@ -3136,6 +3137,7 @@ async function finalizeRecording(): Promise<void> {
   closeCamBubble();
   closeRippleOverlay();
   closeTooltipWindow();
+  closeBlurOverlay();
   closeRegionMarker();
   unregisterCamHotkey();
   // Close the widget + stream, keep the temp file.
@@ -3607,6 +3609,61 @@ ipcMain.on('capture:record-tip', (event, info: { text?: string | null; x?: numbe
   else tooltipPending = { text, x: info?.x ?? 0, y: info?.y ?? 0 };
 });
 
+// ─── v3.0 round 414 (Terry): live blur confirmation overlay ──────────────────
+// FFmpeg applies the blur at SAVE, so during recording the user sees the real
+// content with no sign it's being blurred. This fullscreen, transparent,
+// CLICK-THROUGH, content-protected window draws a frosted box over each active
+// blur region so the user can SEE what's blurred; being content-protected it
+// never appears in the footage (which gets the real FFmpeg blur).
+let blurOverlayWindow: BrowserWindow | null = null;
+
+function ensureBlurOverlay(display: Electron.Display): void {
+  if (blurOverlayWindow && !blurOverlayWindow.isDestroyed()) return;
+  const b = display.bounds;
+  const win = new BrowserWindow({
+    x: b.x, y: b.y, width: b.width, height: b.height,
+    frame: false, show: false, transparent: true, hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false,
+    },
+  });
+  blurOverlayWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  try { win.setIgnoreMouseEvents(true); } catch { /* non-fatal */ }   // click-through — confirmation only
+  try { win.setContentProtection(true); } catch { /* non-fatal */ }   // never appears in the footage
+  win.setMenu(null);
+  win.on('closed', () => { if (blurOverlayWindow === win) blurOverlayWindow = null; });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.showInactive();
+    updateBlurOverlay();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-blur-overlay.html'));
+}
+function updateBlurOverlay(): void {
+  if (!blurOverlayWindow || blurOverlayWindow.isDestroyed()) return;
+  const disp = recordDisplay ? recordDisplay.bounds : screen.getPrimaryDisplay().bounds;
+  const sf = recordDisplay ? recordDisplay.scaleFactor : 1;
+  const vw = recordMeta.width ?? Math.round(disp.width * sf);
+  const vh = recordMeta.height ?? Math.round(disp.height * sf);
+  const sx = vw > 0 ? disp.width / vw : 1;
+  const sy = vh > 0 ? disp.height / vh : 1;
+  // recordBlurSegments are in full-frame VIDEO px; map to display CSS px so the
+  // frosted box lands exactly where the blur will be in the footage.
+  const areas = recordBlurSegments
+    .filter((s) => s.endMs === null)
+    .map((s) => ({ x: Math.round(s.x * sx), y: Math.round(s.y * sy), w: Math.round(s.width * sx), h: Math.round(s.height * sy) }));
+  try { blurOverlayWindow.webContents.send('capture:blur-areas', { areas }); } catch { /* non-fatal */ }
+}
+function closeBlurOverlay(): void {
+  if (blurOverlayWindow && !blurOverlayWindow.isDestroyed()) { try { blurOverlayWindow.close(); } catch { /* non-fatal */ } }
+  blurOverlayWindow = null;
+}
+
 /** Show/hide the bubble with the page-side fade. Creates it on first
  *  toggle if the recording started without one. */
 function toggleCamBubble(): void {
@@ -3850,12 +3907,16 @@ ipcMain.on('capture:record-blur', (event, info: { type?: 'open' | 'close'; rect?
     });
     persistBlurSidecar();
     log.info(`[capture] blur ON at ${(info.startMs / 1000).toFixed(1)}s (${info.rect.width}×${info.rect.height} @ ${info.rect.x},${info.rect.y})`);
+    // v3.0 round 414 — show the live confirmation box for this region.
+    if (recordDisplay) ensureBlurOverlay(recordDisplay);
+    updateBlurOverlay();
   } else if (info?.type === 'close' && typeof info.endMs === 'number') {
     const open = [...recordBlurSegments].reverse().find((s) => s.endMs === null);
     if (open) {
       open.endMs = Math.max(open.startMs, info.endMs);
       persistBlurSidecar();
       log.info(`[capture] blur OFF at ${(info.endMs / 1000).toFixed(1)}s`);
+      updateBlurOverlay();
     }
   }
 });

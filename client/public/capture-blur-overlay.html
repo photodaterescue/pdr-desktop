@@ -1,0 +1,65 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<!--
+  v3.0 round 414 (Terry) — LIVE blur confirmation overlay for screen recording.
+  The actual blur is applied by FFmpeg at SAVE, so during recording the user
+  would otherwise still see the real content and have no idea it's being
+  blurred. This is a fullscreen, transparent, CLICK-THROUGH, content-protected
+  window on the recorded display: it draws a frosted box over each active blur
+  region so the user can SEE what's blurred — and because it's content-protected
+  (WDA_EXCLUDEFROMCAPTURE) it never appears in the footage (which gets the real
+  FFmpeg blur). Main sends the active regions (in display CSS px) via onBlurAreas.
+  Self-contained vanilla HTML/JS — OS chrome, not app UI.
+-->
+<style>
+  html, body {
+    margin: 0; padding: 0; width: 100%; height: 100%;
+    overflow: hidden; background: transparent;
+    -webkit-user-select: none; user-select: none;
+    font: 600 12px/1.3 system-ui, 'Segoe UI', sans-serif;
+  }
+  .blurbox {
+    position: absolute; box-sizing: border-box;
+    border: 2px dashed rgba(212, 175, 55, 0.95);
+    border-radius: 6px;
+    background: rgba(8, 10, 16, 0.42);
+    /* Best-effort live frosting; harmless where it isn't supported (the scrim
+       + border + tag still clearly mark the region). */
+    backdrop-filter: blur(9px);
+    -webkit-backdrop-filter: blur(9px);
+  }
+  .blurtag {
+    position: absolute; top: 5px; left: 5px;
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 7px; border-radius: 6px;
+    background: rgba(10, 10, 14, 0.92); color: #f5d98a;
+    white-space: nowrap; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+  }
+</style>
+</head>
+<body>
+  <div id="root"></div>
+  <script>
+    var root = document.getElementById('root');
+    function render(areas) {
+      root.innerHTML = '';
+      (areas || []).forEach(function (a) {
+        var d = document.createElement('div');
+        d.className = 'blurbox';
+        d.style.left = a.x + 'px'; d.style.top = a.y + 'px';
+        d.style.width = a.w + 'px'; d.style.height = a.h + 'px';
+        var t = document.createElement('div');
+        t.className = 'blurtag';
+        t.textContent = '🔒 Blurred';
+        d.appendChild(t);
+        root.appendChild(d);
+      });
+    }
+    if (window.pdr && window.pdr.capture && window.pdr.capture.onBlurAreas) {
+      window.pdr.capture.onBlurAreas(function (d) { render(d && d.areas); });
+    }
+  </script>
+</body>
+</html>

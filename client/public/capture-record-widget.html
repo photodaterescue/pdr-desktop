@@ -176,6 +176,8 @@
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
+  /* v3.0 round 414 — Unblur (remove the last blur area); shown only when >=1 blur. */
+  #unblur { display: none; }
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
      discoverable). Styled to sit in the button family; the open list
      itself is OS-rendered. */
@@ -261,7 +263,8 @@
     <button id="mic" type="button" title="Record your microphone (voiceover) — turn it on before recording; while recording this mutes/unmutes your voice">Mic</button>
     <select id="micSel" title="Which microphone to record"></select>
     <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
-    <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
+    <button id="blur" type="button" title="Blur an area — pause, then drag a box; the saved video blurs it. Add as many as you like.">Blur</button>
+    <button id="unblur" type="button" title="Remove the last blur area you added">Unblur</button>
     <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the centre, click again to zoom back out. Applied to the saved video.">Zoom</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
@@ -290,6 +293,7 @@
   var micSel = document.getElementById('micSel');
   var clicksBtn = document.getElementById('clicks');
   var blurBtn = document.getElementById('blur');
+  var unblurBtn = document.getElementById('unblur');
   var zoomBtn = document.getElementById('zoom');
   var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
@@ -298,7 +302,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, zoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -316,7 +320,7 @@
   // pressed, so a quality change made while armed affects the live
   // capture too (mid-recording changes still only affect the save).
   var QUALITY_BITRATE = { compact: 4000000, standard: 8000000, high: 12000000 };
-  var blurActive = false;       // a blur segment is currently open
+  var blurCount = 0;            // number of blur regions currently open (multiple allowed)
   var blurSelecting = false;    // the selection overlay is up
   // Round 129 — armed stage: init is stored, the engine stays cold,
   // and NOTHING is captured until the user presses Record.
@@ -599,12 +603,9 @@
     if (finished) return;
     finished = true;
     cancelled = !!asCancel;
-    // Close any open blur segment at the current position so "blur
-    // until the end" works without an explicit Unblur.
-    if (blurActive) {
-      blurActive = false;
-      try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
-    }
+    // v3.0 round 414 — any still-open blur regions stay open; FFmpeg blurs each
+    // open region to the END of the clip, so "blur until the end" works for all
+    // of them without an explicit Unblur.
     // v3.0 round 412 — close an open zoom moment so it runs to the end of the clip.
     if (zoomActive) {
       zoomActive = false;
@@ -746,17 +747,32 @@
   // MP4 gets the blur applied between those two times.
   blurBtn.addEventListener('click', function () {
     if (finished || blurSelecting || !recorder) return;
-    if (blurActive) {
-      blurActive = false;
-      blurBtn.textContent = 'Blur';
-      blurBtn.classList.remove('active');
-      blurBtn.title = 'Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again';
-      try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
-      return;
-    }
+    // v3.0 round 414 — Blur now ADDS a region every time (multiple allowed);
+    // removal is via the Unblur button. Pause, then the area selector opens.
     blurSelecting = true;
     doPause();
     try { if (pdr && pdr.capture && pdr.capture.recordBlurRequest) pdr.capture.recordBlurRequest(); } catch (e) { blurSelecting = false; }
+  });
+  function updateBlurUI() {
+    if (blurCount > 0) {
+      blurBtn.textContent = 'Blur · ' + blurCount;
+      blurBtn.classList.add('active');
+      blurBtn.title = 'Add another blur area (' + blurCount + ' active). The saved video blurs each one.';
+      unblurBtn.style.display = 'inline-block';
+    } else {
+      blurBtn.textContent = 'Blur';
+      blurBtn.classList.remove('active');
+      blurBtn.title = 'Blur an area — pause, then drag a box; the saved video blurs it. Add as many as you like.';
+      unblurBtn.style.display = 'none';
+    }
+    try { requestResize(); } catch (e) {}
+  }
+  unblurBtn.addEventListener('click', function () {
+    if (finished || blurCount <= 0) return;
+    // Closes the last still-open region (main stamps its end here).
+    try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
+    blurCount = Math.max(0, blurCount - 1);
+    updateBlurUI();
   });
 
   snapBtn.addEventListener('click', function () {
@@ -887,14 +903,13 @@
           // (null = user cancelled the selection).
           blurSelecting = false;
           if (cmd.rect && !finished) {
-            blurActive = true;
-            blurBtn.textContent = 'Unblur';
-            blurBtn.classList.add('active');
-            blurBtn.title = 'Blurring that area — click to stop blurring from this point on';
+            blurCount++;
             try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'open', rect: cmd.rect, startMs: clockMs() }); } catch (e) {}
+            updateBlurUI();
           }
-          // Stay paused either way — the user resumes when ready,
-          // exactly the pause → blur → resume flow Terry described.
+          // Stay paused either way — the user resumes when ready, exactly the
+          // pause → blur → resume flow Terry described. Click Blur again to add
+          // another area; Unblur removes the last.
         }
       });
     }

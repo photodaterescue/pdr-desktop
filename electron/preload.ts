@@ -457,6 +457,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:tip-text', handler);
       return () => ipcRenderer.removeListener('capture:tip-text', handler);
     },
+    // v3.0 round 414 (Terry) — live blur-confirmation overlay receives the active
+    // blur regions (display CSS px) so the user can SEE what's being blurred.
+    onBlurAreas: (callback: (d: { areas: { x: number; y: number; w: number; h: number }[] }) => void) => {
+      const handler = (_event: any, d: any) => callback(d);
+      ipcRenderer.on('capture:blur-areas', handler);
+      return () => ipcRenderer.removeListener('capture:blur-areas', handler);
+    },
     // Round 130 — re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
     // Round 131 — change the recorded screen from the bar's dropdown.
