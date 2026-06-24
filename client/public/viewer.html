@@ -10372,7 +10372,7 @@
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 10);   // v3.0 r386 (Terry) — wider catch-zone so a small emoji/text snaps as readily as a photo
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 18);   // v3.0 r386 (Terry) — wider catch-zone; v3.0 (Terry) — 18px magnet so it LOCKS to exact-equal
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -11291,7 +11291,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 10, { lockY: yLock !== null });   // round 309 — Shift locks Y; tell the snapper so the X edge/centre snaps still work (corner-equal is skipped); r386 — wider catch-zone
+        const snap = computeDragSnap(it.el, collageCanvasEl, 18, { lockY: yLock !== null });   // round 309 — Shift locks Y; r386 — wider catch-zone; v3.0 (Terry) — 18px magnet so equidistant LOCKS to exact-equal, no steady hand
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
@@ -16171,7 +16171,7 @@
       // toolbar (above a top tile) and the filmstrip below don't feel crowded against the
       // chrome. The stage is flex-centred, so a slightly smaller canvas sits with SYMMETRIC
       // top/bottom (and left/right) margins instead of hugging the titlebar.
-      const FIT = 0.93;
+      const FIT = 0.88;   // v3.0 (Terry) — more breathing room: the page sits further from the chrome (was 0.93)
       w *= FIT; h *= FIT;
       w = Math.max(120, w); h = Math.max(120, h);
       collageCanvasEl.style.width = w + 'px';
