@@ -9023,10 +9023,11 @@
       const pxX = (sp) => Math.round((sp / c.width) * _expW);
       const pxY = (sp) => Math.round((sp / c.height) * exp.h);
       const TOL = 1.5;
-      // v3.0 (Terry) — "equal" is judged on the DISPLAYED (export-px) numbers, so green means the
-      // numbers you SEE actually match (exact, ±1 for rounding) — NOT a screen-px range that reads 49 ≈ 53.
-      const eqX = function (a, b) { return Math.abs(pxX(a) - pxX(b)) <= 1; };
-      const eqY = function (a, b) { return Math.abs(pxY(a) - pxY(b)) <= 1; };
+      // v3.0 (Terry) — "equal" is judged on the DISPLAYED (export-px) numbers and must be EXACT: green
+      // shows ONLY when the numbers you SEE are identical (47 vs 48 is NOT a match, even off by one) —
+      // not a ±1 / screen-px range. The snap makes a real match land on identical numbers, so it greens.
+      const eqX = function (a, b) { return pxX(a) === pxX(b); };
+      const eqY = function (a, b) { return pxY(a) === pxY(b); };
       const cyMid = (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2;
       const cxMid = (Math.max(r.left, c.left) + Math.min(r.right, c.right)) / 2;
       // v2.1 round 301 (Terry) — measure to the NEAREST reference per side: a neighbouring
@@ -9084,7 +9085,7 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(pxY(vM) - pxX(hM)) <= 1;
+      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       const line = (el, x, y, len, horiz, sym, pe) => {
         el.classList.toggle('pageEq', !!pe);
@@ -10382,7 +10383,7 @@
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 22);   // v3.0 (Terry asked) — generous 22px snap magnet (snap range only; colour tolerance stays exact)
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 14);   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate.
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -11306,7 +11307,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 22, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry asked) — generous 22px snap MAGNET so a normal-speed drag magnetises onto the exact match; the colour/number "equal" tolerance stays exact (separate range)
+        const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
@@ -11357,7 +11358,7 @@
       var rect = collageCanvasEl.getBoundingClientRect();
       var cw = rect.width, ch = rect.height;
       if (!(cw > 0 && ch > 0)) return out;
-      var T = 22;   // catch-zone — matches the move snap magnet
+      var T = 14;   // catch-zone (screen px) — matches the move snap magnet
       var grabX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
       var grabY = isTopCorner ? (anchorY - nw * K * ch) : (anchorY + nw * K * ch);
       var xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
