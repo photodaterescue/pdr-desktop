@@ -149,6 +149,11 @@
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
+  /* v3.0 round 412 — Zoom (mark a zoom moment); gold 'active' while zoomed in. */
+  #zoom.active {
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
+  }
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
      discoverable). Styled to sit in the button family; the open list
      itself is OS-rendered. */
@@ -235,6 +240,7 @@
     <select id="micSel" title="Which microphone to record"></select>
     <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
+    <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the centre, click again to zoom back out. Applied to the saved video.">Zoom</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
       <option value="standard" selected>Standard</option>
@@ -262,6 +268,7 @@
   var micSel = document.getElementById('micSel');
   var clicksBtn = document.getElementById('clicks');
   var blurBtn = document.getElementById('blur');
+  var zoomBtn = document.getElementById('zoom');
   var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
   var muteBtn = document.getElementById('mute');
@@ -269,7 +276,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, zoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -302,6 +309,7 @@
   var audioCtx = null;        // Web Audio mixer: system + mic → one track
   var micMuted = false;       // live mic mute while recording
   var rippleOn = false;       // v3.0 round 411 — click-ripple overlay on
+  var zoomActive = false;     // v3.0 round 412 — a zoom moment is currently open
 
   var bar = document.getElementById('bar');
   // Round 130 — size the WINDOW to the bar's real content so no
@@ -338,6 +346,7 @@
     pauseBtn.disabled = true;
     snapBtn.disabled = true;
     blurBtn.disabled = true;
+    zoomBtn.disabled = true;
     // Area re-pick only makes sense BEFORE recording starts — the
     // crop applies to the whole video.
     areaBtn.style.display = 'inline-block';
@@ -357,6 +366,7 @@
     pauseBtn.disabled = false;
     snapBtn.disabled = false;
     blurBtn.disabled = false;
+    zoomBtn.disabled = false;
     // Area + Screen are meaningless once recording — hide them
     // (frees bar space; the screen/crop are locked in).
     areaBtn.style.display = 'none';
@@ -562,6 +572,11 @@
       blurActive = false;
       try { if (pdr && pdr.capture && pdr.capture.recordBlur) pdr.capture.recordBlur({ type: 'close', endMs: clockMs() }); } catch (e) {}
     }
+    // v3.0 round 412 — close an open zoom moment so it runs to the end of the clip.
+    if (zoomActive) {
+      zoomActive = false;
+      try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'close', endMs: clockMs() }); } catch (e) {}
+    }
     sizeEl.textContent = asCancel ? 'Discarding…' : 'Saving…';
     allButtons.forEach(function (b) { b.disabled = true; });
     try {
@@ -655,6 +670,22 @@
     clicksBtn.classList.toggle('on', rippleOn);
     clicksBtn.title = rippleOn ? 'Click ripples are ON — a gold ring shows where you click; click to turn off' : 'Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials';
     try { if (pdr && pdr.capture && pdr.capture.recordRippleToggle) pdr.capture.recordRippleToggle({ enabled: rippleOn }); } catch (e) {}
+  });
+  // v3.0 round 412 — Zoom moment (manual): click to zoom toward centre, click again to
+  // zoom back out. Records the moment (recording-clock ms) for the save-time zoom.
+  zoomBtn.addEventListener('click', function () {
+    if (finished || !recorder) return;
+    if (!zoomActive) {
+      zoomActive = true;
+      zoomBtn.classList.add('active');
+      zoomBtn.title = 'Zoomed in — click to zoom back out';
+      try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'open', startMs: clockMs() }); } catch (e) {}
+    } else {
+      zoomActive = false;
+      zoomBtn.classList.remove('active');
+      zoomBtn.title = 'Zoom in on the action — click to zoom toward the centre, click again to zoom back out';
+      try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'close', endMs: clockMs() }); } catch (e) {}
+    }
   });
 
   // ── Round 130: Area pick (armed only). Main shows a live veil over

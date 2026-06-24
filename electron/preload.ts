@@ -440,6 +440,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.0 round 411 — click-ripple. The widget toggles it; the ripple overlay
     // page (capture-ripple.html) receives each forwarded click position.
     recordRippleToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-ripple-toggle', info),
+    // v3.0 round 412 — zoom moments (manual Zoom button). Mirrors recordBlur open/close.
+    recordZoom: (info: { type: 'open' | 'close'; startMs?: number; endMs?: number; focalX?: number; focalY?: number; level?: number }) => ipcRenderer.send('capture:record-zoom', info),
     onRippleClick: (callback: (p: { x: number; y: number }) => void) => {
       const handler = (_event: any, p: any) => callback(p);
       ipcRenderer.on('capture:ripple-click', handler);

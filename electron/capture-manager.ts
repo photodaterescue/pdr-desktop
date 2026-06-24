@@ -2660,6 +2660,12 @@ const RECORD_QUALITY = {
 // startup orphan recovery reads it back.
 interface BlurSegment { x: number; y: number; width: number; height: number; startMs: number; endMs: number | null }
 let recordBlurSegments: BlurSegment[] = [];
+// v3.0 round 412 (Terry) — ZOOM moments. focalX/focalY normalised 0..1 in the FINAL
+// (post-region-crop) frame; level = zoom factor (e.g. 2 = 2×). Applied at save by an
+// FFmpeg zoompan stage (same zero-live-cost pattern as crop/blur). endMs null = still
+// zoomed (closed at stop). Manual (Zoom button) + auto (clicks) both produce these.
+interface ZoomSegment { focalX: number; focalY: number; level: number; startMs: number; endMs: number | null }
+let recordZoomSegments: ZoomSegment[] = [];
 
 // Round 128 — camera bubble (tutorial picture-in-picture). A real
 // transparent always-on-top window on the recorded display that is
@@ -2736,6 +2742,7 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
     }, 500);
   }
   recordBlurSegments = [];
+  recordZoomSegments = [];
   recordTempPath = null;
   recordStartedAt = null;
   recordDisplay = null;
@@ -2939,7 +2946,29 @@ export function cancelRecording(): { success: boolean } {
  * here), then the blur segments (coords shifted into the cropped
  * space; segments falling outside the region are dropped).
  */
-function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | null): { filter: string; outLabel: string } | null {
+// v3.0 round 412 (Terry) — build the zoompan z/x/y expressions for the zoom moments.
+// Per moment: smoothstep ease-in (0.4s) → hold at `level` → ease-out, panned so the
+// focal point stays put; z=1 (no zoom) everywhere else. x/y use the live `zoom` so the
+// pan tracks the ease. fps is forced upstream so frame index `in` maps cleanly to time.
+function buildZoomExpr(segments: ZoomSegment[], fps: number): { z: string; x: string; y: string } | null {
+  const valid = segments.filter((s) => s.endMs !== null && (s.endMs as number) > s.startMs && s.level > 1.01);
+  if (valid.length === 0) return null;
+  const ef = Math.max(1, Math.round(0.4 * fps));
+  const sm = (e: string) => `(${e})*(${e})*(3-2*(${e}))`; // smoothstep
+  let z = '1', x = '0', y = '0';
+  for (let i = valid.length - 1; i >= 0; i--) {
+    const s = valid[i];
+    const f0 = Math.round((s.startMs / 1000) * fps);
+    const f1 = Math.round(((s.endMs as number) / 1000) * fps);
+    const Lm1 = (s.level - 1).toFixed(4), L = s.level.toFixed(4);
+    const segZ = `if(lt(in,${f0 + ef}),1+${Lm1}*${sm(`(in-${f0})/${ef}`)},if(gt(in,${f1 - ef}),1+${Lm1}*${sm(`(${f1}-in)/${ef}`)},${L}))`;
+    z = `if(between(in,${f0},${f1}),${segZ},${z})`;
+    x = `if(between(in,${f0},${f1}),(iw-iw/zoom)*${s.focalX.toFixed(4)},${x})`;
+    y = `if(between(in,${f0},${f1}),(ih-ih/zoom)*${s.focalY.toFixed(4)},${y})`;
+  }
+  return { z, x, y };
+}
+function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | null, zoomSegments: ZoomSegment[] = [], frameW = 0, frameH = 0): { filter: string; outLabel: string } | null {
   const parts: string[] = [];
   let cur = '0:v';
   if (regionCrop) {
@@ -2967,11 +2996,18 @@ function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | n
     parts.push(`[a${i}][bb${i}]overlay=${s.x}:${s.y}:enable='between(t,${start},${end})'[v${i}]`);
     cur = `v${i}`;
   });
+  // v3.0 round 412 — zoom moments: zoompan on the FINAL frame (after crop/blur). fps is
+  // forced so frame index maps to time; s = the post-crop frame size.
+  const zexpr = buildZoomExpr(zoomSegments, 30);
+  if (zexpr && frameW > 1 && frameH > 1) {
+    parts.push(`[${cur}]fps=30,zoompan=z='${zexpr.z}':x='${zexpr.x}':y='${zexpr.y}':d=1:s=${frameW}x${frameH}:fps=30[vz]`);
+    cur = 'vz';
+  }
   if (parts.length === 0) return null;
   return { filter: parts.join(';'), outLabel: cur };
 }
 
-async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = [], regionCrop: SelectionRect | null = null): Promise<string | null> {
+async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = [], regionCrop: SelectionRect | null = null, zoomSegments: ZoomSegment[] = [], frameW = 0, frameH = 0): Promise<string | null> {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) {
     log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
@@ -2988,7 +3024,7 @@ async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegm
   // content (flat regions, text) the quality difference is
   // negligible. crf comes from the quality preset (round 126).
   const segments = blurSegments.filter((s) => s.width >= 2 && s.height >= 2);
-  const built = buildVideoFilter(segments, regionCrop);
+  const built = buildVideoFilter(segments, regionCrop, zoomSegments, frameW, frameH);
   const videoArgs = built
     ? ['-filter_complex', built.filter, '-map', `[${built.outLabel}]`, '-map', '0:a?']
     : [];
@@ -3087,6 +3123,8 @@ async function finalizeRecording(): Promise<void> {
   const meta = recordMeta;
   const blurSegments = recordBlurSegments;
   recordBlurSegments = [];
+  const zoomSegments = recordZoomSegments;
+  recordZoomSegments = [];
   const regionCrop = recordRegionCrop;
   recordRegionCrop = null;
   recordRegionCssRect = null;
@@ -3117,7 +3155,9 @@ async function finalizeRecording(): Promise<void> {
       log.warn('[capture] recording produced no data — nothing to save');
       return;
     }
-    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments, regionCrop);
+    const fw = regionCrop?.width ?? meta.width ?? 0;
+    const fh = regionCrop?.height ?? meta.height ?? 0;
+    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments, regionCrop, zoomSegments, fw, fh);
     if (mp4Path) {
       try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
       try { fs.unlinkSync(toLongPath(blurSidecarPath(webmPath))); } catch { /* non-fatal */ }
@@ -3733,6 +3773,27 @@ ipcMain.on('capture:record-blur', (event, info: { type?: 'open' | 'close'; rect?
       open.endMs = Math.max(open.startMs, info.endMs);
       persistBlurSidecar();
       log.info(`[capture] blur OFF at ${(info.endMs / 1000).toFixed(1)}s`);
+    }
+  }
+});
+// v3.0 round 412 (Terry) — zoom moments from the recording bar (manual Zoom button),
+// mirroring blur open/close. Focal defaults to centre when not given (manual); auto-zoom
+// passes a click focal. Applied by the FFmpeg zoompan stage at save.
+ipcMain.on('capture:record-zoom', (event, info: { type?: 'open' | 'close'; startMs?: number; endMs?: number; focalX?: number; focalY?: number; level?: number }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  if (info?.type === 'open' && typeof info.startMs === 'number') {
+    recordZoomSegments.push({
+      focalX: typeof info.focalX === 'number' ? Math.min(1, Math.max(0, info.focalX)) : 0.5,
+      focalY: typeof info.focalY === 'number' ? Math.min(1, Math.max(0, info.focalY)) : 0.5,
+      level: typeof info.level === 'number' ? Math.min(4, Math.max(1.1, info.level)) : 2,
+      startMs: Math.max(0, info.startMs), endMs: null,
+    });
+    log.info(`[capture] zoom ON at ${(info.startMs / 1000).toFixed(1)}s`);
+  } else if (info?.type === 'close' && typeof info.endMs === 'number') {
+    const open = [...recordZoomSegments].reverse().find((s) => s.endMs === null);
+    if (open) {
+      open.endMs = Math.max(open.startMs, info.endMs);
+      log.info(`[capture] zoom OFF at ${(info.endMs / 1000).toFixed(1)}s`);
     }
   }
 });
