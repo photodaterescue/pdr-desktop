@@ -11341,6 +11341,44 @@
     // distance from the ANCHOR (opposite corner) — growing that distance grows
     // the tile — then recompute xFrac/yFrac so the anchor's screen position is
     // unchanged. One undo per drag (begin/commit), matching the other gestures.
+    // v3.0 (Terry) — RESIZE snap, extracted from the resize move handler so it's testable and so
+    // it can offer the SAME relationships the move snap does. The grabbed corner's X-edge and Y-edge
+    // each look for the nearest alignment line; the closer axis within the magnet wins and re-derives
+    // nw (resize is aspect-locked, so the OTHER edge follows). Lines offered:
+    //   • canvas edges / centre, every OTHER tile+text edge/centre + their mirror, (carousel) page bounds
+    //   • SYMMETRIC  — grabbed margin == the anchored opposite margin (right==left / bottom==top) → GREEN
+    //   • CORNER-EQUAL — grabbed margin == the perpendicular anchored margin (e.g. right==top)   → PURPLE
+    // The symmetric + corner-equal lines are the green/purple matches that the move snap already had but
+    // resize was missing entirely (it only offered canvas + other-tile edges). Magnet matches the move
+    // snap (Terry asked for the generous catch there). Returns { nw, vGuide, hGuide }.
+    function computeResizeSnap(draggedEl, nw, K, anchorX, anchorY, isLeftCorner, isTopCorner) {
+      var out = { nw: nw, vGuide: null, hGuide: null };
+      if (!collageCanvasEl) return out;
+      var rect = collageCanvasEl.getBoundingClientRect();
+      var cw = rect.width, ch = rect.height;
+      if (!(cw > 0 && ch > 0)) return out;
+      var T = 22;   // catch-zone — matches the move snap magnet
+      var grabX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
+      var grabY = isTopCorner ? (anchorY - nw * K * ch) : (anchorY + nw * K * ch);
+      var xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
+      var yc = [rect.top, rect.top + ch / 2, rect.top + ch];      // canvas T / centre / B
+      if (carouselMode) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
+      var mirX = function (x) { return 2 * rect.left + cw - x; }, mirY = function (y) { return 2 * rect.top + ch - y; };
+      var pushEdges = function (r) { xc.push(r.left, r.left + r.width / 2, r.right, mirX(r.left), mirX(r.left + r.width / 2), mirX(r.right)); yc.push(r.top, r.top + r.height / 2, r.bottom, mirY(r.top), mirY(r.top + r.height / 2), mirY(r.bottom)); };
+      for (var a = 0; a < collageItems.length; a++) { var o = collageItems[a]; if (o && o.el && o.el !== draggedEl && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect()); }
+      for (var b = 0; b < collageTexts.length; b++) { var o2 = collageTexts[b]; if (o2 && o2.el && o2.el !== draggedEl) pushEdges(o2.el.getBoundingClientRect()); }
+      // SYMMETRIC (green) + CORNER-EQUAL (purple) targets for the grabbed edges — the matches resize lacked.
+      var fixedVM = isTopCorner ? (rect.bottom - anchorY) : (anchorY - rect.top);   // anchor's fixed vertical margin
+      var fixedHM = isLeftCorner ? (rect.right - anchorX) : (anchorX - rect.left);   // anchor's fixed horizontal margin
+      xc.push(mirX(anchorX), isLeftCorner ? (rect.left + fixedVM) : (rect.left + cw - fixedVM));
+      yc.push(mirY(anchorY), isTopCorner ? (rect.top + fixedHM) : (rect.top + ch - fixedHM));
+      var bX = T + 1, sX = null; for (var c = 0; c < xc.length; c++) { var g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
+      var bY = T + 1, sY = null; for (var d = 0; d < yc.length; d++) { var g2 = Math.abs(grabY - yc[d]); if (g2 < bY) { bY = g2; sY = yc[d]; } }
+      var okX = sX != null && bX <= T, okY = sY != null && bY <= T;
+      if (okX && (!okY || bX <= bY)) { out.nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw)); out.vGuide = sX - rect.left; }
+      else if (okY) { out.nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch))); out.hGuide = sY - rect.top; }
+      return out;
+    }
     function startItemResize(it, e, corner) {
       e.preventDefault(); e.stopPropagation();
       // Locked tile: select but don't resize.
@@ -11361,15 +11399,9 @@
       const anchorY = rect.top + anchorYFrac * ch;
       const startDist = Math.hypot(e.clientX - anchorX, e.clientY - anchorY) || 1;
       const startW = it.wFrac;
-      // v2.1 round 264 (Terry) — snap: carousel page-edge snapping for RESIZE (was
-      // none). Whichever corner is grabbed, its X-edge snaps to the nearest page
-      // boundary; the OPPOSITE corner (the anchor) stays pinned by re-deriving wFrac
-      // as the distance from the anchor to the snapped edge, then feeding the EXACT
-      // existing anchor formulas below. Threshold matches the drag snap (6 screen px).
-      // Boundaries are SCREEN px (rect = getBoundingClientRect, includes user zoom) —
-      // the same space as the grabbed corner's clientX. Hold ALT to bypass (mirrors
-      // drag). Gated on carouselMode so single-collage resize is byte-identical.
-      const SNAP_T = 6;
+      // Resize snapping lives in computeResizeSnap (above): canvas edges/centre, other tiles' edges +
+      // mirror, carousel page bounds, plus the SYMMETRIC + CORNER-EQUAL targets — re-deriving nw with
+      // the anchor corner pinned. Magnet matches the move snap. Hold ALT to bypass.
       const isLeftCorner = (corner === 'tl' || corner === 'bl');   // grabbed edge is the tile's LEFT
       const isTopCorner = (corner === 'tl' || corner === 'tr');    // v2.1 round 290 — grabbed edge is the tile's TOP
       const move = (ev) => {
@@ -11411,29 +11443,8 @@
         let vGuide = null, hGuide = null;
         if (!ev.altKey && cw > 0 && ch > 0) {
           const K = getCanvasAspect() / Math.max(0.0001, effectiveAspect(it));   // ihFrac = nw * K
-          const grabX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
-          const grabY = isTopCorner ? (anchorY - nw * K * ch) : (anchorY + nw * K * ch);
-          const xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
-          const yc = [rect.top, rect.top + ch / 2, rect.top + ch];      // canvas T / centre / B
-          if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
-          // v2.1 round 305 (Terry) — also offer each other tile's MIRROR about the canvas centre
-          // (symmetry), so a resized edge snaps to the symmetric spot the green measurement shows
-          // (resize is aspect-locked, so the distribute/equal-gaps case can't apply here — that
-          // lives in the crop + move snaps, which move one edge at a time).
-          const mirX = (x) => 2 * rect.left + cw - x, mirY = (y) => 2 * rect.top + ch - y;
-          const pushEdges = (r) => { xc.push(r.left, r.left + r.width / 2, r.right, mirX(r.left), mirX(r.left + r.width / 2), mirX(r.right)); yc.push(r.top, r.top + r.height / 2, r.bottom, mirY(r.top), mirY(r.top + r.height / 2), mirY(r.bottom)); };
-          for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect()); }
-          for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) pushEdges(o.el.getBoundingClientRect()); }
-          let bX = SNAP_T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
-          let bY = SNAP_T + 1, sY = null; for (let c = 0; c < yc.length; c++) { const g = Math.abs(grabY - yc[c]); if (g < bY) { bY = g; sY = yc[c]; } }
-          const okX = sX != null && bX <= SNAP_T, okY = sY != null && bY <= SNAP_T;
-          if (okX && (!okY || bX <= bY)) {
-            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw));   // X-edge to a vertical line
-            vGuide = sX - rect.left;
-          } else if (okY) {
-            nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch)));   // Y-edge to a horizontal line
-            hGuide = sY - rect.top;
-          }
+          const rs = computeResizeSnap(it.el, nw, K, anchorX, anchorY, isLeftCorner, isTopCorner);
+          nw = rs.nw; vGuide = rs.vGuide; hGuide = rs.hGuide;
         }
         it.wFrac = nw;
         const ihFrac = itemHeightFrac(it);
