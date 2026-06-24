@@ -9023,6 +9023,10 @@
       const pxX = (sp) => Math.round((sp / c.width) * _expW);
       const pxY = (sp) => Math.round((sp / c.height) * exp.h);
       const TOL = 1.5;
+      // v3.0 (Terry) — "equal" is judged on the DISPLAYED (export-px) numbers, so green means the
+      // numbers you SEE actually match (exact, ±1 for rounding) — NOT a screen-px range that reads 49 ≈ 53.
+      const eqX = function (a, b) { return Math.abs(pxX(a) - pxX(b)) <= 1; };
+      const eqY = function (a, b) { return Math.abs(pxY(a) - pxY(b)) <= 1; };
       const cyMid = (Math.max(r.top, c.top) + Math.min(r.bottom, c.bottom)) / 2;
       const cxMid = (Math.max(r.left, c.left) + Math.min(r.right, c.right)) / 2;
       // v2.1 round 301 (Terry) — measure to the NEAREST reference per side: a neighbouring
@@ -9051,7 +9055,7 @@
       }
       const mLeft = Math.max(0, r.left - leftRef), mRight = Math.max(0, rightRef - r.right);
       const mTop = Math.max(0, r.top - topRef), mBot = Math.max(0, botRef - r.bottom);
-      const balX = Math.abs(mLeft - mRight) <= TOL, balY = Math.abs(mTop - mBot) <= TOL;
+      const balX = eqX(mLeft, mRight), balY = eqY(mTop, mBot);
       // v2.1 round 302 (Terry SS1) — green also when THIS edge is symmetric or aligned with
       // another photo, measured from the PAGE edges (round 301 only greened balanced gaps,
       // which lost the symmetric-pair confirmation). Per-edge: left photo's left margin ==
@@ -9063,10 +9067,10 @@
         const o = measureCands[mi];
         const q = o.el.getBoundingClientRect();
         const oLm = q.left - c.left, oRm = c.right - q.right, oTm = q.top - c.top, oBm = c.bottom - q.bottom;
-        if (Math.abs(dLm - oRm) <= TOL || Math.abs(dLm - oLm) <= TOL) eL = true;   // symmetric to O's right, or left edges level
-        if (Math.abs(dRm - oLm) <= TOL || Math.abs(dRm - oRm) <= TOL) eR = true;   // symmetric to O's left, or right edges level
-        if (Math.abs(dTm - oBm) <= TOL || Math.abs(dTm - oTm) <= TOL) eT = true;   // symmetric to O's bottom, or tops level
-        if (Math.abs(dBm - oTm) <= TOL || Math.abs(dBm - oBm) <= TOL) eB = true;   // symmetric to O's top, or bottoms level
+        if (eqX(dLm, oRm) || eqX(dLm, oLm)) eL = true;   // symmetric to O's right, or left edges level
+        if (eqX(dRm, oLm) || eqX(dRm, oRm)) eR = true;   // symmetric to O's left, or right edges level
+        if (eqY(dTm, oBm) || eqY(dTm, oTm)) eT = true;   // symmetric to O's bottom, or tops level
+        if (eqY(dBm, oTm) || eqY(dBm, oBm)) eB = true;   // symmetric to O's top, or bottoms level
       }
       const grL = balX || eL, grR = balX || eR, grT = balY || eT, grB = balY || eB;
       // v2.1 round 307 (Terry) — CORNER-EQUAL vs the PAGE: the gaps to the two NEAREST
@@ -9080,7 +9084,7 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= TOL;
+      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(pxY(vM) - pxX(hM)) <= 1;
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       const line = (el, x, y, len, horiz, sym, pe) => {
         el.classList.toggle('pageEq', !!pe);
@@ -10378,7 +10382,7 @@
         // ALT = free drop. No extra undo snapshot — still one step per gesture.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 18);   // v3.0 r386 (Terry) — wider catch-zone; v3.0 (Terry) — 18px magnet so it LOCKS to exact-equal
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 10);   // v3.0 r386 (Terry) — 10px catch-zone (small emoji/text snaps as readily as a photo)
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -11001,6 +11005,11 @@
         }
       }
       if (bestHGap > T) { out.dy = 0; out.hGuide = null; }
+      // v3.0 (Terry) — the EQUIDISTANT snaps (canvas centre / distribute midpoint = equal gaps on an
+      // axis) take PRIORITY: corner-equal must NOT override them, or "left == right" never locks in.
+      var _vMid = (lRef + rRef) / 2, _hMid = (tRef + bRef) / 2;
+      var xIsEqui = out.vGuide != null && (Math.abs(out.vGuide - cRect.width / 2) < 0.5 || Math.abs(out.vGuide - _vMid) < 0.5);
+      var yIsEqui = out.hGuide != null && (Math.abs(out.hGuide - cRect.height / 2) < 0.5 || Math.abs(out.hGuide - _hMid) < 0.5);
       // v2.1 round 307 (Terry) — CORNER-EQUAL: symmetry vs the PAGE. When the dragged tile's
       // gaps to its two NEAREST perpendicular references are equal (e.g. top margin == left
       // margin — equidistant from a corner), snap them to exactly equal. This is a DIFFERENT
@@ -11020,7 +11029,7 @@
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
         const hVsPage = hIsLeft ? (lRef <= 0.5) : (rRef >= cRect.width - 0.5);   // chosen H ref is the page edge
         const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
-        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T) {
+        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && !xIsEqui && !yIsEqui) {
           // v2.1 round 310 (Terry) — with Shift, one axis is LOCKED, so that margin is fixed and
           // corner-equal becomes a ONE-axis snap: move only the free axis so its margin matches
           // the fixed one. (Round 309 wrongly skipped it entirely → the lavender showed but it
@@ -11297,7 +11306,7 @@
         // inside this existing begin/commit gesture — no extra snapshot.
         if (ev.altKey) { hideCollageSnapGuides(); return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 18, { lockY: yLock !== null });   // round 309 — Shift locks Y; r386 — wider catch-zone; v3.0 (Terry) — 18px magnet so equidistant LOCKS to exact-equal, no steady hand
+        const snap = computeDragSnap(it.el, collageCanvasEl, 10, { lockY: yLock !== null });   // round 309 — Shift locks Y; r386 — 10px catch-zone
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
