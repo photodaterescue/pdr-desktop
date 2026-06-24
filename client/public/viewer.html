@@ -6395,15 +6395,33 @@
         else { try { video.pause(); } catch (_) {} }
       });
 
-      // Seek: click anywhere on the bar to jump. v2.1 (Terry
-      // 2026-06-07) — was suppressed in trim mode but that meant
-      // the user couldn't scrub to verify their in/out points; now
-      // always works. The handles add click+mousedown stopPropagation
-      // so clicking ON a handle doesn't accidentally seek too.
-      seekBar.addEventListener('click', (e) => {
+      // Seek: DRAG anywhere on the bar to scrub. v3.0 round 415 (Terry) — the
+      // bar now scrubs like the trim handles: grab it (or the ball) and drag to
+      // scan through the video frame-by-frame with NO playback and NO sound, so
+      // you can find the exact point you want to play from. We pause on grab and
+      // set currentTime on every move (same proven pattern as the trim handles);
+      // release resumes playback only if it was playing when you grabbed. A plain
+      // click still jumps (mousedown seeks once, no move). The trim handles add
+      // mousedown stopPropagation so grabbing a handle doesn't scrub the bar.
+      function seekBarTo(clientX) {
         const r = seekBar.getBoundingClientRect();
-        const pct = Math.max(0, Math.min(1, (e.clientX - r.left) / r.width));
+        const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
         try { video.currentTime = pct * (video.duration || 0); } catch (_) {}
+      }
+      let seekScrubWasPlaying = false;
+      seekBar.addEventListener('mousedown', (e) => {
+        e.preventDefault();
+        seekScrubWasPlaying = !video.paused && !video.ended;
+        try { video.pause(); } catch (_) {}   // scrub silently — no sound while dragging
+        seekBarTo(e.clientX);
+        const onMove = (mv) => { seekBarTo(mv.clientX); };
+        const onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+          if (seekScrubWasPlaying) { try { video.play(); } catch (_) {} }
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
       });
 
       // Volume button toggles mute; slider click sets level.
