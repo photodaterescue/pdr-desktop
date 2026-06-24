@@ -172,6 +172,14 @@ export interface PDRSettings {
    *  combo outside recordings. Same remap UI as the screenshot
    *  hotkey. */
   captureCamHotkey: string;
+  /** v3.0 round 410 (Terry 2026-06-24) — record the MICROPHONE (voiceover)
+   *  alongside system audio. When ON, the recording widget captures the
+   *  chosen mic and BLENDS it with the system loopback into one track.
+   *  Default OFF. Mirrors the cam device-picker pattern. */
+  captureMicEnabled: boolean;
+  /** Microphone deviceId ('' = system default mic). Chosen from the Mic
+   *  dropdown on the recording bar; persisted for future recordings. */
+  captureMicDevice: string;
   /** v2.1 round 162 (Terry 2026-06-13) — when ON (default), every saved
    *  collage is added to a "PDR Collages" album so they're gathered in one
    *  place. Toggle OFF in Settings → Capture to keep saved collages out of
@@ -352,6 +360,9 @@ export const optimisedDefaults: PDRSettings = {
   captureCamShape: 'circle',
   captureCamDevice: '',
   captureCamHotkey: 'Ctrl+Shift+C',
+  // v3.0 round 410 — microphone/voiceover off until asked for, system-default mic.
+  captureMicEnabled: false,
+  captureMicDevice: '',
   // v2.1 round 162 — saved collages join a "PDR Collages" album by default.
   saveCollagesToAlbum: true,
   // v2.1 round 167 — tooltips on by default (helps the learning curve).
@@ -444,6 +455,8 @@ export function getSettings(): PDRSettings {
     captureCamShape: store.get('captureCamShape', optimisedDefaults.captureCamShape),
     captureCamDevice: store.get('captureCamDevice', optimisedDefaults.captureCamDevice),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
+    captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
+    captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),
     saveCollagesToAlbum: store.get('saveCollagesToAlbum', optimisedDefaults.saveCollagesToAlbum),
     showTooltips: store.get('showTooltips', optimisedDefaults.showTooltips),
     showViewerTooltips: store.get('showViewerTooltips', optimisedDefaults.showViewerTooltips),

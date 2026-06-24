@@ -117,6 +117,33 @@
     color: #a8d8ff;
     border-color: rgba(110, 168, 254, 0.6);
   }
+  /* v3.0 round 410 — Mic (voiceover). Same family as Cam: blue 'on' when armed,
+     red when live-muted. */
+  #mic { width: 56px; padding: 0; }
+  #mic.on {
+    color: #a8d8ff;
+    border-color: rgba(110, 168, 254, 0.6);
+  }
+  #mic.muted {
+    color: #f2b8ba;
+    border-color: rgba(229, 72, 77, 0.55);
+  }
+  #micSel {
+    -webkit-app-region: no-drag;
+    height: 32px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff;
+    border-radius: 8px;
+    font: 500 11.5px/1 system-ui, 'Segoe UI', sans-serif;
+    padding: 0 4px;
+    cursor: pointer;
+    flex-shrink: 0;
+    max-width: 120px;
+    display: none;
+  }
+  #micSel:hover { background: rgba(255, 255, 255, 0.14); }
+  #micSel option { background: #16161a; color: #fff; }
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
      discoverable). Styled to sit in the button family; the open list
      itself is OS-rendered. */
@@ -199,6 +226,8 @@
     <select id="screen" title="Which screen to record"></select>
     <button id="area" type="button" title="Choose an area to record — arrange your windows first, then drag a box (or click a window)">Area</button>
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
+    <button id="mic" type="button" title="Record your microphone (voiceover) — turn it on before recording; while recording this mutes/unmutes your voice">Mic</button>
+    <select id="micSel" title="Which microphone to record"></select>
     <button id="blur" type="button" title="Blur an area — pauses, lets you pick the area, and the saved video blurs it until you click again">Blur</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
@@ -223,6 +252,8 @@
   var screenSel = document.getElementById('screen');
   var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
+  var micBtn = document.getElementById('mic');
+  var micSel = document.getElementById('micSel');
   var blurBtn = document.getElementById('blur');
   var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
@@ -231,7 +262,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, blurBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -255,6 +286,14 @@
   // and NOTHING is captured until the user presses Record.
   var storedInit = null;
   var armed = false;
+  // v3.0 round 410 — microphone / voiceover state.
+  var micOn = false;          // armed preference: record the mic
+  var micDeviceId = '';       // chosen mic ('' = system default)
+  var micStream = null;       // the live mic MediaStream
+  var micTrack = null;        // its audio track (live mute target)
+  var sysAudioTrack = null;   // the system-audio track (Mute target, also feeds the mix)
+  var audioCtx = null;        // Web Audio mixer: system + mic → one track
+  var micMuted = false;       // live mic mute while recording
 
   var bar = document.getElementById('bar');
   // Round 130 — size the WINDOW to the bar's real content so no
@@ -298,6 +337,7 @@
     // Screen dropdown only when there's more than one display, and
     // only while armed (you can't change screen mid-recording).
     if (screenSel.options.length > 1) screenSel.style.display = 'inline-block';
+    updateMicSelVisibility();
     requestResize();
   }
   function enterRecordingUI() {
@@ -344,6 +384,9 @@
   }
   function stopTracks() {
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    // v3.0 round 410 — also release the mic + close the audio mixer.
+    try { if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    try { if (audioCtx && audioCtx.state !== 'closed') audioCtx.close(); } catch (e) {}
   }
 
   function doPause() {
@@ -393,32 +436,81 @@
 
       var vTrack = stream.getVideoTracks()[0];
       var settings = vTrack && vTrack.getSettings ? vTrack.getSettings() : {};
-      var hasAudio = stream.getAudioTracks().length > 0;
-      if (pdr && pdr.capture && pdr.capture.recordStarted) {
-        pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAudio });
+
+      // v3.0 round 410 (Terry) — MICROPHONE / voiceover. Capture the chosen mic
+      // and BLEND it with the system audio into ONE track via Web Audio (WebM is
+      // unreliable with two audio tracks). System audio keeps its own track so
+      // Mute still works (disabling it feeds silence into the mix); the mic gets
+      // its own live mute on the Mic button. If the mic is blocked, recording
+      // continues without it.
+      var recordStream = stream;
+      sysAudioTrack = stream.getAudioTracks()[0] || null;
+      if (micOn) {
+        try {
+          micStream = await navigator.mediaDevices.getUserMedia({
+            audio: micDeviceId ? { deviceId: { exact: micDeviceId } } : true,
+          });
+          micTrack = micStream.getAudioTracks()[0] || null;
+        } catch (micErr) {
+          micOn = false; micStream = null; micTrack = null;
+          try { micBtn.classList.remove('on'); } catch (e) {}
+          reportError('Microphone unavailable (' + ((micErr && micErr.message) || 'blocked') + ') — recording continues without voiceover. Check Windows mic privacy settings.');
+        }
       }
-      if (hasAudio) {
-        // Explicit value, NOT '' — #mute's CSS default is
-        // display:none, so '' would leave it hidden (the same bug
-        // that hid Record; Mute has silently never shown since
-        // round 126 for this reason).
+      if (micTrack) {
+        try {
+          var AC = window.AudioContext || window.webkitAudioContext;
+          audioCtx = new AC();
+          var mixDest = audioCtx.createMediaStreamDestination();
+          if (sysAudioTrack) audioCtx.createMediaStreamSource(new MediaStream([sysAudioTrack])).connect(mixDest);
+          audioCtx.createMediaStreamSource(new MediaStream([micTrack])).connect(mixDest);
+          var mixedTrack = mixDest.stream.getAudioTracks()[0];
+          recordStream = new MediaStream();
+          recordStream.addTrack(vTrack);
+          if (mixedTrack) recordStream.addTrack(mixedTrack);
+        } catch (mixErr) {
+          try { if (micStream) micStream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+          try { if (audioCtx && audioCtx.state !== 'closed') audioCtx.close(); } catch (e) {}
+          audioCtx = null; micTrack = null; micStream = null; recordStream = stream;
+          reportError('Could not blend the microphone — recording continues with system audio only.');
+        }
+      }
+
+      var sysHasAudio = !!sysAudioTrack;
+      var hasAnyAudio = recordStream.getAudioTracks().length > 0;
+      if (pdr && pdr.capture && pdr.capture.recordStarted) {
+        pdr.capture.recordStarted({ width: settings.width || null, height: settings.height || null, hasAudio: hasAnyAudio });
+      }
+      if (sysHasAudio) {
+        // Explicit value, NOT '' — #mute's CSS default is display:none.
         muteBtn.style.display = 'inline-block';
-        requestResize(); // the Mute button just claimed bar width
         muteBtn.addEventListener('click', function () {
           muted = !muted;
-          stream.getAudioTracks().forEach(function (t) { t.enabled = !muted; });
+          if (sysAudioTrack) sysAudioTrack.enabled = !muted;
           muteBtn.textContent = muted ? 'Unmute' : 'Mute';
           muteBtn.classList.toggle('muted', muted);
-          muteBtn.title = muted ? 'Sound is muted — click to record audio again' : 'Mute system audio for part of the recording';
+          muteBtn.title = muted ? 'System sound is muted — click to record it again' : 'Mute system audio for part of the recording';
         });
       }
+      // The Mic button now means "mute/unmute my voice" for the rest of the
+      // recording (its armed on/off role is over). Hidden if there's no mic.
+      if (micTrack) {
+        micBtn.style.display = 'inline-block';
+        micBtn.classList.add('on');
+        micBtn.classList.remove('muted');
+        micBtn.textContent = 'Mic';
+        micBtn.title = 'Your microphone is recording — click to mute/unmute your voice';
+      } else {
+        micBtn.style.display = 'none';
+      }
+      requestResize();
 
       var mime = '';
       var candidates = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8,opus', 'video/webm'];
       for (var i = 0; i < candidates.length; i++) {
         if (window.MediaRecorder && MediaRecorder.isTypeSupported(candidates[i])) { mime = candidates[i]; break; }
       }
-      recorder = new MediaRecorder(stream, {
+      recorder = new MediaRecorder(recordStream, {
         mimeType: mime || undefined,
         videoBitsPerSecond: init.videoBitsPerSecond || 8_000_000,
         audioBitsPerSecond: 128_000,
@@ -493,6 +585,61 @@
     try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(); } catch (e) {}
   });
 
+  // ── v3.0 round 410: Microphone / voiceover ──
+  // ARMED: the Mic button toggles whether your voice is recorded (the device
+  // dropdown appears for 2+ mics); the choice is reported to main so it persists.
+  // RECORDING: the same button live-mutes/unmutes your voice.
+  function updateMicSelVisibility() {
+    var show = armed && micOn && micSel.options.length > 1;
+    micSel.style.display = show ? 'inline-block' : 'none';
+    requestResize();
+  }
+  function enumerateMics() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+    navigator.mediaDevices.enumerateDevices().then(function (devs) {
+      micSel.innerHTML = '';
+      var def = document.createElement('option');
+      def.value = ''; def.textContent = 'Default mic';
+      micSel.appendChild(def);
+      var n = 0;
+      devs.forEach(function (d) {
+        if (d.kind !== 'audioinput' || !d.deviceId || d.deviceId === 'default') return;
+        n++;
+        var o = document.createElement('option');
+        o.value = d.deviceId;
+        o.textContent = d.label || ('Microphone ' + n);
+        micSel.appendChild(o);
+      });
+      if (micDeviceId) { try { micSel.value = micDeviceId; } catch (e) {} }
+      updateMicSelVisibility();
+    }).catch(function () {});
+  }
+  micBtn.addEventListener('click', function () {
+    if (finished) return;
+    if (recorder) {
+      // RECORDING: live mute/unmute your voice.
+      if (!micTrack) return;
+      micMuted = !micMuted;
+      micTrack.enabled = !micMuted;
+      micBtn.textContent = micMuted ? 'Muted' : 'Mic';
+      micBtn.classList.toggle('muted', micMuted);
+      micBtn.classList.toggle('on', !micMuted);
+      micBtn.title = micMuted ? 'Your voice is muted — click to record it again' : 'Your microphone is recording — click to mute/unmute your voice';
+      return;
+    }
+    // ARMED: toggle whether the mic is recorded.
+    micOn = !micOn;
+    micBtn.classList.toggle('on', micOn);
+    micBtn.title = micOn ? 'Microphone ON — your voice will be recorded; click to turn off' : 'Record your microphone (voiceover) — click to turn on before recording';
+    updateMicSelVisibility();
+    try { if (pdr && pdr.capture && pdr.capture.recordMicToggle) pdr.capture.recordMicToggle({ enabled: micOn }); } catch (e) {}
+  });
+  micSel.addEventListener('change', function () {
+    if (finished || !armed) return;
+    micDeviceId = micSel.value || '';
+    try { if (pdr && pdr.capture && pdr.capture.recordSetMic) pdr.capture.recordSetMic(micDeviceId); } catch (e) {}
+  });
+
   // ── Round 130: Area pick (armed only). Main shows a live veil over
   // the screen as it now stands and opens the selector; Esc keeps the
   // previous area. Result comes back on record-do {action:'area-set'}.
@@ -559,6 +706,13 @@
           quality = storedInit.quality;
           qualitySel.value = quality;
         }
+        // v3.0 round 410 — restore the saved mic preference + device, light the
+        // Mic button if on, and populate the device dropdown.
+        micOn = storedInit.mic === true;
+        micDeviceId = storedInit.micDevice || '';
+        micBtn.classList.toggle('on', micOn);
+        micBtn.title = micOn ? 'Microphone ON — your voice will be recorded; click to turn off' : 'Record your microphone (voiceover) — click to turn on before recording';
+        enumerateMics();
         // Round 131 — populate the Screen dropdown from the display
         // list (already sorted left→right with position labels).
         if (storedInit.screens && storedInit.screens.length) {

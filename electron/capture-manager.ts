@@ -2846,6 +2846,9 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       widget.webContents.send('capture:record-init', {
         sourceId: source.id,
         audio: recordAudio,
+        // v3.0 round 410 (Terry) — microphone/voiceover preference for the bar.
+        mic: (() => { try { return getSettings().captureMicEnabled === true; } catch { return false; } })(),
+        micDevice: (() => { try { return getSettings().captureMicDevice || ''; } catch { return ''; } })(),
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
@@ -3585,6 +3588,29 @@ ipcMain.on('capture:record-cam-toggle', (event) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
     toggleCamBubble();
   }
+});
+// v3.0 round 410 (Terry) — microphone/voiceover on/off + device, reported from
+// the recording bar so they persist for future recordings (same persist+sync
+// pattern as quality). The widget owns the live mic capture + audio mixing.
+ipcMain.on('capture:record-mic-toggle', (event, info: { enabled?: boolean }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const on = info?.enabled === true;
+  try { setSetting('captureMicEnabled', on); } catch { /* non-fatal */ }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key: 'captureMicEnabled', value: on }); } catch { /* non-fatal */ }
+  }
+  log.info(`[capture] microphone → ${on ? 'on' : 'off'} (persisted for future recordings)`);
+});
+ipcMain.on('capture:record-set-mic', (event, deviceId: string) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const id = typeof deviceId === 'string' ? deviceId : '';
+  try { setSetting('captureMicDevice', id); } catch { /* non-fatal */ }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key: 'captureMicDevice', value: id }); } catch { /* non-fatal */ }
+  }
+  log.info('[capture] microphone device set (persisted for future recordings)');
 });
 ipcMain.on('capture:cam-fadedout', (event) => {
   if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents && !camVisible) {

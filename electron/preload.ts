@@ -433,6 +433,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // (capture-cam.html) receives init/show/hide and reports fades
     // and camera failures.
     recordCamToggle: () => ipcRenderer.send('capture:record-cam-toggle'),
+    // v3.0 round 410 — microphone/voiceover. The widget reports the on/off
+    // toggle + chosen device so they persist for future recordings.
+    recordMicToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-mic-toggle', info),
+    recordSetMic: (deviceId: string) => ipcRenderer.send('capture:record-set-mic', deviceId),
     // Round 130 — re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
     // Round 131 — change the recorded screen from the bar's dropdown.
