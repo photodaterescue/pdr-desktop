@@ -3329,11 +3329,15 @@ ipcMain.on('capture:record-blur-request', (event) => {
   captureInFlight = true; // blocks hotkey screenshots while selecting
   void (async () => {
     try {
-      const grab = await grabDisplayPng(display, { hideWindows: false, includeWindows: true });
-      if (!grab) { replyRect(null); return; }
-      grab.restore(); // no-op — nothing hidden
-      const dataUrl = `data:image/png;base64,${grab.buffer.toString('base64')}`;
-      const rect = await openRegionOverlay(display, dataUrl, grab.windows);
+      // v3.0 round 418 (Terry) — LIVE veil over the real (paused) desktop, NOT a
+      // pasted frozen screenshot. The frozen grab rendered the captured taskbar
+      // above the real Windows taskbar, so the box you drew landed OFFSET from
+      // the content. The recording is paused during blur selection, so the
+      // desktop already shows the exact frame being blurred — select straight
+      // over it, which is 1:1 with the footage (same fix recording area-select
+      // already uses).
+      const windows = enumerateWindowRectsForDisplay(display);
+      const rect = await openRegionOverlay(display, null, windows, undefined, { live: true });
       if (!rect) { replyRect(null); return; }
       // Display CSS px → video px, rounded to even values (chroma-
       // subsampled H.264 prefers even crop geometry) and clamped.
