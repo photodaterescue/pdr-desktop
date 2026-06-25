@@ -2631,6 +2631,12 @@ export interface PersonCluster {
   is_manual?: 0 | 1;
   face_count: number;
   photo_count: number;
+  /** PM Named tab (Terry r436): how many auto-matched UNVERIFIED faces this
+   *  named person has awaiting review. The inline row shows VERIFIED photos
+   *  only ("zero unverified photos of a named person" — naming requires a
+   *  verification); this count drives the "Review N suggestions" affordance
+   *  that opens the face modal. Computed client-side in PM's prepareFaces. */
+  matchedCount?: number;
   representative_face_id: number;
   representative_file_id: number;
   representative_file_path: string;

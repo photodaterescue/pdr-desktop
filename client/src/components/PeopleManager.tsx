@@ -1479,34 +1479,27 @@ export default function PeopleManager() {
     // pre-backfill legacy auto-matches stay visible (they get
     // scored on next launch anyway).
     if (isRealNamed) {
-      faces = faces.filter(f => {
+      // Terry's rule (r436): a NAMED person's row shows ONLY verified photos —
+      // "zero unverified photos of a named person", since naming requires at
+      // least one verification. The auto-matched (unverified) faces are mere
+      // SUGGESTIONS: they're counted as matchedCount and reviewed separately
+      // via the "Review N suggestions" affordance (the face modal), never shown
+      // as the person's photos. This also keeps a stray false-positive (e.g. a
+      // man auto-matched to a woman) off the clean named view until reviewed.
+      // Threshold-filter the candidate suggestions the same way the modal does.
+      const thresholded = faces.filter(f => {
         if (f.verified) return true;
         const sim = (f as any).match_similarity;
         if (sim == null) return true;
         return sim >= clusterThreshold;
       });
-    }
-    if (isRealNamed) {
-      // Two-phase ordering on real Named rows:
-      //   1. Backend already returns chronological ASC for these.
-      //   2. We split into matched (unverified) + verified groups.
-      //      Matched stays at the FRONT regardless of sort direction
-      //      so the "what needs my attention" set is always the
-      //      first thing the user sees. JS Array.sort is stable so
-      //      chronological order WITHIN each group is preserved.
-      //   3. If user toggled newest-first, reverse each group
-      //      independently (whole-array reverse would push matched
-      //      to the back, which the user explicitly doesn't want).
-      const matched = faces.filter(f => !f.verified);
-      const verified = faces.filter(f => f.verified);
-      const m = namedSortNewestFirst ? [...matched].reverse() : matched;
+      const matchedCount = thresholded.filter(f => !f.verified).length;
+      const verified = thresholded.filter(f => f.verified);
       const v = namedSortNewestFirst ? [...verified].reverse() : verified;
-      faces = [...m, ...v];
+      return { ...cluster, sample_faces: v, matchedCount };
     }
-    // Filters apply on top of ordering. showMatched=false hides the
-    // unverified faces; showUnverifiedOnly=true hides the verified
-    // ones. Both can technically be set, in which case nothing
-    // shows — that's user input, we don't second-guess it.
+    // Non-named tabs (Unnamed / Unsure / Ignored) keep the old behaviour: the
+    // show-matched / show-unverified-only toggles still apply there.
     if (!showMatched) faces = faces.filter(f => f.verified);
     if (showUnverifiedOnly) faces = faces.filter(f => !f.verified);
     return { ...cluster, sample_faces: faces };
@@ -3863,7 +3856,11 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
       const v = namedSortNewestFirst ? [...verified].reverse() : verified;
       faces = [...m, ...v];
     }
-    if (!showMatched) faces = faces.filter(f => f.verified);
+    // The face modal IS the review surface for a named person (Terry r436):
+    // the inline row now shows verified-only, so this is where you confirm/reject
+    // the auto-matched suggestions — it must ALWAYS show them, regardless of the
+    // global show-matched toggle (which now only governs the non-named tabs).
+    if (!showMatched && !isRealNamed) faces = faces.filter(f => f.verified);
     if (showUnverifiedOnly) faces = faces.filter(f => !f.verified);
     return faces;
   })();
@@ -5191,22 +5188,20 @@ function PersonCardRowImpl({ cluster, cropUrl, sampleCrops, isEditing, nameInput
                       explicit clauses keeps the units consistent with
                       the row's mental model: photos on the left, faces
                       on the right. Single line, no extra height. */}
-                  {currentTab === 'named' && cluster.sample_faces && (() => {
-                    const verifiedCount = cluster.sample_faces.filter(f => f.verified).length;
-                    const totalCount = cluster.sample_faces.length;
-                    const toConfirmCount = totalCount - verifiedCount;
-                    if (verifiedCount === 0 && toConfirmCount === 0) return null;
-                    return (
-                      <>
-                        {verifiedCount > 0 && (
-                          <span className="text-purple-500 ml-1">· {verifiedCount} verified</span>
-                        )}
-                        {toConfirmCount > 0 && (
-                          <span className="text-muted-foreground ml-1">· {toConfirmCount} to confirm</span>
-                        )}
-                      </>
-                    );
-                  })()}
+                  {/* Named rows show VERIFIED photos only (Terry r436), so the
+                      "N photos" count above already means verified photos. The
+                      auto-matched UNVERIFIED faces are SUGGESTIONS, surfaced as a
+                      clickable review that opens the face modal — never counted
+                      as the person's photos, never shown inline. */}
+                  {currentTab === 'named' && (cluster.matchedCount ?? 0) > 0 && (
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); setShowFaceGrid(true); }}
+                      className="ml-1.5 text-purple-500 hover:text-purple-600 hover:underline"
+                    >
+                      · Review {cluster.matchedCount} suggestion{cluster.matchedCount === 1 ? '' : 's'}
+                    </button>
+                  )}
                 </p>
               </>
             )}
