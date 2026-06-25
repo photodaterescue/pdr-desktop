@@ -459,25 +459,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       }
     };
     const onUp = () => {
-      // Click-on-dimmed-canvas-closes-all panels gesture
-      // (design doc §5). Fires only when (a) the mousedown was
-      // on the SVG itself (empty canvas), (b) the pointer didn't
-      // move enough to count as a pan, and (c) at least one
-      // panel is open. Toggling each open chevron via its
-      // existing onExpand* callback closes the corresponding
-      // panel — same code path the chevron-click takes.
+      // Click on blank canvas dismisses any open floating IN-LAW panel —
+      // the "click outside to close" an overlay gets. It must NOT touch
+      // inline bloodline offspring (expanded cousins): those are real canvas
+      // tiles, part of the tree itself, so collapsing them on a stray
+      // background click is wrong (Terry r425). Gated on (a) the mousedown
+      // landing on the SVG itself, (b) it being a click, not a pan.
       const isClickOnCanvas = panState.current.active
         && panClickInfoRef.current.onCanvas
         && !panClickInfoRef.current.moved;
       panState.current.active = false;
       panelDragRef.current.active = false;
       if (isClickOnCanvas) {
-        const ancArr = Array.from(expandedAncestorsOf ?? []);
-        const descArr = Array.from(expandedDescendantsOf ?? []);
-        if (ancArr.length + descArr.length > 0) {
-          for (const id of ancArr) onExpandAncestors?.(id);
-          for (const id of descArr) onExpandDescendants?.(id);
-        }
+        for (const id of Array.from(expandedAncestorsOf ?? [])) onExpandAncestors?.(id);
       }
     };
     window.addEventListener('mousemove', onMove);
@@ -1492,12 +1486,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         // been updated to match.
         // Computed inside the SVG block so future panel rendering
         // can read the same value off props.
-        // Only a floating IN-LAW family panel dims the base canvas now.
-        // Bloodline branches expand INLINE — they ARE the canvas — so
-        // dimming on descendant-expansion would grey out the very cousins
-        // the user just revealed (Terry: "it's like the panel is
-        // permanently open"). Descendant expansion no longer counts.
-        const anyPanelOpen = (expandedAncestorsOf?.size ?? 0) > 0;
+        // The base canvas is NEVER dimmed, even when a floating in-law
+        // panel is open (Terry r425). Dimming greyed out the background tree
+        // at exactly the moment you want to read it against the panel — and
+        // you often want to see both at once. The panel is its own bordered
+        // floating window, so it stays distinct without dimming everything
+        // behind it.
         return (
           <svg
             ref={svgRef}
@@ -1510,8 +1504,6 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           >
             <g
               transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
-              opacity={anyPanelOpen ? 0.55 : 1}
-              style={{ transition: 'opacity 220ms ease-out' }}
             >
           {/* Pedigree family groups — one marriage bar + sibling bracket
               per parent-set. Drawn BEFORE individual edges so they sit
@@ -1913,8 +1905,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             if (hiddenSideBranchIds.has(info.headId)) return null;
             if (info.partnerId != null && hiddenSideBranchIds.has(info.partnerId)) return null;
             if (hiddenExtendedIds.has(info.headId)) return null;
-            const r = 17;
-            const stemLen = 24;
+            // Hug the couple's bottom edge (Terry r425). The old long stem
+            // dropped the chevron to ~45% of the parent→child gap — exactly
+            // where an ADJACENT family's sibling bracket sits (e.g. Martin's
+            // brothers span wide enough that Peter+Mary Louise's bracket runs
+            // under Alan+Sally), so the chevron landed right on that line.
+            // Sitting it just under the cards keeps it clearly ABOVE every
+            // sibling bracket; dropping it below instead would make its leader
+            // lines cross the bracket.
+            const r = 14;
+            const stemLen = 4;
             const cardBottomY = info.headY + CARD_H / 2;
             const chevronCy = cardBottomY + stemLen + r;
             const chevronCx = info.midX;
@@ -2242,7 +2242,10 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         const MIN_PANEL_W = (isAbbreviated ? 140 : 280) * viewport.scale;
         const MIN_PANEL_H = (isAbbreviated ? 100 : 180) * viewport.scale;
         const MAX_PANEL_W = 1200;
-        const MAX_PANEL_H = 800;
+        // No height cap (Terry r425): an in-law family can have several
+        // generations below it, so the panel grows to fit them all rather
+        // than clipping / starting too high. The user drags the floating
+        // window to align it horizontally with the canvas instead.
 
         type MiniPlacement = {
           personId: number;
@@ -3154,7 +3157,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const scaledContentW = contentWidth * viewport.scale;
           const scaledContentH = contentHeight * viewport.scale;
           const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW + PANEL_BORDER * 2));
-          const panelH = Math.max(MIN_PANEL_H, Math.min(MAX_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2));
+          const panelH = Math.max(MIN_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2);
           // Centre the panel on the CHEVRON's screen position, not
           // the origin's. For descendant panels the chevron sits at
           // the midpoint between the bloodline head (Carol) and the
