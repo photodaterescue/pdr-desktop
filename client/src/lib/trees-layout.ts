@@ -640,28 +640,37 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       else if (e.type === 'spouse_of') { pushMap(spousesOf, e.aId, e.bId); pushMap(spousesOf, e.bId, e.aId); }
     }
 
-    // Canvas-visible set: the focus's whole BLOODLINE — everyone reachable
-    // via parent_of (either direction) or sibling_of: ancestors,
-    // descendants, siblings, aunts/uncles, GREAT-aunts/uncles, cousins…
-    // plus the direct SPOUSES of all of them. Panelled cousins are removed
-    // in isSlotted; in-laws' families-of-origin attach only via spouse_of,
-    // so they never enter the bloodline and stay parked. Walking
-    // sibling_of here is essential: a great-aunt/uncle often links to a
-    // grandparent ONLY by a derived sibling_of edge (their shared parent is
-    // an unshared ghost), so a parent-chain-only set would miss them and
-    // the park step would strand them at x=0 on top of the grandparents.
+    // Canvas-visible set: the focus's BLOODLINE + the direct SPOUSES of every
+    // bloodline person. Bloodline = focus + its ancestors (walk parent_of UP)
+    // + everyone descended from the focus OR one of those ancestors (walk
+    // childrenOf DOWN). We must NOT walk parent_of UP from a down-reached
+    // node: a cousin has two parents — one bloodline, one married-IN — and
+    // ascending to the married-in parent would drag their ENTIRE family
+    // (siblings, parents, nieces…) in as bogus "bloodline", padding the focus
+    // row with invisible slots that fling the real cousins apart (Terry: Amie
+    // stranded, Patricia's offspring flung wide). sibling_of is followed to
+    // catch a blood sibling whose shared parent is an unshared ghost
+    // (great-aunts/uncles). In-law families attach only via spouse_of, so they
+    // never enter the bloodline and stay parked → floating panels.
     const siblingsOf = new Map<number, number[]>();
     for (const e of graph.edges) {
       if (e.type === 'sibling_of') { pushMap(siblingsOf, e.aId, e.bId); pushMap(siblingsOf, e.bId, e.aId); }
     }
-    const bloodline = new Set<number>([focusId]);
+    const ancestors = new Set<number>();
     {
       const q = [focusId];
       while (q.length) {
         const c = q.shift()!;
-        for (const m of [...(parentsOf.get(c) ?? []), ...(childrenOf.get(c) ?? []), ...(siblingsOf.get(c) ?? [])]) {
-          if (!bloodline.has(m)) { bloodline.add(m); q.push(m); }
-        }
+        for (const p of parentsOf.get(c) ?? []) if (!ancestors.has(p)) { ancestors.add(p); q.push(p); }
+      }
+    }
+    const bloodline = new Set<number>([focusId, ...ancestors]);
+    {
+      const q = [focusId, ...ancestors];
+      while (q.length) {
+        const c = q.shift()!;
+        for (const k of childrenOf.get(c) ?? []) if (!bloodline.has(k)) { bloodline.add(k); q.push(k); }
+        for (const s of siblingsOf.get(c) ?? []) if (!bloodline.has(s)) { bloodline.add(s); q.push(s); }
       }
     }
     const visible = new Set<number>(bloodline);
@@ -745,6 +754,47 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         const desired = ids.map(id => {
           let a = downward ? meanOf(parentsOf.get(id)) : meanOf(childrenOf.get(id));
           if (a == null) a = meanOf(spousesOf.get(id));   // keep couples together
+          return a == null ? (X.get(id) ?? 0) : a;
+        });
+        solveLayer(ids, desired);
+      }
+    }
+
+    // Final direction-correct settle (drift-free). The alternating sweeps
+    // above can let a DEEP expanded branch creep rightward — a cousin's kids
+    // get forced right by the row's min-gap chain, that drags the cousin
+    // right (parent chasing kids), and nothing pulls them back, leaving big
+    // gaps (Terry: Amie stranded, Patricia's offspring flung wide). Pinning
+    // each side to its correct anchor removes the feedback: DESCENDANTS +
+    // the focus row sit strictly UNDER their parents (top-down), ANCESTORS
+    // strictly OVER their children (bottom-up). A few rounds converge.
+    // Anchor on the FOCUS row packed tight (families grouped by sep), then
+    // fan one-directionally: descendants DOWN under their parents, ancestors
+    // UP over their children. The focus row never chases its parents, so the
+    // feedback that caused the drift is gone and the wide cousin generation
+    // packs with no gaps.
+    {
+      const g0 = slottedByGen.get(0) ?? [];
+      let xp = 0;
+      for (let i = 0; i < g0.length; i++) { if (i > 0) xp += sep(g0[i - 1], g0[i]); X.set(g0[i], xp); }
+    }
+    for (let f = 0; f < 5; f++) {
+      for (const g of gensSorted.filter(x => x < 0).sort((a, b) => b - a)) {
+        const ids = slottedByGen.get(g)!;
+        if (ids.length === 0) continue;
+        const desired = ids.map(id => {
+          let a = meanOf(parentsOf.get(id));
+          if (a == null) a = meanOf(spousesOf.get(id));
+          return a == null ? (X.get(id) ?? 0) : a;
+        });
+        solveLayer(ids, desired);
+      }
+      for (const g of gensSorted.filter(x => x > 0).sort((a, b) => a - b)) {
+        const ids = slottedByGen.get(g)!;
+        if (ids.length === 0) continue;
+        const desired = ids.map(id => {
+          let a = meanOf(childrenOf.get(id));
+          if (a == null) a = meanOf(spousesOf.get(id));
           return a == null ? (X.get(id) ?? 0) : a;
         });
         solveLayer(ids, desired);

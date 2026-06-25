@@ -1492,8 +1492,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         // been updated to match.
         // Computed inside the SVG block so future panel rendering
         // can read the same value off props.
-        const anyPanelOpen =
-          (expandedAncestorsOf?.size ?? 0) + (expandedDescendantsOf?.size ?? 0) > 0;
+        // Only a floating IN-LAW family panel dims the base canvas now.
+        // Bloodline branches expand INLINE — they ARE the canvas — so
+        // dimming on descendant-expansion would grey out the very cousins
+        // the user just revealed (Terry: "it's like the panel is
+        // permanently open"). Descendant expansion no longer counts.
+        const anyPanelOpen = (expandedAncestorsOf?.size ?? 0) > 0;
         return (
           <svg
             ref={svgRef}
