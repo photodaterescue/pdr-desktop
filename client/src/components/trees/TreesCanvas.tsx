@@ -1330,6 +1330,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       //   2. bloodline person whose DB-recorded ancestor count
       //      exceeds what's currently on canvas.
       const has = extendedAncestorsByPerson.has(node.personId)
+        // Also an in-law whose extended family is a SIBLING (or their
+        // descendants) rather than an ancestor (Terry r426). A sibling added
+        // via the full-sibling flow links through placeholder parents that get
+        // stripped from the layout, so there's no visible ancestry — yet the
+        // family set (via the derived sibling_of edge) is non-empty. Without
+        // this the in-law got no pill, so the sibling was completely
+        // unreachable. This was Brian's sister Joy: added correctly, but with
+        // nowhere to surface.
+        || (extendedFamilyByPerson.get(node.personId)?.size ?? 0) > 0
         || node.totalParentCount > (visibleParentChildCounts.parentCount.get(node.personId) ?? 0);
       if (!has) continue;
       list.push({
@@ -1340,7 +1349,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       });
     }
     return list;
-  }, [placedNodes, extendedAncestorsByPerson, visibleParentChildCounts, bloodlineSet]);
+  }, [placedNodes, extendedAncestorsByPerson, extendedFamilyByPerson, visibleParentChildCounts, bloodlineSet]);
 
   /** Relationship label for each person relative to the current
    *  focus — "Parent", "Sibling", "Grandchild", etc. Gendered when the
@@ -2043,11 +2052,17 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               // the visual position above the card stays consistent
               // (no layout shift when the affordance switches type).
               const pillCy = cardTop - stemLen - pillH / 2;
+              // Focus-relative wording (Terry r426): these people are the
+              // focus's EXTENDED family — relatives reached only by marrying
+              // into the bloodline (e.g. an aunt's parents/siblings). Frame
+              // it from the focus's perspective so it's clear how they relate.
+              const focusFirst = (nodeById.get(layout.focusPersonId)?.name ?? '').trim().split(/\s+/)[0];
+              const ofFocus = focusFirst ? `${focusFirst}'s` : `the`;
               const tooltipLabel = familyCount === 0
                 ? 'No family recorded yet — click to add'
                 : expanded
-                  ? `Hide ${familyCount} family member${familyCount === 1 ? '' : 's'}`
-                  : `Show ${familyCount} family member${familyCount === 1 ? '' : 's'}`;
+                  ? `Hide ${familyCount} of ${ofFocus} extended family`
+                  : `Show ${familyCount} of ${ofFocus} extended family`;
               return (
                 <g key={`eac-${info.personId}`}>
                   {/* Stem line — same length / colour as the chevron
@@ -2069,7 +2084,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                     onMouseDown={(e) => e.stopPropagation()}
                     onClick={(e) => { e.stopPropagation(); onExpandAncestors?.(info.personId); }}
                   >
-                    <IconTooltip label={tooltipLabel} side="top">
+                    <IconTooltip label={tooltipLabel} side="top" tone="gold">
                       <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
                         {/* Drop shadow / rim — same trick the chevron
                             uses to read as a 3D button. */}
@@ -3202,10 +3217,13 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             minOffsetY = (minPanelTop - defaultPanelTop) / scaleSafe;
             maxOffsetY = (4 * panelH) / scaleSafe;
           } else {
-            const maxPanelBottom = originScreenY - cardHalfHeight + 10;
-            const maxPanelTop = maxPanelBottom - panelH;
+            // Terry r426: allow lowering an in-law family panel BELOW its
+            // married-in spouse. The old cap pinned the panel's bottom at the
+            // anchor card's top, so it could never sit lower — exactly what
+            // blocked dragging it down to line up with the canvas. Give it the
+            // same generous ±4-panel-height budget the descendant panel has.
             minOffsetY = (-4 * panelH) / scaleSafe;
-            maxOffsetY = (maxPanelTop - defaultPanelTop) / scaleSafe;
+            maxOffsetY = (4 * panelH) / scaleSafe;
           }
           // Clamp the WORLD-units offset, then multiply by scale
           // to get the screen-pixel offset applied to defaultPanel*

@@ -1321,6 +1321,19 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       await addRelationship({ personAId: fromId, personBId: toId, type: 'sibling_of' });
     }
 
+    // Recompute the connected-component set (Terry r426). It previously
+    // only rebuilt on a focus change, so a just-added sibling was wrongly
+    // listed under "not connected to this tree" until a full reload —
+    // exactly what Terry saw with the two Joy Days.
+    reloadConnectedComponent();
+    // Auto-reveal (Terry r426). If the from-person is a married-in in-law,
+    // their relatives live in a COLLAPSED floating family panel — so a
+    // sibling added to them lands invisibly and it looks like nothing
+    // happened (Terry added Joy twice for exactly this reason). Open that
+    // person's family panel so the new sibling is immediately visible.
+    // Harmless when the from-person is bloodline (they have no such panel).
+    setExpandedAncestorsOf(prev => { const next = new Set(prev); next.add(fromId); return next; });
+
     // Refresh the graph + run the same Steps/Generations awareness
     // checks the parent/partner/child path runs in finaliseQuickAdd:
     // probe deeper if needed to discover the new sibling's hop
