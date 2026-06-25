@@ -7087,6 +7087,14 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     }
   }
 
+  // v3.0 round 420 (Terry) — STABLE ordering so the layout is deterministic.
+  // Nodes come back in DB row order and edges in BFS/derive order, so two
+  // equidistant people could tie-break differently between renders and the
+  // tree would subtly reshuffle (especially right after a re-centre). Sorting
+  // by stable keys (person id; edge endpoints+type) makes the graph identical
+  // every time, so the pedigree layout — a pure function of the graph — is too.
+  nodes.sort((a, b) => a.personId - b.personId);
+  edges.sort((a, b) => (a.aId - b.aId) || (a.bId - b.bId) || a.type.localeCompare(b.type));
   return { focusPersonId, nodes, edges };
 }
 
