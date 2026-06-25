@@ -932,6 +932,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         }
       }
     }
+    // Also pick up great-aunts/uncles whose shared parent is a STRIPPED
+    // placeholder — they're siblings of a strict ancestor only via a derived
+    // sibling_of edge (Terry r437: Gladys is grandmother Nan's sister via
+    // shared "Unknown" parents, so the parent-walk above misses her and her
+    // child shows inline / she spreads out). Treat such siblings as heads too.
+    for (const e of layout.edges) {
+      if (e.type !== 'sibling_of') continue;
+      if (strictAncestors.has(e.aId) && e.bId !== layout.focusPersonId && !strictAncestors.has(e.bId)) heads.add(e.bId);
+      if (strictAncestors.has(e.bId) && e.aId !== layout.focusPersonId && !strictAncestors.has(e.aId)) heads.add(e.aId);
+    }
     // For each head, walk DOWN collecting descendants that aren't in
     // directLineSet. directLineSet exclusion guards against the rare
     // overlap (cousin marriage, half-relations) where a node could

@@ -374,6 +374,15 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         }
       }
     }
+    // Also: great-aunts/uncles linked to a strict ancestor only via a derived
+    // sibling_of edge (shared parent is a stripped placeholder) — Terry r437.
+    // Mirror of the canvas head detection so a collapsed Gladys's child Marion
+    // is PANELLED (not slotted) instead of placed inline + spreading her out.
+    for (const e of graph.edges) {
+      if (e.type !== 'sibling_of') continue;
+      if (strictAncestors.has(e.aId) && e.bId !== focusId && !strictAncestors.has(e.bId)) heads.add(e.bId);
+      if (strictAncestors.has(e.bId) && e.aId !== focusId && !strictAncestors.has(e.aId)) heads.add(e.aId);
+    }
     // Walk DOWN from each head; collect descendants that aren't in
     // directLine (so cousin-marriage / half-relations don't get
     // accidentally marked panelled).
@@ -826,22 +835,21 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         solveLayer(ids, desired);
       }
     };
-    // ── Childless-ancestor anchoring (Terry r431) ──────────────────────────
-    // A GENUINELY childless ancestor (a great-aunt/uncle with no children of
-    // their own anywhere on the tree — NOT merely a collapsed branch) has no
-    // sub-tree to sit over, so it must borrow a horizontal home. The ONLY
-    // correct home is the bloodline SIBLING it shares parents with: a sister
-    // sits beside her brother. Old code left such a node at a stale x and let
-    // tightenLeafAncestors() drag it leftward to close the gap, which stranded
-    // Derek's childless sister Sylvia far away on the paternal side. Gated on
-    // "no children AT ALL" so collapsed branches (real children, just hidden)
-    // keep their existing centre-over-kids behaviour and don't shift.
-    const noKids = (id: number) => (childrenOf.get(id) ?? []).length === 0;
+    // ── No-slotted-kids ancestor anchoring (Terry r431, broadened r437) ─────
+    // An ancestor with no children PLACED on the canvas — genuinely childless
+    // (a great-aunt/uncle with no descendants, e.g. Sylvia) OR whose branch is
+    // currently COLLAPSED (its kids panelled away, e.g. Gladys with Marion
+    // tucked under a chevron) — has no sub-tree to sit over, so it must borrow
+    // a column. The correct home is its bloodline SIBLING: a sister sits
+    // beside her brother. (r431 originally gated on "no children AT ALL"; r437
+    // broadened it to "no SLOTTED children" so a great-aunt whose one child is
+    // collapsed snaps next to her sibling instead of spreading out over the
+    // hidden kid — the Gladys/Marion mess.)
     const hasSlottedKids = (id: number) => (childrenOf.get(id) ?? []).some(k => isSlotted(k));
-    // True when fanUp() can give this childless node a real anchor (a sibling
-    // that has children, or a spouse who is themselves so anchored — so a
-    // great-aunt's in-law husband trails her). Used to keep tighten off them.
-    const fanUpAnchors = (id: number) => noKids(id) && (
+    // True when fanUp() can give this no-slotted-kids node a real anchor (a
+    // sibling that has children, or a spouse who is themselves so anchored — so
+    // a great-aunt's in-law husband trails her). Used to keep tighten off them.
+    const fanUpAnchors = (id: number) => !hasSlottedKids(id) && (
       (siblingsOf.get(id) ?? []).some(hasSlottedKids) ||
       (spousesOf.get(id) ?? []).some(s => hasSlottedKids(s) || (siblingsOf.get(s) ?? []).some(hasSlottedKids))
     );
@@ -856,7 +864,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         const desired = ids.map(id => {
           const kidMean = meanOf(childrenOf.get(id));
           if (kidMean != null) return kidMean;
-          if (noKids(id)) {
+          if (!hasSlottedKids(id)) {
             const sibMean = meanOf((siblingsOf.get(id) ?? []).filter(hasSlottedKids));
             if (sibMean != null) return sibMean;
             const spMean = meanOf((spousesOf.get(id) ?? []).filter(s => hasSlottedKids(s) || (siblingsOf.get(s) ?? []).some(hasSlottedKids)));
