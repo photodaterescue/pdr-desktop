@@ -826,18 +826,44 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         solveLayer(ids, desired);
       }
     };
+    // ── Childless-ancestor anchoring (Terry r431) ──────────────────────────
+    // A GENUINELY childless ancestor (a great-aunt/uncle with no children of
+    // their own anywhere on the tree — NOT merely a collapsed branch) has no
+    // sub-tree to sit over, so it must borrow a horizontal home. The ONLY
+    // correct home is the bloodline SIBLING it shares parents with: a sister
+    // sits beside her brother. Old code left such a node at a stale x and let
+    // tightenLeafAncestors() drag it leftward to close the gap, which stranded
+    // Derek's childless sister Sylvia far away on the paternal side. Gated on
+    // "no children AT ALL" so collapsed branches (real children, just hidden)
+    // keep their existing centre-over-kids behaviour and don't shift.
+    const noKids = (id: number) => (childrenOf.get(id) ?? []).length === 0;
+    const hasSlottedKids = (id: number) => (childrenOf.get(id) ?? []).some(k => isSlotted(k));
+    // True when fanUp() can give this childless node a real anchor (a sibling
+    // that has children, or a spouse who is themselves so anchored — so a
+    // great-aunt's in-law husband trails her). Used to keep tighten off them.
+    const fanUpAnchors = (id: number) => noKids(id) && (
+      (siblingsOf.get(id) ?? []).some(hasSlottedKids) ||
+      (spousesOf.get(id) ?? []).some(s => hasSlottedKids(s) || (siblingsOf.get(s) ?? []).some(hasSlottedKids))
+    );
     const fanUp = () => {
       for (const g of gensSorted.filter(x => x > 0).sort((a, b) => a - b)) {
         const ids = slottedByGen.get(g)!;
         if (ids.length === 0) continue;
-        // An ancestor sits over its CHILDREN. A childless ancestor (collapsed
-        // branch, or an aunt whose only tie is a panelled spouse) just keeps
-        // its current x here and is packed tight afterwards by
-        // tightenLeafAncestors(). Anchoring a childless node to its spouse let
-        // childless couples float away as a unit; anchoring it to its parents
-        // piled every sibling onto the one grandparent and shoved the focus's
-        // own parent off-centre — so we do neither.
-        const desired = ids.map(id => { const a = meanOf(childrenOf.get(id)); return a == null ? (X.get(id) ?? 0) : a; });
+        // An ancestor sits over its CHILDREN. A genuinely childless one borrows
+        // its bloodline sibling's column (then an already-anchored spouse), and
+        // only falls back to keep-x when it has no anchor at all — which is what
+        // stops childless married-in couples from floating away as a unit.
+        const desired = ids.map(id => {
+          const kidMean = meanOf(childrenOf.get(id));
+          if (kidMean != null) return kidMean;
+          if (noKids(id)) {
+            const sibMean = meanOf((siblingsOf.get(id) ?? []).filter(hasSlottedKids));
+            if (sibMean != null) return sibMean;
+            const spMean = meanOf((spousesOf.get(id) ?? []).filter(s => hasSlottedKids(s) || (siblingsOf.get(s) ?? []).some(hasSlottedKids)));
+            if (spMean != null) return spMean;
+          }
+          return X.get(id) ?? 0;
+        });
         solveLayer(ids, desired);
       }
     };
@@ -856,8 +882,11 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           const couple = i + 1 < ids.length && isSpouse(a, ids[i + 1]);
           const members = couple ? [a, ids[i + 1]] : [a];
           const hasKids = members.some(m => (childrenOf.get(m) ?? []).some(k => isSlotted(k)));
+          // Leave fanUp's sibling-anchored childless nodes alone — dragging them
+          // leftward here is exactly what stranded Sylvia onto the wrong family.
+          const anchored = members.some(fanUpAnchors);
           const uMin = Math.min(...members.map(m => X.get(m) ?? 0));
-          if (!hasKids && prevRight > -Infinity) {
+          if (!hasKids && !anchored && prevRight > -Infinity) {
             const delta = (prevRight + opts.spouseOffset) - uMin;
             if (delta < 0) for (const m of members) X.set(m, (X.get(m) ?? 0) + delta);
           }
