@@ -625,7 +625,12 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       : 0;
     let max = Math.max(stepsReach, gensReach, 1); // floor at 1 so "both off" still fetches focus + immediate neighbours for any add-flows
     for (const hop of pinnedPeople.values()) max = Math.max(max, hop);
-    return Math.min(max, 10); // safety cap
+    // Generous cap (Terry r427): raised from 10 so Steps/Generations can go
+    // "seemingly infinite" for historians with deep lines. Safe — the fetch is
+    // a hop-bounded BFS that stops the moment there are no more relatives, so
+    // a shallow tree never fetches more than it has; the cap only matters once
+    // someone records dozens of generations.
+    return Math.min(max, 50);
   }, [stepsEnabled, generationsEnabled, expandedHops, ancestorsDepth, descendantsDepth, pinnedPeople]);
 
   useEffect(() => {
@@ -2702,7 +2707,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           excludedSuggestionIds={excludedSuggestionIdSet}
           stepsEnabled={stepsEnabled}
           steps={expandedHops}
-          onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(12, next)))}
+          onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(50, next)))}
           onSetFocus={(personId) => {
             // Inline focus change — the modal stays open; only the tree
             // state changes. The modal re-renders with the new focus
@@ -2930,7 +2935,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     excludedSuggestionIds={excludedSuggestionIdSet}
                     stepsEnabled={stepsEnabled}
                     steps={expandedHops}
-                    onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(12, next)))}
+                    onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(50, next)))}
                     onSetFocus={(personId) => setFocusPersonId(personId)}
                     useGenderedLabels={currentTree?.useGenderedLabels ?? true}
                     simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}

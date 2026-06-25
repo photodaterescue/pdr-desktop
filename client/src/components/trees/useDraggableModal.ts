@@ -29,6 +29,14 @@ export function useDraggableModal(options: DraggableModalOptions = {}) {
     const t = e.target as HTMLElement;
     if (t.closest('button, input, textarea, a, select')) return;
     const d = dragRef.current;
+    // Sync to the element's ACTUAL current offset before starting. The modal
+    // may have unmounted + remounted centred since the last drag (e.g. closed
+    // and reopened via AnimatePresence), which leaves dragRef holding a stale
+    // offset; reading it back here stops the modal jumping on the first move.
+    if (modalRef.current) {
+      d.x = parseFloat(modalRef.current.style.left || '0') || 0;
+      d.y = parseFloat(modalRef.current.style.top || '0') || 0;
+    }
     d.dragging = true;
     d.sx = e.clientX; d.sy = e.clientY;
     d.bx = d.x; d.by = d.y;
@@ -63,7 +71,17 @@ export function useDraggableModal(options: DraggableModalOptions = {}) {
 
     d.x = newX;
     d.y = newY;
-    if (modalRef.current) modalRef.current.style.transform = `translate3d(${d.x}px, ${d.y}px, 0)`;
+    // Position via relative left/top, NOT transform. Several of these modals
+    // are Framer-Motion motion.divs whose scale/opacity animation OWNS the
+    // transform property — on any re-render (e.g. toggling a setting like Tree
+    // pop or Fade) Framer re-applies its transform and wipes a transform-based
+    // drag offset, snapping the modal back to centre. left/top are untouched
+    // by Framer, so the drag survives re-renders. (Terry's "nasty" bug.)
+    if (modalRef.current) {
+      modalRef.current.style.position = 'relative';
+      modalRef.current.style.left = `${d.x}px`;
+      modalRef.current.style.top = `${d.y}px`;
+    }
   };
 
   const onPointerUp = () => { dragRef.current.dragging = false; };
