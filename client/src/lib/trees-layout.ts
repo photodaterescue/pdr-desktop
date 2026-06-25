@@ -690,6 +690,36 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       slottedByGen.set(g, ids);
     }
 
+    // Order each DESCENDANT row to follow its PARENT row's left-to-right
+    // order, so a cousin branch lands UNDER its own parent instead of being
+    // dumped at the row's end (Terry r428). The first pass orders the focus
+    // generation as [spouses, focus, siblings, …cousins-as-stragglers], which
+    // appends every expanded cousin on the far right regardless of which
+    // parent they belong to — so expanding a paternal uncle whose slot sits
+    // LEFT of the focus's parent flung his kids to the right and crossed the
+    // focus's own family. We re-sort top-down (parents are ordered before
+    // their children) by each node's parent's INDEX in the row above (couples
+    // keyed by their leftmost parent; a spouse with no parent of their own
+    // borrows their partner's). Ties keep first-pass order, so couples and
+    // sibling sub-order are preserved.
+    for (const g of gensSorted.filter(x => x <= 0).sort((a, b) => b - a)) {
+      const ids = slottedByGen.get(g);
+      if (!ids || ids.length < 2) continue;
+      const parentRow = slottedByGen.get(g + 1) ?? [];
+      if (parentRow.length === 0) continue;
+      const pIndex = new Map<number, number>();
+      parentRow.forEach((pid, i) => pIndex.set(pid, i));
+      const keyOf = (id: number): number => {
+        let best = Infinity;
+        for (const p of parentsOf.get(id) ?? []) { const idx = pIndex.get(p); if (idx != null && idx < best) best = idx; }
+        if (best === Infinity) for (const sp of spousesOf.get(id) ?? []) for (const p of parentsOf.get(sp) ?? []) { const idx = pIndex.get(p); if (idx != null && idx < best) best = idx; }
+        return best;
+      };
+      const decorated = ids.map((id, i) => ({ id, k: keyOf(id), i }));
+      decorated.sort((a, b) => (a.k - b.k) || (a.i - b.i));
+      slottedByGen.set(g, decorated.map(d => d.id));
+    }
+
     // Minimum centre-to-centre gap between two adjacent nodes in a row.
     const isSpouse = (a: number, b: number) => (spousesOf.get(a) ?? []).includes(b);
     // Uniform tight spacing (Terry r424): every adjacency packs at the same
