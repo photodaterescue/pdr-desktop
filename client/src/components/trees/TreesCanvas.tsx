@@ -3211,9 +3211,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // origin's X (chevronScreenX falls back to the origin's
           // own X when no co-parent is involved).
           const defaultPanelLeft = chevronScreenX - panelW / 2;
+          // Ancestor (in-law family) panels sit ABOVE their anchor. A TALL
+          // one (several generations) would open with its top above the
+          // viewport — Terry's "lands partly off-screen / sloppy". Clamp the
+          // default top so it can't start higher than the canvas top (only
+          // bites when the natural position is off-screen; a short panel that
+          // already fits above the anchor keeps that position).
+          const svgTop = svgRef.current?.getBoundingClientRect().top ?? 0;
           const defaultPanelTop = direction === 'descendant'
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
-            : originScreenY - cardHalfHeight - VERTICAL_GAP - panelH;
+            : Math.max(svgTop + 12, originScreenY - cardHalfHeight - VERTICAL_GAP - panelH);
           // Drag offset (set by drag handlers, persisted in
           // panelOffsets state for position memory within session).
           // STORED IN WORLD UNITS — scale-invariant — so a panel
