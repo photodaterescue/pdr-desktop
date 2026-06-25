@@ -2499,6 +2499,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
             onExpandAncestors={handleExpandAncestors}
             onExpandDescendants={handleExpandDescendants}
+            onExpandAllDescendants={(ids) => setExpandedDescendantsOf(new Set(ids))}
             expandedAncestorsOf={expandedAncestorsOf}
             expandedDescendantsOf={expandedDescendantsOf}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}

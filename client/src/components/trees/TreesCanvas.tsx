@@ -1,5 +1,5 @@
 import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
-import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap } from 'lucide-react';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
@@ -138,6 +138,10 @@ interface TreesCanvasProps {
    *  descendants exist beyond the active filters. Same probe-and-pin
    *  pattern as onExpandAncestors but downward. */
   onExpandDescendants?: (personId: number) => void;
+  /** Expand-all / collapse-all (Terry r438): set the WHOLE expanded-
+   *  descendants set at once. The floating far-left button passes every
+   *  side-branch head to expand them all, or [] to collapse them all. */
+  onExpandAllDescendants?: (headIds: number[]) => void;
   /** Person IDs whose ancestors have been REVEALED via the ^ chevron.
    *  Drives the chevron's toggle indicator: members of the set show
    *  a "collapse" glyph; others show an "expand" glyph. Click on a
@@ -187,7 +191,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1550,6 +1554,24 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
 
   return (
     <div className="absolute inset-0 select-none">
+      {/* Expand-all / collapse-all (Terry r438): a floating control on the far
+          left of the canvas that opens every collapsed branch at once (or
+          collapses them all back). Only shows when there's at least one
+          collapsible side-branch. Labelled so it needs no tooltip. */}
+      {onExpandAllDescendants && sideBranchChevrons.length > 0 && (() => {
+        const headIds = sideBranchChevrons.map(c => c.headId);
+        const allExpanded = headIds.every(id => expandedDescendantsOf?.has(id));
+        return (
+          <button
+            onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : headIds); }}
+            title={allExpanded ? 'Collapse every branch' : 'Expand every branch'}
+            className="absolute left-3 top-1/2 -translate-y-1/2 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
+          >
+            {allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
+            {allExpanded ? 'Collapse all' : 'Expand all'}
+          </button>
+        );
+      })()}
       {canvasBackground && (
         <div
           className="absolute inset-0 pointer-events-none"
