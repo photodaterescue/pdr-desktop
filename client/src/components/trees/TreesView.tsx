@@ -3305,31 +3305,42 @@ function GenerationDropdown({ label, value, onChange }: {
   onChange: (n: number) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [draft, setDraft] = useState('');
+  useEffect(() => { if (open) setDraft(String(value)); }, [open, value]);
 
   // The Ancestors (A) pill sits at the right edge of the toolbar; align
   // its popover to the trigger's end so it doesn't overflow the window.
   // The Descendants (D) pill sits further left, so start-align is fine.
   const popoverAlign: 'start' | 'end' = label === 'A' ? 'end' : 'start';
+  const fullName = label === 'D' ? 'Descendants' : 'Ancestors';
+
+  const applyDraft = () => {
+    const n = parseInt(draft, 10);
+    if (Number.isFinite(n) && n >= 0) { onChange(n); setOpen(false); }
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
         <button
           className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-xs bg-background border border-border hover:bg-accent transition-colors"
-          aria-label={`${label === 'D' ? 'Descendants' : 'Ancestors'} generations: ${value}`}
+          aria-label={`${fullName} generations: ${value}`}
         >
           <span className="text-[10px] font-semibold text-muted-foreground tracking-wide">{label}</span>
           <span className="font-mono tabular-nums text-foreground min-w-[1ch] text-center">{value}</span>
           <ChevronDown className="w-3 h-3 text-muted-foreground" />
         </button>
       </PopoverTrigger>
+      {/* Same affordance as the Steps dropdown (Terry): 0–10 grid +
+          type-any-number + "Add 10 more", no hard cap — so ancestors and
+          descendants can be recorded as deep as the line goes, historically
+          up AND down, not limited to the old 0–5 grid. */}
       <PopoverContent className="w-56 p-3" align={popoverAlign} collisionPadding={12}>
         <p className="text-[10px] font-semibold text-muted-foreground tracking-wide mb-1.5 uppercase">
-          {label === 'D' ? 'Descendants' : 'Ancestors'}
+          {fullName}
         </p>
-        {/* 0-5 grid — v2 cap. Clicking any sets the value directly. */}
-        <div className="grid grid-cols-6 gap-1">
-          {[0, 1, 2, 3, 4, 5].map(n => (
+        <div className="grid grid-cols-6 gap-1 mb-2">
+          {[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map(n => (
             <button
               key={n}
               onClick={() => { onChange(n); setOpen(false); }}
@@ -3340,6 +3351,37 @@ function GenerationDropdown({ label, value, onChange }: {
               {n}
             </button>
           ))}
+        </div>
+        <div className="border-t border-border pt-2">
+          <label className="block text-[11px] text-muted-foreground mb-1">Or type any number:</label>
+          <div className="flex gap-1.5">
+            <input
+              type="text"
+              inputMode="numeric"
+              pattern="[0-9]*"
+              value={draft}
+              onChange={e => setDraft(e.target.value.replace(/[^0-9]/g, ''))}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') applyDraft();
+                else if (e.key === 'Escape') setOpen(false);
+              }}
+              className="flex-1 px-2 py-1.5 rounded-md border border-border bg-background text-sm font-mono"
+            />
+            <button
+              onClick={applyDraft}
+              className="px-3 py-1.5 rounded-md text-xs font-medium bg-primary text-primary-foreground hover:bg-primary/90 transition-colors"
+            >
+              Set
+            </button>
+          </div>
+        </div>
+        <div className="border-t border-border mt-2 pt-2">
+          <button
+            onClick={() => { onChange(value + 10); setOpen(false); }}
+            className="w-full px-2 py-1.5 rounded text-xs font-medium text-foreground hover:bg-accent transition-colors text-left"
+          >
+            <span className="text-primary">+</span> Add 10 more (currently {value})
+          </button>
         </div>
       </PopoverContent>
     </Popover>
