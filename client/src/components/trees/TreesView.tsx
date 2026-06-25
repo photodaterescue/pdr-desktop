@@ -182,6 +182,16 @@ function computeGenerationOffset(
 
 export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgroundPick }: TreesViewProps = {}) {
   const [focusPersonId, setFocusPersonId] = useState<number | null>(null);
+  // View history (Terry r432): re-rooting the tree — double-click a card,
+  // "Change focus", or an inline focus from a modal — is a VIEW change, not a
+  // data edit, but the user expects Undo/Redo to walk it back (otherwise a
+  // double-click strands you on a lone person with no way home). We keep a
+  // separate focus history; each entry snapshots the data-undo COUNT at the
+  // moment of the change, so Undo/Redo can tell whether the most recent action
+  // was a view change or a data edit and reverse the right one — a view-undo
+  // never silently reverts an edit, and an edit-undo never hijacks a view step.
+  const [focusUndoStack, setFocusUndoStack] = useState<Array<{ prev: number; undoSnap: number }>>([]);
+  const [focusRedoStack, setFocusRedoStack] = useState<Array<{ next: number; redoSnap: number }>>([]);
   // The picker opens only if we can't auto-pick a sensible focus.
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [autoFocusAttempted, setAutoFocusAttempted] = useState(false);
@@ -439,6 +449,18 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshHistoryCounts]);
+  // When a brand-new data edit lands (or one is re-applied), the data-undo
+  // count rises — that branches history, so any pending view-FORWARD step is
+  // no longer valid. Clearing here keeps view-redo from ever jumping to a
+  // stale focus. (Decreases = a data-undo; left alone.)
+  const prevCanUndoRef = useRef(0);
+  useEffect(() => {
+    if (historyCounts.canUndo > prevCanUndoRef.current) setFocusRedoStack([]);
+    prevCanUndoRef.current = historyCounts.canUndo;
+  }, [historyCounts.canUndo]);
+  // View history is per-tree — switching saved trees re-roots to that tree's
+  // own focus, so a stale back-step must never jump into a different tree.
+  useEffect(() => { setFocusUndoStack([]); setFocusRedoStack([]); }, [currentTreeId]);
 
   const toggleShowDates = useCallback((next: boolean) => {
     setShowDates(next);
@@ -708,6 +730,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // above this point. Declaring these callbacks earlier caused a
   // temporal-dead-zone crash on mount.
   const handleUndo = useCallback(async () => {
+    // View-history FIRST. If the latest action was a re-root (a focus change
+    // with NO data edit committed since — i.e. the data-undo count still
+    // matches the snapshot we took at that change), step the VIEW back instead
+    // of undoing an edit. This is the fix for Terry's "Undo grabbed Brian's
+    // gender when I just wanted my view back" + being stranded on a lone card.
+    const vt = focusUndoStack[focusUndoStack.length - 1];
+    if (vt && historyCounts.canUndo === vt.undoSnap) {
+      setFocusUndoStack(s => s.slice(0, -1));
+      if (focusPersonId != null) setFocusRedoStack(s => [...s, { next: focusPersonId, redoSnap: historyCounts.canRedo }]);
+      setFocusPersonId(vt.prev);
+      const nm = allPersons.find(p => p.id === vt.prev)?.name;
+      toast(`Back to ${nm ? `${nm}'s` : 'the previous'} view`);
+      return;
+    }
     const r = await undoGraphOperation();
     if (r.success) {
       toast(`Undone: ${r.description ?? 'last change'}`);
@@ -722,9 +758,21 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     } else if (r.error) {
       toast.error(r.error);
     }
-  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
+  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts, focusUndoStack, historyCounts, allPersons]);
 
   const handleRedo = useCallback(async () => {
+    // View-history FIRST, mirror of handleUndo: redo a view step only when no
+    // data-redo is more recent (the data-redo count still matches the snapshot
+    // taken when we stepped the view back).
+    const vt = focusRedoStack[focusRedoStack.length - 1];
+    if (vt && historyCounts.canRedo === vt.redoSnap) {
+      setFocusRedoStack(s => s.slice(0, -1));
+      if (focusPersonId != null) setFocusUndoStack(s => [...s, { prev: focusPersonId, undoSnap: historyCounts.canUndo }]);
+      setFocusPersonId(vt.next);
+      const nm = allPersons.find(p => p.id === vt.next)?.name;
+      toast(`Forward to ${nm ? `${nm}'s` : 'the next'} view`);
+      return;
+    }
     const r = await redoGraphOperation();
     if (r.success) {
       toast(`Redone: ${r.description ?? 'change'}`);
@@ -735,7 +783,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     } else if (r.error) {
       toast.error(r.error);
     }
-  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts]);
+  }, [focusPersonId, fetchDepth, refetchGraph, reloadPersons, refreshHistoryCounts, focusRedoStack, historyCounts, allPersons]);
 
   // Subscribe to PM-side data changes. Declared HERE — after the
   // undo/redo callbacks — because the deps include refetchGraph and
@@ -1262,9 +1310,23 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   })();
   const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops, {}, expandedDescendantsOf) : null;
 
+  // Undo/redo button state — enabled when EITHER a data edit OR a view step is
+  // available; the tooltip reflects which the next press will reverse.
+  const nextUndoIsView = focusUndoStack.length > 0 && historyCounts.canUndo === focusUndoStack[focusUndoStack.length - 1].undoSnap;
+  const nextRedoIsView = focusRedoStack.length > 0 && historyCounts.canRedo === focusRedoStack[focusRedoStack.length - 1].redoSnap;
+  const canUndoAny = historyCounts.canUndo > 0 || focusUndoStack.length > 0;
+  const canRedoAny = historyCounts.canRedo > 0 || focusRedoStack.length > 0;
+
   const handleRefocus = useCallback((personId: number) => {
+    // Record the view change so Undo can step back to where we were. Snapshot
+    // the current data-undo count so Undo can tell a view step from an edit.
+    // (Skip when there's no real previous view, or it's a no-op re-root.)
+    if (focusPersonId != null && focusPersonId !== personId) {
+      setFocusUndoStack(s => [...s, { prev: focusPersonId, undoSnap: historyCounts.canUndo }]);
+      setFocusRedoStack([]);
+    }
     setFocusPersonId(personId);
-  }, []);
+  }, [focusPersonId, historyCounts.canUndo]);
 
   /** Resolve a +sibling quick-add now that the user has chosen the
    *  sibling flavour. Runs the appropriate wiring:
@@ -2246,20 +2308,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 was first used. Buttons disable when the respective
                 stack is empty; keyboard shortcut Ctrl/Cmd+Z also works. */}
             <div className="inline-flex items-center rounded-lg border border-border bg-background">
-              <IconTooltip label={historyCounts.canUndo > 0 ? `Undo (Ctrl+Z) — ${historyCounts.canUndo} change${historyCounts.canUndo === 1 ? '' : 's'} available` : 'Nothing to undo'} side="bottom">
+              <IconTooltip label={nextUndoIsView ? 'Undo (Ctrl+Z) — back to previous view' : (historyCounts.canUndo > 0 ? `Undo (Ctrl+Z) — ${historyCounts.canUndo} change${historyCounts.canUndo === 1 ? '' : 's'} available` : 'Nothing to undo')} side="bottom">
                 <button
                   onClick={handleUndo}
-                  disabled={historyCounts.canUndo === 0}
+                  disabled={!canUndoAny}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-l-lg"
                 >
                   <Undo2 className="w-4 h-4" />
                 </button>
               </IconTooltip>
               <div className="w-px h-5 bg-border" />
-              <IconTooltip label={historyCounts.canRedo > 0 ? `Redo (Ctrl+Y) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo'} side="bottom">
+              <IconTooltip label={nextRedoIsView ? 'Redo (Ctrl+Y) — forward to next view' : (historyCounts.canRedo > 0 ? `Redo (Ctrl+Y) — ${historyCounts.canRedo} change${historyCounts.canRedo === 1 ? '' : 's'} available` : 'Nothing to redo')} side="bottom">
                 <button
                   onClick={handleRedo}
-                  disabled={historyCounts.canRedo === 0}
+                  disabled={!canRedoAny}
                   className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-sm text-foreground hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed rounded-r-lg"
                 >
                   <Redo2 className="w-4 h-4" />
@@ -2508,7 +2570,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           currentFocusId={focusPersonId}
           showSortOptions={true}
           onPick={(personId) => {
-            setFocusPersonId(personId);
+            handleRefocus(personId);
             setFocusPickerOpen(false);
           }}
           onPersonsChanged={reloadPersons}
@@ -2711,8 +2773,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           onSetFocus={(personId) => {
             // Inline focus change — the modal stays open; only the tree
             // state changes. The modal re-renders with the new focus
-            // anchor and relationship labels.
-            setFocusPersonId(personId);
+            // anchor and relationship labels. Via handleRefocus so it's undoable.
+            handleRefocus(personId);
           }}
           useGenderedLabels={currentTree?.useGenderedLabels ?? true}
           simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
@@ -2936,7 +2998,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     stepsEnabled={stepsEnabled}
                     steps={expandedHops}
                     onStepsChange={(next) => setExpandedHops(Math.max(1, Math.min(50, next)))}
-                    onSetFocus={(personId) => setFocusPersonId(personId)}
+                    onSetFocus={(personId) => handleRefocus(personId)}
                     useGenderedLabels={currentTree?.useGenderedLabels ?? true}
                     simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
                     onClose={() => setTreesSettingsOpen(false)}
