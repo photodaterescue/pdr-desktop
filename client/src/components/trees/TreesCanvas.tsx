@@ -789,6 +789,35 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         downQueue.push(c);
       }
     }
+    // Step 3: siblings reachable ONLY via a (derived) sibling_of edge whose
+    // shared parent isn't in the layout — e.g. two people glued by an
+    // "Unknown" placeholder parent that gets stripped (Gladys ↔ her sister
+    // Nan). A sibling of a blood relative IS a blood relative, but the
+    // parent→child walk above can't reach them with no surviving parent_of
+    // path, so focusing on such a person showed them ALONE — their sibling's
+    // whole branch was wrongly classed as extended family and hidden. Add the
+    // sibling, fold in that sibling's descendants, and repeat to a fixpoint so
+    // multi-step chains resolve. Only ever ADDS to bloodline, so it can never
+    // hide anything that showed before. In-laws are untouched (their sibling
+    // edges have no bloodline endpoint), so married-in family panels are safe.
+    let grew = true;
+    while (grew) {
+      grew = false;
+      for (const e of layout.edges) {
+        if (e.type !== 'sibling_of') continue;
+        const aIn = bloodline.has(e.aId);
+        const bIn = bloodline.has(e.bId);
+        if (aIn === bIn) continue;
+        const add = aIn ? e.bId : e.aId;
+        bloodline.add(add);
+        grew = true;
+        const dq = [add];
+        while (dq.length) {
+          const cur = dq.shift()!;
+          for (const c of childrenOf.get(cur) ?? []) if (!bloodline.has(c)) { bloodline.add(c); dq.push(c); }
+        }
+      }
+    }
     return bloodline;
   }, [layout.edges, layout.focusPersonId]);
 
