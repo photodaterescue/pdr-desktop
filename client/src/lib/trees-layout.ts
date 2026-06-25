@@ -402,71 +402,6 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     }
     return hidden;
   })();
-  // Direct-line set — focus + focus's ancestors + focus's descendants
-  // + focus's siblings + their descendants. Anyone in this set is
-  // "always visible on canvas"; anyone NOT in it (and reachable via
-  // bloodline) is a side-branch member tucked into a chevron-opened
-  // panel. Used by the third-pass ancestor recentring to distinguish
-  // "kids that pull the parent over them" (direct-line) from "kids
-  // that are panel-only and shouldn't influence canvas spacing"
-  // (side-branch). Without this distinction Patricia / Peter / Carol
-  // get pulled over their panelled subtrees, leaving Alan stranded
-  // far from his siblings on the row.
-  const directLineSet = (() => {
-    const childrenOf = new Map<number, number[]>();
-    const parentsOf = new Map<number, number[]>();
-    for (const e of graph.edges) {
-      if (e.type !== 'parent_of') continue;
-      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
-      childrenOf.get(e.aId)!.push(e.bId);
-      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
-      parentsOf.get(e.bId)!.push(e.aId);
-    }
-    const focusId = graph.focusPersonId;
-    const set = new Set<number>([focusId]);
-    // Ancestors of focus.
-    const upQ = [focusId];
-    while (upQ.length) {
-      const cur = upQ.shift()!;
-      for (const p of parentsOf.get(cur) ?? []) {
-        if (set.has(p)) continue;
-        set.add(p);
-        upQ.push(p);
-      }
-    }
-    // Descendants of focus.
-    const downQ = [focusId];
-    while (downQ.length) {
-      const cur = downQ.shift()!;
-      for (const c of childrenOf.get(cur) ?? []) {
-        if (set.has(c)) continue;
-        set.add(c);
-        downQ.push(c);
-      }
-    }
-    // Focus's siblings + their descendants. Other children of focus's
-    // parents (excluding focus). Then walk down from each non-focus
-    // sibling.
-    const focusParents = parentsOf.get(focusId) ?? [];
-    const sibQ: number[] = [];
-    for (const fp of focusParents) {
-      for (const c of childrenOf.get(fp) ?? []) {
-        if (c === focusId) continue;
-        if (set.has(c)) continue;
-        set.add(c);
-        sibQ.push(c);
-      }
-    }
-    while (sibQ.length) {
-      const cur = sibQ.shift()!;
-      for (const c of childrenOf.get(cur) ?? []) {
-        if (set.has(c)) continue;
-        set.add(c);
-        sibQ.push(c);
-      }
-    }
-    return set;
-  })();
 
   for (const gen of orderedGens) {
     const genNodes = byGen.get(gen)!;
@@ -665,634 +600,180 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     }
   }
 
-  // ── Second pass: re-centre EVERY generation under its placed
-  // parents using per-family grouping. Top-down so each gen works
-  // off the freshly-shifted positions of the gen above it.
-  //
-  // The rules baked in here are exactly what Terry's been asking
-  // for, made unconditional:
-  //  1. Each "family" (siblings sharing a parent-set) sits centred
-  //     directly under its parents' midpoint.
-  //  2. Partners stay glued — an in-law joins their bloodline
-  //     spouse's family group so the couple stays a single block.
-  //  3. Within a family group, ONLY the bloodline siblings count
-  //     toward the midpoint — in-laws drift outward, so e.g. Alan
-  //     sits to Sally's LEFT but Sally + Carol + Graham still sit
-  //     centred under D + S, not nudged right by Alan's presence.
-  //  4. When a person has both their own placed parents AND a
-  //     partner with placed parents, they join whichever family has
-  //     more siblings in this row — so Alan, who has only himself
-  //     under G + D, joins Sally's D + S group rather than fragmenting
-  //     the row.
-  //  5. Sibling lines / brackets dynamically expand horizontally to
-  //     fit the family, never the other way around.
-  //
-  // Top generation (max gen number) keeps its first-pass position —
-  // it has no parents above to centre under.
-  const allGensSorted = Array.from(byGen.keys()).sort((a, b) => b - a);
-  const maxGen = allGensSorted[0];
-  for (const gen of allGensSorted) {
-    if (gen === maxGen) continue;
-    const genNodes = byGen.get(gen)!;
-    if (genNodes.length <= 1) continue;
-    const genIds = new Set(genNodes.map(n => n.personId));
-
-    // Each person's OWN placed parents (restricted to the gen
-    // immediately above — gen+1 — so a great-grandparent visible in
-    // gen+2 doesn't accidentally become an "anchor" for gen here).
-    const parentsByChild = new Map<number, number[]>();
-    for (const e of graph.edges) {
-      if (e.type !== 'parent_of') continue;
-      if (!genIds.has(e.bId)) continue;
-      const parentNode = placed.get(e.aId);
-      if (!parentNode || parentNode.generation !== gen + 1) continue;
-      if (!parentsByChild.has(e.bId)) parentsByChild.set(e.bId, []);
-      parentsByChild.get(e.bId)!.push(e.aId);
-    }
-
-    // Within-row spouse adjacency.
-    const spouseMap = new Map<number, Set<number>>();
-    for (const e of graph.edges) {
-      if (e.type !== 'spouse_of') continue;
-      if (!genIds.has(e.aId) || !genIds.has(e.bId)) continue;
-      if (!spouseMap.has(e.aId)) spouseMap.set(e.aId, new Set());
-      if (!spouseMap.has(e.bId)) spouseMap.set(e.bId, new Set());
-      spouseMap.get(e.aId)!.add(e.bId);
-      spouseMap.get(e.bId)!.add(e.aId);
-    }
-
-    // Count how many row members share a given parent-set key —
-    // used as the tie-break when a person has both own and partner
-    // parents available (Alan: G+D=1 vs D+S=3 → joins D+S).
-    const familySize = new Map<string, number>();
-    for (const c of genNodes) {
-      const own = parentsByChild.get(c.personId);
-      if (!own || own.length === 0) continue;
-      const key = own.slice().sort((a, b) => a - b).join(',');
-      familySize.set(key, (familySize.get(key) ?? 0) + 1);
-    }
-
-    const anchorKey = (pid: number): string => {
-      type Cand = { key: string; size: number; isOwn: boolean };
-      const cands: Cand[] = [];
-      const own = parentsByChild.get(pid);
-      if (own && own.length > 0) {
-        const key = own.slice().sort((a, b) => a - b).join(',');
-        cands.push({ key, size: familySize.get(key) ?? 1, isOwn: true });
-      }
-      for (const sp of spouseMap.get(pid) ?? []) {
-        const spParents = parentsByChild.get(sp);
-        if (!spParents || spParents.length === 0) continue;
-        const key = spParents.slice().sort((a, b) => a - b).join(',');
-        cands.push({ key, size: familySize.get(key) ?? 1, isOwn: false });
-      }
-      if (cands.length === 0) return `__solo_${pid}`;
-      // Larger family wins; tie → own wins; tie again → key compare.
-      cands.sort((a, b) =>
-        b.size - a.size ||
-        (a.isOwn === b.isOwn ? a.key.localeCompare(b.key) : a.isOwn ? -1 : 1)
-      );
-      return cands[0].key;
-    };
-
-    // Use first-pass x for stable in-family ordering — that's where
-    // the spouses-first walk in orderNodesInGeneration glued
-    // partners next to their bloodline counterpart.
-    const orderedRow = genNodes
-      .map(n => placed.get(n.personId))
-      .filter((n): n is LaidOutNode => n != null)
-      .sort((a, b) => a.x - b.x);
-
-    type Group = { key: string; members: number[]; centre: number; bloodlineIdx: number[] };
-    const groupsByKey = new Map<string, Group>();
-    const groupOrder: Group[] = [];
-    for (const node of orderedRow) {
-      const key = anchorKey(node.personId);
-      let g = groupsByKey.get(key);
-      if (!g) {
-        let centre = node.x;
-        if (!key.startsWith('__solo_')) {
-          const parentIds = key.split(',').map(Number);
-          const xs = parentIds.map(p => placed.get(p)?.x).filter((x): x is number => x != null);
-          if (xs.length > 0) centre = xs.reduce((a, b) => a + b, 0) / xs.length;
-        }
-        g = { key, members: [], centre, bloodlineIdx: [] };
-        groupsByKey.set(key, g);
-        groupOrder.push(g);
-      }
-      const memberIdx = g.members.length;
-      g.members.push(node.personId);
-      // Bloodline iff this person's OWN parent-set matches the
-      // group's parent-set. In-laws (joined via partner) get skipped
-      // for the midpoint computation — they drift outward instead.
-      if (!key.startsWith('__solo_')) {
-        const own = parentsByChild.get(node.personId);
-        if (own && own.length > 0) {
-          const ownKey = own.slice().sort((a, b) => a - b).join(',');
-          if (ownKey === key) g.bloodlineIdx.push(memberIdx);
-        }
-      }
-    }
-
-    groupOrder.sort((a, b) => a.centre - b.centre || a.key.localeCompare(b.key));
-
-    // RULE: siblings stay tight. Every member of a family group sits
-    // exactly `spouseOffset` from the next, whether the adjacency is
-    // couple-couple (Alan + Sally), couple-sibling (Sally + Carol),
-    // or sibling-sibling (Carol + Graham). No subtree-width-driven
-    // spreading — Terry's preference is the visual where Sally and
-    // Carol sit shoulder-to-shoulder under D + S, with their
-    // descendant families below shifted as needed to fit. That
-    // shifting happens automatically in the descendant pass; this
-    // pass focuses on parent-row tightness.
-    const newX = new Map<number, number>();
-    let prevRight = -Infinity;
-    for (const g of groupOrder) {
-      const offsets: number[] = [];
-      for (let i = 0; i < g.members.length; i++) {
-        offsets.push(i * opts.spouseOffset);
-      }
-      let leftEdge: number;
-      if (g.bloodlineIdx.length > 0) {
-        const meanOffset = g.bloodlineIdx
-          .map(i => offsets[i])
-          .reduce((a, b) => a + b, 0) / g.bloodlineIdx.length;
-        leftEdge = g.centre - meanOffset;
-      } else {
-        const meanOffset = offsets.reduce((a, b) => a + b, 0) / offsets.length;
-        leftEdge = g.centre - meanOffset;
-      }
-      if (prevRight !== -Infinity) {
-        leftEdge = Math.max(leftEdge, prevRight + opts.nodeSpacing);
-      }
-      g.members.forEach((mid, i) => {
-        newX.set(mid, leftEdge + offsets[i]);
-      });
-      prevRight = leftEdge + offsets[offsets.length - 1];
-    }
-    for (const node of genNodes) {
-      const x = newX.get(node.personId);
-      if (x == null) continue;
-      const existing = placed.get(node.personId);
-      if (!existing) continue;
-      placed.set(node.personId, { ...existing, x });
-    }
-  }
-
-  // ── Third pass: bottom-up ancestor recentring.
-  // The top-down pass above shifted gen +1 (Alan, Sally, Carol,
-  // Graham) under their parents in gen +2 — but gen +2 itself was
-  // placed BEFORE gen +1 moved, leaving great-grandparents stranded
-  // at gen +1's old positions. So once Alan slides left to sit
-  // adjacent to Sally, his parents Grandad Filmer + Dorothy still
-  // hover above where Alan USED to be, miles from where he is now.
-  //
-  // Walk back UP and re-centre each ancestor over their (now-
-  // shifted) children. This mirrors the first-pass ancestor
-  // centring math but reads from the post-shift positions, so
-  // every parent stays directly above its kids' midpoint.
-  for (const gen of allGensSorted.slice().reverse()) {
-    if (gen <= 0) continue;
-    const genNodes = byGen.get(gen)!;
-    if (genNodes.length === 0) continue;
-    // For each parent in this gen, the placed children below.
-    const childrenByParent = new Map<number, number[]>();
-    for (const e of graph.edges) {
-      if (e.type !== 'parent_of') continue;
-      const parentNode = placed.get(e.aId);
-      if (!parentNode || parentNode.generation !== gen) continue;
-      if (!placed.has(e.bId)) continue;
-      if (!childrenByParent.has(e.aId)) childrenByParent.set(e.aId, []);
-      childrenByParent.get(e.aId)!.push(e.bId);
-    }
-    // Sort genNodes by current x so adjacency is preserved.
-    const sorted = genNodes
-      .map(n => placed.get(n.personId))
-      .filter((n): n is LaidOutNode => n != null)
-      .sort((a, b) => a.x - b.x);
-    if (sorted.length === 0) continue;
-
-    // ── Per-family centring (replaces the row-wide bias shift) ──────────
-    // Group parents by their kid-set signature. Every parent who shares
-    // the SAME set of placed kids forms one family group whose desired
-    // centre is that kid-set's midpoint. Patricia / Peter (no placed
-    // kids = aunts/uncles of focus whose own children are hidden in
-    // panels) and other kid-less in-laws form per-person solo groups
-    // that just keep their current x — they fill the gap between the
-    // kid-having groups without dragging the average.
+  {
+    // ───────────────────────────────────────────────────────────────
+    // X-COORDINATE ASSIGNMENT — tidy, compact, balanced (Terry r421).
     //
-    // Each kid-having group is then centred at its OWN desired,
-    // groups laid out left-to-right with nodeSpacing between them.
-    // Net effect: Alan+Sally sit above Terry+Colin+Amie's midpoint
-    // AND Carol+Graham sit above Ben+Jenny's midpoint — independent
-    // of how far apart those two kid groups are. Replaces the old
-    // single-shift bias correction which averaged the two desired
-    // centres and put NEITHER family directly above its kids when
-    // both were in the same row.
-    type FamilyGroup = {
-      key: string;
-      members: number[];
-      desired: number;
-      hasKids: boolean;
-      /** True when this group is a "side branch" sibling-couple
-       *  whose only kids are panelled (none on the direct line).
-       *  We post-process these AFTER the main pass to snap them
-       *  against the kid-having couple's direct-line descendant
-       *  span, with `CARD_W + nodeSpacing` of breathing room. */
-      isSideBranch: boolean;
+    // Replaces the old averaging + cascade passes. The first pass above
+    // already fixed each node's GENERATION, within-row ORDER and Y; this
+    // recomputes every X with a principled layered-graph method so that:
+    //   • only canvas-visible nodes take a horizontal slot — panelled
+    //     cousins / collapsed side-branches are PARKED on their nearest
+    //     visible relative, so they never open a phantom gap in a row nor
+    //     inflate the navigable bounds (which forced the zoom right out);
+    //   • every parent sits over the SPAN of its own visible children
+    //     (not the average of the whole row → no ancestors stranded in
+    //     the empty middle, no lines stretching across to reach kids);
+    //   • branches pack as tight as the min-gap allows (no dead space);
+    //   • result is symmetric + deterministic (no crossing parent paths).
+    //
+    // Method: layers = generations (fixed); order within a layer = fixed
+    // (from the first pass). Iterate up/down sweeps; each sweep sets every
+    // node's desired X to the mean of its already-placed neighbours in the
+    // adjacent layer, then solves the per-layer "sit at desired, honour
+    // the min-gaps" problem OPTIMALLY via pool-adjacent-violators (an
+    // isotonic regression). Converges to a compact, centred tree — the
+    // standard, well-understood approach for this exact problem.
+    const focusId = graph.focusPersonId;
+    const pushMap = (m: Map<number, number[]>, k: number, v: number) => {
+      const a = m.get(k); if (a) a.push(v); else m.set(k, [v]);
     };
-    const groupsByKey = new Map<string, FamilyGroup>();
-    const groupOrder: FamilyGroup[] = [];
-    // Helper: for a kid-LESS person in this gen, find a bloodline
-    // sibling (someone sharing at least one parent with them) who
-    // DOES have placed kids. If found, return that sibling's
-    // kid-set + desired centre — used so kid-less great-aunts /
-    // uncles join their bloodline pair-mate's group and travel
-    // with the pair when it shifts to align under its kids.
-    // Without this, Gladys (Nan's sister, no placed kids) had her
-    // own solo desired = her current x, and the third pass sorted
-    // her group BEFORE Nan's pair when Nan's desired (= Sally.x)
-    // moved rightward — leaving Gladys stranded on the wrong side
-    // of Derek instead of glued to Nan's right.
-    const findKidHavingSibling = (pid: number): { key: string; desired: number } | null => {
-      // Method A — shared parent (parent_of upward, then downward to a
-      // sibling who has placed kids).
-      const grandparentIds = new Set<number>();
-      for (const e of graph.edges) {
-        if (e.type !== 'parent_of') continue;
-        if (e.bId !== pid) continue;
-        grandparentIds.add(e.aId);
-      }
-      for (const e of graph.edges) {
-        if (e.type !== 'parent_of') continue;
-        if (!grandparentIds.has(e.aId)) continue;
-        if (e.bId === pid) continue;
-        const sibKids = childrenByParent.get(e.bId) ?? [];
-        if (sibKids.length === 0) continue;
-        const xs = sibKids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
-        if (xs.length === 0) continue;
-        const desired = xs.reduce((a, b) => a + b, 0) / xs.length;
-        return { key: [...sibKids].sort((a, b) => a - b).join(','), desired };
-      }
-      // Method B — direct sibling_of edges. Same reason as the matching
-      // fallback in findSiblings above: when the shared parent has been
-      // stripped from layoutGraph, parent_of upward returns nothing, so
-      // we have to consult the synthesised sibling_of edges to keep
-      // kid-less Gladys riding along with kid-having Sylvia.
-      for (const e of graph.edges) {
-        if (e.type !== 'sibling_of') continue;
-        let other: number | null = null;
-        if (e.aId === pid) other = e.bId;
-        else if (e.bId === pid) other = e.aId;
-        if (other == null) continue;
-        const sibKids = childrenByParent.get(other) ?? [];
-        if (sibKids.length === 0) continue;
-        const xs = sibKids.map(k => placed.get(k)?.x).filter((x): x is number => x != null);
-        if (xs.length === 0) continue;
-        const desired = xs.reduce((a, b) => a + b, 0) / xs.length;
-        return { key: [...sibKids].sort((a, b) => a - b).join(','), desired };
-      }
-      return null;
-    };
-    for (const node of sorted) {
-      const kids = childrenByParent.get(node.personId) ?? [];
-      // Only CANVAS-VISIBLE kids contribute to desired centre. A kid
-      // is canvas-visible if they're NOT a panelled side-branch
-      // descendant. Side-branch HEADS (aunts/uncles like Patricia /
-      // Peter / Carol) ARE canvas-visible, so when Grandad + Dorothy
-      // get centred at gen+2 their three children Alan + Patricia +
-      // Peter all count toward the midpoint. Their panelled grand-
-      // children (cousins) are EXCLUDED so the cousin family widths
-      // don't drag the canvas spacing.
-      const directLineKids = kids.filter(k => !panelledIds.has(k));
-      let key: string;
-      let desiredCentre: number;
-      let hasKids: boolean;
-      let isSideBranch = false;
-      if (directLineKids.length > 0) {
-        key = [...directLineKids].sort((a, b) => a - b).join(',');
-        const xs = directLineKids
-          .map(k => placed.get(k)?.x)
-          .filter((x): x is number => x != null);
-        desiredCentre = xs.length > 0 ? xs.reduce((a, b) => a + b, 0) / xs.length : node.x;
-        hasKids = true;
-      } else if (kids.length > 0) {
-        // Has kids, but ALL of them are panelled (side-branch). This
-        // is an aunt/uncle of focus (or great-aunt/uncle, etc.).
-        // Stays kid-less for the natural placement pass and gets
-        // snapped against the kid-having couple's direct-line
-        // descendant span by the cascade post-pass.
-        //
-        // Key by the shared panelled kid-set (sorted ids) so a side-
-        // branch couple — Carol + Graham, who share the same children
-        // — collapses into ONE group. Without this, Carol and Graham
-        // each become their own __side_<id> group; the cascade then
-        // tries to place them as two separate units and only Carol
-        // (the bloodline sibling of Sally) gets classified as right-
-        // side, leaving Graham on the wrong side and the couple split
-        // across the row.
-        key = `__side_${[...kids].sort((a, b) => a - b).join(',')}`;
-        desiredCentre = node.x;
-        hasKids = false;
-        isSideBranch = true;
-      } else {
-        // Truly kid-less in this gen — try joining a bloodline
-        // sibling's pair-group so we ride along when the pair shifts.
-        const sib = findKidHavingSibling(node.personId);
-        if (sib) {
-          key = sib.key;
-          desiredCentre = sib.desired;
-          hasKids = true; // group treated as kid-having for placement
-        } else {
-          key = `__solo_${node.personId}`;
-          desiredCentre = node.x;
-          hasKids = false;
-        }
-      }
-      let g = groupsByKey.get(key);
-      if (!g) {
-        g = { key, members: [], desired: desiredCentre, hasKids, isSideBranch };
-        groupsByKey.set(key, g);
-        groupOrder.push(g);
-      }
-      g.members.push(node.personId);
+    const parentsOf = new Map<number, number[]>();
+    const childrenOf = new Map<number, number[]>();
+    const spousesOf = new Map<number, number[]>();
+    for (const e of graph.edges) {
+      if (e.type === 'parent_of') { pushMap(childrenOf, e.aId, e.bId); pushMap(parentsOf, e.bId, e.aId); }
+      else if (e.type === 'spouse_of') { pushMap(spousesOf, e.aId, e.bId); pushMap(spousesOf, e.bId, e.aId); }
     }
 
-    // Sort groups left-to-right by desired centre. Stable tiebreak on
-    // group key so equal-desired groups keep a deterministic order
-    // across renders.
-    groupOrder.sort((a, b) => a.desired - b.desired || a.key.localeCompare(b.key));
-
-    // Place each group — kid-having groups centre on their desired,
-    // solo (kid-less) groups are placed at the kid-less node's
-    // existing position. nodeSpacing enforced between adjacent
-    // groups so the row reads cleanly left-to-right.
-    const newX = new Map<number, number>();
-    let prevRight = -Infinity;
-    for (const g of groupOrder) {
-      const groupSize = g.members.length;
-      const halfSpan = (groupSize - 1) * opts.spouseOffset / 2;
-      let leftEdge = g.desired - halfSpan;
-      if (prevRight !== -Infinity) {
-        leftEdge = Math.max(leftEdge, prevRight + opts.nodeSpacing);
+    // Canvas-visible set: the focus's whole BLOODLINE — everyone reachable
+    // via parent_of (either direction) or sibling_of: ancestors,
+    // descendants, siblings, aunts/uncles, GREAT-aunts/uncles, cousins…
+    // plus the direct SPOUSES of all of them. Panelled cousins are removed
+    // in isSlotted; in-laws' families-of-origin attach only via spouse_of,
+    // so they never enter the bloodline and stay parked. Walking
+    // sibling_of here is essential: a great-aunt/uncle often links to a
+    // grandparent ONLY by a derived sibling_of edge (their shared parent is
+    // an unshared ghost), so a parent-chain-only set would miss them and
+    // the park step would strand them at x=0 on top of the grandparents.
+    const siblingsOf = new Map<number, number[]>();
+    for (const e of graph.edges) {
+      if (e.type === 'sibling_of') { pushMap(siblingsOf, e.aId, e.bId); pushMap(siblingsOf, e.bId, e.aId); }
+    }
+    const bloodline = new Set<number>([focusId]);
+    {
+      const q = [focusId];
+      while (q.length) {
+        const c = q.shift()!;
+        for (const m of [...(parentsOf.get(c) ?? []), ...(childrenOf.get(c) ?? []), ...(siblingsOf.get(c) ?? [])]) {
+          if (!bloodline.has(m)) { bloodline.add(m); q.push(m); }
+        }
       }
-      g.members.forEach((pid, i) => {
-        newX.set(pid, leftEdge + i * opts.spouseOffset);
-      });
-      prevRight = leftEdge + (groupSize - 1) * opts.spouseOffset;
+    }
+    const visible = new Set<number>(bloodline);
+    for (const id of bloodline) for (const sp of spousesOf.get(id) ?? []) visible.add(sp);
+
+    const isSlotted = (id: number) => placed.has(id) && visible.has(id) && !panelledIds.has(id);
+
+    // Per-generation ordered list of SLOTTED nodes (order taken from the
+    // first pass's x, so spouse/sibling adjacency is preserved).
+    const gensSorted = Array.from(byGen.keys()).sort((a, b) => a - b);
+    const slottedByGen = new Map<number, number[]>();
+    for (const g of gensSorted) {
+      const ids = (byGen.get(g) ?? [])
+        .map(n => n.personId)
+        .filter(isSlotted)
+        .sort((a, b) => (placed.get(a)!.x - placed.get(b)!.x) || (a - b));
+      slottedByGen.set(g, ids);
     }
 
-    sorted.forEach((node) => {
-      const x = newX.get(node.personId);
-      if (x == null) return;
-      placed.set(node.personId, { ...node, x });
-    });
+    // Minimum centre-to-centre gap between two adjacent nodes in a row.
+    const sharesChild = (a: number, b: number) => {
+      const bk = new Set(childrenOf.get(b) ?? []);
+      return (childrenOf.get(a) ?? []).some(k => bk.has(k));
+    };
+    const isSpouse = (a: number, b: number) => (spousesOf.get(a) ?? []).includes(b);
+    const isSibling = (a: number, b: number) => {
+      const bp = new Set(parentsOf.get(b) ?? []);
+      return (parentsOf.get(a) ?? []).some(p => bp.has(p));
+    };
+    const sep = (a: number, b: number) =>
+      (isSpouse(a, b) || isSibling(a, b) || sharesChild(a, b)) ? opts.spouseOffset : opts.nodeSpacing;
 
-    // ── CASCADE PASS for side-branch sibling-couples ─────────────────
-    // Now that the kid-having groups (Alan + Sally, focus's direct
-    // parents) are positioned over their direct-line descendants, the
-    // aunt/uncle couples on this row can be snapped to a fixed
-    // breathing-room offset from the kid-having descendant span:
-    //   * Inner edge of side-branch couple
-    //     = outer edge of kid-having couple's direct-line descendant
-    //       span ± (CARD_W + nodeSpacing).
-    // The bloodline sibling sits on the inner side of the couple
-    // (closer to the kid-having pair), the in-law on the outer side.
-    // Cascading outward, each next side-branch couple is the same
-    // CARD_W + nodeSpacing distance from the previous couple's outer
-    // card. Result: even rhythm of one card + one gap between every
-    // visible card on the row, regardless of how many descendants are
-    // tucked into each side-branch's panel.
-    const sideBranchGroups = groupOrder.filter(g => g.isSideBranch);
-    if (sideBranchGroups.length > 0) {
-      // Find the kid-having descendants' x range for THIS row — only
-      // canvas-visible kids count, never panelled side-branch
-      // descendants. The anchor span we cascade against is the
-      // visible-on-canvas children of focus's parents.
-      const directLineKidXs: number[] = [];
-      for (const g of groupOrder) {
-        if (!g.hasKids || g.isSideBranch) continue;
-        for (const memberId of g.members) {
-          const kids = childrenByParent.get(memberId) ?? [];
-          for (const k of kids) {
-            if (panelledIds.has(k)) continue;
-            const x = placed.get(k)?.x;
-            if (x != null) directLineKidXs.push(x);
-          }
-        }
-      }
-      // If there are no kid-having direct-line descendants on this
-      // row (rare — would only happen if focus has no siblings and
-      // the kid-having group is the focus's own row), fall back to
-      // measuring against the kid-having group's couple positions
-      // themselves. Otherwise use the direct-line descendants' span.
-      let leftAnchor: number;
-      let rightAnchor: number;
-      if (directLineKidXs.length > 0) {
-        leftAnchor = Math.min(...directLineKidXs);
-        rightAnchor = Math.max(...directLineKidXs);
-      } else {
-        // Fallback: kid-having couple's own x positions.
-        const kidHavingXs: number[] = [];
-        for (const g of groupOrder) {
-          if (!g.hasKids || g.isSideBranch) continue;
-          for (const m of g.members) {
-            const x = newX.get(m);
-            if (x != null) kidHavingXs.push(x);
-          }
-        }
-        if (kidHavingXs.length === 0) return; // nothing to anchor against
-        leftAnchor = Math.min(...kidHavingXs);
-        rightAnchor = Math.max(...kidHavingXs);
-      }
+    const X = new Map<number, number>();
+    for (const g of gensSorted) { // initial compact left-pack per row
+      const ids = slottedByGen.get(g)!;
+      let x = 0;
+      for (let i = 0; i < ids.length; i++) { if (i > 0) x += sep(ids[i - 1], ids[i]); X.set(ids[i], x); }
+    }
 
-      // Card-width constant (mirrors TreesCanvas's CARD_W). Hardcoded
-      // here because trees-layout.ts is render-agnostic but the
-      // user's spacing rule is expressed in terms of card units.
-      const CARD_W = 170;
-      // Breathing room between adjacent visible cards on the row —
-      // ONE card width (Terry's tightened spacing rule, 2026-05-03;
-      // previously CARD_W + nodeSpacing felt too sideways-spread).
-      const cascadeStep = CARD_W;
+    // Solve one row: choose x_1<=…<=x_n with x_{i+1} >= x_i + gap_i that
+    // minimises Σ(x_i − desired_i)². Exact O(n) via pool-adjacent-
+    // violators on the gap-shifted targets.
+    const solveLayer = (ids: number[], desired: number[]) => {
+      const n = ids.length;
+      if (n === 0) return;
+      const cum: number[] = [0];
+      for (let i = 1; i < n; i++) cum.push(cum[i - 1] + sep(ids[i - 1], ids[i]));
+      const t = desired.map((d, i) => d - cum[i]);
+      const sum: number[] = [];
+      const cnt: number[] = [];
+      for (let i = 0; i < n; i++) {
+        sum.push(t[i]); cnt.push(1);
+        while (sum.length >= 2 && sum[sum.length - 2] / cnt[sum.length - 2] > sum[sum.length - 1] / cnt[sum.length - 1]) {
+          const s = sum.pop()!, c = cnt.pop()!;
+          sum[sum.length - 1] += s; cnt[cnt.length - 1] += c;
+        }
+      }
+      let idx = 0;
+      for (let b = 0; b < sum.length; b++) {
+        const v = sum[b] / cnt[b];
+        for (let c = 0; c < cnt[b]; c++) { X.set(ids[idx], v + cum[idx]); idx++; }
+      }
+    };
 
-      // Classify each side-branch group LEFT vs RIGHT by BLOODLINE
-      // TIE — which kid-having member (Alan = father, Sally = mother)
-      // shares parents with the side-branch group's bloodline member.
-      // Carol shares parents with Sally → right side. Patricia / Peter
-      // share parents with Alan → left side. We can't classify by the
-      // side-branch group's current x because the first pass centred
-      // it over its panelled subtree, which can be anywhere — that
-      // landed Carol in the middle of the row instead of on Sally's
-      // outer side.
-      //
-      // Find the kid-having couple's members and split them by their
-      // current x: leftMember (smaller x = father convention) vs
-      // rightMember (larger x = mother). For each side-branch group,
-      // find its bloodline member (the one that has parent_of edges
-      // shared with a kid-having member) and tag it left/right
-      // accordingly.
-      // Compute focus's direct bloodline ancestors so we can filter
-      // kidHavingMembers to "the canonical anchor pair" — Alan + Sally
-      // at gen=1, focus's grandparents at gen=2, etc. Without this
-      // filter, any OTHER row member who happens to have a direct-
-      // line child placed (e.g. Lindsay = sister-in-law of focus,
-      // whose kids Lilly+Daisy are direct-line because they're focus's
-      // nieces) gets treated as a kid-having anchor and lands as
-      // rightKidHavingId, breaking the bloodline-tie classification
-      // for Carol (Sally's sister) → Carol falls through to the
-      // x-distance fallback and ends up on the wrong side.
-      const focusAncestors = new Set<number>([graph.focusPersonId]);
-      {
-        const upQ = [graph.focusPersonId];
-        while (upQ.length) {
-          const cur = upQ.shift()!;
-          for (const e of graph.edges) {
-            if (e.type !== 'parent_of') continue;
-            if (e.bId !== cur) continue;
-            if (focusAncestors.has(e.aId)) continue;
-            focusAncestors.add(e.aId);
-            upQ.push(e.aId);
-          }
-        }
-      }
-      const kidHavingMembers: number[] = [];
-      for (const g of groupOrder) {
-        if (!g.hasKids || g.isSideBranch) continue;
-        for (const m of g.members) {
-          // Only include focus's direct bloodline ancestors as
-          // cascade anchors. Sister-in-law / brother-in-law parents
-          // who happen to have direct-line nieces/nephews on canvas
-          // are NOT focus's ancestors and shouldn't anchor the
-          // cascade.
-          if (!focusAncestors.has(m)) continue;
-          kidHavingMembers.push(m);
-        }
-      }
-      let leftKidHavingId: number | null = null;
-      let rightKidHavingId: number | null = null;
-      if (kidHavingMembers.length > 0) {
-        const sortedKH = [...kidHavingMembers].sort((a, b) => (newX.get(a) ?? 0) - (newX.get(b) ?? 0));
-        leftKidHavingId = sortedKH[0];
-        rightKidHavingId = sortedKH[sortedKH.length - 1];
-      }
-      const parentsOf = (id: number): Set<number> => {
-        const out = new Set<number>();
-        for (const e of graph.edges) {
-          if (e.type === 'parent_of' && e.bId === id) out.add(e.aId);
-        }
-        return out;
-      };
-      const sharesParent = (a: number, b: number): boolean => {
-        const aP = parentsOf(a);
-        if (aP.size === 0) return false;
-        const bP = parentsOf(b);
-        for (const p of aP) if (bP.has(p)) return true;
-        return false;
-      };
-      const sharesSibling = (a: number, b: number): boolean => {
-        for (const e of graph.edges) {
-          if (e.type !== 'sibling_of') continue;
-          if ((e.aId === a && e.bId === b) || (e.aId === b && e.bId === a)) return true;
-        }
-        return false;
-      };
-      const isSiblingOf = (a: number, b: number) => sharesParent(a, b) || sharesSibling(a, b);
+    const meanOf = (ids: number[] | undefined) => {
+      if (!ids) return null;
+      let s = 0, n = 0;
+      for (const id of ids) { const x = X.get(id); if (x != null) { s += x; n++; } }
+      return n === 0 ? null : s / n;
+    };
 
-      const leftSideBranches: typeof sideBranchGroups = [];
-      const rightSideBranches: typeof sideBranchGroups = [];
-      for (const g of sideBranchGroups) {
-        // Find the bloodline anchor in this side-branch group: the
-        // member that shares a parent (or sibling_of edge) with one
-        // of the kid-having members.
-        let assigned = false;
-        let assignedSide: 'right' | 'left' | 'fallback' | null = null;
-        let assignedBy = -1;
-        for (const m of g.members) {
-          if (rightKidHavingId != null && isSiblingOf(m, rightKidHavingId)) {
-            rightSideBranches.push(g);
-            assigned = true;
-            assignedSide = 'right';
-            assignedBy = m;
-            break;
-          }
-          if (leftKidHavingId != null && isSiblingOf(m, leftKidHavingId)) {
-            leftSideBranches.push(g);
-            assigned = true;
-            assignedSide = 'left';
-            assignedBy = m;
-            break;
-          }
-        }
-        if (!assigned) {
-          // No bloodline tie detected (rare — disconnected branch).
-          // Fall back to the old x-based classification: whichever
-          // side they currently sit closer to.
-          const cx = g.desired;
-          if (Math.abs(cx - leftAnchor) <= Math.abs(cx - rightAnchor)) {
-            leftSideBranches.push(g);
-            assignedSide = 'fallback';
-          } else {
-            rightSideBranches.push(g);
-            assignedSide = 'fallback';
-          }
-        }
-        // assignedSide / assignedBy are kept around in case future
-        // logging needs to see how each side-branch group classified.
-        void assignedSide; void assignedBy;
+    const ITERS = 12;
+    for (let it = 0; it < ITERS; it++) {
+      const downward = it % 2 === 0;
+      const order = downward
+        ? gensSorted.slice().sort((a, b) => b - a)   // parents before children
+        : gensSorted.slice().sort((a, b) => a - b);  // children before parents
+      for (const g of order) {
+        const ids = slottedByGen.get(g)!;
+        if (ids.length === 0) continue;
+        const desired = ids.map(id => {
+          let a = downward ? meanOf(parentsOf.get(id)) : meanOf(childrenOf.get(id));
+          if (a == null) a = meanOf(spousesOf.get(id));   // keep couples together
+          return a == null ? (X.get(id) ?? 0) : a;
+        });
+        solveLayer(ids, desired);
       }
-      // Within each side, order side-branch couples by their bloodline
-      // anchor's desired x (closest to the kid-having pair first, so
-      // the cascade walks outward).
-      leftSideBranches.sort((a, b) => b.desired - a.desired);
-      rightSideBranches.sort((a, b) => a.desired - b.desired);
+    }
 
-      // Place left-side cascade: each side-branch couple's INNER card
-      // (closest to leftAnchor) sits at x = (previous outer / leftAnchor)
-      // − cascadeStep. Within the couple, members are ordered by their
-      // existing newX from the first pass (which already encodes
-      // bloodline-inside / in-law-outside — that ordering came from
-      // orderParentGeneration earlier in the layout).
-      let leftFrontier = leftAnchor;
-      for (const g of leftSideBranches) {
-        // Sort members by current placed x to preserve inner/outer order.
-        const members = g.members
-          .map(m => ({ id: m, x: newX.get(m) ?? 0 }))
-          .sort((a, b) => a.x - b.x);
-        // Inner card sits at leftFrontier - cascadeStep, outer card
-        // sits at innerCardX - spouseOffset (further out / left).
-        const innerCardX = leftFrontier - cascadeStep;
-        // The couple's RIGHTMOST member is the inner one (closest to
-        // leftAnchor).
-        const innerIdx = members.length - 1;
-        // Place rightmost member at innerCardX, then walk left.
-        for (let i = innerIdx; i >= 0; i--) {
-          const offset = (innerIdx - i) * opts.spouseOffset;
-          newX.set(members[i].id, innerCardX - offset);
+    // Centre the whole tree on the focus.
+    const fx = X.get(focusId) ?? 0;
+    if (fx !== 0) for (const id of [...X.keys()]) X.set(id, X.get(id)! - fx);
+
+    // Park every non-slotted placed node on its nearest slotted relative
+    // (BFS outward). Keeps panels anchored near their owner and the
+    // navigable bounds tight; the canvas relocates them into chevron
+    // panels on expand, so the parked x only sets their resting home.
+    for (const node of placed.values()) {
+      if (X.has(node.personId)) continue;
+      const q = [node.personId];
+      const seen = new Set<number>([node.personId]);
+      let parkX: number | null = null;
+      while (q.length && parkX == null) {
+        const c = q.shift()!;
+        for (const m of [...(parentsOf.get(c) ?? []), ...(childrenOf.get(c) ?? []), ...(spousesOf.get(c) ?? []), ...(siblingsOf.get(c) ?? [])]) {
+          if (X.has(m)) { parkX = X.get(m)!; break; }
+          if (!seen.has(m)) { seen.add(m); q.push(m); }
         }
-        // Advance frontier to the OUTER (leftmost) card of this couple.
-        leftFrontier = innerCardX - (innerIdx * opts.spouseOffset);
       }
+      X.set(node.personId, parkX ?? 0);
+    }
 
-      // Mirror for right side: inner card sits at x = rightAnchor + cascadeStep.
-      let rightFrontier = rightAnchor;
-      for (const g of rightSideBranches) {
-        const members = g.members
-          .map(m => ({ id: m, x: newX.get(m) ?? 0 }))
-          .sort((a, b) => a.x - b.x);
-        // Inner card is the LEFTMOST member (closest to rightAnchor).
-        const innerCardX = rightFrontier + cascadeStep;
-        for (let i = 0; i < members.length; i++) {
-          newX.set(members[i].id, innerCardX + i * opts.spouseOffset);
-        }
-        rightFrontier = innerCardX + (members.length - 1) * opts.spouseOffset;
-      }
-
-      // Re-apply the updated newX values into placed.
-      sorted.forEach((node) => {
-        const x = newX.get(node.personId);
-        if (x == null) return;
-        placed.set(node.personId, { ...node, x });
-      });
+    // Write the new X back (Y is untouched — set by the first pass).
+    for (const node of Array.from(placed.values())) {
+      const x = X.get(node.personId);
+      if (x != null) placed.set(node.personId, { ...node, x });
     }
   }
 
