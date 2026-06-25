@@ -910,7 +910,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    */
   const hiddenSideBranchIds = useMemo(() => {
     const hidden = new Set<number>();
-    for (const [, desc] of sideBranchDescendantsByHead) {
+    for (const [head, desc] of sideBranchDescendantsByHead) {
+      // Expanded heads show their whole bloodline branch INLINE on the
+      // canvas (the layout slots them as normal tiles), so don't hide
+      // those descendants — only collapsed branches stay tucked away.
+      if (expandedDescendantsOf?.has(head)) continue;
       for (const id of desc) hidden.add(id);
     }
     // Sweep spouse_of edges once to pull in non-bloodline partners
@@ -963,7 +967,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       }
     }
     return hidden;
-  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
+  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet, expandedDescendantsOf]);
 
   /** Per-side-branch-head chevron geometry: position, leader-line
    *  endpoints, and per-parent bloodline colours. The v chevron now
@@ -2192,9 +2196,9 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         for (const pid of expandedAncestorsOf ?? new Set<number>()) {
           origins.push({ personId: pid, direction: 'ancestor' });
         }
-        for (const pid of expandedDescendantsOf ?? new Set<number>()) {
-          origins.push({ personId: pid, direction: 'descendant' });
-        }
+        // Descendant branches now expand INLINE as normal canvas tiles
+        // (bloodline belongs on the canvas, not in a floating panel), so
+        // ONLY married-in / in-law families get a floating panel here.
         if (origins.length === 0) return null;
 
         // Vertical gap between the origin's row and the panel's

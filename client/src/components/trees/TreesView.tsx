@@ -1255,7 +1255,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       ),
     };
   })();
-  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops) : null;
+  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops, {}, expandedDescendantsOf) : null;
 
   const handleRefocus = useCallback((personId: number) => {
     setFocusPersonId(personId);

@@ -252,7 +252,7 @@ export function assignGenerations(graph: FamilyGraph): Map<number, number> {
  * This is the "Canopy" renderer's layout. The focus-explorer renderer can
  * use the same nodes but hide anyone beyond a given hop count.
  */
-export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}): TreeLayout {
+export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}, expandedHeads: Set<number> = new Set()): TreeLayout {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const generations = assignGenerations(graph);
 
@@ -379,6 +379,10 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // accidentally marked panelled).
     const hidden = new Set<number>();
     for (const head of heads) {
+      // Heads the user has expanded inline are NOT panelled — their whole
+      // bloodline branch (cousins + their descendants) is slotted onto the
+      // canvas as normal tiles instead of tucked into a floating panel.
+      if (expandedHeads.has(head)) continue;
       const q = [head];
       const seen = new Set<number>([head]);
       while (q.length) {
@@ -1326,9 +1330,10 @@ function orderNodesInGeneration(genNodes: FamilyGraphNode[], graph: FamilyGraph)
 export function computeFocusLayout(
   graph: FamilyGraph,
   expandedHops: number,
-  options: LayoutOptions = {}
+  options: LayoutOptions = {},
+  expandedHeads: Set<number> = new Set()
 ): TreeLayout & { collapsedCountPerAnchor: Map<number, number> } {
-  const base = computePedigreeLayout(graph, options);
+  const base = computePedigreeLayout(graph, options, expandedHeads);
   // Identify nodes whose hopsFromFocus > expandedHops → these are "beyond
   // the current horizon" and should be collapsed. Anchor each collapsed
   // node to its nearest expanded neighbour so the renderer can draw a
