@@ -691,17 +691,16 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     }
 
     // Minimum centre-to-centre gap between two adjacent nodes in a row.
-    const sharesChild = (a: number, b: number) => {
-      const bk = new Set(childrenOf.get(b) ?? []);
-      return (childrenOf.get(a) ?? []).some(k => bk.has(k));
-    };
     const isSpouse = (a: number, b: number) => (spousesOf.get(a) ?? []).includes(b);
-    const isSibling = (a: number, b: number) => {
-      const bp = new Set(parentsOf.get(b) ?? []);
-      return (parentsOf.get(a) ?? []).some(p => bp.has(p));
-    };
-    const sep = (a: number, b: number) =>
-      (isSpouse(a, b) || isSibling(a, b) || sharesChild(a, b)) ? opts.spouseOffset : opts.nodeSpacing;
+    // Uniform tight spacing (Terry r424): every adjacency packs at the same
+    // tight gap. The OLD rule gave "unrelated" neighbours a wider nodeSpacing
+    // gap — that is exactly what made an in-law sitting beside a sibling
+    // (Sally↔Patricia, Wendy↔Ian) read ~30% further apart than two siblings.
+    // Horizontal width is now EARNED only by a real sub-tree below (the
+    // subtree-aware focus-row re-pack in the settle widens a branch by exactly
+    // what its descendants occupy), never by a fixed relationship gap — so the
+    // whole tree reads uniform until a branch genuinely needs the room.
+    const sep = (_a: number, _b: number) => opts.spouseOffset;
 
     const X = new Map<number, number>();
     for (const g of gensSorted) { // initial compact left-pack per row
@@ -768,38 +767,105 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // each side to its correct anchor removes the feedback: DESCENDANTS +
     // the focus row sit strictly UNDER their parents (top-down), ANCESTORS
     // strictly OVER their children (bottom-up). A few rounds converge.
-    // Anchor on the FOCUS row packed tight (families grouped by sep), then
-    // fan one-directionally: descendants DOWN under their parents, ancestors
-    // UP over their children. The focus row never chases its parents, so the
-    // feedback that caused the drift is gone and the wide cousin generation
-    // packs with no gaps.
+    // ── Subtree-AWARE spacing (Terry r424). Spacing is driven by how much
+    // room each branch's DESCENDANTS actually need, not a fixed relationship
+    // gap. A childless couple sits as tight as two siblings; a couple with a
+    // big brood gets exactly the width its sub-tree occupies — no more, no
+    // arbitrary "family boundary" gap. Method: fan descendants DOWN under
+    // their parents, MEASURE each focus-row unit's real sub-tree extent, then
+    // re-pack the focus row left-to-right so neighbouring sub-trees just clear
+    // each other; fan UP so ancestors centre over the result; repeat (a few
+    // rounds converge). The min gap between adjacent sub-trees is the same
+    // tight value as between two siblings, so the whole tree reads uniform.
+    const descOf = new Map<number, number[]>();
+    for (const r of (slottedByGen.get(0) ?? [])) {
+      const acc: number[] = []; const q = [...(childrenOf.get(r) ?? [])]; const seen = new Set<number>();
+      while (q.length) { const c = q.shift()!; if (seen.has(c) || !isSlotted(c)) continue; seen.add(c); acc.push(c); for (const k of childrenOf.get(c) ?? []) q.push(k); }
+      descOf.set(r, acc);
+    }
     {
       const g0 = slottedByGen.get(0) ?? [];
       let xp = 0;
       for (let i = 0; i < g0.length; i++) { if (i > 0) xp += sep(g0[i - 1], g0[i]); X.set(g0[i], xp); }
     }
-    for (let f = 0; f < 5; f++) {
+    const fanDown = () => {
       for (const g of gensSorted.filter(x => x < 0).sort((a, b) => b - a)) {
         const ids = slottedByGen.get(g)!;
         if (ids.length === 0) continue;
-        const desired = ids.map(id => {
-          let a = meanOf(parentsOf.get(id));
-          if (a == null) a = meanOf(spousesOf.get(id));
-          return a == null ? (X.get(id) ?? 0) : a;
-        });
+        const desired = ids.map(id => { let a = meanOf(parentsOf.get(id)); if (a == null) a = meanOf(spousesOf.get(id)); return a == null ? (X.get(id) ?? 0) : a; });
         solveLayer(ids, desired);
       }
+    };
+    const fanUp = () => {
       for (const g of gensSorted.filter(x => x > 0).sort((a, b) => a - b)) {
         const ids = slottedByGen.get(g)!;
         if (ids.length === 0) continue;
-        const desired = ids.map(id => {
-          let a = meanOf(childrenOf.get(id));
-          if (a == null) a = meanOf(spousesOf.get(id));
-          return a == null ? (X.get(id) ?? 0) : a;
-        });
+        // An ancestor sits over its CHILDREN. A childless ancestor (collapsed
+        // branch, or an aunt whose only tie is a panelled spouse) just keeps
+        // its current x here and is packed tight afterwards by
+        // tightenLeafAncestors(). Anchoring a childless node to its spouse let
+        // childless couples float away as a unit; anchoring it to its parents
+        // piled every sibling onto the one grandparent and shoved the focus's
+        // own parent off-centre — so we do neither.
+        const desired = ids.map(id => { const a = meanOf(childrenOf.get(id)); return a == null ? (X.get(id) ?? 0) : a; });
         solveLayer(ids, desired);
       }
-    }
+    };
+    // Close the excess gap a childless ("leaf") ancestor unit leaves behind: it
+    // has no sub-tree to sit over, so it should pack tight beside its sibling
+    // rather than float at a stale x. Only ever pulls a unit LEFT to close a
+    // gap — never pushes right (which could collide with a real sub-tree). Runs
+    // each settle round so the next fan-up re-centres any grandparent over the
+    // tightened unit.
+    const tightenLeafAncestors = () => {
+      for (const g of gensSorted.filter(x => x > 0).sort((a, b) => a - b)) {
+        const ids = slottedByGen.get(g)!;
+        let prevRight = -Infinity, i = 0;
+        while (i < ids.length) {
+          const a = ids[i];
+          const couple = i + 1 < ids.length && isSpouse(a, ids[i + 1]);
+          const members = couple ? [a, ids[i + 1]] : [a];
+          const hasKids = members.some(m => (childrenOf.get(m) ?? []).some(k => isSlotted(k)));
+          const uMin = Math.min(...members.map(m => X.get(m) ?? 0));
+          if (!hasKids && prevRight > -Infinity) {
+            const delta = (prevRight + opts.spouseOffset) - uMin;
+            if (delta < 0) for (const m of members) X.set(m, (X.get(m) ?? 0) + delta);
+          }
+          prevRight = Math.max(...members.map(m => X.get(m) ?? 0));
+          i += members.length;
+        }
+      }
+    };
+    // Re-pack the focus row so each unit's whole sub-tree clears the previous
+    // unit's sub-tree by the tight gap. A "unit" is a couple (kept together)
+    // or a single. Childless units fall back to just their own width → tight.
+    const repackFocusRow = () => {
+      const g0 = slottedByGen.get(0) ?? [];
+      let cursor = -Infinity, i = 0;
+      while (i < g0.length) {
+        const a = g0[i];
+        const couple = i + 1 < g0.length && isSpouse(a, g0[i + 1]);
+        const members = couple ? [a, g0[i + 1]] : [a];
+        let uMin = Infinity, uMax = -Infinity;
+        for (const m of members) {
+          let mn = X.get(m) ?? 0, mx = X.get(m) ?? 0;
+          for (const d of descOf.get(m) ?? []) { const dx = X.get(d); if (dx != null) { if (dx < mn) mn = dx; if (dx > mx) mx = dx; } }
+          if (mn < uMin) uMin = mn;
+          if (mx > uMax) uMax = mx;
+        }
+        // Set this unit exactly one tight gap past the previous sub-tree's
+        // right edge — pulling IN where the first pass over-spaced (e.g. an
+        // in-law beside a sibling) as well as pushing OUT where a wide brood
+        // needs the room. (A plain max(0,…) could only push out, so stale
+        // wide gaps survived.)
+        const delta = cursor === -Infinity ? 0 : (cursor + opts.spouseOffset) - uMin;
+        if (delta !== 0) for (const m of members) { X.set(m, (X.get(m) ?? 0) + delta); for (const d of descOf.get(m) ?? []) X.set(d, (X.get(d) ?? 0) + delta); }
+        cursor = uMax + delta;
+        i += members.length;
+      }
+    };
+    for (let f = 0; f < 6; f++) { fanDown(); repackFocusRow(); fanUp(); tightenLeafAncestors(); }
+    fanDown();
 
     // Centre the whole tree on the focus.
     const fx = X.get(focusId) ?? 0;
