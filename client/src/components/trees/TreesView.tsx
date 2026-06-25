@@ -185,6 +185,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // The picker opens only if we can't auto-pick a sensible focus.
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
   const [autoFocusAttempted, setAutoFocusAttempted] = useState(false);
+  // v3.0 round 419 (Terry) — true once the saved-tree load has run, so the
+  // first-visit focus picker only opens after we know whether a tree exists.
+  const [savedTreesLoaded, setSavedTreesLoaded] = useState(false);
   const [graph, setGraph] = useState<FamilyGraph | null>(null);
   const [loading, setLoading] = useState(false);
   const [expandedHops, setExpandedHops] = useState(3);
@@ -484,7 +487,17 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // auto-create "My Tree" so the settings auto-save has a target.
   useEffect(() => {
     (async () => {
+      // v3.0 round 419 (Terry) — one-time cleanup of the now-unused localStorage
+      // focus store (a stale value can linger from older builds); the saved tree
+      // is the single source of truth now, so nothing should read this key.
+      try {
+        localStorage.removeItem('pdr-trees-last-focus');
+        localStorage.removeItem('pdr-trees-last-focus-migrated-v3');
+      } catch {}
       const r = await listSavedTrees();
+      // v3.0 round 419 (Terry) — mark the load done so the auto-focus effect
+      // can decide (open the picker only on a genuine first visit).
+      setSavedTreesLoaded(true);
       if (!r.success) return;
       const list = r.data ?? [];
       if (list.length === 0) {
@@ -543,40 +556,53 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // be declared AFTER refetchGraph / fetchDepth or React hits a TDZ
   // crash. See comment near the undo/redo block for the same rule.)
 
-  // Auto-focus on first open: ONLY use the last focus you explicitly
-  // chose (stored in localStorage). If there isn't one, show the picker.
-  // We don't second-guess with graph analysis — your first pick wins
-  // forever, and you change it deliberately via the Change focus button.
+  // Auto-focus on first open. v3.0 round 419 (Terry) — the SAVED TREE's
+  // focus_person_id is the single source of truth now; there's no separate
+  // localStorage focus store. When saved trees exist, the saved-tree load above
+  // activates one and sets the focus, so this no-ops. Only on a genuine first
+  // visit (load finished, no trees, nothing set a focus) do we open the picker
+  // for a deliberate choice. Gating on savedTreesLoaded stops the picker
+  // flashing before a tree activates.
   useEffect(() => {
     if (autoFocusAttempted || focusPersonId != null) return;
-    if (allPersons.length === 0) return;
+    if (!savedTreesLoaded || allPersons.length === 0) return;
     setAutoFocusAttempted(true);
-    try {
-      // One-time migration: previous builds had an auto-picker that
-      // clobbered localStorage with "most-photographed" as focus. Wipe
-      // any such stale value on first run of this build so the user
-      // gets to choose fresh.
-      if (!localStorage.getItem('pdr-trees-last-focus-migrated-v3')) {
-        localStorage.removeItem('pdr-trees-last-focus');
-        localStorage.setItem('pdr-trees-last-focus-migrated-v3', '1');
-      }
-      const stored = localStorage.getItem('pdr-trees-last-focus');
-      const storedId = stored ? parseInt(stored, 10) : NaN;
-      if (Number.isFinite(storedId) && allPersons.some(p => p.id === storedId)) {
-        setFocusPersonId(storedId);
-        return;
-      }
-    } catch {}
-    // No stored default → open the picker so the user makes a deliberate choice.
     setFocusPickerOpen(true);
-  }, [allPersons, autoFocusAttempted, focusPersonId]);
+  }, [savedTreesLoaded, allPersons.length, autoFocusAttempted, focusPersonId]);
 
-  // Persist focus so the next Trees open lands on the same person.
+  // v3.0 round 419 (Terry) — focus persistence lives entirely in the saved tree
+  // now (auto-saved below to saved_trees.focus_person_id). The old localStorage
+  // 'pdr-trees-last-focus' store was removed so there's one source of truth; the
+  // most-recently-opened tree is what's restored on mount.
+
+  // Survive the focus person being DELETED or MERGED out from under an open tree.
+  // The backend nulls the tree's focus on discard and re-points it to the survivor
+  // on merge; the client reacts here: if the focused person has vanished from the
+  // live person list, reload the saved trees and re-home onto the tree's current
+  // focus (the merge survivor) if it's valid, otherwise clear the focus and reopen
+  // the picker so the user chooses a new one.
   useEffect(() => {
-    if (focusPersonId != null) {
-      try { localStorage.setItem('pdr-trees-last-focus', String(focusPersonId)); } catch {}
-    }
-  }, [focusPersonId]);
+    if (focusPersonId == null || allPersons.length === 0) return;
+    if (allPersons.some(p => p.id === focusPersonId)) return; // focus still exists
+    let cancelled = false;
+    (async () => {
+      const r = await listSavedTrees();
+      if (cancelled) return;
+      const list = r.success ? (r.data ?? []) : [];
+      setSavedTrees(list);
+      const active = currentTreeId != null ? list.find(t => t.id === currentTreeId) : null;
+      const survivor = active?.focusPersonId ?? null;
+      if (survivor != null && allPersons.some(p => p.id === survivor)) {
+        setFocusPersonId(survivor);
+        toast('The focus person was merged — the tree now centres on the merged person.');
+      } else {
+        setFocusPersonId(null);
+        setFocusPickerOpen(true);
+        toast('The person this tree was focused on was removed — choose a new focus.');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [allPersons, focusPersonId, currentTreeId]);
 
   // Fetch graph whenever the focus OR the requested depth changes.
   // Depth === the number of relationship hops walked outward from the

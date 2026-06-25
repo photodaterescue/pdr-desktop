@@ -3944,6 +3944,9 @@ export function renamePerson(personId: number, newName: string, newFullName?: st
 export function mergePersons(targetPersonId: number, sourcePersonId: number): number {
   const database = getDb();
   const result = database.prepare(`UPDATE face_detections SET person_id = ? WHERE person_id = ?`).run(targetPersonId, sourcePersonId);
+  // v3.0 round 419 (Terry) — re-home any saved tree focused on the merged-away
+  // person onto the survivor, so the tree never dangles on a deleted focus row.
+  database.prepare(`UPDATE saved_trees SET focus_person_id = ? WHERE focus_person_id = ?`).run(targetPersonId, sourcePersonId);
   database.prepare(`DELETE FROM persons WHERE id = ?`).run(sourcePersonId);
   return result.changes;
 }
@@ -7592,6 +7595,10 @@ export function mergePlaceholderIntoPerson(placeholderId: number, targetPersonId
         db.prepare(`UPDATE relationships SET person_a_id = ?, person_b_id = ? WHERE id = ?`).run(newA, newB, edge.id);
       }
     }
+    // v3.0 round 419 (Terry) — re-home any tree focused on this placeholder onto
+    // the real person it's merging into (defensive; the tree must never point at
+    // a deleted row).
+    db.prepare(`UPDATE saved_trees SET focus_person_id = ? WHERE focus_person_id = ?`).run(targetPersonId, placeholderId);
     db.prepare(`DELETE FROM persons WHERE id = ? AND is_placeholder = 1`).run(placeholderId);
   });
   tx();
