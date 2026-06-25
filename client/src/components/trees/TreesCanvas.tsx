@@ -191,6 +191,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
+  // Which FACE each cached avatar was cropped from (file path + box). Lets the
+  // loader re-crop when a person's representative face changes — e.g. you
+  // confirm a different photo in People Manager — instead of keeping the stale
+  // crop forever (Terry: confirmed Gladys's photo, Trees kept the old one even
+  // after Refresh, because the cache was keyed only on personId).
+  const avatarSigRef = useRef<Map<number, string>>(new Map());
   const [contextMenu, setContextMenu] = useState<{ personId: number; x: number; y: number } | null>(null);
 
   /** Step 6 of TREES_PANEL_DESIGN.md — drag mechanics + constraints +
@@ -315,12 +321,17 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     let cancelled = false;
     (async () => {
       for (const node of layout.nodes) {
-        if (avatars.has(node.personId)) continue;
         if (!node.representativeFaceFilePath || !node.representativeFaceBox) continue;
         const box = node.representativeFaceBox;
+        // Re-crop when the FACE changes, not just when it's missing — so a
+        // newly-confirmed photo replaces the old crop. Skip only when this
+        // exact face (path + box) is already the one we've cached.
+        const sig = `${node.representativeFaceFilePath}|${box.x},${box.y},${box.w},${box.h}`;
+        if (avatarSigRef.current.get(node.personId) === sig) continue;
         const res = await getFaceCrop(node.representativeFaceFilePath, box.x, box.y, box.w, box.h, 128);
         if (cancelled) return;
         if (res.success && res.dataUrl) {
+          avatarSigRef.current.set(node.personId, sig);
           setAvatars(prev => {
             const next = new Map(prev);
             next.set(node.personId, res.dataUrl!);
