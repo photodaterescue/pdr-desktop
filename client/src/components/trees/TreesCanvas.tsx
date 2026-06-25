@@ -643,6 +643,34 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     ...n, renderedX: n.x, renderedY: n.y,
   })), [layout.nodes]);
 
+  // Auto-zoom-to-fit (Terry r428): whenever the tree's SHAPE changes — it
+  // loads, a branch is expanded/collapsed, or the focus changes — refit the
+  // viewport so the whole tree is visible. Without this, expanding a branch
+  // grows the tree off-screen and the user has to pan/zoom out by hand. Keyed
+  // to placedNodes, which only changes on a structural change (graph load /
+  // expand / focus / data edit) — NOT on pan or manual zoom, so the user's
+  // own zoom is preserved between structural changes.
+  useEffect(() => {
+    const svg = svgRef.current;
+    if (!svg || placedNodes.length === 0) return;
+    const rect = svg.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return;
+    let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+    for (const n of placedNodes) {
+      if (n.renderedX - CARD_W / 2 < minX) minX = n.renderedX - CARD_W / 2;
+      if (n.renderedX + CARD_W / 2 > maxX) maxX = n.renderedX + CARD_W / 2;
+      if (n.renderedY - CARD_H / 2 < minY) minY = n.renderedY - CARD_H / 2;
+      if (n.renderedY + CARD_H / 2 > maxY) maxY = n.renderedY + CARD_H / 2;
+    }
+    const PAD = 80;
+    const contentW = Math.max(1, maxX - minX);
+    const contentH = Math.max(1, maxY - minY);
+    const scale = Math.max(0.05, Math.min((rect.width - PAD * 2) / contentW, (rect.height - PAD * 2) / contentH, 1.1));
+    const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
+    setViewport({ scale, tx: rect.width / 2 - cx * scale, ty: rect.height / 2 - cy * scale });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [placedNodes]);
+
   const nodeById = useMemo(() => {
     const m = new Map<number, typeof placedNodes[0]>();
     for (const n of placedNodes) m.set(n.personId, n);
