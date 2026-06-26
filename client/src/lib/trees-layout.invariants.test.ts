@@ -234,6 +234,20 @@ const CORPUS: Array<{ name: string; names: Record<number, string>; edges: E[] }>
       [5, 10, 'parent_of'], [7, 10, 'parent_of'],
     ],
   },
+  {
+    // Terry 2026-06-26: focus=Lucy Day. The couple Colin+Lindsay sit at the
+    // focus's PARENT generation (a side-branch aunt/uncle couple), and Colin's
+    // sibling Amie landed BETWEEN them. The couple-pairing pass only ran for
+    // descendants (g<=0), so a couple at an ANCESTOR generation was never
+    // guaranteed adjacent — the bug Terry kept re-finding under new focuses.
+    name: 'side-branch couple at the parent generation stays adjacent',
+    names: { 1: 'GP', 2: 'Parent', 3: 'Colin', 4: 'Amie', 5: 'Lucy', 6: 'Lindsay', 7: 'CousinKid' },
+    edges: [
+      [1, 2, 'parent_of'], [1, 3, 'parent_of'], [1, 4, 'parent_of'],
+      [2, 5, 'parent_of'],
+      [3, 6, 'spouse_of'], [3, 7, 'parent_of'], [6, 7, 'parent_of'],
+    ],
+  },
 ];
 
 /**
@@ -252,6 +266,12 @@ const KNOWN_FAILING = new Set<string>([
   'childless great-aunt (derived) two generations up|Parent',
   'multiple childless siblings + one sibling WITH a branch|Kid',
   'multiple childless siblings + one sibling WITH a branch|TheirKid',
+  // Couple-split is FIXED here (Colin+Lindsay adjacent — see the dedicated
+  // couples test above); these two focuses still trip the SAME lineage-column
+  // root — childless Amie takes the central column so Lucy's parent sits off to
+  // the side. Tracked, to clear when the lineage fix lands.
+  'side-branch couple at the parent generation stays adjacent|Lucy',
+  'side-branch couple at the parent generation stays adjacent|CousinKid',
 ]);
 
 describe('collapsing a generation hides the WHOLE subtree, including in-laws', () => {
@@ -272,6 +292,25 @@ describe('collapsing a generation hides the WHOLE subtree, including in-laws', (
     // F + spouse stay; the whole subtree below (bloodline C/GC AND in-laws CS/GCS) goes
     expect([...slotted].sort()).toEqual(['F', 'FS']);
   });
+});
+
+// Terry 2026-06-26: the couples-split GUARANTEE, isolated from every other
+// invariant. A couple must NEVER be split by a sibling, for ANY focus — this
+// asserts ONLY spouse-adjacency across every couple shape × every focus, so it
+// stays green even where a shape also trips the (separate, tracked) lineage-
+// column issue. This is the proof Terry's "no sibling between a couple, no
+// matter the focus" ask holds globally.
+describe('couples never split by a sibling (every couple shape × every focus)', () => {
+  const coupleShapes = CORPUS.filter(s => s.edges.some(e => e[2] === 'spouse_of'));
+  for (const shape of coupleShapes) {
+    for (const focus of Object.keys(shape.names).map(Number)) {
+      it(`${shape.name} — focus=${shape.names[focus]}`, () => {
+        const g = graphFor(shape.names, shape.edges, focus);
+        const nodes = layoutAll(g).nodes.filter(n => (n as any).slotted);
+        expect(checkSpousesAdjacent(g, nodes)).toEqual([]);
+      });
+    }
+  }
 });
 
 describe('trees layout invariants (every shape × every focus)', () => {

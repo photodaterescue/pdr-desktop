@@ -782,6 +782,40 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       slottedByGen.set(g, paired);
     }
 
+    // ── GLOBAL couple-adjacency GUARANTEE (Terry 2026-06-26) ──────────────
+    // No matter the focus or the generation, a couple is NEVER split by a
+    // sibling. The parent-keyed pass above only paired descendants (g<=0); a
+    // couple at an ANCESTOR generation (e.g. focus=Lucy → her parent's cousin
+    // Colin + wife Lindsay with his sister Amie between them) was left
+    // interleaved. This runs for EVERY generation as the final word on row
+    // order: walk the row, emit each node immediately followed by its same-row
+    // spouse(s), bloodline-first so the married-in spouse sits on the outside.
+    // Verified by the invariant harness (spouses-adjacent, every shape × every
+    // focus) — the scalable guarantee, not another per-person patch.
+    for (const g of gensSorted) {
+      const ids = slottedByGen.get(g);
+      if (!ids || ids.length < 2) continue;
+      const rowSet = new Set(ids);
+      const placedAdj = new Set<number>();
+      const out: number[] = [];
+      for (const id of ids) {
+        if (placedAdj.has(id)) continue;
+        // A married-in spouse whose bloodline partner is also in this row waits
+        // for the partner to pull them in (keeps the bloodline sibling run intact).
+        if (!bloodline.has(id)
+          && (spousesOf.get(id) ?? []).some(sp => rowSet.has(sp) && bloodline.has(sp) && !placedAdj.has(sp))) {
+          continue;
+        }
+        out.push(id); placedAdj.add(id);
+        for (const sp of spousesOf.get(id) ?? []) {
+          if (rowSet.has(sp) && !placedAdj.has(sp)) { out.push(sp); placedAdj.add(sp); }
+        }
+      }
+      // Safety net: anything not yet emitted (shouldn't happen) keeps its order.
+      for (const id of ids) if (!placedAdj.has(id)) { out.push(id); placedAdj.add(id); }
+      slottedByGen.set(g, out);
+    }
+
     // Minimum centre-to-centre gap between two adjacent nodes in a row.
     const isSpouse = (a: number, b: number) => (spousesOf.get(a) ?? []).includes(b);
     // Uniform tight spacing (Terry r424): every adjacency packs at the same
