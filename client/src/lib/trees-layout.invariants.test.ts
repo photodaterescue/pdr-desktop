@@ -218,6 +218,26 @@ const KNOWN_FAILING = new Set<string>([
   'multiple childless siblings + one sibling WITH a branch|TheirKid',
 ]);
 
+describe('collapsing a generation hides the WHOLE subtree, including in-laws', () => {
+  // Terry 2026-06-26: focus=Grandad, collapse the generation below him → ONLY
+  // the in-laws cascaded down. Collapsing a node must panel its bloodline
+  // descendants AND their married-in spouses, not leave the in-laws dangling.
+  it('collapsed focus → no descendant or in-law spouse stays slotted', () => {
+    const names = { 1: 'F', 2: 'FS', 3: 'C', 4: 'CS', 5: 'GC', 6: 'GCS' };
+    const edges: E[] = [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'],
+      [3, 4, 'spouse_of'], [3, 5, 'parent_of'], [4, 5, 'parent_of'],
+      [5, 6, 'spouse_of'],
+    ];
+    const g = graphFor(names, edges, 1);
+    const everyId = new Set(g.nodes.map(n => n.personId));
+    const layout = computeFocusLayout(g, 99, {}, everyId, new Set([1])); // collapse focus F
+    const slotted = new Set(layout.nodes.filter(n => n.slotted).map(n => n.name));
+    // F + spouse stay; the whole subtree below (bloodline C/GC AND in-laws CS/GCS) goes
+    expect([...slotted].sort()).toEqual(['F', 'FS']);
+  });
+});
+
 describe('trees layout invariants (every shape × every focus)', () => {
   for (const shape of CORPUS) {
     const ids = Object.keys(shape.names).map(Number);

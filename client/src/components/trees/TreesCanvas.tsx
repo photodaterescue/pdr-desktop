@@ -1066,6 +1066,28 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         }
       }
     }
+    // Direct-line collapse (Terry r440, ordering fixed r444): hide the whole
+    // subtree under any downward direct-line node the user has collapsed. This
+    // MUST run BEFORE the spouse + co-parent sweeps below so those sweeps also
+    // pull in the collapsed descendants' married-in spouses — otherwise the
+    // bloodline children vanish but the in-laws linger and cascade down (Terry:
+    // collapse Grandad's children → only the in-laws remained). Mirror of the
+    // collapsedDirect block in trees-layout panelledIds (which already ordered
+    // it before its sweep) so canvas-hide and layout-placement stay in lockstep.
+    if (collapsedDescendantsOf) {
+      for (const start of collapsedDescendantsOf) {
+        if (!downwardDirectSet.has(start)) continue;
+        const dq = [...(childrenOfHB.get(start) ?? [])];
+        const dseen = new Set<number>([start]);
+        while (dq.length) {
+          const cur = dq.shift()!;
+          if (dseen.has(cur)) continue;
+          dseen.add(cur);
+          hidden.add(cur);
+          for (const c of childrenOfHB.get(cur) ?? []) dq.push(c);
+        }
+      }
+    }
     // Sweep spouse_of edges once to pull in non-bloodline partners
     // of any already-hidden side-branch descendant.
     for (const e of layout.edges) {
@@ -1113,25 +1135,6 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         if (bloodlineSet.has(pid)) continue;
         const anyOtherParentHidden = parents.some(o => o !== pid && hidden.has(o));
         if (anyOtherParentHidden) hidden.add(pid);
-      }
-    }
-    // Direct-line collapse (Terry r440): hide the whole subtree under any
-    // downward direct-line node the user has collapsed. Mirror of the
-    // collapsedDirect block in trees-layout panelledIds so canvas-hide and
-    // layout-placement stay in lockstep. Strict ancestors are never in
-    // downwardDirectSet, so the upward spine is untouched.
-    if (collapsedDescendantsOf) {
-      for (const start of collapsedDescendantsOf) {
-        if (!downwardDirectSet.has(start)) continue;
-        const dq = [...(childrenOfHB.get(start) ?? [])];
-        const dseen = new Set<number>([start]);
-        while (dq.length) {
-          const cur = dq.shift()!;
-          if (dseen.has(cur)) continue;
-          dseen.add(cur);
-          hidden.add(cur);
-          for (const c of childrenOfHB.get(cur) ?? []) dq.push(c);
-        }
       }
     }
     return hidden;
@@ -1736,14 +1739,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         // MASTER — open/close EVERY level at once.
         const allExpanded = allBranchPointIds.length > 0 && allBranchPointIds.every(id => expandedDescendantsOf?.has(id));
         return (
-          <button
-            onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : allBranchPointIds); }}
-            title={allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'}
-            className="absolute left-3 top-3 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
-          >
-            {allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
-            {allExpanded ? 'Collapse all' : 'Expand all'}
-          </button>
+          <IconTooltip label={allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'} side="right">
+            <button
+              onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : allBranchPointIds); }}
+              className="absolute left-3 top-3 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
+            >
+              {allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
+              {allExpanded ? 'Collapse all' : 'Expand all'}
+            </button>
+          </IconTooltip>
         );
       })()}
       {onSetGenerationExpanded && generationToggles.map((g, i) => {
@@ -1752,15 +1756,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         const screenY = viewport.ty + g.childRowWorldY * viewport.scale;
         const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
         return (
-          <button
-            key={`gen-toggle-${i}`}
-            onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
-            title={show ? 'Show this whole generation' : 'Hide this whole generation'}
-            className="absolute left-3 z-30 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
-            style={{ top: Math.max(48, screenY - 16) }}
-          >
-            {show ? <ChevronsUpDown className="w-4 h-4 text-primary" /> : <ChevronsDownUp className="w-4 h-4 text-primary" />}
-          </button>
+          <IconTooltip key={`gen-toggle-${i}`} label={show ? 'Show this whole generation' : 'Hide this whole generation'} side="right">
+            <button
+              onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
+              className="absolute left-3 z-30 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
+              style={{ top: Math.max(48, screenY - 16) }}
+            >
+              {show ? <ChevronsUpDown className="w-4 h-4 text-primary" /> : <ChevronsDownUp className="w-4 h-4 text-primary" />}
+            </button>
+          </IconTooltip>
         );
       })}
       {canvasBackground && (
