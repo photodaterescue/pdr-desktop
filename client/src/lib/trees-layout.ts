@@ -388,20 +388,25 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // accidentally marked panelled).
     const hidden = new Set<number>();
     for (const head of heads) {
-      // Heads the user has expanded inline are NOT panelled — their whole
-      // bloodline branch (cousins + their descendants) is slotted onto the
-      // canvas as normal tiles instead of tucked into a floating panel.
-      if (expandedHeads.has(head)) continue;
-      const q = [head];
+      // PER-LEVEL (Terry r439): a node's children are SHOWN only when the node
+      // itself is expanded. The head's children appear iff the head is in
+      // expandedHeads; THEIR children iff they too are expanded; and everything
+      // beneath a collapsed node stays hidden regardless of its own flag
+      // (hiddenAbove carries that down). This replaces the old all-or-nothing
+      // "expanded head reveals its whole branch" so the user can open the tree
+      // one generation at a time.
+      const q: { id: number; hiddenAbove: boolean }[] = [{ id: head, hiddenAbove: false }];
       const seen = new Set<number>([head]);
       while (q.length) {
-        const cur = q.shift()!;
+        const { id: cur, hiddenAbove } = q.shift()!;
+        const curOpen = expandedHeads.has(cur);
         for (const c of childrenOf.get(cur) ?? []) {
           if (seen.has(c)) continue;
           seen.add(c);
           if (directLine.has(c)) continue;
-          hidden.add(c);
-          q.push(c);
+          const cHidden = hiddenAbove || !curOpen;
+          if (cHidden) hidden.add(c);
+          q.push({ id: c, hiddenAbove: cHidden });
         }
       }
     }

@@ -986,12 +986,33 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    */
   const hiddenSideBranchIds = useMemo(() => {
     const hidden = new Set<number>();
+    const childrenOfHB = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOfHB.has(e.aId)) childrenOfHB.set(e.aId, []);
+      childrenOfHB.get(e.aId)!.push(e.bId);
+    }
+    // PER-LEVEL (Terry r439): walk each head's branch top-down; a node's
+    // children show only when that node itself is expanded, and everything
+    // under a collapsed node stays hidden (hiddenAbove). So expanding a head
+    // reveals just its direct children — each then gets its own chevron — and
+    // the user opens deeper one generation at a time. Mirror of trees-layout's
+    // panelledIds so canvas-hide and layout-placement agree.
     for (const [head, desc] of sideBranchDescendantsByHead) {
-      // Expanded heads show their whole bloodline branch INLINE on the
-      // canvas (the layout slots them as normal tiles), so don't hide
-      // those descendants — only collapsed branches stay tucked away.
-      if (expandedDescendantsOf?.has(head)) continue;
-      for (const id of desc) hidden.add(id);
+      const q: { id: number; hiddenAbove: boolean }[] = [{ id: head, hiddenAbove: false }];
+      const seen = new Set<number>([head]);
+      while (q.length) {
+        const { id: cur, hiddenAbove } = q.shift()!;
+        const curOpen = expandedDescendantsOf?.has(cur) ?? false;
+        for (const c of childrenOfHB.get(cur) ?? []) {
+          if (seen.has(c)) continue;
+          seen.add(c);
+          if (!desc.has(c)) continue;
+          const cHidden = hiddenAbove || !curOpen;
+          if (cHidden) hidden.add(c);
+          q.push({ id: c, hiddenAbove: cHidden });
+        }
+      }
     }
     // Sweep spouse_of edges once to pull in non-bloodline partners
     // of any already-hidden side-branch descendant.
@@ -1080,32 +1101,40 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       partnersOf.get(e.aId)!.push(e.bId);
       partnersOf.get(e.bId)!.push(e.aId);
     }
-    for (const headId of sideBranchDescendantsByHead.keys()) {
+    // Place a chevron on EVERY shown branch-point (Terry r439 per-level): a
+    // head, OR any REVEALED descendant that itself has side-branch children
+    // (e.g. once Gladys is opened, Marion appears and gets her own chevron to
+    // open Sarah). Heads always anchor a chevron; revealed nodes only when
+    // they're currently shown (not in hiddenSideBranchIds) and have a child.
+    const childrenOfCh = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOfCh.has(e.aId)) childrenOfCh.set(e.aId, []);
+      childrenOfCh.get(e.aId)!.push(e.bId);
+    }
+    const allDesc = new Set<number>();
+    for (const desc of sideBranchDescendantsByHead.values()) for (const d of desc) allDesc.add(d);
+    const branchPoints = new Set<number>(sideBranchDescendantsByHead.keys());
+    for (const d of allDesc) {
+      if (hiddenSideBranchIds.has(d)) continue;
+      if ((childrenOfCh.get(d) ?? []).some(c => allDesc.has(c))) branchPoints.add(d);
+    }
+    for (const headId of branchPoints) {
       const headNode = nodeById.get(headId);
       if (!headNode) continue;
-      // Pick the partner whose card is currently visible AND who is
-      // a co-parent of one of head's hideable descendants. That
-      // ensures the chevron's other leader line goes to the right
-      // person (the actual co-parent of the cousins, not some
-      // unrelated past partner).
+      // Partner = the visible spouse who co-parents one of THIS node's DIRECT
+      // side-branch children — generalised from heads to any branch-point so
+      // the chevron's second leader still lands on the real co-parent.
+      const directKids = new Set((childrenOfCh.get(headId) ?? []).filter(c => allDesc.has(c)));
       const candidates = (partnersOf.get(headId) ?? [])
         .map(pid => nodeById.get(pid))
         .filter((n): n is NonNullable<typeof n> => n != null);
       let partnerNode: typeof headNode | null = null;
       for (const cand of candidates) {
-        // Co-parent test: there exists a parent_of edge from cand
-        // to a descendant of head.
-        const desc = sideBranchDescendantsByHead.get(headId)!;
         let isCoParent = false;
         for (const e of layout.edges) {
-          if (e.type !== 'parent_of') continue;
-          if (e.aId !== cand.personId) continue;
-          if (desc.has(e.bId) || (layout.edges.some(e2 =>
-            e2.type === 'parent_of' && e2.aId === headId && e2.bId === e.bId,
-          ))) {
-            isCoParent = true;
-            break;
-          }
+          if (e.type !== 'parent_of' || e.aId !== cand.personId) continue;
+          if (directKids.has(e.bId)) { isCoParent = true; break; }
         }
         if (isCoParent) { partnerNode = cand; break; }
       }
@@ -1127,7 +1156,27 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       });
     }
     return list;
-  }, [sideBranchDescendantsByHead, layout.edges, nodeById, bloodlineSet]);
+  }, [sideBranchDescendantsByHead, hiddenSideBranchIds, layout.edges, nodeById, bloodlineSet]);
+
+  // Every collapsible bloodline branch-point (head + any descendant that has
+  // side-branch children of its own). Per-level (r439): "Expand all" must open
+  // EVERY level — setting all of these expanded reveals the whole tree; [] hides
+  // it back to the default. NOT the floating in-law panels (separate firewall).
+  const allBranchPointIds = useMemo(() => {
+    const childrenOfBP = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOfBP.has(e.aId)) childrenOfBP.set(e.aId, []);
+      childrenOfBP.get(e.aId)!.push(e.bId);
+    }
+    const allDesc = new Set<number>();
+    for (const desc of sideBranchDescendantsByHead.values()) for (const d of desc) allDesc.add(d);
+    const ids = new Set<number>(sideBranchDescendantsByHead.keys());
+    for (const d of allDesc) {
+      if ((childrenOfBP.get(d) ?? []).some(c => allDesc.has(c))) ids.add(d);
+    }
+    return [...ids];
+  }, [sideBranchDescendantsByHead, layout.edges]);
 
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
@@ -1559,11 +1608,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           collapses them all back). Only shows when there's at least one
           collapsible side-branch. Labelled so it needs no tooltip. */}
       {onExpandAllDescendants && sideBranchChevrons.length > 0 && (() => {
-        const headIds = sideBranchChevrons.map(c => c.headId);
-        const allExpanded = headIds.every(id => expandedDescendantsOf?.has(id));
+        // Open EVERY level (all branch-points), not just the heads — so one click
+        // reveals the whole bloodline tree; click again collapses it all back.
+        const allExpanded = allBranchPointIds.length > 0 && allBranchPointIds.every(id => expandedDescendantsOf?.has(id));
         return (
           <button
-            onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : headIds); }}
+            onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : allBranchPointIds); }}
             title={allExpanded ? 'Collapse every branch' : 'Expand every branch'}
             className="absolute left-3 top-1/2 -translate-y-1/2 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
           >
