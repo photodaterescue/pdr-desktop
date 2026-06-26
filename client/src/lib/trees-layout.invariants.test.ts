@@ -69,8 +69,39 @@ function layoutAll(graph: FamilyGraph) {
   return computeFocusLayout(graph, 99, {}, everyId, new Set());
 }
 
+// Strict blood-ancestors of the focus — the focus's pedigree spine (walk parent_of
+// UP). The parents-centred invariant is enforced TIGHTLY on these (they're what the
+// layout's spine-seating guarantees); other parents keep the looser footprint check.
+function ancestorsOf(graph: FamilyGraph, focusId: number): Set<number> {
+  const parentsOf = new Map<number, number[]>();
+  for (const e of graph.edges) if (e.type === 'parent_of') { if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []); parentsOf.get(e.bId)!.push(e.aId); }
+  const anc = new Set<number>();
+  const q = [focusId];
+  while (q.length) { const c = q.shift()!; for (const p of parentsOf.get(c) ?? []) if (!anc.has(p)) { anc.add(p); q.push(p); } }
+  return anc;
+}
+
+// Lay a graph out with only a SUBSET of branch heads expanded (the others collapse,
+// so their descendants are panelled and NOT slotted). This is the partial /
+// collapsed state that the spine-drift bug needed: with a side branch panelled, the
+// focus's parents used to be pooled off their children. `expand` is the set of heads
+// to expand; the focus is always added.
+function layoutPartial(graph: FamilyGraph, expand: Iterable<number>) {
+  const heads = new Set<number>([graph.focusPersonId, ...expand]);
+  return computeFocusLayout(graph, 99, {}, heads, new Set());
+}
+
 const CARD_W = 170;       // cards are ~170px wide → centres closer than this overlap
 const SNUG = 480;         // a non-stranded sibling sits within this of its group
+// Tight centre tolerance for a SPINE parent/couple over its own children. Calibrated
+// against the layout: with the spine-seating fix, the worst legitimate full+partial
+// residual a blood-ancestor shows is ~55px (a real maternal/paternal fork where the
+// two grandparent couples must split to clear each other). 80px sits comfortably
+// above that and far below the drift this catches (engineered partial-collapse cases
+// drift the focus's parents 200px+ before the fix; the old ±190 footprint slack hid
+// even Terry's live ~170px). Residual is measured AFTER subtracting the unavoidable
+// "couple wider than its children" spread, so it is NOT fork-specific slack.
+const SPINE_CENTRE_TOL = 80;
 
 // ── Invariant checkers (return human-readable violations) ────────────────
 function childrenOf(graph: FamilyGraph) {
@@ -132,6 +163,22 @@ function checkNoStrandedSibling(graph: FamilyGraph, nodes: LaidOutNode[]): strin
   return bad;
 }
 
+// A parent/couple must sit CENTRED over its own children. This is now CENTRE-based
+// (couple-midpoint vs the children's-span centre), not the old "is the centre inside
+// the children's footprint ±a card" — that ±190 slack hid a real ~170px spine drift
+// that only appeared when a side branch was collapsed.
+//
+// For a BLOOD-ANCESTOR of the focus (the pedigree spine) the tolerance is tight
+// (SPINE_CENTRE_TOL), because the layout's spine-seating pins those over their kids
+// in every expansion state. We subtract the one unavoidable component first: a
+// COUPLE that is wider than its visible children can't shrink, so a residual up to
+// (coupleWidth − childSpan)/2 is geometric, not drift (this is a general couple rule,
+// applied to every couple — NOT fork-specific slack). At a genuine maternal/paternal
+// fork the two grandparent couples split to clear each other; that residual stays
+// within the tolerance, so the fork passes without any special-casing.
+//
+// Non-ancestor parents (a sibling's branch, an in-law side a spine fix doesn't touch)
+// keep the original looser footprint check, so this only TIGHTENS, never weakens.
 function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
   const byId = new Map(nodes.map(n => [n.personId, n]));
   const kids = childrenOf(graph);
@@ -143,19 +190,28 @@ function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[]
     if (e.aId === graph.focusPersonId) focusCouple.add(e.bId);
     if (e.bId === graph.focusPersonId) focusCouple.add(e.aId);
   }
+  const ancestors = ancestorsOf(graph, graph.focusPersonId);
   const bad: string[] = [];
   for (const [pid, kidIds] of kids) {
     if (focusCouple.has(pid)) continue;
     const p = byId.get(pid); if (!p) continue;
     const vis = kidIds.map(k => byId.get(k)).filter((k): k is LaidOutNode => !!k);
     if (vis.length === 0) continue;
-    // parent (allowing for a co-parent spouse) should sit over the children's span
     const kidMin = Math.min(...vis.map(k => k.x)), kidMax = Math.max(...vis.map(k => k.x));
     const spouseXs = graph.edges.filter(e => e.type === 'spouse_of' && (e.aId === pid || e.bId === pid)).map(e => byId.get(e.aId === pid ? e.bId : e.aId)).filter((s): s is LaidOutNode => !!s).map(s => s.x);
     const parentCentre = spouseXs.length ? (p.x + spouseXs[0]) / 2 : p.x;
-    const span = kidMax - kidMin;
-    // centre must be within the children span (+ a card of slack each side)
-    if (parentCentre < kidMin - CARD_W - 20 || parentCentre > kidMax + CARD_W + 20) bad.push(`${p.name} not over children (centre ${Math.round(parentCentre)} vs span ${Math.round(kidMin)}..${Math.round(kidMax)}, w=${Math.round(span)})`);
+    const kidsCentre = (kidMin + kidMax) / 2;
+    if (ancestors.has(pid)) {
+      // TIGHT centre check on the spine.
+      const coupleWidth = spouseXs.length ? Math.abs(p.x - spouseXs[0]) : 0;
+      const childSpan = kidMax - kidMin;
+      const coupleSlack = Math.max(0, (coupleWidth - childSpan) / 2);
+      const residual = Math.max(0, Math.abs(parentCentre - kidsCentre) - coupleSlack);
+      if (residual > SPINE_CENTRE_TOL) bad.push(`${p.name} not centred over children (centre ${Math.round(parentCentre)} vs kids-centre ${Math.round(kidsCentre)}, residual ${Math.round(residual)} > ${SPINE_CENTRE_TOL})`);
+    } else {
+      // Looser footprint check for non-spine parents (unchanged from before).
+      if (parentCentre < kidMin - CARD_W - 20 || parentCentre > kidMax + CARD_W + 20) bad.push(`${p.name} not over children (centre ${Math.round(parentCentre)} vs span ${Math.round(kidMin)}..${Math.round(kidMax)})`);
+    }
   }
   return bad;
 }
@@ -348,6 +404,98 @@ describe('trees layout invariants (every shape × every focus)', () => {
         const g = graphFor(shape.names, shape.edges, focus);
         const violations = allViolations(g);
         expect(violations, violations.join('\n')).toEqual([]);
+      });
+    }
+  }
+});
+
+// ── PARTIAL-expansion (collapsed) corpus ──────────────────────────────────
+// The spine-drift bug only appeared in PARTIAL states: with some branch heads
+// collapsed, their descendants panel away (not slotted), so the focus's parents
+// row holds only a few units — and the layout used to POOL the focus's parents
+// with a too-close collapsed leaf branch-head, dragging them off their children.
+// layoutAll (everything expanded) never reproduced it. Each shape below is laid
+// out with ONLY its spine expanded (every side branch collapsed) and asserts the
+// SAME structural invariants, with the parents-centred check now tight on the
+// spine. Before the spine-seating fix these drift the focus's parents 70–250px
+// off their children; after it they sit dead-centre.
+const PARTIAL_CORPUS: Array<{ name: string; names: Record<number, string>; edges: E[]; focus: number; expand: number[] }> = [
+  {
+    // focus + 2 sibs; the focus's parent has a sibling Uncle (collapsed) with 3
+    // cousins; grandparents above. The collapsed Uncle leaf sits left of Par.
+    name: 'parent with a collapsed uncle branch',
+    names: { 1: 'GP1', 2: 'GP2', 3: 'Par', 4: 'ParSp', 5: 'Uncle', 6: 'UncleSp', 7: 'Focus', 8: 'Sib1', 9: 'Sib2', 10: 'Cou1', 11: 'Cou2', 12: 'Cou3' },
+    edges: [[1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [3, 4, 'spouse_of'], [5, 6, 'spouse_of'], [3, 7, 'parent_of'], [4, 7, 'parent_of'], [3, 8, 'parent_of'], [4, 8, 'parent_of'], [3, 9, 'parent_of'], [4, 9, 'parent_of'], [5, 10, 'parent_of'], [6, 10, 'parent_of'], [5, 11, 'parent_of'], [6, 11, 'parent_of'], [5, 12, 'parent_of'], [6, 12, 'parent_of']],
+    focus: 7, expand: [1, 2, 3, 4], // spine only; Uncle collapsed
+  },
+  {
+    // two uncles, one each side, both collapsed, each with cousins.
+    name: 'two collapsed uncle branches, one each side',
+    names: { 1: 'GP1', 2: 'GP2', 3: 'Par', 4: 'ParSp', 5: 'UncL', 6: 'UncLsp', 7: 'UncR', 8: 'UncRsp', 9: 'Focus', 10: 'Sib', 11: 'CL1', 12: 'CL2', 13: 'CR1', 14: 'CR2' },
+    edges: [[1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [1, 7, 'parent_of'], [2, 7, 'parent_of'], [3, 4, 'spouse_of'], [5, 6, 'spouse_of'], [7, 8, 'spouse_of'], [3, 9, 'parent_of'], [4, 9, 'parent_of'], [3, 10, 'parent_of'], [4, 10, 'parent_of'], [5, 11, 'parent_of'], [6, 11, 'parent_of'], [5, 12, 'parent_of'], [6, 12, 'parent_of'], [7, 13, 'parent_of'], [8, 13, 'parent_of'], [7, 14, 'parent_of'], [8, 14, 'parent_of']],
+    focus: 9, expand: [1, 2, 3, 4],
+  },
+  {
+    // THREE uncles all to the LEFT of Par, each with a deep cousin subtree; focus
+    // + 1 sib on the right. Heavy one-sided pull — the strongest reproduction
+    // (the focus's parents drift ~250px before the fix).
+    name: 'three deep collapsed uncle branches on one side',
+    names: {
+      1: 'GP1', 2: 'GP2', 3: 'UncA', 4: 'UncAsp', 5: 'UncB', 6: 'UncBsp', 7: 'UncC', 8: 'UncCsp', 9: 'Par', 10: 'ParSp',
+      11: 'Focus', 12: 'Sib',
+      13: 'CA1', 14: 'CA2', 15: 'CB1', 16: 'CB2', 17: 'CC1', 18: 'CC2', 19: 'GCA1', 20: 'GCB1', 21: 'GCC1',
+    },
+    edges: [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [1, 7, 'parent_of'], [2, 7, 'parent_of'], [1, 9, 'parent_of'], [2, 9, 'parent_of'],
+      [3, 4, 'spouse_of'], [5, 6, 'spouse_of'], [7, 8, 'spouse_of'], [9, 10, 'spouse_of'],
+      [9, 11, 'parent_of'], [10, 11, 'parent_of'], [9, 12, 'parent_of'], [10, 12, 'parent_of'],
+      [3, 13, 'parent_of'], [4, 13, 'parent_of'], [3, 14, 'parent_of'], [4, 14, 'parent_of'],
+      [5, 15, 'parent_of'], [6, 15, 'parent_of'], [5, 16, 'parent_of'], [6, 16, 'parent_of'],
+      [7, 17, 'parent_of'], [8, 17, 'parent_of'], [7, 18, 'parent_of'], [8, 18, 'parent_of'],
+      [13, 19, 'parent_of'], [15, 20, 'parent_of'], [17, 21, 'parent_of'],
+    ],
+    focus: 11, expand: [1, 2, 9, 10], // spine only; all 3 uncles collapsed
+  },
+];
+
+describe('parents stay centred in PARTIAL / collapsed states', () => {
+  for (const shape of PARTIAL_CORPUS) {
+    it(`${shape.name} — focus=${shape.names[shape.focus]}`, () => {
+      const g = graphFor(shape.names, shape.edges, shape.focus);
+      const nodes = layoutPartial(g, shape.expand).nodes.filter(n => n.slotted);
+      const violations = [
+        ...checkOverlap(nodes),
+        ...checkSpousesAdjacent(g, nodes),
+        ...checkNoStrandedSibling(g, nodes),
+        ...checkParentsCentred(g, nodes),
+      ];
+      expect(violations, violations.join('\n')).toEqual([]);
+    });
+  }
+
+  // Also exercise the EXISTING corpus shapes in partial states: for every shape ×
+  // every focus, collapse each branch head one at a time (and all-but-spine) and
+  // re-run the invariants. Broad coverage that the parents-centred guarantee holds
+  // under collapse, not just full expansion.
+  for (const shape of CORPUS) {
+    const ids = Object.keys(shape.names).map(Number);
+    for (const focus of ids) {
+      it(`partial sweep — ${shape.name} — focus=${shape.names[focus]}`, () => {
+        const g = graphFor(shape.names, shape.edges, focus);
+        const heads = ids.filter(id => id !== focus);
+        // a handful of representative subsets: none expanded, all expanded, and
+        // each single head expanded alone.
+        const subsets: number[][] = [[], heads, ...heads.map(h => [h])];
+        for (const sub of subsets) {
+          const nodes = layoutPartial(g, sub).nodes.filter(n => n.slotted);
+          const violations = [
+            ...checkOverlap(nodes),
+            ...checkSpousesAdjacent(g, nodes),
+            ...checkNoStrandedSibling(g, nodes),
+            ...checkParentsCentred(g, nodes),
+          ];
+          expect(violations, `expand=[${sub.join(',')}]\n` + violations.join('\n')).toEqual([]);
+        }
       });
     }
   }

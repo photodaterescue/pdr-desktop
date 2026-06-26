@@ -1358,12 +1358,21 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           for (let c = 0; c < cnt[b]; c++) { setUnitCentre(keys[idx], v + cum[idx]); idx++; }
         }
       };
-      const seatSpineUnit = (P: number) => {
-        const g = genOfUnit(P);
-        const allKids = (childUnitsOf.get(P) ?? []).filter(cu => genOfUnit(cu) === g - 1 && membersOfUnit(cu).some(m => NX.has(m)));
-        if (!allKids.length) return;
-        const cs = allKids.map(centreOfUnit);
-        setUnitCentre(P, (Math.min(...cs) + Math.max(...cs)) / 2);
+      // Authoritative seat used by the final pass: centre P over the span of its
+      // OWN child CARDS (members with a parent_of edge from a P member), NOT over
+      // the merged child-UNIT centres. This matters at the maternal/paternal fork:
+      // a grandparent couple's child unit is the [dad,mum] couple, but the couple's
+      // actual child is just dad (one card) — seating over dad (then letting the
+      // two grandparent couples spread to clear each other) keeps each grandparent
+      // over its own child, exactly what checkParentsCentred measures. Returns the
+      // target centre, or null when P has no slotted child card.
+      const spineSeatCentre = (P: number): number | null => {
+        let mn = Infinity, mx = -Infinity;
+        for (const m of membersOfUnit(P)) for (const c of childrenOf.get(m) ?? []) {
+          const x = NX.get(c);
+          if (x != null) { if (x < mn) mn = x; if (x > mx) mx = x; }
+        }
+        return mn === Infinity ? null : (mn + mx) / 2;
       };
 
       // 3) CLIMB the spine: from each spine unit (bottom-up), splay that unit's
@@ -1406,16 +1415,60 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         parkConeSide(downCone(u), 'right');
       }
 
-      // 5) Finalize BOTTOM-UP: spread each row to the min gap (overlap-free) and,
-      // for ancestor rows, re-seat the spine over the now-final children first so
-      // a wider row below (a maternal/paternal grandparent fork that got spread)
-      // keeps its parents centred. Descendant + focus rows are already spaced, so
-      // their spread is a no-op; doing them too is a safe overlap guarantee.
+      // 5) Finalize BOTTOM-UP. The previous version seated each spine unit over its
+      // children and THEN ran spreadRow, but spreadRow's pool-adjacent-violators is
+      // free to move ANY unit — so a too-close NON-spine neighbour (a sibling/branch
+      // head, e.g. a collapsed leaf great-aunt sitting just left of the focus's
+      // parents) got POOLED with the spine unit and dragged it off its children. The
+      // seat ran before the spread, so the spread silently undid it (the focus's
+      // parents ≈170px off their kids when a side branch is collapsed; the same
+      // pooling also pushes a spine couple off when childless siblings sit beside it
+      // even fully expanded). Terry 2026-06-26.
+      //
+      // Fix: spine seating is AUTHORITATIVE. For every ancestor row we seat each
+      // spine unit over its OWN child cards (spineSeatCentre — member-level, so the
+      // maternal/paternal grandparent fork centres each couple over its own child)
+      // and then make the NON-spine units YIELD around the now-fixed spine: a
+      // bidirectional min-gap clamp that never moves a spine unit, only pushes the
+      // non-spine ones apart (and away from the spine), preserving slottedByGen
+      // order so couples stay whole. Two FIXED spine units that still collide are
+      // the genuine fork (each over a different single child); there is no overlap-
+      // free way to keep both perfectly centred, so they split symmetrically — the
+      // same compromise the old spread produced, and the per-parent check tolerates
+      // it because the residual is exactly the couple-over-narrow-children spread.
+      // Descendant + focus rows have no spine seat to protect → plain spreadRow.
+      const minGapBetween = (a: number, b: number) => spanOfUnit(a) / 2 + GAP + spanOfUnit(b) / 2;
+      const resolveRowSpineFixed = (rowKeys: number[]) => {
+        const keys = rowKeys.filter(u => membersOfUnit(u).some(m => NX.has(m)));
+        if (keys.length === 0) return;
+        // Authoritative spine seat over own child cards.
+        for (const u of keys) if (spine.has(u)) { const c = spineSeatCentre(u); if (c != null) setUnitCentre(u, c); }
+        if (keys.length === 1) return;
+        const fixed = keys.map(u => spine.has(u));
+        const c = keys.map(centreOfUnit);
+        for (let pass = 0; pass <= keys.length; pass++) {
+          let moved = false;
+          const fix = (i: number, j: number) => {
+            // ensure c[j] - c[i] >= gap (i is the left unit, j = i+1)
+            const m = minGapBetween(keys[i], keys[j]);
+            const slack = m - (c[j] - c[i]);
+            if (slack <= 1e-6) return;
+            if (!fixed[i] && !fixed[j]) { const h = slack / 2; c[i] -= h; c[j] += h; moved = true; }
+            else if (!fixed[j]) { c[j] = c[i] + m; moved = true; }
+            else if (!fixed[i]) { c[i] = c[j] - m; moved = true; }
+            else { const h = slack / 2; c[i] -= h; c[j] += h; moved = true; } // fork: both fixed → split
+          };
+          for (let i = 1; i < keys.length; i++) fix(i - 1, i);
+          for (let i = keys.length - 2; i >= 0; i--) fix(i, i + 1);
+          if (!moved) break;
+        }
+        keys.forEach((u, i) => setUnitCentre(u, c[i]));
+      };
       const gensAsc = [...unitsByGen.keys()].sort((a, b) => a - b);
       const focusG = genOfUnit(focusUnit);
       for (const g of gensAsc) {
-        if (g > focusG) for (const u of (unitsByGen.get(g) ?? [])) if (spine.has(u)) seatSpineUnit(u);
-        spreadRow(unitsByGen.get(g) ?? []);
+        if (g > focusG) resolveRowSpineFixed(unitsByGen.get(g) ?? []);
+        else spreadRow(unitsByGen.get(g) ?? []);
       }
 
       // Defensive: any slotted node still unplaced keeps its settle X.
