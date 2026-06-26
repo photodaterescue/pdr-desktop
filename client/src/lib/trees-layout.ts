@@ -1332,32 +1332,6 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         const left = c - spanOfUnit(u) / 2;
         members.forEach((m, i) => NX.set(m, left + i * GAP));
       };
-      // Spread a row's UNITS to the required centre-to-centre gap
-      // ((span_a+span_b)/2 + GAP → nearest cards clear by GAP) with the L2-minimal
-      // shift (pool-adjacent-violators on the current centres). Couples move as a
-      // block, so a partnership is never split; a row already spaced sees ~0 move.
-      const spreadRow = (keysRaw: number[]) => {
-        const keys = keysRaw.filter(u => membersOfUnit(u).some(m => NX.has(m)));
-        if (keys.length < 2) return;
-        keys.sort((a, b) => centreOfUnit(a) - centreOfUnit(b) || rowIndexOfUnit(a) - rowIndexOfUnit(b));
-        const desired = keys.map(centreOfUnit);
-        const cum: number[] = [0];
-        for (let i = 1; i < keys.length; i++) cum.push(cum[i - 1] + spanOfUnit(keys[i - 1]) / 2 + GAP + spanOfUnit(keys[i]) / 2);
-        const t = desired.map((d, i) => d - cum[i]);   // gap-shifted targets
-        const sum: number[] = [], cnt: number[] = [];
-        for (let i = 0; i < t.length; i++) {
-          sum.push(t[i]); cnt.push(1);
-          while (sum.length >= 2 && sum[sum.length - 2] / cnt[sum.length - 2] > sum[sum.length - 1] / cnt[sum.length - 1]) {
-            const s = sum.pop()!, c = cnt.pop()!;
-            sum[sum.length - 1] += s; cnt[cnt.length - 1] += c;
-          }
-        }
-        let idx = 0;
-        for (let b = 0; b < sum.length; b++) {
-          const v = sum[b] / cnt[b];
-          for (let c = 0; c < cnt[b]; c++) { setUnitCentre(keys[idx], v + cum[idx]); idx++; }
-        }
-      };
       // Authoritative seat used by the final pass: centre P over the span of its
       // OWN child CARDS (members with a parent_of edge from a P member), NOT over
       // the merged child-UNIT centres. This matters at the maternal/paternal fork:
@@ -1415,61 +1389,142 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         parkConeSide(downCone(u), 'right');
       }
 
-      // 5) Finalize BOTTOM-UP. The previous version seated each spine unit over its
-      // children and THEN ran spreadRow, but spreadRow's pool-adjacent-violators is
-      // free to move ANY unit — so a too-close NON-spine neighbour (a sibling/branch
-      // head, e.g. a collapsed leaf great-aunt sitting just left of the focus's
-      // parents) got POOLED with the spine unit and dragged it off its children. The
-      // seat ran before the spread, so the spread silently undid it (the focus's
-      // parents ≈170px off their kids when a side branch is collapsed; the same
-      // pooling also pushes a spine couple off when childless siblings sit beside it
-      // even fully expanded). Terry 2026-06-26.
+      // 5) Finalize BOTTOM-UP — EVERY parent (spine AND non-spine) centred over its
+      // OWN children, in every expansion state (Terry 2026-06-26). The cone packing
+      // (1–4) already centres each unit over its kids WITHIN its own cone, but the
+      // old finalize re-resolved each row in isolation: a moved unit's children (in
+      // the row below, already settled) did NOT follow it, so a parent and its kids
+      // desynced — aunt/uncle couples (Kevin+Sarah, Nicholas+Lauren) and cousin
+      // couples sat up to ~147px off their own children because Jo+Paul's wider brood
+      // was seated first and the aunts were merely gap-packed around it.
       //
-      // Fix: spine seating is AUTHORITATIVE. For every ancestor row we seat each
-      // spine unit over its OWN child cards (spineSeatCentre — member-level, so the
-      // maternal/paternal grandparent fork centres each couple over its own child)
-      // and then make the NON-spine units YIELD around the now-fixed spine: a
-      // bidirectional min-gap clamp that never moves a spine unit, only pushes the
-      // non-spine ones apart (and away from the spine), preserving slottedByGen
-      // order so couples stay whole. Two FIXED spine units that still collide are
-      // the genuine fork (each over a different single child); there is no overlap-
-      // free way to keep both perfectly centred, so they split symmetrically — the
-      // same compromise the old spread produced, and the per-parent check tolerates
-      // it because the residual is exactly the couple-over-narrow-children spread.
-      // Descendant + focus rows have no spine seat to protect → plain spreadRow.
+      // Fix: a single bottom-up contour sweep. For each ancestor row (deepest first),
+      // seat EVERY unit with placed children over its own children's-span centre
+      // (member-level, so the maternal/paternal fork seats each grandparent couple
+      // over its own single child). A leaf unit (no placed kids — a childless
+      // great-aunt, a collapsed branch head) keeps its cone X. Then resolve same-row
+      // overlaps L→R and R→L by shifting whole SUBTREES rigidly: moving a unit drags
+      // its entire descendant cone with it, so a shifted child keeps its own
+      // parent-over-kids. Each unit that is pinned by its own kids is "anchored"; an
+      // anchored↔anchored collision is the genuine fork (each over disjoint children)
+      // and splits symmetrically. Family-with-more-children is WIDER (its subtree
+      // occupies more room) and pushes neighbours further out, never stealing their
+      // column. Re-seating ancestors above happens naturally because they are swept
+      // last, over the now-final child positions.
       const minGapBetween = (a: number, b: number) => spanOfUnit(a) / 2 + GAP + spanOfUnit(b) / 2;
-      const resolveRowSpineFixed = (rowKeys: number[]) => {
+      // Descendant units of U strictly below U's generation (for rigid subtree shift).
+      const subtreeBelow = (u: number): number[] => {
+        const acc: number[] = [];
+        const seen = new Set<number>([u]);
+        const q = [u];
+        while (q.length) {
+          const cur = q.shift()!;
+          for (const k of childUnitsOf.get(cur) ?? []) {
+            if (seen.has(k)) continue;
+            if (genOfUnit(k) >= genOfUnit(cur)) continue;   // strictly downward only
+            seen.add(k); acc.push(k); q.push(k);
+          }
+        }
+        return acc;
+      };
+      // Shift a unit AND its whole descendant subtree rigidly by dx, so children stay
+      // centred under the moved parent.
+      const shiftUnitSubtree = (u: number, dx: number) => {
+        if (dx === 0) return;
+        for (const m of membersOfUnit(u)) { const x = NX.get(m); if (x != null) NX.set(m, x + dx); }
+        for (const su of subtreeBelow(u)) for (const m of membersOfUnit(su)) { const x = NX.get(m); if (x != null) NX.set(m, x + dx); }
+      };
+      // Seat each unit in `rowKeys` over its OWN children, then clear same-row
+      // overlaps by shifting whole subtrees. ANCHORED units (those with placed
+      // children) are PINNED at their children's-span centre — that pin is the whole
+      // point (every parent centred over its kids), so the overlap solver must not let
+      // them drift the way a plain pool-adjacent-violators would. CHILDLESS leaf units
+      // pack into the gaps AROUND the pinned anchors. Two anchored units genuinely too
+      // close (the maternal/paternal fork, or sibling parents whose broods don't fit)
+      // split symmetrically — and only then, when leaves can't fit between them or two
+      // pins collide. Every move is a rigid subtree shift so children stay centred
+      // under their moved parent; ancestors re-seat on the next (higher) row.
+      const resolveRowOverChildren = (rowKeys: number[]) => {
         const keys = rowKeys.filter(u => membersOfUnit(u).some(m => NX.has(m)));
         if (keys.length === 0) return;
-        // Authoritative spine seat over own child cards.
-        for (const u of keys) if (spine.has(u)) { const c = spineSeatCentre(u); if (c != null) setUnitCentre(u, c); }
+        // 1) Seat anchored units over their own child cards (unit only — the children
+        //    below are the reference and must not move here). The focus unit is the
+        //    tree's anchor: keep it where it is (re-centred on focus at the very end).
+        const anchored: boolean[] = [];
+        keys.sort((a, b) => rowIndexOfUnit(a) - rowIndexOfUnit(b));
+        for (const u of keys) {
+          const s = u === focusUnit ? null : spineSeatCentre(u);
+          if (s != null) { setUnitCentre(u, s); anchored.push(true); }
+          else anchored.push(u === focusUnit);   // focus pinned-in-place too
+        }
         if (keys.length === 1) return;
-        const fixed = keys.map(u => spine.has(u));
+        // 2) Resolve overlaps with anchored units PINNED. `c` = working centres.
         const c = keys.map(centreOfUnit);
-        for (let pass = 0; pass <= keys.length; pass++) {
+        const gap = (i: number, j: number) => minGapBetween(keys[i], keys[j]);
+        // 2a) Pin-vs-pin: where two anchored units (with only leaves, or nothing,
+        //     between them) are too close even before packing leaves, push them — and
+        //     all pins — apart symmetrically. Iterating adjacent anchored pairs only
+        //     ever increases separation, so it converges.
+        for (let pass = 0; pass < keys.length; pass++) {
           let moved = false;
-          const fix = (i: number, j: number) => {
-            // ensure c[j] - c[i] >= gap (i is the left unit, j = i+1)
-            const m = minGapBetween(keys[i], keys[j]);
-            const slack = m - (c[j] - c[i]);
-            if (slack <= 1e-6) return;
-            if (!fixed[i] && !fixed[j]) { const h = slack / 2; c[i] -= h; c[j] += h; moved = true; }
-            else if (!fixed[j]) { c[j] = c[i] + m; moved = true; }
-            else if (!fixed[i]) { c[i] = c[j] - m; moved = true; }
-            else { const h = slack / 2; c[i] -= h; c[j] += h; moved = true; } // fork: both fixed → split
-          };
-          for (let i = 1; i < keys.length; i++) fix(i - 1, i);
-          for (let i = keys.length - 2; i >= 0; i--) fix(i, i + 1);
+          for (let i = 0; i + 1 < keys.length; i++) {
+            if (!anchored[i] || !anchored[i + 1]) continue;
+            const need = gap(i, i + 1) - (c[i + 1] - c[i]);
+            if (need > 1e-6) { c[i] -= need / 2; c[i + 1] += need / 2; moved = true; }
+          }
           if (!moved) break;
         }
-        keys.forEach((u, i) => setUnitCentre(u, c[i]));
+        // 2b) Pack each maximal run of consecutive LEAF units between its bounding
+        //     anchored pins (or the row ends). Left-pack at min-gap from the left pin,
+        //     then slide the run toward each leaf's own desired centre without crossing
+        //     either pin. If the run can't fit, push the right pin (and every pin to
+        //     its right) outward to make exactly enough room, then place left-packed.
+        let i = 0;
+        while (i < keys.length) {
+          if (anchored[i]) { i++; continue; }
+          let j = i; while (j + 1 < keys.length && !anchored[j + 1]) j++;   // [i..j] leaves
+          const leftPin = i - 1 >= 0 ? i - 1 : -1;
+          const rightPin = j + 1 < keys.length ? j + 1 : -1;
+          // run internal width (centre of first leaf → centre of last leaf)
+          let internal = 0;
+          for (let k = i; k < j; k++) internal += gap(k, k + 1);
+          const lo = leftPin >= 0 ? c[leftPin] + gap(leftPin, i) : -Infinity;
+          const hi = rightPin >= 0 ? c[rightPin] - gap(j, rightPin) : Infinity;
+          // Ensure room between pins; if not, shove the right pin (+ pins to its right).
+          if (leftPin >= 0 && rightPin >= 0 && hi - lo < internal - 1e-6) {
+            const deficit = internal - (hi - lo);
+            for (let k = rightPin; k < keys.length; k++) c[k] += deficit;
+          }
+          const hi2 = rightPin >= 0 ? c[rightPin] - gap(j, rightPin) : Infinity;
+          // desired centre of the run's first leaf (so the run sits near its kids /
+          // its cone position), clamped so the whole run stays within [lo, hi2].
+          const firstDesired = (() => {
+            const u = keys[i]; const s = u === focusUnit ? null : spineSeatCentre(u);
+            return (s != null ? s : centreOfUnit(u));
+          })();
+          let start = firstDesired;
+          if (start < lo) start = lo;
+          if (start + internal > hi2) start = hi2 - internal;
+          if (!isFinite(start)) start = lo !== -Infinity ? lo : (hi2 !== Infinity ? hi2 - internal : c[i]);
+          let acc = start;
+          for (let k = i; k <= j; k++) { c[k] = acc; if (k < j) acc += gap(k, k + 1); }
+          i = j + 1;
+        }
+        // 3) Apply as rigid subtree shifts so each moved parent carries its children.
+        keys.forEach((u, k) => shiftUnitSubtree(u, c[k] - centreOfUnit(u)));
       };
+      // Single bottom-up contour sweep over EVERY row, children before parents.
+      // Generation increases UPWARD (descendants are negative, ancestors positive),
+      // so ascending-gen order visits the deepest descendant row first and the top
+      // ancestor row last — exactly the order resolveRowOverChildren needs (it seats
+      // each unit over its already-final children in the row below). The deepest rows
+      // have no children → it just clears their same-row overlaps (the cone packing
+      // already placed them tightly); every row above then seats its units over those
+      // now-final kids and shifts whole subtrees to clear overlaps. Uniform across
+      // descendant, focus and ancestor rows, so a cousin couple deep in a side branch
+      // is centred over its kids exactly like the focus's own parents are.
       const gensAsc = [...unitsByGen.keys()].sort((a, b) => a - b);
-      const focusG = genOfUnit(focusUnit);
-      for (const g of gensAsc) {
-        if (g > focusG) resolveRowSpineFixed(unitsByGen.get(g) ?? []);
-        else spreadRow(unitsByGen.get(g) ?? []);
-      }
+      for (const g of gensAsc) resolveRowOverChildren(unitsByGen.get(g) ?? []);
 
       // Defensive: any slotted node still unplaced keeps its settle X.
       for (const id of X.keys()) if (isSlotted(id) && !NX.has(id)) NX.set(id, X.get(id)!);

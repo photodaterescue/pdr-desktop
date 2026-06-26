@@ -69,17 +69,6 @@ function layoutAll(graph: FamilyGraph) {
   return computeFocusLayout(graph, 99, {}, everyId, new Set());
 }
 
-// Strict blood-ancestors of the focus — the focus's pedigree spine (walk parent_of
-// UP). The parents-centred invariant is enforced TIGHTLY on these (they're what the
-// layout's spine-seating guarantees); other parents keep the looser footprint check.
-function ancestorsOf(graph: FamilyGraph, focusId: number): Set<number> {
-  const parentsOf = new Map<number, number[]>();
-  for (const e of graph.edges) if (e.type === 'parent_of') { if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []); parentsOf.get(e.bId)!.push(e.aId); }
-  const anc = new Set<number>();
-  const q = [focusId];
-  while (q.length) { const c = q.shift()!; for (const p of parentsOf.get(c) ?? []) if (!anc.has(p)) { anc.add(p); q.push(p); } }
-  return anc;
-}
 
 // Lay a graph out with only a SUBSET of branch heads expanded (the others collapse,
 // so their descendants are panelled and NOT slotted). This is the partial /
@@ -168,17 +157,20 @@ function checkNoStrandedSibling(graph: FamilyGraph, nodes: LaidOutNode[]): strin
 // the children's footprint ±a card" — that ±190 slack hid a real ~170px spine drift
 // that only appeared when a side branch was collapsed.
 //
-// For a BLOOD-ANCESTOR of the focus (the pedigree spine) the tolerance is tight
-// (SPINE_CENTRE_TOL), because the layout's spine-seating pins those over their kids
-// in every expansion state. We subtract the one unavoidable component first: a
+// The tight tolerance (SPINE_CENTRE_TOL) now applies to EVERY parent — spine AND
+// non-spine (Terry 2026-06-26). It was previously gated to blood-ancestors only,
+// which let aunt/uncle and cousin couples sit up to ~147px off their own children
+// (a wider spine brood was seated first and the side couples merely gap-packed). The
+// layout's finalize now seats every parent over its own children, so the same tight
+// rule holds for all of them. We subtract the one unavoidable component first: a
 // COUPLE that is wider than its visible children can't shrink, so a residual up to
-// (coupleWidth − childSpan)/2 is geometric, not drift (this is a general couple rule,
-// applied to every couple — NOT fork-specific slack). At a genuine maternal/paternal
-// fork the two grandparent couples split to clear each other; that residual stays
-// within the tolerance, so the fork passes without any special-casing.
+// (coupleWidth − childSpan)/2 is geometric, not drift (a general couple rule applied
+// to every couple — NOT fork-specific slack). At a genuine maternal/paternal fork the
+// two grandparent couples split to clear each other; that residual stays within the
+// tolerance, so the fork passes without any special-casing.
 //
-// Non-ancestor parents (a sibling's branch, an in-law side a spine fix doesn't touch)
-// keep the original looser footprint check, so this only TIGHTENS, never weakens.
+// The FOCUS couple stays exempt: the whole tree is centred ON them, so their child
+// can sit off-centre when the subtree below is lopsided — by design, not drift.
 function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
   const byId = new Map(nodes.map(n => [n.personId, n]));
   const kids = childrenOf(graph);
@@ -190,7 +182,6 @@ function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[]
     if (e.aId === graph.focusPersonId) focusCouple.add(e.bId);
     if (e.bId === graph.focusPersonId) focusCouple.add(e.aId);
   }
-  const ancestors = ancestorsOf(graph, graph.focusPersonId);
   const bad: string[] = [];
   for (const [pid, kidIds] of kids) {
     if (focusCouple.has(pid)) continue;
@@ -201,17 +192,13 @@ function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[]
     const spouseXs = graph.edges.filter(e => e.type === 'spouse_of' && (e.aId === pid || e.bId === pid)).map(e => byId.get(e.aId === pid ? e.bId : e.aId)).filter((s): s is LaidOutNode => !!s).map(s => s.x);
     const parentCentre = spouseXs.length ? (p.x + spouseXs[0]) / 2 : p.x;
     const kidsCentre = (kidMin + kidMax) / 2;
-    if (ancestors.has(pid)) {
-      // TIGHT centre check on the spine.
-      const coupleWidth = spouseXs.length ? Math.abs(p.x - spouseXs[0]) : 0;
-      const childSpan = kidMax - kidMin;
-      const coupleSlack = Math.max(0, (coupleWidth - childSpan) / 2);
-      const residual = Math.max(0, Math.abs(parentCentre - kidsCentre) - coupleSlack);
-      if (residual > SPINE_CENTRE_TOL) bad.push(`${p.name} not centred over children (centre ${Math.round(parentCentre)} vs kids-centre ${Math.round(kidsCentre)}, residual ${Math.round(residual)} > ${SPINE_CENTRE_TOL})`);
-    } else {
-      // Looser footprint check for non-spine parents (unchanged from before).
-      if (parentCentre < kidMin - CARD_W - 20 || parentCentre > kidMax + CARD_W + 20) bad.push(`${p.name} not over children (centre ${Math.round(parentCentre)} vs span ${Math.round(kidMin)}..${Math.round(kidMax)})`);
-    }
+    // TIGHT centre check on EVERY parent. Subtract the geometric couple-slack first
+    // (a couple wider than its children can't centre tighter than (cw−span)/2).
+    const coupleWidth = spouseXs.length ? Math.abs(p.x - spouseXs[0]) : 0;
+    const childSpan = kidMax - kidMin;
+    const coupleSlack = Math.max(0, (coupleWidth - childSpan) / 2);
+    const residual = Math.max(0, Math.abs(parentCentre - kidsCentre) - coupleSlack);
+    if (residual > SPINE_CENTRE_TOL) bad.push(`${p.name} not centred over children (centre ${Math.round(parentCentre)} vs kids-centre ${Math.round(kidsCentre)}, residual ${Math.round(residual)} > ${SPINE_CENTRE_TOL})`);
   }
   return bad;
 }
@@ -302,6 +289,29 @@ const CORPUS: Array<{ name: string; names: Record<number, string>; edges: E[] }>
       [1, 2, 'parent_of'], [1, 3, 'parent_of'], [1, 4, 'parent_of'],
       [2, 5, 'parent_of'],
       [3, 6, 'spouse_of'], [3, 7, 'parent_of'], [6, 7, 'parent_of'],
+    ],
+  },
+  {
+    // Terry 2026-06-26: focus=Lucy. Her parent-couple Jo+Paul has THREE children
+    // (Lucy + 2 sibs); it is FLANKED by two aunt-couples Kevin+Sarah and
+    // Nicholas+Lauren, EACH with their own 2 children, all under one grandparent
+    // couple. The aunt-couples' children used to bleed sideways into the focus's
+    // family — the side couples sat up to ~147px off their OWN children because
+    // Jo+Paul's wider brood was seated first. Asserts EVERY couple (spine AND the
+    // two non-spine aunt couples) is centred over its own children, every focus.
+    name: 'aunt couples with their own broods flank the focus parents (Lucy)',
+    names: {
+      1: 'GPa', 2: 'GMa',
+      3: 'Kevin', 4: 'Sarah', 5: 'Jo', 6: 'Paul', 7: 'Nicholas', 8: 'Lauren',
+      10: 'Lucy', 11: 'LSib1', 12: 'LSib2',
+      20: 'KevK1', 21: 'KevK2', 30: 'NicK1', 31: 'NicK2',
+    },
+    edges: [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [1, 7, 'parent_of'], [2, 7, 'parent_of'],
+      [3, 4, 'spouse_of'], [5, 6, 'spouse_of'], [7, 8, 'spouse_of'],
+      [5, 10, 'parent_of'], [6, 10, 'parent_of'], [5, 11, 'parent_of'], [6, 11, 'parent_of'], [5, 12, 'parent_of'], [6, 12, 'parent_of'],
+      [3, 20, 'parent_of'], [4, 20, 'parent_of'], [3, 21, 'parent_of'], [4, 21, 'parent_of'],
+      [7, 30, 'parent_of'], [8, 30, 'parent_of'], [7, 31, 'parent_of'], [8, 31, 'parent_of'],
     ],
   },
 ];
@@ -455,6 +465,28 @@ const PARTIAL_CORPUS: Array<{ name: string; names: Record<number, string>; edges
       [13, 19, 'parent_of'], [15, 20, 'parent_of'], [17, 21, 'parent_of'],
     ],
     focus: 11, expand: [1, 2, 9, 10], // spine only; all 3 uncles collapsed
+  },
+  {
+    // Terry's live case in a PARTIAL state: focus=Lucy, parent-couple Jo+Paul (3
+    // kids), flanked by aunt-couples Kevin+Sarah and Nicholas+Lauren (2 kids each).
+    // ONE aunt (Kevin) is EXPANDED so HIS children are slotted and MUST be centred
+    // under him, while the other aunt (Nicholas) stays collapsed. The asymmetry is
+    // exactly what pushed the expanded aunt off his own kids before the fix.
+    name: 'one aunt expanded beside the focus parents stays centred over her kids (Lucy)',
+    names: {
+      1: 'GPa', 2: 'GMa',
+      3: 'Kevin', 4: 'Sarah', 5: 'Jo', 6: 'Paul', 7: 'Nicholas', 8: 'Lauren',
+      10: 'Lucy', 11: 'LSib1', 12: 'LSib2',
+      20: 'KevK1', 21: 'KevK2', 30: 'NicK1', 31: 'NicK2',
+    },
+    edges: [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [1, 7, 'parent_of'], [2, 7, 'parent_of'],
+      [3, 4, 'spouse_of'], [5, 6, 'spouse_of'], [7, 8, 'spouse_of'],
+      [5, 10, 'parent_of'], [6, 10, 'parent_of'], [5, 11, 'parent_of'], [6, 11, 'parent_of'], [5, 12, 'parent_of'], [6, 12, 'parent_of'],
+      [3, 20, 'parent_of'], [4, 20, 'parent_of'], [3, 21, 'parent_of'], [4, 21, 'parent_of'],
+      [7, 30, 'parent_of'], [8, 30, 'parent_of'], [7, 31, 'parent_of'], [8, 31, 'parent_of'],
+    ],
+    focus: 10, expand: [1, 2, 5, 6, 3, 4], // spine + Kevin's couple expanded; Nicholas collapsed
   },
 ];
 
