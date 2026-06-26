@@ -1259,14 +1259,16 @@ export function initDatabase(): { success: boolean; error?: string } {
       // Data model isn't touched; only the rendered label changes.
       try { db.exec(`ALTER TABLE saved_trees ADD COLUMN simplify_half_labels INTEGER NOT NULL DEFAULT 0`); } catch {}
     }
-    // Cousin differentiation (Terry Phase 3) — per-family swimlane band +
-    // per-family connector-comb tint, so cousins from different aunts/uncles
-    // read as distinct clusters. Both default ON.
+    // Cousin differentiation (Terry) — vertical per-branch swimlane column
+    // (default ON) + an optional faint vertical divider between adjacent
+    // families (default OFF). NB: an earlier build added show_family_tint
+    // for a per-family connector tint that was reverted; that column may
+    // linger harmlessly on already-migrated DBs and is no longer read.
     if (!savedTreeColNames.has('show_family_lanes')) {
       try { db.exec(`ALTER TABLE saved_trees ADD COLUMN show_family_lanes INTEGER NOT NULL DEFAULT 1`); } catch {}
     }
-    if (!savedTreeColNames.has('show_family_tint')) {
-      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN show_family_tint INTEGER NOT NULL DEFAULT 1`); } catch {}
+    if (!savedTreeColNames.has('show_family_dividers')) {
+      try { db.exec(`ALTER TABLE saved_trees ADD COLUMN show_family_dividers INTEGER NOT NULL DEFAULT 0`); } catch {}
     }
 
     // Memories — user-selected monthly thumbnail overrides. Right-click
@@ -7316,11 +7318,11 @@ export interface SavedTreeRecord {
   /** When true, the Mars/Venus/Combined symbol in the top-right of
    *  each card is suppressed regardless of whether the gender is set. */
   hideGenderMarker: boolean;
-  /** Cousin differentiation (Terry Phase 3). `showFamilyLanes` = faint
-   *  per-family swimlane band; `showFamilyTint` = per-family connector-comb
-   *  tint. Both default ON. */
+  /** Cousin differentiation (Terry). `showFamilyLanes` = vertical per-branch
+   *  swimlane column (default ON); `showFamilyDividers` = faint vertical
+   *  separator between adjacent families (default OFF). */
   showFamilyLanes: boolean;
-  showFamilyTint: boolean;
+  showFamilyDividers: boolean;
   lastOpenedAt: string | null;
   createdAt: string;
   updatedAt: string;
@@ -7346,7 +7348,7 @@ interface SavedTreeRow {
   use_gendered_labels: number | null;
   hide_gender_marker: number | null;
   show_family_lanes: number | null;
-  show_family_tint: number | null;
+  show_family_dividers: number | null;
   last_opened_at: string | null;
   created_at: string;
   updated_at: string;
@@ -7385,7 +7387,7 @@ function rowToSavedTree(row: SavedTreeRow): SavedTreeRecord {
     useGenderedLabels: row.use_gendered_labels == null ? true : row.use_gendered_labels === 1,
     hideGenderMarker: row.hide_gender_marker === 1,
     showFamilyLanes: row.show_family_lanes == null ? true : row.show_family_lanes === 1,
-    showFamilyTint: row.show_family_tint == null ? true : row.show_family_tint === 1,
+    showFamilyDividers: row.show_family_dividers === 1,
     lastOpenedAt: row.last_opened_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -7457,7 +7459,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   useGenderedLabels: boolean;
   hideGenderMarker: boolean;
   showFamilyLanes: boolean;
-  showFamilyTint: boolean;
+  showFamilyDividers: boolean;
   markOpened: boolean;
 }>): { success: boolean; data?: SavedTreeRecord; error?: string } {
   const db = getDb();
@@ -7482,7 +7484,7 @@ export function updateSavedTree(id: number, patch: Partial<{
   if (patch.useGenderedLabels != null)  { sets.push('use_gendered_labels = ?');  values.push(patch.useGenderedLabels ? 1 : 0); }
   if (patch.hideGenderMarker != null)   { sets.push('hide_gender_marker = ?');   values.push(patch.hideGenderMarker ? 1 : 0); }
   if (patch.showFamilyLanes != null)    { sets.push('show_family_lanes = ?');    values.push(patch.showFamilyLanes ? 1 : 0); }
-  if (patch.showFamilyTint != null)     { sets.push('show_family_tint = ?');     values.push(patch.showFamilyTint ? 1 : 0); }
+  if (patch.showFamilyDividers != null) { sets.push('show_family_dividers = ?'); values.push(patch.showFamilyDividers ? 1 : 0); }
   if (patch.markOpened)                 { sets.push(`last_opened_at = datetime('now')`); }
   sets.push(`updated_at = datetime('now')`);
 

@@ -95,12 +95,13 @@ interface TreesCanvasProps {
    *  visible so the user can still edit gender — it just doesn't
    *  preview the result. */
   hideGenderMarker?: boolean;
-  /** Cousin differentiation (Terry Phase 3). `showFamilyLanes` paints a faint
-   *  per-family swimlane behind each sibling group; `showFamilyTint` colours
-   *  each family's connector comb to match. Both default ON, toggled in Tree
-   *  Settings → Display, persisted per saved tree. */
+  /** Cousin differentiation (Terry). `showFamilyLanes` paints a faint VERTICAL
+   *  swimlane column behind each branch (an aunt/uncle's whole sub-tree, plus
+   *  the focus's own line) so cousins read as distinct families; `showFamily
+   *  Dividers` adds a faint vertical separator between adjacent families.
+   *  Toggled in Tree Settings, persisted per saved tree. */
   showFamilyLanes?: boolean;
-  showFamilyTint?: boolean;
+  showFamilyDividers?: boolean;
   /** Person IDs whose ancestors are hidden in this tree. When set, any
    *  person reachable ONLY through that person's parent_of↑ chain is
    *  filtered from the render. */
@@ -207,7 +208,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyTint = true, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1669,19 +1670,74 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    *  Families are ordered by generation then left-to-right x and assigned
    *  rotating palette colours, so ADJACENT families in a row always differ.
    *  Soft, low-saturation hues to stay premium, not garish. */
-  const familyTintByKey = useMemo(() => {
+  /** Cousin differentiation (Terry) — VERTICAL per-branch swimlanes. Each
+   *  "branch" is a whole sub-tree: one side-branch head (an aunt/uncle, or a
+   *  derived great-aunt) plus all their descendants AND the married-in spouses
+   *  of everyone in it — i.e. the entire column under that aunt/uncle. The
+   *  focus's own line (their parents + everyone down the direct line) gets a
+   *  lane too, so every family reads as its own column. Each lane is a
+   *  bounding box + a soft tint; tints are assigned left-to-right so adjacent
+   *  columns always differ. The render uses these for the lane rects AND the
+   *  optional dividers between them. */
+  const branchLanes = useMemo(() => {
     const PAL = ['#8ea2f4', '#5fc8f0', '#5bd1a6', '#f0c14b', '#ef9bb0', '#b79bf0', '#4fd6c4', '#f0a868'];
-    const withPos = familyGroups.map(g => {
-      const kids = g.childIds.map(id => nodeById.get(id)).filter((n): n is NonNullable<typeof n> => n != null);
-      const xs = kids.map(k => k.x);
-      const ys = kids.map(k => k.y);
-      return { key: g.parentIds.join(','), minX: xs.length ? Math.min(...xs) : 0, y: ys.length ? Math.round(ys[0]) : 0 };
-    });
-    withPos.sort((a, b) => (a.y - b.y) || (a.minX - b.minX));
-    const tint = new Map<string, string>();
-    withPos.forEach((w, i) => tint.set(w.key, PAL[i % PAL.length]));
-    return tint;
-  }, [familyGroups, nodeById]);
+    const spousesOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type === 'spouse_of') {
+        if (!spousesOf.has(e.aId)) spousesOf.set(e.aId, []);
+        if (!spousesOf.has(e.bId)) spousesOf.set(e.bId, []);
+        spousesOf.get(e.aId)!.push(e.bId);
+        spousesOf.get(e.bId)!.push(e.aId);
+      } else if (e.type === 'parent_of') {
+        // aId = parent, bId = child
+        if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+        parentsOf.get(e.bId)!.push(e.aId);
+      }
+    }
+    const vis = (id: number) => nodeById.has(id) && !hiddenSideBranchIds.has(id) && !hiddenExtendedIds.has(id);
+    const bboxOf = (seed: Iterable<number>) => {
+      const members = new Set<number>();
+      for (const id of seed) {
+        members.add(id);
+        for (const sp of spousesOf.get(id) ?? []) members.add(sp);
+      }
+      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, n = 0;
+      for (const id of members) {
+        if (!vis(id)) continue;
+        const nd = nodeById.get(id)!;
+        minX = Math.min(minX, nd.x); maxX = Math.max(maxX, nd.x);
+        minY = Math.min(minY, nd.y); maxY = Math.max(maxY, nd.y); n++;
+      }
+      return n > 0 ? { minX, maxX, minY, maxY } : null;
+    };
+    const PADX = CARD_W / 2 + 12;
+    const lanes: Array<{ minY: number; maxY: number; left: number; right: number; anchor: number; color: string }> = [];
+    const pushLane = (bb: { minX: number; maxX: number; minY: number; maxY: number } | null, anchor: number | undefined) => {
+      if (!bb) return;
+      lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '' });
+    };
+    for (const [head, desc] of sideBranchDescendantsByHead) {
+      pushLane(bboxOf([head, ...desc]), nodeById.get(head)?.x);
+    }
+    // The focus's own branch: their parents + everyone down the direct line.
+    const focusSeed = [...downwardDirectSet, ...(parentsOf.get(layout.focusPersonId) ?? [])];
+    pushLane(bboxOf(focusSeed), nodeById.get(layout.focusPersonId)?.x);
+    // Clip each lane's (padded) horizontal extent to its own territory — the
+    // midpoints between neighbouring branch anchors — so vertical lanes NEVER
+    // overlap, even when a family's grandkids spread under a neighbour (the
+    // bbox is x-only; without this a tall lane swallows a shorter one beside it).
+    lanes.sort((a, b) => a.anchor - b.anchor);
+    for (let i = 0; i < lanes.length; i++) {
+      const leftB = i > 0 ? (lanes[i - 1].anchor + lanes[i].anchor) / 2 : -Infinity;
+      const rightB = i < lanes.length - 1 ? (lanes[i].anchor + lanes[i + 1].anchor) / 2 : Infinity;
+      lanes[i].left = Math.max(lanes[i].left, leftB);
+      lanes[i].right = Math.min(lanes[i].right, rightB);
+      if (lanes[i].right < lanes[i].left) lanes[i].right = lanes[i].left;
+    }
+    lanes.forEach((l, i) => { l.color = PAL[i % PAL.length]; });
+    return lanes;
+  }, [sideBranchDescendantsByHead, downwardDirectSet, layout.edges, layout.focusPersonId, nodeById, hiddenSideBranchIds, hiddenExtendedIds]);
 
   /** Sibling clusters whose shared parent ISN'T currently in nodeById —
    *  e.g. two named sisters whose only parent record was a placeholder
@@ -1835,32 +1891,46 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             <g
               transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
             >
-          {/* Cousin differentiation (Terry Phase 3) — a faint per-family
-              swimlane behind each sibling group, so cousins from different
-              aunts/uncles read as distinct clusters. Drawn FIRST so it sits
-              behind the connectors and cards. Each family's lane uses the same
-              tint as its connector comb. Only families with a visible child
-              get a lane. */}
-          {showFamilyLanes && familyGroups.map((group, i) => {
-            const vis = group.childIds
-              .map(id => nodeById.get(id))
-              .filter((n): n is NonNullable<typeof n> => n != null && !hiddenSideBranchIds.has(n.personId) && !hiddenExtendedIds.has(n.personId));
-            if (vis.length === 0) return null;
-            const tint = familyTintByKey.get(group.parentIds.join(',')) ?? '#8ea2f4';
-            const xs = vis.map(k => k.x);
-            const ys = vis.map(k => k.y);
-            const padX = CARD_W / 2 + 8;
-            const padY = CARD_H / 2 + 10;
-            const minX = Math.min(...xs) - padX;
-            const maxX = Math.max(...xs) + padX;
-            const minY = Math.min(...ys) - padY;
-            const maxY = Math.max(...ys) + padY;
+          {/* Cousin differentiation (Terry) — VERTICAL per-branch swimlanes:
+              one soft tinted column behind each branch's whole sub-tree, so
+              each aunt/uncle's family (and the focus's own line) reads as a
+              distinct column. Drawn FIRST so it sits behind the connectors and
+              cards. */}
+          {showFamilyLanes && branchLanes.map((lane, i) => {
+            const padY = CARD_H / 2 + 14;
+            const y = lane.minY - padY;
+            const w = lane.right - lane.left;
+            const h = (lane.maxY - lane.minY) + padY * 2;
+            if (w <= 1) return null;
             return (
               <rect
-                key={`lane-${i}-${group.parentIds.join('_')}`}
-                x={minX} y={minY} width={maxX - minX} height={maxY - minY} rx={26}
-                fill={tint} fillOpacity={0.09}
-                stroke={tint} strokeOpacity={0.16} strokeWidth={1.5}
+                key={`lane-${i}`}
+                x={lane.left} y={y} width={w} height={h} rx={28}
+                fill={lane.color} fillOpacity={0.15}
+                stroke={lane.color} strokeOpacity={0.34} strokeWidth={1.5}
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })}
+
+          {/* Optional faint vertical divider between adjacent families
+              (Terry's idea — the safe alternative to a physical gap). */}
+          {showFamilyDividers && branchLanes.map((lane, i) => {
+            if (i === 0) return null;
+            const prev = branchLanes[i - 1];
+            const gap = lane.left - prev.right;
+            // Only divide families that genuinely sit next to each other.
+            if (gap > CARD_W * 2.6) return null;
+            const xMid = (prev.right + lane.left) / 2;
+            const pad = CARD_H / 2 + 14;
+            const yTop = Math.min(prev.minY, lane.minY) - pad;
+            const yBot = Math.max(prev.maxY, lane.maxY) + pad;
+            return (
+              <line
+                key={`div-${i}`}
+                x1={xMid} y1={yTop} x2={xMid} y2={yBot}
+                stroke="#64748b" strokeOpacity={0.22} strokeWidth={1.5}
+                strokeDasharray="2 8"
                 style={{ pointerEvents: 'none' }}
               />
             );
@@ -1919,11 +1989,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 // generation row.
                 bracketOffset={0}
                 contrast={treeContrast}
-                strokeOverride={
-                  showFamilyTint
-                    ? (familyTintByKey.get(group.parentIds.join(',')) ?? (isFamilyBloodline ? '#ad9eff' : undefined))
-                    : (isFamilyBloodline ? '#ad9eff' : undefined)
-                }
+                strokeOverride={isFamilyBloodline ? '#ad9eff' : undefined}
                 onParentClick={(parentId) => {
                   const parent = nodeById.get(parentId);
                   if (!parent) return;

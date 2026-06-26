@@ -183,17 +183,18 @@ export function ManageTreesModal({
     onChanged();
   };
 
-  /** Cousin differentiation (Terry Phase 3). Two tree-scoped toggles, both ON
-   *  by default: the faint per-family swimlane band, and the per-family
-   *  connector-comb tint. Same live-commit pattern as the toggles above. */
+  /** Cousin differentiation (Terry). Two tree-scoped toggles: the vertical
+   *  per-branch swimlane column (ON by default) and an optional vertical
+   *  divider between adjacent families (OFF by default). Same live-commit
+   *  pattern as the toggles above. */
   const handleToggleFamilyLanes = async (t: SavedTreeRecord, value: boolean) => {
     setTrees(prev => prev.map(x => x.id === t.id ? { ...x, showFamilyLanes: value } : x));
     await updateSavedTree(t.id, { showFamilyLanes: value });
     onChanged();
   };
-  const handleToggleFamilyTint = async (t: SavedTreeRecord, value: boolean) => {
-    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, showFamilyTint: value } : x));
-    await updateSavedTree(t.id, { showFamilyTint: value });
+  const handleToggleFamilyDividers = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, showFamilyDividers: value } : x));
+    await updateSavedTree(t.id, { showFamilyDividers: value });
     onChanged();
   };
 
@@ -497,19 +498,19 @@ export function ManageTreesModal({
                         />
                         <span className="text-foreground">Family swimlanes</span>
                         <span className="ml-1 text-muted-foreground/70">
-                          (faint band behind each family so cousins read as groups)
+                          (soft vertical colour behind each family so cousins read as columns)
                         </span>
                       </label>
                       <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={t.showFamilyTint}
-                          onChange={e => handleToggleFamilyTint(t, e.target.checked)}
+                          checked={t.showFamilyDividers}
+                          onChange={e => handleToggleFamilyDividers(t, e.target.checked)}
                           className="w-3.5 h-3.5"
                         />
-                        <span className="text-foreground">Family-coloured connectors</span>
+                        <span className="text-foreground">Family dividers</span>
                         <span className="ml-1 text-muted-foreground/70">
-                          (tints each family's connecting lines to match its lane)
+                          (a faint vertical line between adjacent families)
                         </span>
                       </label>
                     </div>
