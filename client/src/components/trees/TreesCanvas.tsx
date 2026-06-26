@@ -150,6 +150,12 @@ interface TreesCanvasProps {
   expandedAncestorsOf?: Set<number>;
   /** Mirror of expandedAncestorsOf for the v chevron below the card. */
   expandedDescendantsOf?: Set<number>;
+  /** Collapse a DEFAULT-OPEN downward direct-line node (Terry r440 — chevrons
+   *  on direct family too). Toggles membership of collapsedDescendantsOf. */
+  onCollapseDescendants?: (personId: number) => void;
+  /** Downward direct-line nodes the user has collapsed (opposite default to
+   *  expandedDescendantsOf: a member HIDES its subtree). */
+  collapsedDescendantsOf?: Set<number>;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -191,7 +197,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, expandedAncestorsOf, expandedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -890,6 +896,48 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return set;
   }, [layout.edges, layout.focusPersonId]);
 
+  /** The DOWNWARD direct line only (focus + focus's descendants + focus's
+   *  siblings + their descendants) — directLineSet minus the strict ancestors.
+   *  These default-OPEN nodes get a COLLAPSE chevron (Terry r440 "all offspring
+   *  should have the chevron, even my own direct family"); the upward ancestor
+   *  spine never does. */
+  const downwardDirectSet = useMemo(() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    const set = new Set<number>([layout.focusPersonId]);
+    const downQ = [layout.focusPersonId];
+    while (downQ.length) {
+      const cur = downQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c); downQ.push(c);
+      }
+    }
+    const focusParents = parentsOf.get(layout.focusPersonId) ?? [];
+    const sibQ: number[] = [];
+    for (const fp of focusParents) {
+      for (const c of childrenOf.get(fp) ?? []) {
+        if (c === layout.focusPersonId || set.has(c)) continue;
+        set.add(c); sibQ.push(c);
+      }
+    }
+    while (sibQ.length) {
+      const cur = sibQ.shift()!;
+      for (const c of childrenOf.get(cur) ?? []) {
+        if (set.has(c)) continue;
+        set.add(c); sibQ.push(c);
+      }
+    }
+    return set;
+  }, [layout.edges, layout.focusPersonId]);
+
   /** For each side-branch head (an aunt / uncle / great-aunt / etc.
    *  — anyone in bloodline who's a sibling of a direct ancestor of
    *  focus, but isn't focus or a direct ancestor themselves), the
@@ -1063,8 +1111,27 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         if (anyOtherParentHidden) hidden.add(pid);
       }
     }
+    // Direct-line collapse (Terry r440): hide the whole subtree under any
+    // downward direct-line node the user has collapsed. Mirror of the
+    // collapsedDirect block in trees-layout panelledIds so canvas-hide and
+    // layout-placement stay in lockstep. Strict ancestors are never in
+    // downwardDirectSet, so the upward spine is untouched.
+    if (collapsedDescendantsOf) {
+      for (const start of collapsedDescendantsOf) {
+        if (!downwardDirectSet.has(start)) continue;
+        const dq = [...(childrenOfHB.get(start) ?? [])];
+        const dseen = new Set<number>([start]);
+        while (dq.length) {
+          const cur = dq.shift()!;
+          if (dseen.has(cur)) continue;
+          dseen.add(cur);
+          hidden.add(cur);
+          for (const c of childrenOfHB.get(cur) ?? []) dq.push(c);
+        }
+      }
+    }
     return hidden;
-  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet, expandedDescendantsOf]);
+  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet, expandedDescendantsOf, collapsedDescendantsOf, downwardDirectSet]);
 
   /** Per-side-branch-head chevron geometry: position, leader-line
    *  endpoints, and per-parent bloodline colours. The v chevron now
@@ -1088,6 +1155,10 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       midX: number; midY: number;
       headColour: string;
       partnerColour: string | null;
+      /** true = downward direct-line node (default OPEN, toggles
+       *  collapsedDescendantsOf); false = side-branch (default CLOSED,
+       *  toggles expandedDescendantsOf). */
+      direct: boolean;
     };
     const list: ChevronInfo[] = [];
     // Build a map of each head's spouse_of partners that are placed
@@ -1114,18 +1185,28 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     }
     const allDesc = new Set<number>();
     for (const desc of sideBranchDescendantsByHead.values()) for (const d of desc) allDesc.add(d);
-    const branchPoints = new Set<number>(sideBranchDescendantsByHead.keys());
+    // id -> isDirect. SIDE-BRANCH branch-points (default-closed, toggle
+    // expandedDescendantsOf): every head + any revealed descendant with a
+    // side-branch child. PLUS DOWNWARD DIRECT-LINE branch-points (Terry r440 —
+    // default-open, toggle collapsedDescendantsOf): every shown direct node with
+    // a direct child, incl. the focus + their siblings. The two sets are disjoint.
+    const branchPointDirect = new Map<number, boolean>();
+    for (const head of sideBranchDescendantsByHead.keys()) branchPointDirect.set(head, false);
     for (const d of allDesc) {
       if (hiddenSideBranchIds.has(d)) continue;
-      if ((childrenOfCh.get(d) ?? []).some(c => allDesc.has(c))) branchPoints.add(d);
+      if ((childrenOfCh.get(d) ?? []).some(c => allDesc.has(c))) branchPointDirect.set(d, false);
     }
-    for (const headId of branchPoints) {
+    for (const n of downwardDirectSet) {
+      if (hiddenSideBranchIds.has(n)) continue; // only currently-shown nodes anchor a chevron
+      if ((childrenOfCh.get(n) ?? []).some(c => downwardDirectSet.has(c))) branchPointDirect.set(n, true);
+    }
+    for (const [headId, isDirect] of branchPointDirect) {
       const headNode = nodeById.get(headId);
       if (!headNode) continue;
       // Partner = the visible spouse who co-parents one of THIS node's DIRECT
-      // side-branch children — generalised from heads to any branch-point so
-      // the chevron's second leader still lands on the real co-parent.
-      const directKids = new Set((childrenOfCh.get(headId) ?? []).filter(c => allDesc.has(c)));
+      // children — generalised across side-branch + direct so the chevron's
+      // second leader still lands on the real co-parent.
+      const directKids = new Set((childrenOfCh.get(headId) ?? []).filter(c => isDirect ? downwardDirectSet.has(c) : allDesc.has(c)));
       const candidates = (partnersOf.get(headId) ?? [])
         .map(pid => nodeById.get(pid))
         .filter((n): n is NonNullable<typeof n> => n != null);
@@ -1153,10 +1234,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         partnerY: partnerNode?.y ?? null,
         midX, midY,
         headColour, partnerColour,
+        direct: isDirect,
       });
     }
     return list;
-  }, [sideBranchDescendantsByHead, hiddenSideBranchIds, layout.edges, nodeById, bloodlineSet]);
+  }, [sideBranchDescendantsByHead, hiddenSideBranchIds, downwardDirectSet, layout.edges, nodeById, bloodlineSet]);
 
   // Every collapsible bloodline branch-point (head + any descendant that has
   // side-branch children of its own). Per-level (r439): "Expand all" must open
@@ -2077,12 +2159,20 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             const cardBottomY = info.headY + CARD_H / 2;
             const chevronCy = cardBottomY + stemLen + r;
             const chevronCx = info.midX;
-            const expanded = expandedDescendantsOf?.has(info.headId) ?? false;
+            // OPEN = children currently shown. Side-branch: open iff expanded.
+            // Direct (Terry r440): open by DEFAULT, closed only when collapsed.
+            const expanded = info.direct
+              ? !(collapsedDescendantsOf?.has(info.headId) ?? false)
+              : (expandedDescendantsOf?.has(info.headId) ?? false);
+            // Pulse only draws the eye to a side-branch the user has REVEALED;
+            // direct family is open by default, so it never pulses (it would be
+            // constant motion across the whole tree).
+            const pulse = expanded && !info.direct;
             const fill = '#ad9eff';
             const rim = '#7e6df0';
-            const label = expanded
-              ? 'Hide cousins on this branch'
-              : 'Show cousins on this branch';
+            const label = info.direct
+              ? (expanded ? 'Hide this part of the family' : 'Show this part of the family')
+              : (expanded ? 'Hide cousins on this branch' : 'Show cousins on this branch');
             // Glyph stays as v (down) regardless of expansion
             // state — design doc §2.4: "the chevron's glyph does
             // not rotate when active". Earlier rotation-on-expansion
@@ -2126,7 +2216,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                   transform={`translate(${chevronCx} ${chevronCy})`}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => e.stopPropagation()}
-                  onClick={(e) => { e.stopPropagation(); onExpandDescendants?.(info.headId); }}
+                  onClick={(e) => { e.stopPropagation(); if (info.direct) onCollapseDescendants?.(info.headId); else onExpandDescendants?.(info.headId); }}
                 >
                   <IconTooltip label={label} side="bottom">
                     {/* Inner <g> pulses when this chevron's panel
@@ -2134,7 +2224,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         (pdr-tree-chevron-pulse keyframe). Anchored
                         to the chevron's own centre via
                         transform-box: fill-box on the class. */}
-                    <g className={expanded ? 'pdr-tree-chevron-pulse' : undefined}>
+                    <g className={pulse ? 'pdr-tree-chevron-pulse' : undefined}>
                       <ellipse
                         cx={0} cy={3}
                         rx={r * 0.92} ry={r * 0.55}

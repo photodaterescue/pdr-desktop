@@ -495,6 +495,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
    *  pins another expansion still holds. */
   const [expandedAncestorsOf, setExpandedAncestorsOf] = useState<Set<number>>(new Set());
   const [expandedDescendantsOf, setExpandedDescendantsOf] = useState<Set<number>>(new Set());
+  // Default-OPEN downward direct-line nodes the user has COLLAPSED (Terry r440).
+  // Opposite default to expandedDescendantsOf: a node in here hides its subtree.
+  const [collapsedDescendantsOf, setCollapsedDescendantsOf] = useState<Set<number>>(new Set());
   /** For each expander personId, the set of ancestors / descendants
    *  it pulled into pinnedPeople. Used to UNDO the pinning on
    *  collapse. Ref-counted (a pin only disappears from pinnedPeople
@@ -669,6 +672,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       setPinnedPeople(new Map());
       setExpandedAncestorsOf(new Set());
       setExpandedDescendantsOf(new Set());
+      setCollapsedDescendantsOf(new Set());
       ancestorPinSourcesRef.current.clear();
       descendantPinSourcesRef.current.clear();
       lastFocusRef.current = focusPersonId;
@@ -1308,7 +1312,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       ),
     };
   })();
-  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops, {}, expandedDescendantsOf) : null;
+  const layout = layoutGraph ? computeFocusLayout(layoutGraph, effectiveLayoutHops, {}, expandedDescendantsOf, collapsedDescendantsOf) : null;
 
   // Undo/redo button state — enabled when EITHER a data edit OR a view step is
   // available; the tooltip reflects which the next press will reverse.
@@ -2133,6 +2137,21 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     descendantPinSourcesRef.current.set(personId, new Set());
   }, [focusPersonId, expandedDescendantsOf]);
 
+  /** Collapse / re-open a DEFAULT-OPEN downward direct-line node (focus's
+   *  descendant / sibling / their descendants) — Terry r440 "all offspring
+   *  should have the chevron, even my own direct family". Pure flag flip into
+   *  collapsedDescendantsOf (opposite default to expandedDescendantsOf); the
+   *  layout panels the subtree away and the canvas hides it. Never touches the
+   *  floating in-law panels (separate firewall). */
+  const handleCollapseDescendants = useCallback((personId: number) => {
+    setCollapsedDescendantsOf(prev => {
+      const next = new Set(prev);
+      if (next.has(personId)) next.delete(personId);
+      else next.add(personId);
+      return next;
+    });
+  }, []);
+
   /** Steps-aware +parent gate. Before opening the +parent picker
    *  for a person, check whether they already have parents stored
    *  but currently hidden by the Steps cap. If so, the user almost
@@ -2213,6 +2232,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     descendantPinSourcesRef.current.clear();
     setExpandedAncestorsOf(new Set());
     setExpandedDescendantsOf(new Set());
+    setCollapsedDescendantsOf(new Set());
   }, []);
 
   const handleRemovePerson = useCallback(async (personId: number) => {
@@ -2500,8 +2520,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onExpandAncestors={handleExpandAncestors}
             onExpandDescendants={handleExpandDescendants}
             onExpandAllDescendants={(ids) => setExpandedDescendantsOf(new Set(ids))}
+            onCollapseDescendants={handleCollapseDescendants}
             expandedAncestorsOf={expandedAncestorsOf}
             expandedDescendantsOf={expandedDescendantsOf}
+            collapsedDescendantsOf={collapsedDescendantsOf}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
             onEditDates={(personId, screenX, screenY) => {

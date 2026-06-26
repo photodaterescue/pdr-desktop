@@ -252,7 +252,7 @@ export function assignGenerations(graph: FamilyGraph): Map<number, number> {
  * This is the "Canopy" renderer's layout. The focus-explorer renderer can
  * use the same nodes but hide anyone beyond a given hop count.
  */
-export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}, expandedHeads: Set<number> = new Set()): TreeLayout {
+export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}, expandedHeads: Set<number> = new Set(), collapsedDirect: Set<number> = new Set()): TreeLayout {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const generations = assignGenerations(graph);
 
@@ -408,6 +408,24 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           if (cHidden) hidden.add(c);
           q.push({ id: c, hiddenAbove: cHidden });
         }
+      }
+    }
+    // Direct-line collapse (Terry r440): the default-OPEN downward direct line
+    // (focus's descendants, siblings + their descendants) is collapsible too —
+    // "all offspring should have the chevron, even my own direct family". When
+    // the user collapses such a node, panel its WHOLE subtree away so the row
+    // closes up with no empty slot. Never the strict ancestors (the upward
+    // spine has no collapse control). Mirror in TreesCanvas hiddenSideBranchIds.
+    for (const start of collapsedDirect) {
+      if (strictAncestors.has(start) || !directLine.has(start)) continue;
+      const q = [...(childrenOf.get(start) ?? [])];
+      const seen = new Set<number>([start]);
+      while (q.length) {
+        const cur = q.shift()!;
+        if (seen.has(cur)) continue;
+        seen.add(cur);
+        hidden.add(cur);
+        for (const c of childrenOf.get(cur) ?? []) q.push(c);
       }
     }
     // Sweep spouse_of edges so non-bloodline partners of any hidden
@@ -1519,9 +1537,10 @@ export function computeFocusLayout(
   graph: FamilyGraph,
   expandedHops: number,
   options: LayoutOptions = {},
-  expandedHeads: Set<number> = new Set()
+  expandedHeads: Set<number> = new Set(),
+  collapsedDirect: Set<number> = new Set()
 ): TreeLayout & { collapsedCountPerAnchor: Map<number, number> } {
-  const base = computePedigreeLayout(graph, options, expandedHeads);
+  const base = computePedigreeLayout(graph, options, expandedHeads, collapsedDirect);
   // Identify nodes whose hopsFromFocus > expandedHops → these are "beyond
   // the current horizon" and should be collapsed. Anchor each collapsed
   // node to its nearest expanded neighbour so the renderer can draw a
