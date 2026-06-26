@@ -95,6 +95,12 @@ interface TreesCanvasProps {
    *  visible so the user can still edit gender — it just doesn't
    *  preview the result. */
   hideGenderMarker?: boolean;
+  /** Cousin differentiation (Terry Phase 3). `showFamilyLanes` paints a faint
+   *  per-family swimlane behind each sibling group; `showFamilyTint` colours
+   *  each family's connector comb to match. Both default ON, toggled in Tree
+   *  Settings → Display, persisted per saved tree. */
+  showFamilyLanes?: boolean;
+  showFamilyTint?: boolean;
   /** Person IDs whose ancestors are hidden in this tree. When set, any
    *  person reachable ONLY through that person's parent_of↑ chain is
    *  filtered from the render. */
@@ -201,7 +207,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyTint = true, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1657,6 +1663,26 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return Array.from(groups.values());
   }, [layout.edges, nodeById]);
 
+  /** Cousin differentiation (Terry Phase 3): give each family (sibling group) a
+   *  faint tint so cousins from different aunts/uncles read as distinct groups
+   *  — used for both the per-family swimlane band and the connector-comb tint.
+   *  Families are ordered by generation then left-to-right x and assigned
+   *  rotating palette colours, so ADJACENT families in a row always differ.
+   *  Soft, low-saturation hues to stay premium, not garish. */
+  const familyTintByKey = useMemo(() => {
+    const PAL = ['#8ea2f4', '#5fc8f0', '#5bd1a6', '#f0c14b', '#ef9bb0', '#b79bf0', '#4fd6c4', '#f0a868'];
+    const withPos = familyGroups.map(g => {
+      const kids = g.childIds.map(id => nodeById.get(id)).filter((n): n is NonNullable<typeof n> => n != null);
+      const xs = kids.map(k => k.x);
+      const ys = kids.map(k => k.y);
+      return { key: g.parentIds.join(','), minX: xs.length ? Math.min(...xs) : 0, y: ys.length ? Math.round(ys[0]) : 0 };
+    });
+    withPos.sort((a, b) => (a.y - b.y) || (a.minX - b.minX));
+    const tint = new Map<string, string>();
+    withPos.forEach((w, i) => tint.set(w.key, PAL[i % PAL.length]));
+    return tint;
+  }, [familyGroups, nodeById]);
+
   /** Sibling clusters whose shared parent ISN'T currently in nodeById —
    *  e.g. two named sisters whose only parent record was a placeholder
    *  that the layoutGraph strip removed. The familyGroups builder above
@@ -1809,6 +1835,37 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             <g
               transform={`translate(${viewport.tx} ${viewport.ty}) scale(${viewport.scale})`}
             >
+          {/* Cousin differentiation (Terry Phase 3) — a faint per-family
+              swimlane behind each sibling group, so cousins from different
+              aunts/uncles read as distinct clusters. Drawn FIRST so it sits
+              behind the connectors and cards. Each family's lane uses the same
+              tint as its connector comb. Only families with a visible child
+              get a lane. */}
+          {showFamilyLanes && familyGroups.map((group, i) => {
+            const vis = group.childIds
+              .map(id => nodeById.get(id))
+              .filter((n): n is NonNullable<typeof n> => n != null && !hiddenSideBranchIds.has(n.personId) && !hiddenExtendedIds.has(n.personId));
+            if (vis.length === 0) return null;
+            const tint = familyTintByKey.get(group.parentIds.join(',')) ?? '#8ea2f4';
+            const xs = vis.map(k => k.x);
+            const ys = vis.map(k => k.y);
+            const padX = CARD_W / 2 + 8;
+            const padY = CARD_H / 2 + 10;
+            const minX = Math.min(...xs) - padX;
+            const maxX = Math.max(...xs) + padX;
+            const minY = Math.min(...ys) - padY;
+            const maxY = Math.max(...ys) + padY;
+            return (
+              <rect
+                key={`lane-${i}-${group.parentIds.join('_')}`}
+                x={minX} y={minY} width={maxX - minX} height={maxY - minY} rx={26}
+                fill={tint} fillOpacity={0.09}
+                stroke={tint} strokeOpacity={0.16} strokeWidth={1.5}
+                style={{ pointerEvents: 'none' }}
+              />
+            );
+          })}
+
           {/* Pedigree family groups — one marriage bar + sibling bracket
               per parent-set. Drawn BEFORE individual edges so they sit
               underneath the nodes. */}
@@ -1862,7 +1919,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 // generation row.
                 bracketOffset={0}
                 contrast={treeContrast}
-                strokeOverride={isFamilyBloodline ? '#ad9eff' : undefined}
+                strokeOverride={
+                  showFamilyTint
+                    ? (familyTintByKey.get(group.parentIds.join(',')) ?? (isFamilyBloodline ? '#ad9eff' : undefined))
+                    : (isFamilyBloodline ? '#ad9eff' : undefined)
+                }
                 onParentClick={(parentId) => {
                   const parent = nodeById.get(parentId);
                   if (!parent) return;
