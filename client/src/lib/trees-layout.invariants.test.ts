@@ -251,28 +251,16 @@ const CORPUS: Array<{ name: string; names: Record<number, string>; edges: E[] }>
 ];
 
 /**
- * KNOWN-FAILING (tracked, NOT hidden) — a deeper root issue the harness caught:
- * a LINEAGE node (one that has descendants) loses the central column to a
- * CHILDLESS sibling, so the real grandparent is shunted aside while the
- * childless great-aunt sits over the line. This is the SAME root family as the
- * stranding bug, in the ancestor-placement (fanUp / solveLayer ordering). It is
- * to be fixed AT THE ROOT (one change for all of them), not per-case. Marked
- * `it.fails` so `npm test` stays green as a guard for everything else AND trips
- * the moment the root fix lands (it.fails reports failure when the test passes),
- * forcing these back to normal `it`. See trees_chevrons_differentiation_plan.md.
+ * KNOWN-FAILING — CLEARED (Terry 2026-06-26). The deeper root issue the harness
+ * caught — a LINEAGE node (one with descendants) losing its central column to a
+ * CHILDLESS sibling so the real grandparent was shunted aside while the childless
+ * great-aunt sat over the line — is now FIXED at the root. The X-coordinate pass
+ * in trees-layout.ts was replaced with a focus-rooted, subtree-band positioner
+ * (down-cones for the focus + every branch head, the spine seated bottom-up
+ * centred over its children). Every parent/couple is centred over its children
+ * with no overlaps, so all six formerly-failing focuses now pass as normal `it`.
  */
-const KNOWN_FAILING = new Set<string>([
-  'childless great-aunt (derived) two generations up|Focus',
-  'childless great-aunt (derived) two generations up|Parent',
-  'multiple childless siblings + one sibling WITH a branch|Kid',
-  'multiple childless siblings + one sibling WITH a branch|TheirKid',
-  // Couple-split is FIXED here (Colin+Lindsay adjacent — see the dedicated
-  // couples test above); these two focuses still trip the SAME lineage-column
-  // root — childless Amie takes the central column so Lucy's parent sits off to
-  // the side. Tracked, to clear when the lineage fix lands.
-  'side-branch couple at the parent generation stays adjacent|Lucy',
-  'side-branch couple at the parent generation stays adjacent|CousinKid',
-]);
+const KNOWN_FAILING = new Set<string>([]);
 
 describe('collapsing a generation hides the WHOLE subtree, including in-laws', () => {
   // Terry 2026-06-26: focus=Grandad, collapse the generation below him → ONLY

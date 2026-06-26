@@ -1102,6 +1102,328 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       }
     }
 
+    // ───────────────────────────────────────────────────────────────────
+    // HARD PARENT-CENTRING POSITIONER (Terry 2026-06-26).
+    //
+    // The settle above (fanDown/fanUp/repackFocusRow/solveLayer) positions each
+    // generation row semi-independently, so a family's parent row and child row
+    // drift apart — a childless sibling can steal the column the lineage node
+    // needs, and a wide parent row never widens the children below it. This
+    // OVERRIDES the settle's X for every slotted node with a focus-rooted,
+    // subtree-band layout in which EVERY parent (or couple) is centred over its
+    // children with no overlaps.
+    //
+    // Method (focus-rooted tree — a proper tree both ways because rooting at the
+    // focus turns the top-down DAG "merge" into an up-fork):
+    //   • UNITS = a node + its contiguous same-row spouse(s) (couples kept whole).
+    //   • DOWN-CONE: a unit centred over its children, sibling subtrees packed by
+    //     bounding box so they never overlap (classic tidy top-down).
+    //   • CONE ROOTS = focus unit + every branch head (a unit at an ancestor gen
+    //     that is a child of a bloodline ancestor but not itself on the focus
+    //     spine — i.e. focus's siblings, aunts/uncles, great-aunts/uncles…).
+    //   • Pack each cone root's down-cone side-by-side (left→right in
+    //     slottedByGen order) with per-generation cursors so no row overlaps;
+    //     then seat each spine ancestor bottom-up centred over its children
+    //     (the up-fork resolves to side-by-side, within the check's slack).
+    // Order WITHIN every row is taken from slottedByGen (already correct, couples
+    // adjacent) — this only sets X. Y is untouched.
+    {
+      const GAP = opts.spouseOffset; // uniform tight min centre-to-centre gap
+      // Generation of each slotted node, and an index within its row (for L→R order).
+      const genOf = new Map<number, number>();
+      const rowIndex = new Map<number, number>();
+      for (const [g, ids] of slottedByGen) ids.forEach((id, i) => { genOf.set(id, g); rowIndex.set(id, i); });
+
+      // UNITS — partition each row via unitFrom (couple/single/remarriage block).
+      const unitOfMember = new Map<number, number[]>();   // member id → its unit members
+      const unitKeyOf = new Map<number, number>();        // member id → unit key (members[0])
+      const unitsByGen = new Map<number, number[]>();      // gen → unit keys, in row order
+      for (const [g, ids] of slottedByGen) {
+        const keys: number[] = [];
+        let i = 0;
+        while (i < ids.length) {
+          const members = unitFrom(ids, i);
+          const key = members[0];
+          for (const m of members) { unitOfMember.set(m, members); unitKeyOf.set(m, key); }
+          keys.push(key);
+          i += members.length;
+        }
+        unitsByGen.set(g, keys);
+      }
+      const allUnitKeys = Array.from(unitsByGen.values()).flat();
+      const membersOfUnit = (u: number) => unitOfMember.get(u) ?? [u];
+      const genOfUnit = (u: number) => genOf.get(u)!;
+      const rowIndexOfUnit = (u: number) => Math.min(...membersOfUnit(u).map(m => rowIndex.get(m) ?? 0));
+
+      // Unit-level child / parent / SIBLING relations (slotted only). Siblings are
+      // followed via sibling_of so a "derived sibling" (joined only by a stripped-
+      // placeholder shared parent → no visible parent edge) still attaches to the
+      // tree beside its sibling instead of being orphaned.
+      const childUnitsOf = new Map<number, number[]>();
+      const parentUnitsOf = new Map<number, number[]>();
+      const sibUnitsOf = new Map<number, number[]>();
+      for (const u of allUnitKeys) {
+        const kids = new Set<number>();
+        const pars = new Set<number>();
+        const sibs = new Set<number>();
+        for (const m of membersOfUnit(u)) {
+          for (const c of childrenOf.get(m) ?? []) if (isSlotted(c)) kids.add(unitKeyOf.get(c)!);
+          for (const p of parentsOf.get(m) ?? []) if (isSlotted(p)) pars.add(unitKeyOf.get(p)!);
+          for (const s of siblingsOf.get(m) ?? []) if (isSlotted(s)) sibs.add(unitKeyOf.get(s)!);
+        }
+        kids.delete(u); pars.delete(u); sibs.delete(u);
+        childUnitsOf.set(u, [...kids].sort((a, b) => rowIndexOfUnit(a) - rowIndexOfUnit(b)));
+        parentUnitsOf.set(u, [...pars].sort((a, b) => rowIndexOfUnit(a) - rowIndexOfUnit(b)));
+        sibUnitsOf.set(u, [...sibs].sort((a, b) => rowIndexOfUnit(a) - rowIndexOfUnit(b)));
+      }
+
+      // Spine = focus unit + every strict bloodline ANCESTOR unit (walk parent
+      // units UP from the focus). These are SEATED over their children; everyone
+      // else attaches to the spine as a branch head (cone root).
+      const focusUnit = unitKeyOf.get(focusId)!;
+      const spine = new Set<number>([focusUnit]);
+      {
+        const q = [focusUnit];
+        while (q.length) {
+          const u = q.shift()!;
+          for (const pu of parentUnitsOf.get(u) ?? []) {
+            if (genOfUnit(pu) <= genOfUnit(u)) continue;       // strictly above
+            if (spine.has(pu)) continue;
+            if (!membersOfUnit(pu).some(m => bloodline.has(m))) continue;  // bloodline only
+            spine.add(pu); q.push(pu);
+          }
+        }
+      }
+
+      // Down-cone: relative layout of a unit + ALL its descendants, tidy
+      // (Reingold–Tilford). Returns pos (member id → relX), per-gen extent
+      // [min,max] and the unit's own centre. Children subtrees are packed by
+      // bounding box so no row overlaps; the unit is centred over its kids' band.
+      type Cone = { pos: Map<number, number>; ext: Map<number, [number, number]>; centre: number };
+      const mergeExtInto = (into: Map<number, [number, number]>, g: number, mn: number, mx: number) => {
+        const cur = into.get(g);
+        if (!cur) into.set(g, [mn, mx]); else into.set(g, [Math.min(cur[0], mn), Math.max(cur[1], mx)]);
+      };
+      const shiftCone = (c: Cone, dx: number): Cone => {
+        if (dx === 0) return c;
+        const pos = new Map<number, number>();
+        for (const [id, x] of c.pos) pos.set(id, x + dx);
+        const ext = new Map<number, [number, number]>();
+        for (const [g, [mn, mx]] of c.ext) ext.set(g, [mn + dx, mx + dx]);
+        return { pos, ext, centre: c.centre + dx };
+      };
+      // Smallest dx so cone `c` sits entirely to the RIGHT of `cursor` at every
+      // gen it occupies (cursor = next-free x per gen; absent gen ⇒ free at -inf).
+      const dxToClearRight = (c: Cone, cursor: Map<number, number>): number => {
+        let dx = 0, any = false;
+        for (const [cg, [mn]] of c.ext) {
+          const cur = cursor.get(cg);
+          if (cur == null) continue;
+          const need = cur - mn;
+          if (!any || need > dx) { dx = need; any = true; }
+        }
+        return any ? dx : 0;
+      };
+      const downCone = (u: number): Cone => {
+        const members = membersOfUnit(u);
+        const g = genOfUnit(u);
+        const kids = (childUnitsOf.get(u) ?? []).filter(cu => genOfUnit(cu) === g - 1);
+        const pos = new Map<number, number>();
+        const ext = new Map<number, [number, number]>();
+        const placeMembers = (centre: number) => {
+          const span = (members.length - 1) * GAP;
+          const left = centre - span / 2;
+          members.forEach((m, i) => pos.set(m, left + i * GAP));
+          mergeExtInto(ext, g, left, left + span);
+        };
+        if (kids.length === 0) { placeMembers(0); return { pos, ext, centre: 0 }; }
+        const cursor = new Map<number, number>();
+        const childCentres: number[] = [];
+        for (const k of kids) {
+          const kc = downCone(k);
+          const sc = shiftCone(kc, dxToClearRight(kc, cursor));
+          for (const [id, x] of sc.pos) pos.set(id, x);
+          for (const [cg, [mn, mx]] of sc.ext) { mergeExtInto(ext, cg, mn, mx); cursor.set(cg, mx + GAP); }
+          childCentres.push(sc.centre);
+        }
+        placeMembers((childCentres[0] + childCentres[childCentres.length - 1]) / 2);
+        return { pos, ext, centre: (childCentres[0] + childCentres[childCentres.length - 1]) / 2 };
+      };
+
+      // GLOBAL placement. NX = final relative X per member. `occ` = occupied
+      // [min,max] per gen so newly-placed cones never overlap an existing row.
+      const NX = new Map<number, number>();
+      const occ = new Map<number, [number, number]>();
+      const stampCone = (c: Cone) => {
+        for (const [id, x] of c.pos) NX.set(id, x);
+        for (const [g, [mn, mx]] of c.ext) mergeExtInto(occ, g, mn, mx);
+      };
+      const centreOfUnit = (u: number): number => {
+        const ms = membersOfUnit(u).map(m => NX.get(m)).filter((x): x is number => x != null);
+        return ms.length ? (Math.min(...ms) + Math.max(...ms)) / 2 : 0;
+      };
+      const edgeOfUnit = (u: number, side: 'left' | 'right'): number => {
+        const ms = membersOfUnit(u).map(m => NX.get(m)).filter((x): x is number => x != null);
+        if (!ms.length) return centreOfUnit(u);
+        return side === 'left' ? Math.min(...ms) : Math.max(...ms);
+      };
+      // Place a cone on a given SIDE, as far IN toward `innerEdge` as possible
+      // while clearing all current occupancy by GAP at every gen it touches.
+      // 'left'  ⇒ cone's RIGHT edge = min(innerEdge − GAP, every leftmost-occupied − GAP).
+      // 'right' ⇒ cone's LEFT  edge = max(innerEdge + GAP, every rightmost-occupied + GAP).
+      // A childless-leaf branch head (single-gen cone, no descendants below to
+      // clear) thus sits snug beside its anchor instead of being flung out past a
+      // deep cousin branch — the stranded-sibling fix, structural not per-person.
+      const placeConeSide = (c: Cone, side: 'left' | 'right', innerEdge: number) => {
+        // A LEAF cone (single generation, no descendant rows) is placed directly
+        // adjacent to the anchor and NOT pushed past far-away same-row occupancy —
+        // the final per-row spread resolves any same-row overlap. This keeps a
+        // childless great-aunt snug beside her own sibling instead of flung past an
+        // unrelated couple sitting elsewhere in the row. A MULTI-gen cone must
+        // clear ALL occupancy (its descendant rows can't be fixed by the per-row
+        // spread without tearing the cone apart), so it sits beyond everything.
+        const isLeaf = c.ext.size <= 1;
+        if (side === 'left') {
+          let rightEdge = innerEdge - GAP;
+          if (!isLeaf) for (const [cg, [, mx]] of c.ext) { void mx; const o = occ.get(cg); if (o) rightEdge = Math.min(rightEdge, o[0] - GAP); }
+          const curMax = Math.max(...[...c.ext.values()].map(([, mx]) => mx));
+          stampCone(shiftCone(c, rightEdge - curMax));
+        } else {
+          let leftEdge = innerEdge + GAP;
+          if (!isLeaf) for (const [cg, [mn]] of c.ext) { const o = occ.get(cg); if (o) leftEdge = Math.max(leftEdge, o[1] + GAP); }
+          const curMin = Math.min(...[...c.ext.values()].map(([mn]) => mn));
+          stampCone(shiftCone(c, leftEdge - curMin));
+        }
+      };
+      // Park a stray cone fully to one side of ALL occupancy (no inner anchor).
+      const parkConeSide = (c: Cone, side: 'left' | 'right') => {
+        const o0 = [...occ.values()];
+        if (!o0.length) { stampCone(c); return; }
+        const innerEdge = side === 'left' ? Math.min(...o0.map(o => o[0])) : Math.max(...o0.map(o => o[1]));
+        placeConeSide(c, side, innerEdge);
+      };
+
+      // 1) Focus down-cone at the origin.
+      stampCone(downCone(focusUnit));
+
+      // Splay branch-head cones around an already-placed anchor unit: those whose
+      // row order sits left of the anchor go LEFT (nearest first, snug to the
+      // anchor's left edge); the rest go RIGHT.
+      const placeBranchHeadsAround = (anchorUnit: number, heads: number[]) => {
+        const aIdx = rowIndexOfUnit(anchorUnit);
+        const lefts = heads.filter(h => rowIndexOfUnit(h) < aIdx).sort((a, b) => rowIndexOfUnit(b) - rowIndexOfUnit(a)); // nearest first
+        const rights = heads.filter(h => rowIndexOfUnit(h) >= aIdx).sort((a, b) => rowIndexOfUnit(a) - rowIndexOfUnit(b));
+        for (const h of lefts) { if (!NX.has(h)) placeConeSide(downCone(h), 'left', edgeOfUnit(anchorUnit, 'left')); }
+        for (const h of rights) { if (!NX.has(h)) placeConeSide(downCone(h), 'right', edgeOfUnit(anchorUnit, 'right')); }
+      };
+
+      // 2) Attach derived siblings of the focus (no slotted parent → not reached
+      // by the climb) directly beside the focus, at the focus generation.
+      {
+        const focusSibs = (sibUnitsOf.get(focusUnit) ?? [])
+          .filter(s => genOfUnit(s) === genOfUnit(focusUnit) && !spine.has(s) && !NX.has(s)
+            && (parentUnitsOf.get(s) ?? []).every(pu => !NX.has(pu)));
+        placeBranchHeadsAround(focusUnit, focusSibs);
+      }
+
+      const spanOfUnit = (u: number) => (membersOfUnit(u).length - 1) * GAP;
+      const setUnitCentre = (u: number, c: number) => {
+        const members = membersOfUnit(u);
+        const left = c - spanOfUnit(u) / 2;
+        members.forEach((m, i) => NX.set(m, left + i * GAP));
+      };
+      // Spread a row's UNITS to the required centre-to-centre gap
+      // ((span_a+span_b)/2 + GAP → nearest cards clear by GAP) with the L2-minimal
+      // shift (pool-adjacent-violators on the current centres). Couples move as a
+      // block, so a partnership is never split; a row already spaced sees ~0 move.
+      const spreadRow = (keysRaw: number[]) => {
+        const keys = keysRaw.filter(u => membersOfUnit(u).some(m => NX.has(m)));
+        if (keys.length < 2) return;
+        keys.sort((a, b) => centreOfUnit(a) - centreOfUnit(b) || rowIndexOfUnit(a) - rowIndexOfUnit(b));
+        const desired = keys.map(centreOfUnit);
+        const cum: number[] = [0];
+        for (let i = 1; i < keys.length; i++) cum.push(cum[i - 1] + spanOfUnit(keys[i - 1]) / 2 + GAP + spanOfUnit(keys[i]) / 2);
+        const t = desired.map((d, i) => d - cum[i]);   // gap-shifted targets
+        const sum: number[] = [], cnt: number[] = [];
+        for (let i = 0; i < t.length; i++) {
+          sum.push(t[i]); cnt.push(1);
+          while (sum.length >= 2 && sum[sum.length - 2] / cnt[sum.length - 2] > sum[sum.length - 1] / cnt[sum.length - 1]) {
+            const s = sum.pop()!, c = cnt.pop()!;
+            sum[sum.length - 1] += s; cnt[cnt.length - 1] += c;
+          }
+        }
+        let idx = 0;
+        for (let b = 0; b < sum.length; b++) {
+          const v = sum[b] / cnt[b];
+          for (let c = 0; c < cnt[b]; c++) { setUnitCentre(keys[idx], v + cum[idx]); idx++; }
+        }
+      };
+      const seatSpineUnit = (P: number) => {
+        const g = genOfUnit(P);
+        const allKids = (childUnitsOf.get(P) ?? []).filter(cu => genOfUnit(cu) === g - 1 && membersOfUnit(cu).some(m => NX.has(m)));
+        if (!allKids.length) return;
+        const cs = allKids.map(centreOfUnit);
+        setUnitCentre(P, (Math.min(...cs) + Math.max(...cs)) / 2);
+      };
+
+      // 3) CLIMB the spine: from each spine unit (bottom-up), splay that unit's
+      // parent's OTHER children (the aunts/uncles = branch heads) around the
+      // already-placed spine child, then seat the parent over its children. The
+      // maternal/paternal fork is handled because a spine unit can have two parent
+      // spine units — each seats over its own children's span.
+      const spineByGenAsc = [...spine].filter(s => genOfUnit(s) > genOfUnit(focusUnit)).sort((a, b) => genOfUnit(a) - genOfUnit(b));
+      for (const P of spineByGenAsc) {
+        const g = genOfUnit(P);
+        const kidsBelow = (childUnitsOf.get(P) ?? []).filter(cu => genOfUnit(cu) === g - 1);
+        const placedKids = kidsBelow.filter(cu => membersOfUnit(cu).some(m => NX.has(m)));
+        const anchor = placedKids.length
+          ? placedKids.reduce((b, k) => centreOfUnit(k) < centreOfUnit(b) ? k : b)
+          : (kidsBelow[0] ?? P);
+        placeBranchHeadsAround(anchor, kidsBelow.filter(cu => !spine.has(cu) && !NX.has(cu)));
+        // Seat P over its (now placed) children; record occupancy.
+        const members = membersOfUnit(P);
+        const cs = (placedKids.length ? placedKids : kidsBelow).filter(cu => membersOfUnit(cu).some(m => NX.has(m))).map(centreOfUnit);
+        const centre = cs.length ? (Math.min(...cs) + Math.max(...cs)) / 2 : centreOfUnit(P);
+        setUnitCentre(P, centre);
+        const o = occ.get(g);
+        if (o) { const lo = Math.min(...members.map(m => NX.get(m)!)); const hi = Math.max(...members.map(m => NX.get(m)!));
+          if (hi > o[0] && lo < o[1]) {
+            const span = spanOfUnit(P);
+            const leftOpt = o[0] - GAP - span, rightOpt = o[1] + GAP;
+            setUnitCentre(P, (Math.abs(leftOpt - (centre - span / 2)) <= Math.abs(rightOpt - (centre - span / 2)) ? leftOpt : rightOpt) + span / 2);
+          }
+        }
+        mergeExtInto(occ, g, Math.min(...members.map(m => NX.get(m)!)), Math.max(...members.map(m => NX.get(m)!)));
+        // P's own derived siblings (great-aunts/uncles) splay beside P.
+        placeBranchHeadsAround(P, (sibUnitsOf.get(P) ?? [])
+          .filter(s => genOfUnit(s) === g && !spine.has(s) && !NX.has(s) && (parentUnitsOf.get(s) ?? []).every(pu => !NX.has(pu))));
+      }
+
+      // 4) Any remaining slotted unit not yet placed (disconnected oddities) —
+      // park to the right of all occupancy so it never overlaps.
+      for (const u of allUnitKeys) {
+        if (NX.has(u)) continue;
+        parkConeSide(downCone(u), 'right');
+      }
+
+      // 5) Finalize BOTTOM-UP: spread each row to the min gap (overlap-free) and,
+      // for ancestor rows, re-seat the spine over the now-final children first so
+      // a wider row below (a maternal/paternal grandparent fork that got spread)
+      // keeps its parents centred. Descendant + focus rows are already spaced, so
+      // their spread is a no-op; doing them too is a safe overlap guarantee.
+      const gensAsc = [...unitsByGen.keys()].sort((a, b) => a - b);
+      const focusG = genOfUnit(focusUnit);
+      for (const g of gensAsc) {
+        if (g > focusG) for (const u of (unitsByGen.get(g) ?? [])) if (spine.has(u)) seatSpineUnit(u);
+        spreadRow(unitsByGen.get(g) ?? []);
+      }
+
+      // Defensive: any slotted node still unplaced keeps its settle X.
+      for (const id of X.keys()) if (isSlotted(id) && !NX.has(id)) NX.set(id, X.get(id)!);
+      // Override the settle's X with the new positions for slotted nodes.
+      for (const [id, x] of NX) if (isSlotted(id)) X.set(id, x);
+    }
+
     // Centre the whole tree on the focus.
     const fx = X.get(focusId) ?? 0;
     if (fx !== 0) for (const id of [...X.keys()]) X.set(id, X.get(id)! - fx);
