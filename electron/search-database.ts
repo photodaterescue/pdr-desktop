@@ -6977,6 +6977,12 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   // Face thumbnail coords per person — prefer the user-chosen representative
   // face; fall back to any face for that person so a new cluster still
   // gets an avatar until the user picks one in People Manager.
+  // VERIFIED faces win the fallback (Terry 2026-06-26): a named person can have
+  // 1 confirmed face plus many auto-matched (unverified) suggestions on the same
+  // person_id. Ordering by confidence alone let a high-confidence SUGGESTION
+  // (possibly the wrong face) become the Trees avatar, even though People
+  // Manager shows the confirmed one. `verified DESC` makes Trees pick the same
+  // confirmed face PM does (e.g. Dorothy Ada: 1 verified + 21 suggestions).
   const faceCoordRows = db.prepare(`
     SELECT fd.id AS face_id, fd.person_id, fd.file_id,
            fd.box_x, fd.box_y, fd.box_w, fd.box_h,
@@ -6984,7 +6990,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
     FROM face_detections fd
     JOIN indexed_files f ON fd.file_id = f.id
     WHERE fd.person_id IN (${placeholders})
-    ORDER BY fd.person_id, fd.confidence DESC
+    ORDER BY fd.person_id, fd.verified DESC, fd.confidence DESC
   `).all(...ids) as {
     face_id: number; person_id: number; file_id: number;
     box_x: number; box_y: number; box_w: number; box_h: number;
