@@ -2567,6 +2567,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             useGenderedLabels={currentTree?.useGenderedLabels ?? true}
             simplifyHalfLabels={currentTree?.simplifyHalfLabels ?? false}
             hideGenderMarker={currentTree?.hideGenderMarker ?? false}
+            showFamilyLanes={currentTree?.showFamilyLanes ?? true}
+            showFamilyTint={currentTree?.showFamilyTint ?? true}
             hiddenAncestorPersonIds={currentTree?.hiddenAncestorPersonIds ?? []}
             onToggleHiddenAncestor={async (personId) => {
               if (!currentTreeId || !currentTree) return;

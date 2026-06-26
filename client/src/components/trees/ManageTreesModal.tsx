@@ -183,6 +183,20 @@ export function ManageTreesModal({
     onChanged();
   };
 
+  /** Cousin differentiation (Terry Phase 3). Two tree-scoped toggles, both ON
+   *  by default: the faint per-family swimlane band, and the per-family
+   *  connector-comb tint. Same live-commit pattern as the toggles above. */
+  const handleToggleFamilyLanes = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, showFamilyLanes: value } : x));
+    await updateSavedTree(t.id, { showFamilyLanes: value });
+    onChanged();
+  };
+  const handleToggleFamilyTint = async (t: SavedTreeRecord, value: boolean) => {
+    setTrees(prev => prev.map(x => x.id === t.id ? { ...x, showFamilyTint: value } : x));
+    await updateSavedTree(t.id, { showFamilyTint: value });
+    onChanged();
+  };
+
   /** Tree-scoped preference for collapsing Half-brother / Half-sister
    *  labels down to the plain Brother / Sister terms. Off by default —
    *  relationship labels stay technically accurate unless the user opts
@@ -472,6 +486,30 @@ export function ManageTreesModal({
                         <span className="text-foreground">Show half-siblings as plain Brother / Sister</span>
                         <span className="ml-1 text-muted-foreground/70">
                           (hides the technically-accurate "Half-" prefix)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={t.showFamilyLanes}
+                          onChange={e => handleToggleFamilyLanes(t, e.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="text-foreground">Family swimlanes</span>
+                        <span className="ml-1 text-muted-foreground/70">
+                          (faint band behind each family so cousins read as groups)
+                        </span>
+                      </label>
+                      <label className="flex items-center gap-2 text-xs text-muted-foreground cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={t.showFamilyTint}
+                          onChange={e => handleToggleFamilyTint(t, e.target.checked)}
+                          className="w-3.5 h-3.5"
+                        />
+                        <span className="text-foreground">Family-coloured connectors</span>
+                        <span className="ml-1 text-muted-foreground/70">
+                          (tints each family's connecting lines to match its lane)
                         </span>
                       </label>
                     </div>
