@@ -1718,11 +1718,17 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '' });
     };
     for (const [head, desc] of sideBranchDescendantsByHead) {
+      // Terry 2026-06-26: don't lane the focus's OWN close family. Only the
+      // DISTANT branches need differentiating — a great-aunt/uncle and above
+      // (gen ≥ +2) WITH descendants to tell apart. A lane around the focus,
+      // their parents, or their direct aunts/uncles (gen +1, → first cousins)
+      // is just noise around the person you're already looking at.
+      if ((nodeById.get(head)?.generation ?? 0) < 2) continue;
+      if (![...desc].some(d => vis(d))) continue;
       pushLane(bboxOf([head, ...desc]), nodeById.get(head)?.x);
     }
-    // The focus's own branch: their parents + everyone down the direct line.
-    const focusSeed = [...downwardDirectSet, ...(parentsOf.get(layout.focusPersonId) ?? [])];
-    pushLane(bboxOf(focusSeed), nodeById.get(layout.focusPersonId)?.x);
+    // NB: no lane for the focus's own direct line / parents / direct aunts &
+    // uncles — Terry: unnecessary and noisy around the focus.
     // Clip each lane's (padded) horizontal extent to its own territory — the
     // midpoints between neighbouring branch anchors — so vertical lanes NEVER
     // overlap, even when a family's grandkids spread under a neighbour (the
