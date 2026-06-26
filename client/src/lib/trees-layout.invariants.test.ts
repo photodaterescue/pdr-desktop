@@ -300,8 +300,46 @@ describe('collapsing a generation hides the WHOLE subtree, including in-laws', (
 // stays green even where a shape also trips the (separate, tracked) lineage-
 // column issue. This is the proof Terry's "no sibling between a couple, no
 // matter the focus" ask holds globally.
+// Deliberately awkward, unrelated structures — the BREADTH proof that the
+// couple-adjacency rule is GLOBAL (Terry 2026-06-26: "make it global… so if a
+// user has a different scenario it doesn't do this bug for them"). These are
+// spouse-adjacency-only (they may trip the separate lineage issue), so they
+// stress the one rule across shapes the main corpus doesn't have.
+const COUPLE_STRESS: Array<{ name: string; names: Record<number, string>; edges: E[] }> = [
+  {
+    name: 'STRESS three siblings, two married, one single',
+    names: { 1: 'GP', 2: 'A', 3: 'As', 4: 'B', 5: 'Bs', 6: 'C', 7: 'AKid' },
+    edges: [[1, 2, 'parent_of'], [1, 4, 'parent_of'], [1, 6, 'parent_of'], [2, 3, 'spouse_of'], [4, 5, 'spouse_of'], [2, 7, 'parent_of'], [3, 7, 'parent_of']],
+  },
+  {
+    name: 'STRESS spouse listed before partner in source order',
+    names: { 1: 'GP', 2: 'Spouse', 3: 'Blood', 4: 'Sib', 5: 'Focus' },
+    edges: [[2, 3, 'spouse_of'], [1, 3, 'parent_of'], [1, 4, 'parent_of'], [3, 5, 'parent_of']],
+  },
+  {
+    name: 'STRESS remarriage — one person, two spouses in a row',
+    names: { 1: 'P', 2: 'S1', 3: 'S2', 4: 'K1', 5: 'K2' },
+    edges: [[1, 2, 'spouse_of'], [1, 3, 'spouse_of'], [1, 4, 'parent_of'], [2, 4, 'parent_of'], [1, 5, 'parent_of'], [3, 5, 'parent_of']],
+  },
+  {
+    name: 'STRESS great-uncle couple two generations up',
+    names: { 1: 'GGP', 2: 'GP', 3: 'GreatUncle', 4: 'GUWife', 5: 'Parent', 6: 'Focus' },
+    edges: [[1, 2, 'parent_of'], [1, 3, 'parent_of'], [3, 4, 'spouse_of'], [2, 5, 'parent_of'], [5, 6, 'parent_of']],
+  },
+  {
+    name: 'STRESS wide sibling row — two couples + two singles interleaved',
+    names: { 1: 'GP', 2: 'A', 3: 'B', 4: 'Bs', 5: 'C', 6: 'D', 7: 'Ds', 8: 'Focus' },
+    edges: [[1, 2, 'parent_of'], [1, 3, 'parent_of'], [1, 5, 'parent_of'], [1, 6, 'parent_of'], [3, 4, 'spouse_of'], [6, 7, 'spouse_of'], [2, 8, 'parent_of']],
+  },
+  {
+    name: 'STRESS in-law married to in-law on a side branch',
+    names: { 1: 'GP', 2: 'Parent', 3: 'Aunt', 4: 'UncleInLaw', 5: 'Focus', 6: 'CousinA', 7: 'CousinAspouse' },
+    edges: [[1, 2, 'parent_of'], [1, 3, 'parent_of'], [3, 4, 'spouse_of'], [2, 5, 'parent_of'], [3, 6, 'parent_of'], [4, 6, 'parent_of'], [6, 7, 'spouse_of']],
+  },
+];
+
 describe('couples never split by a sibling (every couple shape × every focus)', () => {
-  const coupleShapes = CORPUS.filter(s => s.edges.some(e => e[2] === 'spouse_of'));
+  const coupleShapes = [...CORPUS.filter(s => s.edges.some(e => e[2] === 'spouse_of')), ...COUPLE_STRESS];
   for (const shape of coupleShapes) {
     for (const focus of Object.keys(shape.names).map(Number)) {
       it(`${shape.name} — focus=${shape.names[focus]}`, () => {

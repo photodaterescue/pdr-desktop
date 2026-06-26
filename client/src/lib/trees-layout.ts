@@ -806,9 +806,20 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           && (spousesOf.get(id) ?? []).some(sp => rowSet.has(sp) && bloodline.has(sp) && !placedAdj.has(sp))) {
           continue;
         }
-        out.push(id); placedAdj.add(id);
-        for (const sp of spousesOf.get(id) ?? []) {
-          if (rowSet.has(sp) && !placedAdj.has(sp)) { out.push(sp); placedAdj.add(sp); }
+        const sps = (spousesOf.get(id) ?? []).filter(sp => rowSet.has(sp) && !placedAdj.has(sp));
+        if (sps.length <= 1) {
+          out.push(id); placedAdj.add(id);
+          for (const sp of sps) { out.push(sp); placedAdj.add(sp); }
+        } else {
+          // Remarriage: a person with 2+ same-row spouses sits in the MIDDLE of
+          // their spouse cluster so they stay adjacent to each. (A single row
+          // can't keep one node beside 3+, but the realistic <=2 case is exact;
+          // without this the second spouse lands two slots away — caught by the
+          // remarriage stress shape in the harness.)
+          const half = Math.floor(sps.length / 2);
+          for (let i = 0; i < half; i++) { out.push(sps[i]); placedAdj.add(sps[i]); }
+          out.push(id); placedAdj.add(id);
+          for (let i = half; i < sps.length; i++) { out.push(sps[i]); placedAdj.add(sps[i]); }
         }
       }
       // Safety net: anything not yet emitted (shouldn't happen) keeps its order.
@@ -818,6 +829,17 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
 
     // Minimum centre-to-centre gap between two adjacent nodes in a row.
     const isSpouse = (a: number, b: number) => (spousesOf.get(a) ?? []).includes(b);
+    // A "unit" starting at index i = the node PLUS every contiguous spouse of
+    // anyone already in the unit. Normally a couple (2), but handles remarriage
+    // (a person with 2+ same-row spouses is one indivisible block) so the
+    // unit-walking passes below never split a second spouse off as a lone unit
+    // and fling it past the first family (Terry — the remarriage stress shape).
+    const unitFrom = (ids: number[], i: number): number[] => {
+      const u = [ids[i]];
+      let j = i + 1;
+      while (j < ids.length && u.some(m => isSpouse(m, ids[j]))) { u.push(ids[j]); j++; }
+      return u;
+    };
     // Uniform tight spacing (Terry r424): every adjacency packs at the same
     // tight gap. The OLD rule gave "unrelated" neighbours a wider nodeSpacing
     // gap — that is exactly what made an in-law sitting beside a sibling
@@ -982,9 +1004,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         const ids = slottedByGen.get(g)!;
         let prevRight = -Infinity, i = 0;
         while (i < ids.length) {
-          const a = ids[i];
-          const couple = i + 1 < ids.length && isSpouse(a, ids[i + 1]);
-          const members = couple ? [a, ids[i + 1]] : [a];
+          const members = unitFrom(ids, i);
           const hasKids = members.some(m => (childrenOf.get(m) ?? []).some(k => isSlotted(k)));
           // Leave fanUp's sibling-anchored childless nodes alone — dragging them
           // leftward here is exactly what stranded Sylvia onto the wrong family.
@@ -1006,9 +1026,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       const g0 = slottedByGen.get(0) ?? [];
       let cursor = -Infinity, i = 0;
       while (i < g0.length) {
-        const a = g0[i];
-        const couple = i + 1 < g0.length && isSpouse(a, g0[i + 1]);
-        const members = couple ? [a, g0[i + 1]] : [a];
+        const members = unitFrom(g0, i);
         let uMin = Infinity, uMax = -Infinity;
         for (const m of members) {
           let mn = X.get(m) ?? 0, mx = X.get(m) ?? 0;
