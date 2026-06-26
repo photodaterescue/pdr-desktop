@@ -957,6 +957,60 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     for (let f = 0; f < 6; f++) { fanDown(); repackFocusRow(); fanUp(); tightenLeafAncestors(); }
     fanDown();
 
+    // ── Pull stranded CHILDLESS bloodline-siblings snug (Terry 2026-06-26) ──
+    // THE GENERAL fix for the recurring "derived sibling flung to the side"
+    // bug — previously patched per-relative (Joy r426, Gladys's tile r434,
+    // great-aunts r437) but r437 only covered the UPWARD direction (fanUp).
+    // A bloodline sibling whose only link is through STRIPPED PLACEHOLDER
+    // parents has no visible parent to seat it under, so repackFocusRow / the
+    // settle sequence it PAST its sibling's whole sub-tree → it lands far out
+    // with empty space beside it (focus=Grandad → his childless sister Sylvia
+    // Mills; focus=Nan → Gladys, but she has Marion so the column is USED and
+    // looks right). Rule: a sibling that owns NO sub-tree belongs snug beside
+    // its sibling's CARD, not past its sub-tree. One pass, every generation;
+    // ancestors fanUp already snugged see delta≈0 and are left as-is; only
+    // ever pulls a unit INWARD; skips any move that would collide in-row.
+    {
+      const genOf = new Map<number, number>();
+      for (const [g, ids] of slottedByGen) for (const id of ids) genOf.set(id, g);
+      const unitOf = (id: number): number[] => {
+        for (const s of spousesOf.get(id) ?? []) if (isSlotted(s) && genOf.get(s) === genOf.get(id)) return [id, s];
+        return [id];
+      };
+      const processed = new Set<number>();
+      for (const N of [...X.keys()]) {
+        if (processed.has(N) || !isSlotted(N)) continue;
+        const gN = genOf.get(N);
+        if (gN == null) continue;
+        const unit = unitOf(N);
+        for (const m of unit) processed.add(m);
+        if (!unit.some(m => bloodline.has(m))) continue;            // must be a real bloodline sibling unit
+        if (unit.some(m => hasSlottedKids(m))) continue;            // unit owns a sub-tree → it needs its own column
+        const sibs = unit.flatMap(m => siblingsOf.get(m) ?? [])
+          .filter(s => isSlotted(s) && genOf.get(s) === gN && hasSlottedKids(s));
+        if (sibs.length === 0) continue;                            // no sibling-with-a-branch to snug against
+        const nMin = Math.min(...unit.map(m => X.get(m) ?? 0));
+        const nMax = Math.max(...unit.map(m => X.get(m) ?? 0));
+        const S = sibs.reduce((b, s) => Math.abs((X.get(s) ?? 0) - nMin) < Math.abs((X.get(b) ?? 0) - nMin) ? s : b);
+        const sUnit = unitOf(S);
+        const sMin = Math.min(...sUnit.map(m => X.get(m) ?? 0));
+        const sMax = Math.max(...sUnit.map(m => X.get(m) ?? 0));
+        let delta: number;
+        if (nMin >= (X.get(S) ?? 0)) {                              // N sits to the RIGHT of its sibling
+          delta = (sMax + opts.spouseOffset) - nMin;
+          if (delta >= 0) continue;                                // already tight / would push outward
+        } else {                                                    // N sits to the LEFT
+          delta = (sMin - opts.spouseOffset) - nMax;
+          if (delta <= 0) continue;
+        }
+        const newMin = nMin + delta, newMax = nMax + delta;
+        const clash = (slottedByGen.get(gN) ?? []).some(id =>
+          !unit.includes(id) && (X.get(id) ?? 0) > newMin - opts.spouseOffset && (X.get(id) ?? 0) < newMax + opts.spouseOffset);
+        if (clash) continue;
+        for (const m of unit) X.set(m, (X.get(m) ?? 0) + delta);
+      }
+    }
+
     // Centre the whole tree on the focus.
     const fx = X.get(focusId) ?? 0;
     if (fx !== 0) for (const id of [...X.keys()]) X.set(id, X.get(id)! - fx);
