@@ -154,6 +154,11 @@ export interface LaidOutNode extends FamilyGraphNode {
   x: number;
   /** Logical y coord — tiers are evenly spaced by `rowHeight`. */
   y: number;
+  /** True when this node takes a real slot on the main canvas (bloodline +
+   *  their on-canvas spouses). False for PARKED nodes — in-law families that
+   *  the renderer shows in floating side-panels, not inline. Lets the layout
+   *  invariant suite check only what's actually drawn on the canvas. */
+  slotted?: boolean;
 }
 
 export interface LaidOutEdge extends FamilyGraphEdge {
@@ -1034,10 +1039,12 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       X.set(node.personId, parkX ?? 0);
     }
 
-    // Write the new X back (Y is untouched — set by the first pass).
+    // Write the new X back (Y is untouched — set by the first pass). Also stamp
+    // `slotted` here, while isSlotted is in scope, so the layout output can tell
+    // canvas nodes from parked in-law-panel nodes (used by the invariant suite).
     for (const node of Array.from(placed.values())) {
       const x = X.get(node.personId);
-      if (x != null) placed.set(node.personId, { ...node, x });
+      if (x != null) placed.set(node.personId, { ...node, x, slotted: isSlotted(node.personId) });
     }
   }
 
