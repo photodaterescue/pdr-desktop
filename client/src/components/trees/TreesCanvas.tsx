@@ -156,6 +156,10 @@ interface TreesCanvasProps {
   /** Downward direct-line nodes the user has collapsed (opposite default to
    *  expandedDescendantsOf: a member HIDES its subtree). */
   collapsedDescendantsOf?: Set<number>;
+  /** Per-generation buttons (Terry SS1): show/hide a whole generation row at
+   *  once. sideIds = side-branch branch-points at that row (toggle expanded),
+   *  directIds = direct branch-points (toggle collapsed), show = reveal vs hide. */
+  onSetGenerationExpanded?: (sideIds: number[], directIds: number[], show: boolean) => void;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -197,7 +201,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -1260,6 +1264,42 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return [...ids];
   }, [sideBranchDescendantsByHead, layout.edges]);
 
+  /** Per-generation toggles (Terry SS1 — "a unique feature, a lot of control").
+   *  Group every shown branch-point by its ROW (world-y), so one button can
+   *  show/hide that whole generation's children at once. The button stack sits
+   *  on the far left, each entry vertically aligned to the row it controls
+   *  (one row BELOW the branch-points = the children that appear/disappear).
+   *  Side-branch branch-points toggle expandedDescendantsOf; direct ones toggle
+   *  collapsedDescendantsOf — onSetGenerationExpanded handles both together. */
+  const generationToggles = useMemo(() => {
+    if (sideBranchChevrons.length === 0) return [] as Array<{
+      sideIds: number[]; directIds: number[]; childRowWorldY: number; allOpen: boolean;
+    }>;
+    // Generation pitch in world units (vertical distance between rows).
+    const ys = [...new Set(layout.nodes.map(n => Math.round(n.y)))].sort((a, b) => a - b);
+    let pitch = 180;
+    for (let i = 1; i < ys.length; i++) { const d = ys[i] - ys[i - 1]; if (d > 20) { pitch = d; break; } }
+    const byRow = new Map<number, { sideIds: number[]; directIds: number[]; headY: number; open: number; total: number }>();
+    for (const c of sideBranchChevrons) {
+      const key = Math.round(c.headY);
+      if (!byRow.has(key)) byRow.set(key, { sideIds: [], directIds: [], headY: c.headY, open: 0, total: 0 });
+      const g = byRow.get(key)!;
+      const isOpen = c.direct
+        ? !(collapsedDescendantsOf?.has(c.headId) ?? false)
+        : (expandedDescendantsOf?.has(c.headId) ?? false);
+      if (c.direct) g.directIds.push(c.headId); else g.sideIds.push(c.headId);
+      g.total++; if (isOpen) g.open++;
+    }
+    return [...byRow.values()]
+      .sort((a, b) => a.headY - b.headY)
+      .map(g => ({
+        sideIds: g.sideIds,
+        directIds: g.directIds,
+        childRowWorldY: g.headY + pitch,
+        allOpen: g.open === g.total,
+      }));
+  }, [sideBranchChevrons, layout.nodes, expandedDescendantsOf, collapsedDescendantsOf]);
+
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
    *  but the user clicked the aunt's v chevron. Drives the lift /
@@ -1685,25 +1725,44 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
 
   return (
     <div className="absolute inset-0 select-none">
-      {/* Expand-all / collapse-all (Terry r438): a floating control on the far
-          left of the canvas that opens every collapsed branch at once (or
-          collapses them all back). Only shows when there's at least one
-          collapsible side-branch. Labelled so it needs no tooltip. */}
+      {/* Per-generation controls (Terry SS1 — "a unique feature, a lot of
+          control"). Far-left stack: a MASTER expand/collapse-all at the top
+          ("although that might be useful as well"), then one button PER
+          GENERATION, each vertically aligned to the row it shows/hides so you
+          can open the tree one generation at a time, both for cousins and for
+          your own direct family. The floating in-law ancestor panels are NEVER
+          touched by any of these (separate firewall). */}
       {onExpandAllDescendants && sideBranchChevrons.length > 0 && (() => {
-        // Open EVERY level (all branch-points), not just the heads — so one click
-        // reveals the whole bloodline tree; click again collapses it all back.
+        // MASTER — open/close EVERY level at once.
         const allExpanded = allBranchPointIds.length > 0 && allBranchPointIds.every(id => expandedDescendantsOf?.has(id));
         return (
           <button
             onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : allBranchPointIds); }}
-            title={allExpanded ? 'Collapse every branch' : 'Expand every branch'}
-            className="absolute left-3 top-1/2 -translate-y-1/2 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
+            title={allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'}
+            className="absolute left-3 top-3 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
           >
             {allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
             {allExpanded ? 'Collapse all' : 'Expand all'}
           </button>
         );
       })()}
+      {onSetGenerationExpanded && generationToggles.map((g, i) => {
+        // Each per-gen button tracks its row: world-y -> screen-y via the same
+        // transform the canvas uses, clamped below the master so it stays put.
+        const screenY = viewport.ty + g.childRowWorldY * viewport.scale;
+        const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
+        return (
+          <button
+            key={`gen-toggle-${i}`}
+            onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
+            title={show ? 'Show this whole generation' : 'Hide this whole generation'}
+            className="absolute left-3 z-30 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
+            style={{ top: Math.max(48, screenY - 16) }}
+          >
+            {show ? <ChevronsUpDown className="w-4 h-4 text-primary" /> : <ChevronsDownUp className="w-4 h-4 text-primary" />}
+          </button>
+        );
+      })}
       {canvasBackground && (
         <div
           className="absolute inset-0 pointer-events-none"

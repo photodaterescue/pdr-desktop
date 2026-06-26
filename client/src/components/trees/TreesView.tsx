@@ -2519,8 +2519,30 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onQuickAddSibling={(personId) => setQuickAdd({ fromPersonId: personId, kind: 'sibling' })}
             onExpandAncestors={handleExpandAncestors}
             onExpandDescendants={handleExpandDescendants}
-            onExpandAllDescendants={(ids) => setExpandedDescendantsOf(new Set(ids))}
+            onExpandAllDescendants={(ids) => {
+              setExpandedDescendantsOf(new Set(ids));
+              // Master toggle always returns direct family to its default (shown):
+              // expand-all re-opens any collapsed direct node, collapse-all drops
+              // back to the default view (cousins hidden, direct family shown).
+              setCollapsedDescendantsOf(new Set());
+            }}
             onCollapseDescendants={handleCollapseDescendants}
+            onSetGenerationExpanded={(sideIds, directIds, show) => {
+              // Per-generation buttons (Terry SS1): show/hide a whole generation
+              // at once. Side-branch nodes live in expandedDescendantsOf (add to
+              // show); default-open direct nodes live in collapsedDescendantsOf
+              // (remove to show). Both updated together so the row toggles cleanly.
+              setExpandedDescendantsOf(prev => {
+                const n = new Set(prev);
+                if (show) sideIds.forEach(id => n.add(id)); else sideIds.forEach(id => n.delete(id));
+                return n;
+              });
+              setCollapsedDescendantsOf(prev => {
+                const n = new Set(prev);
+                if (show) directIds.forEach(id => n.delete(id)); else directIds.forEach(id => n.add(id));
+                return n;
+              });
+            }}
             expandedAncestorsOf={expandedAncestorsOf}
             expandedDescendantsOf={expandedDescendantsOf}
             collapsedDescendantsOf={collapsedDescendantsOf}
