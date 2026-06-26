@@ -1683,6 +1683,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const PAL = ['#8ea2f4', '#5fc8f0', '#5bd1a6', '#f0c14b', '#ef9bb0', '#b79bf0', '#4fd6c4', '#f0a868'];
     const spousesOf = new Map<number, number[]>();
     const parentsOf = new Map<number, number[]>();
+    const kidsOf = new Map<number, number[]>();
     for (const e of layout.edges) {
       if (e.type === 'spouse_of') {
         if (!spousesOf.has(e.aId)) spousesOf.set(e.aId, []);
@@ -1693,6 +1694,8 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         // aId = parent, bId = child
         if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
         parentsOf.get(e.bId)!.push(e.aId);
+        if (!kidsOf.has(e.aId)) kidsOf.set(e.aId, []);
+        kidsOf.get(e.aId)!.push(e.bId);
       }
     }
     const vis = (id: number) => nodeById.has(id) && !hiddenSideBranchIds.has(id) && !hiddenExtendedIds.has(id);
@@ -1717,18 +1720,34 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       if (!bb) return;
       lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '' });
     };
+    // The focus's strict ancestor line (walk parents up) — these must NEVER be
+    // laned: a grandparent/parent is a direct ancestor, not a cousin branch.
+    const strictAnc = new Set<number>();
+    { const q = [...(parentsOf.get(layout.focusPersonId) ?? [])]; while (q.length) { const a = q.shift()!; if (strictAnc.has(a)) continue; strictAnc.add(a); for (const p of (parentsOf.get(a) ?? [])) q.push(p); } }
     for (const [head, desc] of sideBranchDescendantsByHead) {
-      // Terry 2026-06-26: don't lane the focus's OWN close family. Only the
-      // DISTANT branches need differentiating — a great-aunt/uncle and above
-      // (gen ≥ +2) WITH descendants to tell apart. A lane around the focus,
-      // their parents, or their direct aunts/uncles (gen +1, → first cousins)
-      // is just noise around the person you're already looking at.
-      if ((nodeById.get(head)?.generation ?? 0) < 2) continue;
+      // Terry 2026-06-26: colour a branch ONLY when it's a real GROUP of cousins
+      // to tell apart, and ONLY when it's genuinely a SIDE branch — never the
+      // focus's own line. Three guards:
+      //   1. NOT a strict ancestor of the focus (a parent/grandparent — e.g.
+      //      Sally Anne when focused on her grandchild — must not colour the
+      //      focus's direct line; a derived-sibling head can mis-list one).
+      //   2. NOT on the focus's own descendant/sibling line (downwardDirectSet).
+      //   3. a head (couple) with 2+ visible children = an actual cousin group.
+      // This is distance-agnostic and reconciles both of Terry's cases: Lucy's
+      // single-child Day aunts and great-auntie Gladys's single child (Marion)
+      // get NO lane; his uncle Peter+Mary's six and aunt Carol's kids DO.
+      // A genuine cousin branch never CONTAINS the focus's own line. Reject the
+      // head if IT or ANY of its descendants is the focus, a strict ancestor, or
+      // on the focus's descendant/sibling line — this kills a derived-sibling
+      // head (e.g. a second "Sylvia Mills") whose mis-linked subtree wraps the
+      // focus's family and would colour the focus's direct line.
+      if ([head, ...desc].some(d => d === layout.focusPersonId || strictAnc.has(d) || downwardDirectSet.has(d))) continue;
+      const headKids = new Set<number>();
+      for (const m of [head, ...(spousesOf.get(head) ?? [])]) for (const c of (kidsOf.get(m) ?? [])) if (vis(c)) headKids.add(c);
+      if (headKids.size < 2) continue;
       if (![...desc].some(d => vis(d))) continue;
       pushLane(bboxOf([head, ...desc]), nodeById.get(head)?.x);
     }
-    // NB: no lane for the focus's own direct line / parents / direct aunts &
-    // uncles — Terry: unnecessary and noisy around the focus.
     // Clip each lane's (padded) horizontal extent to its own territory — the
     // midpoints between neighbouring branch anchors — so vertical lanes NEVER
     // overlap, even when a family's grandkids spread under a neighbour (the
