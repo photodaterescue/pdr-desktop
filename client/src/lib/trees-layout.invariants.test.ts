@@ -135,8 +135,17 @@ function checkNoStrandedSibling(graph: FamilyGraph, nodes: LaidOutNode[]): strin
 function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
   const byId = new Map(nodes.map(n => [n.personId, n]));
   const kids = childrenOf(graph);
+  // The FOCUS couple is the centred anchor — the whole tree is centred ON them,
+  // so their child can sit off-centre when the subtree below is lopsided. That's
+  // by design, not a misplacement, so they're exempt from this check.
+  const focusCouple = new Set<number>([graph.focusPersonId]);
+  for (const e of graph.edges) if (e.type === 'spouse_of') {
+    if (e.aId === graph.focusPersonId) focusCouple.add(e.bId);
+    if (e.bId === graph.focusPersonId) focusCouple.add(e.aId);
+  }
   const bad: string[] = [];
   for (const [pid, kidIds] of kids) {
+    if (focusCouple.has(pid)) continue;
     const p = byId.get(pid); if (!p) continue;
     const vis = kidIds.map(k => byId.get(k)).filter((k): k is LaidOutNode => !!k);
     if (vis.length === 0) continue;
@@ -197,6 +206,33 @@ const CORPUS: Array<{ name: string; names: Record<number, string>; edges: E[] }>
     name: 'focus with childless sibling AND a wide brood beside it',
     names: { 1: 'F', 2: 'Sp', 3: 'K1', 4: 'K2', 5: 'K3', 6: 'ChildlessSib' },
     edges: [[1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 4, 'parent_of'], [2, 4, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'], [1, 6, 'sibling_of']],
+  },
+  {
+    // Terry 2026-06-26: focus=Grandad, a married grandchild (Colin+Lindsay) had
+    // his childless sister (Amie) land BETWEEN him and his wife — couple split
+    // by a sibling. Two generations of descendants, a married grandchild with
+    // childless siblings on both sides.
+    name: 'grandchild couple stays adjacent with childless siblings beside',
+    names: { 1: 'Derek', 2: 'Wife', 3: 'Daughter', 4: 'SonInLaw', 5: 'Colin', 6: 'Amie', 7: 'Terry', 8: 'Lindsay', 9: 'Lilly', 10: 'Daisy' },
+    edges: [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [3, 4, 'spouse_of'],
+      [3, 5, 'parent_of'], [4, 5, 'parent_of'], [3, 6, 'parent_of'], [4, 6, 'parent_of'],
+      [3, 7, 'parent_of'], [4, 7, 'parent_of'],
+      [5, 8, 'spouse_of'], [5, 9, 'parent_of'], [8, 9, 'parent_of'], [5, 10, 'parent_of'], [8, 10, 'parent_of'],
+    ],
+  },
+  {
+    // Terry 2026-06-26: the REAL couples-split — the in-law (Lindsay) has her
+    // OWN parked family, so she isn't parent-less; she must still sit beside
+    // her partner Colin, not be ordered by her parked parents.
+    name: 'in-law with own parked family stays beside partner',
+    names: { 1: 'Derek', 2: 'Wife', 3: 'Sally', 4: 'Alan', 5: 'Colin', 6: 'Amie', 7: 'Lindsay', 8: 'LinDad', 9: 'LinMum', 10: 'Lilly' },
+    edges: [
+      [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [3, 4, 'spouse_of'],
+      [3, 5, 'parent_of'], [4, 5, 'parent_of'], [3, 6, 'parent_of'], [4, 6, 'parent_of'],
+      [5, 7, 'spouse_of'], [8, 7, 'parent_of'], [9, 7, 'parent_of'], [8, 9, 'spouse_of'],
+      [5, 10, 'parent_of'], [7, 10, 'parent_of'],
+    ],
   },
 ];
 

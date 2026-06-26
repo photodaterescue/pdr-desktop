@@ -754,7 +754,32 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       };
       const decorated = ids.map((id, i) => ({ id, k: keyOf(id), i }));
       decorated.sort((a, b) => (a.k - b.k) || (a.i - b.i));
-      slottedByGen.set(g, decorated.map(d => d.id));
+      // Couple-adjacency (Terry 2026-06-26 — the couples-split bug): drop each
+      // married-in (non-bloodline) spouse immediately AFTER their bloodline
+      // partner. Without this a sibling tiebreaks in between (Colin|Amie|Lindsay)
+      // — especially when the in-law has her own parked family, which keys her
+      // by her partner but leaves her first-pass x out by her parked parents.
+      const ordered = decorated.map(d => d.id);
+      const genSet = new Set(ordered);
+      const paired: number[] = [];
+      const seenPair = new Set<number>();
+      // Pass 1: walk the BLOODLINE nodes in order, each immediately followed by
+      // their married-in spouse(s). Iterating bloodline-first (not just "first
+      // seen") is essential — otherwise an in-law who happens to sort ahead of
+      // their partner (Karen before Ben) gets emitted alone and the couple stays
+      // interleaved (Karen|Dan|Ben|Jenny). Skipping in-laws here lets them be
+      // pulled in beside their partner instead.
+      for (const id of ordered) {
+        if (seenPair.has(id) || !bloodline.has(id)) continue;
+        paired.push(id); seenPair.add(id);
+        for (const sp of spousesOf.get(id) ?? []) {
+          if (!seenPair.has(sp) && genSet.has(sp) && !bloodline.has(sp)) { paired.push(sp); seenPair.add(sp); }
+        }
+      }
+      // Pass 2: leftovers (in-laws whose partner isn't in this row, all-in-law
+      // rows) keep their order so nothing is dropped.
+      for (const id of ordered) if (!seenPair.has(id)) { paired.push(id); seenPair.add(id); }
+      slottedByGen.set(g, paired);
     }
 
     // Minimum centre-to-centre gap between two adjacent nodes in a row.
@@ -859,7 +884,16 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       for (const g of gensSorted.filter(x => x < 0).sort((a, b) => b - a)) {
         const ids = slottedByGen.get(g)!;
         if (ids.length === 0) continue;
-        const desired = ids.map(id => { let a = meanOf(parentsOf.get(id)); if (a == null) a = meanOf(spousesOf.get(id)); return a == null ? (X.get(id) ?? 0) : a; });
+        const desired = ids.map(id => {
+          // BLOODLINE descendants sit under their parents; a MARRIED-IN spouse
+          // (non-bloodline — e.g. Lindsay, who has her own parked family) sits
+          // beside their PARTNER, never dragged out under their parked parents
+          // (Terry 2026-06-26 — the couples-split bug). Fall back to the other
+          // anchor only if the preferred one isn't on canvas.
+          let a = bloodline.has(id) ? meanOf(parentsOf.get(id)) : meanOf(spousesOf.get(id));
+          if (a == null) a = meanOf(parentsOf.get(id)) ?? meanOf(spousesOf.get(id));
+          return a == null ? (X.get(id) ?? 0) : a;
+        });
         solveLayer(ids, desired);
       }
     };
@@ -1388,25 +1422,63 @@ function orderChildGeneration(
   placed: Map<number, LaidOutNode>
 ): FamilyGraphNode[] {
   if (genNodes.length <= 1) return genNodes;
+  const idSet = new Set(genNodes.map(n => n.personId));
   const byId = new Map(genNodes.map(n => [n.personId, n] as const));
-  const pullX = (childId: number): number => {
+  const spousesById = new Map<number, number[]>();
+  const childrenOf = new Map<number, number[]>();
+  const parentsOf = new Map<number, number[]>();
+  const sibOf = new Map<number, number[]>();
+  const push = (m: Map<number, number[]>, k: number, v: number) => { if (!m.has(k)) m.set(k, []); m.get(k)!.push(v); };
+  for (const e of graph.edges) {
+    if (e.type === 'spouse_of') { if (idSet.has(e.aId)) push(spousesById, e.aId, e.bId); if (idSet.has(e.bId)) push(spousesById, e.bId, e.aId); }
+    else if (e.type === 'parent_of') { push(childrenOf, e.aId, e.bId); push(parentsOf, e.bId, e.aId); }
+    else if (e.type === 'sibling_of') { push(sibOf, e.aId, e.bId); push(sibOf, e.bId, e.aId); }
+  }
+  // Bloodline = focus + ancestors + everyone descended from focus/an ancestor +
+  // siblings (mirror of computePedigreeLayout's `bloodline`). Married-in spouses
+  // attach via spouse_of only and are NOT in here — that's how we tell a real
+  // in-law (Lindsay, who has her own parked family) from a bloodline child.
+  const focus = graph.focusPersonId;
+  const anc = new Set<number>();
+  { const q = [focus]; while (q.length) { const c = q.shift()!; for (const p of parentsOf.get(c) ?? []) if (!anc.has(p)) { anc.add(p); q.push(p); } } }
+  const bloodlineSet = new Set<number>([focus, ...anc]);
+  { const q = [focus, ...anc]; while (q.length) { const c = q.shift()!; for (const k of childrenOf.get(c) ?? []) if (!bloodlineSet.has(k)) { bloodlineSet.add(k); q.push(k); } for (const s of sibOf.get(c) ?? []) if (!bloodlineSet.has(s)) { bloodlineSet.add(s); q.push(s); } } }
+  const pullX = (childId: number): number | null => {
     const parentXs = graph.edges
       .filter(e => e.type === 'parent_of' && e.bId === childId)
       .map(e => placed.get(e.aId)?.x)
       .filter((x): x is number => x != null);
-    if (parentXs.length === 0) return 0;
+    if (parentXs.length === 0) return null;
     return parentXs.reduce((a, b) => a + b, 0) / parentXs.length;
   };
-  // Tiebreaker: when two children have the same parent midpoint
-  // (siblings sharing both parents), fall back to person_id ASC so
-  // "first-created sits left" — matching the same rule used in
-  // orderParentGeneration. Otherwise SQL row order leaks into the
-  // layout and siblings can swap places between refreshes.
-  return [...genNodes].sort((a, b) => {
-    const dx = pullX(a.personId) - pullX(b.personId);
-    if (dx !== 0) return dx;
-    return a.personId - b.personId;
+  // SPOUSE ADJACENCY (Terry 2026-06-26 — the couples-split bug): the old
+  // version sorted EVERY node by parent-midpoint, so married-in spouses
+  // clustered away from their partners (Colin's wife landed past his sister;
+  // Ben+Karen / Jenny+Dan interleaved). The married-in test is BLOODLINE, not
+  // "has no parents" — a real in-law (Lindsay) has her OWN parked family, so
+  // pullX isn't null for her. Fix: order the BLOODLINE descendants by parent
+  // midpoint, then drop each married-in (non-bloodline) spouse in immediately
+  // beside their partner so every couple stays together. Tiebreak person_id ASC
+  // (stable, "first-created sits left") matching orderParentGeneration.
+  const kids = genNodes.filter(n => bloodlineSet.has(n.personId));
+  kids.sort((a, b) => {
+    const dx = (pullX(a.personId) ?? 0) - (pullX(b.personId) ?? 0);
+    return dx !== 0 ? dx : a.personId - b.personId;
   });
+  const result: FamilyGraphNode[] = [];
+  const used = new Set<number>();
+  for (const n of kids) {
+    if (used.has(n.personId)) continue;
+    result.push(n); used.add(n.personId);
+    // append this child's married-in (non-bloodline) spouse(s) right beside them
+    for (const s of spousesById.get(n.personId) ?? []) {
+      if (idSet.has(s) && !used.has(s) && !bloodlineSet.has(s)) { result.push(byId.get(s)!); used.add(s); }
+    }
+  }
+  // Leftovers — spouses whose partner isn't in this gen, or all-in-law rows —
+  // keep in a stable order so nothing is dropped.
+  for (const n of genNodes) if (!used.has(n.personId)) { result.push(n); used.add(n.personId); }
+  return result;
 }
 
 /**
