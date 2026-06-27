@@ -4591,7 +4591,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                             strokeLinecap="round"
                           >
                             <path d={bezierPath(entryX, entryY, centerX, bracketY)} />
-                            <line x1={minX} y1={bracketY} x2={maxX} y2={bracketY} />
+                            {/* Bracket spans the kin AND the centre where the drop
+                                lands, so a single off-centre child (e.g. Marion, the
+                                left half of a couple) is still joined to the drop by a
+                                horizontal line instead of leaving a gap (Terry r472).
+                                When the kin already straddle the centre this is a no-op. */}
+                            <line x1={Math.min(minX, centerX)} y1={bracketY} x2={Math.max(maxX, centerX)} y2={bracketY} />
                             {kinPlacements.map(p => (
                               <line
                                 key={`tcd-${p.personId}`}
