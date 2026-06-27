@@ -1127,6 +1127,22 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return byAncestor;
   }, [layout.edges, layout.focusPersonId, nodeById]);
 
+  /** Lateral side (+1 right / -1 left) for a collapsed-sibling chip + its panel:
+   *  AWAY from the ancestor's spouse, so a couple's two panels splay to opposite
+   *  outer sides instead of stacking on one side (Terry). Falls back to the tree
+   *  centre for a lone ancestor with no on-canvas spouse. */
+  const siblingPanelSide = useCallback((ancId: number, ancX: number): 1 | -1 => {
+    for (const e of layout.edges) {
+      if (e.type !== 'spouse_of') continue;
+      const other = e.aId === ancId ? e.bId : (e.bId === ancId ? e.aId : null);
+      if (other == null) continue;
+      const sn = nodeById.get(other);
+      if (sn) return sn.x > ancX ? -1 : 1; // spouse on the right → open LEFT, and vice-versa
+    }
+    const c = (layout.bounds.minX + layout.bounds.maxX) / 2;
+    return ancX < c ? -1 : 1;
+  }, [layout.edges, nodeById, layout.bounds]);
+
   /** Every person hidden from the canvas because their G5 sibling head
    *  collapsed off-canvas: the collapsed heads themselves + each head's
    *  whole subtree (cousins) + their non-bloodline spouses. Folded into
@@ -1418,34 +1434,59 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    *  (one row BELOW the branch-points = the children that appear/disappear).
    *  Side-branch branch-points toggle expandedDescendantsOf; direct ones toggle
    *  collapsedDescendantsOf — onSetGenerationExpanded handles both together. */
-  const generationToggles = useMemo(() => {
-    if (sideBranchChevrons.length === 0) return [] as Array<{
-      sideIds: number[]; directIds: number[]; childRowWorldY: number; allOpen: boolean;
-    }>;
-    // Generation pitch in world units (vertical distance between rows).
-    const ys = [...new Set(layout.nodes.map(n => Math.round(n.y)))].sort((a, b) => a - b);
-    let pitch = 180;
-    for (let i = 1; i < ys.length; i++) { const d = ys[i] - ys[i - 1]; if (d > 20) { pitch = d; break; } }
-    const byRow = new Map<number, { sideIds: number[]; directIds: number[]; headY: number; open: number; total: number }>();
+  /** Floating generation rows (Terry): a subtle number on EVERY visible
+   *  row — even rows with no collapse control — to give the tree obvious
+   *  but quiet structure. Numbering is computed over ALL visible rows
+   *  (distinct y of SLOTTED, on-canvas nodes), youngest-visible-row = 1,
+   *  counting UP (older generations get bigger numbers, sitting higher /
+   *  smaller y). Each row carries optional toggle data: when a
+   *  side-branch chevron's HEAD sits on that row, the row also renders
+   *  the existing per-generation expand/collapse pill (chevron + the
+   *  SAME number) instead of a bare number — so the numbering stays
+   *  consistent across collapsible and non-collapsible rows. */
+  const generationRows = useMemo(() => {
+    type Row = {
+      worldY: number;
+      genNum: number;
+      sideIds: number[];
+      directIds: number[];
+      allOpen: boolean;
+      collapsible: boolean;
+    };
+    // Visible rows = distinct rounded y of slotted (on-canvas) nodes.
+    // Fall back to all nodes if the layout hasn't stamped `slotted`
+    // (defensive — every current layout does).
+    const slottedNodes = layout.nodes.filter(n => n.slotted !== false);
+    const source = slottedNodes.length > 0 ? slottedNodes : layout.nodes;
+    const ysAsc = [...new Set(source.map(n => Math.round(n.y)))].sort((a, b) => a - b);
+    if (ysAsc.length === 0) return [] as Row[];
+    // Toggle data keyed by the HEAD's row (rounded y). A row is
+    // collapsible iff at least one side-branch chevron head sits on it.
+    const toggleByRow = new Map<number, { sideIds: number[]; directIds: number[]; open: number; total: number }>();
     for (const c of sideBranchChevrons) {
       const key = Math.round(c.headY);
-      if (!byRow.has(key)) byRow.set(key, { sideIds: [], directIds: [], headY: c.headY, open: 0, total: 0 });
-      const g = byRow.get(key)!;
+      if (!toggleByRow.has(key)) toggleByRow.set(key, { sideIds: [], directIds: [], open: 0, total: 0 });
+      const g = toggleByRow.get(key)!;
       const isOpen = c.direct
         ? !(collapsedDescendantsOf?.has(c.headId) ?? false)
         : (expandedDescendantsOf?.has(c.headId) ?? false);
       if (c.direct) g.directIds.push(c.headId); else g.sideIds.push(c.headId);
       g.total++; if (isOpen) g.open++;
     }
-    return [...byRow.values()]
-      .sort((a, b) => a.headY - b.headY)
-      .map(g => ({
-        sideIds: g.sideIds,
-        directIds: g.directIds,
-        childRowWorldY: g.headY + pitch,
-        allOpen: g.open === g.total,
-      }));
-  }, [sideBranchChevrons, layout.nodes, expandedDescendantsOf, collapsedDescendantsOf]);
+    // Number youngest (largest y, bottom of the tree) = 1, counting UP.
+    const total = ysAsc.length;
+    return ysAsc.map((worldY, idxAsc) => {
+      const t = toggleByRow.get(worldY);
+      return {
+        worldY,
+        genNum: total - idxAsc,
+        sideIds: t?.sideIds ?? [],
+        directIds: t?.directIds ?? [],
+        allOpen: t ? t.open === t.total : false,
+        collapsible: !!t,
+      };
+    });
+  }, [layout.nodes, sideBranchChevrons, expandedDescendantsOf, collapsedDescendantsOf]);
 
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden
@@ -2012,24 +2053,40 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           </IconTooltip>
         );
       })()}
-      {onSetGenerationExpanded && generationToggles.map((g, i) => {
-        // Each per-gen button tracks its row: world-y -> screen-y via the same
-        // transform the canvas uses, clamped below the master so it stays put.
-        const screenY = viewport.ty + g.childRowWorldY * viewport.scale;
-        const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
-        // Generation number (Terry): youngest row = 1, increasing UP the tree.
-        // generationToggles is sorted oldest-first, so invert the index.
-        const genNum = generationToggles.length - i;
+      {generationRows.map((g) => {
+        // Each row tracks its world-y -> screen-y via the same transform the
+        // canvas uses, clamped below the master button so it stays put.
+        const screenY = viewport.ty + g.worldY * viewport.scale;
+        const top = Math.max(48, screenY - 16);
+        // Collapsible rows render the existing per-generation expand/collapse
+        // pill (chevron + number). Non-collapsible rows render just the
+        // subtle number — same numbering, quiet structure on every row.
+        if (g.collapsible && onSetGenerationExpanded) {
+          const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
+          return (
+            <IconTooltip key={`gen-row-${g.worldY}`} label={show ? `Show generation ${g.genNum}` : `Hide generation ${g.genNum}`} side="right">
+              <button
+                onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
+                className="absolute left-3 z-30 inline-flex items-center justify-center gap-1 min-w-8 h-8 px-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
+                style={{ top }}
+              >
+                <span className="text-xs font-semibold tabular-nums leading-none">{g.genNum}</span>
+                {show ? <ChevronsUpDown className="w-3.5 h-3.5 text-primary" /> : <ChevronsDownUp className="w-3.5 h-3.5 text-primary" />}
+              </button>
+            </IconTooltip>
+          );
+        }
+        // Non-collapsible row — subtle number badge only. Same pill radius +
+        // shadow as the toggle so the rail reads as one consistent system;
+        // text-foreground for legibility (lavender body text reads too faint).
         return (
-          <IconTooltip key={`gen-toggle-${i}`} label={show ? `Show generation ${genNum}` : `Hide generation ${genNum}`} side="right">
-            <button
-              onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
-              className="absolute left-3 z-30 inline-flex items-center justify-center gap-1 min-w-8 h-8 px-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
-              style={{ top: Math.max(48, screenY - 16) }}
+          <IconTooltip key={`gen-row-${g.worldY}`} label={`Generation ${g.genNum}`} side="right">
+            <div
+              className="absolute left-3 z-30 inline-flex items-center justify-center min-w-8 h-8 px-1.5 rounded-lg bg-background/80 border border-border/70 shadow-sm backdrop-blur-sm text-foreground pointer-events-auto"
+              style={{ top }}
             >
-              <span className="text-xs font-semibold tabular-nums leading-none">{genNum}</span>
-              {show ? <ChevronsUpDown className="w-3.5 h-3.5 text-primary" /> : <ChevronsDownUp className="w-3.5 h-3.5 text-primary" />}
-            </button>
+              <span className="text-xs font-semibold tabular-nums leading-none opacity-80">{g.genNum}</span>
+            </div>
           </IconTooltip>
         );
       })}
@@ -2797,15 +2854,16 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           })}
           {/* G5 over-population (Phase 1b): "N siblings" chip on each
               bloodline ancestor whose collateral siblings collapsed
-              off-canvas (generation-row 5+). Drawn here in the
+              off-canvas (generation-row 4+). Drawn here in the
               non-dimmed canvas group (same layer as the chevrons) so
-              it stays full-opacity + its open-state pulse reads
-              clearly when the lavender sibling panel is open. Sits
-              just below the ancestor card's bottom-right, clear of
-              the central downward family drop-line. Lavender pill
-              (bloodline accent) with text-foreground label — lavender
-              text on white is too faint for body copy, so the colour
-              lives in the pill fill + chevron glyph, not the text. */}
+              it stays full-opacity + its open-state pulse reads clearly
+              when the lavender sibling panel is open. Siblings are
+              LATERAL (not descendants), so the chip sits on the card's
+              OUTER SIDE (away from the spine centre) and points sideways
+              (←/→) — matching the lateral panel that opens from there.
+              Lavender pill (bloodline accent) with text-foreground label
+              — lavender text on white is too faint for body copy, so the
+              colour lives in the pill border + chevron glyph. */}
           {Array.from(g5CollapsedSiblingsByAncestor.entries()).map(([ancestorId, heads]) => {
             const anc = nodeById.get(ancestorId);
             if (!anc) return null;
@@ -2813,33 +2871,36 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             if (count === 0) return null;
             const open = openSiblingChips?.has(ancestorId) ?? false;
             const label = `${count} sibling${count === 1 ? '' : 's'}`;
-            // Pill geometry — sized to the label + chevron glyph. 8px text
-            // padding each side, ~16px for the chevron + its gap.
-            const CHIP_TEXT = label;
+            // Pill geometry — sized to the label + the sideways chevron glyph.
             const pillH = 24;
-            const pillW = Math.max(70, CHIP_TEXT.length * 7.5 + 16 + 22);
-            // Bottom-right of the card, dropped on a short stem. Right edge
-            // of the pill aligns ~to the card's right edge so the chip reads
-            // as belonging to this card without sitting over its drop-line.
-            const stemLen = 14;
-            const cardBottomY = anc.y + CARD_H / 2;
-            const pillCy = cardBottomY + stemLen + pillH / 2;
-            const pillCx = anc.x + CARD_W / 2 - pillW / 2;
+            const pillW = Math.max(70, label.length * 7.5 + 16 + 22);
+            // Side AWAY from the spouse (so a couple's two chips/panels splay to
+            // opposite sides), falling back to tree-centre — same rule the panel uses.
+            const chipSide: 1 | -1 = siblingPanelSide(ancestorId, anc.x);
+            // Pill beside the card on a short horizontal stem, at row mid-height.
+            const stemLen = 12;
+            const cardEdgeX = anc.x + chipSide * (CARD_W / 2);
+            const pillCx = cardEdgeX + chipSide * (stemLen + pillW / 2);
+            const pillCy = anc.y;
             const fill = '#ad9eff';
             const rim = '#7e6df0';
             const tooltipLabel = open
               ? `Hide ${count} collapsed sibling${count === 1 ? '' : 's'} of this ancestor`
               : `Show ${count} sibling${count === 1 ? '' : 's'} that were collapsed to keep the tree tidy`;
-            // Chevron glyph — down when closed (expand), up when open (collapse).
-            const glyphPath = open ? 'M -5 2 L 0 -3 L 5 2' : 'M -5 -2 L 0 3 L 5 -2';
+            // Sideways chevron — points OUTWARD (toward the panel) when closed,
+            // back toward the card when open. Outward = chipSide direction.
+            const pointOut = open ? -chipSide : chipSide;
+            const glyphPath = pointOut === 1
+              ? 'M -2 -5 L 3 0 L -2 5'   // ▶ points right
+              : 'M 2 -5 L -3 0 L 2 5';   // ◀ points left
             return (
               <g key={`g5sib-${ancestorId}`}>
-                {/* Stem from the card's bottom edge down to the pill. */}
+                {/* Horizontal stem from the card's side edge to the pill. */}
                 <line
-                  x1={anc.x + CARD_W / 2 - pillW / 2}
-                  y1={cardBottomY}
-                  x2={anc.x + CARD_W / 2 - pillW / 2}
-                  y2={pillCy - pillH / 2}
+                  x1={cardEdgeX}
+                  y1={pillCy}
+                  x2={pillCx - chipSide * (pillW / 2)}
+                  y2={pillCy}
                   stroke={fill}
                   strokeWidth={4}
                   strokeLinecap="round"
@@ -2851,7 +2912,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); onToggleSiblingChip?.(ancestorId); }}
                 >
-                  <IconTooltip label={tooltipLabel} side="bottom">
+                  <IconTooltip label={tooltipLabel} side={chipSide === 1 ? 'right' : 'left'}>
                     <g className={open ? 'pdr-tree-chevron-pulse' : undefined}>
                       {/* Drop shadow + rim — same 3D-button trick the
                           chevrons + count-pill use. */}
@@ -2876,12 +2937,24 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         stroke={fill}
                         strokeWidth={2}
                       />
-                      {/* Label — text-foreground (dark) for legibility; the
-                          lavender accent is the pill border + chevron. */}
+                      {/* Chevron on the OUTER end of the pill (the side facing
+                          the panel); label fills the rest. */}
+                      <path
+                        transform={`translate(${chipSide === 1 ? pillW / 2 - 11 : -pillW / 2 + 11} 0)`}
+                        d={glyphPath}
+                        stroke={fill}
+                        strokeWidth={2.5}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      {/* Label — text-foreground (dark) for legibility; nudged
+                          away from the chevron so they don't overlap. */}
                       <text
-                        x={-pillW / 2 + 11}
+                        x={chipSide === 1 ? -pillW / 2 + 11 : pillW / 2 - 11}
                         y={1}
-                        textAnchor="start"
+                        textAnchor={chipSide === 1 ? 'start' : 'end'}
                         dominantBaseline="middle"
                         fontSize={12.5}
                         fontWeight={600}
@@ -2892,17 +2965,6 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                       >
                         {label}
                       </text>
-                      {/* Chevron glyph at the pill's right end. */}
-                      <path
-                        transform={`translate(${pillW / 2 - 12} 0)`}
-                        d={glyphPath}
-                        stroke={fill}
-                        strokeWidth={2.5}
-                        fill="none"
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        style={{ pointerEvents: 'none' }}
-                      />
                     </g>
                   </IconTooltip>
                 </g>
@@ -3092,6 +3154,9 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           panelAnchorX: number;
           panelAnchorY: number;
           tetherColour: string;
+          /** True for G5 sibling panels — drawn BESIDE the card with a
+           *  horizontal tether (vs the vertical descendant/ancestor tether). */
+          opensLateral: boolean;
         };
         const layouts: Layout[] = [];
         for (const { personId, direction } of origins) {
@@ -3110,18 +3175,26 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const chevInfo = direction === 'descendant'
             ? sideBranchChevrons.find(c => c.headId === personId)
             : null;
-          // G5 sibling panel anchors to the "N siblings" chip, which sits
-          // just below the ancestor card's bottom edge (see the chip render
-          // block). The panel drops straight down from there, like a
-          // descendant panel. SIBLINGS_CHIP_DROP mirrors the chip's stem so
-          // the tether starts at the chip, not the card centre.
-          const SIBLINGS_CHIP_DROP = (CARD_H / 2 + 30) * viewport.scale;
+          // G5 sibling panel opens LATERALLY (Terry): siblings are lateral,
+          // not descendants, so the panel sits BESIDE the ancestor card with a
+          // HORIZONTAL tether from the card's side — never below it. It opens
+          // toward the OUTER edge of the tree (away from the spine centre) so
+          // two near-centre ancestors splay to opposite sides instead of
+          // stacking down over the cousins.
+          // +1 = panel opens RIGHT, -1 = LEFT — AWAY from the spouse so a couple's
+          // two panels splay to opposite sides (fallback: tree centre).
+          const siblingsSide: 1 | -1 = siblingPanelSide(personId, origin.renderedX);
+          const cardHalfWidth = (CARD_W / 2) * viewport.scale;
+          // Lateral tether start: the card's left/right edge at row mid-height.
+          const siblingsAnchorScreenX = originScreenX + siblingsSide * cardHalfWidth;
           const chevronWorldX = chevInfo ? chevInfo.midX : origin.renderedX;
-          const chevronScreenX = viewport.tx + chevronWorldX * viewport.scale;
+          const chevronScreenX = direction === 'siblings'
+            ? siblingsAnchorScreenX
+            : viewport.tx + chevronWorldX * viewport.scale;
           const chevronScreenY = direction === 'descendant'
             ? originScreenY + chevronOffset
             : direction === 'siblings'
-              ? originScreenY + SIBLINGS_CHIP_DROP
+              ? originScreenY // tether leaves the card at row mid-height
               : originScreenY - chevronOffset;
           // Compute the panel's content set FIRST — needed before
           // the mini-tree layout so we know who to lay out.
@@ -3982,30 +4055,43 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const scaledContentW = contentWidth * viewport.scale;
           const scaledContentH = contentHeight * viewport.scale;
           const panelW = Math.max(MIN_PANEL_W, Math.min(MAX_PANEL_W, scaledContentW + PANEL_BORDER * 2));
-          const panelH = Math.max(MIN_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2);
-          // Centre the panel on the CHEVRON's screen position, not
-          // the origin's. For descendant panels the chevron sits at
-          // the midpoint between the bloodline head (Carol) and the
-          // co-parent partner (Graham), so the panel needs to drop
-          // straight down from THAT point — not from Carol alone,
-          // which previously left the panel off-centre to the left
-          // of the couple. Ancestor panels still anchor to the
-          // origin's X (chevronScreenX falls back to the origin's
-          // own X when no co-parent is involved).
-          const defaultPanelLeft = chevronScreenX - panelW / 2;
-          // Ancestor (in-law family) panels sit ABOVE their anchor. A TALL
-          // one (several generations) would open with its top above the
-          // viewport — Terry's "lands partly off-screen / sloppy". Clamp the
-          // default top so it can't start higher than the canvas top (only
-          // bites when the natural position is off-screen; a short panel that
-          // already fits above the anchor keeps that position).
+          // Height: descendant + ancestor panels clamp to a MIN floor. G5
+          // sibling panels do NOT (Terry): a sibling can have a different
+          // parent / extra generations, so the panel must grow vertically to
+          // fit ALL content rather than be capped — height flows freely, only
+          // width is clamped.
+          const panelH = direction === 'siblings'
+            ? HEADER_H + scaledContentH + PANEL_BORDER * 2
+            : Math.max(MIN_PANEL_H, HEADER_H + scaledContentH + PANEL_BORDER * 2);
+          // Panel direction families:
+          //   • descendant + sibling-DOWN-? → no: siblings open LATERALLY.
+          //   • descendant → drops DOWN from the couple's chevron.
+          //   • ancestor   → sits ABOVE the in-law card.
+          //   • siblings   → sits BESIDE the ancestor card (lateral), opening
+          //                  toward the tree's outer edge (siblingsSide).
+          const opensLateral = direction === 'siblings';
+          const dropsDown = direction === 'descendant';
           const svgTop = svgRef.current?.getBoundingClientRect().top ?? 0;
-          // Descendant + G5-sibling panels both drop DOWN from a chevron/chip
-          // on the card's bottom edge; ancestor (in-law) panels sit ABOVE.
-          const dropsDown = direction === 'descendant' || direction === 'siblings';
-          const defaultPanelTop = dropsDown
-            ? originScreenY + cardHalfHeight + VERTICAL_GAP
-            : Math.max(svgTop + 12, originScreenY - cardHalfHeight - VERTICAL_GAP - panelH);
+          // Horizontal gap between the card's side and the panel (lateral).
+          const LATERAL_GAP = 80 * viewport.scale;
+          let defaultPanelLeft: number;
+          let defaultPanelTop: number;
+          if (opensLateral) {
+            // Beside the card on the outer side; vertically centred on the
+            // ancestor's row, clamped so it never starts above the canvas top.
+            defaultPanelLeft = siblingsSide === 1
+              ? siblingsAnchorScreenX + LATERAL_GAP
+              : siblingsAnchorScreenX - LATERAL_GAP - panelW;
+            defaultPanelTop = Math.max(svgTop + 12, originScreenY - panelH / 2);
+          } else {
+            // Descendant: drop straight down from the couple's chevron.
+            // Ancestor: sit ABOVE the in-law card (clamped to canvas top so a
+            // tall one doesn't open off-screen).
+            defaultPanelLeft = chevronScreenX - panelW / 2;
+            defaultPanelTop = dropsDown
+              ? originScreenY + cardHalfHeight + VERTICAL_GAP
+              : Math.max(svgTop + 12, originScreenY - cardHalfHeight - VERTICAL_GAP - panelH);
+          }
           // Drag offset (set by drag handlers, persisted in
           // panelOffsets state for position memory within session).
           // STORED IN WORLD UNITS — scale-invariant — so a panel
@@ -4037,11 +4123,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             minOffsetY = (minPanelTop - defaultPanelTop) / scaleSafe;
             maxOffsetY = (4 * panelH) / scaleSafe;
           } else {
-            // Terry r426: allow lowering an in-law family panel BELOW its
-            // married-in spouse. The old cap pinned the panel's bottom at the
-            // anchor card's top, so it could never sit lower — exactly what
-            // blocked dragging it down to line up with the canvas. Give it the
-            // same generous ±4-panel-height budget the descendant panel has.
+            // Ancestor (in-law) AND lateral (G5 sibling) panels both get a
+            // generous ±4-panel-height vertical drag budget so the user can
+            // line the panel up with the canvas. Terry r426: an in-law panel
+            // must be lowerable below its married-in spouse; the sibling panel
+            // likewise floats freely beside the spine.
             minOffsetY = (-4 * panelH) / scaleSafe;
             maxOffsetY = (4 * panelH) / scaleSafe;
           }
@@ -4052,7 +4138,6 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const clampedWorldY = Math.max(minOffsetY, Math.min(maxOffsetY, offsetWorld.y));
           const panelLeft = defaultPanelLeft + clampedWorldX * scaleSafe;
           const panelTop = defaultPanelTop + clampedWorldY * scaleSafe;
-          const panelAnchorX = panelLeft + panelW / 2;
           // Anchor the tether 2 px INSIDE the panel border (the panel
           // <Card> has borderWidth: 2). The in-panel tether-continuation
           // <g> starts at the SVG's local y=0, which corresponds to the
@@ -4062,9 +4147,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // we extend the bezier endpoint past the border to meet the
           // in-panel scaffolding cleanly.
           const PANEL_BORDER_WIDTH = 2;
-          const panelAnchorY = dropsDown
-            ? panelTop + PANEL_BORDER_WIDTH
-            : panelTop + panelH - PANEL_BORDER_WIDTH;
+          // Tether landing point on the panel:
+          //   • lateral (siblings) → the panel's card-FACING side edge, at
+          //     the panel's vertical centre (horizontal tether).
+          //   • descendant → panel top edge, centred.
+          //   • ancestor   → panel bottom edge, centred.
+          const panelAnchorX = opensLateral
+            ? (siblingsSide === 1 ? panelLeft + PANEL_BORDER_WIDTH : panelLeft + panelW - PANEL_BORDER_WIDTH)
+            : panelLeft + panelW / 2;
+          const panelAnchorY = opensLateral
+            ? panelTop + panelH / 2
+            : dropsDown
+              ? panelTop + PANEL_BORDER_WIDTH
+              : panelTop + panelH - PANEL_BORDER_WIDTH;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
           const directionLabel = direction === 'descendant'
             ? 'descendants'
@@ -4116,6 +4211,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             chevronScreenX, chevronScreenY,
             panelAnchorX, panelAnchorY,
             tetherColour,
+            opensLateral,
           });
         }
 
@@ -4132,17 +4228,27 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               style={{ zIndex: 25 }}
             >
               {layouts.map(l => {
-                // Bezier control points pulled 40% of the vertical
-                // delta along the direction of travel — produces a
-                // smooth S-curve that bends naturally if the panel
-                // is offset diagonally. (Diagonal offset arrives
-                // when drag lands in step 6.)
-                const dy = l.panelAnchorY - l.chevronScreenY;
-                const c1x = l.chevronScreenX;
-                const c1y = l.chevronScreenY + dy * 0.4;
-                const c2x = l.panelAnchorX;
-                const c2y = l.panelAnchorY - dy * 0.4;
-                const path = `M ${l.chevronScreenX} ${l.chevronScreenY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${l.panelAnchorX} ${l.panelAnchorY}`;
+                // Bezier control points pulled 40% of the delta along the
+                // direction of travel — a smooth S-curve that bends naturally
+                // when the panel is offset. Lateral (sibling) panels travel
+                // HORIZONTALLY, so the control points pull along X; the
+                // descendant/ancestor panels travel vertically and pull along Y.
+                let path: string;
+                if (l.opensLateral) {
+                  const dx = l.panelAnchorX - l.chevronScreenX;
+                  const c1x = l.chevronScreenX + dx * 0.4;
+                  const c1y = l.chevronScreenY;
+                  const c2x = l.panelAnchorX - dx * 0.4;
+                  const c2y = l.panelAnchorY;
+                  path = `M ${l.chevronScreenX} ${l.chevronScreenY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${l.panelAnchorX} ${l.panelAnchorY}`;
+                } else {
+                  const dy = l.panelAnchorY - l.chevronScreenY;
+                  const c1x = l.chevronScreenX;
+                  const c1y = l.chevronScreenY + dy * 0.4;
+                  const c2x = l.panelAnchorX;
+                  const c2y = l.panelAnchorY - dy * 0.4;
+                  path = `M ${l.chevronScreenX} ${l.chevronScreenY} C ${c1x} ${c1y}, ${c2x} ${c2y}, ${l.panelAnchorX} ${l.panelAnchorY}`;
+                }
                 return (
                   <path
                     key={`tether-${l.personId}-${l.direction}`}
