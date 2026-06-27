@@ -3279,7 +3279,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               const svgScreenLeft = panel1.panelLeft + (panel1.panelW - panel1.contentWidth * viewport.scale) / 2;
               const svgScreenTop = panel1.panelTop; // SVG sits flush at the panel's inner top
               sibFamAnchorX = svgScreenLeft + tile.cx * viewport.scale;
-              sibFamAnchorY = svgScreenTop + (tile.cy + CARD_H / 2) * viewport.scale;
+              // Originate the flexible connector from the BOTTOM of the "+N" family
+              // chip that hangs under the tile (tile bottom + stem + pill height), not
+              // the tile edge above it — so tile -> stem -> chip -> flexible connector
+              // reads as ONE continuous line through the chip the user clicked, with no
+              // break between the chip and Panel 2 (Terry r473).
+              sibFamAnchorY = svgScreenTop + (tile.cy + CARD_H / 2 + SIB_FAM_STEM + SIB_FAM_PILL_H) * viewport.scale;
             }
           }
           const chevronWorldX = chevInfo ? chevInfo.midX : origin.renderedX;
