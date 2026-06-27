@@ -1517,10 +1517,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    *  collapsedDescendantsOf — onSetGenerationExpanded handles both together. */
   /** Floating generation rows (Terry): a subtle number on EVERY visible
    *  row — even rows with no collapse control — to give the tree obvious
-   *  but quiet structure. Numbering is computed over ALL visible rows
-   *  (distinct y of SLOTTED, on-canvas nodes), youngest-visible-row = 1,
-   *  counting UP (older generations get bigger numbers, sitting higher /
-   *  smaller y). Each row carries optional toggle data: when a
+   *  but quiet structure. Numbering is by TRUE generation depth (node.generation
+   *  vs the deepest generation that EXISTS in the graph), youngest-that-exists =
+   *  1, counting UP — so a generation's number is fixed by the real structure and
+   *  does NOT shift when other generations are collapsed/expanded (Terry r474).
+   *  Each row carries optional toggle data: when a
    *  side-branch chevron's HEAD sits on that row, the row also renders
    *  the existing per-generation expand/collapse pill (chevron + the
    *  SAME number) instead of a bare number — so the numbering stays
@@ -1539,8 +1540,20 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     // (defensive — every current layout does).
     const slottedNodes = layout.nodes.filter(n => n.slotted !== false);
     const source = slottedNodes.length > 0 ? slottedNodes : layout.nodes;
-    const ysAsc = [...new Set(source.map(n => Math.round(n.y)))].sort((a, b) => a - b);
-    if (ysAsc.length === 0) return [] as Row[];
+    if (source.length === 0) return [] as Row[];
+    // Map each visible row (rounded y) to its TRUE generation. node.generation
+    // is focus = 0, ancestors positive, descendants negative. We number by TRUE
+    // depth — the youngest generation that EXISTS = 1 — so the numbers reflect
+    // the real structure and DON'T shift when a generation is collapsed/expanded
+    // (Terry r474). minGeneration (deepest existing) comes from the layout, which
+    // computes it over the whole graph (including collapsed-off-canvas people).
+    const genByY = new Map<number, number>();
+    for (const n of source) {
+      const y = Math.round(n.y);
+      if (!genByY.has(y)) genByY.set(y, n.generation);
+    }
+    const ysAsc = [...genByY.keys()].sort((a, b) => a - b);
+    const minGen = layout.minGeneration ?? Math.min(...source.map(n => n.generation));
     // Toggle data keyed by the HEAD's row (rounded y). A row is
     // collapsible iff at least one side-branch chevron head sits on it.
     const toggleByRow = new Map<number, { sideIds: number[]; directIds: number[]; open: number; total: number }>();
@@ -1554,20 +1567,20 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       if (c.direct) g.directIds.push(c.headId); else g.sideIds.push(c.headId);
       g.total++; if (isOpen) g.open++;
     }
-    // Number youngest (largest y, bottom of the tree) = 1, counting UP.
-    const total = ysAsc.length;
-    return ysAsc.map((worldY, idxAsc) => {
+    return ysAsc.map((worldY) => {
       const t = toggleByRow.get(worldY);
+      const rowGen = genByY.get(worldY) ?? 0;
       return {
         worldY,
-        genNum: total - idxAsc,
+        // TRUE generation number: youngest-that-exists = 1, counting UP.
+        genNum: rowGen - minGen + 1,
         sideIds: t?.sideIds ?? [],
         directIds: t?.directIds ?? [],
         allOpen: t ? t.open === t.total : false,
         collapsible: !!t,
       };
     });
-  }, [layout.nodes, sideBranchChevrons, expandedDescendantsOf, collapsedDescendantsOf]);
+  }, [layout.nodes, layout.minGeneration, sideBranchChevrons, expandedDescendantsOf, collapsedDescendantsOf]);
 
   /** Person IDs that are CURRENTLY revealed via an expanded
    *  side-branch chevron — i.e. cousins who would normally be hidden

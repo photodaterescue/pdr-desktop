@@ -171,6 +171,13 @@ export interface TreeLayout {
   nodes: LaidOutNode[];
   edges: LaidOutEdge[];
   bounds: { minX: number; maxX: number; minY: number; maxY: number };
+  /** Deepest generation that EXISTS in the graph this layout was built from —
+   *  focus = 0, ancestors positive, descendants negative. Includes people who are
+   *  collapsed off-canvas (they're still in the graph, just not placed). Used to
+   *  number the left-rail rows by TRUE depth, so the youngest generation that
+   *  exists is always #1 and the numbers don't shift when a generation is
+   *  collapsed/expanded (Terry r474). */
+  minGeneration: number;
 }
 
 export interface LayoutOptions {
@@ -260,6 +267,10 @@ export function assignGenerations(graph: FamilyGraph): Map<number, number> {
 export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions = {}, expandedHeads: Set<number> = new Set(), collapsedDirect: Set<number> = new Set()): TreeLayout {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const generations = assignGenerations(graph);
+  // Deepest generation that exists (most negative = youngest) in this graph.
+  // Anchors the left-rail row numbering to the TRUE structure so the youngest
+  // generation that exists is always #1, even when it's collapsed (Terry r474).
+  const minGeneration = generations.size ? Math.min(...generations.values()) : 0;
 
   // Group nodes by generation.
   const byGen = new Map<number, FamilyGraphNode[]>();
@@ -277,7 +288,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
   // Place focus first at (0, 0).
   const focusNode = graph.nodes.find(n => n.personId === graph.focusPersonId);
   if (!focusNode) {
-    return { focusPersonId: graph.focusPersonId, nodes: [], edges: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 } };
+    return { focusPersonId: graph.focusPersonId, nodes: [], edges: [], bounds: { minX: 0, maxX: 0, minY: 0, maxY: 0 }, minGeneration };
   }
 
   // Process generations in a specific order so that when we place
@@ -1670,7 +1681,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     ? { minX: 0, maxX: 0, minY: 0, maxY: 0 }
     : { minX: Math.min(...xs), maxX: Math.max(...xs), minY: Math.min(...ys), maxY: Math.max(...ys) };
 
-  return { focusPersonId: graph.focusPersonId, nodes: laidOutNodes, edges: laidOutEdges, bounds };
+  return { focusPersonId: graph.focusPersonId, nodes: laidOutNodes, edges: laidOutEdges, bounds, minGeneration };
 }
 
 /**
