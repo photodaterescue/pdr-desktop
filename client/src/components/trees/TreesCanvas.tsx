@@ -4152,11 +4152,14 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           let defaultPanelTop: number;
           if (opensLateral) {
             // Beside the card on the outer side; vertically centred on the
-            // ancestor's row, clamped so it never starts above the canvas top.
+            // ancestor's row. NO top clamp (Terry r469): the panel must stay
+            // anchored to its chevron and pan off the top naturally when you
+            // scroll DOWN to look lower — auto-sliding down to stay in view felt
+            // wrong (it chased you). Left/right + downward never had this issue.
             defaultPanelLeft = siblingsSide === 1
               ? siblingsAnchorScreenX + LATERAL_GAP
               : siblingsAnchorScreenX - LATERAL_GAP - panelW;
-            defaultPanelTop = Math.max(svgTop + 12, originScreenY - panelH / 2);
+            defaultPanelTop = originScreenY - panelH / 2;
           } else if (direction === 'sibling-family') {
             // Drop DOWN from the sibling's tile inside Panel 1 — centred under
             // the tile's screen X, just below it.
