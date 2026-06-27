@@ -587,3 +587,40 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
     }
   }
 });
+
+// ── G5 collateral-sibling collapse (Terry 2026-06-27) ─────────────────────
+// On the 5th generation ROW and above (youngest shown row = 1, counting up), a
+// collateral sibling is NOT slotted on canvas — it collapses to an "N siblings"
+// chip + lavender panel. The LAYOUT must mark such heads (and their descendants)
+// as panelled, so the tree packs tight (render-side hiding would leave a gap).
+describe('G5 collateral siblings collapse off-canvas (panelled) at row 5+', () => {
+  it('great-grand-uncle (row 5) is panelled; bloodline ancestors stay slotted', () => {
+    // rows from youngest: K=1, F=2, P=3, GP=4, GGP=5, GGGP=6. GGU is GGP's sibling
+    // (row 5) → panelled; GGU's child too. Bloodline 1,2,5,6,7,8 stay on canvas.
+    const names = { 1: 'GGGP', 2: 'GGP', 3: 'GGU', 4: 'GGUK', 5: 'GP', 6: 'P', 7: 'F', 8: 'K' };
+    const edges: E[] = [
+      [1, 2, 'parent_of'], [1, 3, 'parent_of'],
+      [2, 5, 'parent_of'], [5, 6, 'parent_of'], [6, 7, 'parent_of'], [7, 8, 'parent_of'],
+      [3, 4, 'parent_of'],
+    ];
+    const g = graphFor(names, edges, 7);
+    const by = new Map(layoutAll(g).nodes.map(n => [n.personId, n]));
+    const slotted = (id: number) => !!by.get(id)?.slotted;
+    for (const id of [1, 2, 5, 6, 7, 8]) expect(slotted(id), `${names[id as keyof typeof names]} should be slotted`).toBe(true);
+    expect(slotted(3), 'GGU (row-5 collateral sibling) should be panelled, not slotted').toBe(false);
+    expect(slotted(4), "GGU's child should be panelled").toBe(false);
+  });
+
+  it('a great-aunt (row 4) is still slotted — the rule starts at row 5', () => {
+    // Same spine one shorter: GP has a sibling GU at row 4 → must stay on canvas.
+    const names = { 1: 'GGP', 2: 'GP', 3: 'GU', 4: 'GUK', 5: 'P', 6: 'F', 7: 'K' };
+    const edges: E[] = [
+      [1, 2, 'parent_of'], [1, 3, 'parent_of'],
+      [2, 5, 'parent_of'], [5, 6, 'parent_of'], [6, 7, 'parent_of'],
+      [3, 4, 'parent_of'],
+    ];
+    const g = graphFor(names, edges, 6);
+    const by = new Map(layoutAll(g).nodes.map(n => [n.personId, n]));
+    expect(!!by.get(3)?.slotted, 'GU (row-4 collateral sibling) should stay slotted').toBe(true);
+  });
+});

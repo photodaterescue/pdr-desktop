@@ -415,6 +415,37 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         }
       }
     }
+    // G5 RULE (Terry 2026-06-27): on the 5th generation ROW and above (youngest
+    // shown row = 1, counting UP), collateral siblings are NOT drawn on canvas —
+    // they collapse to an "N siblings" chip + lavender panel. PANEL the head itself
+    // (its descendants are already hidden above; the spouse sweep below takes its
+    // partner) so the tree packs tight around the bloodline. row = descDepth + 1 + U,
+    // where descDepth = deepest focus-line descendant depth shown and U = the head's
+    // generations above the focus. The threshold shifts with the tree, as intended.
+    {
+      const ancDist = new Map<number, number>();
+      { const q: Array<[number, number]> = [[focusId, 0]]; const seen = new Set<number>([focusId]);
+        while (q.length) { const [id, d] = q.shift()!; for (const p of parentsOf.get(id) ?? []) { if (seen.has(p)) continue; seen.add(p); ancDist.set(p, d + 1); q.push([p, d + 1]); } } }
+      let descDepth = 0;
+      { const q: Array<[number, number]> = [[focusId, 0]];
+        for (const fp of parentsOf.get(focusId) ?? []) for (const c of childrenOf.get(fp) ?? []) if (c !== focusId) q.push([c, 0]);
+        const seen = new Set<number>();
+        while (q.length) { const [id, d] = q.shift()!; if (seen.has(id)) continue; seen.add(id); if (d > descDepth) descDepth = d; for (const c of childrenOf.get(id) ?? []) q.push([c, d + 1]); } }
+      const headU = (head: number): number => {
+        let u = Infinity;
+        for (const p of parentsOf.get(head) ?? []) for (const sib of childrenOf.get(p) ?? []) { const a = ancDist.get(sib); if (a != null && a < u) u = a; }
+        if (u === Infinity) for (const e of graph.edges) { if (e.type !== 'sibling_of') continue; if (e.aId === head) { const a = ancDist.get(e.bId); if (a != null && a < u) u = a; } else if (e.bId === head) { const a = ancDist.get(e.aId); if (a != null && a < u) u = a; } }
+        return u;
+      };
+      for (const head of heads) {
+        const u = headU(head);
+        if (u === Infinity || descDepth + 1 + u < 5) continue;
+        // Panel the head AND its whole subtree — it lives in the chip's panel,
+        // never on canvas, regardless of the per-level expand state.
+        const q = [head]; const seen = new Set<number>([head]);
+        while (q.length) { const cur = q.shift()!; if (!directLine.has(cur)) hidden.add(cur); for (const c of childrenOf.get(cur) ?? []) if (!seen.has(c)) { seen.add(c); q.push(c); } }
+      }
+    }
     // Direct-line collapse (Terry r440): the default-OPEN downward direct line
     // (focus's descendants, siblings + their descendants) is collapsible too —
     // "all offspring should have the chevron, even my own direct family". When
