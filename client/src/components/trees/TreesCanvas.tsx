@@ -198,6 +198,12 @@ const CARD_W = 170;
 // enough breathing room. Layout row height is bumped in lockstep via
 // trees-layout.ts so vertical gaps don't shrink to nothing.
 const CARD_H = 154;
+// Lateral sibling-collapse chevron geometry (Terry r468): mirrors the offspring
+// chevron (r=17) on a SHORT lavender stem out to the panel side. Shared by the
+// chip render AND the panel tether origin so the flexible connector emanates
+// from the chevron the user clicked.
+const SIB_CHEV_R = 17;
+const SIB_CHEV_STEM = 14;
 const AVATAR_R = 36;
 const CARD_TOP_PAD = 14;
 const AVATAR_TO_NAME = 22;
@@ -2937,101 +2943,74 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             const count = heads.length;
             if (count === 0) return null;
             const open = openSiblingChips?.has(ancestorId) ?? false;
-            const label = `${count} sibling${count === 1 ? '' : 's'}`;
-            // Pill geometry — sized to the label + the sideways chevron glyph.
-            const pillH = 24;
-            const pillW = Math.max(70, label.length * 7.5 + 16 + 22);
-            // Side AWAY from the spouse (so a couple's two chips/panels splay to
+            // Side AWAY from the spouse (so a couple's two chevrons/panels splay to
             // opposite sides), falling back to tree-centre — same rule the panel uses.
             const chipSide: 1 | -1 = siblingPanelSide(ancestorId, anc.x);
-            // Pill beside the card on a short horizontal stem, at row mid-height.
-            const stemLen = 12;
+            // Mirror the offspring chevron, rotated 90° to point OUT to the side the
+            // lateral sibling panel opens (Terry r468) — no text label, in-keeping
+            // with the tree. Short lavender stem from the card's mid-side to it.
+            const r = SIB_CHEV_R;
             const cardEdgeX = anc.x + chipSide * (CARD_W / 2);
-            const pillCx = cardEdgeX + chipSide * (stemLen + pillW / 2);
-            const pillCy = anc.y;
+            const chevronCx = cardEdgeX + chipSide * (SIB_CHEV_STEM + r);
+            const chevronCy = anc.y;
             const fill = '#ad9eff';
             const rim = '#7e6df0';
+            const ancFirst = (anc.fullName?.trim() || anc.name?.trim() || '').split(/\s+/)[0] || 'this ancestor';
             const tooltipLabel = open
-              ? `Hide ${count} collapsed sibling${count === 1 ? '' : 's'} of this ancestor`
-              : `Show ${count} sibling${count === 1 ? '' : 's'} that were collapsed to keep the tree tidy`;
-            // Sideways chevron — points OUTWARD (toward the panel) when closed,
-            // back toward the card when open. Outward = chipSide direction.
-            const pointOut = open ? -chipSide : chipSide;
-            const glyphPath = pointOut === 1
-              ? 'M -2 -5 L 3 0 L -2 5'   // ▶ points right
-              : 'M 2 -5 L -3 0 L 2 5';   // ◀ points left
+              ? `Hide ${ancFirst}'s ${count} sibling${count === 1 ? '' : 's'}`
+              : `Show ${ancFirst}'s ${count} sibling${count === 1 ? '' : 's'}`;
+            // Offspring V-glyph (points down). Rotated so it points OUT toward the
+            // panel side when closed; +180° (flips back toward the card) when open —
+            // the same toggle language as the offspring chevron's v/^ flip.
+            const glyphPath = 'M -7 -2 L 0 5 L 7 -2';
+            const glyphRotation = -90 * chipSide + (open ? 180 : 0);
             return (
               <g key={`g5sib-${ancestorId}`}>
-                {/* Horizontal stem from the card's side edge to the pill. */}
+                {/* Short lavender connector from the card's mid-side to the chevron. */}
                 <line
                   x1={cardEdgeX}
-                  y1={pillCy}
-                  x2={pillCx - chipSide * (pillW / 2)}
-                  y2={pillCy}
+                  y1={chevronCy}
+                  x2={chevronCx - chipSide * r}
+                  y2={chevronCy}
                   stroke={fill}
                   strokeWidth={4}
                   strokeLinecap="round"
                   style={{ pointerEvents: 'none' }}
                 />
                 <g
-                  transform={`translate(${pillCx} ${pillCy})`}
+                  transform={`translate(${chevronCx} ${chevronCy})`}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => e.stopPropagation()}
                   onClick={(e) => { e.stopPropagation(); onToggleSiblingChip?.(ancestorId); }}
                 >
                   <IconTooltip label={tooltipLabel} side={chipSide === 1 ? 'right' : 'left'}>
-                    <g className={open ? 'pdr-tree-chevron-pulse' : undefined}>
-                      {/* Drop shadow + rim — same 3D-button trick the
-                          chevrons + count-pill use. */}
+                    <g>
                       <ellipse
-                        cx={0} cy={4}
-                        rx={pillW / 2 * 0.97} ry={pillH / 2 * 0.55}
+                        cx={0} cy={3}
+                        rx={r * 0.92} ry={r * 0.55}
                         fill="rgba(0,0,0,0.22)"
                         style={{ pointerEvents: 'none' }}
                       />
-                      <rect
-                        x={-pillW / 2} y={-pillH / 2 + 1.5}
-                        width={pillW} height={pillH}
-                        rx={pillH / 2} ry={pillH / 2}
-                        fill={rim}
+                      <circle r={r} cx={0} cy={1.5} fill={rim} style={{ pointerEvents: 'none' }} />
+                      <circle r={r} fill={fill} stroke="none" />
+                      <path
+                        d={`M ${-r * 0.7} ${-r * 0.35} A ${r * 0.85} ${r * 0.85} 0 0 1 ${r * 0.7} ${-r * 0.35}`}
+                        stroke="rgba(255,255,255,0.45)"
+                        strokeWidth={1.5}
+                        fill="none"
+                        strokeLinecap="round"
                         style={{ pointerEvents: 'none' }}
                       />
-                      <rect
-                        x={-pillW / 2} y={-pillH / 2}
-                        width={pillW} height={pillH}
-                        rx={pillH / 2} ry={pillH / 2}
-                        fill="#ffffff"
-                        stroke={fill}
-                        strokeWidth={2}
-                      />
-                      {/* Chevron on the OUTER end of the pill (the side facing
-                          the panel); label fills the rest. */}
                       <path
-                        transform={`translate(${chipSide === 1 ? pillW / 2 - 11 : -pillW / 2 + 11} 0)`}
                         d={glyphPath}
-                        stroke={fill}
-                        strokeWidth={2.5}
+                        transform={`rotate(${glyphRotation})`}
+                        stroke="#ffffff"
+                        strokeWidth={3}
                         fill="none"
                         strokeLinecap="round"
                         strokeLinejoin="round"
-                        style={{ pointerEvents: 'none' }}
+                        style={{ pointerEvents: 'none', transition: 'transform 160ms ease-out' }}
                       />
-                      {/* Label — text-foreground (dark) for legibility; nudged
-                          away from the chevron so they don't overlap. */}
-                      <text
-                        x={chipSide === 1 ? -pillW / 2 + 11 : pillW / 2 - 11}
-                        y={1}
-                        textAnchor={chipSide === 1 ? 'start' : 'end'}
-                        dominantBaseline="middle"
-                        fontSize={12.5}
-                        fontWeight={600}
-                        fontFamily='"Inter", system-ui, -apple-system, sans-serif'
-                        fill="currentColor"
-                        className="text-foreground"
-                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                      >
-                        {label}
-                      </text>
                     </g>
                   </IconTooltip>
                 </g>
@@ -3268,8 +3247,10 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // two panels splay to opposite sides (fallback: tree centre).
           const siblingsSide: 1 | -1 = siblingPanelSide(personId, origin.renderedX);
           const cardHalfWidth = (CARD_W / 2) * viewport.scale;
-          // Lateral tether start: the card's left/right edge at row mid-height.
-          const siblingsAnchorScreenX = originScreenX + siblingsSide * cardHalfWidth;
+          // Lateral tether start: the side CHEVRON (card edge + short stem + chevron
+          // radius) at row mid-height, so the flexible connector continues straight
+          // out of the chevron the user clicked (Terry r468).
+          const siblingsAnchorScreenX = originScreenX + siblingsSide * (cardHalfWidth + (SIB_CHEV_STEM + SIB_CHEV_R) * viewport.scale);
           // PANEL 2 anchor — the tether starts from this sibling's TILE inside
           // its parent Panel 1, not from any canvas position (the sibling is
           // off-canvas / parked). Look up the already-built Panel 1 layout
