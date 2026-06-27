@@ -1411,6 +1411,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       // occupies more room) and pushes neighbours further out, never stealing their
       // column. Re-seating ancestors above happens naturally because they are swept
       // last, over the now-final child positions.
+      const minGapBetween = (a: number, b: number) => spanOfUnit(a) / 2 + GAP + spanOfUnit(b) / 2;
       // Descendant units of U strictly below U's generation (for rigid subtree shift).
       const subtreeBelow = (u: number): number[] => {
         const acc: number[] = [];
@@ -1457,35 +1458,9 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           else anchored.push(u === focusUnit);   // focus pinned-in-place too
         }
         if (keys.length === 1) return;
-        // SUBTREE REACH (Terry 2026-06-27 — the global "widen further up the tree"
-        // rule). The children below are already final, so measure how far each
-        // unit's WHOLE subtree reaches left/right of the unit's own centre, and
-        // clear neighbours by those facing reaches — not just the units' own card
-        // widths. A branch that fans out wider below (Carol's children) thus
-        // reserves that width in every row above, so a thin neighbour (Gladys →
-        // Marion) can't tuck into its column. EXCEPTION: two SPINE units (the
-        // maternal/paternal fork) share the focus's descendant subtree, so reach
-        // would double-count it and tear the fork apart — they keep the plain
-        // card-width gap and are positioned by the fork seating instead.
-        const reachR = new Map<number, number>();
-        const reachL = new Map<number, number>();
-        for (const u of keys) {
-          const ctr = centreOfUnit(u);
-          let mn = Infinity, mx = -Infinity;
-          for (const su of [u, ...subtreeBelow(u)]) for (const m of membersOfUnit(su)) {
-            const x = NX.get(m); if (x == null) continue; if (x < mn) mn = x; if (x > mx) mx = x;
-          }
-          const half = spanOfUnit(u) / 2;
-          reachR.set(u, mx === -Infinity ? half : Math.max(mx - ctr, half));
-          reachL.set(u, mn === Infinity ? half : Math.max(ctr - mn, half));
-        }
         // 2) Resolve overlaps with anchored units PINNED. `c` = working centres.
         const c = keys.map(centreOfUnit);
-        const gap = (i: number, j: number) => {
-          const a = keys[i], b = keys[j];
-          if (spine.has(a) && spine.has(b)) return spanOfUnit(a) / 2 + GAP + spanOfUnit(b) / 2;
-          return reachR.get(a)! + GAP + reachL.get(b)!;
-        };
+        const gap = (i: number, j: number) => minGapBetween(keys[i], keys[j]);
         // 2a) Pin-vs-pin: where two anchored units (with only leaves, or nothing,
         //     between them) are too close even before packing leaves, push them — and
         //     all pins — apart symmetrically. Iterating adjacent anchored pairs only

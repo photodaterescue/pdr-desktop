@@ -1712,27 +1712,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       }
     }
     const vis = (id: number) => nodeById.has(id) && !hiddenSideBranchIds.has(id) && !hiddenExtendedIds.has(id);
-    const bboxOf = (seed: Iterable<number>) => {
-      const members = new Set<number>();
-      for (const id of seed) {
-        members.add(id);
-        for (const sp of spousesOf.get(id) ?? []) members.add(sp);
-      }
-      let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity, n = 0;
-      for (const id of members) {
-        if (!vis(id)) continue;
-        const nd = nodeById.get(id)!;
-        minX = Math.min(minX, nd.x); maxX = Math.max(maxX, nd.x);
-        minY = Math.min(minY, nd.y); maxY = Math.max(maxY, nd.y); n++;
-      }
-      return n > 0 ? { minX, maxX, minY, maxY, members } : null;
-    };
     const PADX = CARD_W / 2 + 12;
-    const lanes: Array<{ minY: number; maxY: number; left: number; right: number; anchor: number; color: string; members: Set<number>; bbMinX: number; bbMaxX: number }> = [];
-    const pushLane = (bb: { minX: number; maxX: number; minY: number; maxY: number; members: Set<number> } | null, anchor: number | undefined) => {
-      if (!bb) return;
-      lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '', members: bb.members, bbMinX: bb.minX, bbMaxX: bb.maxX });
-    };
+    // Vertical band per row: half the inter-row pitch + the corner radius, so the
+    // per-row rects overlap slightly and read as ONE smooth shape (drawn inside an
+    // opacity group so the overlap doesn't double-tint at the seams).
+    const ys = [...new Set([...nodeById.values()].map(n => Math.round(n.y)))].sort((a, b) => a - b);
+    let pitch = 180;
+    for (let k = 1; k < ys.length; k++) { const d = ys[k] - ys[k - 1]; if (d > 20) { pitch = d; break; } }
+    const RX = 18;
+    const halfBand = pitch / 2 + RX;
+    const visNodes: Array<{ id: number; x: number; y: number }> = [];
+    for (const [id, nd] of nodeById) if (vis(id)) visNodes.push({ id, x: nd.x, y: nd.y });
+    type Seg = { top: number; bottom: number; left: number; right: number };
+    const lanes: Array<{ color: string; anchor: number; segs: Seg[]; left: number; right: number; minY: number; maxY: number; members: Set<number> }> = [];
     // The focus's strict ancestor line (walk parents up) — these must NEVER be
     // laned: a grandparent/parent is a direct ancestor, not a cousin branch.
     const strictAnc = new Set<number>();
@@ -1759,29 +1751,44 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       for (const m of [head, ...(spousesOf.get(head) ?? [])]) for (const c of (kidsOf.get(m) ?? [])) if (vis(c)) headKids.add(c);
       if (headKids.size < 2) continue;
       if (![...desc].some(d => vis(d))) continue;
-      pushLane(bboxOf([head, ...desc]), nodeById.get(head)?.x);
-    }
-    // Clip each lane horizontally so it NEVER covers a card from another branch.
-    // The bbox + half-card pad can bleed onto a neighbour, and a family whose
-    // kids fan out wide sits PAST the midpoint between branch heads — so clip
-    // against the nearest FOREIGN card that shares the lane's vertical band, not
-    // against head anchors (which sit at the top and ignore the wide rows below).
-    // Splitting the gap at the midpoint between our outermost member and that
-    // foreign card keeps every card's centre inside its own zone and makes
-    // adjacent lanes meet exactly — no overlap onto other branches' people.
-    const visNodes: Array<{ id: number; x: number; y: number }> = [];
-    for (const [id, nd] of nodeById) if (vis(id)) visNodes.push({ id, x: nd.x, y: nd.y });
-    for (const lane of lanes) {
-      let leftForeign = -Infinity, rightForeign = Infinity;
-      for (const c of visNodes) {
-        if (lane.members.has(c.id)) continue;
-        if (c.y < lane.minY - CARD_H / 2 || c.y > lane.maxY + CARD_H / 2) continue; // not in this lane's rows
-        if (c.x <= lane.bbMinX) leftForeign = Math.max(leftForeign, c.x);
-        else if (c.x >= lane.bbMaxX) rightForeign = Math.min(rightForeign, c.x);
+      // Members = head + descendants + their married-in spouses (visible only).
+      const members = new Set<number>();
+      for (const id of [head, ...desc]) { members.add(id); for (const sp of spousesOf.get(id) ?? []) members.add(sp); }
+      // Group members BY ROW so the zone hugs the family per row, not as one
+      // bounding box — a wide row of children can no longer drag the zone over a
+      // thin neighbour sitting in the narrow row above (Terry: Gladys / Marion).
+      const byRow = new Map<number, { minX: number; maxX: number }>();
+      let minY = Infinity, maxY = -Infinity, laneLeft = Infinity, laneRight = -Infinity;
+      for (const id of members) {
+        if (!vis(id)) continue;
+        const nd = nodeById.get(id)!;
+        const key = Math.round(nd.y);
+        const r = byRow.get(key);
+        if (!r) byRow.set(key, { minX: nd.x, maxX: nd.x });
+        else { if (nd.x < r.minX) r.minX = nd.x; if (nd.x > r.maxX) r.maxX = nd.x; }
+        if (nd.y < minY) minY = nd.y; if (nd.y > maxY) maxY = nd.y;
       }
-      if (leftForeign > -Infinity) lane.left = Math.max(lane.left, (leftForeign + lane.bbMinX) / 2);
-      if (rightForeign < Infinity) lane.right = Math.min(lane.right, (rightForeign + lane.bbMaxX) / 2);
-      if (lane.right < lane.left) lane.right = lane.left;
+      if (byRow.size === 0) continue;
+      const segs: Seg[] = [];
+      for (const [yc, ext] of [...byRow.entries()].sort((a, b) => a[0] - b[0])) {
+        let left = ext.minX - PADX, right = ext.maxX + PADX;
+        // Clamp THIS row against the nearest foreign card IN THE SAME ROW (midpoint
+        // split) so a row-segment can never sit under another branch's card.
+        let leftForeign = -Infinity, rightForeign = Infinity;
+        for (const c of visNodes) {
+          if (members.has(c.id)) continue;
+          if (Math.abs(c.y - yc) > CARD_H / 2) continue;
+          if (c.x <= ext.minX) { if (c.x > leftForeign) leftForeign = c.x; }
+          else if (c.x >= ext.maxX) { if (c.x < rightForeign) rightForeign = c.x; }
+        }
+        if (leftForeign > -Infinity) left = Math.max(left, leftForeign + CARD_W / 2 + 10);
+        if (rightForeign < Infinity) right = Math.min(right, rightForeign - CARD_W / 2 - 10);
+        left = Math.min(left, ext.minX); right = Math.max(right, ext.maxX); // never clip our own row's cards
+        if (right < left) right = left;
+        segs.push({ top: yc - halfBand, bottom: yc + halfBand, left, right });
+        if (left < laneLeft) laneLeft = left; if (right > laneRight) laneRight = right;
+      }
+      lanes.push({ color: '', anchor: nodeById.get(head)?.x ?? laneLeft, segs, left: laneLeft, right: laneRight, minY, maxY, members });
     }
     lanes.sort((a, b) => a.anchor - b.anchor);
     lanes.forEach((l, i) => { l.color = PAL[i % PAL.length]; });
@@ -1949,22 +1956,20 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               each aunt/uncle's family (and the focus's own line) reads as a
               distinct column. Drawn FIRST so it sits behind the connectors and
               cards. */}
-          {showFamilyLanes && branchLanes.map((lane, i) => {
-            const padY = CARD_H / 2 + 14;
-            const y = lane.minY - padY;
-            const w = lane.right - lane.left;
-            const h = (lane.maxY - lane.minY) + padY * 2;
-            if (w <= 1) return null;
-            return (
-              <rect
-                key={`lane-${i}`}
-                x={lane.left} y={y} width={w} height={h} rx={28}
-                fill={lane.color} fillOpacity={0.15}
-                stroke={lane.color} strokeOpacity={0.34} strokeWidth={1.5}
-                style={{ pointerEvents: 'none' }}
-              />
-            );
-          })}
+          {showFamilyLanes && branchLanes.map((lane, i) => (
+            // One soft tinted shape per branch, built from PER-ROW segments so it
+            // hugs the family and can never cover another branch's card. Drawn in
+            // an opacity GROUP (opacity on the <g>, fill solid on the rects) so the
+            // deliberately-overlapping row rects merge into one smooth shape rather
+            // than double-tinting at the seams.
+            <g key={`lane-${i}`} opacity={0.16} style={{ pointerEvents: 'none' }}>
+              {lane.segs.map((s, j) => {
+                const w = s.right - s.left;
+                if (w <= 1) return null;
+                return <rect key={j} x={s.left} y={s.top} width={w} height={s.bottom - s.top} rx={18} ry={18} fill={lane.color} />;
+              })}
+            </g>
+          ))}
 
           {/* Optional faint vertical divider between adjacent families
               (Terry's idea — the safe alternative to a physical gap). */}
