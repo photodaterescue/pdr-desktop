@@ -588,12 +588,12 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
   }
 });
 
-// ── G5 collateral-sibling collapse (Terry 2026-06-27) ─────────────────────
-// On the 5th generation ROW and above (youngest shown row = 1, counting up), a
+// ── Collateral-sibling collapse at row 4+ (Terry 2026-06-27, lowered from 5) ──
+// On the 4th generation ROW and above (youngest shown row = 1, counting up), a
 // collateral sibling is NOT slotted on canvas — it collapses to an "N siblings"
 // chip + lavender panel. The LAYOUT must mark such heads (and their descendants)
 // as panelled, so the tree packs tight (render-side hiding would leave a gap).
-describe('G5 collateral siblings collapse off-canvas (panelled) at row 5+', () => {
+describe('collateral siblings collapse off-canvas (panelled) at row 4+', () => {
   it('great-grand-uncle (row 5) is panelled; bloodline ancestors stay slotted', () => {
     // rows from youngest: K=1, F=2, P=3, GP=4, GGP=5, GGGP=6. GGU is GGP's sibling
     // (row 5) → panelled; GGU's child too. Bloodline 1,2,5,6,7,8 stay on canvas.
@@ -611,16 +611,21 @@ describe('G5 collateral siblings collapse off-canvas (panelled) at row 5+', () =
     expect(slotted(4), "GGU's child should be panelled").toBe(false);
   });
 
-  it('a great-aunt (row 4) is still slotted — the rule starts at row 5', () => {
-    // Same spine one shorter: GP has a sibling GU at row 4 → must stay on canvas.
-    const names = { 1: 'GGP', 2: 'GP', 3: 'GU', 4: 'GUK', 5: 'P', 6: 'F', 7: 'K' };
+  it('row-4 great-aunt panels; row-3 aunt stays — the rule starts at row 4', () => {
+    // rows from youngest: K=1, F=2, P=3, GP=4, GGP=5. PU = P's sibling (row 3, aunt)
+    // → STAYS. GU = GP's sibling (row 4, great-aunt) + GUK her child → PANEL.
+    const names = { 1: 'K', 2: 'F', 3: 'P', 4: 'GP', 5: 'GGP', 6: 'PU', 7: 'GU', 8: 'GUK' };
     const edges: E[] = [
-      [1, 2, 'parent_of'], [1, 3, 'parent_of'],
-      [2, 5, 'parent_of'], [5, 6, 'parent_of'], [6, 7, 'parent_of'],
-      [3, 4, 'parent_of'],
+      [5, 4, 'parent_of'], [5, 7, 'parent_of'],   // GGP → GP + GU (row-4 siblings)
+      [4, 3, 'parent_of'], [4, 6, 'parent_of'],   // GP → P + PU (row-3 siblings)
+      [3, 2, 'parent_of'], [2, 1, 'parent_of'],   // P → F → K
+      [7, 8, 'parent_of'],                         // GU → GUK
     ];
-    const g = graphFor(names, edges, 6);
+    const g = graphFor(names, edges, 2);          // focus = F
     const by = new Map(layoutAll(g).nodes.map(n => [n.personId, n]));
-    expect(!!by.get(3)?.slotted, 'GU (row-4 collateral sibling) should stay slotted').toBe(true);
+    const slotted = (id: number) => !!by.get(id)?.slotted;
+    expect(slotted(6), 'PU (row-3 aunt) should stay slotted').toBe(true);
+    expect(slotted(7), 'GU (row-4 great-aunt) should panel').toBe(false);
+    expect(slotted(8), "GU's child should panel").toBe(false);
   });
 });

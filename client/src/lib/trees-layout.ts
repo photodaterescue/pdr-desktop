@@ -415,8 +415,8 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         }
       }
     }
-    // G5 RULE (Terry 2026-06-27): on the 5th generation ROW and above (youngest
-    // shown row = 1, counting UP), collateral siblings are NOT drawn on canvas —
+    // ROW-4 RULE (Terry 2026-06-27, lowered from 5): on the 4th generation ROW and
+    // above (youngest shown row = 1, counting UP), collateral siblings are NOT drawn —
     // they collapse to an "N siblings" chip + lavender panel. PANEL the head itself
     // (its descendants are already hidden above; the spouse sweep below takes its
     // partner) so the tree packs tight around the bloodline. row = descDepth + 1 + U,
@@ -439,7 +439,7 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
       };
       for (const head of heads) {
         const u = headU(head);
-        if (u === Infinity || descDepth + 1 + u < 5) continue;
+        if (u === Infinity || descDepth + 1 + u < 4) continue; // Terry 2026-06-27: row 4+ (great-aunts/uncles), revised down from 5
         // Panel the head AND its whole subtree — it lives in the chip's panel,
         // never on canvas, regardless of the per-level expand state.
         const q = [head]; const seen = new Set<number>([head]);
