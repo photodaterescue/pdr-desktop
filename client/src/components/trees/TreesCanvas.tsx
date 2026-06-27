@@ -204,6 +204,14 @@ const CARD_H = 154;
 // from the chevron the user clicked.
 const SIB_CHEV_R = 17;
 const SIB_CHEV_STEM = 14;
+// Per-tile "family" count chip under a collapsed-sibling tile in Panel 1 (Terry
+// r470): hangs off the tile BOTTOM on a short lavender stem, styled like the gold
+// extended-family chip over a card but lavender; click opens Panel 2 (that
+// sibling's family). SIB_FAM_BADGE_ROOM = extra panel bottom-padding to fit it.
+const SIB_FAM_PILL_W = 36;
+const SIB_FAM_PILL_H = 22;
+const SIB_FAM_STEM = 12;
+const SIB_FAM_BADGE_ROOM = SIB_FAM_STEM + SIB_FAM_PILL_H + 10;
 const AVATAR_R = 36;
 const CARD_TOP_PAD = 14;
 const AVATAR_TO_NAME = 22;
@@ -3964,7 +3972,15 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             : (topRowHasSiblingBracket
                 ? PANEL_PADDING + TETHER_BRACKET_ROOM + TITLE_ROOM
                 : PANEL_PADDING + TITLE_ROOM);
-          const padBottom = direction === 'ancestor' ? PANEL_PADDING + TETHER_BRACKET_ROOM : PANEL_PADDING;
+          // Siblings panel where a tile has a family chip needs extra bottom room
+          // so the under-tile chip (stem + pill) isn't clipped by the SVG (Terry r470).
+          const sibsHaveFamilyChip = direction === 'siblings'
+            && (g5CollapsedSiblingsByAncestor.get(personId) ?? []).some(h => (g5SiblingFamilyByHead.get(h)?.size ?? 0) > 0);
+          const padBottom = direction === 'ancestor'
+            ? PANEL_PADDING + TETHER_BRACKET_ROOM
+            : sibsHaveFamilyChip
+              ? PANEL_PADDING + SIB_FAM_BADGE_ROOM
+              : PANEL_PADDING;
           const contentHeight = sortedGens.length === 0
             ? CARD_H
             : sortedGens.length * CARD_H
@@ -4884,76 +4900,66 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                         </g>
                       );
                     })()}
-                    {/* PER-TILE FAMILY INDICATOR (Panel 1 only, Terry r466).
+                    {/* PER-TILE FAMILY CHIP (Panel 1 only, Terry r470).
                         Each sibling tile whose person has a family of their own
-                        (spouse + descendants) gets a lavender line across the
-                        TOP of the tile + a "+N" count of those hidden relatives
-                        — the same "more family to offer" cue the in-law panels
-                        use. Clicking it opens Panel 2 (that sibling's family),
-                        tethered from this tile. Childless siblings show nothing. */}
+                        (spouse + descendants) gets a prominent "+N" count chip
+                        hung off the tile BOTTOM on a short lavender stem — the
+                        same noticeable "click-me" chip as the gold extended-
+                        family chip over a card, but lavender (bloodline). It
+                        PULSES while closed to say "click me"; clicking opens
+                        Panel 2 (that sibling's family). Childless siblings show
+                        nothing. */}
                     {l.direction === 'siblings' && l.miniPlacements.map(p => {
                       const famCount = g5SiblingFamilyByHead.get(p.personId)?.size ?? 0;
                       if (famCount === 0) return null;
                       const open = openSiblingFamilyChips?.has(p.personId) ?? false;
-                      const cardTop = p.cy - CARD_H / 2;
-                      const cardLeft = p.cx - CARD_W / 2;
-                      const cardRight = p.cx + CARD_W / 2;
-                      // Count badge — top-right corner of the tile, straddling
-                      // the top edge. Lavender border + fill-white, dark count
-                      // text (lavender body text reads too faint per style guide).
-                      const badgeR = 12;
-                      const badgeCx = cardRight - badgeR - 2;
-                      const badgeCy = cardTop;
+                      const cardBottom = p.cy + CARD_H / 2;
+                      const fill = '#ad9eff';
+                      const rim = '#7e6df0';
                       const label = `+${famCount}`;
+                      const pillW = Math.max(SIB_FAM_PILL_W, label.length * 8 + 14);
+                      const pillH = SIB_FAM_PILL_H;
+                      const pillCx = p.cx;
+                      const pillCy = cardBottom + SIB_FAM_STEM + pillH / 2;
                       const tip = open
                         ? `Hide ${famCount} more in this sibling's family`
                         : `Show ${famCount} more in this sibling's family`;
-                      const fill = '#ad9eff';
                       return (
                         <g key={`g5sf-${p.personId}`}>
-                          {/* Top-of-tile accent line — the "has hidden family" cue. */}
+                          {/* Short lavender stem from the tile's bottom-middle to the chip. */}
                           <line
-                            x1={cardLeft + 6}
-                            y1={cardTop}
-                            x2={cardRight - 6}
-                            y2={cardTop}
+                            x1={pillCx}
+                            y1={cardBottom}
+                            x2={pillCx}
+                            y2={pillCy - pillH / 2}
                             stroke={fill}
-                            strokeWidth={3}
+                            strokeWidth={4}
                             strokeLinecap="round"
                             style={{ pointerEvents: 'none' }}
                           />
                           <g
-                            transform={`translate(${badgeCx} ${badgeCy})`}
+                            transform={`translate(${pillCx} ${pillCy})`}
                             style={{ cursor: 'pointer' }}
                             onMouseDown={(e) => e.stopPropagation()}
                             onClick={(e) => { e.stopPropagation(); onToggleSiblingFamilyChip?.(p.personId); }}
                           >
-                            <IconTooltip label={tip} side="top">
-                              <g className={open ? 'pdr-tree-chevron-pulse' : undefined}>
-                                <ellipse cx={0} cy={3} rx={badgeR * 1.5} ry={badgeR * 0.7} fill="rgba(0,0,0,0.20)" style={{ pointerEvents: 'none' }} />
-                                {/* Pill sized to the "+N" text. */}
-                                {(() => {
-                                  const pillW = Math.max(badgeR * 2.2, label.length * 8 + 12);
-                                  const pillH = badgeR * 2;
-                                  return (
-                                    <>
-                                      <rect x={-pillW / 2} y={-pillH / 2} width={pillW} height={pillH} rx={pillH / 2} ry={pillH / 2} fill="#ffffff" stroke={fill} strokeWidth={2} />
-                                      <text
-                                        x={0} y={1}
-                                        textAnchor="middle"
-                                        dominantBaseline="middle"
-                                        fontSize={12}
-                                        fontWeight={700}
-                                        fontFamily='"Inter", system-ui, -apple-system, sans-serif'
-                                        fill="currentColor"
-                                        className="text-foreground"
-                                        style={{ pointerEvents: 'none', userSelect: 'none' }}
-                                      >
-                                        {label}
-                                      </text>
-                                    </>
-                                  );
-                                })()}
+                            <IconTooltip label={tip} side="bottom">
+                              {/* Pulse while CLOSED — the "click me" cue (Terry r470). */}
+                              <g className={open ? undefined : 'pdr-tree-chevron-pulse'}>
+                                <ellipse cx={0} cy={4} rx={pillW / 2 * 0.96} ry={pillH / 2 * 0.55} fill="rgba(0,0,0,0.22)" style={{ pointerEvents: 'none' }} />
+                                <rect x={-pillW / 2} y={-pillH / 2 + 1.5} width={pillW} height={pillH} rx={pillH / 2} ry={pillH / 2} fill={rim} style={{ pointerEvents: 'none' }} />
+                                <rect x={-pillW / 2} y={-pillH / 2} width={pillW} height={pillH} rx={pillH / 2} ry={pillH / 2} fill={fill} />
+                                <text
+                                  x={0} y={1}
+                                  textAnchor="middle"
+                                  dominantBaseline="middle"
+                                  fontSize={13}
+                                  fontWeight={700}
+                                  fill="#ffffff"
+                                  style={{ pointerEvents: 'none', userSelect: 'none' }}
+                                >
+                                  {label}
+                                </text>
                               </g>
                             </IconTooltip>
                           </g>
