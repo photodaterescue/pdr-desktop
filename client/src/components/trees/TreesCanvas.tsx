@@ -1873,14 +1873,18 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         // transform the canvas uses, clamped below the master so it stays put.
         const screenY = viewport.ty + g.childRowWorldY * viewport.scale;
         const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
+        // Generation number (Terry): youngest row = 1, increasing UP the tree.
+        // generationToggles is sorted oldest-first, so invert the index.
+        const genNum = generationToggles.length - i;
         return (
-          <IconTooltip key={`gen-toggle-${i}`} label={show ? 'Show this whole generation' : 'Hide this whole generation'} side="right">
+          <IconTooltip key={`gen-toggle-${i}`} label={show ? `Show generation ${genNum}` : `Hide generation ${genNum}`} side="right">
             <button
               onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
-              className="absolute left-3 z-30 inline-flex items-center justify-center w-8 h-8 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
+              className="absolute left-3 z-30 inline-flex items-center justify-center gap-1 min-w-8 h-8 px-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
               style={{ top: Math.max(48, screenY - 16) }}
             >
-              {show ? <ChevronsUpDown className="w-4 h-4 text-primary" /> : <ChevronsDownUp className="w-4 h-4 text-primary" />}
+              <span className="text-xs font-semibold tabular-nums leading-none">{genNum}</span>
+              {show ? <ChevronsUpDown className="w-3.5 h-3.5 text-primary" /> : <ChevronsDownUp className="w-3.5 h-3.5 text-primary" />}
             </button>
           </IconTooltip>
         );
@@ -1965,8 +1969,8 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               <line
                 key={`div-${i}`}
                 x1={xMid} y1={yTop} x2={xMid} y2={yBot}
-                stroke="#64748b" strokeOpacity={0.22} strokeWidth={1.5}
-                strokeDasharray="2 8"
+                stroke="#64748b" strokeOpacity={0.66} strokeWidth={2.5}
+                strokeDasharray="4 6"
                 style={{ pointerEvents: 'none' }}
               />
             );
