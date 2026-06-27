@@ -675,13 +675,26 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     ...n, renderedX: n.x, renderedY: n.y,
   })), [layout.nodes]);
 
+  // Stable CONTENT signature of the laid-out tree (ids + rounded positions).
+  // The auto-fit below keys to THIS, not to the placedNodes array reference: a
+  // parent re-render can hand us a fresh layout.nodes array with identical
+  // content (same people, same positions), which used to retrigger the fit and
+  // snap the user's manual zoom/pan back mid-gesture (Terry: zoom in, then grab
+  // to pan → "the zoom jumps back out"). Positions only change on a real
+  // structural change (load / expand / collapse / focus / edit), never on pan or
+  // zoom, so keying to this fits exactly when it should and never mid-gesture.
+  const fitSignature = useMemo(
+    () => placedNodes.map(n => `${n.personId}:${Math.round(n.renderedX)}:${Math.round(n.renderedY)}`).join('|'),
+    [placedNodes],
+  );
+
   // Auto-zoom-to-fit (Terry r428): whenever the tree's SHAPE changes — it
   // loads, a branch is expanded/collapsed, or the focus changes — refit the
   // viewport so the whole tree is visible. Without this, expanding a branch
   // grows the tree off-screen and the user has to pan/zoom out by hand. Keyed
-  // to placedNodes, which only changes on a structural change (graph load /
-  // expand / focus / data edit) — NOT on pan or manual zoom, so the user's
-  // own zoom is preserved between structural changes.
+  // to fitSignature (a content hash) so it fires ONLY when node positions truly
+  // change — never on a spurious array-ref change from a parent re-render, which
+  // used to snap the user's manual zoom/pan back to fit mid-gesture.
   useEffect(() => {
     const svg = svgRef.current;
     if (!svg || placedNodes.length === 0) return;
@@ -701,7 +714,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     setViewport({ scale, tx: rect.width / 2 - cx * scale, ty: rect.height / 2 - cy * scale });
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [placedNodes]);
+  }, [fitSignature]);
 
   const nodeById = useMemo(() => {
     const m = new Map<number, typeof placedNodes[0]>();
