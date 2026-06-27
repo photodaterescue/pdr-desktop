@@ -498,6 +498,13 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // Default-OPEN downward direct-line nodes the user has COLLAPSED (Terry r440).
   // Opposite default to expandedDescendantsOf: a node in here hides its subtree.
   const [collapsedDescendantsOf, setCollapsedDescendantsOf] = useState<Set<number>>(new Set());
+  // G5 over-population (Phase 1b): bloodline ancestor personIds whose "N siblings"
+  // chip is OPEN. The layout already PANELS (slotted=false) every collateral
+  // sibling head on generation-row 5+ so they're off the canvas; opening the
+  // chip surfaces them + their families in a lavender floating panel. Mirrors
+  // expandedDescendantsOf exactly (pure flag set, no graph probe — the collapsed
+  // heads are already in the fetched connected-component graph).
+  const [openSiblingChips, setOpenSiblingChips] = useState<Set<number>>(new Set());
   /** For each expander personId, the set of ancestors / descendants
    *  it pulled into pinnedPeople. Used to UNDO the pinning on
    *  collapse. Ref-counted (a pin only disappears from pinnedPeople
@@ -673,6 +680,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       setExpandedAncestorsOf(new Set());
       setExpandedDescendantsOf(new Set());
       setCollapsedDescendantsOf(new Set());
+      setOpenSiblingChips(new Set());
       ancestorPinSourcesRef.current.clear();
       descendantPinSourcesRef.current.clear();
       lastFocusRef.current = focusPersonId;
@@ -2152,6 +2160,22 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     });
   }, []);
 
+  /** Toggle the "N siblings" chip on a bloodline ancestor whose collateral
+   *  siblings collapsed off-canvas under the G5 over-population rule (Phase
+   *  1b). Pure flag flip into openSiblingChips — the collapsed sibling heads
+   *  + their families are already in the fetched graph (bloodline-adjacent,
+   *  pulled in by the connected-component fetch); the layout just marked them
+   *  slotted=false. Opening the chip adds this ancestor to the panel origins
+   *  so the lavender sibling panel renders. Mirrors handleExpandDescendants. */
+  const handleToggleSiblingChip = useCallback((ancestorId: number) => {
+    setOpenSiblingChips(prev => {
+      const next = new Set(prev);
+      if (next.has(ancestorId)) next.delete(ancestorId);
+      else next.add(ancestorId);
+      return next;
+    });
+  }, []);
+
   /** Steps-aware +parent gate. Before opening the +parent picker
    *  for a person, check whether they already have parents stored
    *  but currently hidden by the Steps cap. If so, the user almost
@@ -2233,6 +2257,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setExpandedAncestorsOf(new Set());
     setExpandedDescendantsOf(new Set());
     setCollapsedDescendantsOf(new Set());
+    setOpenSiblingChips(new Set());
   }, []);
 
   const handleRemovePerson = useCallback(async (personId: number) => {
@@ -2546,6 +2571,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             expandedAncestorsOf={expandedAncestorsOf}
             expandedDescendantsOf={expandedDescendantsOf}
             collapsedDescendantsOf={collapsedDescendantsOf}
+            openSiblingChips={openSiblingChips}
+            onToggleSiblingChip={handleToggleSiblingChip}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
             onEditDates={(personId, screenX, screenY) => {

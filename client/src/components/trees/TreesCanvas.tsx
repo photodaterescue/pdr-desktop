@@ -167,6 +167,14 @@ interface TreesCanvasProps {
    *  once. sideIds = side-branch branch-points at that row (toggle expanded),
    *  directIds = direct branch-points (toggle collapsed), show = reveal vs hide. */
   onSetGenerationExpanded?: (sideIds: number[], directIds: number[], show: boolean) => void;
+  /** G5 over-population (Phase 1b): bloodline-ancestor personIds whose
+   *  "N siblings" chip is currently OPEN. Each open ancestor renders a
+   *  lavender floating panel of its collateral siblings (the heads the
+   *  layout collapsed off-canvas on generation-row 5+, plus their families).
+   *  Mirror of expandedDescendantsOf — a flag set, no graph probe. */
+  openSiblingChips?: Set<number>;
+  /** Toggle a bloodline ancestor's "N siblings" chip open/closed. */
+  onToggleSiblingChip?: (ancestorId: number) => void;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -208,7 +216,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf }: TreesCanvasProps) {
+export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip }: TreesCanvasProps) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -504,6 +512,9 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       panelDragRef.current.active = false;
       if (isClickOnCanvas) {
         for (const id of Array.from(expandedAncestorsOf ?? [])) onExpandAncestors?.(id);
+        // G5 sibling panels are floating overlays like the in-law panel, so
+        // a click on blank canvas dismisses them too.
+        for (const id of Array.from(openSiblingChips ?? [])) onToggleSiblingChip?.(id);
       }
     };
     window.addEventListener('mousemove', onMove);
@@ -512,7 +523,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       window.removeEventListener('mousemove', onMove);
       window.removeEventListener('mouseup', onUp);
     };
-  }, [viewport.scale, expandedAncestorsOf, expandedDescendantsOf, onExpandAncestors, onExpandDescendants, clampViewport]);
+  }, [viewport.scale, expandedAncestorsOf, expandedDescendantsOf, openSiblingChips, onExpandAncestors, onExpandDescendants, onToggleSiblingChip, clampViewport]);
 
   // Panel-open MRU order — drives the Esc-closes-topmost gesture
   // (design doc §5). We track keys (`${personId}-${direction}`)
@@ -524,6 +535,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const liveKeys = new Set<string>();
     for (const id of expandedAncestorsOf ?? []) liveKeys.add(`${id}-ancestor`);
     for (const id of expandedDescendantsOf ?? []) liveKeys.add(`${id}-descendant`);
+    for (const id of openSiblingChips ?? []) liveKeys.add(`${id}-siblings`);
     // Drop keys for panels that closed since last sync.
     panelOpenOrderRef.current = panelOpenOrderRef.current.filter(k => liveKeys.has(k));
     // Append keys for newly-opened panels (preserves the order
@@ -531,7 +543,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     for (const k of liveKeys) {
       if (!panelOpenOrderRef.current.includes(k)) panelOpenOrderRef.current.push(k);
     }
-  }, [expandedAncestorsOf, expandedDescendantsOf]);
+  }, [expandedAncestorsOf, expandedDescendantsOf, openSiblingChips]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -545,10 +557,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       const dir = last.slice(dashIdx + 1);
       if (dir === 'ancestor') onExpandAncestors?.(id);
       else if (dir === 'descendant') onExpandDescendants?.(id);
+      else if (dir === 'siblings') onToggleSiblingChip?.(id);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onExpandAncestors, onExpandDescendants]);
+  }, [onExpandAncestors, onExpandDescendants, onToggleSiblingChip]);
 
   // Individual-node dragging is intentionally disabled — the layout is
   // deterministic and stable, so letting users drag people around just
@@ -1042,6 +1055,112 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     return m;
   }, [layout.edges, layout.focusPersonId, directLineSet]);
 
+  /** G5 over-population (Phase 1b). The layout panels every collateral
+   *  side-branch HEAD that sits on generation-row 5+ — it marks the head
+   *  (and its whole subtree) `slotted = false` so the tree packs tight
+   *  (trees-layout.ts `panelledIds`, G5 RULE). Phase 1b surfaces those
+   *  collapsed siblings via a chip + lavender panel.
+   *
+   *  SINGLE SOURCE OF TRUTH: we never recompute the row threshold here.
+   *  A side-branch head H is "G5-collapsed" iff the layout left it
+   *  NOT slotted. Normally a side-branch head IS slotted (on canvas,
+   *  with a v-chevron); only the G5 rule panels the head itself. So
+   *  H is collapsed exactly when `nodeById.get(H)?.slotted === false`.
+   *
+   *  We group the collapsed heads by their BLOODLINE ANCESTOR — the
+   *  spine ancestor they're a sibling of (H's parent's child that is a
+   *  strict ancestor of focus, or the same via a derived sibling_of
+   *  edge whose shared parent was stripped). That ancestor owns the
+   *  chip; the value is the list of its collapsed sibling heads. */
+  const g5CollapsedSiblingsByAncestor = useMemo(() => {
+    const childrenOf = new Map<number, number[]>();
+    const parentsOf = new Map<number, number[]>();
+    for (const e of layout.edges) {
+      if (e.type !== 'parent_of') continue;
+      if (!childrenOf.has(e.aId)) childrenOf.set(e.aId, []);
+      childrenOf.get(e.aId)!.push(e.bId);
+      if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []);
+      parentsOf.get(e.bId)!.push(e.aId);
+    }
+    // Strict ancestors of focus (excluding focus) — the bloodline spine.
+    const strictAncestors = new Set<number>();
+    const upQ = [layout.focusPersonId];
+    while (upQ.length) {
+      const cur = upQ.shift()!;
+      for (const p of parentsOf.get(cur) ?? []) {
+        if (strictAncestors.has(p)) continue;
+        strictAncestors.add(p);
+        upQ.push(p);
+      }
+    }
+    // For a collapsed head, the bloodline ancestor it's a sibling of:
+    // a child of one of H's parents that is itself a strict ancestor.
+    // Fallback: a strict-ancestor sibling reached via a sibling_of edge
+    // (covers heads whose shared parent is a stripped placeholder —
+    // same fallback trees-layout uses to classify them as heads).
+    const ancestorForHead = (head: number): number | null => {
+      for (const p of parentsOf.get(head) ?? []) {
+        for (const sib of childrenOf.get(p) ?? []) {
+          if (sib !== head && strictAncestors.has(sib)) return sib;
+        }
+      }
+      for (const e of layout.edges) {
+        if (e.type !== 'sibling_of') continue;
+        if (e.aId === head && strictAncestors.has(e.bId)) return e.bId;
+        if (e.bId === head && strictAncestors.has(e.aId)) return e.aId;
+      }
+      return null;
+    };
+    const byAncestor = new Map<number, number[]>();
+    // Scan EVERY layout-panelled node (slotted === false), not just heads that
+    // have descendants — a CHILDLESS collapsed sibling (e.g. great-aunt Sylvia
+    // Mills) is panelled by the layout too and must be counted/hidden. Keep only
+    // the ones that are collateral HEADS (ancestorForHead != null); cousins,
+    // in-laws and the focus's own line return null and are skipped.
+    for (const [head, node] of nodeById) {
+      if (node.slotted !== false) continue; // the G5 signal: off-canvas per the layout
+      const anc = ancestorForHead(head);
+      if (anc == null) continue;
+      if (!byAncestor.has(anc)) byAncestor.set(anc, []);
+      byAncestor.get(anc)!.push(head);
+    }
+    return byAncestor;
+  }, [layout.edges, layout.focusPersonId, nodeById]);
+
+  /** Every person hidden from the canvas because their G5 sibling head
+   *  collapsed off-canvas: the collapsed heads themselves + each head's
+   *  whole subtree (cousins) + their non-bloodline spouses. Folded into
+   *  hiddenSideBranchIds below so every existing canvas consumer (cards,
+   *  chevrons, lanes, family-group brackets, edges) treats them as
+   *  hidden — exactly like any other side-branch person off the canvas.
+   *  Independent of the chip's open/closed state: a collapsed head is
+   *  never drawn on the dimmed canvas; the panel is where it appears. */
+  const g5HiddenIds = useMemo(() => {
+    const hidden = new Set<number>();
+    if (g5CollapsedSiblingsByAncestor.size === 0) return hidden;
+    // A collapsed head is COLLATERAL BLOODLINE (a sibling of a strict
+    // ancestor, so itself a descendant of an ancestor → in bloodlineSet).
+    // We therefore can't discriminate by bloodline membership; we hide the
+    // head + exactly its panelled descendant set (sideBranchDescendantsByHead
+    // already excludes the focus's direct line, guarding cousin-marriage
+    // overlaps) + their non-bloodline spouses.
+    for (const heads of g5CollapsedSiblingsByAncestor.values()) {
+      for (const head of heads) {
+        hidden.add(head);
+        const desc = sideBranchDescendantsByHead.get(head);
+        if (desc) for (const d of desc) hidden.add(d);
+      }
+    }
+    // Non-bloodline partners of any hidden person come along (otherwise
+    // they'd strand on the canvas while their spouse + kids are panelled).
+    for (const e of layout.edges) {
+      if (e.type !== 'spouse_of') continue;
+      if (hidden.has(e.aId) && !bloodlineSet.has(e.bId)) hidden.add(e.bId);
+      if (hidden.has(e.bId) && !bloodlineSet.has(e.aId)) hidden.add(e.aId);
+    }
+    return hidden;
+  }, [g5CollapsedSiblingsByAncestor, sideBranchDescendantsByHead, layout.edges, bloodlineSet]);
+
   /** Person IDs ALWAYS hidden from the dimmed canvas because they
    *  belong to a side-branch (cousins + their descendants + the
    *  cousins' non-bloodline partners). Per Option B: the panel
@@ -1058,6 +1177,11 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
    */
   const hiddenSideBranchIds = useMemo(() => {
     const hidden = new Set<number>();
+    // G5 over-population (Phase 1b): collateral sibling heads the layout
+    // collapsed off-canvas on generation-row 5+ (and their subtrees +
+    // non-bloodline spouses). Seeded first so every downstream sweep +
+    // every consumer of this set treats them as hidden uniformly.
+    for (const id of g5HiddenIds) hidden.add(id);
     const childrenOfHB = new Map<number, number[]>();
     for (const e of layout.edges) {
       if (e.type !== 'parent_of') continue;
@@ -1158,7 +1282,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       }
     }
     return hidden;
-  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet, expandedDescendantsOf, collapsedDescendantsOf, downwardDirectSet]);
+  }, [sideBranchDescendantsByHead, layout.edges, bloodlineSet, expandedDescendantsOf, collapsedDescendantsOf, downwardDirectSet, g5HiddenIds]);
 
   /** Per-side-branch-head chevron geometry: position, leader-line
    *  endpoints, and per-parent bloodline colours. The v chevron now
@@ -2671,6 +2795,120 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
               </g>
             );
           })}
+          {/* G5 over-population (Phase 1b): "N siblings" chip on each
+              bloodline ancestor whose collateral siblings collapsed
+              off-canvas (generation-row 5+). Drawn here in the
+              non-dimmed canvas group (same layer as the chevrons) so
+              it stays full-opacity + its open-state pulse reads
+              clearly when the lavender sibling panel is open. Sits
+              just below the ancestor card's bottom-right, clear of
+              the central downward family drop-line. Lavender pill
+              (bloodline accent) with text-foreground label — lavender
+              text on white is too faint for body copy, so the colour
+              lives in the pill fill + chevron glyph, not the text. */}
+          {Array.from(g5CollapsedSiblingsByAncestor.entries()).map(([ancestorId, heads]) => {
+            const anc = nodeById.get(ancestorId);
+            if (!anc) return null;
+            const count = heads.length;
+            if (count === 0) return null;
+            const open = openSiblingChips?.has(ancestorId) ?? false;
+            const label = `${count} sibling${count === 1 ? '' : 's'}`;
+            // Pill geometry — sized to the label + chevron glyph. 8px text
+            // padding each side, ~16px for the chevron + its gap.
+            const CHIP_TEXT = label;
+            const pillH = 24;
+            const pillW = Math.max(70, CHIP_TEXT.length * 7.5 + 16 + 22);
+            // Bottom-right of the card, dropped on a short stem. Right edge
+            // of the pill aligns ~to the card's right edge so the chip reads
+            // as belonging to this card without sitting over its drop-line.
+            const stemLen = 14;
+            const cardBottomY = anc.y + CARD_H / 2;
+            const pillCy = cardBottomY + stemLen + pillH / 2;
+            const pillCx = anc.x + CARD_W / 2 - pillW / 2;
+            const fill = '#ad9eff';
+            const rim = '#7e6df0';
+            const tooltipLabel = open
+              ? `Hide ${count} collapsed sibling${count === 1 ? '' : 's'} of this ancestor`
+              : `Show ${count} sibling${count === 1 ? '' : 's'} that were collapsed to keep the tree tidy`;
+            // Chevron glyph — down when closed (expand), up when open (collapse).
+            const glyphPath = open ? 'M -5 2 L 0 -3 L 5 2' : 'M -5 -2 L 0 3 L 5 -2';
+            return (
+              <g key={`g5sib-${ancestorId}`}>
+                {/* Stem from the card's bottom edge down to the pill. */}
+                <line
+                  x1={anc.x + CARD_W / 2 - pillW / 2}
+                  y1={cardBottomY}
+                  x2={anc.x + CARD_W / 2 - pillW / 2}
+                  y2={pillCy - pillH / 2}
+                  stroke={fill}
+                  strokeWidth={4}
+                  strokeLinecap="round"
+                  style={{ pointerEvents: 'none' }}
+                />
+                <g
+                  transform={`translate(${pillCx} ${pillCy})`}
+                  style={{ cursor: 'pointer' }}
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={(e) => { e.stopPropagation(); onToggleSiblingChip?.(ancestorId); }}
+                >
+                  <IconTooltip label={tooltipLabel} side="bottom">
+                    <g className={open ? 'pdr-tree-chevron-pulse' : undefined}>
+                      {/* Drop shadow + rim — same 3D-button trick the
+                          chevrons + count-pill use. */}
+                      <ellipse
+                        cx={0} cy={4}
+                        rx={pillW / 2 * 0.97} ry={pillH / 2 * 0.55}
+                        fill="rgba(0,0,0,0.22)"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <rect
+                        x={-pillW / 2} y={-pillH / 2 + 1.5}
+                        width={pillW} height={pillH}
+                        rx={pillH / 2} ry={pillH / 2}
+                        fill={rim}
+                        style={{ pointerEvents: 'none' }}
+                      />
+                      <rect
+                        x={-pillW / 2} y={-pillH / 2}
+                        width={pillW} height={pillH}
+                        rx={pillH / 2} ry={pillH / 2}
+                        fill="#ffffff"
+                        stroke={fill}
+                        strokeWidth={2}
+                      />
+                      {/* Label — text-foreground (dark) for legibility; the
+                          lavender accent is the pill border + chevron. */}
+                      <text
+                        x={-pillW / 2 + 11}
+                        y={1}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                        fontSize={12.5}
+                        fontWeight={600}
+                        fontFamily='"Inter", system-ui, -apple-system, sans-serif'
+                        fill="currentColor"
+                        className="text-foreground"
+                        style={{ pointerEvents: 'none', userSelect: 'none' }}
+                      >
+                        {label}
+                      </text>
+                      {/* Chevron glyph at the pill's right end. */}
+                      <path
+                        transform={`translate(${pillW / 2 - 12} 0)`}
+                        d={glyphPath}
+                        stroke={fill}
+                        strokeWidth={2.5}
+                        fill="none"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        style={{ pointerEvents: 'none' }}
+                      />
+                    </g>
+                  </IconTooltip>
+                </g>
+              </g>
+            );
+          })}
           {/* PathwayHighlight is rendered LATER in the panel-scaffold
               IIFE so it has access to the panel layouts and can route
               the comet through panel-rendered cards correctly. */}
@@ -2698,14 +2936,24 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           the direction of travel so the curve flexes naturally as
           the panel moves (drag arrives in step 6). */}
       {(() => {
-        type PanelOrigin = { personId: number; direction: 'ancestor' | 'descendant' };
+        type PanelOrigin = { personId: number; direction: 'ancestor' | 'descendant' | 'siblings' };
         const origins: PanelOrigin[] = [];
         for (const pid of expandedAncestorsOf ?? new Set<number>()) {
           origins.push({ personId: pid, direction: 'ancestor' });
         }
+        // G5 over-population (Phase 1b): each OPEN "N siblings" chip adds a
+        // lavender panel anchored to the bloodline ancestor that owns it,
+        // showing the collateral siblings the layout collapsed off-canvas
+        // on generation-row 5+ (plus their families). Only render an open
+        // chip whose ancestor STILL has collapsed siblings this layout.
+        for (const pid of openSiblingChips ?? new Set<number>()) {
+          if (!g5CollapsedSiblingsByAncestor.has(pid)) continue;
+          origins.push({ personId: pid, direction: 'siblings' });
+        }
         // Descendant branches now expand INLINE as normal canvas tiles
         // (bloodline belongs on the canvas, not in a floating panel), so
-        // ONLY married-in / in-law families get a floating panel here.
+        // ONLY married-in / in-law families + G5 sibling chips get a
+        // floating panel here.
         if (origins.length === 0) return null;
 
         // Vertical gap between the origin's row and the panel's
@@ -2761,7 +3009,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
 
         type Layout = {
           personId: number;
-          direction: 'ancestor' | 'descendant';
+          direction: 'ancestor' | 'descendant' | 'siblings';
           panelKey: string;
           personName: string;
           directionLabel: string;
@@ -2862,11 +3110,19 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const chevInfo = direction === 'descendant'
             ? sideBranchChevrons.find(c => c.headId === personId)
             : null;
+          // G5 sibling panel anchors to the "N siblings" chip, which sits
+          // just below the ancestor card's bottom edge (see the chip render
+          // block). The panel drops straight down from there, like a
+          // descendant panel. SIBLINGS_CHIP_DROP mirrors the chip's stem so
+          // the tether starts at the chip, not the card centre.
+          const SIBLINGS_CHIP_DROP = (CARD_H / 2 + 30) * viewport.scale;
           const chevronWorldX = chevInfo ? chevInfo.midX : origin.renderedX;
           const chevronScreenX = viewport.tx + chevronWorldX * viewport.scale;
           const chevronScreenY = direction === 'descendant'
             ? originScreenY + chevronOffset
-            : originScreenY - chevronOffset;
+            : direction === 'siblings'
+              ? originScreenY + SIBLINGS_CHIP_DROP
+              : originScreenY - chevronOffset;
           // Compute the panel's content set FIRST — needed before
           // the mini-tree layout so we know who to lay out.
           //  • Descendant chevron — bloodline descendants of the
@@ -2912,6 +3168,59 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
                 const anyOtherParentInPanel = parents.some(o => o !== pid && contentSet.has(o));
                 if (anyOtherParentInPanel) contentSet.add(pid);
               }
+            }
+          } else if (direction === 'siblings') {
+            // G5 sibling panel — the collapsed collateral siblings of this
+            // bloodline ancestor (the heads the layout panelled off-canvas
+            // on generation-row 5+) + each head's whole subtree (the
+            // ancestor's nieces/nephews, grand-nieces, cousins of the
+            // focus's older generations) + their non-bloodline spouses.
+            // Same sweep shape as the descendant branch above, just seeded
+            // from the collapsed sibling heads rather than one head.
+            const heads = g5CollapsedSiblingsByAncestor.get(personId) ?? [];
+            for (const head of heads) {
+              contentSet.add(head);
+              const desc = sideBranchDescendantsByHead.get(head);
+              if (desc) for (const id of desc) contentSet.add(id);
+            }
+            // Non-bloodline spouses of any panel resident (so a cousin's
+            // married-in partner rides along instead of stranding).
+            for (const e of layout.edges) {
+              if (e.type !== 'spouse_of') continue;
+              if (contentSet.has(e.aId) && !bloodlineSet.has(e.bId)) contentSet.add(e.bId);
+              if (contentSet.has(e.bId) && !bloodlineSet.has(e.aId)) contentSet.add(e.aId);
+            }
+            // Co-parent sweep — same guard as the descendant branch: pull a
+            // non-bloodline parent in only when their child has another
+            // parent already in the panel (covers unmarried co-parents with
+            // no spouse_of edge).
+            const parentsByChildSib = new Map<number, number[]>();
+            for (const e of layout.edges) {
+              if (e.type !== 'parent_of') continue;
+              if (!parentsByChildSib.has(e.bId)) parentsByChildSib.set(e.bId, []);
+              parentsByChildSib.get(e.bId)!.push(e.aId);
+            }
+            for (const [childId, parents] of parentsByChildSib) {
+              if (!contentSet.has(childId)) continue;
+              for (const pid of parents) {
+                if (contentSet.has(pid)) continue;
+                if (bloodlineSet.has(pid)) continue;
+                const anyOtherParentInPanel = parents.some((o: number) => o !== pid && contentSet.has(o));
+                if (anyOtherParentInPanel) contentSet.add(pid);
+              }
+            }
+            // USER REQUIREMENT: the panel shows ONLY the collapsed siblings'
+            // own families — never anyone already on the canvas. The
+            // discriminator is the layout's SLOTTED flag, NOT bloodline
+            // membership: a collapsed collateral sibling IS bloodline
+            // (a descendant of a shared ancestor), so a bloodline filter
+            // would wrongly empty the panel. Drop anyone the layout still
+            // slots on canvas (the spine ancestor + any inline relative);
+            // the collapsed heads + their subtrees are slotted=false, so
+            // they survive. (Their non-bloodline spouses are parked /
+            // slotted=false too, so they ride along.)
+            for (const id of Array.from(contentSet)) {
+              if (nodeById.get(id)?.slotted !== false) contentSet.delete(id);
             }
           } else {
             // In-law family panel — Terry's broader scope. Shows the
@@ -3412,6 +3721,14 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
             panelTitleEarly = partnerFirst
               ? `${headFirst} & ${partnerFirst} Descendants`
               : `${headFirst} Descendants`;
+          } else if (direction === 'siblings') {
+            // G5 sibling panel — name it after the bloodline ancestor whose
+            // collateral siblings collapsed off-canvas. First-name form to
+            // match the "'s Family" wording; full origin name fallback.
+            const ancFirst = firstNameOfTitle(origin);
+            panelTitleEarly = ancFirst
+              ? `${ancFirst}'s siblings`
+              : `${originName}'s siblings`;
           } else {
             // First-name + 's Family — Terry's preferred wording
             // ("Lindsay's Family") for the broader in-law panel that
@@ -3458,7 +3775,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const topGen = ascendingForTopRow[0];
           const topRow = topGen != null ? (byGen.get(topGen) ?? []) : [];
           let topRowHasSiblingBracket = false;
-          if (direction === 'ancestor' && topRow.length >= 2) {
+          // Ancestor + G5-sibling panels both render their title top-centre
+          // and may carry a sibling bracket over the top row (the collapsed
+          // siblings share a hidden/stripped parent, so the orphan-sibling
+          // pass brackets them). Descendant panels reserve bracket room by
+          // default and are handled separately below.
+          if (direction !== 'descendant' && topRow.length >= 2) {
             const topRowIds = new Set(topRow.map(n => n.personId));
             for (const e of layout.edges) {
               if (e.type !== 'sibling_of') continue;
@@ -3678,7 +4000,10 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // bites when the natural position is off-screen; a short panel that
           // already fits above the anchor keeps that position).
           const svgTop = svgRef.current?.getBoundingClientRect().top ?? 0;
-          const defaultPanelTop = direction === 'descendant'
+          // Descendant + G5-sibling panels both drop DOWN from a chevron/chip
+          // on the card's bottom edge; ancestor (in-law) panels sit ABOVE.
+          const dropsDown = direction === 'descendant' || direction === 'siblings';
+          const defaultPanelTop = dropsDown
             ? originScreenY + cardHalfHeight + VERTICAL_GAP
             : Math.max(svgTop + 12, originScreenY - cardHalfHeight - VERTICAL_GAP - panelH);
           // Drag offset (set by drag handlers, persisted in
@@ -3707,7 +4032,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           const maxOffsetX = (panelW * 3) / scaleSafe;
           let minOffsetY: number;
           let maxOffsetY: number;
-          if (direction === 'descendant') {
+          if (dropsDown) {
             const minPanelTop = originScreenY + cardHalfHeight - 10;
             minOffsetY = (minPanelTop - defaultPanelTop) / scaleSafe;
             maxOffsetY = (4 * panelH) / scaleSafe;
@@ -3737,13 +4062,17 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
           // we extend the bezier endpoint past the border to meet the
           // in-panel scaffolding cleanly.
           const PANEL_BORDER_WIDTH = 2;
-          const panelAnchorY = direction === 'descendant'
+          const panelAnchorY = dropsDown
             ? panelTop + PANEL_BORDER_WIDTH
             : panelTop + panelH - PANEL_BORDER_WIDTH;
           const personName = origin.fullName?.trim() || origin.name?.trim() || 'this person';
-          const directionLabel = direction === 'descendant' ? 'descendants' : 'family of origin';
+          const directionLabel = direction === 'descendant'
+            ? 'descendants'
+            : direction === 'siblings' ? 'siblings' : 'family of origin';
           const isOriginBloodline = bloodlineSet.has(personId);
-          const tetherColour = direction === 'descendant'
+          // Lavender for descendant + G5-sibling panels (bloodline lines), and
+          // for an ancestor panel whose origin is bloodline; orange otherwise.
+          const tetherColour = direction === 'descendant' || direction === 'siblings'
             ? '#ad9eff'
             : (isOriginBloodline ? '#ad9eff' : '#f59e0b');
           // Branch surname for the abbreviated zoomed-out header.
