@@ -117,6 +117,58 @@ function checkOverlap(nodes: LaidOutNode[]): string[] {
   return bad;
 }
 
+// Adjacent SIBLINGS (with nothing between them in their row) must sit TIGHT:
+// their sub-trees' closest horizontal approach should be ~one card + a small gap,
+// never a wasteful empty corridor. This catches the recurring "expand/collapse a
+// generation and a gap opens up between my family and the cousins" / "Derek and
+// his sister drift apart" class — in EVERY expand/collapse state, so it can't
+// reappear unnoticed. A wide sub-tree legitimately pushes its sibling's HEAD far
+// away, but somewhere below the two sub-trees must still nearly touch; we measure
+// the CLOSEST approach across shared generations, so legitimate wide families pass.
+function checkSiblingGap(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
+  const byId = new Map(nodes.map(n => [n.personId, n]));
+  const kids = childrenOf(graph);
+  const subtreeContour = (root: number) => {
+    const m = new Map<number, [number, number]>();
+    const seen = new Set<number>();
+    const q = [root];
+    while (q.length) {
+      const c = q.shift()!;
+      if (seen.has(c)) continue;
+      seen.add(c);
+      const n = byId.get(c);
+      if (n) { const e = m.get(n.generation); if (!e) m.set(n.generation, [n.x, n.x]); else { if (n.x < e[0]) e[0] = n.x; if (n.x > e[1]) e[1] = n.x; } }
+      for (const k of kids.get(c) ?? []) q.push(k);
+    }
+    return m;
+  };
+  const subtreeSet = (root: number) => { const s = new Set<number>(); const q = [root]; while (q.length) { const c = q.shift()!; if (s.has(c)) continue; s.add(c); for (const k of kids.get(c) ?? []) q.push(k); } return s; };
+  const EMPTY_TOL = 150; // empty space (beyond one card) allowed at the closest approach
+  const bad: string[] = [];
+  for (const key of siblingPairs(graph)) {
+    const [a, b] = key.split('-').map(Number);
+    const na = byId.get(a), nb = byId.get(b);
+    if (!na || !nb || na.generation !== nb.generation) continue;
+    const L = na.x <= nb.x ? na : nb, R = na.x <= nb.x ? nb : na;
+    // Only ADJACENT siblings — skip if another node of their gen sits between them.
+    if (nodes.some(n => n.generation === L.generation && n.x > L.x + 1 && n.x < R.x - 1)) continue;
+    const cl = subtreeContour(L.personId), cr = subtreeContour(R.personId);
+    let closest = Infinity;
+    for (const [gen, le] of cl) { const re = cr.get(gen); if (re) closest = Math.min(closest, re[0] - le[1]); }
+    if (closest === Infinity) continue;
+    const emptyGap = closest - CARD_W;
+    if (emptyGap <= EMPTY_TOL) continue;
+    // Real stranding only if the corridor between them is NOT occupied by a THIRD
+    // family — if another branch's cards sit between the siblings, the separation is
+    // legitimate (e.g. a grandparent's own descendants between two great-aunts), not
+    // a spurious gap.
+    const lSet = subtreeSet(L.personId), rSet = subtreeSet(R.personId);
+    const third = nodes.some(n => !lSet.has(n.personId) && !rSet.has(n.personId) && n.x > L.x + CARD_W / 2 && n.x < R.x - CARD_W / 2);
+    if (!third) bad.push(`adjacent siblings ${L.name} & ${R.name} over-separated: ${Math.round(emptyGap)}px of empty space at their closest approach`);
+  }
+  return bad;
+}
+
 function checkSpousesAdjacent(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
   const byId = new Map(nodes.map(n => [n.personId, n]));
   const bad: string[] = [];
@@ -212,6 +264,7 @@ function allViolations(graph: FamilyGraph) {
     ...checkSpousesAdjacent(graph, nodes),
     ...checkNoStrandedSibling(graph, nodes),
     ...checkParentsCentred(graph, nodes),
+    ...checkSiblingGap(graph, nodes),
   ];
   if (v.length && process.env.DBG) console.log(`focus=${graph.nodes.find(n => n.personId === graph.focusPersonId)?.name}`, nodes.map(n => `${n.name}@${Math.round(n.x)}/g${n.generation}`).join('  '));
   return v;
@@ -500,6 +553,7 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
         ...checkSpousesAdjacent(g, nodes),
         ...checkNoStrandedSibling(g, nodes),
         ...checkParentsCentred(g, nodes),
+        ...checkSiblingGap(g, nodes),
       ];
       expect(violations, violations.join('\n')).toEqual([]);
     });
@@ -525,6 +579,7 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
             ...checkSpousesAdjacent(g, nodes),
             ...checkNoStrandedSibling(g, nodes),
             ...checkParentsCentred(g, nodes),
+            ...checkSiblingGap(g, nodes),
           ];
           expect(violations, `expand=[${sub.join(',')}]\n` + violations.join('\n')).toEqual([]);
         }

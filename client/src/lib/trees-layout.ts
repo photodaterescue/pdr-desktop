@@ -1474,6 +1474,23 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           }
           if (!moved) break;
         }
+        // 2a-pull) A CHILDLESS focus is pinned over nothing, so a brood-sibling
+        //     seated over its own (off-to-one-side) kids drifts away and leaves an
+        //     empty corridor between them. Pull that sibling's whole sub-tree IN so
+        //     it sits adjacent — its kids slide under the focus's empty space (a
+        //     different generation, so no overlap). Only the focus needs this: every
+        //     other childless unit is a leaf, handled by the run-packing below.
+        const focusChildless = !(childUnitsOf.get(focusUnit) ?? []).some(cu => membersOfUnit(cu).some(m => NX.has(m)));
+        if (focusChildless) {
+          for (let k = 0; k + 1 < keys.length; k++) {
+            if (!anchored[k] || !anchored[k + 1]) continue;
+            const kFocus = keys[k] === focusUnit, k1Focus = keys[k + 1] === focusUnit;
+            if (kFocus === k1Focus) continue;            // exactly one of the pair is the focus
+            const over = (c[k + 1] - c[k]) - gap(k, k + 1);
+            if (over <= 1e-6) continue;                  // already adjacent
+            if (k1Focus) c[k] += over; else c[k + 1] -= over; // slide the brood-sibling in to the focus
+          }
+        }
         // 2b) Pack each maximal run of consecutive LEAF units between its bounding
         //     anchored pins (or the row ends). Left-pack at min-gap from the left pin,
         //     then slide the run toward each leaf's own desired centre without crossing
@@ -1502,10 +1519,28 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
             const u = keys[i]; const s = u === focusUnit ? null : spineSeatCentre(u);
             return (s != null ? s : centreOfUnit(u));
           })();
-          let start = firstDesired;
-          if (start < lo) start = lo;
-          if (start + internal > hi2) start = hi2 - internal;
-          if (!isFinite(start)) start = lo !== -Infinity ? lo : (hi2 !== Infinity ? hi2 - internal : c[i]);
+          // Hug the available pin. A leaf run with a pin on only ONE side (it sits at
+          // an END of the row — e.g. a childless sibling beside the focus, or beside an
+          // aunt seated over her kids) must pack SNUG to that pin; drifting to its own
+          // (often stale) cone-desired X opens an empty corridor between it and its
+          // sibling (Terry: "Derek and his sister drift apart" in partial states).
+          // With pins on BOTH sides, position by the desired centre clamped between them.
+          const runLeaves = keys.slice(i, j + 1);
+          const pinIsSib = (pinIdx: number) => pinIdx >= 0 && runLeaves.some(lf => (sibUnitsOf.get(lf) ?? []).includes(keys[pinIdx]));
+          let start: number;
+          if (lo === -Infinity && hi2 !== Infinity) start = hi2 - internal;          // no left pin → hug the right pin
+          else if (lo !== -Infinity && hi2 === Infinity) start = lo;                  // no right pin → hug the left pin
+          else if (lo !== -Infinity) {
+            // Both pins present: a childless leaf must hug its SIBLING, not sit at
+            // its stale cone-desired X (Terry: a great-aunt drifting from her brother
+            // even with an unrelated couple on her far side). Hug the sibling pin when
+            // exactly one neighbouring pin is a sibling; otherwise use the desired.
+            const lSib = pinIsSib(leftPin), rSib = pinIsSib(rightPin);
+            if (rSib && !lSib) start = hi2 - internal;
+            else if (lSib && !rSib) start = lo;
+            else { start = firstDesired; if (start < lo) start = lo; if (start + internal > hi2) start = hi2 - internal; }
+          }
+          else start = c[i];                                                          // no pins at all → keep position
           let acc = start;
           for (let k = i; k <= j; k++) { c[k] = acc; if (k < j) acc += gap(k, k + 1); }
           i = j + 1;
@@ -1528,6 +1563,34 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
 
       // Defensive: any slotted node still unplaced keeps its settle X.
       for (const id of X.keys()) if (isSlotted(id) && !NX.has(id)) NX.set(id, X.get(id)!);
+      {
+        // Final compaction (Terry 2026-06-27): close any vertical corridor that has
+        // NO card at ANY generation. A branch parked far from its kin (e.g. a
+        // great-aunt's family pushed to the far right, or the focus's family left
+        // adrift from the cousins when a generation is expanded) leaves dead air
+        // that nothing nests into. Shift everything to the RIGHT of each corridor
+        // leftward to close it down to a normal between-family gap. A corridor only
+        // ever falls BETWEEN whole families, so families move rigidly — parent-over-
+        // child and couples are preserved; only the wasted space shrinks. Runs in
+        // EVERY expand/collapse state, so no state can keep a spurious gap.
+        const CARDW = 170;          // card width (matches the renderer)
+        const HALF = CARDW / 2;
+        const CORRIDOR = CARDW;     // empty span wider than a card ⇒ spurious
+        const TARGET = 100;         // close it down to a tidy between-family gap
+        const xs = [...NX.values()].sort((a, b) => a - b);
+        const cuts: Array<{ at: number; by: number }> = [];
+        let cursor = xs.length ? xs[0] + HALF : 0;
+        for (let i = 1; i < xs.length; i++) {
+          const gapW = (xs[i] - HALF) - cursor;
+          if (gapW > CORRIDOR) cuts.push({ at: cursor, by: gapW - TARGET });
+          if (xs[i] + HALF > cursor) cursor = xs[i] + HALF;
+        }
+        if (cuts.length) for (const [id, x] of NX) {
+          let dx = 0;
+          for (const cut of cuts) if (x - HALF > cut.at) dx -= cut.by;
+          if (dx !== 0) NX.set(id, x + dx);
+        }
+      }
       // Override the settle's X with the new positions for slotted nodes.
       for (const [id, x] of NX) if (isSlotted(id)) X.set(id, x);
     }
