@@ -505,6 +505,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // expandedDescendantsOf exactly (pure flag set, no graph probe — the collapsed
   // heads are already in the fetched connected-component graph).
   const [openSiblingChips, setOpenSiblingChips] = useState<Set<number>>(new Set());
+  // G5 Panel 2 (Terry r466): collapsed sibling-head personIds whose OWN family
+  // panel (their spouse + descendants) is open. Keyed by the sibling head id —
+  // a second-level disclosure off a sibling tile inside Panel 1.
+  const [openSiblingFamilyChips, setOpenSiblingFamilyChips] = useState<Set<number>>(new Set());
   /** For each expander personId, the set of ancestors / descendants
    *  it pulled into pinnedPeople. Used to UNDO the pinning on
    *  collapse. Ref-counted (a pin only disappears from pinnedPeople
@@ -681,6 +685,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       setExpandedDescendantsOf(new Set());
       setCollapsedDescendantsOf(new Set());
       setOpenSiblingChips(new Set());
+      setOpenSiblingFamilyChips(new Set());
       ancestorPinSourcesRef.current.clear();
       descendantPinSourcesRef.current.clear();
       lastFocusRef.current = focusPersonId;
@@ -2176,6 +2181,20 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     });
   }, []);
 
+  /** Toggle Panel 2 (Terry r466) — a single collapsed sibling's OWN family
+   *  (spouse + descendants), opened from the "+N" indicator on that sibling's
+   *  tile inside Panel 1. Pure flag flip into openSiblingFamilyChips, keyed by
+   *  the sibling head id. The canvas gates Panel 2's render on its owning
+   *  Panel 1 still being open, so a stale entry simply doesn't render. */
+  const handleToggleSiblingFamilyChip = useCallback((headId: number) => {
+    setOpenSiblingFamilyChips(prev => {
+      const next = new Set(prev);
+      if (next.has(headId)) next.delete(headId);
+      else next.add(headId);
+      return next;
+    });
+  }, []);
+
   /** Steps-aware +parent gate. Before opening the +parent picker
    *  for a person, check whether they already have parents stored
    *  but currently hidden by the Steps cap. If so, the user almost
@@ -2258,6 +2277,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setExpandedDescendantsOf(new Set());
     setCollapsedDescendantsOf(new Set());
     setOpenSiblingChips(new Set());
+    setOpenSiblingFamilyChips(new Set());
   }, []);
 
   const handleRemovePerson = useCallback(async (personId: number) => {
@@ -2573,6 +2593,8 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             collapsedDescendantsOf={collapsedDescendantsOf}
             openSiblingChips={openSiblingChips}
             onToggleSiblingChip={handleToggleSiblingChip}
+            openSiblingFamilyChips={openSiblingFamilyChips}
+            onToggleSiblingFamilyChip={handleToggleSiblingFamilyChip}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
             onEditDates={(personId, screenX, screenY) => {
