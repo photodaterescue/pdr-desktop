@@ -1712,13 +1712,13 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
         minX = Math.min(minX, nd.x); maxX = Math.max(maxX, nd.x);
         minY = Math.min(minY, nd.y); maxY = Math.max(maxY, nd.y); n++;
       }
-      return n > 0 ? { minX, maxX, minY, maxY } : null;
+      return n > 0 ? { minX, maxX, minY, maxY, members } : null;
     };
     const PADX = CARD_W / 2 + 12;
-    const lanes: Array<{ minY: number; maxY: number; left: number; right: number; anchor: number; color: string }> = [];
-    const pushLane = (bb: { minX: number; maxX: number; minY: number; maxY: number } | null, anchor: number | undefined) => {
+    const lanes: Array<{ minY: number; maxY: number; left: number; right: number; anchor: number; color: string; members: Set<number>; bbMinX: number; bbMaxX: number }> = [];
+    const pushLane = (bb: { minX: number; maxX: number; minY: number; maxY: number; members: Set<number> } | null, anchor: number | undefined) => {
       if (!bb) return;
-      lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '' });
+      lanes.push({ minY: bb.minY, maxY: bb.maxY, left: bb.minX - PADX, right: bb.maxX + PADX, anchor: anchor ?? (bb.minX + bb.maxX) / 2, color: '', members: bb.members, bbMinX: bb.minX, bbMaxX: bb.maxX });
     };
     // The focus's strict ancestor line (walk parents up) — these must NEVER be
     // laned: a grandparent/parent is a direct ancestor, not a cousin branch.
@@ -1748,18 +1748,29 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       if (![...desc].some(d => vis(d))) continue;
       pushLane(bboxOf([head, ...desc]), nodeById.get(head)?.x);
     }
-    // Clip each lane's (padded) horizontal extent to its own territory — the
-    // midpoints between neighbouring branch anchors — so vertical lanes NEVER
-    // overlap, even when a family's grandkids spread under a neighbour (the
-    // bbox is x-only; without this a tall lane swallows a shorter one beside it).
-    lanes.sort((a, b) => a.anchor - b.anchor);
-    for (let i = 0; i < lanes.length; i++) {
-      const leftB = i > 0 ? (lanes[i - 1].anchor + lanes[i].anchor) / 2 : -Infinity;
-      const rightB = i < lanes.length - 1 ? (lanes[i].anchor + lanes[i + 1].anchor) / 2 : Infinity;
-      lanes[i].left = Math.max(lanes[i].left, leftB);
-      lanes[i].right = Math.min(lanes[i].right, rightB);
-      if (lanes[i].right < lanes[i].left) lanes[i].right = lanes[i].left;
+    // Clip each lane horizontally so it NEVER covers a card from another branch.
+    // The bbox + half-card pad can bleed onto a neighbour, and a family whose
+    // kids fan out wide sits PAST the midpoint between branch heads — so clip
+    // against the nearest FOREIGN card that shares the lane's vertical band, not
+    // against head anchors (which sit at the top and ignore the wide rows below).
+    // Splitting the gap at the midpoint between our outermost member and that
+    // foreign card keeps every card's centre inside its own zone and makes
+    // adjacent lanes meet exactly — no overlap onto other branches' people.
+    const visNodes: Array<{ id: number; x: number; y: number }> = [];
+    for (const [id, nd] of nodeById) if (vis(id)) visNodes.push({ id, x: nd.x, y: nd.y });
+    for (const lane of lanes) {
+      let leftForeign = -Infinity, rightForeign = Infinity;
+      for (const c of visNodes) {
+        if (lane.members.has(c.id)) continue;
+        if (c.y < lane.minY - CARD_H / 2 || c.y > lane.maxY + CARD_H / 2) continue; // not in this lane's rows
+        if (c.x <= lane.bbMinX) leftForeign = Math.max(leftForeign, c.x);
+        else if (c.x >= lane.bbMaxX) rightForeign = Math.min(rightForeign, c.x);
+      }
+      if (leftForeign > -Infinity) lane.left = Math.max(lane.left, (leftForeign + lane.bbMinX) / 2);
+      if (rightForeign < Infinity) lane.right = Math.min(lane.right, (rightForeign + lane.bbMaxX) / 2);
+      if (lane.right < lane.left) lane.right = lane.left;
     }
+    lanes.sort((a, b) => a.anchor - b.anchor);
     lanes.forEach((l, i) => { l.color = PAL[i % PAL.length]; });
     return lanes;
   }, [sideBranchDescendantsByHead, downwardDirectSet, layout.edges, layout.focusPersonId, nodeById, hiddenSideBranchIds, hiddenExtendedIds]);
