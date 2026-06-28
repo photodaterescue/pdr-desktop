@@ -2237,7 +2237,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
         if (g.collapsible && onSetGenerationExpanded) {
           const show = !g.allOpen; // not all shown -> reveal; all shown -> hide
           return (
-            <IconTooltip key={`gen-row-${g.worldY}`} label={show ? `Show generation ${g.genNum}` : `Hide generation ${g.genNum}`} side="right">
+            <IconTooltip key={`gen-row-${g.worldY}`} label={show ? `Show all of generation ${g.genNum}'s offspring` : `Hide all of generation ${g.genNum}'s offspring`} side="right">
               <button
                 data-tree-toggle="1"
                 onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
