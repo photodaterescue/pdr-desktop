@@ -2822,7 +2822,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
           // stack lines up flush on both edges.
           <div className="absolute top-3 right-3 z-40 flex flex-col items-stretch gap-2 w-52">
             {expandAllState.available && (
-              <IconTooltip label={expandAllState.allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'} side="left">
+              <IconTooltip label={expandAllState.allExpanded ? 'Collapse all your bloodline branches (extended families stay on their gold chips)' : 'Expand all your bloodline branches (extended families stay on their gold chips)'} side="left">
                 <button
                   onClick={() => {
                     setExpandedDescendantsOf(new Set(expandAllState.allExpanded ? [] : expandAllState.allBranchPointIds));
@@ -2832,7 +2832,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                   className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
                 >
                   {expandAllState.allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
-                  {expandAllState.allExpanded ? 'Collapse all' : 'Expand all'}
+                  {expandAllState.allExpanded ? 'Collapse bloodline' : 'Expand bloodline'}
                 </button>
               </IconTooltip>
             )}
