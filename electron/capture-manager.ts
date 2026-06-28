@@ -3629,7 +3629,14 @@ function createRippleOverlay(display: Electron.Display): void {
     },
   });
   rippleWindow = win;
-  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  // v3.0 round 486 (Terry) — sit the ripple JUST BELOW the cam bubble (which is
+  // 'screen-saver'). At the SAME level the two tie on z-order by raise-order, so
+  // toggling Clicks AFTER Cam put the click-through ripple ABOVE the cam — and the
+  // cam's OS app-region drag then passed THROUGH the ripple to the windows behind,
+  // so "dragging the cam" actually dragged/clicked OS windows (focus changes, windows
+  // closing). 'pop-up-menu' stays above the recorded content (rings still film) but
+  // under the cam, so the cam is always grabbable regardless of toggle order.
+  try { win.setAlwaysOnTop(true, 'pop-up-menu'); } catch { /* non-fatal */ }
   // Click-through — the overlay must never intercept the user's clicks; the global
   // hook still sees them.
   try { win.setIgnoreMouseEvents(true, { forward: true }); } catch { /* non-fatal */ }

@@ -3152,6 +3152,13 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
         type PanelOrigin = { personId: number; direction: 'ancestor' | 'descendant' | 'siblings' | 'sibling-family' };
         const origins: PanelOrigin[] = [];
         for (const pid of expandedAncestorsOf ?? new Set<number>()) {
+          // Only render the in-law's family panel while the in-law's OWN tile is
+          // still on canvas. If a row / bloodline collapse panelled them off-canvas,
+          // skip the panel — otherwise it orphans (floats with no anchor tile). Bug:
+          // collapsing the rows beneath Dan removed his tile but left "Dan's Family"
+          // hanging (Terry). Mirrors the slotted gate the sibling chips already use.
+          const headNode = nodeById.get(pid);
+          if (!headNode || headNode.slotted === false) continue;
           origins.push({ personId: pid, direction: 'ancestor' });
         }
         // G5 over-population (Phase 1b): each OPEN "N siblings" chip adds a
