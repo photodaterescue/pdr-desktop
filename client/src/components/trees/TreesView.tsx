@@ -2497,7 +2497,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               // Pulse cue: any of the Steps/Generations pulses → dot on
               // the Actions trigger (Steps/Gen still live in this menu).
               const actionsPulse = pulseSteps || pulseGenerations || hiddenByStepsCount > 0;
-              const branchesShown = (expandedAncestorsOf.size + expandedDescendantsOf.size) > 0;
+              // Include the G5 sibling-collapse panels in the gate so
+              // "Branches shown" appears when ONLY those are open too.
+              const branchesShown = (expandedAncestorsOf.size + expandedDescendantsOf.size + openSiblingChips.size + openSiblingFamilyChips.size) > 0;
               return (
                 <DropdownMenu open={actionsMenuOpen} onOpenChange={setActionsMenuOpen} modal={false}>
                   <DropdownMenuTrigger asChild>
@@ -2649,6 +2651,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                           onToggleAncestor={handleExpandAncestors}
                           onToggleDescendant={handleExpandDescendants}
                           onClearAll={collapseAllExpansions}
+                          openSiblingChips={openSiblingChips}
+                          openSiblingFamilyChips={openSiblingFamilyChips}
+                          onToggleSiblingChip={handleToggleSiblingChip}
+                          onToggleSiblingFamilyChip={handleToggleSiblingFamilyChip}
                         />
                       </div>
                     )}
@@ -2810,7 +2816,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             PULSE lives directly on these controls via FilterPill, so the
             Actions ▾ button no longer needs its own pulse dot. */}
         {layout && graph && (
-          <div className="absolute top-3 right-3 z-40 flex flex-col items-end gap-2">
+          // Fixed-width container + items-stretch so every control is the
+          // SAME width (no staircase). Each child is forced full-width via
+          // w-full (FilterPill/Branches pass-through className) so the
+          // stack lines up flush on both edges.
+          <div className="absolute top-3 right-3 z-40 flex flex-col items-stretch gap-2 w-52">
             {expandAllState.available && (
               <IconTooltip label={expandAllState.allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'} side="left">
                 <button
@@ -2819,7 +2829,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     // Master toggle returns direct family to default (shown).
                     setCollapsedDescendantsOf(new Set());
                   }}
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
+                  className="w-full inline-flex items-center justify-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
                 >
                   {expandAllState.allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
                   {expandAllState.allExpanded ? 'Collapse all' : 'Expand all'}
@@ -2830,6 +2840,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               label="Steps"
               pulse={pulseSteps}
               pulseSlow={hiddenByStepsCount > 0}
+              className="w-full justify-between"
             >
               <StepsDropdown
                 value={expandedHops}
@@ -2838,7 +2849,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 maxUseful={maxHopsInGraph}
               />
             </FilterPill>
-            <FilterPill label="Generations" pulse={pulseGenerations}>
+            <FilterPill label="Generations" pulse={pulseGenerations} className="w-full justify-between">
               <div className="inline-flex items-center gap-1.5">
                 <GenerationDropdown
                   label="D"
@@ -2852,7 +2863,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 />
               </div>
             </FilterPill>
-            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (
+            {(expandedAncestorsOf.size + expandedDescendantsOf.size + openSiblingChips.size + openSiblingFamilyChips.size) > 0 && (
               <BranchesShownDropdown
                 expandedAncestors={expandedAncestorsOf}
                 expandedDescendants={expandedDescendantsOf}
@@ -2860,6 +2871,11 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 onToggleAncestor={handleExpandAncestors}
                 onToggleDescendant={handleExpandDescendants}
                 onClearAll={collapseAllExpansions}
+                openSiblingChips={openSiblingChips}
+                openSiblingFamilyChips={openSiblingFamilyChips}
+                onToggleSiblingChip={handleToggleSiblingChip}
+                onToggleSiblingFamilyChip={handleToggleSiblingFamilyChip}
+                triggerClassName="w-full justify-between"
               />
             )}
           </div>
@@ -3504,7 +3520,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
  *  off state looks muted but still clearly clickable. Matches the
  *  'Change focus' button's look so the three header controls read as a
  *  consistent row of actions, not a mix of labels and inputs. */
-function FilterPill({ label, children, pulse, pulseSlow }: {
+function FilterPill({ label, children, pulse, pulseSlow, className = '' }: {
   label: string; children: React.ReactNode;
   /** When true, the pill briefly animates to draw attention to a
    *  filter overage (e.g. user added a relative beyond the current
@@ -3516,6 +3532,11 @@ function FilterPill({ label, children, pulse, pulseSlow }: {
    *  attention (Steps pill while hidden relatives exist). pulse
    *  takes priority when both are set. */
   pulseSlow?: boolean;
+  /** Extra classes for the pill root. Used by the floating canvas
+   *  cluster to force `w-full justify-between` so every control in
+   *  the stack shares one width (no staircase). Default '' keeps the
+   *  intrinsic inline-flex sizing everywhere else. */
+  className?: string;
 }) {
   // The label is now a non-interactive caption — only the +/−
   // steppers inside are buttons. Previously the label itself was a
@@ -3534,7 +3555,7 @@ function FilterPill({ label, children, pulse, pulseSlow }: {
       ? 'animate-pulse-cta-slow ring-2 ring-primary/40 ring-offset-1 ring-offset-background'
       : '';
   return (
-    <div className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40 transition-shadow ${pulseClass}`}>
+    <div className={`inline-flex items-center gap-1 pl-1 pr-1.5 py-0.5 rounded-lg border bg-primary/10 border-primary/40 transition-shadow ${pulseClass} ${className}`}>
       <span className="px-2 py-0.5 text-sm font-medium text-primary select-none">{label}</span>
       {children}
     </div>
@@ -3870,6 +3891,11 @@ function BranchesShownDropdown({
   onToggleAncestor,
   onToggleDescendant,
   onClearAll,
+  openSiblingChips,
+  openSiblingFamilyChips,
+  onToggleSiblingChip,
+  onToggleSiblingFamilyChip,
+  triggerClassName = '',
 }: {
   expandedAncestors: Set<number>;
   expandedDescendants: Set<number>;
@@ -3877,9 +3903,28 @@ function BranchesShownDropdown({
   onToggleAncestor: (id: number) => void;
   onToggleDescendant: (id: number) => void;
   onClearAll: () => void;
+  /** G5 sibling-collapse panels — a SEPARATE bloodline mechanism from
+   *  expandedDescendants. Each open chip = "{Ancestor}'s siblings"
+   *  (keyed by ancestor id). Surfaced + counted here so the trigger's
+   *  total and the Bloodline list reflect every open bloodline branch,
+   *  not just cousin chevrons. Optional so call sites that don't have
+   *  them still work. */
+  openSiblingChips?: Set<number>;
+  /** G5 Panel 2 — each open = "{Sibling}'s family" (keyed by the
+   *  collapsed sibling's head id). Also bloodline. */
+  openSiblingFamilyChips?: Set<number>;
+  onToggleSiblingChip?: (ancestorId: number) => void;
+  onToggleSiblingFamilyChip?: (headId: number) => void;
+  /** Extra classes for the trigger button — the floating canvas
+   *  cluster passes `w-full justify-between` so the pill matches the
+   *  width of the Steps / Generations pills above it. Default '' keeps
+   *  the intrinsic inline-flex sizing (toolbar/Actions-menu use). */
+  triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const total = expandedAncestors.size + expandedDescendants.size;
+  const siblingChipCount = openSiblingChips?.size ?? 0;
+  const siblingFamilyCount = openSiblingFamilyChips?.size ?? 0;
+  const total = expandedAncestors.size + expandedDescendants.size + siblingChipCount + siblingFamilyCount;
 
   // Person-name lookup straight from graph.nodes — full name when
   // available so the dropdown reads naturally ("Lindsay Clapson"
@@ -3895,6 +3940,16 @@ function BranchesShownDropdown({
   const extendedEntries = Array.from(expandedAncestors)
     .map(id => ({ id, name: nameOf(id) }))
     .sort((a, b) => a.name.localeCompare(b.name));
+  // Sibling-collapse panels — both bloodline. Labels spell out the
+  // panel kind ("…'s siblings" / "…'s family") so the row reads as the
+  // panel it closes, not just a bare person name.
+  const siblingEntries = Array.from(openSiblingChips ?? [])
+    .map(id => ({ id, label: `${nameOf(id)}'s siblings` }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const siblingFamilyEntries = Array.from(openSiblingFamilyChips ?? [])
+    .map(id => ({ id, label: `${nameOf(id)}'s family` }))
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const hasBloodline = bloodlineEntries.length > 0 || siblingEntries.length > 0 || siblingFamilyEntries.length > 0;
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -3902,7 +3957,7 @@ function BranchesShownDropdown({
         <button
           aria-label={`${total} branch${total === 1 ? '' : 'es'} shown — click to manage`}
           data-pdr-variant="caution"
-          className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors"
+          className={`inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-colors ${triggerClassName}`}
           style={{ backgroundColor: '#fed7aa', borderColor: '#f59e0b', color: '#7c2d12', borderWidth: '1px', borderStyle: 'solid' }}
         >
           <Users className="w-3 h-3" />
@@ -3911,7 +3966,7 @@ function BranchesShownDropdown({
         </button>
       </PopoverTrigger>
       <PopoverContent className="w-64 p-3" align="end" collisionPadding={12}>
-        {bloodlineEntries.length > 0 && (
+        {hasBloodline && (
           <div className="mb-3">
             <p
               className="text-[10px] font-semibold tracking-wide mb-1.5 uppercase"
@@ -3930,6 +3985,36 @@ function BranchesShownDropdown({
                       onCheckedChange={() => onToggleDescendant(entry.id)}
                     />
                     <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.name}</span>
+                  </label>
+                </li>
+              ))}
+              {/* Open "{Ancestor}'s siblings" panels — unchecking closes
+                  that lavender sibling panel via onToggleSiblingChip. */}
+              {siblingEntries.map(entry => (
+                <li key={`sib-${entry.id}`}>
+                  <label
+                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Checkbox
+                      checked
+                      onCheckedChange={() => onToggleSiblingChip?.(entry.id)}
+                    />
+                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.label}</span>
+                  </label>
+                </li>
+              ))}
+              {/* Open "{Sibling}'s family" panels (Panel 2) — unchecking
+                  closes it via onToggleSiblingFamilyChip. */}
+              {siblingFamilyEntries.map(entry => (
+                <li key={`sibfam-${entry.id}`}>
+                  <label
+                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
+                  >
+                    <Checkbox
+                      checked
+                      onCheckedChange={() => onToggleSiblingFamilyChip?.(entry.id)}
+                    />
+                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.label}</span>
                   </label>
                 </li>
               ))}
