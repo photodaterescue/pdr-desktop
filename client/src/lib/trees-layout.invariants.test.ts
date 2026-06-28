@@ -255,6 +255,49 @@ function checkParentsCentred(graph: FamilyGraph, nodes: LaidOutNode[]): string[]
   return bad;
 }
 
+// PLANARITY (Phase 2): no two subtrees may INTERLEAVE horizontally — that's a
+// crossed connector line, the "trapped-interior branch" case. If A sits left of
+// B in their generation, A's whole subtree must stay left of B's whole subtree at
+// every shared descendant generation. Co-parents (spouses, or any two parents
+// sharing a child) legitimately share descendants, and the rare shared-descendant
+// merge (cousin marriage) is skipped too — neither is a crossing. Contours use
+// card CENTRES, so adjacent disjoint subtrees (a card-width apart) pass; only a
+// genuine overlap of the centre-spans is flagged.
+function checkNoCrossedLines(graph: FamilyGraph, nodes: LaidOutNode[]): string[] {
+  const byId = new Map(nodes.map(n => [n.personId, n]));
+  const kids = childrenOf(graph);
+  const key = (a: number, b: number) => a < b ? `${a}-${b}` : `${b}-${a}`;
+  const coparent = new Set<string>();
+  for (const e of graph.edges) if (e.type === 'spouse_of') coparent.add(key(e.aId, e.bId));
+  const parentsOf = new Map<number, number[]>();
+  for (const e of graph.edges) if (e.type === 'parent_of') { if (!parentsOf.has(e.bId)) parentsOf.set(e.bId, []); parentsOf.get(e.bId)!.push(e.aId); }
+  for (const ps of parentsOf.values()) for (let i = 0; i < ps.length; i++) for (let j = i + 1; j < ps.length; j++) coparent.add(key(ps[i], ps[j]));
+  const contour = (root: number) => {
+    const m = new Map<number, [number, number]>(); const seen = new Set<number>(); const q = [root];
+    while (q.length) { const c = q.shift()!; if (seen.has(c)) continue; seen.add(c);
+      const n = byId.get(c); if (n) { const e = m.get(n.generation); if (!e) m.set(n.generation, [n.x, n.x]); else { if (n.x < e[0]) e[0] = n.x; if (n.x > e[1]) e[1] = n.x; } }
+      for (const k of kids.get(c) ?? []) q.push(k); }
+    return m;
+  };
+  const subSet = (root: number) => { const s = new Set<number>(); const q = [root]; while (q.length) { const c = q.shift()!; if (s.has(c)) continue; s.add(c); for (const k of kids.get(c) ?? []) q.push(k); } return s; };
+  const byGen = new Map<number, LaidOutNode[]>();
+  for (const n of nodes) { if (!byGen.has(n.generation)) byGen.set(n.generation, []); byGen.get(n.generation)!.push(n); }
+  const EPS = 1;
+  const bad: string[] = [];
+  for (const row of byGen.values()) {
+    const sorted = [...row].sort((a, b) => a.x - b.x);
+    for (let i = 0; i < sorted.length; i++) for (let j = i + 1; j < sorted.length; j++) {
+      const A = sorted[i], B = sorted[j];
+      if (A.x === B.x) continue;
+      if (coparent.has(key(A.personId, B.personId))) continue;
+      const sa = subSet(A.personId); if ([...subSet(B.personId)].some(x => sa.has(x))) continue; // shared-descendant merge — not a crossing
+      const ca = contour(A.personId), cb = contour(B.personId);
+      for (const [g, ae] of ca) { const be = cb.get(g); if (!be) continue; if (ae[1] > be[0] + EPS) { bad.push(`${A.name} & ${B.name} subtrees cross at gen ${g} (${A.name}.maxX=${Math.round(ae[1])} > ${B.name}.minX=${Math.round(be[0])})`); break; } }
+    }
+  }
+  return bad;
+}
+
 function allViolations(graph: FamilyGraph) {
   // Only the nodes actually drawn on the canvas — PARKED in-law families (shown
   // in floating side-panels by the renderer) are excluded, exactly as on screen.
@@ -265,6 +308,7 @@ function allViolations(graph: FamilyGraph) {
     ...checkNoStrandedSibling(graph, nodes),
     ...checkParentsCentred(graph, nodes),
     ...checkSiblingGap(graph, nodes),
+    ...checkNoCrossedLines(graph, nodes),
   ];
   if (v.length && process.env.DBG) console.log(`focus=${graph.nodes.find(n => n.personId === graph.focusPersonId)?.name}`, nodes.map(n => `${n.name}@${Math.round(n.x)}/g${n.generation}`).join('  '));
   return v;
@@ -554,6 +598,7 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
         ...checkNoStrandedSibling(g, nodes),
         ...checkParentsCentred(g, nodes),
         ...checkSiblingGap(g, nodes),
+        ...checkNoCrossedLines(g, nodes),
       ];
       expect(violations, violations.join('\n')).toEqual([]);
     });
@@ -580,6 +625,7 @@ describe('parents stay centred in PARTIAL / collapsed states', () => {
             ...checkNoStrandedSibling(g, nodes),
             ...checkParentsCentred(g, nodes),
             ...checkSiblingGap(g, nodes),
+            ...checkNoCrossedLines(g, nodes),
           ];
           expect(violations, `expand=[${sub.join(',')}]\n` + violations.join('\n')).toEqual([]);
         }
@@ -627,5 +673,29 @@ describe('collateral siblings collapse off-canvas (panelled) at row 4+', () => {
     expect(slotted(6), 'PU (row-3 aunt) should stay slotted').toBe(true);
     expect(slotted(7), 'GU (row-4 great-aunt) should panel').toBe(false);
     expect(slotted(8), "GU's child should panel").toBe(false);
+  });
+});
+
+// Self-test: prove checkNoCrossedLines actually DETECTS a crossing (a checker that
+// always returns [] would be a silent no-op that passes everything). A deliberately
+// interleaved layout — sibling P1 sits left of P2, but P1's child is placed RIGHT of
+// P2's child — must be flagged; the same layout uncrossed must pass.
+describe('planarity invariant self-test', () => {
+  it('flags a deliberately interleaved (crossed) layout, passes the uncrossed one', () => {
+    const g = graphFor(
+      { 1: 'GP', 2: 'P1', 3: 'P2', 4: 'C1', 5: 'C2' },
+      [[1, 2, 'parent_of'], [1, 3, 'parent_of'], [2, 4, 'parent_of'], [3, 5, 'parent_of']],
+      1,
+    );
+    const crossed = [
+      { personId: 1, name: 'GP', x: 100, generation: 1 },
+      { personId: 2, name: 'P1', x: 0, generation: 0 },
+      { personId: 3, name: 'P2', x: 200, generation: 0 },
+      { personId: 4, name: 'C1', x: 300, generation: -1 },  // P1's child placed to the RIGHT…
+      { personId: 5, name: 'C2', x: 100, generation: -1 },  // …of P2's child → lines cross
+    ] as unknown as LaidOutNode[];
+    expect(checkNoCrossedLines(g, crossed).length).toBeGreaterThan(0);
+    const ok = crossed.map(n => n.personId === 4 ? { ...n, x: 100 } : n.personId === 5 ? { ...n, x: 300 } : n) as unknown as LaidOutNode[];
+    expect(checkNoCrossedLines(g, ok)).toEqual([]);
   });
 });
