@@ -699,3 +699,24 @@ describe('planarity invariant self-test', () => {
     expect(checkNoCrossedLines(g, ok)).toEqual([]);
   });
 });
+
+// Balance budget (Phase 3): when a generation row overflows the per-row cap, the
+// FURTHEST-from-focus collateral is panelled until the row fits — but the bloodline
+// spine is never shed. A great-grandparent with 12 children puts 13 cards on one
+// row (a grandparent + 12 great-aunts/uncles, all at row 3, so the row-4 rule does
+// NOT collapse them); the budget must bring that row back within the cap.
+describe('balance budget caps a wide generation (Phase 3)', () => {
+  it('panels furthest collateral when a row exceeds the cap; keeps the spine', () => {
+    const names: Record<number, string> = { 1: 'GGP', 2: 'GP', 3: 'P', 4: 'F' };
+    const edges: E[] = [[1, 2, 'parent_of'], [2, 3, 'parent_of'], [3, 4, 'parent_of']];
+    for (let i = 0; i < 12; i++) { const id = 10 + i; names[id] = 'GU' + i; edges.push([1, id, 'parent_of']); }
+    const g = graphFor(names, edges, 4); // focus = F
+    const slotted = layoutAll(g).nodes.filter(n => n.slotted);
+    const gpGen = slotted.find(n => n.name === 'GP')!.generation;
+    const rowCount = slotted.filter(n => n.generation === gpGen).length;
+    expect(rowCount, `the great-aunt/uncle row should be capped at <= 10, got ${rowCount}`).toBeLessThanOrEqual(10);
+    const guSlotted = slotted.filter(n => /^GU\d/.test(n.name)).length;
+    expect(guSlotted, 'the budget should have panelled some great-uncles (it did not fire)').toBeLessThan(12);
+    for (const nm of ['GGP', 'GP', 'P', 'F']) expect(slotted.some(n => n.name === nm), `${nm} (bloodline spine) must stay slotted`).toBe(true);
+  });
+});

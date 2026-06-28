@@ -475,6 +475,93 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
         for (const c of childrenOf.get(cur) ?? []) q.push(c);
       }
     }
+    // ── BALANCE BUDGET (Phase 3, Terry 2026-06-28) ───────────────────────
+    // Cap how wide / lopsided the canvas gets. After the row-4 / per-level /
+    // collapse rules, if a generation ROW still overflows (> GEN_CAP cards) or
+    // one SIDE runs away (> SIDE_RATIO x the other, once that side is sizeable),
+    // panel the FURTHEST-from-focus collateral branches first — "nearest-first
+    // spend": the closest family stays on canvas, the rest sit one click away in
+    // a panel. Purely structural (counts + hops, no x), so it composes with the
+    // layout that follows, and it is a NO-OP for a tree already within budget
+    // (so a balanced focus like Terry's own view is unchanged). Thresholds tune
+    // live; a wide-family stress shape in the invariant harness proves the cap
+    // actually fires. Spine (directLine) is never panelled, so a genuinely large
+    // direct family stays put — only collateral overflow is shed.
+    {
+      const GEN_CAP = 10;     // max cards in any one generation row
+      const SIDE_RATIO = 2;   // a side may not exceed SIDE_RATIO x the other...
+      const SIDE_FLOOR = 6;   // ...once that side is at least this many cards
+      const hop = new Map<number, number>([[focusId, 0]]);
+      { const q = [focusId]; while (q.length) { const c = q.shift()!; const d = hop.get(c)!;
+        for (const nb of [...(parentsOf.get(c) ?? []), ...(childrenOf.get(c) ?? [])]) if (!hop.has(nb)) { hop.set(nb, d + 1); q.push(nb); } } }
+      // paternal / maternal side of each strict ancestor (from the focus's two parents)
+      const sideOf = new Map<number, number>();
+      (parentsOf.get(focusId) ?? []).slice(0, 2).forEach((p, i) => {
+        const q = [p]; const seen = new Set<number>([p]);
+        while (q.length) { const c = q.shift()!; if (!sideOf.has(c)) sideOf.set(c, i);
+          for (const pp of parentsOf.get(c) ?? []) if (!seen.has(pp)) { seen.add(pp); q.push(pp); } } });
+      const headSide = (head: number): number => {
+        for (const p of parentsOf.get(head) ?? []) for (const sib of childrenOf.get(p) ?? []) { const s = sideOf.get(sib); if (s != null) return s; }
+        for (const e of graph.edges) { if (e.type !== 'sibling_of') continue;
+          if (e.aId === head) { const s = sideOf.get(e.bId); if (s != null) return s; }
+          if (e.bId === head) { const s = sideOf.get(e.aId); if (s != null) return s; } }
+        return 0;
+      };
+      // slotted subtree of a head (size + per-generation count), honouring `hidden`
+      const headStats = (head: number) => {
+        const gens = new Map<number, number>(); let size = 0;
+        const q = [head]; const seen = new Set<number>([head]);
+        while (q.length) { const cur = q.shift()!;
+          if (cur !== head && directLine.has(cur)) continue;
+          if (!hidden.has(cur)) { const g = generations.get(cur) ?? 0; gens.set(g, (gens.get(g) ?? 0) + 1); size++; }
+          for (const c of childrenOf.get(cur) ?? []) if (!seen.has(c)) { seen.add(c); q.push(c); } }
+        return { gens, size };
+      };
+      const panelHead = (head: number) => {
+        const q = [head]; const seen = new Set<number>([head]);
+        while (q.length) { const cur = q.shift()!; if (!directLine.has(cur)) hidden.add(cur);
+          for (const c of childrenOf.get(cur) ?? []) if (!seen.has(c)) { seen.add(c); q.push(c); } }
+      };
+      // The main spouse-sweep runs AFTER this block, so married-in spouses of
+      // already-panelled heads (e.g. the row-4 great-aunts/uncles) would still be
+      // counted below and falsely inflate the per-row / per-side totals — which is
+      // exactly what made the budget over-fire on a balanced tree. Sweep them each
+      // pass so the counts match what is really on canvas.
+      const sweepSpouses = () => {
+        for (const e of graph.edges) { if (e.type !== 'spouse_of') continue;
+          if (hidden.has(e.aId) && !directLine.has(e.bId) && !heads.has(e.bId)) hidden.add(e.bId);
+          if (hidden.has(e.bId) && !directLine.has(e.aId) && !heads.has(e.aId)) hidden.add(e.aId); }
+      };
+      let guard = 0;
+      while (guard++ < 500) {
+        sweepSpouses();
+        const live = [...heads].filter(h => !hidden.has(h)).map(h => ({ h, hop: hop.get(h) ?? 0, side: headSide(h), ...headStats(h) })).filter(L => L.size > 0);
+        if (!live.length) break;
+        // Count only the MAIN-CANVAS bloodline width per generation: the spine
+        // (directLine) + visible collateral subtrees + their married-in spouses.
+        // Parked in-law / extended families live in separate gold side-panels and
+        // do NOT widen a spine row, so counting them (the whole fetched graph) was
+        // massively over-inflating the totals and over-firing the cap.
+        const canvas = new Set<number>(directLine);
+        for (const L of live) { const q = [L.h]; const s = new Set<number>([L.h]); while (q.length) { const c = q.shift()!; if (hidden.has(c)) continue; canvas.add(c); for (const k of childrenOf.get(c) ?? []) if (!s.has(k)) { s.add(k); q.push(k); } } }
+        for (const e of graph.edges) { if (e.type !== 'spouse_of') continue; if (canvas.has(e.aId) && !hidden.has(e.bId)) canvas.add(e.bId); if (canvas.has(e.bId) && !hidden.has(e.aId)) canvas.add(e.aId); }
+        const genTot = new Map<number, number>();
+        for (const id of canvas) if (!hidden.has(id)) { const g = generations.get(id) ?? 0; genTot.set(g, (genTot.get(g) ?? 0) + 1); }
+        // 1) a generation over the per-row cap that still has pannable collateral
+        let cands: typeof live = [];
+        for (const [g, c] of genTot) if (c > GEN_CAP) { const cg = live.filter(L => L.gens.has(g)); if (cg.length) { cands = cg; break; } }
+        // 2) else a runaway side
+        if (!cands.length) {
+          const sideTot = [0, 0]; for (const L of live) sideTot[L.side] += L.size;
+          const big = sideTot[0] >= sideTot[1] ? 0 : 1;
+          if (sideTot[big] >= SIDE_FLOOR && sideTot[big] > SIDE_RATIO * sideTot[1 - big]) cands = live.filter(L => L.side === big);
+        }
+        if (!cands.length) break;
+        // furthest from focus first; tiebreak by biggest sprawl, then id (stable)
+        cands.sort((a, b) => b.hop - a.hop || b.size - a.size || a.h - b.h);
+        panelHead(cands[0].h);
+      }
+    }
     // Sweep spouse_of edges so non-bloodline partners of any hidden
     // descendant come along (otherwise they linger on canvas while
     // their spouse + kids are tucked inside the panel).
