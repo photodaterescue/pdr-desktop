@@ -185,6 +185,11 @@ export interface PDRSettings {
    *  cursor). A transparent click-through overlay on the recorded display, filmed
    *  like the cam bubble; click positions come from a global mouse hook. Default OFF. */
   captureRippleEnabled: boolean;
+  /** v3.0 round 485 (Terry) — AUTO-ZOOM toward clicks: when ON, each click during a
+   *  recording opens an automatic zoom moment toward where you clicked (eases in, holds,
+   *  eases back out when you pause). Applied at save by the same zoompan stage as manual
+   *  zoom — zero live cost. Reuses the click-ripple global mouse hook. Default OFF. */
+  captureAutoZoomEnabled: boolean;
   /** v2.1 round 162 (Terry 2026-06-13) — when ON (default), every saved
    *  collage is added to a "PDR Collages" album so they're gathered in one
    *  place. Toggle OFF in Settings → Capture to keep saved collages out of
@@ -370,6 +375,8 @@ export const optimisedDefaults: PDRSettings = {
   captureMicDevice: '',
   // v3.0 round 411 — click-ripple off until asked for.
   captureRippleEnabled: false,
+  // v3.0 round 485 — auto-zoom toward clicks off until asked for.
+  captureAutoZoomEnabled: false,
   // v2.1 round 162 — saved collages join a "PDR Collages" album by default.
   saveCollagesToAlbum: true,
   // v2.1 round 167 — tooltips on by default (helps the learning curve).
@@ -465,6 +472,7 @@ export function getSettings(): PDRSettings {
     captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
     captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),
     captureRippleEnabled: store.get('captureRippleEnabled', optimisedDefaults.captureRippleEnabled),
+    captureAutoZoomEnabled: store.get('captureAutoZoomEnabled', optimisedDefaults.captureAutoZoomEnabled),
     saveCollagesToAlbum: store.get('saveCollagesToAlbum', optimisedDefaults.saveCollagesToAlbum),
     showTooltips: store.get('showTooltips', optimisedDefaults.showTooltips),
     showViewerTooltips: store.get('showViewerTooltips', optimisedDefaults.showViewerTooltips),

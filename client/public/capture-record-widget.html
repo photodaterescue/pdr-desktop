@@ -176,6 +176,11 @@
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
+  /* v3.0 round 485 — Auto-zoom toward clicks; gold 'on' like Clicks. */
+  #autozoom.on {
+    color: #f5d98a;
+    border-color: rgba(212, 175, 55, 0.65);
+  }
   /* v3.0 round 414 — Unblur (remove the last blur area); shown only when >=1 blur. */
   #unblur { display: none; }
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
@@ -266,6 +271,7 @@
     <button id="blur" type="button" title="Blur an area — pause, then drag a box; the saved video blurs it. Add as many as you like.">Blur</button>
     <button id="unblur" type="button" title="Remove the last blur area you added">Unblur</button>
     <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the centre, click again to zoom back out. Applied to the saved video.">Zoom</button>
+    <button id="autozoom" type="button" title="Auto-zoom toward where you click — eases in on each click, eases back out when you pause. Applied to the saved video.">Auto-zoom</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
       <option value="standard" selected>Standard</option>
@@ -295,6 +301,7 @@
   var blurBtn = document.getElementById('blur');
   var unblurBtn = document.getElementById('unblur');
   var zoomBtn = document.getElementById('zoom');
+  var autoZoomBtn = document.getElementById('autozoom');
   var qualitySel = document.getElementById('quality');
   var snapBtn = document.getElementById('snap');
   var muteBtn = document.getElementById('mute');
@@ -302,7 +309,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -336,6 +343,7 @@
   var micMuted = false;       // live mic mute while recording
   var rippleOn = false;       // v3.0 round 411 — click-ripple overlay on
   var zoomActive = false;     // v3.0 round 412 — a zoom moment is currently open
+  var autoZoomOn = false;     // v3.0 round 485 — auto-zoom toward clicks enabled
 
   var bar = document.getElementById('bar');
   // Round 130 — size the WINDOW to the bar's real content so no
@@ -721,6 +729,24 @@
       try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'close', endMs: clockMs() }); } catch (e) {}
     }
   });
+  // v3.0 round 485 — auto-zoom toward clicks toggle (works armed or recording, like
+  // Clicks; main owns the click hook + opens zoom moments toward each click). Persisted
+  // for future recordings via main's settings-store; also mirrored to localStorage so the
+  // button can restore instantly even before the init payload lands.
+  var LS_AUTOZOOM = 'pdr.capture.autoZoom';
+  function applyAutoZoomBtn() {
+    autoZoomBtn.classList.toggle('on', autoZoomOn);
+    autoZoomBtn.title = autoZoomOn
+      ? 'Auto-zoom is ON — each click eases the saved video in toward where you clicked; click to turn off'
+      : 'Auto-zoom toward where you click — eases in on each click, eases back out when you pause. Applied to the saved video.';
+  }
+  autoZoomBtn.addEventListener('click', function () {
+    if (finished) return;
+    autoZoomOn = !autoZoomOn;
+    applyAutoZoomBtn();
+    try { localStorage.setItem(LS_AUTOZOOM, autoZoomOn ? '1' : '0'); } catch (e) {}
+    try { if (pdr && pdr.capture && pdr.capture.setAutoZoom) pdr.capture.setAutoZoom(autoZoomOn); } catch (e) {}
+  });
 
   // ── Round 130: Area pick (armed only). Main shows a live veil over
   // the screen as it now stands and opens the selector; Esc keeps the
@@ -850,6 +876,16 @@
         rippleOn = storedInit.ripple === true;
         clicksBtn.classList.toggle('on', rippleOn);
         clicksBtn.title = rippleOn ? 'Click ripples are ON — a gold ring shows where you click; click to turn off' : 'Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials';
+        // v3.0 round 485 — restore the auto-zoom preference. The init payload (main's
+        // settings-store) is authoritative; fall back to the localStorage mirror if the
+        // payload doesn't carry it. Light the button and push the resolved state to main
+        // so its autoZoomEnabled matches what the bar shows on load.
+        autoZoomOn = (typeof storedInit.autoZoom === 'boolean')
+          ? storedInit.autoZoom
+          : (function () { try { return localStorage.getItem(LS_AUTOZOOM) === '1'; } catch (e) { return false; } })();
+        applyAutoZoomBtn();
+        try { localStorage.setItem(LS_AUTOZOOM, autoZoomOn ? '1' : '0'); } catch (e) {}
+        try { if (pdr && pdr.capture && pdr.capture.setAutoZoom) pdr.capture.setAutoZoom(autoZoomOn); } catch (e) {}
         // Round 131 — populate the Screen dropdown from the display
         // list (already sorted left→right with position labels).
         if (storedInit.screens && storedInit.screens.length) {

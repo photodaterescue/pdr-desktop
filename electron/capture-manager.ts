@@ -2667,6 +2667,71 @@ let recordBlurSegments: BlurSegment[] = [];
 interface ZoomSegment { focalX: number; focalY: number; level: number; startMs: number; endMs: number | null }
 let recordZoomSegments: ZoomSegment[] = [];
 
+// v3.0 round 485 (Terry) — AUTO-ZOOM toward clicks. When enabled, each click during a
+// recording opens an automatic ZoomSegment toward where the cursor was, eased in by the
+// same save-time zoompan stage as manual zoom (zero live cost). A hold timer eases it
+// back out once the user stops clicking; a click while a zoom is already open just
+// extends the hold (we don't re-target mid-zoom — keeps the motion calm). The click
+// positions come from the SAME global mouse hook the click-ripple feature uses.
+let autoZoomEnabled = false;
+let autoZoomTimer: NodeJS.Timeout | null = null;
+let autoZoomOpenFocal: { x: number; y: number } | null = null;
+const AUTOZOOM_LEVEL = 2;        // zoom factor each click eases in to
+const AUTOZOOM_HOLD_MS = 2500;   // how long the zoom holds after the last click before easing out
+
+/** Elapsed recording-clock ms (0 before record-start). Matches the timeline the save uses. */
+function nowMs(): number {
+  return recordStartedAt ? Date.now() - recordStartedAt.getTime() : 0;
+}
+
+/**
+ * Map a cursor point (DIP, same space as display.bounds) to a normalised 0..1 focal in
+ * the FINAL (post-region-crop) frame the zoompan stage operates on. Returns null if there
+ * is no recorded display, or the click landed outside the recorded frame/region.
+ */
+function autoZoomFocalFromCursor(p: { x: number; y: number }): { x: number; y: number } | null {
+  if (!recordDisplay) return null;
+  const b = recordDisplay.bounds;
+  const relX = p.x - b.x;
+  const relY = p.y - b.y;
+  let fx: number, fy: number;
+  if (recordRegionCssRect) {
+    const r = recordRegionCssRect;
+    fx = (relX - r.x) / r.width;
+    fy = (relY - r.y) / r.height;
+  } else {
+    fx = relX / b.width;
+    fy = relY / b.height;
+  }
+  if (fx < 0 || fx > 1 || fy < 0 || fy > 1) return null; // clicked outside the recorded frame
+  return { x: fx, y: fy };
+}
+
+/** Close the still-open auto-zoom segment (ease-out runs to its endMs). */
+function closeOpenAutoZoom(): void {
+  const open = [...recordZoomSegments].reverse().find((s) => s.endMs === null);
+  if (open) open.endMs = Math.max(open.startMs, nowMs());
+  autoZoomOpenFocal = null;
+}
+
+/**
+ * Drive auto-zoom from one click. Opens a new zoom toward the click when none is open;
+ * a click while one IS open just (re)arms the hold timer so the zoom stays in longer.
+ */
+function driveAutoZoom(p: { x: number; y: number }): void {
+  if (recordingState !== 'recording') return;
+  const focal = autoZoomFocalFromCursor(p);
+  if (!focal) return;
+  if (!autoZoomOpenFocal) {
+    recordZoomSegments.push({ focalX: focal.x, focalY: focal.y, level: AUTOZOOM_LEVEL, startMs: nowMs(), endMs: null });
+    autoZoomOpenFocal = focal;
+    log.info(`[capture] auto-zoom ON at ${(nowMs() / 1000).toFixed(1)}s → ${focal.x.toFixed(2)},${focal.y.toFixed(2)}`);
+  }
+  // Always (re)arm the hold: the zoom eases out AUTOZOOM_HOLD_MS after the LAST click.
+  if (autoZoomTimer) clearTimeout(autoZoomTimer);
+  autoZoomTimer = setTimeout(() => { autoZoomTimer = null; closeOpenAutoZoom(); }, AUTOZOOM_HOLD_MS);
+}
+
 // Round 128 — camera bubble (tutorial picture-in-picture). A real
 // transparent always-on-top window on the recorded display that is
 // deliberately NOT content-protected: it's on screen, so the
@@ -2745,6 +2810,12 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   }
   recordBlurSegments = [];
   recordZoomSegments = [];
+  // v3.0 round 485 (Terry) — auto-zoom teardown: clear the hold timer + open-focal, and
+  // force-stop the click hook (recording is over, so neither feature needs it now —
+  // closeRippleOverlay above skips stopRippleHook while autoZoomEnabled is true).
+  if (autoZoomTimer) { clearTimeout(autoZoomTimer); autoZoomTimer = null; }
+  autoZoomOpenFocal = null;
+  stopRippleHook();
   recordTempPath = null;
   recordStartedAt = null;
   recordDisplay = null;
@@ -2864,6 +2935,8 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         micDevice: (() => { try { return getSettings().captureMicDevice || ''; } catch { return ''; } })(),
         // v3.0 round 411 (Terry) — click-ripple preference for the bar.
         ripple: (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })(),
+        // v3.0 round 485 (Terry) — auto-zoom-toward-clicks preference for the bar.
+        autoZoom: (() => { try { return getSettings().captureAutoZoomEnabled === true; } catch { return false; } })(),
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
@@ -3136,6 +3209,12 @@ async function finalizeRecording(): Promise<void> {
   const meta = recordMeta;
   const blurSegments = recordBlurSegments;
   recordBlurSegments = [];
+  // v3.0 round 485 (Terry) — STOP pressed: close any still-open auto-zoom segment so its
+  // ease-out runs to the end of the clip (manual zoom relies on the widget sending 'close'
+  // at stop; auto-zoom has no widget event, so we close it here in main while the clock is
+  // still live). Must run BEFORE we snapshot recordZoomSegments for the save below.
+  if (autoZoomTimer) { clearTimeout(autoZoomTimer); autoZoomTimer = null; }
+  closeOpenAutoZoom();
   const zoomSegments = recordZoomSegments;
   recordZoomSegments = [];
   const regionCrop = recordRegionCrop;
@@ -3228,6 +3307,11 @@ ipcMain.on('capture:record-started', (event, info: { width?: number; height?: nu
       // hook (deferred from arm, so the armed/setup phase stays lag-free).
       const rippleOn = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
       if (rippleOn && recordDisplay) createRippleOverlay(recordDisplay);
+      // v3.0 round 485 (Terry) — read the persisted auto-zoom choice now that
+      // recordDisplay + recordStartedAt are set; if on, make sure the click hook
+      // is running (createRippleOverlay above may already have started it).
+      autoZoomEnabled = (() => { try { return getSettings().captureAutoZoomEnabled === true; } catch { return false; } })();
+      if (autoZoomEnabled) ensureClickHook();
     }
     log.info(`[capture] recorder running ${recordMeta.width}×${recordMeta.height}, audio: ${recordMeta.hasAudio ? 'yes' : 'no'}`);
   }
@@ -3490,14 +3574,24 @@ let rippleWindow: BrowserWindow | null = null;
 let rippleDisplay: Electron.Display | null = null;
 let rippleHookOn = false;
 
+// v3.0 round 485 (Terry) — the global mouse hook now feeds BOTH features: it draws the
+// click ripple (if the overlay is up) AND drives auto-zoom (if enabled). Gated on an
+// active recording so stray clicks while idle/processing do nothing. We read the cursor
+// point once and fan it out.
 function onGlobalMouseDown(): void {
-  if (!rippleWindow || rippleWindow.isDestroyed() || !rippleDisplay) return;
+  if (recordingState !== 'recording') return;
   try {
     const p = screen.getCursorScreenPoint();   // DIP — same space as display.bounds + the overlay
-    const b = rippleDisplay.bounds;
-    const x = p.x - b.x, y = p.y - b.y;
-    if (x < 0 || y < 0 || x > b.width || y > b.height) return;   // a click on another display
-    rippleWindow.webContents.send('capture:ripple-click', { x, y });
+    // Click ripple — only when its overlay exists and the click is on the recorded display.
+    if (rippleWindow && !rippleWindow.isDestroyed() && rippleDisplay) {
+      const b = rippleDisplay.bounds;
+      const x = p.x - b.x, y = p.y - b.y;
+      if (x >= 0 && y >= 0 && x <= b.width && y <= b.height) {
+        rippleWindow.webContents.send('capture:ripple-click', { x, y });
+      }
+    }
+    // Auto-zoom — toward the click (its own on-frame bounds check lives in driveAutoZoom).
+    if (autoZoomEnabled) driveAutoZoom(p);
   } catch { /* non-fatal */ }
 }
 function startRippleHook(): void {
@@ -3507,6 +3601,11 @@ function startRippleHook(): void {
     uIOhook.start();
     rippleHookOn = true;
   } catch (e) { log.warn(`[capture] click hook failed: ${(e as Error).message}`); }
+}
+// v3.0 round 485 (Terry) — start the global click hook if EITHER feature needs it
+// (ripples OR auto-zoom). startRippleHook already no-ops when it's already running.
+function ensureClickHook(): void {
+  startRippleHook();
 }
 function stopRippleHook(): void {
   if (!rippleHookOn) return;
@@ -3536,16 +3635,19 @@ function createRippleOverlay(display: Electron.Display): void {
   try { win.setIgnoreMouseEvents(true, { forward: true }); } catch { /* non-fatal */ }
   // NO setContentProtection — the rings MUST appear in the footage.
   win.setMenu(null);
-  win.on('closed', () => { if (rippleWindow === win) { rippleWindow = null; stopRippleHook(); } });
+  // v3.0 round 485 (Terry) — don't kill the hook on overlay-close if auto-zoom still needs it.
+  win.on('closed', () => { if (rippleWindow === win) { rippleWindow = null; if (!autoZoomEnabled) stopRippleHook(); } });
   win.webContents.once('did-finish-load', () => {
     if (win.isDestroyed()) return;
     win.showInactive();
-    startRippleHook();
+    ensureClickHook();
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-ripple.html'));
 }
 function closeRippleOverlay(): void {
-  stopRippleHook();
+  // v3.0 round 485 (Terry) — closing the ripple overlay must NOT stop the click hook when
+  // auto-zoom is still using it; only stop it if no feature needs the hook anymore.
+  if (!autoZoomEnabled) stopRippleHook();
   if (rippleWindow && !rippleWindow.isDestroyed()) { try { rippleWindow.close(); } catch { /* non-fatal */ } }
   rippleWindow = null;
 }
@@ -3951,6 +4053,23 @@ ipcMain.on('capture:record-zoom', (event, info: { type?: 'open' | 'close'; start
       log.info(`[capture] zoom OFF at ${(info.endMs / 1000).toFixed(1)}s`);
     }
   }
+});
+// v3.0 round 485 (Terry) — AUTO-ZOOM toward clicks on/off from the recording bar.
+// Persist the choice + (de)activate the click hook. When turned on mid-recording we
+// ensure the hook is running so the very next click drives a zoom; turning it off leaves
+// any open segment to ease out on its timer. Mirrors the click-ripple toggle's pattern.
+ipcMain.on('capture:set-auto-zoom', (event, on: unknown) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  autoZoomEnabled = !!on;
+  try { setSetting('captureAutoZoomEnabled', autoZoomEnabled); } catch { /* non-fatal */ }
+  // Only carry the hook's overhead while actually recording (the click-ripple toggle uses
+  // the same rule); record-started honours the persisted choice when recording begins.
+  if (autoZoomEnabled && recordingState === 'recording') ensureClickHook();
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (win.isDestroyed()) continue;
+    try { win.webContents.send('settings:changed', { key: 'captureAutoZoomEnabled', value: autoZoomEnabled }); } catch { /* non-fatal */ }
+  }
+  log.info(`[capture] auto-zoom → ${autoZoomEnabled ? 'on' : 'off'}`);
 });
 
 /** App-quit safety: flush the temp WebM so the startup orphan

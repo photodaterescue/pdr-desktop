@@ -442,6 +442,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recordRippleToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-ripple-toggle', info),
     // v3.0 round 412 — zoom moments (manual Zoom button). Mirrors recordBlur open/close.
     recordZoom: (info: { type: 'open' | 'close'; startMs?: number; endMs?: number; focalX?: number; focalY?: number; level?: number }) => ipcRenderer.send('capture:record-zoom', info),
+    // v3.0 round 485 — auto-zoom toward clicks on/off. Main reuses the click hook to open
+    // automatic zoom moments toward each click; applied at save by the same zoompan stage.
+    setAutoZoom: (on: boolean) => ipcRenderer.send('capture:set-auto-zoom', on),
     onRippleClick: (callback: (p: { x: number; y: number }) => void) => {
       const handler = (_event: any, p: any) => callback(p);
       ipcRenderer.on('capture:ripple-click', handler);
