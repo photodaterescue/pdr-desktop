@@ -3549,6 +3549,28 @@ function createCamBubble(display: Electron.Display): void {
   // NO setContentProtection here — the bubble must appear in the
   // footage; that's its entire purpose.
   win.setMenu(null);
+  // v3.0 round 487 (Terry) — Clicks + cam-drag glitch. The global click hook (uiohook) and
+  // the full-screen ripple overlay both fight the cam bubble's OS app-region drag — hijacking
+  // focus and OS windows (the earlier z-order tweak didn't cure it). So while the cam is being
+  // DRAGGED, fully SUSPEND Clicks: stop the hook AND hide the ripple overlay; restore both
+  // ~400ms after the drag stops (debounced off the window-move events). Clicks behaves
+  // normally everywhere else and the instant a cam drag ends.
+  let camDragTimer: NodeJS.Timeout | null = null;
+  const suspendClicksForCamDrag = () => {
+    const wasOn = rippleHookOn;
+    if (rippleHookOn) stopRippleHook();
+    if (rippleWindow && !rippleWindow.isDestroyed() && rippleWindow.isVisible()) { try { rippleWindow.hide(); } catch { /* non-fatal */ } }
+    if (wasOn) log.info('[capture] cam drag — Clicks suspended');
+    if (camDragTimer) clearTimeout(camDragTimer);
+    camDragTimer = setTimeout(() => {
+      camDragTimer = null;
+      if (recordingState !== 'recording') return;
+      if (rippleWindow && !rippleWindow.isDestroyed() && !rippleWindow.isVisible()) { try { rippleWindow.showInactive(); } catch { /* non-fatal */ } }
+      if (rippleWindow || autoZoomEnabled) { ensureClickHook(); log.info('[capture] cam drag ended — Clicks resumed'); }
+    }, 400);
+  };
+  win.on('will-move', suspendClicksForCamDrag);
+  win.on('move', suspendClicksForCamDrag);
   win.on('closed', () => {
     if (camWindow === win) {
       camWindow = null;
