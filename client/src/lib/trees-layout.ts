@@ -831,9 +831,28 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
     // Colin + wife Lindsay with his sister Amie between them) was left
     // interleaved. This runs for EVERY generation as the final word on row
     // order: walk the row, emit each node immediately followed by its same-row
-    // spouse(s), bloodline-first so the married-in spouse sits on the outside.
+    // spouse(s). Each couple is then ordered male-LEFT / female-RIGHT (Terry:
+    // consistent man/woman sides), falling back to bloodline-partner-left
+    // (married-in on the outside) when gender is missing or both share a gender.
     // Verified by the invariant harness (spouses-adjacent, every shape × every
     // focus) — the scalable guarantee, not another per-person patch.
+    //
+    // coupleOrder is safe on planarity: a married-in spouse has no upward
+    // connector by default so swapping the pair never crosses a line; and
+    // swapping WITHIN a couple keeps the couple's midpoint, so parents-centred
+    // is untouched.
+    const nodeGender = new Map(graph.nodes.map(n => [n.personId, n.gender] as const));
+    const genderRankP = (pid: number): number => {
+      const gx = nodeGender.get(pid);
+      return gx === 'male' ? 0 : gx === 'female' ? 1 : 0.5;
+    };
+    const coupleOrder = (a: number, b: number): [number, number] => {
+      const dg = genderRankP(a) - genderRankP(b);
+      if (dg !== 0) return dg < 0 ? [a, b] : [b, a];
+      const aBlood = bloodline.has(a), bBlood = bloodline.has(b);
+      if (aBlood !== bBlood) return aBlood ? [a, b] : [b, a];
+      return [a, b];
+    };
     for (const g of gensSorted) {
       const ids = slottedByGen.get(g);
       if (!ids || ids.length < 2) continue;
@@ -849,9 +868,12 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           continue;
         }
         const sps = (spousesOf.get(id) ?? []).filter(sp => rowSet.has(sp) && !placedAdj.has(sp));
-        if (sps.length <= 1) {
+        if (sps.length === 0) {
           out.push(id); placedAdj.add(id);
-          for (const sp of sps) { out.push(sp); placedAdj.add(sp); }
+        } else if (sps.length === 1) {
+          const [cl, cr] = coupleOrder(id, sps[0]);
+          out.push(cl); placedAdj.add(cl);
+          out.push(cr); placedAdj.add(cr);
         } else {
           // Remarriage: a person with 2+ same-row spouses sits in the MIDDLE of
           // their spouse cluster so they stay adjacent to each. (A single row
