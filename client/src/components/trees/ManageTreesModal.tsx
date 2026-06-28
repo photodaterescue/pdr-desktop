@@ -13,6 +13,7 @@ import {
 } from '@/lib/electron-bridge';
 import { promptConfirm } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { svgToPngBlob, downloadBlob, escapeHtml } from '@/lib/trees-export';
 
 interface ManageTreesModalProps {
   currentTreeId: number | null;
@@ -638,68 +639,6 @@ export function ManageTreesModal({
       </div>
     </div>
   );
-}
-
-// ───────────────────────────── helpers ─────────────────────────────
-
-/** Serialise an SVG element and rasterise to a PNG blob at `scale` (2x
- *  for retina-quality output). Embedded images (avatar href="data:…")
- *  ride along with the serialisation; plain text uses system fonts. */
-async function svgToPngBlob(svg: SVGSVGElement, scale: number): Promise<Blob> {
-  const clone = svg.cloneNode(true) as SVGSVGElement;
-  // Ensure the clone carries its current on-screen dimensions as
-  // attributes (the original uses CSS sizing which doesn't serialise).
-  const rect = svg.getBoundingClientRect();
-  clone.setAttribute('width', String(rect.width));
-  clone.setAttribute('height', String(rect.height));
-  // White background so light-theme exports aren't transparent.
-  const bg = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
-  bg.setAttribute('x', '0'); bg.setAttribute('y', '0');
-  bg.setAttribute('width', '100%'); bg.setAttribute('height', '100%');
-  bg.setAttribute('fill', 'white');
-  clone.insertBefore(bg, clone.firstChild);
-
-  const serialized = new XMLSerializer().serializeToString(clone);
-  const svgBlob = new Blob([serialized], { type: 'image/svg+xml;charset=utf-8' });
-  const url = URL.createObjectURL(svgBlob);
-
-  const canvas = document.createElement('canvas');
-  canvas.width = Math.max(1, Math.round(rect.width * scale));
-  canvas.height = Math.max(1, Math.round(rect.height * scale));
-  const ctx = canvas.getContext('2d')!;
-
-  return new Promise<Blob>((resolve, reject) => {
-    const img = new Image();
-    img.onload = () => {
-      ctx.fillStyle = 'white';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-      URL.revokeObjectURL(url);
-      canvas.toBlob((blob) => {
-        if (blob) resolve(blob);
-        else reject(new Error('Canvas export failed'));
-      }, 'image/png');
-    };
-    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('SVG load failed')); };
-    img.src = url;
-  });
-}
-
-function downloadBlob(blob: Blob, filename: string) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-function escapeHtml(s: string): string {
-  return s.replace(/[&<>"']/g, c => (
-    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' } as Record<string, string>
-  )[c]);
 }
 
 // ───────────────────────────── History ─────────────────────────────

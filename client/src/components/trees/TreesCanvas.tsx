@@ -1,4 +1,4 @@
-import { useRef, useState, useEffect, useCallback, useMemo } from 'react';
+import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
@@ -186,6 +186,16 @@ interface TreesCanvasProps {
 
 interface Viewport { tx: number; ty: number; scale: number; }
 
+/** Imperative zoom API exposed to TreesView so the toolbar
+ *  "Actions ▾ → Zoom" submenu can drive the canvas. Mouse-wheel zoom
+ *  stays internal + unchanged; these mirror the same clamp math. */
+export interface TreesCanvasHandle {
+  zoomIn: () => void;
+  zoomOut: () => void;
+  fit: () => void;
+  reset: () => void;
+}
+
 const NODE_RADIUS = 42; // legacy — kept for spouse-line math and partner-chip positioning
 const NODE_WIDTH = 150;
 const NODE_HEIGHT = 150;
@@ -237,7 +247,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip }: TreesCanvasProps) {
+export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip }: TreesCanvasProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -727,14 +737,12 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     [placedNodes],
   );
 
-  // Auto-zoom-to-fit (Terry r428): whenever the tree's SHAPE changes — it
-  // loads, a branch is expanded/collapsed, or the focus changes — refit the
-  // viewport so the whole tree is visible. Without this, expanding a branch
-  // grows the tree off-screen and the user has to pan/zoom out by hand. Keyed
-  // to fitSignature (a content hash) so it fires ONLY when node positions truly
-  // change — never on a spurious array-ref change from a parent re-render, which
-  // used to snap the user's manual zoom/pan back to fit mid-gesture.
-  useEffect(() => {
+  // Fit-to-content: compute the world bounds of every placed node and
+  // set a viewport that centres + scales the whole tree into view. Used
+  // by the auto-fit effect (below) AND by the toolbar "Fit to screen"
+  // menu item via the imperative handle. Returns silently when the SVG
+  // hasn't been measured yet or there's nothing to fit.
+  const fitToContent = useCallback(() => {
     const svg = svgRef.current;
     if (!svg || placedNodes.length === 0) return;
     const rect = svg.getBoundingClientRect();
@@ -752,8 +760,53 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
     const scale = Math.max(0.05, Math.min((rect.width - PAD * 2) / contentW, (rect.height - PAD * 2) / contentH, 1.1));
     const cx = (minX + maxX) / 2, cy = (minY + maxY) / 2;
     setViewport({ scale, tx: rect.width / 2 - cx * scale, ty: rect.height / 2 - cy * scale });
+  }, [placedNodes]);
+
+  // Auto-zoom-to-fit (Terry r428): whenever the tree's SHAPE changes — it
+  // loads, a branch is expanded/collapsed, or the focus changes — refit the
+  // viewport so the whole tree is visible. Without this, expanding a branch
+  // grows the tree off-screen and the user has to pan/zoom out by hand. Keyed
+  // to fitSignature (a content hash) so it fires ONLY when node positions truly
+  // change — never on a spurious array-ref change from a parent re-render, which
+  // used to snap the user's manual zoom/pan back to fit mid-gesture.
+  useEffect(() => {
+    fitToContent();
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fitSignature]);
+
+  // ─── Imperative zoom controls (toolbar "Actions ▾ → Zoom") ─────
+  // Programmatic zoom about the CENTRE of the canvas, mirroring the
+  // wheel-zoom math (same 0.2–3 clamp + never-blank-canvas clamp) so
+  // the menu buttons and the mouse wheel feel identical. fit() reuses
+  // the auto-fit logic; reset() is scale 1 centred on the canvas.
+  const zoomAboutCentre = useCallback((factor: number) => {
+    const svg = svgRef.current;
+    if (!svg) return;
+    const rect = svg.getBoundingClientRect();
+    const cx = rect.width / 2;
+    const cy = rect.height / 2;
+    setViewport(v => {
+      const newScale = Math.min(3, Math.max(0.2, v.scale * factor));
+      const worldX = (cx - v.tx) / v.scale;
+      const worldY = (cy - v.ty) / v.scale;
+      const rawTx = cx - worldX * newScale;
+      const rawTy = cy - worldY * newScale;
+      const { tx, ty } = clampViewport(rawTx, rawTy, newScale);
+      return { tx, ty, scale: newScale };
+    });
+  }, [clampViewport]);
+
+  useImperativeHandle(ref, () => ({
+    zoomIn: () => zoomAboutCentre(1.2),
+    zoomOut: () => zoomAboutCentre(1 / 1.2),
+    fit: () => fitToContent(),
+    reset: () => {
+      const svg = svgRef.current;
+      if (!svg) return;
+      const rect = svg.getBoundingClientRect();
+      setViewport({ scale: 1, tx: rect.width / 2, ty: rect.height / 2 });
+    },
+  }), [zoomAboutCentre, fitToContent]);
 
   const nodeById = useMemo(() => {
     const m = new Map<number, typeof placedNodes[0]>();
@@ -5253,7 +5306,7 @@ export function TreesCanvas({ layout, highlightTargetId = null, highlightNonce =
       })()}
     </div>
   );
-}
+});
 
 // ─────────────────────────────────────────────────────────────────
 // Pedigree "family group" rendering

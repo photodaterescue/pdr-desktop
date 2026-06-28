@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play, Sparkles } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play, Sparkles, Image as ImageIcon, FileText, ZoomIn, ZoomOut, Maximize2, Scan, Footprints, GitFork } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -43,6 +43,20 @@ import { promptConfirm, promptChoice, promptCheckList } from './promptConfirm';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Checkbox } from '@/components/ui/checkbox';
 import { SnapshotStatusBadge } from '@/components/SnapshotStatusBadge';
+import { Button } from '@/components/ui/button';
+import {
+  DropdownMenu,
+  DropdownMenuTrigger,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuSub,
+  DropdownMenuSubTrigger,
+  DropdownMenuSubContent,
+} from '@/components/ui/dropdown-menu';
+import type { TreesCanvasHandle } from './TreesCanvas';
+import { getTreeCanvasSvg, exportTreeSvgToPng, exportTreeSvgToPdf } from '@/lib/trees-export';
 
 interface PersonSummary {
   id: number;
@@ -194,6 +208,17 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [focusRedoStack, setFocusRedoStack] = useState<Array<{ next: number; redoSnap: number }>>([]);
   // The picker opens only if we can't auto-pick a sensible focus.
   const [focusPickerOpen, setFocusPickerOpen] = useState(false);
+  // Ref to the canvas so the Actions ▾ → Zoom submenu can drive
+  // zoomIn / zoomOut / fit / reset. Mouse-wheel zoom stays internal.
+  const canvasRef = useRef<TreesCanvasHandle>(null);
+  // Controls the Actions ▾ dropdown's open state. Controlled so the
+  // nested Steps / Generations / Branches popovers (which portal
+  // OUTSIDE the menu) don't dismiss the menu when the user clicks
+  // inside them — see onInteractOutside guard on the content.
+  const [actionsMenuOpen, setActionsMenuOpen] = useState(false);
+  // 'png' | 'pdf' while an export is in flight (so the menu rows can
+  // show progress + disable). Mirrors ManageTreesModal's pattern.
+  const [treeExporting, setTreeExporting] = useState<'png' | 'pdf' | null>(null);
   const [autoFocusAttempted, setAutoFocusAttempted] = useState(false);
   // v3.0 round 419 (Terry) — true once the saved-tree load has run, so the
   // first-visit focus picker only opens after we know whether a tree exists.
@@ -2280,6 +2305,35 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
     setOpenSiblingFamilyChips(new Set());
   }, []);
 
+  // ─── Trees toolbar exports (Actions ▾) ────────────────────────
+  // Both reuse the shared trees-export helpers (single source of
+  // truth with Manage Trees). The canvas SVG is grabbed live via
+  // getTreeCanvasSvg() so no plumbing of an extra ref is needed.
+  const handleToolbarExportPng = useCallback(async () => {
+    const svg = getTreeCanvasSvg();
+    if (!svg) { toast.error('Nothing to export yet.'); return; }
+    setTreeExporting('png');
+    try {
+      await exportTreeSvgToPng(svg, currentTree?.name ?? 'tree');
+    } catch {
+      toast.error('Could not export the tree as a PNG.');
+    } finally {
+      setTreeExporting(null);
+    }
+  }, [currentTree]);
+  const handleToolbarExportPdf = useCallback(async () => {
+    const svg = getTreeCanvasSvg();
+    if (!svg) { toast.error('Nothing to export yet.'); return; }
+    setTreeExporting('pdf');
+    try {
+      await exportTreeSvgToPdf(svg, currentTree?.name ?? 'tree');
+    } catch {
+      toast.error('Could not open the print view.');
+    } finally {
+      setTreeExporting(null);
+    }
+  }, [currentTree]);
+
   const handleRemovePerson = useCallback(async (personId: number) => {
     // Remove every edge touching this person in the current graph.
     if (!graph) return;
@@ -2367,6 +2421,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             <span className="text-xs text-muted-foreground">
               {graph.nodes.length} {graph.nodes.length === 1 ? 'person' : 'people'} · {graph.edges.filter(e => !e.derived).length} relationships
             </span>
+            {/* Focus chip — always-visible "who the tree is centred on"
+                indicator. First name + a small avatar, clicking it opens
+                the same Change-focus picker. Avatar falls back to a
+                monogram dot when the person has no face crop on file. */}
+            {(() => {
+              if (focusPersonId == null) return null;
+              const fp = allPersons.find(p => p.id === focusPersonId);
+              if (!fp) return null;
+              const full = (fp.fullName?.trim() || fp.name?.trim() || '');
+              const firstName = full.split(/\s+/)[0] || 'focus';
+              return (
+                <IconTooltip label={`Tree is focused on ${full || firstName} — click to change`} side="bottom">
+                  <button
+                    onClick={() => setFocusPickerOpen(true)}
+                    data-testid="trees-focus-chip"
+                    className="inline-flex items-center gap-1.5 pl-1 pr-2.5 py-0.5 rounded-full border border-primary/40 bg-primary/10 text-xs font-medium text-foreground hover:bg-primary/20 transition-colors"
+                  >
+                    {fp.avatarData ? (
+                      <img src={fp.avatarData} alt="" className="w-5 h-5 rounded-full object-cover" />
+                    ) : (
+                      <span className="w-5 h-5 rounded-full bg-primary/30 text-primary inline-flex items-center justify-center text-[10px] font-semibold uppercase">
+                        {firstName.charAt(0)}
+                      </span>
+                    )}
+                    <span className="text-muted-foreground">Focused on</span>
+                    <span className="font-semibold">{firstName}</span>
+                  </button>
+                </IconTooltip>
+              );
+            })()}
             <div className="flex-1" />
             {/* Undo / Redo — history is persistent across sessions, so
                 you can walk changes all the way back to when the app
@@ -2393,45 +2477,185 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             </div>
-            {/* Trees Settings — single ribbon button that opens a full
-                Dialog (TreesSettingsModal, rendered at the bottom of
-                this view). Replaces an earlier popover-with-tabs that
-                Terry rightly called out as cramped: Trees has grown
-                three families of settings (Tree, Display, Effects) and
-                a small floating popover hides them rather than
-                presenting them. The dialog mirrors PDR's main
-                SettingsModal pattern — same backdrop, same rounded-2xl
-                card, same horizontal tab strip with a primary
-                underline on the active tab — so users feel one
-                consistent settings surface across the app. The
-                ribbon button reuses the "information" palette
-                (#dbeafe / #3b82f6 / #1e3a8a) so it sits next to the
-                other ribbon buttons without introducing new colours.
-                The (1) badge fires when Dates Living is on, so the
-                user sees at-a-glance that an Add-Info option is
-                active even when the dialog is closed. */}
-            <IconTooltip label="Trees settings — Tree, Display, Effects" side="bottom">
-              <button
-                onClick={() => { setTreesSettingsTab('manageTrees'); setTreesSettingsOpen(true); }}
-                data-pdr-variant="information"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-              >
-                <Sliders className="w-4 h-4" />
-                Trees Settings{showDates ? ' (1)' : ''}
-              </button>
-            </IconTooltip>
-            <IconTooltip label="Change the focus person" side="bottom">
-              <button
-                onClick={() => setFocusPickerOpen(true)}
-                data-pdr-variant="information"
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors"
-                style={{ backgroundColor: '#dbeafe', borderColor: '#3b82f6', color: '#1e3a8a', borderWidth: '1px', borderStyle: 'solid' }}
-              >
-                <Users className="w-4 h-4" />
-                Change focus
-              </button>
-            </IconTooltip>
+            {/* Actions ▾ — single consolidated menu. Replaces the
+                former row of standalone ribbon buttons (Trees
+                Settings / Change focus / Steps / Generations /
+                Branches) that Terry asked to collapse into one tidy
+                dropdown, matching the Memories "Actions" pattern. The
+                Steps / Generations / Branches controls keep their own
+                existing popovers — they're hosted as menu rows, NOT
+                DropdownMenuItems, so their popovers open on top
+                without the menu auto-closing (see onInteractOutside).
+                A small lavender dot rides the trigger whenever the
+                Steps / Generations pulse cues are active so the
+                "relatives hidden beyond the cap" signal survives the
+                move into the menu. */}
+            {(() => {
+              // Pulse cue: any of the former FilterPill pulses → dot
+              // on the Actions trigger so the user still notices that
+              // relatives are hidden beyond the current caps.
+              const actionsPulse = pulseSteps || pulseGenerations || hiddenByStepsCount > 0;
+              const branchesShown = (expandedAncestorsOf.size + expandedDescendantsOf.size) > 0;
+              return (
+                <DropdownMenu open={actionsMenuOpen} onOpenChange={setActionsMenuOpen} modal={false}>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      variant="information"
+                      size="sm"
+                      className="relative"
+                      data-testid="trees-actions-trigger"
+                    >
+                      Actions
+                      <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
+                      {actionsPulse && (
+                        <span
+                          aria-hidden
+                          className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary animate-pulse-cta ring-2 ring-background"
+                        />
+                      )}
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="end"
+                    className="min-w-[260px]"
+                    // Keep the menu open when the user clicks inside one
+                    // of the nested Radix popovers (Steps / Generations
+                    // / Branches), which portal OUTSIDE this content and
+                    // would otherwise register as an outside-interaction
+                    // and dismiss the menu.
+                    onInteractOutside={(e) => {
+                      const target = e.target as HTMLElement | null;
+                      if (target?.closest('[data-radix-popper-content-wrapper]')) {
+                        e.preventDefault();
+                      }
+                    }}
+                  >
+                    {/* Change focus — opens the existing searchable
+                        FocusPickerModal (its single search field already
+                        auto-filters names + offers "+ Add" inline). */}
+                    <DropdownMenuItem onSelect={() => setFocusPickerOpen(true)}>
+                      <Users className="w-3.5 h-3.5 mr-2" />
+                      Change focus
+                    </DropdownMenuItem>
+                    {/* Tree Settings — opens the full Trees Settings
+                        dialog on the Manage Trees tab. (1) when Dates
+                        Living is on, same cue the old button carried. */}
+                    <DropdownMenuItem onSelect={() => { setTreesSettingsTab('manageTrees'); setTreesSettingsOpen(true); }}>
+                      <Sliders className="w-3.5 h-3.5 mr-2" />
+                      Tree Settings{showDates ? ' (1)' : ''}
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    {/* Save as image / Print — shared trees-export
+                        helpers (single source of truth with Manage
+                        Trees). preventDefault keeps the menu open while
+                        the async export runs so the "Exporting…" label
+                        is visible. */}
+                    <DropdownMenuItem
+                      disabled={treeExporting != null}
+                      onSelect={(e) => { e.preventDefault(); void handleToolbarExportPng(); }}
+                    >
+                      <ImageIcon className="w-3.5 h-3.5 mr-2" />
+                      {treeExporting === 'png' ? 'Saving image…' : 'Save as image (PNG)'}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem
+                      disabled={treeExporting != null}
+                      onSelect={(e) => { e.preventDefault(); void handleToolbarExportPdf(); }}
+                    >
+                      <FileText className="w-3.5 h-3.5 mr-2" />
+                      {treeExporting === 'pdf' ? 'Opening…' : 'Print / Save as PDF'}
+                    </DropdownMenuItem>
+                    {/* Zoom submenu — drives the canvas via the
+                        imperative handle (mouse-wheel zoom unchanged). */}
+                    <DropdownMenuSub>
+                      <DropdownMenuSubTrigger>
+                        <Maximize2 className="w-3.5 h-3.5 mr-2" />
+                        Zoom
+                      </DropdownMenuSubTrigger>
+                      <DropdownMenuSubContent>
+                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); canvasRef.current?.zoomIn(); }}>
+                          <ZoomIn className="w-3.5 h-3.5 mr-2" />
+                          Zoom in
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={(e) => { e.preventDefault(); canvasRef.current?.zoomOut(); }}>
+                          <ZoomOut className="w-3.5 h-3.5 mr-2" />
+                          Zoom out
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => canvasRef.current?.fit()}>
+                          <Maximize2 className="w-3.5 h-3.5 mr-2" />
+                          Fit to screen
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onSelect={() => canvasRef.current?.reset()}>
+                          <Scan className="w-3.5 h-3.5 mr-2" />
+                          Reset (100%)
+                        </DropdownMenuItem>
+                      </DropdownMenuSubContent>
+                    </DropdownMenuSub>
+                    <DropdownMenuSeparator />
+                    {/* Steps — hosts the existing StepsDropdown popover.
+                        Rendered as a plain row (not a DropdownMenuItem)
+                        so clicking the inner popover trigger doesn't
+                        select-and-close the menu. The "+N hidden" count
+                        rides alongside the label so that signal isn't
+                        lost now the pill's ambient pulse lives on the
+                        Actions trigger. */}
+                    <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
+                      <span className="inline-flex items-center gap-1.5">
+                        <Footprints className="w-3.5 h-3.5 text-muted-foreground" />
+                        Steps
+                        {hiddenByStepsCount > 0 && (
+                          <span className="text-[11px] font-semibold text-primary tabular-nums">
+                            +{hiddenByStepsCount} hidden
+                          </span>
+                        )}
+                      </span>
+                      <StepsDropdown
+                        value={expandedHops}
+                        onChange={setExpandedHops}
+                        hiddenCount={hiddenByStepsCount}
+                        maxUseful={maxHopsInGraph}
+                      />
+                    </div>
+                    {/* Generations — D (descendants) / A (ancestors). */}
+                    <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
+                      <span className="inline-flex items-center gap-1.5">
+                        <GitFork className="w-3.5 h-3.5 text-muted-foreground" />
+                        Generations
+                      </span>
+                      <div className="inline-flex items-center gap-1.5">
+                        <GenerationDropdown
+                          label="D"
+                          value={descendantsDepth}
+                          onChange={setDescendantsDepth}
+                        />
+                        <GenerationDropdown
+                          label="A"
+                          value={ancestorsDepth}
+                          onChange={setAncestorsDepth}
+                        />
+                      </div>
+                    </div>
+                    {/* Branches shown — only when at least one branch
+                        chevron is expanded (same gate as before). */}
+                    {branchesShown && (
+                      <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
+                        <span className="inline-flex items-center gap-1.5">
+                          <GitBranch className="w-3.5 h-3.5 text-muted-foreground" />
+                          Branches shown
+                        </span>
+                        <BranchesShownDropdown
+                          expandedAncestors={expandedAncestorsOf}
+                          expandedDescendants={expandedDescendantsOf}
+                          graph={graph}
+                          onToggleAncestor={handleExpandAncestors}
+                          onToggleDescendant={handleExpandDescendants}
+                          onClearAll={collapseAllExpansions}
+                        />
+                      </div>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              );
+            })()}
             {/* Snapshot status — same shared component as PM and S&D
                 so the safety net is visible everywhere users make
                 data decisions. Tree edits can be just as expensive
@@ -2451,70 +2675,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             )}
-            {/* Branch-expansion list — popover showing every
-                chevron currently expanded, split into Bloodline
-                (cousins / descendant chevrons, lavender) and
-                Extended family (in-laws' lineages / ancestor
-                chevrons, orange). Each row has a checkbox the
-                user can toggle to close that single branch, plus
-                a "Clear all" footer to collapse the lot. Replaces
-                the previous one-click-close-all button — Terry
-                wanted granular control and a per-section colour
-                cue rather than a binary on/off. */}
-            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (
-              <BranchesShownDropdown
-                expandedAncestors={expandedAncestorsOf}
-                expandedDescendants={expandedDescendantsOf}
-                graph={graph}
-                onToggleAncestor={handleExpandAncestors}
-                onToggleDescendant={handleExpandDescendants}
-                onClearAll={collapseAllExpansions}
-              />
-            )}
-            {/* Steps filter — same dropdown style as the
-                Generations D/A pickers (0–10 grid, type-any-number,
-                +10 quick-step). Per Terry: the previous +/- stepper
-                capped at 6 was too restrictive; a dropdown matches
-                the Generations affordance and lets users go to 10
-                or any custom number.
-                The pill pulses (continuously) when hidden people
-                exist beyond the current Steps cap, AND briefly
-                flashes via pulseSteps when a new-add lands beyond
-                the cap. The dropdown trigger carries a "+N"
-                badge with the hidden count so the user knows
-                exactly how many more they'd see by bumping Steps. */}
-            <FilterPill
-              label="Steps"
-              pulse={pulseSteps}
-              pulseSlow={hiddenByStepsCount > 0}
-            >
-              <StepsDropdown
-                value={expandedHops}
-                onChange={setExpandedHops}
-                hiddenCount={hiddenByStepsCount}
-                maxUseful={maxHopsInGraph}
-              />
-            </FilterPill>
-            <FilterPill label="Generations" pulse={pulseGenerations}>
-              {/* D (descendants) on left, A (ancestors) on right —
-                  matches Terry's spatial intuition (younger below,
-                  older above). Each is a dropdown of 0–10 with
-                  type-any-number + "Add 10 more" for users who
-                  legitimately need deeper trees (royal families,
-                  deep historical research). No hard cap. */}
-              <div className="inline-flex items-center gap-1.5">
-                <GenerationDropdown
-                  label="D"
-                  value={descendantsDepth}
-                  onChange={setDescendantsDepth}
-                />
-                <GenerationDropdown
-                  label="A"
-                  value={ancestorsDepth}
-                  onChange={setAncestorsDepth}
-                />
-              </div>
-            </FilterPill>
             <IconTooltip label="Refresh tree and people list" side="bottom">
               <button
                 onClick={() => {
@@ -2544,6 +2704,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
         )}
         {layout && (
           <TreesCanvas
+            ref={canvasRef}
             layout={layout}
             highlightTargetId={highlightTarget?.id ?? null}
             highlightNonce={highlightTarget?.nonce ?? 0}
