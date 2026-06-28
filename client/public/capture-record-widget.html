@@ -167,6 +167,12 @@
   #micSel:hover { background: rgba(255, 255, 255, 0.14); }
   #micSel option { background: #16161a; color: #fff; }
   /* v3.0 round 411 — Clicks (click-ripple) toggle; gold 'on' like Blur. */
+  /* v3.0 round 488 (Terry) — Clicks PULLED from v3.0 and hidden: the global
+     click-hook it needs adds too much mouse lag during recording to ship. Kept in
+     the markup (not deleted) so it returns in v3.1 once the hook is de-lagged.
+     Auto-zoom (opt-in, default OFF) stays for the "help viewers follow the cursor"
+     need and never runs the hook unless a user deliberately enables it. */
+  #clicks { display: none !important; }
   #clicks.on {
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
@@ -873,7 +879,10 @@
         micBtn.title = micOn ? 'Microphone ON — your voice will be recorded; click to turn off' : 'Record your microphone (voiceover) — click to turn on before recording';
         enumerateMics();
         // v3.0 round 411 — restore the click-ripple preference + light the button.
-        rippleOn = storedInit.ripple === true;
+        // v3.0 round 488 (Terry) — Clicks pulled for v3.0 (global-hook lag); force it
+        // OFF regardless of any stored preference so the now-hidden feature can never
+        // re-activate the laggy hook. Returns in v3.1.
+        rippleOn = false;
         clicksBtn.classList.toggle('on', rippleOn);
         clicksBtn.title = rippleOn ? 'Click ripples are ON — a gold ring shows where you click; click to turn off' : 'Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials';
         // v3.0 round 485 — restore the auto-zoom preference. The init payload (main's
