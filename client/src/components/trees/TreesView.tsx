@@ -27,7 +27,7 @@ import {
   type FamilyGraph,
   type SavedTreeRecord,
 } from '@/lib/electron-bridge';
-import { computeFocusLayout } from '@/lib/trees-layout';
+import { computeFocusLayout, assignGenerations } from '@/lib/trees-layout';
 import { toast } from 'sonner';
 import { TreesCanvas } from './TreesCanvas';
 import { SetRelationshipModal } from './SetRelationshipModal';
@@ -3922,6 +3922,8 @@ function BranchesShownDropdown({
   triggerClassName?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // Sort mode for the branch rows (applies within each section).
+  const [sortMode, setSortMode] = useState<'name' | 'gen' | 'steps'>('name');
   const siblingChipCount = openSiblingChips?.size ?? 0;
   const siblingFamilyCount = openSiblingFamilyChips?.size ?? 0;
   const total = expandedAncestors.size + expandedDescendants.size + siblingChipCount + siblingFamilyCount;
@@ -3934,22 +3936,95 @@ function BranchesShownDropdown({
     return n?.fullName?.trim() || n?.name?.trim() || `#${id}`;
   };
 
-  const bloodlineEntries = Array.from(expandedDescendants)
-    .map(id => ({ id, name: nameOf(id) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const extendedEntries = Array.from(expandedAncestors)
-    .map(id => ({ id, name: nameOf(id) }))
-    .sort((a, b) => a.name.localeCompare(b.name));
+  // True-depth GENERATION number per person — the SAME numbering the
+  // left rail uses: youngest-that-exists = 1, counting up. assignGenerations
+  // returns focus=0, parents positive, children negative; normalising by
+  // the minimum present generation gives `gen - minGen + 1`. Memoised on
+  // the graph so we don't re-walk every render (and so there's no
+  // setState-in-render). Pure derivation — no effects, no loop risk.
+  const genNumById = useMemo(() => {
+    const out = new Map<number, number>();
+    if (!graph) return out;
+    const raw = assignGenerations(graph);
+    if (raw.size === 0) return out;
+    let minGen = Infinity;
+    raw.forEach(g => { if (g < minGen) minGen = g; });
+    raw.forEach((g, id) => out.set(id, g - minGen + 1));
+    return out;
+  }, [graph]);
+  const stepsById = useMemo(() => {
+    const out = new Map<number, number>();
+    if (graph) for (const n of graph.nodes) out.set(n.personId, n.hopsFromFocus);
+    return out;
+  }, [graph]);
+  const genOf = (id: number) => genNumById.get(id);
+  const stepsOf = (id: number) => stepsById.get(id);
+
+  // Sort comparator shared by both sections. Generation/Steps fall back
+  // to name when the metric is missing or tied so order stays stable.
+  const sortRows = <T extends { id: number; sortName: string }>(rows: T[]): T[] =>
+    [...rows].sort((a, b) => {
+      if (sortMode === 'gen') {
+        const ga = genOf(a.id), gb = genOf(b.id);
+        if (ga != null && gb != null && ga !== gb) return ga - gb;
+        if ((ga == null) !== (gb == null)) return ga == null ? 1 : -1;
+      } else if (sortMode === 'steps') {
+        const sa = stepsOf(a.id), sb = stepsOf(b.id);
+        if (sa != null && sb != null && sa !== sb) return sa - sb;
+        if ((sa == null) !== (sb == null)) return sa == null ? 1 : -1;
+      }
+      return a.sortName.localeCompare(b.sortName);
+    });
+
+  const bloodlineEntries = sortRows(
+    Array.from(expandedDescendants).map(id => ({ id, label: nameOf(id), sortName: nameOf(id), toggle: onToggleDescendant })),
+  );
+  const extendedEntries = sortRows(
+    Array.from(expandedAncestors).map(id => ({ id, label: nameOf(id), sortName: nameOf(id), toggle: onToggleAncestor })),
+  );
   // Sibling-collapse panels — both bloodline. Labels spell out the
   // panel kind ("…'s siblings" / "…'s family") so the row reads as the
-  // panel it closes, not just a bare person name.
-  const siblingEntries = Array.from(openSiblingChips ?? [])
-    .map(id => ({ id, label: `${nameOf(id)}'s siblings` }))
-    .sort((a, b) => a.label.localeCompare(b.label));
-  const siblingFamilyEntries = Array.from(openSiblingFamilyChips ?? [])
-    .map(id => ({ id, label: `${nameOf(id)}'s family` }))
-    .sort((a, b) => a.label.localeCompare(b.label));
+  // panel it closes. sortName is the underlying person name so gen/steps
+  // sorting lines them up with the cousin rows.
+  const siblingEntries = sortRows(
+    Array.from(openSiblingChips ?? []).map(id => ({ id, label: `${nameOf(id)}'s siblings`, sortName: nameOf(id), toggle: (x: number) => onToggleSiblingChip?.(x) })),
+  );
+  const siblingFamilyEntries = sortRows(
+    Array.from(openSiblingFamilyChips ?? []).map(id => ({ id, label: `${nameOf(id)}'s family`, sortName: nameOf(id), toggle: (x: number) => onToggleSiblingFamilyChip?.(x) })),
+  );
   const hasBloodline = bloodlineEntries.length > 0 || siblingEntries.length > 0 || siblingFamilyEntries.length > 0;
+
+  /** One branch row — checkbox + name + "Gen g · s steps" metadata.
+   *  `tone` colours the name + checkbox: lavender for bloodline, gold
+   *  for extended family. Reuses the shared Checkbox primitive. */
+  const renderRow = (
+    entry: { id: number; label: string; toggle: (id: number) => void },
+    keyPrefix: string,
+    tone: 'bloodline' | 'extended',
+  ) => {
+    const colour = tone === 'bloodline' ? '#7e6df0' : '#c2740a';
+    const checkClass = tone === 'bloodline'
+      ? 'border-[#ad9eff] data-[state=checked]:bg-[#ad9eff] data-[state=checked]:border-[#ad9eff] data-[state=checked]:text-white'
+      : 'border-[#f59e0b] data-[state=checked]:bg-[#f59e0b] data-[state=checked]:border-[#f59e0b] data-[state=checked]:text-white';
+    const g = genOf(entry.id);
+    const s = stepsOf(entry.id);
+    const metaBits: string[] = [];
+    if (g != null) metaBits.push(`Gen ${g}`);
+    if (s != null) metaBits.push(`${s} step${s === 1 ? '' : 's'}`);
+    return (
+      <li key={`${keyPrefix}-${entry.id}`}>
+        <label className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors">
+          <Checkbox checked className={checkClass} onCheckedChange={() => entry.toggle(entry.id)} />
+          <span className="flex flex-col leading-tight min-w-0">
+            <span className="text-sm truncate" style={{ color: colour }}>{entry.label}</span>
+            {metaBits.length > 0 && (
+              <span className="text-[10px] text-muted-foreground">{metaBits.join(' · ')}</span>
+            )}
+          </span>
+        </label>
+      </li>
+    );
+  };
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
@@ -3965,7 +4040,39 @@ function BranchesShownDropdown({
           <ChevronDown className="w-3 h-3" />
         </button>
       </PopoverTrigger>
-      <PopoverContent className="w-64 p-3" align="end" collisionPadding={12}>
+      <PopoverContent
+        className="w-72 p-3"
+        align="end"
+        collisionPadding={12}
+        // Keep the dropdown OPEN when the user clicks an expand/collapse
+        // chevron on the canvas (so they can watch the list update). Any
+        // chevron / toggle carries data-tree-toggle; a click elsewhere
+        // (empty canvas, another control) falls through and closes.
+        // Mirrors the e.target pattern used by AlbumsView's More menu.
+        onInteractOutside={(e) => {
+          // Radix puts the actually-CLICKED element in e.detail.originalEvent.target,
+          // NOT e.target (which is the dismissable layer). Use the former so a tree
+          // chevron/toggle click keeps the dropdown OPEN (let the user expand/collapse
+          // branches + watch the list update) while an empty-canvas click closes it.
+          const orig = (e.detail as { originalEvent?: Event } | undefined)?.originalEvent;
+          const t = orig?.target ?? e.target;
+          if (t instanceof Element && t.closest('[data-tree-toggle]')) e.preventDefault();
+        }}
+      >
+        {/* Sort control — reorders rows within each section. Compact
+            segmented row of three small buttons. */}
+        <div className="flex items-center gap-1 mb-2 text-[11px]">
+          <span className="text-muted-foreground mr-0.5">Sort:</span>
+          {([['name', 'Name'], ['gen', 'Generation'], ['steps', 'Steps']] as const).map(([mode, label]) => (
+            <button
+              key={mode}
+              onClick={() => setSortMode(mode)}
+              className={`px-1.5 py-0.5 rounded transition-colors ${sortMode === mode ? 'bg-primary/15 text-primary font-semibold' : 'text-foreground hover:bg-accent'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
         {hasBloodline && (
           <div className="mb-3">
             <p
@@ -3975,49 +4082,13 @@ function BranchesShownDropdown({
               Bloodline
             </p>
             <ul className="space-y-1">
-              {bloodlineEntries.map(entry => (
-                <li key={`d-${entry.id}`}>
-                  <label
-                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
-                  >
-                    <Checkbox
-                      checked
-                      onCheckedChange={() => onToggleDescendant(entry.id)}
-                    />
-                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.name}</span>
-                  </label>
-                </li>
-              ))}
+              {bloodlineEntries.map(entry => renderRow(entry, 'd', 'bloodline'))}
               {/* Open "{Ancestor}'s siblings" panels — unchecking closes
                   that lavender sibling panel via onToggleSiblingChip. */}
-              {siblingEntries.map(entry => (
-                <li key={`sib-${entry.id}`}>
-                  <label
-                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
-                  >
-                    <Checkbox
-                      checked
-                      onCheckedChange={() => onToggleSiblingChip?.(entry.id)}
-                    />
-                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.label}</span>
-                  </label>
-                </li>
-              ))}
+              {siblingEntries.map(entry => renderRow(entry, 'sib', 'bloodline'))}
               {/* Open "{Sibling}'s family" panels (Panel 2) — unchecking
                   closes it via onToggleSiblingFamilyChip. */}
-              {siblingFamilyEntries.map(entry => (
-                <li key={`sibfam-${entry.id}`}>
-                  <label
-                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
-                  >
-                    <Checkbox
-                      checked
-                      onCheckedChange={() => onToggleSiblingFamilyChip?.(entry.id)}
-                    />
-                    <span className="text-sm" style={{ color: '#7e6df0' }}>{entry.label}</span>
-                  </label>
-                </li>
-              ))}
+              {siblingFamilyEntries.map(entry => renderRow(entry, 'sibfam', 'bloodline'))}
             </ul>
           </div>
         )}
@@ -4030,19 +4101,7 @@ function BranchesShownDropdown({
               Extended family
             </p>
             <ul className="space-y-1">
-              {extendedEntries.map(entry => (
-                <li key={`a-${entry.id}`}>
-                  <label
-                    className="flex items-center gap-2 px-1 py-1 rounded cursor-pointer hover:bg-accent transition-colors"
-                  >
-                    <Checkbox
-                      checked
-                      onCheckedChange={() => onToggleAncestor(entry.id)}
-                    />
-                    <span className="text-sm" style={{ color: '#c2740a' }}>{entry.name}</span>
-                  </label>
-                </li>
-              ))}
+              {extendedEntries.map(entry => renderRow(entry, 'a', 'extended'))}
             </ul>
           </div>
         )}

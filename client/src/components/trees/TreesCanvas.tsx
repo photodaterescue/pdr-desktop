@@ -2239,6 +2239,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           return (
             <IconTooltip key={`gen-row-${g.worldY}`} label={show ? `Show generation ${g.genNum}` : `Hide generation ${g.genNum}`} side="right">
               <button
+                data-tree-toggle="1"
                 onClick={(e) => { e.stopPropagation(); onSetGenerationExpanded(g.sideIds, g.directIds, show); }}
                 className="absolute left-3 z-30 inline-flex items-center justify-center gap-1 min-w-8 h-8 px-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-foreground"
                 style={{ top }}
@@ -2815,6 +2816,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                   />
                 )}
                 <g
+                  data-tree-toggle="1"
                   transform={`translate(${chevronCx} ${chevronCy})`}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -2921,6 +2923,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                     style={{ pointerEvents: 'none' }}
                   />
                   <g
+                    data-tree-toggle="1"
                     transform={`translate(${pillCx} ${pillCy})`}
                     style={{ cursor: 'pointer' }}
                     onMouseDown={(e) => e.stopPropagation()}
@@ -2987,6 +2990,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                   style={{ pointerEvents: 'none' }}
                 />
                 <g
+                  data-tree-toggle="1"
                   transform={`translate(${chevronCx} ${chevronCy})`}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -3078,6 +3082,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                   style={{ pointerEvents: 'none' }}
                 />
                 <g
+                  data-tree-toggle="1"
                   transform={`translate(${chevronCx} ${chevronCy})`}
                   style={{ cursor: 'pointer' }}
                   onMouseDown={(e) => e.stopPropagation()}
@@ -5051,6 +5056,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                             style={{ pointerEvents: 'none' }}
                           />
                           <g
+                            data-tree-toggle="1"
                             transform={`translate(${pillCx} ${pillCy})`}
                             style={{ cursor: 'pointer' }}
                             onMouseDown={(e) => e.stopPropagation()}
@@ -6259,6 +6265,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               style={{ pointerEvents: 'none' }}
             />
             <g
+              data-tree-toggle="1"
               transform={`translate(0 ${chevronCy + lift})`}
               style={{ cursor: 'pointer', transition: 'transform 120ms ease-out' }}
               onMouseEnter={() => setChevronHovered(true)}
@@ -6367,6 +6374,7 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
               style={{ pointerEvents: 'none' }}
             />
             <g
+              data-tree-toggle="1"
               transform={`translate(0 ${chevronCy + lift})`}
               style={{ cursor: 'pointer', transition: 'transform 120ms ease-out' }}
               onMouseEnter={() => setChevronHovered(true)}
