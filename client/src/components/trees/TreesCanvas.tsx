@@ -182,6 +182,14 @@ interface TreesCanvasProps {
   openSiblingFamilyChips?: Set<number>;
   /** Toggle a collapsed sibling's family (Panel 2) open/closed. */
   onToggleSiblingFamilyChip?: (headId: number) => void;
+  /** Reports the master "Expand all / Collapse all" state UP to the
+   *  parent so the floating top-right canvas cluster (rendered in
+   *  TreesView) can drive it. `available` = at least one collapsible
+   *  side-branch exists; `allExpanded` = every branch-point is already
+   *  open; `allBranchPointIds` = the full set to pass back to
+   *  onExpandAllDescendants (or [] to collapse). The master toggle
+   *  itself moved out of the canvas into that cluster. */
+  onExpandAllStateChange?: (state: { available: boolean; allExpanded: boolean; allBranchPointIds: number[] }) => void;
 }
 
 interface Viewport { tx: number; ty: number; scale: number; }
@@ -247,7 +255,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip }: TreesCanvasProps, ref) {
+export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip, onExpandAllStateChange }: TreesCanvasProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -265,6 +273,14 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
    *  `${personId}-${direction}` so each chevron's panel remembers its
    *  drag position independently within the session. */
   const [panelOffsets, setPanelOffsets] = useState<Map<string, { x: number; y: number }>>(new Map());
+  /** Key of the floating panel the user most-recently interacted with
+   *  (drag-start or any pointer-down inside it). That panel gets the
+   *  TOP z-index so it comes to the FRONT — without this every panel
+   *  shared one z-index and a dragged panel slid BEHIND its neighbours
+   *  (Terry: dragging "Lindsay's Family" vanished behind "Gladys's
+   *  family"). Bring-to-front is by most-recent interaction, not render
+   *  order. */
+  const [activePanelKey, setActivePanelKey] = useState<string | null>(null);
   /** Per-panel horizontal scroll position. When the panel content
    *  overflows its display width (typical when zoomed in past
    *  MAX_PANEL_W), CardContent shows a horizontal scrollbar — and
@@ -1561,6 +1577,27 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
     return [...ids];
   }, [sideBranchDescendantsByHead, layout.edges]);
 
+  // Report the master Expand-all / Collapse-all state UP so TreesView's
+  // floating top-right cluster can render + drive the toggle (the pill
+  // itself moved out of the canvas). Mirrors the old inline logic:
+  // available when at least one collapsible side-branch exists;
+  // allExpanded when every branch-point is already open.
+  const lastExpandAllSigRef = useRef('');
+  useEffect(() => {
+    if (!onExpandAllStateChange) return;
+    const available = sideBranchChevrons.length > 0;
+    const allExpanded = allBranchPointIds.length > 0 && allBranchPointIds.every(id => expandedDescendantsOf?.has(id));
+    // Only report UP when the value actually CHANGES. `allBranchPointIds` is a
+    // fresh array reference every render (layout recomputes upstream), so firing
+    // unconditionally re-triggered TreesView's setExpandAllState → re-render →
+    // this effect again → infinite loop (React #185, blanked the Trees view).
+    // The signature guard breaks that — fire once per real change. (r476 fix)
+    const sig = `${available}|${allExpanded}|${allBranchPointIds.join(',')}`;
+    if (sig === lastExpandAllSigRef.current) return;
+    lastExpandAllSigRef.current = sig;
+    onExpandAllStateChange({ available, allExpanded, allBranchPointIds });
+  }, [sideBranchChevrons.length, allBranchPointIds, expandedDescendantsOf, onExpandAllStateChange]);
+
   /** Per-generation toggles (Terry SS1 — "a unique feature, a lot of control").
    *  Group every shown branch-point by its ROW (world-y), so one button can
    *  show/hide that whole generation's children at once. The button stack sits
@@ -2179,27 +2216,16 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
   return (
     <div className="absolute inset-0 select-none">
       {/* Per-generation controls (Terry SS1 — "a unique feature, a lot of
-          control"). Far-left stack: a MASTER expand/collapse-all at the top
-          ("although that might be useful as well"), then one button PER
-          GENERATION, each vertically aligned to the row it shows/hides so you
-          can open the tree one generation at a time, both for cousins and for
-          your own direct family. The floating in-law ancestor panels are NEVER
-          touched by any of these (separate firewall). */}
-      {onExpandAllDescendants && sideBranchChevrons.length > 0 && (() => {
-        // MASTER — open/close EVERY level at once.
-        const allExpanded = allBranchPointIds.length > 0 && allBranchPointIds.every(id => expandedDescendantsOf?.has(id));
-        return (
-          <IconTooltip label={allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'} side="right">
-            <button
-              onClick={(e) => { e.stopPropagation(); onExpandAllDescendants(allExpanded ? [] : allBranchPointIds); }}
-              className="absolute left-3 top-3 z-30 inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
-            >
-              {allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
-              {allExpanded ? 'Collapse all' : 'Expand all'}
-            </button>
-          </IconTooltip>
-        );
-      })()}
+          control"). Far-left stack: one button PER GENERATION, each
+          vertically aligned to the row it shows/hides so you can open the
+          tree one generation at a time, both for cousins and for your own
+          direct family. The floating in-law ancestor panels are NEVER
+          touched by any of these (separate firewall).
+          The MASTER "Expand all / Collapse all" toggle that used to sit at
+          the TOP of this stack moved into TreesView's floating top-right
+          canvas cluster (its state is reported up via
+          onExpandAllStateChange) so Expand/Collapse + Steps + Generations
+          share one home. */}
       {generationRows.map((g) => {
         // Each row tracks its world-y -> screen-y via the same transform the
         // canvas uses, clamped below the master button so it stays put.
@@ -4449,8 +4475,17 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                   boxShadow: '0 12px 32px rgba(0, 0, 0, 0.20)',
                   borderColor: l.tetherColour,
                   borderWidth: 2,
-                  zIndex: 30,
+                  // Active (most-recently-interacted) panel sits one
+                  // level above its siblings so a dragged panel comes
+                  // to the FRONT instead of sliding behind neighbours.
+                  zIndex: activePanelKey === l.panelKey ? 31 : 30,
                 }}
+                // Bring-to-front on ANY pointer-down inside the panel —
+                // capture phase so it still fires when an inner element
+                // (e.g. a PersonNode) stops propagation. This makes the
+                // top panel track most-recent interaction, not render
+                // order.
+                onPointerDownCapture={() => setActivePanelKey(l.panelKey)}
                 // Forward wheel events to the canvas's zoom handler
                 // so the user can scroll-zoom even when the cursor
                 // is over a panel — without this the panel HTML
@@ -4476,6 +4511,8 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                   const startDrag = (e: React.MouseEvent) => {
                     if (e.button !== 0) return;
                     e.preventDefault();
+                    // Bring this panel to the front for the whole drag.
+                    setActivePanelKey(l.panelKey);
                     const current = panelOffsets.get(l.panelKey) ?? { x: 0, y: 0 };
                     panelDragRef.current = {
                       active: true,

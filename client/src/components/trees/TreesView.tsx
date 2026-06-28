@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play, Sparkles, Image as ImageIcon, FileText, ZoomIn, ZoomOut, Maximize2, Scan, Footprints, GitFork } from 'lucide-react';
+import { Users, X, GitBranch, RefreshCw, UserPlus, Pin, Pencil, FolderOpen, Info, Undo2, Redo2, Move, EyeOff, Eye, ChevronDown, Sliders, Play, Sparkles, Image as ImageIcon, FileText, ZoomIn, ZoomOut, Maximize2, Scan, Footprints, GitFork, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import {
@@ -219,6 +219,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   // 'png' | 'pdf' while an export is in flight (so the menu rows can
   // show progress + disable). Mirrors ManageTreesModal's pattern.
   const [treeExporting, setTreeExporting] = useState<'png' | 'pdf' | null>(null);
+  // Master Expand-all / Collapse-all state, reported up from the canvas
+  // (which knows the branch-point set). Drives the toggle in the
+  // floating top-right canvas cluster below.
+  const [expandAllState, setExpandAllState] = useState<{ available: boolean; allExpanded: boolean; allBranchPointIds: number[] }>({ available: false, allExpanded: false, allBranchPointIds: [] });
   const [autoFocusAttempted, setAutoFocusAttempted] = useState(false);
   // v3.0 round 419 (Terry) — true once the saved-tree load has run, so the
   // first-visit focus picker only opens after we know whether a tree exists.
@@ -2477,23 +2481,21 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 </button>
               </IconTooltip>
             </div>
-            {/* Actions ▾ — single consolidated menu. Replaces the
-                former row of standalone ribbon buttons (Trees
-                Settings / Change focus / Steps / Generations /
-                Branches) that Terry asked to collapse into one tidy
-                dropdown, matching the Memories "Actions" pattern. The
-                Steps / Generations / Branches controls keep their own
-                existing popovers — they're hosted as menu rows, NOT
-                DropdownMenuItems, so their popovers open on top
-                without the menu auto-closing (see onInteractOutside).
-                A small lavender dot rides the trigger whenever the
-                Steps / Generations pulse cues are active so the
-                "relatives hidden beyond the cap" signal survives the
-                move into the menu. */}
+            {/* Actions ▾ — consolidated menu. Per Terry the Steps /
+                Generations / Branches controls live in BOTH places: the
+                always-visible floating canvas cluster (top-right) AND
+                here in the menu, so a user working from the toolbar can
+                reach everything from one button. The Steps / Generations
+                / Branches rows host their own existing popovers — they're
+                plain rows (NOT DropdownMenuItems) so clicking the inner
+                popover trigger doesn't select-and-close the menu (see
+                onInteractOutside + modal={false}). A small lavender dot
+                rides the trigger whenever the Steps / Generations pulse
+                cues are active — the same signal also shows on the canvas
+                cluster controls. */}
             {(() => {
-              // Pulse cue: any of the former FilterPill pulses → dot
-              // on the Actions trigger so the user still notices that
-              // relatives are hidden beyond the current caps.
+              // Pulse cue: any of the Steps/Generations pulses → dot on
+              // the Actions trigger (Steps/Gen still live in this menu).
               const actionsPulse = pulseSteps || pulseGenerations || hiddenByStepsCount > 0;
               const branchesShown = (expandedAncestorsOf.size + expandedDescendantsOf.size) > 0;
               return (
@@ -2595,9 +2597,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                         Rendered as a plain row (not a DropdownMenuItem)
                         so clicking the inner popover trigger doesn't
                         select-and-close the menu. The "+N hidden" count
-                        rides alongside the label so that signal isn't
-                        lost now the pill's ambient pulse lives on the
-                        Actions trigger. */}
+                        rides alongside the label. */}
                     <div className="flex items-center justify-between gap-2 px-2 py-1.5 text-sm">
                       <span className="inline-flex items-center gap-1.5">
                         <Footprints className="w-3.5 h-3.5 text-muted-foreground" />
@@ -2756,6 +2756,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onToggleSiblingChip={handleToggleSiblingChip}
             openSiblingFamilyChips={openSiblingFamilyChips}
             onToggleSiblingFamilyChip={handleToggleSiblingFamilyChip}
+            onExpandAllStateChange={setExpandAllState}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
             onEditDates={(personId, screenX, screenY) => {
@@ -2799,6 +2800,69 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               });
             }}
           />
+        )}
+        {/* Floating canvas control cluster (Terry) — pinned TOP-RIGHT,
+            above the tree + floating panels (z-40), like map controls.
+            Holds the master Expand/Collapse-all toggle (moved here from
+            the old top-LEFT canvas pill — one home now), plus the Steps,
+            Generations (D/A) and Branches-shown controls (reusing the
+            same dropdown components the toolbar used). The hidden-people
+            PULSE lives directly on these controls via FilterPill, so the
+            Actions ▾ button no longer needs its own pulse dot. */}
+        {layout && graph && (
+          <div className="absolute top-3 right-3 z-40 flex flex-col items-end gap-2">
+            {expandAllState.available && (
+              <IconTooltip label={expandAllState.allExpanded ? 'Collapse the whole family tree' : 'Expand the whole family tree'} side="left">
+                <button
+                  onClick={() => {
+                    setExpandedDescendantsOf(new Set(expandAllState.allExpanded ? [] : expandAllState.allBranchPointIds));
+                    // Master toggle returns direct family to default (shown).
+                    setCollapsedDescendantsOf(new Set());
+                  }}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-background/90 border border-border shadow-sm hover:bg-accent transition-colors backdrop-blur-sm text-xs font-medium text-foreground"
+                >
+                  {expandAllState.allExpanded ? <ChevronsDownUp className="w-4 h-4 text-primary" /> : <ChevronsUpDown className="w-4 h-4 text-primary" />}
+                  {expandAllState.allExpanded ? 'Collapse all' : 'Expand all'}
+                </button>
+              </IconTooltip>
+            )}
+            <FilterPill
+              label="Steps"
+              pulse={pulseSteps}
+              pulseSlow={hiddenByStepsCount > 0}
+            >
+              <StepsDropdown
+                value={expandedHops}
+                onChange={setExpandedHops}
+                hiddenCount={hiddenByStepsCount}
+                maxUseful={maxHopsInGraph}
+              />
+            </FilterPill>
+            <FilterPill label="Generations" pulse={pulseGenerations}>
+              <div className="inline-flex items-center gap-1.5">
+                <GenerationDropdown
+                  label="D"
+                  value={descendantsDepth}
+                  onChange={setDescendantsDepth}
+                />
+                <GenerationDropdown
+                  label="A"
+                  value={ancestorsDepth}
+                  onChange={setAncestorsDepth}
+                />
+              </div>
+            </FilterPill>
+            {(expandedAncestorsOf.size + expandedDescendantsOf.size) > 0 && (
+              <BranchesShownDropdown
+                expandedAncestors={expandedAncestorsOf}
+                expandedDescendants={expandedDescendantsOf}
+                graph={graph}
+                onToggleAncestor={handleExpandAncestors}
+                onToggleDescendant={handleExpandDescendants}
+                onClearAll={collapseAllExpansions}
+              />
+            )}
+          </div>
         )}
         {/* Empty-state hint — anchored to the top of the canvas so it never
             overlaps with the centred focus avatar. */}
