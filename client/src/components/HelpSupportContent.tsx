@@ -337,7 +337,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_E — Enhanced</dt>
-                      <dd className="text-muted-foreground mt-0.5">A new file created by the PDR Viewer&apos;s Enhance panel — brightness, contrast, saturation, temperature, or B&amp;W adjustments baked into a fresh JPG alongside the original. The original is untouched; this is your edited copy. The enhancement type (manual or AI) is recorded in the file&apos;s XMP metadata so Search &amp; Discovery can filter for it.</dd>
+                      <dd className="text-muted-foreground mt-0.5">A new file created by the PDR Viewer&apos;s Enhance panel — brightness, contrast, saturation, temperature, or B&amp;W adjustments, or AI face-restore and upscale that sharpen and enlarge old or low-resolution photos, baked into a fresh JPG alongside the original. The original is untouched; this is your edited copy. The enhancement type (manual or AI) is recorded in the file&apos;s XMP metadata so Search &amp; Discovery can filter for it.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_T — Trimmed</dt>

@@ -10510,6 +10510,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Photo Date Rescue restores correct dates to photos and videos by analyzing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
                   <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale — multi-GB Google Takeouts, decades of phone backups, mixed scanner output, the lot.</p>
+                  <p>And once your dates are fixed, PDR becomes a full home for your photos: search and browse them, relive them in Memories, name faces in People Manager, build a Family Tree, design collages and carousels, enhance old photos, record your screen, and share — all on your own hardware, nothing uploaded.</p>
                 </div>
               </section>
 
@@ -11788,6 +11789,35 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 </Accordion>
               </div>
 
+              {/* v3.0 (Terry 2026-06-28) — Beyond the fix: best-practice tips for the
+                  v3.0 creative + sharing tools, so Best Practices reflects them too. */}
+              <section className="pt-6">
+                <h3 className="text-lg font-medium text-foreground mb-4">Beyond the fix</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed mb-4">Once your dates are clean, PDR is a full home for your photos. A few habits to get the best out of the newer tools:</p>
+                <div className="space-y-4">
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Collages save as re-openable projects</p>
+                    <p className="text-sm text-muted-foreground">A collage keeps editing as a project (auto-saved under &ldquo;Your Collage Projects&rdquo;). Use <em>Update</em> to keep refining the same piece, or <em>Save as new version</em> to branch a variation without losing the original. Multi-page Carousels live in the same project.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Set Screen Capture blur before you stop</p>
+                    <p className="text-sm text-muted-foreground">Blur areas, zoom moments and the webcam bubble are baked into the saved MP4 when you stop recording. Position your blur over anything sensitive <em>before</em> you finish — it can&apos;t be added afterwards.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Name faces first, then build a Tree</p>
+                    <p className="text-sm text-muted-foreground">Family Trees are built from the people you&apos;ve verified in People Manager, so name and merge faces there first. The more people you confirm, the richer and more complete the tree.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Enhance to a new file</p>
+                    <p className="text-sm text-muted-foreground">When restoring or upscaling an old photo in the Viewer, save to a new file (the <span className="font-mono text-xs">_E</span> copy) rather than over the original, so you always keep the untouched scan.</p>
+                  </div>
+                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
+                    <p className="font-medium text-foreground mb-1">Pick the right way to share</p>
+                    <p className="text-sm text-muted-foreground">Send to Phone needs both devices on the same Wi-Fi. For anything off-network, drag files straight out to another app, Copy an image, or Print to PDF — those travel anywhere.</p>
+                  </div>
+                </div>
+              </section>
+
               {/* Closing Statement */}
               <section className="pt-6">
                 <div className="p-6 bg-primary/5 border border-primary/10 rounded-xl">
@@ -11936,8 +11966,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <li><span className="font-medium text-foreground">Search &amp; Discovery</span> — find any photo by date, person, location, tag, camera or scanner. Right-click any file for &ldquo;Add to album&hellip;&rdquo; to drop it (or your selection) into an existing or new album without leaving S&amp;D.</li>
                     <li><span className="font-medium text-foreground">Memories</span> — Dates timeline (year / month / day drilldowns) + Albums + On This Day across your library. Right-click any photo or selection inside a Dates drilldown or album and choose &ldquo;Send to Search &amp; Discovery&rdquo; (or &ldquo;Add to S&amp;D pile&rdquo; to accumulate) — the chosen files appear as a Memories chip in the S&amp;D filter row and can be filtered, ranked, or acted on like any other result set. A gold &ldquo;Back to Memories&rdquo; pill appears in the title bar so one click returns you to the exact month or album you came from, scrolled back to the file you last touched.</li>
                     <li><span className="font-medium text-foreground">People Manager</span> — name and merge AI-detected face clusters.</li>
+                    <li><span className="font-medium text-foreground">Needs Dates</span> — work through the Marked files (the ones with no reliable date) and set dates yourself, individually or in bulk.</li>
+                    <li><span className="font-medium text-foreground">Family Trees</span> — turn the people in your library into a visual family tree you can build out and explore.</li>
+                    <li><span className="font-medium text-foreground">Collages &amp; Carousels</span> — arrange your photos into designed collages, saved as re-openable projects, plus multi-page carousels — with templates, frames, captions and text.</li>
+                    <li><span className="font-medium text-foreground">Enhance</span> — restore, sharpen and upscale old or low-resolution photos right inside the Viewer.</li>
+                    <li><span className="font-medium text-foreground">Screen Capture</span> — record your screen (or grab a screenshot) straight into your library, with on-the-fly blur, zoom, a webcam bubble and voiceover.</li>
+                    <li><span className="font-medium text-foreground">Sharing</span> — get photos out the moment you need them: drag several at once, Send to Phone over Wi-Fi, Print or Print to PDF, or Copy.</li>
                   </ul>
-                  <p>PDR also keeps itself up to date in the background, so future improvements (Trees and Edit Dates — released shortly) will arrive without you needing to manually download anything.</p>
+                  <p>PDR also keeps itself up to date in the background, so new features and improvements arrive automatically — no manual downloads.</p>
                 </div>
               </section>
             </div>
@@ -12081,6 +12117,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     apart from the latest one with each update." */}
                 <Accordion type="multiple" defaultValue={[
                   `ver-${updateStatus === 'update-available' && latestVersion ? latestVersion : appVersion}`,
+                  'ver-3.0',
                 ]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
@@ -12120,6 +12157,35 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
+                  {/* v3.0 (Terry 2026-06-28) — the big v3.0 release entry.
+                      Collages, Screen Capture, Family Trees, AI Enhance and
+                      Sharing weren't yet in the changelog. Added above the v2.1
+                      entry; v2.1 never shipped as its own release (package is
+                      2.0.15) so its scope folds into v3.0 — the detailed v2.1
+                      bullet record is kept below for reference. */}
+                  <AccordionItem value="ver-3.0" className="border border-border rounded-lg px-4">
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v3.0</span>
+                        {appVersion?.startsWith('3.0') && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">The big v3.0 release: Collages &amp; Carousels, Screen Capture, Family Trees, AI photo Enhance, and one-tap Sharing.</strong> PDR is now a full home for your photos &mdash; not just date repair, but creating, organising, restoring and sharing them, all on your own hardware with nothing uploaded. Builds on the v2.1 foundation below (video transcription, manual photo enhancement, the Date Editor, Recycle Bin, format conversion, and the deep Search &amp; Discovery + Memories refresh).
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Collages &amp; Carousels</strong> &mdash; a full collage studio in its own window. Start from around ten ready-made layouts, drop in your photos, then style them with frames, curved corners, captions, text and fonts, and effects (glow, shadow, blend, vignette, grain). Marquee and Ctrl-click multi-select with Canva-style equidistant snapping and measurement guides; Magic Resize keeps your layout intact when you change the canvas size. Every collage saves as a re-openable <code>.pdrcollage</code> project you can come back to, and multi-page Carousels let you build a sequence.</li>
+                        <li><strong className="text-foreground font-medium">Screen Capture</strong> &mdash; record your screen (or grab a screenshot) straight into your library. Blur sensitive areas live (as many as you need, with a confirmation overlay), mark zoom moments, drop in a webcam bubble, and add a microphone voiceover. Recordings save as MP4. The PDR Viewer&apos;s video timeline also gains scrub-to-preview so you can find the right frame at a glance.</li>
+                        <li><strong className="text-foreground font-medium">Family Trees</strong> &mdash; turn the people you&apos;ve named in People Manager into a visual family tree. Focus any person to recentre the tree, expand or collapse the bloodline and extended-family branches one at a time, and explore generation after generation without the canvas getting tangled.</li>
+                        <li><strong className="text-foreground font-medium">AI photo Enhance</strong> &mdash; restore faces and upscale old or low-resolution photos with on-device AI, right inside the Viewer, alongside the manual brightness / contrast / saturation sliders. Save to a new file or over the original &mdash; either way your original is never lost.</li>
+                        <li><strong className="text-foreground font-medium">Sharing, the last mile</strong> &mdash; get photos out the moment you need them: drag several files out at once (with a &ldquo;Drag (N)&rdquo; count badge), Send to Phone over Wi-Fi by scanning a QR code, Print or Print to PDF, or Copy an image straight to the clipboard.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+
                   <AccordionItem value="ver-2.1" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
