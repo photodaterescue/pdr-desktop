@@ -41,3 +41,10 @@ electron-stdout.log
 .scratch/
 
 release-test-phase-a/
+
+# Throwaway Claude Code dev helpers — tmp-cdp.cjs (CDP driver for live
+# verification) and tmp-commit.txt (commit-message staging). Per-session
+# scratch, never part of the source tree. Kept around so they don't dirty
+# the working tree before a release (the release pre-flight requires it clean).
+tmp-cdp.cjs
+tmp-commit.txt

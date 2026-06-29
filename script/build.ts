@@ -23,7 +23,7 @@ import { rm, readFile } from "fs/promises";
 const isReleaseBuild = process.argv.includes('--release');
 if (isReleaseBuild) {
   process.env.VITE_PDR_RELEASE_GATE = 'release';
-  console.log('[build] Release gate ENABLED — Trees + Edit Dates disabled in this build.');
+  console.log('[build] Release gate flag set. (v3.0: Trees is unlocked — no features are gated off in this build.)');
 }
 
 // server deps to bundle to reduce openat(2) syscalls

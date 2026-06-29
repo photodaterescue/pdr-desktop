@@ -28,12 +28,16 @@
 const RELEASE_GATE: string = (import.meta.env.VITE_PDR_RELEASE_GATE as string | undefined) ?? '';
 
 /**
- * Whether Trees (the family-tree view) is reachable. Returns true
- * in dev builds and any non-release production build. Returns false
- * for the v2.0.0 release-gated build.
+ * Whether Trees (the family-tree view) is reachable.
+ *
+ * v3.0 (Terry 2026-06-29): unlocked UNCONDITIONALLY. Trees is the headline
+ * v3.0 feature, so the v2.0.x release gate that greyed it out is lifted —
+ * Terry's explicit "ship Trees in v3.0". Mirrors isEditDatesEnabled /
+ * isFormatConversionEnabled (return true, kept as a function so call sites
+ * don't change). RELEASE_GATE no longer gates any shipping feature.
  */
 export function isTreesEnabled(): boolean {
-  return RELEASE_GATE !== 'release';
+  return true;
 }
 
 /**
