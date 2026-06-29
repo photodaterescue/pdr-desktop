@@ -12117,7 +12117,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     apart from the latest one with each update." */}
                 <Accordion type="multiple" defaultValue={[
                   `ver-${updateStatus === 'update-available' && latestVersion ? latestVersion : appVersion}`,
-                  'ver-3.0',
+                  'ver-3.0.0',
                 ]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
@@ -12157,16 +12157,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
-                  {/* v3.0 (Terry 2026-06-28) — the big v3.0 release entry.
-                      Collages, Screen Capture, Family Trees, AI Enhance and
-                      Sharing weren't yet in the changelog. Added above the v2.1
-                      entry; v2.1 never shipped as its own release (package is
-                      2.0.15) so its scope folds into v3.0 — the detailed v2.1
-                      bullet record is kept below for reference. */}
-                  <AccordionItem value="ver-3.0" className="border border-border rounded-lg px-4">
+                  {/* v3.0.0 (Terry 2026-06-28) — the big v3.0.0 release. v2.1 never
+                      shipped; it was REPLACED by v3.0.0, so this single entry covers
+                      both the headline features AND the work that had been slated for
+                      v2.1. The last shipped version before 3.0.0 was 2.0.14 (below). */}
+                  <AccordionItem value="ver-3.0.0" className="border border-border rounded-lg px-4">
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
-                        <span>v3.0</span>
+                        <span>v3.0.0</span>
                         {appVersion?.startsWith('3.0') && (
                           <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
                         )}
@@ -12174,7 +12172,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">The big v3.0 release: Collages &amp; Carousels, Screen Capture, Family Trees, AI photo Enhance, and one-tap Sharing.</strong> PDR is now a full home for your photos &mdash; not just date repair, but creating, organising, restoring and sharing them, all on your own hardware with nothing uploaded. Builds on the v2.1 foundation below (video transcription, manual photo enhancement, the Date Editor, Recycle Bin, format conversion, and the deep Search &amp; Discovery + Memories refresh).
+                        <strong className="text-foreground">The big v3.0 release: Collages &amp; Carousels, Screen Capture, Family Trees, AI photo Enhance, and one-tap Sharing.</strong> PDR is now a full home for your photos &mdash; not just date repair, but creating, organising, restoring and sharing them, all on your own hardware with nothing uploaded. This release also folds in the work that had been lined up as v2.1 (which never shipped on its own): video transcription, manual photo enhancement, the Date Editor, a Recycle Bin, a working Photo Format converter, a smoother end-of-Fix experience, and a deep refresh of Search &amp; Discovery and Memories &mdash; all detailed below.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Collages &amp; Carousels</strong> &mdash; a full collage studio in its own window. Start from around ten ready-made layouts, drop in your photos, then style them with frames, curved corners, captions, text and fonts, and effects (glow, shadow, blend, vignette, grain). Marquee and Ctrl-click multi-select with Canva-style equidistant snapping and measurement guides; Magic Resize keeps your layout intact when you change the canvas size. Every collage saves as a re-openable <code>.pdrcollage</code> project you can come back to, and multi-page Carousels let you build a sequence.</li>
@@ -12182,24 +12180,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Family Trees</strong> &mdash; turn the people you&apos;ve named in People Manager into a visual family tree. Focus any person to recentre the tree, expand or collapse the bloodline and extended-family branches one at a time, and explore generation after generation without the canvas getting tangled.</li>
                         <li><strong className="text-foreground font-medium">AI photo Enhance</strong> &mdash; restore faces and upscale old or low-resolution photos with on-device AI, right inside the Viewer, alongside the manual brightness / contrast / saturation sliders. Save to a new file or over the original &mdash; either way your original is never lost.</li>
                         <li><strong className="text-foreground font-medium">Sharing, the last mile</strong> &mdash; get photos out the moment you need them: drag several files out at once (with a &ldquo;Drag (N)&rdquo; count badge), Send to Phone over Wi-Fi by scanning a QR code, Print or Print to PDF, or Copy an image straight to the clipboard.</li>
-                      </ul>
-                    </AccordionContent>
-                  </AccordionItem>
-
-                  <AccordionItem value="ver-2.1" className="border border-border rounded-lg px-4">
-                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
-                      <div className="flex items-center gap-2">
-                        <span>v2.1</span>
-                        {appVersion === '2.1' && (
-                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
-                        )}
-                      </div>
-                    </AccordionTrigger>
-                    <AccordionContent className="pt-2 pb-4">
-                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">The big v2.1 release: video transcription, AI photo enhancement, the Date Editor unlock, a Recycle Bin, a working Photo Format converter, a smoother end-of-Fix experience, and a deep refresh of Search &amp; Discovery and Memories.</strong> The toolbar view-pill recipe and the selection-banner recipe are now shared across Search &amp; Discovery, Memories &mdash; Dates, Memories &mdash; Albums, and Needs Dates so the four surfaces look and behave as one family. A round-trip between Memories and S&amp;D lets you pull selections out of a month or album for ad-hoc filtering and jump straight back to where you came from.
-                      </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li className="list-none -ml-5 mt-3 pt-3 border-t border-border/60"><strong className="text-foreground font-medium">Also in v3.0 (the work that had been lined up as v2.1):</strong> the toolbar view-pill and selection-banner recipes are now shared across Search &amp; Discovery, Memories &mdash; Dates, Memories &mdash; Albums and Needs Dates so the four surfaces behave as one family, and a round-trip between Memories and S&amp;D lets you pull selections out of a month or album for ad-hoc filtering and jump straight back. In detail:</li>
                         <li><strong className="text-foreground font-medium">Video transcription (Whisper Large-v3 Turbo, on-device)</strong> &mdash; right-click any video in Memories, Albums, or Search &amp; Discovery and choose Transcribe. Progress modal with ETA. A lavender &ldquo;T&rdquo; badge appears on transcribed-video tiles, and the viewer overlays the spoken text. Everything runs locally on your machine &mdash; no API key, no upload, no rate limit. A new Settings switch under Privacy &amp; Security (&ldquo;Hide video transcripts&rdquo;) levers the T badge and the viewer subtitle overlay together.</li>
                         <li><strong className="text-foreground font-medium">Photo enhancement sliders in the PDR Viewer</strong> &mdash; manual brightness, contrast, saturation, and other live filter sliders with double-click reset. Save your changes back to the original file or to a new file (the original stays untouched in either case).</li>
                         <li><strong className="text-foreground font-medium">PDR Viewer Clip Trim</strong> &mdash; trim handles on the viewer&apos;s video timeline plus a Save button. Trim is non-destructive (a new file is written; the original stays put), saved as <code>_TR</code>, indexed automatically.</li>
