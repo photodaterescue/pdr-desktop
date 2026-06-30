@@ -305,18 +305,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Portraits" → "Sinta Portraits"); falls back to the whole name when there's no category prefix.
   const collageTypeOf = (name?: string | null): string => {
     if (!name) return '';
-    const parts = String(name).split(' · ');
-    return (parts.length > 1 ? parts.slice(1).join(' · ') : parts[0]).trim();
+    if (/^Collage \d{4}-\d{2}-\d{2}/.test(name)) return '';   // auto-generated timestamp name — not a real type
+    let parts = String(name).split(' · ').map((s) => s.trim()).filter(Boolean);
+    if (parts.length > 1 && /^v?\d+$/i.test(parts[parts.length - 1])) parts.pop();   // drop a trailing version (v2/v3) from old names
+    if (parts.length > 1) parts = parts.slice(1);   // drop the leading category → what's left is the type
+    const t = parts.join(' · ').trim();
+    // a bare category with no descriptive type isn't a "type"
+    if (['general', 'personal', 'business', 'family', 'friends', 'gift', 'event', 'travel'].includes(t.toLowerCase())) return '';
+    return t;
   };
   const collageTypes = useMemo(() => {
     const m = new Map<string, number>();
     for (const ph of albumPhotos) {
-      const n = ph.collage_name; if (!n) continue;
-      const parts = String(n).split(' · ');
-      const t = (parts.length > 1 ? parts.slice(1).join(' · ') : parts[0]).trim();
+      const t = collageTypeOf(ph.collage_name);
       if (t) m.set(t, (m.get(t) || 0) + 1);
     }
     return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [albumPhotos]);
 
   // v2.1 round 102 (Terry 2026-06-11) — group an album's photos by
@@ -560,7 +565,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     try { localStorage.setItem(ALBUMS_TILE_META_KEY, JSON.stringify(metaFields)); } catch { /* localStorage may be unavailable */ }
   }, [metaFields]);
   const showFilename = metaFields.includes('filename');
-  const showDate = metaFields.includes('date');
   const showType = metaFields.includes('type');   // v3.0 (Terry) — show the collage's type below the tile (collage albums only)
 
   // Ctrl+wheel zoom — same interaction the S&D grid and Memories
@@ -682,6 +686,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const el = headerToolbarRef.current;
     if (!el || typeof ResizeObserver === 'undefined') return;
     const measure = (w: number) => {
+      // v3.0 (Terry) — ignore transient 0-width measurements (e.g. while the window is briefly backgrounded
+      // as the Viewer/Collage window opens after a file is clicked) so the toolbar doesn't collapse to
+      // "⋯ More" and get stuck. A real resize re-fires measure() with the true width.
+      if (!w || w <= 0) return;
       // < 760px → fold collapsibles into "⋯ More"; < 980px → icon-only.
       const veryCompact = w < 760;
       const compact = w < 980;
@@ -2716,8 +2724,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
         {([
           { key: 'filename' as AlbumTileMetaField, label: 'Filename' },
-          { key: 'date' as AlbumTileMetaField, label: 'Date' },
-          // v3.0 (Terry) — "Type" (the collage's category·type) only offered on PDR Collages albums; off by default.
+          // v3.0 (Terry) — "Date" removed: redundant — collage filenames are date-prefixed and the day
+          // sub-headers already show the date. "Type" (the collage's category·type) only on PDR Collages
+          // albums; off by default.
           ...(selectedAlbum?.source === 'pdr_collages' ? [{ key: 'type' as AlbumTileMetaField, label: 'Type' }] : []),
         ]).map((opt) => {
           const checked = metaFields.includes(opt.key);
@@ -4317,7 +4326,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
-                    {(showFilename || showDate || (showType && p.collage_name)) && (
+                    {(showFilename || (showType && p.collage_name)) && (
                       <div className="px-1 pt-1 pb-0.5 min-w-0">
                         {showType && p.collage_name && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.collage_name}>
@@ -4327,11 +4336,6 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         {showFilename && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.filename}>
                             {p.filename}
-                          </p>
-                        )}
-                        {showDate && (
-                          <p className="text-[10px] text-muted-foreground truncate">
-                            {p.derived_date ? p.derived_date.slice(0, 10) : '—'}
                           </p>
                         )}
                       </div>

@@ -9180,6 +9180,55 @@ ipcMain.handle('scannerOverride:clear', async (_event, args: { make: string; mod
 
 // ─── Search & Discovery IPC handlers ─────────────────────────────────────────
 
+// v3.0 (Terry) — one-time backfill of collage_name onto PRE-v3 collage photos (their type was only
+// written to the file's EXIF title, never the index). Reads the title back via exiftool and stores it,
+// so existing collages show their type + match the type filter. Self-limiting: it only reads photos in
+// pdr_collages albums that still lack a name, so once done it does nothing. Fire-and-forget from
+// search:init so it never blocks boot. Real users start fresh, so for them this is always a no-op.
+let collageBackfillDone = false;   // per-process guard — a double search:init mustn't run it twice
+async function backfillCollageNames(): Promise<void> {
+  if (collageBackfillDone) return;
+  collageBackfillDone = true;
+  try {
+    const { getDb, setCollageName } = await import('./search-database.js');
+    const db = getDb();
+    const rows = db.prepare(`
+      SELECT DISTINCT i.id AS id, i.file_path AS file_path
+        FROM indexed_files i
+        JOIN album_files af ON af.file_id = i.id
+        JOIN albums a ON a.id = af.album_id
+       WHERE a.source = 'pdr_collages'
+         AND i.collage_name IS NULL
+         AND (i.in_recycle_bin IS NULL OR i.in_recycle_bin = 0)
+    `).all() as Array<{ id: number; file_path: string }>;
+    if (rows.length === 0) return;
+    console.log(`[collage-backfill] reading EXIF titles for ${rows.length} un-named collage photo(s)…`);
+    const { ExifTool } = await import('exiftool-vendored');
+    const exiftoolPath = path.join(__dirname, 'bin', 'exiftool.exe');
+    const exiftool = new ExifTool({ exiftoolPath: fs.existsSync(exiftoolPath) ? exiftoolPath : undefined });
+    let set = 0;
+    try {
+      for (const r of rows) {
+        let val = '';   // '' = checked, no title found → marks the row so it isn't re-read with exiftool every launch
+        if (r.file_path && fs.existsSync(r.file_path)) {
+          try {
+            const tags = await exiftool.read(r.file_path);
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+            const t = tags as any;
+            const title = t.Title || t.ObjectName || t.XPTitle || null;
+            if (title && String(title).trim()) val = String(title).trim();
+          } catch { /* unreadable → leave val '' */ }
+        }
+        setCollageName(r.id, val);
+        if (val) set++;
+      }
+    } finally { try { await exiftool.end(); } catch { /* non-fatal */ } }
+    console.log(`[collage-backfill] set collage_name on ${set}/${rows.length} photo(s).`);
+  } catch (err) {
+    console.warn('[collage-backfill] failed (non-fatal):', (err as Error).message);
+  }
+}
+
 ipcMain.handle('search:init', async () => {
   const result = initDatabase();
   // v2.0.11 — runDatabaseCleanup no longer runs here. The startup
@@ -9199,6 +9248,9 @@ ipcMain.handle('search:init', async () => {
     } catch (mErr) {
       console.warn('[collage-migrate] migration failed (non-fatal):', (mErr as Error).message);
     }
+    // v3.0 (Terry) — backfill collage_name onto pre-v3 collage photos (dev data; real users start fresh).
+    // Fire-and-forget + self-limiting (skips files that already have a name) so it never blocks search init.
+    void backfillCollageNames();
   }
   return result;
 });

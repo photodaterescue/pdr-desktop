@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { AlertTriangle, ChevronRight, X, Copy, Check } from 'lucide-react';
 import { EmojiPickerPopover } from '@/components/EmojiPickerPopover';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 
 /**
  * promptConfirm(message) — async replacement for the native window.confirm().
@@ -791,15 +792,16 @@ function InputDialog({
             copyableTitle ? (
               <div className="flex items-center justify-center gap-1.5 mb-2">
                 <h3 className="text-lg font-semibold text-foreground leading-snug truncate" title={title}>{title}</h3>
-                <button
-                  type="button"
-                  onClick={() => { try { navigator.clipboard.writeText(title); setTitleCopied(true); setTimeout(() => setTitleCopied(false), 1200); } catch { /* clipboard unavailable */ } }}
-                  className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-secondary/50"
-                  aria-label="Copy filename"
-                  title="Copy filename"
-                >
-                  {titleCopied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
-                </button>
+                <IconTooltip label={titleCopied ? 'Copied!' : 'Copy filename'} side="top">
+                  <button
+                    type="button"
+                    onClick={() => { try { navigator.clipboard.writeText(title); setTitleCopied(true); setTimeout(() => setTitleCopied(false), 1200); } catch { /* clipboard unavailable */ } }}
+                    className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-secondary/50"
+                    aria-label="Copy filename"
+                  >
+                    {titleCopied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+                  </button>
+                </IconTooltip>
               </div>
             ) : (
               <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
