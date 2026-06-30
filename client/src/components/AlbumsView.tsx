@@ -299,8 +299,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   useEffect(() => { setMediaFilter('all'); }, [selection]);
   // v3.0 (Terry) — collage "type" filter (PDR Collages albums only). '' = all types; resets per album so a
   // leftover filter doesn't bleed across albums (mirrors the mediaFilter reset above).
-  const [typeFilter, setTypeFilter] = useState<string>('');
-  useEffect(() => { setTypeFilter(''); }, [selection]);
+  const [typeFilter, setTypeFilter] = useState<Set<string>>(new Set());   // v3.0 (Terry) — multi-select type filter (checkboxes; none = all)
+  useEffect(() => { setTypeFilter(new Set()); }, [selection]);
   // The displayable TYPE of a collage = the part of its name after the category (e.g. "Personal · Sinta
   // Portraits" → "Sinta Portraits"); falls back to the whole name when there's no category prefix.
   const collageTypeOf = (name?: string | null): string => {
@@ -2870,7 +2870,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // distinct collage TYPES in this album (+ "All types") as radios; picking one narrows the grid. The caller
   // gates rendering on selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0.
   const renderTypeButton = (compact = false) => {
-    const active = typeFilter !== '';
+    const count = typeFilter.size;
+    const active = count > 0;
+    const pillLabel = count === 0 ? 'All' : count === 1 ? Array.from(typeFilter)[0] : `${count} types`;
+    const toggle = (t: string) => setTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
     return (
       <Popover>
         <IconTooltip label="Filter these collages by type" side="bottom">
@@ -2883,7 +2886,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               <span className="inline-flex items-center gap-1.5 relative">
                 <Filter className="w-3.5 h-3.5" />
                 {!compact && <span className="text-muted-foreground/85">Type:</span>}
-                {!compact && <span className="max-w-[120px] truncate">{active ? typeFilter : 'All'}</span>}
+                {!compact && <span className="max-w-[120px] truncate">{pillLabel}</span>}
                 {active && compact && <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full bg-primary" />}
               </span>
               {!compact && <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
@@ -2891,20 +2894,22 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           </PopoverTrigger>
         </IconTooltip>
         <PopoverContent align="start" className="w-64 p-1">
-          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">Filter by type</p>
+          <div className="flex items-center justify-between px-3 pt-2 pb-1">
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Filter by type — tick any</span>
+            {active && (
+              <button type="button" onClick={() => setTypeFilter(new Set())} className="text-[11px] text-primary hover:underline">Clear</button>
+            )}
+          </div>
           <div className="max-h-72 overflow-y-auto">
-            <RadioGroup value={typeFilter || '__all__'} onValueChange={(v) => setTypeFilter(v === '__all__' ? '' : v)} className="gap-0">
-              <label htmlFor="albums-type-all" className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
-                <span className="inline-flex items-center gap-2 text-foreground"><Filter className="w-3.5 h-3.5 text-muted-foreground" />All types</span>
-                <span className="inline-flex items-center gap-3"><span className="text-xs text-muted-foreground">{albumPhotos.length.toLocaleString()}</span><RadioGroupItem id="albums-type-all" value="__all__" /></span>
+            {collageTypes.map(([t, c]) => (
+              <label key={t} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
+                <span className="text-foreground truncate">{t}</span>
+                <span className="inline-flex items-center gap-3 shrink-0">
+                  <span className="text-xs text-muted-foreground">{c.toLocaleString()}</span>
+                  <Checkbox checked={typeFilter.has(t)} onCheckedChange={() => toggle(t)} />
+                </span>
               </label>
-              {collageTypes.map(([t, count], i) => (
-                <label key={t} htmlFor={`albums-type-${i}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
-                  <span className="text-foreground truncate" title={t}>{t}</span>
-                  <span className="inline-flex items-center gap-3 shrink-0"><span className="text-xs text-muted-foreground">{count.toLocaleString()}</span><RadioGroupItem id={`albums-type-${i}`} value={t} /></span>
-                </label>
-              ))}
-            </RadioGroup>
+            ))}
           </div>
         </PopoverContent>
       </Popover>
@@ -3862,7 +3867,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   if (mediaFilter === 'photos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'photo');
                   else if (mediaFilter === 'videos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'video');
                   if (captionedOnly) visiblePhotos = visiblePhotos.filter((p) => p.caption && p.caption.length > 0);
-                  if (typeFilter) visiblePhotos = visiblePhotos.filter((p) => collageTypeOf(p.collage_name) === typeFilter);   // v3.0 (Terry) — collage type filter
+                  if (typeFilter.size > 0) visiblePhotos = visiblePhotos.filter((p) => typeFilter.has(collageTypeOf(p.collage_name)));   // v3.0 (Terry) — collage type filter (multi-select)
                   // v2.1 round 103 (Terry 2026-06-11) — format day labels
                   // the same way the scroll listener does so the inline
                   // divider text matches the sticky banner verbatim.

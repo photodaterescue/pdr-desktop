@@ -1,6 +1,7 @@
 import * as React from 'react';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from './tooltip';
 import { useShowTooltips } from '@/hooks/useShowTooltips';
+import { cn } from '@/lib/utils';
 
 interface IconTooltipProps {
   label: React.ReactNode;
@@ -12,6 +13,9 @@ interface IconTooltipProps {
    *  amber used for married-in / extended-family affordances in Trees,
    *  so the bubble matches the gold pill it labels. */
   tone?: 'default' | 'gold';
+  /** v3.0 (Terry) — extra classes for the tooltip bubble, e.g. a higher z-index so it shows ABOVE a
+   *  modal overlay (the caption dialog is z-[80]; the default tooltip is z-50 and would hide behind it). */
+  contentClassName?: string;
 }
 
 /**
@@ -26,7 +30,7 @@ interface IconTooltipProps {
  * long filenames/paths where converting thousands of DOM nodes to
  * Radix tooltips would be a perf regression for no real UX gain.
  */
-export function IconTooltip({ label, side = 'top', delayMs = 120, children, disabled, tone = 'default' }: IconTooltipProps) {
+export function IconTooltip({ label, side = 'top', delayMs = 120, children, disabled, tone = 'default', contentClassName }: IconTooltipProps) {
   // v2.1 round 167 (Terry) — global "Show tooltips" toggle. When off, render
   // the child alone (no tooltip), matching the disabled/empty-label path.
   const showTooltips = useShowTooltips();
@@ -49,7 +53,7 @@ export function IconTooltip({ label, side = 'top', delayMs = 120, children, disa
         <TooltipTrigger asChild>
           {isDisabledChild ? <span className="inline-flex">{children}</span> : children}
         </TooltipTrigger>
-        <TooltipContent side={side} className={tone === 'gold' ? 'bg-[#c2740a] text-white' : undefined}>{label}</TooltipContent>
+        <TooltipContent side={side} className={cn(tone === 'gold' ? 'bg-[#c2740a] text-white' : undefined, contentClassName)}>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

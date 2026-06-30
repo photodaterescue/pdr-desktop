@@ -792,7 +792,7 @@ function InputDialog({
             copyableTitle ? (
               <div className="flex items-center justify-center gap-1.5 mb-2">
                 <h3 className="text-lg font-semibold text-foreground leading-snug truncate" title={title}>{title}</h3>
-                <IconTooltip label={titleCopied ? 'Copied!' : 'Copy filename'} side="top">
+                <IconTooltip label={titleCopied ? 'Copied!' : 'Copy filename'} side="top" contentClassName="z-[90]">
                   <button
                     type="button"
                     onClick={() => { try { navigator.clipboard.writeText(title); setTitleCopied(true); setTimeout(() => setTitleCopied(false), 1200); } catch { /* clipboard unavailable */ } }}
