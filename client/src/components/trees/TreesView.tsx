@@ -2489,14 +2489,10 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                 / Branches rows host their own existing popovers — they're
                 plain rows (NOT DropdownMenuItems) so clicking the inner
                 popover trigger doesn't select-and-close the menu (see
-                onInteractOutside + modal={false}). A small lavender dot
-                rides the trigger whenever the Steps / Generations pulse
-                cues are active — the same signal also shows on the canvas
-                cluster controls. */}
+                onInteractOutside + modal={false}). The hidden-people /
+                Steps-Generations pulse cue lives only on the canvas
+                cluster controls (top-right), not on this trigger. */}
             {(() => {
-              // Pulse cue: any of the Steps/Generations pulses → dot on
-              // the Actions trigger (Steps/Gen still live in this menu).
-              const actionsPulse = pulseSteps || pulseGenerations || hiddenByStepsCount > 0;
               // Include the G5 sibling-collapse panels in the gate so
               // "Branches shown" appears when ONLY those are open too.
               const branchesShown = (expandedAncestorsOf.size + expandedDescendantsOf.size + openSiblingChips.size + openSiblingFamilyChips.size) > 0;
@@ -2511,12 +2507,6 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                     >
                       Actions
                       <ChevronDown className="w-3.5 h-3.5 ml-1.5 opacity-80" />
-                      {actionsPulse && (
-                        <span
-                          aria-hidden
-                          className="absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full bg-primary animate-pulse-cta ring-2 ring-background"
-                        />
-                      )}
                     </Button>
                   </DropdownMenuTrigger>
                   <DropdownMenuContent

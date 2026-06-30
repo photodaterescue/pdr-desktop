@@ -2522,7 +2522,7 @@
     .cnw-card { max-width: 460px; text-align: left; }
     .cnw-sub { font-size: 12.5px; color: #9a98ad; margin: 4px 0 14px; }
     .cnw-label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px; color: #8b88a0; margin: 13px 0 7px; }
-    .cnw-opt { text-transform: none; font-weight: 400; color: #6f6d80; }
+    .cnw-opt { text-transform: none; font-weight: 400; color: #a8a5bd; }   /* v3.0 round 493 (Terry) — was #6f6d80, too faint on the dark card; lifted for legibility */
     .cnw-chips { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 9px; }
     .cnw-chip { padding: 6px 12px; border-radius: 999px; border: 1px solid rgba(169,156,255,0.3); background: rgba(169,156,255,0.08); color: #cfc9e8; font-size: 12.5px; cursor: pointer; transition: all 0.12s; }
     .cnw-chip:hover { border-color: rgba(254,194,66,0.6); color: #fff; }
@@ -12897,7 +12897,7 @@
         if (collageExportedFileId && window.pdr && window.pdr.captions && window.pdr.captions.get) {
           window.pdr.captions.get(collageExportedFileId).then(function (cr) { if (cr && cr.success && typeof cr.data === 'string') { collageCaptionText = cr.data; var _ce = document.getElementById('collageCaptionInput'); if (_ce) _ce.value = collageCaptionText; } }).catch(function () {});
         }
-        try { var _cciR = document.getElementById('collageCaptionInput'); if (_cciR) _cciR.value = collageCaptionText; } catch (_) {}
+        try { var _cciR = document.getElementById('collageCaptionInput'); if (_cciR) _cciR.value = collageCaptionText; var _ccbR = document.getElementById('btn-collage-caption'); if (_ccbR) _ccbR.classList.remove('pinned'); } catch (_) {}   // v3.0 round 493 (Terry) — open a reopened collage with the caption window CLOSED (don't carry the previous collage's pinned-open state)
         try { updateUndoButtons(); } catch (_) {}
         updateCollageTitle();   // v2.1 round 347 (Terry) — show the reopened project's name
         return true;
@@ -13242,6 +13242,7 @@
     function showCollageWelcome() {
       const w = document.getElementById('collage-welcome');
       if (!w) return;
+      collageMode = false;   // v3.0 round 493 (Terry) — the gallery is NOT the editing canvas; clear collageMode so the collage right-click menu can't fire on the Home/welcome tiles
       // v2.1 round 321 (Terry) — CRITICAL: the CWS is an overlay sitting OVER the editing canvas,
       // and the canvas/stage marquee-select grabs the pointer on pointerdown (setPointerCapture).
       // On a REAL click that capture swallowed the click on every CWS button (Blank / recent /
@@ -13271,6 +13272,7 @@
     function hideCollageWelcome() {
       const w = document.getElementById('collage-welcome');
       if (w) { w.classList.remove('active'); w.setAttribute('aria-hidden', 'true'); }
+      collageMode = true;   // v3.0 round 493 (Terry) — leaving the gallery = back in the editor; restore collageMode (pairs with showCollageWelcome's clear)
       // Restore the editing chrome (re-expand the menu for the work session).
       document.body.classList.remove('collage-panel-collapsed', 'cws-open');
       try { setTimeout(maybeShowCollageWelcomeCard, 450); } catch (_) {}
