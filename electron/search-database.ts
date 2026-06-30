@@ -8016,6 +8016,74 @@ export function findOrCreateCollageAlbumInFolder(title: string, folderGroupId: n
   return txn();
 }
 
+/** v3.0 (Terry) — Phase 3 one-time migration: move PRE-folder collage/carousel albums into the new
+ *  PDR Collages › {Collages | Carousels} tree.
+ *   • Old top-level pdr_collages albums (auto-group only, not in any kind-folder) → the Collages folder,
+ *     merging any same-titled folder album that already exists (so e.g. "General" ends up as ONE album).
+ *   • The old user_created "PDR Carousels" album → PDR Collages › Carousels › General.
+ *  Photos are never deleted — album_files are copied (INSERT OR IGNORE) into the kept album; only the
+ *  now-redundant old album ROWS are removed (album = a virtual grouping; indexed_files are untouched).
+ *  Naturally idempotent (it keys off the old structure, which it removes) + self-guarding: it returns 0
+ *  without touching anything when there's nothing to migrate. Takes a one-time VACUUM INTO backup first. */
+export function migrateCollagesToKindFolders(): number {
+  const db = getDb();
+  const auto = db.prepare(
+    `SELECT id FROM album_groups WHERE source_kind='auto' AND source_key='pdr_collages' LIMIT 1`
+  ).get() as { id: number } | undefined;
+  if (!auto) return 0;   // no PDR Collages source at all → no collages to migrate
+  // OLD single collages = pdr_collages albums linked to the PDR Collages source group but NOT yet in any
+  // user sub-folder of it (i.e. pre-folder top-level albums).
+  const oldSingles = db.prepare(
+    `SELECT a.id, a.title FROM albums a
+      WHERE a.source='pdr_collages'
+        AND EXISTS (SELECT 1 FROM album_group_memberships m WHERE m.album_id=a.id AND m.group_id=?)
+        AND NOT EXISTS (SELECT 1 FROM album_group_memberships m2 JOIN album_groups g ON g.id=m2.group_id
+                          WHERE m2.album_id=a.id AND g.source_kind='user' AND g.parent_id=?)`
+  ).all(auto.id, auto.id) as { id: number; title: string }[];
+  const oldCar = db.prepare(
+    `SELECT id FROM albums WHERE source='user_created' AND lower(title)='pdr carousels' LIMIT 1`
+  ).get() as { id: number } | undefined;
+  if (oldSingles.length === 0 && !oldCar) return 0;   // already migrated / nothing to do
+
+  // One-time safety backup before mutating (best-effort; never block the migration on a backup failure).
+  try {
+    const ts = new Date().toISOString().replace(/[:.]/g, '-');
+    const bak = `${db.name}.pre-collage-migration-${ts}.bak`;
+    db.exec(`VACUUM INTO '${bak.replace(/'/g, "''")}'`);
+    console.log(`[collage-migrate] backed up DB to ${bak}`);
+  } catch (bErr) {
+    console.warn(`[collage-migrate] pre-migration backup failed (continuing): ${(bErr as Error).message}`);
+  }
+
+  const folders = ensureCollageKindFolders();
+  const txn = db.transaction(() => {
+    let n = 0;
+    for (const old of oldSingles) {
+      // a same-titled album already in the Collages folder (e.g. a category created by a new save)?
+      const dup = db.prepare(
+        `SELECT a.id FROM albums a JOIN album_group_memberships m ON m.album_id=a.id
+          WHERE a.source='pdr_collages' AND lower(a.title)=lower(?) AND m.group_id=? AND a.id<>? LIMIT 1`
+      ).get(old.title, folders.collages, old.id) as { id: number } | undefined;
+      db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto) VALUES (?, ?, 0)`).run(old.id, folders.collages);
+      if (dup) {
+        db.prepare(`INSERT OR IGNORE INTO album_files (album_id, file_id) SELECT ?, file_id FROM album_files WHERE album_id=?`).run(old.id, dup.id);
+        db.prepare(`DELETE FROM albums WHERE id=?`).run(dup.id);
+      }
+      n++;
+    }
+    if (oldCar) {
+      const tgt = findOrCreateCollageAlbumInFolder('General', folders.carousels);   // carousels had no category → General
+      db.prepare(`INSERT OR IGNORE INTO album_files (album_id, file_id) SELECT ?, file_id FROM album_files WHERE album_id=?`).run(tgt, oldCar.id);
+      db.prepare(`DELETE FROM albums WHERE id=?`).run(oldCar.id);
+      n++;
+    }
+    return n;
+  });
+  const moved = txn();
+  console.log(`[collage-migrate] migrated ${moved} album(s) into PDR Collages > {Collages|Carousels}`);
+  return moved;
+}
+
 /** Rename an album. Always bumps updated_at so the list re-sorts. */
 export function renameAlbum(albumId: number, newTitle: string): { success: boolean; error?: string } {
   const db = getDb();

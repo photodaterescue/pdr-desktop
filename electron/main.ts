@@ -9188,6 +9188,18 @@ ipcMain.handle('search:init', async () => {
   // the workspace renderer mounts. By the time this IPC fires the DB
   // is already clean. Running it again here would be wasted work +
   // contention with the main thread.
+  // v3.0 (Terry) — one-time migration of PRE-folder collage/carousel albums into the new
+  // PDR Collages > {Collages|Carousels} tree. Idempotent + self-guarding (no-op once done) and
+  // non-fatal, so a hiccup never blocks search init. Runs in the MAIN process (not a worker) so
+  // the DB connection is writable.
+  if (result && result.success) {
+    try {
+      const { migrateCollagesToKindFolders } = await import('./search-database.js');
+      migrateCollagesToKindFolders();
+    } catch (mErr) {
+      console.warn('[collage-migrate] migration failed (non-fatal):', (mErr as Error).message);
+    }
+  }
   return result;
 });
 
