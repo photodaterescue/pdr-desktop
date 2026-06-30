@@ -2319,7 +2319,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     const transparent = !!(layout.canvas && layout.canvas.transparent);
 
     const capturedAt = new Date();
-    const { month } = timestampParts(capturedAt);
+    const { date, time, month } = timestampParts(capturedAt);
     const stamp = `${capturedAt.getFullYear()}${pad(capturedAt.getMonth() + 1)}${pad(capturedAt.getDate())}_${pad(capturedAt.getHours())}${pad(capturedAt.getMinutes())}${pad(capturedAt.getSeconds())}`;
     const libRoot = onlineLibraryRoot();
     const baseDir = libRoot ? path.join(libRoot, 'PDR Captures', month) : pendingDir();
@@ -2331,17 +2331,50 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     // (kept separate from single collages' "Collages" folder, under the one PDR Collages source).
     // v3.0 (Terry) — was a flat user_created "PDR Carousels" album; now a kind-folder + category.
     const wantCollagesAlbum = (() => { try { return getSettings().saveCollagesToAlbum !== false; } catch { return true; } })();
+    // v3.0 (Terry) — each carousel is its OWN album (cover = the wide overview, name = the collage name) under
+    // PDR Collages › Carousels › ‹category›, so a carousel reads as one clickable unit, not loose pages.
     let albumId: number | null = null;
     let addPhotosToAlbum: ((id: number, ids: number[]) => unknown) | null = null;
+    let setAlbumCover: ((albumId: number, fileId: number | null) => void) | null = null;
     if (libRoot && wantCollagesAlbum) {
       try {
         const sdb = await import('./search-database.js');
-        const albumTitle = (opts && typeof opts.album === 'string' && opts.album.trim()) ? opts.album.trim() : 'General';
-        const folders = sdb.ensureCollageKindFolders();
-        albumId = sdb.findOrCreateCollageAlbumInFolder(albumTitle, folders.carousels);
+        const category = (opts && typeof opts.album === 'string' && opts.album.trim()) ? opts.album.trim() : 'General';
+        const carouselName = (opts && typeof opts.name === 'string' && opts.name.trim()) ? opts.name.trim() : `Carousel ${date} ${time}`;
+        const categoryFolderId = sdb.ensureCarouselCategoryFolder(category);
+        albumId = sdb.createCarouselAlbum(carouselName, categoryFolderId);
         addPhotosToAlbum = sdb.addPhotosToAlbum;
+        setAlbumCover = sdb.setAlbumCover;
       } catch (albErr) {
         log.warn(`[collage] carousel album prep failed (non-fatal): ${(albErr as Error).message}`); // v3.0 (Terry)
+      }
+    }
+
+    // v3.0 (Terry) — save the WIDE design (the cohesive overview the pages were sliced from) as its own
+    // long-dated library file, index it, and make it the carousel album's COVER + first photo. This is the
+    // previously-missing carousel file; it also names + covers the carousel folder.
+    let wideFileId: number | null = null;
+    if (libRoot) {
+      try {
+        const wideOut = uniqueCapturePath(folderPath, `${date}_${time}_CW`, transparent ? '.png' : '.jpg');
+        const wideOutBuf = transparent ? await sharp(wideBuf).png().toBuffer() : await sharp(wideBuf).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
+        fs.writeFileSync(toLongPath(wideOut), wideOutBuf);
+        await stampCaptureMetadata(wideOut, capturedAt, 'collage', opts && opts.caption ? opts.caption : undefined, opts && opts.name ? opts.name : undefined);
+        wideFileId = await indexCapturedFile(wideOut, libRoot, capturedAt, wideWidth, wideHeight, 'photo');
+        if (wideFileId != null) {
+          broadcast('library:filesAdded', { reason: 'collage', newFilePath: wideOut, fileId: wideFileId });
+          try {
+            const sdb = await import('./search-database.js');
+            if (opts && opts.caption && opts.caption.trim()) sdb.setFileCaption(wideFileId, opts.caption.trim());
+            if (opts && opts.name && opts.name.trim()) sdb.setCollageName(wideFileId, opts.name.trim());
+            if (albumId != null) {
+              if (addPhotosToAlbum) addPhotosToAlbum(albumId, [wideFileId]);
+              if (setAlbumCover) setAlbumCover(albumId, wideFileId);
+            }
+          } catch (wMetaErr) { log.warn(`[collage] carousel wide-file album/cover failed (non-fatal): ${(wMetaErr as Error).message}`); }
+        }
+      } catch (wideErr) {
+        log.warn(`[collage] carousel wide-file save failed (non-fatal): ${(wideErr as Error).message}`);
       }
     }
 

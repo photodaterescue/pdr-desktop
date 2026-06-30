@@ -7801,6 +7801,46 @@ export function setCollageName(fileId: number, collageName: string): boolean {
   return r.changes > 0;
 }
 
+/** v3.0 (Terry) — set an album's cover photo. Used to make a carousel's WIDE overview image the cover of
+ *  its per-carousel album. */
+export function setAlbumCover(albumId: number, fileId: number | null): void {
+  const db = getDb();
+  db.prepare(`UPDATE albums SET cover_file_id = ?, updated_at = datetime('now') WHERE id = ?`).run(fileId, albumId);
+}
+
+/** v3.0 (Terry) — a carousel is a multi-page UNIT, so each saved carousel gets its OWN album (its pages +
+ *  the wide overview) under PDR Collages › Carousels › ‹category›. This ensures the ‹category› FOLDER exists
+ *  under the Carousels kind-folder, created directly (same controlled-structure approach as
+ *  ensureCollageKindFolders — the normal user-folder depth guard would block this level). Returns its id. */
+export function ensureCarouselCategoryFolder(category: string): number {
+  const db = getDb();
+  const folders = ensureCollageKindFolders();
+  const trimmed = (category || '').trim() || 'General';
+  const row = db.prepare(
+    `SELECT id FROM album_groups WHERE source_kind='user' AND parent_id=? AND lower(title)=lower(?) LIMIT 1`
+  ).get(folders.carousels, trimmed) as { id: number } | undefined;
+  if (row) return row.id;
+  const r = db.prepare(`INSERT INTO album_groups (title, parent_id, source_kind) VALUES (?, ?, 'user')`).run(trimmed, folders.carousels);
+  return Number(r.lastInsertRowid);
+}
+
+/** v3.0 (Terry) — create a NEW per-carousel album (always new — each saved carousel is its own unit) inside a
+ *  carousel category folder. pdr_collages source + auto-linked to the PDR Collages group (the Albums tree
+ *  de-dupes it down to the sub-folder). Returns the album id. */
+export function createCarouselAlbum(title: string, categoryFolderId: number): number {
+  const db = getDb();
+  const trimmed = (title || '').trim() || 'Carousel';
+  const txn = db.transaction(() => {
+    const res = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'pdr_collages')`).run(trimmed);
+    const albumId = Number(res.lastInsertRowid);
+    db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+                  SELECT ?, g.id, 1 FROM album_groups g WHERE g.source_kind='auto' AND g.source_key='pdr_collages'`).run(albumId);
+    db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto) VALUES (?, ?, 0)`).run(albumId, categoryFolderId);
+    return albumId;
+  });
+  return txn();
+}
+
 /**
  * Look up indexed_files.id by destination file_path within a specific run.
  * Used by the Takeout importer to match Fix-output paths back to the freshly
