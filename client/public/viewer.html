@@ -12726,6 +12726,15 @@
         if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verVal = ep.version; }
         try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
       }
+      // v3.0 round 495 (Terry) — default (titlebar) mode: if this collage already HAS a name, prefill the
+      // category + "what's it for?" so a named collage shows its current name instead of a blank field that
+      // reads as "unnamed" (SS4). Gate on ' · ' so generic timestamp names (unnamed collages) stay blank.
+      if (!renameTarget && !exportMode && currentCollageProjectName && currentCollageProjectName.indexOf(' · ') >= 0) {
+        const dp = parseCollageName(currentCollageProjectName);
+        if (dp.category) selectedCat = dp.category;
+        if (dp.name) nameEl.value = dp.name;
+        if (dp.version) verVal = dp.version;
+      }
       buildChips(); refreshPreview();
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
       // round 350 — "What's it for?" autofill: suggest the user's PAST entries (Terry expected this).
@@ -22186,7 +22195,14 @@ function zoomTo(newZoom, centreX, centreY) {
         // v3.0 (Terry) — first time: the naming wizard (pick an Album, then Save). Once it's been saved,
         // the button reads "Update" → re-save over the SAME library photo, no wizard. Carousels keep their
         // direct slide export.
-        if (carouselMode) { if (collageSaveFn) collageSaveFn(); return; }
+        if (carouselMode) {
+          // v3.0 round 495 (Terry) — carousels now show the SAME naming wizard as a single collage (it was
+          // bypassed, so a carousel saved with no name/category modal). The wizard names the project, then
+          // saveCollage() routes to saveCarousel() (which has its own empty-check) to export the slides
+          // under that chosen name. Falls back to the direct slide export if the wizard can't open.
+          try { openCollageNameWizard({ exportMode: true }); } catch (_) { if (collageSaveFn) collageSaveFn(); }
+          return;
+        }
         try { if (!collageProjectHasContent()) { showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); return; } } catch (_) {}
         if (collageExportedFileId != null) {
           try { saveCollage(collageCurrentAlbum(), { action: 'update', replaceFileId: collageExportedFileId }); } catch (_) {}
