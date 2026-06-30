@@ -12719,17 +12719,18 @@
       try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
       // round 351 — rename mode: prefill from the project's existing name (overrides the last-used default)
       if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verVal = pp.version; }
-      // round 353 — export mode: default to General (clear the last-used default) unless the project is
-      // already named (then prefill its album/name); relabel the buttons for the export action.
+      // v3.0 round 497 (Terry) — export mode: KEEP the last-used category as the default (it used to clear to
+      // '', which silently filed e.g. a Personal collage into General when the user didn't re-click a chip).
+      // Prefill the project's own category/name if it's already named; relabel the buttons for the export action.
       if (exportMode) {
-        selectedCat = '';
         if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verVal = ep.version; }
         try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
       }
-      // v3.0 round 495 (Terry) — default (titlebar) mode: if this collage already HAS a name, prefill the
-      // category + "what's it for?" so a named collage shows its current name instead of a blank field that
-      // reads as "unnamed" (SS4). Gate on ' · ' so generic timestamp names (unnamed collages) stay blank.
-      if (!renameTarget && !exportMode && currentCollageProjectName && currentCollageProjectName.indexOf(' · ') >= 0) {
+      // v3.0 round 495 / 497 (Terry) — default (titlebar) mode: prefill the saved category + type so re-opening
+      // shows what was saved, not a blank field that reads as "unnamed". parseCollageName blanks auto-timestamp
+      // names (so a truly-unnamed collage stays blank), and a type-only name (a type set but no category yet)
+      // still prefills its type — fixes "it asks me to refill the details" when only a type had been entered.
+      if (!renameTarget && !exportMode && currentCollageProjectName) {
         const dp = parseCollageName(currentCollageProjectName);
         if (dp.category) selectedCat = dp.category;
         if (dp.name) nameEl.value = dp.name;
