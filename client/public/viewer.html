@@ -12598,7 +12598,7 @@
     // label + an optional version — so names stay tidy ("Business · v3.0 launch") not freeform mush.
     // Mitigations against duplicate custom categories: (1) show existing categories as chips, (2)
     // type-ahead filters them, (3) case/space-normalise on save, (5) soft near-match nudge.
-    const COLLAGE_FIXED_CATEGORIES = ['Personal', 'Business', 'Family', 'Friends', 'Gift', 'Event', 'Travel'];
+    const COLLAGE_FIXED_CATEGORIES = ['General', 'Personal', 'Business', 'Family', 'Friends', 'Gift', 'Event', 'Travel'];   // v3.0 round 499 (Terry) — General is the default/fallback album; now an explicit chip too
     const COLLAGE_CAT_KEY = 'pdr-collage-categories';
     const COLLAGE_LASTCAT_KEY = 'pdr-collage-last-category';
     function loadCustomCategories() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_CAT_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch (_) { return []; } }
@@ -12716,8 +12716,10 @@
           chipsEl.appendChild(t);
         }
       }
-      try { const last = localStorage.getItem(COLLAGE_LASTCAT_KEY); if (last && allCats().some((c) => c === last)) selectedCat = last; } catch (_) {}   // default to last-used (consistency)
-      // round 351 — rename mode: prefill from the project's existing name (overrides the last-used default)
+      // v3.0 round 499 (Terry) — do NOT pre-select a category on open: nothing highlighted forces a deliberate
+      // choice; if the user picks none, the save defaults to General (below). An already-categorised collage
+      // still gets its saved category prefilled per-mode further down.
+      // round 351 — rename mode: prefill from the project's existing name
       if (renameTarget) { const pp = parseCollageName(renameTarget.name || ''); selectedCat = pp.category || ''; if (pp.name) nameEl.value = pp.name; if (pp.version) verVal = pp.version; }
       // v3.0 round 497 (Terry) — export mode: KEEP the last-used category as the default (it used to clear to
       // '', which silently filed e.g. a Personal collage into General when the user didn't re-click a chip).
@@ -12776,13 +12778,16 @@
       function doSave() {
         if (!exportMode && !nameEl.value.trim()) return;   // export allows a blank name (→ General + auto-name)
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
-        const nm = assembleCollageName(selectedCat, nameEl.value, verVal);
+        // v3.0 round 499 (Terry) — no category chosen → General (the default album), applied to BOTH the name and
+        // the export album, so an un-picked collage files into General consistently (and re-opens showing General).
+        const effCat = selectedCat || 'General';
+        const nm = assembleCollageName(effCat, nameEl.value, verVal);
         try { if (nameEl.value.trim()) rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
         if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
         if (exportMode) {
-          // round 353 — name the project to match (if named), then EXPORT into the chosen album (blank → General)
+          // round 353 — name the project to match (if named), then EXPORT into the chosen album (none → General)
           if (nm) { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
-          const albumForExport = selectedCat || 'General';
+          const albumForExport = effCat;
           close();
           try { saveCollage(albumForExport); } catch (_) {}
           return;
