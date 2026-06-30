@@ -13242,7 +13242,6 @@
     function showCollageWelcome() {
       const w = document.getElementById('collage-welcome');
       if (!w) return;
-      collageMode = false;   // v3.0 round 493 (Terry) — the gallery is NOT the editing canvas; clear collageMode so the collage right-click menu can't fire on the Home/welcome tiles
       // v2.1 round 321 (Terry) — CRITICAL: the CWS is an overlay sitting OVER the editing canvas,
       // and the canvas/stage marquee-select grabs the pointer on pointerdown (setPointerCapture).
       // On a REAL click that capture swallowed the click on every CWS button (Blank / recent /
@@ -13272,7 +13271,6 @@
     function hideCollageWelcome() {
       const w = document.getElementById('collage-welcome');
       if (w) { w.classList.remove('active'); w.setAttribute('aria-hidden', 'true'); }
-      collageMode = true;   // v3.0 round 493 (Terry) — leaving the gallery = back in the editor; restore collageMode (pairs with showCollageWelcome's clear)
       // Restore the editing chrome (re-expand the menu for the work session).
       document.body.classList.remove('collage-panel-collapsed', 'cws-open');
       try { setTimeout(maybeShowCollageWelcomeCard, 450); } catch (_) {}
@@ -17745,6 +17743,11 @@
         }
         collageStageEl.addEventListener('contextmenu', function (e) {
           if (!collageMode) return;
+          // v3.0 round 494 (Terry) — on the Home/gallery (welcome) overlay, suppress the collage
+          // context menu. This is the regression-free fix for the right-click-on-Home bug: we leave
+          // collageMode alone (r493 cleared it here, which broke tile selection + the save/name
+          // wizard, both gated on collageMode) and gate on the cws-open body class instead.
+          if (document.body.classList.contains('cws-open')) { e.preventDefault(); return; }
           e.preventDefault();
           // Text/emoji float above everything → check them FIRST.
           var txt = topTextAtPoint(e.clientX, e.clientY);
