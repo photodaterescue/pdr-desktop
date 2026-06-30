@@ -28,6 +28,7 @@
   "build": {
     "appId": "com.photodaterescue.app",
     "productName": "Photo Date Rescue",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },

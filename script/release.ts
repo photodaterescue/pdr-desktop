@@ -317,6 +317,19 @@ async function main(): Promise<void> {
     info(`Step 2/${mode === 'package-only' ? 3 : 4} — Electron TypeScript`);
     await exec('npm', ['run', 'build:electron']);
 
+    // ---- rebuild non-N-API natives for Electron's ABI ----
+    // electron-builder's blanket native rebuild is OFF (package.json
+    // build.npmRebuild=false). Its @electron/rebuild pass tried to COMPILE
+    // uiohook-napi from source — it doesn't recognise uiohook's
+    // prebuildify-style prebuilt — and there's no Visual Studio C++
+    // toolchain on the build machine, so that compile failed the v3.0.0
+    // package. Instead we rebuild ONLY better-sqlite3 here (the lone
+    // non-N-API native addon; it has an Electron prebuilt, no compile).
+    // uiohook-napi / sharp / koffi are all N-API and self-load their own
+    // prebuilds at runtime (proven across every dev build).
+    info('Rebuilding better-sqlite3 for Electron (only non-N-API native)');
+    await exec('npx', ['electron-rebuild', '-o', 'better-sqlite3']);
+
     // ---- clean prior release artefacts ----
     // electron-builder doesn't auto-clean release/ between builds, which
     // means previous-version .exes (Photo Date Rescue Setup 1.0.1.exe,
