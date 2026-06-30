@@ -8148,15 +8148,35 @@ export function migrateCollagesToKindFolders(): number {
     `SELECT id FROM album_groups WHERE source_kind='auto' AND source_key='pdr_collages' LIMIT 1`
   ).get() as { id: number } | undefined;
   if (!auto) return 0;   // no PDR Collages source at all → no collages to migrate
-  // OLD single collages = pdr_collages albums linked to the PDR Collages source group but NOT yet in any
-  // user sub-folder of it (i.e. pre-folder top-level albums).
+  // v3.0 (Terry) cleanup — an earlier version of the loose-collage sweep below treated an album as "already
+  // filed" only if it sat in a folder DIRECTLY under PDR Collages, so it wrongly scooped CAROUSEL albums
+  // (which live one level deeper, under Carousels › ‹category›) into the Collages folder too. Strip any such
+  // stray Collages memberships. Runs only when both kind-folders exist; idempotent (0 changes once clean).
+  {
+    const collagesF = db.prepare(
+      `SELECT id FROM album_groups WHERE source_kind='user' AND parent_id=? AND lower(title)='collages' LIMIT 1`
+    ).get(auto.id) as { id: number } | undefined;
+    const carouselsF = db.prepare(
+      `SELECT id FROM album_groups WHERE source_kind='user' AND parent_id=? AND lower(title)='carousels' LIMIT 1`
+    ).get(auto.id) as { id: number } | undefined;
+    if (collagesF && carouselsF) {
+      const cleaned = db.prepare(
+        `DELETE FROM album_group_memberships WHERE group_id=? AND album_id IN (
+           SELECT m.album_id FROM album_group_memberships m
+             JOIN album_groups g ON g.id=m.group_id WHERE g.parent_id=?)`
+      ).run(collagesF.id, carouselsF.id);
+      if (cleaned.changes > 0) console.log(`[collage-migrate] removed ${cleaned.changes} carousel album(s) wrongly filed under the Collages folder.`);
+    }
+  }
+  // OLD single collages = pdr_collages albums linked to the PDR Collages source group but NOT yet filed in
+  // ANY user sub-folder. NB: test for any is_auto=0 (user-folder) membership — NOT just a folder DIRECTLY
+  // under PDR Collages — so carousels (filed one level deeper) aren't mistaken for loose collages.
   const oldSingles = db.prepare(
     `SELECT a.id, a.title FROM albums a
       WHERE a.source='pdr_collages'
         AND EXISTS (SELECT 1 FROM album_group_memberships m WHERE m.album_id=a.id AND m.group_id=?)
-        AND NOT EXISTS (SELECT 1 FROM album_group_memberships m2 JOIN album_groups g ON g.id=m2.group_id
-                          WHERE m2.album_id=a.id AND g.source_kind='user' AND g.parent_id=?)`
-  ).all(auto.id, auto.id) as { id: number; title: string }[];
+        AND NOT EXISTS (SELECT 1 FROM album_group_memberships m2 WHERE m2.album_id=a.id AND m2.is_auto=0)`
+  ).all(auto.id) as { id: number; title: string }[];
   const oldCar = db.prepare(
     `SELECT id FROM albums WHERE source='user_created' AND lower(title)='pdr carousels' LIMIT 1`
   ).get() as { id: number } | undefined;

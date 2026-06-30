@@ -2180,8 +2180,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     // ONLY in its sub-folder. Scoped to AUTO groups so deliberate multi-folder membership of
     // user-created albums (the same album dropped into several folders) is left untouched.
     if (group.source_kind === 'auto' && childGroupList.length > 0) {
+      // Hide any album filed in a descendant folder at ANY depth — not just a direct child. Carousels live
+      // one level deeper (Carousels › ‹category›), so a direct-children-only check would leak them onto the
+      // source level next to the Collages folder. Walk the whole sub-tree.
       const inChild = new Set<number>();
-      for (const cg of childGroupList) for (const aid of (albumIdsByGroup.get(cg.id) ?? [])) inChild.add(aid);
+      const stack = [...childGroupList];
+      while (stack.length > 0) {
+        const g = stack.pop()!;
+        for (const aid of (albumIdsByGroup.get(g.id) ?? [])) inChild.add(aid);
+        for (const c of (childGroups.get(g.id) ?? [])) stack.push(c);
+      }
       if (inChild.size > 0) albumIdList = albumIdList.filter((id) => !inChild.has(id));
     }
     const totalCount = albumIdList.length + childGroupList.length;
