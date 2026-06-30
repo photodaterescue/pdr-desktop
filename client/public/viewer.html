@@ -16560,7 +16560,7 @@
       saveOpts = saveOpts || {};
       // v2.1 round 258 (Terry) — carousel P4: in carousel mode, Save exports the
       // whole carousel as numbered slides instead of one collage file.
-      if (carouselMode) return saveCarousel();
+      if (carouselMode) return saveCarousel(album); // v3.0 (Terry) — pass the chosen category through to the carousel save
       const on = collageItems.filter((it) => it.on && !isVideoPath(it.path));
       if (on.length === 0) { await showPdrAlert({ title: 'Nothing to save', body: 'Add at least one photo to the collage first.' }); return; }  // v2.1 round 273 (Terry) — styled alert, no native dialog
       const saveBtn = document.getElementById('collage-save');
@@ -16616,7 +16616,7 @@
     // the slice count to the IPC, which bakes the wide image once and crops it into N
     // 1080-wide slides (slide_01.jpg … slide_NN.jpg) in a dedicated folder. We do NOT open
     // the Viewer (wrong for N files) — on success we reveal the folder.
-    async function saveCarousel() {
+    async function saveCarousel(album) { // v3.0 (Terry) — album = the category chosen in the wizard (→ PDR Collages › Carousels › ‹category›)
       const saveBtn = document.getElementById('collage-save');
       const originalHtml = saveBtn ? saveBtn.innerHTML : '';
       // Empty-carousel guard: nothing on the wide canvas → nothing to export.
@@ -16635,7 +16635,7 @@
         }
         // v2.1 round 373 (Terry) — carousel export carries the NAME + caption note (like a single collage).
         const _carNote = (function () { try { const _t = document.getElementById('collageCaptionInput'); return (_t && typeof _t.value === 'string') ? _t.value.trim() : (collageCaptionText || '').trim(); } catch (_) { return (collageCaptionText || '').trim(); } })();
-        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined });
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined });
         if (res && res.success && res.count > 0) {
           // v2.1 round 270 (Terry) — open ALL the slides in the Viewer (like a normal collage
           // save), instead of only revealing the folder. res.files = [{filePath,filename,..}] in

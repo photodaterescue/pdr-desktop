@@ -2144,7 +2144,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const showAboveIndicator = dragOverGroupId === group.id && dragOverPosition === 'above';
     const showBelowIndicator = dragOverGroupId === group.id && dragOverPosition === 'below';
     const childGroupList = childGroups.get(group.id) ?? [];
-    const albumIdList = albumIdsByGroup.get(group.id) ?? [];
+    let albumIdList = albumIdsByGroup.get(group.id) ?? [];
+    // v3.0 (Terry) — a category album lives in a kind sub-folder (e.g. PDR Collages › Collages ›
+    // Personal) but is also auto-linked to its source group. Hide it at the source level so it shows
+    // ONLY in its sub-folder. Scoped to AUTO groups so deliberate multi-folder membership of
+    // user-created albums (the same album dropped into several folders) is left untouched.
+    if (group.source_kind === 'auto' && childGroupList.length > 0) {
+      const inChild = new Set<number>();
+      for (const cg of childGroupList) for (const aid of (albumIdsByGroup.get(cg.id) ?? [])) inChild.add(aid);
+      if (inChild.size > 0) albumIdList = albumIdList.filter((id) => !inChild.has(id));
+    }
     const totalCount = albumIdList.length + childGroupList.length;
 
     // Right-click context menu items vary by group kind. Auto groups

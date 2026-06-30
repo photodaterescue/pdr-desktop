@@ -7966,6 +7966,56 @@ export function findCollageAlbumByTitle(title: string): number | null {
   return row ? row.id : null;
 }
 
+/** v3.0 (Terry) — Collage album structure: PDR Collages › {Collages | Carousels} › ‹category›.
+ *  The "PDR Collages" auto source-group can't host user folders via createUserAlbumGroup (it
+ *  refuses an auto parent — source groups are meant to stay flat), so we create the two kind-
+ *  folders directly as a controlled system structure (source_kind='user', parent = PDR Collages).
+ *  Idempotent: INSERT OR IGNORE the auto group, lookup-or-insert each sub-folder. Returns their ids. */
+export function ensureCollageKindFolders(): { collages: number; carousels: number } {
+  const db = getDb();
+  db.prepare(`INSERT OR IGNORE INTO album_groups (title, source_kind, source_key, icon_key, palette_key, parent_id)
+                VALUES ('PDR Collages', 'auto', 'pdr_collages', 'grid', 'amber', NULL)`).run();
+  const auto = db.prepare(
+    `SELECT id FROM album_groups WHERE source_kind = 'auto' AND source_key = 'pdr_collages' LIMIT 1`
+  ).get() as { id: number } | undefined;
+  if (!auto) throw new Error('PDR Collages source group could not be created');
+  const ensureSub = (title: string): number => {
+    const row = db.prepare(
+      `SELECT id FROM album_groups WHERE source_kind = 'user' AND parent_id = ? AND lower(title) = lower(?) LIMIT 1`
+    ).get(auto.id, title) as { id: number } | undefined;
+    if (row) return row.id;
+    const r = db.prepare(`INSERT INTO album_groups (title, parent_id, source_kind) VALUES (?, ?, 'user')`).run(title, auto.id);
+    return Number(r.lastInsertRowid);
+  };
+  return { collages: ensureSub('Collages'), carousels: ensureSub('Carousels') };
+}
+
+/** v3.0 (Terry) — find/create a pdr_collages category album WITHIN a kind-folder (Collages or
+ *  Carousels). Folder-scoped so "Personal" under Collages is distinct from "Personal" under
+ *  Carousels — album titles repeat; only the folder membership differs. The new album is also
+ *  auto-linked to the PDR Collages source group (so it counts as a collage album); the Albums
+ *  tree de-dupes it down to its sub-folder so it isn't shown at both levels. */
+export function findOrCreateCollageAlbumInFolder(title: string, folderGroupId: number): number {
+  const db = getDb();
+  const trimmed = (title || '').trim() || 'General';
+  const row = db.prepare(`
+    SELECT a.id FROM albums a
+      JOIN album_group_memberships m ON m.album_id = a.id
+     WHERE a.source = 'pdr_collages' AND lower(a.title) = lower(?) AND m.group_id = ?
+     LIMIT 1
+  `).get(trimmed, folderGroupId) as { id: number } | undefined;
+  if (row) return row.id;
+  const txn = db.transaction(() => {
+    const res = db.prepare(`INSERT INTO albums (title, source) VALUES (?, 'pdr_collages')`).run(trimmed);
+    const albumId = Number(res.lastInsertRowid);
+    db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto)
+                  SELECT ?, g.id, 1 FROM album_groups g WHERE g.source_kind = 'auto' AND g.source_key = 'pdr_collages'`).run(albumId);
+    db.prepare(`INSERT OR IGNORE INTO album_group_memberships (album_id, group_id, is_auto) VALUES (?, ?, 0)`).run(albumId, folderGroupId);
+    return albumId;
+  });
+  return txn();
+}
+
 /** Rename an album. Always bumps updated_at so the list re-sorts. */
 export function renameAlbum(albumId: number, newTitle: string): { success: boolean; error?: string } {
   const db = getDb();
