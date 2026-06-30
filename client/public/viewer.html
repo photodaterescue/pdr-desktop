@@ -12633,7 +12633,7 @@
       const parts = [];
       if (cat && cat.trim()) parts.push(cat.trim());
       if (name && name.trim()) parts.push(name.trim());
-      if (ver && ver.trim()) { const v = ver.trim(); parts.push(/^\d/.test(v) ? ('v' + v) : v); }
+      // v3.0 round 496 (Terry) — v-numbers dropped: collages group by category/type + date, not version (ver now ignored).
       return parts.join(' · ');
     }
     // round 351 — parse a structured name back into its parts (for the rename-from-gallery prefill).
@@ -12664,18 +12664,18 @@
       overlay.className = 'enhance-ai-warning cnw-overlay'; overlay.style.display = 'flex';
       overlay.innerHTML = '<div class="enhance-ai-warning-card cnw-card">'
         + '<div class="enhance-ai-warning-title">Name this collage project</div>'
-        + '<p class="cnw-sub">Optional — a name to find it again here in Collages. Your exported images keep their original filenames in the library.</p>'
+        + '<p class="cnw-sub">Optional — give it a type to group collages of the same kind, then filter Memories › Albums by it to find them by date. Your exported images keep their original filenames.</p>'
         + '<div class="cnw-label">Album</div><div class="cnw-chips" id="cnw-chips"></div>'
         + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom album…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
-        + '<div class="cnw-label">What’s it for? <span class="cnw-opt">— the occasion / person / moment</span></div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. 1st Holiday Together, Mum’s 60th" autocomplete="off" />'
+        + '<div class="cnw-label">Type <span class="cnw-opt">— what kind of collage, e.g. Sinta Portraits (filter by it in Albums)</span></div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. Sinta Portraits, Holiday 2026" autocomplete="off" />'
         + '<div id="cnw-name-suggest" class="cnw-suggest" style="display:none"></div>'
         + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
         + '<div id="cnw-export-note" class="cnw-export-note" style="display:none"></div>'
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
         + '</div>';
       document.body.appendChild(overlay);
-      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Save collage to your library' : 'Name this collage project'); } catch (_) {}
+      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Save collage to your library' : 'Categorise this collage'); } catch (_) {}
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
       const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), previewEl = $('#cnw-preview'), exportNoteEl = $('#cnw-export-note'), saveBtn = $('[data-action="save"]');
@@ -12736,6 +12736,12 @@
         if (dp.version) verVal = dp.version;
       }
       buildChips(); refreshPreview();
+      // v3.0 round 496 (Terry) — default/titlebar buttons: an already-categorised collage shows [Close]
+      // [Confirm] (its type is saved); an uncategorised one shows [Skip] [Save Category/Type].
+      if (!renameTarget && !exportMode) {
+        const _named = !!(currentCollageProjectName && currentCollageProjectName.indexOf(' · ') >= 0);
+        try { const _sk = $('[data-action="skip"]'); if (_sk) _sk.textContent = _named ? 'Close' : 'Skip'; if (saveBtn) saveBtn.textContent = _named ? 'Confirm' : 'Save Category/Type'; } catch (_) {}
+      }
       customEl.addEventListener('input', () => { buildChips(customEl.value); nudgeEl.style.display = 'none'; });   // (2) type-ahead
       // round 350 — "What's it for?" autofill: suggest the user's PAST entries (Terry expected this).
       function nameHistory() { const out = [], seen = new Set(); loadWhatForHistory().concat(seededWhatFor).forEach((h) => { const k = (h || '').toLowerCase(); if (h && !seen.has(k)) { seen.add(k); out.push(h); } }); return out; }
@@ -16504,7 +16510,7 @@
         var btn = document.getElementById('collage-save');
         if (btn) btn.setAttribute('data-pdr-tooltip', saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library');
         var more = document.getElementById('collage-save-more');
-        if (more) more.style.display = saved ? '' : 'none';
+        if (more) more.style.display = 'none';   // v3.0 round 496 (Terry) — v-numbers dropped; "Save as new version" was the chevron's only option, so the more-menu is retired.
       } catch (_) {}
     }
     // "Save as new version": bump the version in the name, then save a NEW file (the previous version
