@@ -2340,7 +2340,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
       try {
         const sdb = await import('./search-database.js');
         const category = (opts && typeof opts.album === 'string' && opts.album.trim()) ? opts.album.trim() : 'General';
-        const carouselName = (opts && typeof opts.name === 'string' && opts.name.trim()) ? opts.name.trim() : `Carousel ${date} ${time}`;
+        const carouselName = sdb.collageTypeFromName(opts && opts.name ? opts.name : null) || `Carousel ${date} ${time}`;
         const categoryFolderId = sdb.ensureCarouselCategoryFolder(category);
         albumId = sdb.createCarouselAlbum(carouselName, categoryFolderId);
         addPhotosToAlbum = sdb.addPhotosToAlbum;

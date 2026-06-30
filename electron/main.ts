@@ -9243,8 +9243,9 @@ ipcMain.handle('search:init', async () => {
   // the DB connection is writable.
   if (result && result.success) {
     try {
-      const { migrateCollagesToKindFolders } = await import('./search-database.js');
+      const { migrateCollagesToKindFolders, migrateCarouselsToPerCarouselAlbums } = await import('./search-database.js');
       migrateCollagesToKindFolders();
+      migrateCarouselsToPerCarouselAlbums();
     } catch (mErr) {
       console.warn('[collage-migrate] migration failed (non-fatal):', (mErr as Error).message);
     }

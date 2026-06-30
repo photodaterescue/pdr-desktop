@@ -7841,6 +7841,71 @@ export function createCarouselAlbum(title: string, categoryFolderId: number): nu
   return txn();
 }
 
+/** v3.0 (Terry) — the displayable "type" of a collage/carousel from its full name: drops the leading
+ *  category + a trailing version, and treats auto "Collage YYYY-MM-DD …" names + bare categories as no-type.
+ *  Mirrors the renderer's collageTypeOf so carousel folder names line up with the Albums type filter. */
+export function collageTypeFromName(name?: string | null): string {
+  if (!name) return '';
+  if (/^Collage \d{4}-\d{2}-\d{2}/.test(name)) return '';
+  let parts = String(name).split(' · ').map((s) => s.trim()).filter(Boolean);
+  if (parts.length > 1 && /^v?\d+$/i.test(parts[parts.length - 1])) parts.pop();
+  if (parts.length > 1) parts = parts.slice(1);
+  const t = parts.join(' · ').trim();
+  if (['general', 'personal', 'business', 'family', 'friends', 'gift', 'event', 'travel'].includes(t.toLowerCase())) return '';
+  return t;
+}
+
+/** v3.0 (Terry) — one-time migration: turn the PRE-restructure flat carousel category-albums (slides loose in
+ *  "Carousels › ‹category›") into per-carousel albums — each carousel (grouped by its Carousel_<stamp> export
+ *  folder) becomes its own album under a ‹category› FOLDER, named by its type (or a dated "Carousel …"), with
+ *  the first slide as the cover (old carousels have no wide overview). Non-destructive: slides are copied into
+ *  the new albums, then the redundant flat album row is removed. Idempotent (keys off albums sitting DIRECTLY
+ *  in the Carousels kind-folder, which it removes). Returns the number of per-carousel albums created. */
+export function migrateCarouselsToPerCarouselAlbums(): number {
+  const db = getDb();
+  const auto = db.prepare(`SELECT id FROM album_groups WHERE source_kind='auto' AND source_key='pdr_collages' LIMIT 1`).get() as { id: number } | undefined;
+  if (!auto) return 0;
+  const carouselsFolder = db.prepare(
+    `SELECT id FROM album_groups WHERE source_kind='user' AND parent_id=? AND lower(title)='carousels' LIMIT 1`
+  ).get(auto.id) as { id: number } | undefined;
+  if (!carouselsFolder) return 0;
+  const oldFlat = db.prepare(
+    `SELECT a.id, a.title FROM albums a JOIN album_group_memberships m ON m.album_id=a.id WHERE a.source='pdr_collages' AND m.group_id=?`
+  ).all(carouselsFolder.id) as Array<{ id: number; title: string }>;
+  if (oldFlat.length === 0) return 0;
+  const txn = db.transaction(() => {
+    let made = 0;
+    for (const old of oldFlat) {
+      const categoryFolderId = ensureCarouselCategoryFolder(old.title);
+      const photos = db.prepare(
+        `SELECT i.id AS id, i.file_path AS file_path, i.collage_name AS collage_name
+           FROM album_files af JOIN indexed_files i ON i.id=af.file_id WHERE af.album_id=? ORDER BY i.id`
+      ).all(old.id) as Array<{ id: number; file_path: string; collage_name: string | null }>;
+      const groups = new Map<string, Array<{ id: number; collage_name: string | null }>>();
+      for (const p of photos) {
+        const m = String(p.file_path || '').match(/Carousel_(\d{8}_\d{6})/i);
+        const key = m ? m[1] : '_nostamp_';
+        const arr = groups.get(key); if (arr) arr.push(p); else groups.set(key, [p]);
+      }
+      for (const [stamp, grp] of groups) {
+        let name = collageTypeFromName(grp[0].collage_name);
+        if (!name) name = (stamp !== '_nostamp_')
+          ? `Carousel ${stamp.slice(0, 4)}-${stamp.slice(4, 6)}-${stamp.slice(6, 8)} ${stamp.slice(9, 11)}:${stamp.slice(11, 13)}`
+          : 'Carousel';
+        const newId = createCarouselAlbum(name, categoryFolderId);
+        for (const p of grp) db.prepare(`INSERT OR IGNORE INTO album_files (album_id, file_id) VALUES (?, ?)`).run(newId, p.id);
+        db.prepare(`UPDATE albums SET cover_file_id=? WHERE id=?`).run(grp[0].id, newId);
+        made++;
+      }
+      db.prepare(`DELETE FROM albums WHERE id=?`).run(old.id);
+    }
+    return made;
+  });
+  const result = txn();
+  console.log(`[carousel-migrate] made ${result} per-carousel album(s) from ${oldFlat.length} flat carousel album(s).`);
+  return result;
+}
+
 /**
  * Look up indexed_files.id by destination file_path within a specific run.
  * Used by the Takeout importer to match Fix-output paths back to the freshly
