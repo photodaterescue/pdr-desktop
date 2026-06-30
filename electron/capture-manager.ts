@@ -2224,6 +2224,10 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
         if (fileId != null && opts && opts.caption && opts.caption.trim()) {
           try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.caption.trim()); } catch (capErr) { log.warn(`[collage] set caption failed (non-fatal): ${(capErr as Error).message}`); }
         }
+        // v3.0 (Terry) — store the collage's category·type name so Albums can show it under the tile + filter by type.
+        if (fileId != null && opts && opts.name && opts.name.trim()) {
+          try { const { setCollageName } = await import('./search-database.js'); setCollageName(fileId, opts.name.trim()); } catch (nameErr) { log.warn(`[collage] set collage name failed (non-fatal): ${(nameErr as Error).message}`); }
+        }
         // v2.1 round 161 (Terry) — every saved collage joins a "PDR Collages"
         // album (created on first save), so they're all gathered in one place
         // in the Albums view. Non-fatal: a failure here never blocks the save.
@@ -2378,6 +2382,10 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
           // via the title tags written by stampCaptureMetadata above), like a single-collage export.
           if (fileId != null && opts && opts.caption && opts.caption.trim()) {
             try { const { setFileCaption } = await import('./search-database.js'); setFileCaption(fileId, opts.caption.trim()); } catch (capErr) { log.warn(`[collage] carousel slide ${i + 1} set caption failed (non-fatal): ${(capErr as Error).message}`); }
+          }
+          // v3.0 (Terry) — each slide carries the carousel's category·type name (for the Albums Type label + filter).
+          if (fileId != null && opts && opts.name && opts.name.trim()) {
+            try { const { setCollageName } = await import('./search-database.js'); setCollageName(fileId, opts.name.trim()); } catch (nameErr) { log.warn(`[collage] carousel slide ${i + 1} set collage name failed (non-fatal): ${(nameErr as Error).message}`); }
           }
           if (fileId != null && albumId != null && addPhotosToAlbum) {
             try { addPhotosToAlbum(albumId, [fileId]); }

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createRoot } from 'react-dom/client';
-import { AlertTriangle, ChevronRight, X } from 'lucide-react';
+import { AlertTriangle, ChevronRight, X, Copy, Check } from 'lucide-react';
 import { EmojiPickerPopover } from '@/components/EmojiPickerPopover';
 
 /**
@@ -651,13 +651,17 @@ export interface InputOptions {
    *  into their comments. Default false so other prompts stay
    *  utilitarian. */
   enableEmoji?: boolean;
+  /** v3.0 (Terry) — show a copy-to-clipboard icon next to the title (e.g. so the user can copy a
+   *  photo's filename straight from the caption dialog). Default false so other prompts stay unchanged. */
+  copyableTitle?: boolean;
 }
 
 function InputDialog({
-  eyebrow, title, subtitle, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, enableEmoji, onConfirm, onCancel, onDismiss,
+  eyebrow, title, subtitle, message, placeholder, initialValue, confirmLabel, cancelLabel, multiline, maxLength, enableEmoji, copyableTitle, onConfirm, onCancel, onDismiss,
 }: InputOptions & { onConfirm: (v: string) => void; onCancel: () => void; onDismiss: () => void }) {
   const [mounted, setMounted] = useState(false);
   const [value, setValue] = useState(initialValue ?? '');
+  const [titleCopied, setTitleCopied] = useState(false);   // v3.0 (Terry) — transient "Copied" state for the title copy icon
   const inputRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null);
   const saveBtnRef = useRef<HTMLButtonElement>(null);
 
@@ -784,7 +788,22 @@ function InputDialog({
             </p>
           )}
           {title && (
-            <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
+            copyableTitle ? (
+              <div className="flex items-center justify-center gap-1.5 mb-2">
+                <h3 className="text-lg font-semibold text-foreground leading-snug truncate" title={title}>{title}</h3>
+                <button
+                  type="button"
+                  onClick={() => { try { navigator.clipboard.writeText(title); setTitleCopied(true); setTimeout(() => setTitleCopied(false), 1200); } catch { /* clipboard unavailable */ } }}
+                  className="shrink-0 text-muted-foreground hover:text-foreground transition-colors p-1 rounded-md hover:bg-secondary/50"
+                  aria-label="Copy filename"
+                  title="Copy filename"
+                >
+                  {titleCopied ? <Check className="w-4 h-4 text-primary" /> : <Copy className="w-4 h-4" />}
+                </button>
+              </div>
+            ) : (
+              <h3 className="text-lg font-semibold text-foreground text-center mb-2 leading-snug">{title}</h3>
+            )
           )}
           {subtitle && (
             <p className="text-sm font-medium text-foreground text-center mb-3 -mt-1 leading-snug">{subtitle}</p>

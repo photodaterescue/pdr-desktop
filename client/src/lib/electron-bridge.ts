@@ -1177,6 +1177,9 @@ export interface IndexedFile {
   // sidecar.description during Fix / Enrichment). Editable per-photo
   // via the right-click "Caption…" item in Albums / By Date / S&D.
   caption?: string | null;
+  // v3.0 (Terry) — a collage/carousel export's category·type name (e.g. "Personal · Sinta Portraits").
+  // NULL for ordinary photos. Drives the Albums "Type" tile label + the collage type filter.
+  collage_name?: string | null;
 }
 
 export interface SearchResult {

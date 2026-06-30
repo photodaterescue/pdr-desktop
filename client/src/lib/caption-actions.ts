@@ -67,6 +67,7 @@ export async function editPhotoCaption(args: {
     eyebrow: initial.length > 0 ? 'EDIT CAPTION' : 'ADD CAPTION',
     title: args.filename ? args.filename : 'Caption',
     subtitle: pseudonym,
+    copyableTitle: !!args.filename,   // v3.0 (Terry) — show a copy-the-filename icon next to the title
     message: 'Captions are saved in your PDR library and (when possible) written into the photo’s EXIF ImageDescription so they travel with the file when you export it.',
     placeholder: 'Type a caption…',
     initialValue: initial,

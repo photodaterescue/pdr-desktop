@@ -297,6 +297,27 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // so a leftover filter from one album doesn't bleed into the next.
   const [mediaFilter, setMediaFilter] = useState<'all' | 'photos' | 'videos'>('all');
   useEffect(() => { setMediaFilter('all'); }, [selection]);
+  // v3.0 (Terry) — collage "type" filter (PDR Collages albums only). '' = all types; resets per album so a
+  // leftover filter doesn't bleed across albums (mirrors the mediaFilter reset above).
+  const [typeFilter, setTypeFilter] = useState<string>('');
+  useEffect(() => { setTypeFilter(''); }, [selection]);
+  // The displayable TYPE of a collage = the part of its name after the category (e.g. "Personal · Sinta
+  // Portraits" → "Sinta Portraits"); falls back to the whole name when there's no category prefix.
+  const collageTypeOf = (name?: string | null): string => {
+    if (!name) return '';
+    const parts = String(name).split(' · ');
+    return (parts.length > 1 ? parts.slice(1).join(' · ') : parts[0]).trim();
+  };
+  const collageTypes = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const ph of albumPhotos) {
+      const n = ph.collage_name; if (!n) continue;
+      const parts = String(n).split(' · ');
+      const t = (parts.length > 1 ? parts.slice(1).join(' · ') : parts[0]).trim();
+      if (t) m.set(t, (m.get(t) || 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
+  }, [albumPhotos]);
 
   // v2.1 round 102 (Terry 2026-06-11) — group an album's photos by
   // day with sticky-banner day headers (same UX as Memories Dates).
@@ -515,7 +536,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Both persisted to localStorage with `pdr-albums-*` keys so the
   // settings stay scoped to Albums and don't collide with the
   // identically-named MemoriesView preferences.
-  type AlbumTileMetaField = 'filename' | 'date';
+  type AlbumTileMetaField = 'filename' | 'date' | 'type';
   const ALBUMS_SELECTION_MODE_KEY = 'pdr-albums-selection-mode';
   const ALBUMS_TILE_META_KEY = 'pdr-albums-tile-meta';
   const [selectionMode, setSelectionMode] = useState<boolean>(() => {
@@ -532,7 +553,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date');
+      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date' || f === 'type');
     } catch { return []; }
   });
   useEffect(() => {
@@ -540,6 +561,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   }, [metaFields]);
   const showFilename = metaFields.includes('filename');
   const showDate = metaFields.includes('date');
+  const showType = metaFields.includes('type');   // v3.0 (Terry) — show the collage's type below the tile (collage albums only)
 
   // Ctrl+wheel zoom — same interaction the S&D grid and Memories
   // By Date use. Previously attached to `gridScrollRef` (the per-
@@ -2695,6 +2717,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         {([
           { key: 'filename' as AlbumTileMetaField, label: 'Filename' },
           { key: 'date' as AlbumTileMetaField, label: 'Date' },
+          // v3.0 (Terry) — "Type" (the collage's category·type) only offered on PDR Collages albums; off by default.
+          ...(selectedAlbum?.source === 'pdr_collages' ? [{ key: 'type' as AlbumTileMetaField, label: 'Type' }] : []),
         ]).map((opt) => {
           const checked = metaFields.includes(opt.key);
           return (
@@ -2832,6 +2856,51 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       </PopoverContent>
     </Popover>
   );
+
+  // v3.0 (Terry) — Type filter pill for PDR Collages albums. Mirrors the Media pill: a Popover listing the
+  // distinct collage TYPES in this album (+ "All types") as radios; picking one narrows the grid. The caller
+  // gates rendering on selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0.
+  const renderTypeButton = (compact = false) => {
+    const active = typeFilter !== '';
+    return (
+      <Popover>
+        <IconTooltip label="Filter these collages by type" side="bottom">
+          <PopoverTrigger asChild>
+            <button
+              type="button"
+              data-testid="albums-type-filter"
+              className={`inline-flex items-center ${compact ? 'justify-center w-8' : 'justify-between min-w-[150px]'} gap-1.5 h-8 px-3 rounded-md text-xs font-medium border transition-colors ${active ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-background hover:bg-accent text-foreground'}`}
+            >
+              <span className="inline-flex items-center gap-1.5 relative">
+                <Filter className="w-3.5 h-3.5" />
+                {!compact && <span className="text-muted-foreground/85">Type:</span>}
+                {!compact && <span className="max-w-[120px] truncate">{active ? typeFilter : 'All'}</span>}
+                {active && compact && <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full bg-primary" />}
+              </span>
+              {!compact && <ChevronDown className="w-3.5 h-3.5 opacity-70" />}
+            </button>
+          </PopoverTrigger>
+        </IconTooltip>
+        <PopoverContent align="start" className="w-64 p-1">
+          <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-3 pt-2 pb-1">Filter by type</p>
+          <div className="max-h-72 overflow-y-auto">
+            <RadioGroup value={typeFilter || '__all__'} onValueChange={(v) => setTypeFilter(v === '__all__' ? '' : v)} className="gap-0">
+              <label htmlFor="albums-type-all" className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
+                <span className="inline-flex items-center gap-2 text-foreground"><Filter className="w-3.5 h-3.5 text-muted-foreground" />All types</span>
+                <span className="inline-flex items-center gap-3"><span className="text-xs text-muted-foreground">{albumPhotos.length.toLocaleString()}</span><RadioGroupItem id="albums-type-all" value="__all__" /></span>
+              </label>
+              {collageTypes.map(([t, count], i) => (
+                <label key={t} htmlFor={`albums-type-${i}`} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
+                  <span className="text-foreground truncate" title={t}>{t}</span>
+                  <span className="inline-flex items-center gap-3 shrink-0"><span className="text-xs text-muted-foreground">{count.toLocaleString()}</span><RadioGroupItem id={`albums-type-${i}`} value={t} /></span>
+                </label>
+              ))}
+            </RadioGroup>
+          </div>
+        </PopoverContent>
+      </Popover>
+    );
+  };
 
   // v2.0.15 (Terry 2026-05-29) — refresh consolidated into the
   // titlebar (next to the Recycle Bin icon). AlbumsView listens to
@@ -2979,6 +3048,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           <div className="flex flex-col gap-1.5">
             <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider px-1">View</span>
             {renderMediaButton(false)}
+            {selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0 && renderTypeButton(false)}
             {renderDisplayButton(false)}
             <div className="flex items-center justify-between gap-2 px-1">
               <span className="text-xs text-muted-foreground">Spacing</span>
@@ -3618,6 +3688,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     <>
                       {selectedAlbum.source === 'user_created' && renderAddFilesControl(true)}
                       {renderMediaButton(true)}
+                      {selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0 && renderTypeButton(true)}
                       {renderDisplayButton(true)}
                       {refreshButton}
                       {renderDensityControl(true)}
@@ -3626,6 +3697,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     <>
                       {selectedAlbum.source === 'user_created' && renderAddFilesControl(false)}
                       {renderMediaButton(false)}
+                      {selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0 && renderTypeButton(false)}
                       {renderDisplayButton(false)}
                       {refreshButton}
                       {renderDensityControl(false)}
@@ -3781,6 +3853,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   if (mediaFilter === 'photos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'photo');
                   else if (mediaFilter === 'videos') visiblePhotos = visiblePhotos.filter((p) => p.file_type === 'video');
                   if (captionedOnly) visiblePhotos = visiblePhotos.filter((p) => p.caption && p.caption.length > 0);
+                  if (typeFilter) visiblePhotos = visiblePhotos.filter((p) => collageTypeOf(p.collage_name) === typeFilter);   // v3.0 (Terry) — collage type filter
                   // v2.1 round 103 (Terry 2026-06-11) — format day labels
                   // the same way the scroll listener does so the inline
                   // divider text matches the sticky banner verbatim.
@@ -4244,8 +4317,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
-                    {(showFilename || showDate) && (
+                    {(showFilename || showDate || (showType && p.collage_name)) && (
                       <div className="px-1 pt-1 pb-0.5 min-w-0">
+                        {showType && p.collage_name && (
+                          <p className="text-[11px] font-medium text-foreground truncate" title={p.collage_name}>
+                            {collageTypeOf(p.collage_name)}
+                          </p>
+                        )}
                         {showFilename && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.filename}>
                             {p.filename}

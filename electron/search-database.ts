@@ -910,6 +910,10 @@ export function initDatabase(): { success: boolean; error?: string } {
       //      new filename suffix — minimal-surface design agreed
       //      with Terry 2026-06-09.
       { name: 'user_set_at', type: 'TEXT' },
+      // v3.0 (Terry) — the collage's category·type "name" (e.g. "Personal · Sinta Portraits"), stored so
+      // Albums can show it under collage tiles + filter by type. Set on collage/carousel export; NULL for
+      // ordinary photos. The same name also travels in the file's EXIF title for portability.
+      { name: 'collage_name', type: 'TEXT' },
     ];
     for (const col of newCols) {
       if (!colNames.has(col.name)) {
@@ -7786,6 +7790,14 @@ export function applyTakeoutSidecarMetadata(
 export function setFileCaption(fileId: number, caption: string): boolean {
   const db = getDb();
   const r = db.prepare(`UPDATE indexed_files SET caption = ? WHERE id = ?`).run(caption, fileId);
+  return r.changes > 0;
+}
+
+/** v3.0 (Terry) — store a collage/carousel export's category·type "name" (e.g. "Personal · Sinta
+ *  Portraits") so Memories › Albums can show it under the tile + filter by type. NULL for ordinary photos. */
+export function setCollageName(fileId: number, collageName: string): boolean {
+  const db = getDb();
+  const r = db.prepare(`UPDATE indexed_files SET collage_name = ? WHERE id = ?`).run(collageName, fileId);
   return r.changes > 0;
 }
 
