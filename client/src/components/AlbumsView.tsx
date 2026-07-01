@@ -915,8 +915,12 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const [renameGroupTitle, setRenameGroupTitle] = useState('');
 
   // ── Data loaders ────────────────────────────────────────────────
-  const refreshAll = useCallback(async () => {
-    setLoading(true);
+  const refreshAll = useCallback(async (silent = false) => {
+    // v3.0 (Terry) — `silent` skips the loading flag so BACKGROUND refreshes (returning to the window,
+    // live file-adds) don't swap the whole tree out for "Loading…" and back. That swap was eating the
+    // first click after returning from the Viewer: the click hit-tested the empty loading container
+    // instead of the tree row, so a second click was needed. Initial load + manual Refresh stay non-silent.
+    if (!silent) setLoading(true);
     const [albumsR, groupsR, membershipsR] = await Promise.all([
       listAlbums(),
       listAlbumGroups(),
@@ -925,7 +929,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     setAlbums(albumsR.success && albumsR.data ? albumsR.data : []);
     setGroups(groupsR.success && groupsR.data ? groupsR.data : []);
     setMemberships(membershipsR.success && membershipsR.data ? membershipsR.data : []);
-    setLoading(false);
+    if (!silent) setLoading(false);
   }, []);
   useEffect(() => { refreshAll(); }, [refreshAll]);
 
@@ -945,7 +949,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // PDR Collages album) now refreshes the open album LIVE — no manual Refresh needed.
   useEffect(() => {
     const off = (window as { pdr?: { library?: { onFilesAdded?: (cb: (info: { reason?: string }) => void) => (() => void) } } })
-      .pdr?.library?.onFilesAdded?.(() => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); });
+      .pdr?.library?.onFilesAdded?.(() => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(true); });
     return () => { if (typeof off === 'function') off(); };
   }, [refreshAll]);
 
@@ -953,7 +957,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Collage window after an export). onFilesAdded only catches the export if Albums is already mounted on
   // that album when it happens; this covers "have it refreshed by the time I get there" for any nav order.
   useEffect(() => {
-    const onFocus = () => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(); };
+    const onFocus = () => { setAlbumPhotosRefreshTick((t) => t + 1); void refreshAll(true); };
     window.addEventListener('focus', onFocus);
     return () => window.removeEventListener('focus', onFocus);
   }, [refreshAll]);
