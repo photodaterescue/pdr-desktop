@@ -9243,9 +9243,10 @@ ipcMain.handle('search:init', async () => {
   // the DB connection is writable.
   if (result && result.success) {
     try {
-      const { migrateCollagesToKindFolders, migrateCarouselsToPerCarouselAlbums } = await import('./search-database.js');
+      const { migrateCollagesToKindFolders, migrateCarouselsToPerCarouselAlbums, fixCarouselCovers } = await import('./search-database.js');
       migrateCollagesToKindFolders();
       migrateCarouselsToPerCarouselAlbums();
+      fixCarouselCovers();   // v3.0 (Terry) — carousel cover = first page, not the wide overview
     } catch (mErr) {
       console.warn('[collage-migrate] migration failed (non-fatal):', (mErr as Error).message);
     }

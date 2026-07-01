@@ -1638,6 +1638,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return () => window.removeEventListener('pdr:albumsRefresh', handler as EventListener);
   }, [refreshAll]);
 
+  // v3.0 (Terry) — is the selected album a CAROUSEL (a pdr_collages album filed in a Carousels ‹category›
+  // folder)? Carousels read as ordered pages, so their photos sort chronologically (overview first, then
+  // page 1→N) rather than the newest-first order used for ordinary albums.
+  const selectedAlbumIsCarousel = useMemo(() => {
+    if (selection?.type !== 'album') return false;
+    return memberships.some((m) => m.album_id === selection.id && carouselCategoryFolderIds.has(m.group_id));
+  }, [selection, memberships, carouselCategoryFolderIds]);
+
   // ── Right-pane data: load album photos when an album is selected ──
   useEffect(() => {
     if (selection?.type !== 'album') { setAlbumPhotos([]); return; }
@@ -1661,6 +1669,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         const bDate = b.derived_date ?? '';
         if (aDate && !bDate) return -1;
         if (!aDate && bDate) return 1;
+        // v3.0 (Terry) — carousels read as ordered pages: chronological (ASC) so the wide overview (lowest
+        // id) comes first, then slide_01…slide_NN left-to-right (matches drag-into-IG expectations). Ordinary
+        // albums stay newest-first to match Memories — Dates.
+        if (selectedAlbumIsCarousel) {
+          if (aDate !== bDate) return aDate.localeCompare(bDate);
+          return a.id - b.id;
+        }
         if (aDate !== bDate) return bDate.localeCompare(aDate);
         return b.id - a.id;
       });
@@ -1672,7 +1687,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     // Move-to-Recycle-Bin can force-reload the SAME album's photos
     // (selection is unchanged, so without this the grid keeps showing
     // deleted tiles — RISK 1).
-  }, [selection, albumPhotosRefreshTick]);
+  }, [selection, albumPhotosRefreshTick, selectedAlbumIsCarousel]);
 
   // v2.0.15 (Terry 2026-06-02) — scroll-to-tile after photos load.
   // Back-pill flow latches the file id the user right-clicked from

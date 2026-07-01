@@ -2368,8 +2368,10 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
             if (opts && opts.caption && opts.caption.trim()) sdb.setFileCaption(wideFileId, opts.caption.trim());
             if (opts && opts.name && opts.name.trim()) sdb.setCollageName(wideFileId, opts.name.trim());
             if (albumId != null) {
+              // The wide overview joins the album (ordered first as the full-design reference) but is NOT the
+              // cover — see the first-page cover set after the slides are saved (Terry: the wide file distorts
+              // as a square tile).
               if (addPhotosToAlbum) addPhotosToAlbum(albumId, [wideFileId]);
-              if (setAlbumCover) setAlbumCover(albumId, wideFileId);
             }
           } catch (wMetaErr) { log.warn(`[collage] carousel wide-file album/cover failed (non-fatal): ${(wMetaErr as Error).message}`); }
         }
@@ -2433,6 +2435,13 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
 
     if (files.length === 0) {
       return { success: false, error: 'None of the slides could be saved.' };
+    }
+
+    // v3.0 (Terry) — the carousel COVER is its FIRST PAGE (slide_01), not the wide overview: the 4320×1350
+    // overview distorts badly cropped into a square tile, whereas a page reads cleanly.
+    if (albumId != null && setAlbumCover) {
+      const firstPageId = files.find((f) => f.fileId != null)?.fileId ?? null;
+      if (firstPageId != null) { try { setAlbumCover(albumId, firstPageId); } catch { /* non-fatal */ } }
     }
     log.info(`[collage] saved carousel — ${files.length}/${n} slide(s) sliced from ${wideWidth}×${wideHeight} → ${folderPath}${libRoot ? '' : ' (pending)'}`);
     return { success: true, files, folderPath, count: files.length, pending: !libRoot };

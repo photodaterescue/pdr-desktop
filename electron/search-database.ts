@@ -8133,6 +8133,40 @@ export function findOrCreateCollageAlbumInFolder(title: string, folderGroupId: n
   return txn();
 }
 
+/** v3.0 (Terry) — carousel COVER = its first PAGE (slide_01), never the wide *_CW overview (4320×1350 distorts
+ *  as a square tile). Re-points any carousel album whose cover is a wide overview to its first non-overview
+ *  file (lowest id = slide_01). Idempotent; runs on search:init to fix carousels saved before this rule. */
+export function fixCarouselCovers(): number {
+  const db = getDb();
+  const auto = db.prepare(`SELECT id FROM album_groups WHERE source_kind='auto' AND source_key='pdr_collages' LIMIT 1`).get() as { id: number } | undefined;
+  if (!auto) return 0;
+  const carouselsKind = db.prepare(`SELECT id FROM album_groups WHERE source_kind='user' AND parent_id=? AND lower(title)='carousels' LIMIT 1`).get(auto.id) as { id: number } | undefined;
+  if (!carouselsKind) return 0;
+  // Carousel albums = pdr_collages albums filed in a ‹category› folder under the Carousels kind-folder.
+  const carouselAlbums = db.prepare(
+    `SELECT DISTINCT a.id, a.cover_file_id FROM albums a
+       JOIN album_group_memberships m ON m.album_id=a.id
+       JOIN album_groups g ON g.id=m.group_id
+      WHERE a.source='pdr_collages' AND g.parent_id=?`
+  ).all(carouselsKind.id) as Array<{ id: number; cover_file_id: number | null }>;
+  let fixed = 0;
+  for (const a of carouselAlbums) {
+    // First PAGE = the album's file with the lowest id that ISN'T a wide overview (*_CW). Slides are indexed
+    // after the overview in page order, so the lowest non-CW id is slide_01.
+    const firstPage = db.prepare(
+      `SELECT i.id FROM album_files af JOIN indexed_files i ON i.id=af.file_id
+        WHERE af.album_id=? AND i.filename NOT LIKE '%\\_CW.%' ESCAPE '\\'
+        ORDER BY i.id ASC LIMIT 1`
+    ).get(a.id) as { id: number } | undefined;
+    if (firstPage && a.cover_file_id !== firstPage.id) {
+      db.prepare(`UPDATE albums SET cover_file_id=?, updated_at=datetime('now') WHERE id=?`).run(firstPage.id, a.id);
+      fixed++;
+    }
+  }
+  if (fixed > 0) console.log(`[carousel-cover] re-pointed ${fixed} carousel cover(s) to their first page.`);
+  return fixed;
+}
+
 /** v3.0 (Terry) — Phase 3 one-time migration: move PRE-folder collage/carousel albums into the new
  *  PDR Collages › {Collages | Carousels} tree.
  *   • Old top-level pdr_collages albums (auto-group only, not in any kind-folder) → the Collages folder,
