@@ -950,6 +950,13 @@ export function initDatabase(): { success: boolean; error?: string } {
       try { db.exec(`ALTER TABLE face_detections ADD COLUMN match_similarity REAL`); } catch {}
     }
 
+    // v3.0 (Terry) — album_groups gains cover_file_id so a FOLDER (e.g. a Carousels ‹category›) can show a
+    // user-CHOSEN representative cover instead of always auto-picking the first item in its sub-tree.
+    const agCols = db.prepare(`PRAGMA table_info(album_groups)`).all() as { name: string }[];
+    if (!new Set(agCols.map(c => c.name)).has('cover_file_id')) {
+      try { db.exec(`ALTER TABLE album_groups ADD COLUMN cover_file_id INTEGER REFERENCES indexed_files(id) ON DELETE SET NULL`); } catch {}
+    }
+
     // v2.0.13 — Takeout people-hint seeds. Google's Takeout JSON
     // sidecars sometimes include a `people` array — names Google
     // associated with a photo (via Google Photos face groups + manual
@@ -7808,6 +7815,13 @@ export function setAlbumCover(albumId: number, fileId: number | null): void {
   db.prepare(`UPDATE albums SET cover_file_id = ?, updated_at = datetime('now') WHERE id = ?`).run(fileId, albumId);
 }
 
+/** v3.0 (Terry) — set a FOLDER's chosen cover file (which carousel/album represents a category). Pass null
+ *  to clear it and fall back to the auto first-in-sub-tree cover. */
+export function setAlbumGroupCover(groupId: number, fileId: number | null): void {
+  const db = getDb();
+  db.prepare(`UPDATE album_groups SET cover_file_id = ?, updated_at = datetime('now') WHERE id = ?`).run(fileId, groupId);
+}
+
 /** v3.0 (Terry) — a carousel is a multi-page UNIT, so each saved carousel gets its OWN album (its pages +
  *  the wide overview) under PDR Collages › Carousels › ‹category›. This ensures the ‹category› FOLDER exists
  *  under the Carousels kind-folder, created directly (same controlled-structure approach as
@@ -8431,7 +8445,8 @@ export function listAlbumGroups(): AlbumGroupRecord[] {
     SELECT
       g.id, g.title, g.parent_id, g.source_kind, g.source_key,
       g.icon_key, g.palette_key, g.sort_order,
-      g.created_at, g.updated_at,
+      g.created_at, g.updated_at, g.cover_file_id,
+      (SELECT file_path FROM indexed_files WHERE id = g.cover_file_id) AS cover_path,
       (SELECT COUNT(*) FROM album_group_memberships m WHERE m.group_id = g.id) AS album_count
     FROM album_groups g
     ORDER BY

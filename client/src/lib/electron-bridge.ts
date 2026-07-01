@@ -1345,6 +1345,8 @@ export interface AlbumGroupRecord {
   created_at: string;
   updated_at: string;
   album_count: number;
+  cover_file_id: number | null;   // v3.0 (Terry) — user-chosen folder cover (e.g. category representative)
+  cover_path: string | null;      // resolved path of cover_file_id (for the thumb), null when unset
 }
 export interface AlbumGroupMembershipRecord {
   album_id: number;
@@ -1370,6 +1372,10 @@ export async function createAlbumGroup(title: string, parentId: number | null = 
 }
 export async function renameAlbumGroup(groupId: number, newTitle: string): Promise<{ success: boolean; error?: string }> {
   if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.rename(groupId, newTitle);
+  return { success: false, error: 'Not running in Electron' };
+}
+export async function setAlbumGroupCover(groupId: number, fileId: number | null): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.albums?.groups) return (window as any).pdr.albums.groups.setCover(groupId, fileId);
   return { success: false, error: 'Not running in Electron' };
 }
 export async function deleteAlbumGroup(groupId: number): Promise<{ success: boolean; error?: string }> {

@@ -85,6 +85,7 @@ import {
   getThumbnail,
   openSearchViewer,
   setAlbumCoverPhoto,
+  setAlbumGroupCover,
   openCollageComposer,
   // v2.1 round 275 (Terry) — recycle handler for the new Albums
   // multi-select toolbar + per-photo menu (parity with Dates).
@@ -3354,7 +3355,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     nSub > 0 ? `${nSub} folder${nSub === 1 ? '' : 's'}` : null,
                     nAlb > 0 ? `${nAlb} ${albNoun}${nAlb === 1 ? '' : 's'}` : null,
                   ].filter(Boolean).join(' · ') || 'Empty';
-                  const coverPath = firstCoverInSubtree(folder.id);
+                  const coverPath = folder.cover_path ?? firstCoverInSubtree(folder.id);
                   return (
                     <button
                       key={`subfolder-${folder.id}`}
@@ -3425,6 +3426,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         </span>
                       </div>
                     )}
+                    <ContextMenu>
+                    <ContextMenuTrigger asChild>
                     <button
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
@@ -3473,6 +3476,26 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <p className="text-xs text-muted-foreground mt-0.5">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
                     </button>
+                    </ContextMenuTrigger>
+                    <ContextMenuContent>
+                      <ContextMenuItem onSelect={() => navigateSelection({ type: 'album', id: album.id })}>
+                        <FolderOpen className="w-3.5 h-3.5 mr-2" />
+                        Open
+                      </ContextMenuItem>
+                      {/* v3.0 (Terry) — pick which album/carousel represents this category folder (its tile
+                          cover one level up), instead of the auto first-in-sub-tree pick. */}
+                      {selectedGroup.source_kind === 'user' && album.coverFileId != null && (
+                        <ContextMenuItem onSelect={async () => {
+                          const r = await setAlbumGroupCover(selectedGroup.id, album.coverFileId);
+                          if (r.success) { void refreshAll(true); toast.success('Cover set', { description: `“${selectedGroup.title}” now shows this` }); }
+                          else toast.error("Couldn't set the cover", { description: r.error });
+                        }}>
+                          <Star className="w-3.5 h-3.5 mr-2" />
+                          Set as “{selectedGroup.title}” cover
+                        </ContextMenuItem>
+                      )}
+                    </ContextMenuContent>
+                    </ContextMenu>
                     </Fragment>
                   );
                   });

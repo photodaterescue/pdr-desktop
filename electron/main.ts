@@ -9480,6 +9480,16 @@ ipcMain.handle('albumGroups:rename', async (_event, groupId: number, newTitle: s
   } catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
+// v3.0 (Terry) — set a folder's chosen representative cover (e.g. which carousel shows on a category tile).
+ipcMain.handle('albumGroups:setCover', async (_event, groupId: number, fileId: number | null) => {
+  try {
+    const { setAlbumGroupCover } = await import('./search-database.js');
+    setAlbumGroupCover(groupId, fileId ?? null);
+    markDbDirty();
+    return { success: true };
+  } catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
 ipcMain.handle('albumGroups:delete', async (_event, groupId: number) => {
   try {
     const { deleteAlbumGroup } = await import('./search-database.js');
