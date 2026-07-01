@@ -2567,11 +2567,18 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     if (selection.type === 'album') {
       const album = albumsById.get(selection.id);
       if (!album) return segs;
-      const memb = memberships.find(m => m.album_id === selection.id);
-      if (memb) {
-        for (const g of walkGroupChain(memb.group_id)) {
-          segs.push({ kind: 'group', id: g.id, label: g.title });
-        }
+      // v3.0 (Terry) — an album can belong to several groups (its source auto-group AND a user folder). Pick
+      // the membership whose parent chain is DEEPEST so the breadcrumb shows the album's real folder location
+      // (e.g. PDR Collages › Collages › General), not just the bare source. A plain .find() returned whichever
+      // membership loaded first, which dropped the "Collages" level for foldered collages.
+      let bestChain: AlbumGroupRecord[] = [];
+      for (const m of memberships) {
+        if (m.album_id !== selection.id) continue;
+        const chain = walkGroupChain(m.group_id);
+        if (chain.length > bestChain.length) bestChain = chain;
+      }
+      for (const g of bestChain) {
+        segs.push({ kind: 'group', id: g.id, label: g.title });
       }
       segs.push({ kind: 'album', id: album.id, label: album.title });
     }
