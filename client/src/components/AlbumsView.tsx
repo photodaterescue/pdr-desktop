@@ -3236,13 +3236,24 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     if (selectedGroup) {
       const profile = getSourceProfileForGroup(selectedGroup);
       const Icon = selectedGroup.source_kind === 'auto' ? profile.Icon : FolderOpen;
+      // v3.0 (Terry) — a folder view shows its sub-FOLDERS as tiles too, not just its direct albums, so
+      // clicking Carousels reveals its ‹category› folders (General/…) exactly as clicking Collages reveals
+      // its category albums. Folders render first in the grid, then any direct albums.
+      const childFolderList = childGroups.get(selectedGroup.id) ?? [];
+      const nFolders = childFolderList.length;
+      const nAlbums = selectedGroupAlbumIds.length;
+      const albumNoun = carouselCategoryFolderIds.has(selectedGroup.id) ? 'carousel' : 'album';
+      const groupCountLabel = [
+        nFolders > 0 ? `${nFolders} folder${nFolders === 1 ? '' : 's'}` : null,
+        nAlbums > 0 ? `${nAlbums} ${albumNoun}${nAlbums === 1 ? '' : 's'}` : null,
+      ].filter(Boolean).join(' · ') || 'Empty';
       return (
         <div className="flex flex-col h-full">
           {renderBreadcrumb()}
           <div className="flex items-center gap-3 px-6 py-3 border-b border-border">
             <span className={profile.iconColorClass}><Icon className="w-5 h-5" /></span>
             <h2 className="text-lg font-medium text-foreground truncate">{selectedGroup.title}</h2>
-            <span className="text-xs text-muted-foreground">{selectedGroupAlbumIds.length} album{selectedGroupAlbumIds.length === 1 ? '' : 's'}</span>
+            <span className="text-xs text-muted-foreground">{groupCountLabel}</span>
             {/* Zoom + Density — follows the user across all three
                 surfaces (All-albums / per-group / album detail).
                 State is shared, so resizing here also resizes
@@ -3255,7 +3266,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             </div>
           </div>
           <div ref={gridScrollRef} className="flex-1 overflow-y-auto px-6 pt-3 pb-4">
-            {selectedGroupAlbumIds.length === 0 ? (
+            {nFolders === 0 && nAlbums === 0 ? (
               <p className="text-sm text-muted-foreground italic">
                 {isGroupDroppable(selectedGroup)
                   ? 'This folder is empty. Drag album rows from the tree on the left into the folder header to add them here.'
@@ -3266,6 +3277,46 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
               >
+                {childFolderList.map((folder, fidx) => {
+                  const childAlbumIds = albumIdsByGroup.get(folder.id) ?? [];
+                  const childSubs = (childGroups.get(folder.id) ?? []).length;
+                  const total = childAlbumIds.length + childSubs;
+                  const noun = carouselCategoryFolderIds.has(folder.id) ? 'carousel' : 'album';
+                  const coverPath = childAlbumIds.length > 0 ? (albumsById.get(childAlbumIds[0])?.coverPath ?? null) : null;
+                  return (
+                    <button
+                      key={`subfolder-${folder.id}`}
+                      type="button"
+                      onClick={() => navigateSelection({ type: 'group', id: folder.id })}
+                      data-cover-path={coverPath ?? undefined}
+                      // Folder tile — click drills into the sub-folder (its albums show on the right). Not
+                      // draggable; the tree row is the drag surface. Cover = its first album's cover when the
+                      // thumb is already cached, else a folder glyph so it never sticks on a shimmer.
+                      className="flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-pointer animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both"
+                      style={{ animationDelay: `${Math.min(fidx, 8) * 30}ms`, animationDuration: '400ms' }}
+                    >
+                      <div className="aspect-square bg-muted relative overflow-hidden" style={{ aspectRatio: '1 / 1' }}>
+                        {coverPath && thumbs[coverPath] ? (
+                          <img src={thumbs[coverPath]} alt={folder.title} className="absolute inset-0 w-full h-full object-cover" loading="lazy" />
+                        ) : (
+                          <div className="absolute inset-0 flex items-center justify-center">
+                            <FolderOpen className="w-12 h-12 text-muted-foreground/30" />
+                          </div>
+                        )}
+                        <span className="absolute top-2 right-2 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-background/80 text-muted-foreground backdrop-blur-sm">
+                          <FolderOpen className="w-2.5 h-2.5" />
+                          Folder
+                        </span>
+                      </div>
+                      <div className="p-3">
+                        <IconTooltip content={folder.title}>
+                          <p className="text-sm font-medium text-foreground truncate">{folder.title}</p>
+                        </IconTooltip>
+                        <p className="text-xs text-muted-foreground mt-0.5">{total} {noun}{total === 1 ? '' : 's'}</p>
+                      </div>
+                    </button>
+                  );
+                })}
                 {(() => {
                   // v3.0 (Terry) — carousel category folders date their carousels like the Collages photo
                   // view: newest day first, a day/date divider before each new day. Other folder views keep
