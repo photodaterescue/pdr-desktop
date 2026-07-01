@@ -12115,10 +12115,13 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     then to the seed value as a last resort. Terry
                     2026-05-19: "About PDR has all versions collapsed
                     apart from the latest one with each update." */}
-                <Accordion type="multiple" defaultValue={[
-                  `ver-${updateStatus === 'update-available' && latestVersion ? latestVersion : appVersion}`,
-                  'ver-3.0.0',
-                ]} className="space-y-2">
+                {/* v3.0 (Terry 2026-07-01) — changelog opens fully COLLAPSED (scannable version headlines,
+                    expand any for the full detail). Previously the current + v3.0.0 entries auto-expanded,
+                    which dumped the whole long v3.0 list on open. Only a PENDING download update auto-opens
+                    now (so the "what's new to download" + button are visible); everything else is collapsed. */}
+                <Accordion type="multiple" defaultValue={
+                  updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : []
+                } className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">

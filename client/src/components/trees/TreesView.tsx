@@ -2456,6 +2456,29 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
               );
             })()}
             <div className="flex-1" />
+            {/* v3.0 (Terry) — visible zoom control on the Trees toolbar (parity with the Workspace's zoom).
+                Drives the canvas's existing zoom API via canvasRef; mouse-wheel zoom still works too. Fit
+                (centre) frames the whole tree — the natural "reset" for a pan/zoom canvas. Same bordered
+                group styling as Undo/Redo alongside it. */}
+            <div className="inline-flex items-center rounded-lg border border-border bg-background">
+              <IconTooltip label="Zoom out" side="bottom">
+                <button onClick={() => canvasRef.current?.zoomOut()} className="inline-flex items-center px-2.5 py-1.5 text-sm text-foreground hover:bg-accent rounded-l-lg" data-testid="trees-zoom-out">
+                  <ZoomOut className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <div className="w-px h-5 bg-border" />
+              <IconTooltip label="Fit tree to view" side="bottom">
+                <button onClick={() => canvasRef.current?.fit()} className="inline-flex items-center px-2.5 py-1.5 text-sm text-foreground hover:bg-accent" data-testid="trees-zoom-fit">
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+              <div className="w-px h-5 bg-border" />
+              <IconTooltip label="Zoom in" side="bottom">
+                <button onClick={() => canvasRef.current?.zoomIn()} className="inline-flex items-center px-2.5 py-1.5 text-sm text-foreground hover:bg-accent rounded-r-lg" data-testid="trees-zoom-in">
+                  <ZoomIn className="w-4 h-4" />
+                </button>
+              </IconTooltip>
+            </div>
             {/* Undo / Redo — history is persistent across sessions, so
                 you can walk changes all the way back to when the app
                 was first used. Buttons disable when the respective
