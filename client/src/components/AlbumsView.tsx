@@ -318,7 +318,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Portraits" → "Sinta Portraits"); falls back to the whole name when there's no category prefix.
   const collageTypeOf = (name?: string | null): string => {
     if (!name) return '';
-    if (/^Collage \d{4}-\d{2}-\d{2}/.test(name)) return '';   // auto-generated timestamp name — not a real type
+    if (/^Collage \d{4}-\d{2}-\d{2}/.test(name)) return '';   // auto-generated collage timestamp name — not a real type
+    if (/^Carousel \d{4}-\d{2}-\d{2}/.test(name)) return '';  // auto-generated carousel name — not a real type
     let parts = String(name).split(' · ').map((s) => s.trim()).filter(Boolean);
     if (parts.length > 1 && /^v?\d+$/i.test(parts[parts.length - 1])) parts.pop();   // drop a trailing version (v2/v3) from old names
     if (parts.length > 1) parts = parts.slice(1);   // drop the leading category → what's left is the type
@@ -2359,6 +2360,21 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 <span className="text-xs font-medium text-foreground truncate flex-1">{group.title}</span>
               </IconTooltip>
               <span className="text-[10px] text-muted-foreground shrink-0">{totalCount === 0 ? 'empty' : totalCount}</span>
+              {/* v3.0 (Terry) — "New collage" lives here (replaces the old toolbar button) so the tree stays
+                  narrow. Only on the PDR Collages source row; opens a fresh empty collage window. */}
+              {group.source_kind === 'auto' && group.source_key === 'pdr_collages' && (
+                <IconTooltip content="New collage">
+                  <button
+                    type="button"
+                    onClick={(e) => { e.stopPropagation(); void openCollageComposer(); }}
+                    className="shrink-0 text-primary/70 hover:text-primary p-0.5 rounded transition-colors"
+                    aria-label="New collage"
+                    data-testid="tree-new-collage"
+                  >
+                    <LayoutGrid className="w-3.5 h-3.5" />
+                  </button>
+                </IconTooltip>
+              )}
               {isUser && (
                 <div className="hidden group-hover/row:flex items-center gap-0.5 shrink-0">
                   <IconTooltip content="Rename folder">
@@ -2587,6 +2603,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     if (selectedGroup.source_kind !== 'auto') return direct;
     const inSub = subtreeAlbumIds(selectedGroup.id);
     return direct.filter((id) => !inSub.has(id));
+  })();
+
+  // v3.0 (Terry) — distinct TYPES among the current folder's cards (carousels are named by type) for the
+  // folder-level type filter. Empty when the cards carry no real type (e.g. only auto-named carousels), which
+  // is when the filter control stays hidden.
+  const folderCardTypes: Array<[string, number]> = (() => {
+    const m = new Map<string, number>();
+    for (const id of selectedGroupAlbumIds) {
+      const t = collageTypeOf(albumsById.get(id)?.title);
+      if (!t) continue;
+      m.set(t, (m.get(t) ?? 0) + 1);
+    }
+    return Array.from(m.entries()).sort((a, b) => a[0].localeCompare(b[0], undefined, { sensitivity: 'base' }));
   })();
 
   // ── Breadcrumb ───────────────────────────────────────────────────
@@ -2980,7 +3009,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // v3.0 (Terry) — Type filter pill for PDR Collages albums. Mirrors the Media pill: a Popover listing the
   // distinct collage TYPES in this album (+ "All types") as radios; picking one narrows the grid. The caller
   // gates rendering on selectedAlbum?.source === 'pdr_collages' && collageTypes.length > 0.
-  const renderTypeButton = (compact = false) => {
+  const renderTypeButton = (compact = false, types: Array<[string, number]> = collageTypes) => {
     const count = typeFilter.size;
     const active = count > 0;
     const pillLabel = count === 0 ? 'All' : count === 1 ? Array.from(typeFilter)[0] : `${count} types`;
@@ -3012,7 +3041,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             )}
           </div>
           <div className="max-h-72 overflow-y-auto">
-            {collageTypes.map(([t, c]) => (
+            {types.map(([t, c]) => (
               <label key={t} className="flex items-center justify-between gap-2 px-3 py-2 rounded-md text-sm cursor-pointer hover:bg-muted/50 transition-colors">
                 <span className="text-foreground truncate">{t}</span>
                 <span className="inline-flex items-center gap-3 shrink-0">
@@ -3328,6 +3357,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 State is shared, so resizing here also resizes
                 everywhere else. */}
             <div className="ml-auto flex items-center gap-2 shrink-0">
+              {/* v3.0 (Terry) — folder-level type filter (e.g. filter the carousels in a category by type).
+                  Only shows when the folder's cards carry real types. */}
+              {folderCardTypes.length > 0 && renderTypeButton(false, folderCardTypes)}
               {/* v2.1 round 276 (Terry) — full-label render-fn call. */}
               {renderDisplayButton()}
               {refreshButton}
@@ -3395,10 +3427,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                   // view: newest day first, a day/date divider before each new day. Other folder views keep
                   // the plain title-sorted grid. Gated on the same "Show Day and Date" toggle.
                   const dateGrouped = carouselCategoryFolderIds.has(selectedGroup.id) && groupByDay;
-                  const orderedIds = dateGrouped
+                  const sortedIds = dateGrouped
                     ? [...selectedGroupAlbumIds].sort((a, b) =>
                         (albumsById.get(b)?.createdAt ?? '').localeCompare(albumsById.get(a)?.createdAt ?? ''))
                     : selectedGroupAlbumIds;
+                  // v3.0 (Terry) — folder-level type filter narrows the cards to the ticked type(s).
+                  const orderedIds = typeFilter.size > 0
+                    ? sortedIds.filter((id) => typeFilter.has(collageTypeOf(albumsById.get(id)?.title)))
+                    : sortedIds;
                   let prevDayKey: string | null = null;
                   return orderedIds.map((id, idx) => {
                   const album = albumsById.get(id);
@@ -4766,18 +4802,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 <FolderPlus className="w-3.5 h-3.5" />
                 New album
               </Button>
-              {/* v2.1 round 241 (Terry) — standalone "New collage" workspace
-                  entry point, sitting with New folder / New album because a
-                  collage is a creative artefact that lives alongside albums
-                  (saved collages even gather into the "PDR Collages" album,
-                  round 162). Opens a FRESH, empty collage window; the user
-                  populates it via the in-collage "Add photos". Same
-                  openCollageComposer helper the selection "Create collage"
-                  actions use — passing no paths opens it empty. */}
-              <Button variant="secondary" size="sm" onClick={() => { void openCollageComposer(); }} className="gap-1 px-3 py-1 h-auto text-xs" data-testid="button-create-collage">
-                <LayoutGrid className="w-3.5 h-3.5" />
-                New collage
-              </Button>
+              {/* v3.0 (Terry) — "New collage" moved OFF the toolbar to a compact icon on the PDR Collages
+                  tree row (see renderGroupRow) so the tree stays narrow. openCollageComposer() still drives it. */}
             </div>
           )}
         </div>
