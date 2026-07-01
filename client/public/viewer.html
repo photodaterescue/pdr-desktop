@@ -16009,6 +16009,12 @@
       carouselMode = true;
       carouselPageCount = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, n || CAROUSEL_DEFAULT));
       carouselFocusPage = 0;   // v2.1 round 270 (Terry) — start focused on page 1
+      // v3.0 (Terry) — a fresh carousel is a NEW project: clear any carried-over name/id so the save
+      // categoriser starts blank. Without this it inherited the previous collage's name (e.g. it was
+      // auto-populating "Personal · Sinta Portraits"). Both callers start a blank carousel, never a reopen.
+      currentCollageProjectId = null;
+      currentCollageProjectName = null;
+      try { updateCollageTitle(); } catch (_) {}
       // Body class kept for the carousel-filmstrip CSS (pool hidden, slice thumbs shown).
       try { document.body.classList.add('carousel-mode'); } catch (_) {}
       // Empty the canvas first (carouselMode=true → restore's nOrig=0 clears all tiles),
