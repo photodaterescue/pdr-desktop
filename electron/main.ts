@@ -1132,6 +1132,15 @@ function createWindow() {
   });
   hardenWindowAgainstNavigation(mainWindow);
 
+  // v3.0 (Terry) — first-click fix. After a separate window (Viewer / Collage / People) takes focus, the
+  // main window's webContents is left blurred. On Windows the first click back onto the main window only
+  // re-focuses the web contents — it is NOT delivered to the element under the cursor — so picking a
+  // different album or folder took two clicks. Re-focus the webContents the instant the window regains
+  // focus so that first click lands. (Same class of bug the viewer/collage title-bar drag fix addressed.)
+  mainWindow.on('focus', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.focus();
+  });
+
   // v2.0.11 (Terry 2026-05-24) — DON'T trigger workspaceReadyToShow
   // from ready-to-show. Chromium fires that event the moment it paints
   // the first frame of the document — but the first frame is just the
