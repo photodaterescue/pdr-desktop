@@ -132,6 +132,18 @@ const DRAG_MIME_SECTION = 'application/x-pdr-section';
 const EXPANDED_STORAGE_KEY = 'pdr-albums-expanded-groups';
 const SECTION_ORDER_STORAGE_KEY = 'pdr-albums-section-order';
 
+// Day-header label, e.g. "Tuesday, 30 June 2026". Mirrors the photo-grid divider's formatDay verbatim
+// (UTC, from the date portion) so the carousel folder view reads of-a-piece with the album photo view.
+const _DAY_NAMES = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+const _MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+function formatDayLabel(iso: string): string {
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (!m) return '';
+  const d = new Date(Date.UTC(parseInt(m[1], 10), parseInt(m[2], 10) - 1, parseInt(m[3], 10)));
+  if (isNaN(d.getTime())) return '';
+  return `${_DAY_NAMES[d.getUTCDay()]}, ${d.getUTCDate()} ${_MONTH_NAMES[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 type SectionOrder = 'sources-first' | 'folders-first';
 type SectionKind = 'sources' | 'folders';
 
@@ -970,6 +982,21 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       if (arr) arr.push(g); else m.set(key, [g]);
     }
     return m;
+  }, [groups]);
+
+  // v3.0 (Terry) — carousel CATEGORY folders (PDR Collages › Carousels › ‹category›). The tree treats these
+  // as leaves: it does NOT list each carousel album as a child node — selecting the folder shows the
+  // carousels on the right instead (and dates them like the Collages photo view). Identified as user folders
+  // whose parent is the system "Carousels" kind-folder (itself a user folder directly under an auto source).
+  const carouselCategoryFolderIds = useMemo(() => {
+    const ids = new Set<number>();
+    const carouselsKind = groups.find((g) => {
+      if (g.source_kind !== 'user' || g.title.toLowerCase() !== 'carousels') return false;
+      return groups.find((p) => p.id === g.parent_id)?.source_kind === 'auto';
+    });
+    if (!carouselsKind) return ids;
+    for (const g of groups) if (g.parent_id === carouselsKind.id) ids.add(g.id);
+    return ids;
   }, [groups]);
 
   const albumIdsByGroup = useMemo(() => {
@@ -2174,6 +2201,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     const showAboveIndicator = dragOverGroupId === group.id && dragOverPosition === 'above';
     const showBelowIndicator = dragOverGroupId === group.id && dragOverPosition === 'below';
     const childGroupList = childGroups.get(group.id) ?? [];
+    const isCarouselCategory = carouselCategoryFolderIds.has(group.id);
     let albumIdList = albumIdsByGroup.get(group.id) ?? [];
     // v3.0 (Terry) — a category album lives in a kind sub-folder (e.g. PDR Collages › Collages ›
     // Personal) but is also auto-linked to its source group. Hide it at the source level so it shows
@@ -2237,6 +2265,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           {showAboveIndicator && (
             <div className="absolute -top-px left-2 right-2 h-0.5 bg-primary rounded-full pointer-events-none shadow-[0_0_4px_var(--tw-shadow-color)] shadow-primary/40" />
           )}
+          {isCarouselCategory ? (
+            // Carousel category folders are leaves — no expand toggle; selecting the row shows the carousels
+            // on the right. Spacer matches the chevron button's footprint so the title stays aligned.
+            <span className="shrink-0 p-0.5" aria-hidden="true"><span className="block w-3.5 h-3.5" /></span>
+          ) : (
           <button
             type="button"
             onClick={(e) => { e.stopPropagation(); toggleGroupExpanded(group.id); }}
@@ -2245,6 +2278,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           >
             {isExpanded ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronRight className="w-3.5 h-3.5" />}
           </button>
+          )}
           <span className={`shrink-0 transition-colors ${isNestHighlight ? 'text-primary' : profile.iconColorClass}`}><Icon className="w-3.5 h-3.5" /></span>
           {isRenaming ? (
             <div className="flex items-center gap-1 flex-1 min-w-0">
@@ -2343,7 +2377,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         {isExpanded && (
           <>
             {childGroupList.map((child) => renderGroupRow(child, depth + 1))}
-            {albumIdList.map((id) => {
+            {!isCarouselCategory && albumIdList.map((id) => {
               const a = albumsById.get(id);
               return a ? renderAlbumLeaf(a, depth + 1, group.id) : null;
             })}
@@ -3232,14 +3266,43 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                 className={`grid ${density === 'tight' ? 'gap-1' : 'gap-3'}`}
                 style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${albumCardTilePx}px, 1fr))` }}
               >
-                {selectedGroupAlbumIds.map((id, idx) => {
+                {(() => {
+                  // v3.0 (Terry) — carousel category folders date their carousels like the Collages photo
+                  // view: newest day first, a day/date divider before each new day. Other folder views keep
+                  // the plain title-sorted grid. Gated on the same "Show Day and Date" toggle.
+                  const dateGrouped = carouselCategoryFolderIds.has(selectedGroup.id) && groupByDay;
+                  const orderedIds = dateGrouped
+                    ? [...selectedGroupAlbumIds].sort((a, b) =>
+                        (albumsById.get(b)?.createdAt ?? '').localeCompare(albumsById.get(a)?.createdAt ?? ''))
+                    : selectedGroupAlbumIds;
+                  let prevDayKey: string | null = null;
+                  return orderedIds.map((id, idx) => {
                   const album = albumsById.get(id);
                   if (!album) return null;
                   const ap = getSourceProfileForAlbum(album);
                   const AIcon = ap.Icon;
+                  const myDayKey = dateGrouped ? (album.createdAt?.slice(0, 10) ?? 'no-date') : '';
+                  const dayChanged = dateGrouped && myDayKey !== prevDayKey;
+                  prevDayKey = myDayKey;
                   return (
+                    <Fragment key={`${selectedGroup.id}-${album.id}`}>
+                    {dayChanged && (
+                      /* Day/date divider — full grid width; typography mirrors the album photo-grid divider
+                         so the two surfaces read of-a-piece (Terry: dates should show like in Collages). */
+                      <div
+                        style={{ gridColumn: '1 / -1' }}
+                        className="py-2 mt-2 first:mt-0 border-b border-border/60 bg-background text-sm font-semibold text-foreground"
+                      >
+                        {album.createdAt ? formatDayLabel(album.createdAt) : 'Undated'}
+                        <span className="ml-2 text-xs font-normal text-muted-foreground tabular-nums">
+                          {(() => {
+                            const n = orderedIds.filter((q) => (albumsById.get(q)?.createdAt?.slice(0, 10) ?? 'no-date') === myDayKey).length;
+                            return `${n.toLocaleString()} ${n === 1 ? 'carousel' : 'carousels'}`;
+                          })()}
+                        </span>
+                      </div>
+                    )}
                     <button
-                      key={`${selectedGroup.id}-${album.id}`}
                       type="button"
                       onClick={() => navigateSelection({ type: 'album', id: album.id })}
                       draggable
@@ -3287,8 +3350,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <p className="text-xs text-muted-foreground mt-0.5">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
                     </button>
+                    </Fragment>
                   );
-                })}
+                  });
+                })()}
               </div>
             )}
           </div>
