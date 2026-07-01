@@ -29,7 +29,7 @@ import { useEffect, useState, useCallback, useMemo, useRef, Fragment } from 'rea
 import {
   ChevronDown, ChevronRight, ChevronLeft, FolderPlus, FolderClosed, FolderOpen,
   Trash2, Pencil, Plus, Check, X, Image as ImageIcon, RefreshCw,
-  Sparkles, FileText, LayoutGrid, FolderMinus, Layers, GripVertical, Copy, Smartphone, Printer,
+  Sparkles, FileText, LayoutGrid, Grid2x2Plus, FolderMinus, Layers, GripVertical, Copy, Smartphone, Printer,
   CalendarRange, Search as SearchIcon, Images, Undo2, Redo2,
   ZoomIn, ZoomOut, RotateCcw, MessageSquareText, Star, HardDrive,
   Captions, Info, Eye, Filter, Film, Files,
@@ -2283,11 +2283,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     // folders skip the "New sub-folder" entry (USER_GROUP_MAX_DEPTH).
     const canHaveSubfolders = isUser && depth === 0;
     return (
-      <div key={`group-${group.id}`} className="group/row">
+      <div key={`group-${group.id}`}>
+        {/* v3.0 (Terry) — group/row moved OFF this wrapper (which also holds the expanded children) and ONTO
+            the row content div below, so hovering a child row no longer reveals every ANCESTOR row's
+            rename/delete icons ("appearing all at once"). Now they reveal only for the row actually hovered. */}
         <ContextMenu>
           <ContextMenuTrigger asChild>
         <div
-          className={`relative flex items-center gap-1.5 pr-2 py-1 rounded-md transition-all cursor-pointer ${
+          className={`group/row relative flex items-center gap-1.5 pr-2 py-1 rounded-md transition-all cursor-pointer ${
             // Dashed inner outline reads as "drop here" without the
             // heavy filled chip the old solid ring produced. Same OS-
             // standard convention as folder drop zones in Finder /
@@ -2359,22 +2362,23 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               <IconTooltip content={group.title}>
                 <span className="text-xs font-medium text-foreground truncate flex-1">{group.title}</span>
               </IconTooltip>
-              <span className="text-[10px] text-muted-foreground shrink-0">{totalCount === 0 ? 'empty' : totalCount}</span>
-              {/* v3.0 (Terry) — "New collage" lives here (replaces the old toolbar button) so the tree stays
-                  narrow. Only on the PDR Collages source row; opens a fresh empty collage window. */}
+              {/* v3.0 (Terry) — "New collage" icon sits to the LEFT of the count on the PDR Collages source
+                  row (replaces the old toolbar button so the tree stays narrow); opens a fresh empty collage.
+                  Grid2x2Plus = a bolder grid with a "+" built in. */}
               {group.source_kind === 'auto' && group.source_key === 'pdr_collages' && (
                 <IconTooltip content="New collage">
                   <button
                     type="button"
                     onClick={(e) => { e.stopPropagation(); void openCollageComposer(); }}
-                    className="shrink-0 text-primary/70 hover:text-primary p-0.5 rounded transition-colors"
+                    className="shrink-0 text-primary/80 hover:text-primary p-0.5 rounded transition-colors"
                     aria-label="New collage"
                     data-testid="tree-new-collage"
                   >
-                    <LayoutGrid className="w-3.5 h-3.5" />
+                    <Grid2x2Plus className="w-4 h-4" strokeWidth={2.25} />
                   </button>
                 </IconTooltip>
               )}
+              <span className="text-[10px] text-muted-foreground shrink-0">{totalCount === 0 ? 'empty' : totalCount}</span>
               {isUser && (
                 <div className="hidden group-hover/row:flex items-center gap-0.5 shrink-0">
                   <IconTooltip content="Rename folder">
