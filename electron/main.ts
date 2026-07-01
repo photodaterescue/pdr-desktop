@@ -9490,6 +9490,20 @@ ipcMain.handle('albumGroups:setCover', async (_event, groupId: number, fileId: n
   } catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
+// v3.0 (Terry) — "View in Albums" jump from the Collage window: bring the MAIN window forward and tell it to
+// navigate to Memories → Albums (opening the given album if one is passed). The renderer handles the nav.
+ipcMain.handle('collage:viewInAlbums', async (_event, albumId: number | null) => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('pdr:navigate-albums', albumId ?? null);
+    }
+    return { success: true };
+  } catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
 ipcMain.handle('albumGroups:delete', async (_event, groupId: number) => {
   try {
     const { deleteAlbumGroup } = await import('./search-database.js');

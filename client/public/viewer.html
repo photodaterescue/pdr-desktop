@@ -16494,11 +16494,20 @@
 
     // v3.0 (Terry) — Save flow helpers: a brief toast, the Save/Update button state, the chevron
     // menu (Save as new version / Save to another album), and the new-version action.
-    function collageToast(msg, ms) {
+    function collageToast(msg, ms, action) {
       try {
         var d = document.createElement('div');
-        d.textContent = msg;
-        d.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1f1d2e;color:#e9e6f7;padding:10px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 32px rgba(0,0,0,.5);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;max-width:82vw;text-align:center;';
+        d.style.cssText = 'position:fixed;bottom:84px;left:50%;transform:translateX(-50%);z-index:2147483647;background:#1f1d2e;color:#e9e6f7;padding:10px 18px;border-radius:10px;border:1px solid rgba(255,255,255,.14);box-shadow:0 10px 32px rgba(0,0,0,.5);font:13px system-ui,-apple-system,"Segoe UI",sans-serif;max-width:82vw;text-align:center;display:inline-flex;align-items:center;';
+        var span = document.createElement('span'); span.textContent = msg; d.appendChild(span);
+        // v3.0 (Terry) — optional action (e.g. "View in Albums"): a lavender pill the user can click before
+        // the toast fades. When an action is present the toast lingers longer so it's actually clickable.
+        if (action && action.label) {
+          var btn = document.createElement('button');
+          btn.textContent = action.label;
+          btn.style.cssText = 'margin-left:12px;background:#ad9eff;color:#1a1a2e;border:none;border-radius:7px;padding:5px 12px;font:600 12px system-ui,-apple-system,"Segoe UI",sans-serif;cursor:pointer;white-space:nowrap;';
+          btn.onclick = function () { try { action.onClick && action.onClick(); } catch (_) {} try { d.remove(); } catch (_) {} };
+          d.appendChild(btn);
+        }
         document.body.appendChild(d);
         setTimeout(function () { try { d.remove(); } catch (_) {} }, ms || 3600);
       } catch (_) {}
@@ -16596,7 +16605,9 @@
           const _msg = (_act === 'update') ? ('Updated in ' + _where + ' — safe in your library')
             : (_act === 'version') ? ('Saved v' + (saveOpts.version || '') + ' to ' + _where + ' — safe in your library')
             : ('Saved to ' + _where + ' — safe in your library');
-          collageToast(_msg);
+          // v3.0 (Terry) — the toast names the destination AND offers a "View in Albums" jump: it brings the
+          // main window forward and lands on Memories → Albums with this collage's album selected.
+          collageToast(_msg, 8000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });
           // First save + New version open the finished photo in the Viewer; a quick Update stays in the editor.
           if (_act !== 'update') {
             const name = res.filename || res.filePath.split(/[\\/]/).pop();

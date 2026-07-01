@@ -527,12 +527,20 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // flag); this is just the save-back channel — main composites the
   // full-resolution originals with sharp and lands a _CO file.
   collage: {
+    // v3.0 (Terry) — "View in Albums" jump: bring the main window forward + navigate it to Memories → Albums
+    // (opening `albumId` if given). onNavigateAlbums lets the main window's workspace react to the request.
+    viewInAlbums: (albumId?: number | null) => ipcRenderer.invoke('collage:viewInAlbums', albumId ?? null) as Promise<{ success: boolean; error?: string }>,
+    onNavigateAlbums: (callback: (albumId: number | null) => void) => {
+      const handler = (_event: any, albumId: number | null) => callback(albumId);
+      ipcRenderer.on('pdr:navigate-albums', handler);
+      return () => ipcRenderer.removeListener('pdr:navigate-albums', handler);
+    },
     saveLayout: (layout: {
       canvas: { w: number; h: number; bg: string; bgImage?: { path: string; opacity: number; enh?: unknown } };
       items: Array<{ path: string; xFrac: number; yFrac: number; wFrac: number; aspect: number; rot: number; enh?: unknown }>;
     }, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string }) =>
       ipcRenderer.invoke('collage:saveLayout', layout, opts) as Promise<{
-        success: boolean; filePath?: string; filename?: string; fileId?: number | null; pending?: boolean; error?: string;
+        success: boolean; filePath?: string; filename?: string; fileId?: number | null; albumId?: number | null; pending?: boolean; error?: string;
       }>,
     // v2.1 round 260 (Terry) — carousel wide: SLICED EXPORT. The carousel is now ONE
     // WIDE collage layout (canvas.w = pageCount*1080, h = 1350). Main bakes it once and

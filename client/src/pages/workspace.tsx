@@ -1297,6 +1297,17 @@ useEffect(() => {
   return () => window.removeEventListener('pdr:openAlbumsAlbum', handler as EventListener);
 }, []);
 
+// v3.0 (Terry) — "View in Albums" jump from the Collage window (a separate window): the main process
+// focuses this window and fires collage.onNavigateAlbums with the saved collage's album id. Stash it as the
+// pending-open album, then reuse the same openAlbumsAlbum route to land on Memories → Albums with it selected.
+useEffect(() => {
+  const off = (window as any).pdr?.collage?.onNavigateAlbums?.((albumId: number | null) => {
+    try { if (albumId != null) localStorage.setItem('pdr-albums-pending-open', String(albumId)); } catch { /* localStorage may be unavailable */ }
+    window.dispatchEvent(new Event('pdr:openAlbumsAlbum'));
+  });
+  return () => { if (typeof off === 'function') off(); };
+}, []);
+
 // v2.0.15 (Terry 2026-05-29) — titlebar Recycle Bin button dispatches
 // pdr:openRecycleBin so it can navigate from any view without
 // needing access to setActiveView. Mirrors the sidebar's behaviour:

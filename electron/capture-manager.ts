@@ -2215,6 +2215,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
     await stampCaptureMetadata(outPath, capturedAt, 'collage', opts && opts.caption ? opts.caption : undefined, opts && opts.name ? opts.name : undefined);
 
     let fileId: number | null = null;
+    let savedAlbumId: number | null = null;   // v3.0 (Terry) — the PDR Collages ‹category› album this filed into (for the "View in Albums" jump)
     if (libRoot) {
       try {
         fileId = await indexCapturedFile(outPath, libRoot, capturedAt, W, H, 'photo');
@@ -2242,7 +2243,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
             const albumTitle = (opts && typeof opts.album === 'string' && opts.album.trim()) ? opts.album.trim() : 'General';
             const folders = ensureCollageKindFolders();
             const albumId = findOrCreateCollageAlbumInFolder(albumTitle, folders.collages);
-            if (albumId != null) addPhotosToAlbum(albumId, [fileId]);
+            if (albumId != null) { addPhotosToAlbum(albumId, [fileId]); savedAlbumId = albumId; }
           } catch (albErr) {
             log.warn(`[collage] add to PDR Collages source failed (non-fatal): ${(albErr as Error).message}`);
           }
@@ -2272,7 +2273,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
       }
     }
     log.info(`[collage] saved freeform composite ${filename} (${W}×${H})${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
-    return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
+    return { success: true, filePath: outPath, filename, fileId, albumId: savedAlbumId, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveLayout failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
