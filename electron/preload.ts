@@ -548,11 +548,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // dedicated subfolder and returning the file list + folder (the renderer reveals the
     // folder rather than opening N files). Signature changed from (layouts[]) → (layout,
     // pageCount); the return shape is unchanged.
-    saveCarousel: (layout: unknown, pageCount: number, opts?: { name?: string; caption?: string }) =>
+    saveCarousel: (layout: unknown, pageCount: number, opts?: { name?: string; caption?: string; album?: string }) =>
       ipcRenderer.invoke('collage:saveCarousel', layout, pageCount, opts) as Promise<{
         success: boolean;
         files?: Array<{ filePath: string; filename: string; fileId: number | null }>;
-        folderPath?: string; count?: number; pending?: boolean; error?: string;
+        folderPath?: string; count?: number; albumId?: number | null; pending?: boolean; error?: string;
       }>,
     // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
     // open the shared photo picker for a background, and listens for the

@@ -16668,6 +16668,10 @@
             const names = (res.files || []).map((f) => (f && f.filename) || ((f && f.filePath) || '').split(/[\\/]/).pop());
             if (paths.length) await window.pdr.search.openViewer(paths, names, 0, false);
           } catch (_) {}
+          // v3.0 (Terry) — same "saved to..." confirmation + "View in Albums" jump as a single collage,
+          // pointing at the carousel's own album under PDR Collages › Carousels › ‹category›.
+          var _carWhere = 'Memories › Albums › PDR Collages › Carousels › ' + (album || 'General');
+          collageToast('Saved to ' + _carWhere + ' — safe in your library', 8000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });
           if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides — opened in Viewer';

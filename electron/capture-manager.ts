@@ -2445,7 +2445,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
       if (firstPageId != null) { try { setAlbumCover(albumId, firstPageId); } catch { /* non-fatal */ } }
     }
     log.info(`[collage] saved carousel — ${files.length}/${n} slide(s) sliced from ${wideWidth}×${wideHeight} → ${folderPath}${libRoot ? '' : ' (pending)'}`);
-    return { success: true, files, folderPath, count: files.length, pending: !libRoot };
+    return { success: true, files, folderPath, count: files.length, albumId, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
