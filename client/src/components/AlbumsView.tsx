@@ -1778,10 +1778,13 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // added tiles get observed. Falls back to a no-op when
   // gridScrollRef isn't mounted yet (e.g. on the empty-state
   // surface where no grid is rendered).
+  // v3.0 (Terry) — persist across effect re-runs so re-observing on navigation doesn't re-fetch covers
+  // already loaded/in-flight (the setThumbs guard covers the rest).
+  const requestedCoversRef = useRef<Set<string>>(new Set());
   useEffect(() => {
     const container = gridScrollRef.current;
     if (!container) return;
-    const requested = new Set<string>();
+    const requested = requestedCoversRef.current;
     const observer = new IntersectionObserver((entries) => {
       for (const entry of entries) {
         if (!entry.isIntersecting) continue;
@@ -1807,7 +1810,10 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       els.forEach((el) => observer.observe(el));
     });
     return () => { cancelAnimationFrame(raf); observer.disconnect(); };
-  }, [albums]);
+    // v3.0 (Terry) — also re-run on `selection` (navigation): cards rendered when you drill into a folder
+    // weren't being observed, so their covers never loaded (carousel cards showed blank). The persistent
+    // requestedCoversRef stops this re-run from re-fetching covers already loaded.
+  }, [albums, selection]);
 
   // ── Actions ──────────────────────────────────────────────────────
   const handleCreateAlbum = async () => {
