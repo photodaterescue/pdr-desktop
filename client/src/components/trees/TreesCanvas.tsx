@@ -2785,33 +2785,29 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
             const glyphPath = 'M -7 -2 L 0 5 L 7 -2';
             return (
               <g key={`sbc-${info.headId}`}>
-                {/* Head's leader line — from head's card bottom
-                    edge down/across to the chevron, in the head's
-                    bloodline colour. */}
-                <line
-                  x1={info.headX}
-                  y1={cardBottomY}
-                  x2={chevronCx}
-                  y2={chevronCy - r}
+                {/* v3.0 (Terry) — leader lines route ORTHOGONALLY: a short vertical drop from each parent's
+                    card bottom, then a horizontal run INTO THE SIDE of the offspring chevron (left parent →
+                    the chevron's left side, right parent → its right side). Replaces the old acute diagonals
+                    that converged on the chevron's top-middle. The chevron itself is unchanged. */}
+                <path
+                  d={`M ${info.headX} ${cardBottomY} L ${info.headX} ${chevronCy} L ${info.headX <= chevronCx ? chevronCx - r : chevronCx + r} ${chevronCy}`}
+                  fill="none"
                   stroke={info.headColour}
                   strokeWidth={4}
                   strokeLinecap="round"
+                  strokeLinejoin="round"
                   style={{ pointerEvents: 'none' }}
                 />
-                {/* Partner's leader line — only when a partner is
-                    on canvas and is the actual co-parent of the
-                    cousins. Coloured by the partner's bloodline
-                    status (typically orange — they're the in-law
-                    married into the family). */}
+                {/* Partner's leader line — only when a partner is on canvas and is the actual co-parent of
+                    the cousins. Coloured by the partner's bloodline status (typically the gold in-law). */}
                 {info.partnerId != null && info.partnerX != null && info.partnerColour && (
-                  <line
-                    x1={info.partnerX}
-                    y1={info.partnerY != null ? info.partnerY + CARD_H / 2 : cardBottomY}
-                    x2={chevronCx}
-                    y2={chevronCy - r}
+                  <path
+                    d={`M ${info.partnerX} ${info.partnerY != null ? info.partnerY + CARD_H / 2 : cardBottomY} L ${info.partnerX} ${chevronCy} L ${info.partnerX <= chevronCx ? chevronCx - r : chevronCx + r} ${chevronCy}`}
+                    fill="none"
                     stroke={info.partnerColour}
                     strokeWidth={4}
                     strokeLinecap="round"
+                    strokeLinejoin="round"
                     style={{ pointerEvents: 'none' }}
                   />
                 )}
