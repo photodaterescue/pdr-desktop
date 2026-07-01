@@ -1302,8 +1302,11 @@ useEffect(() => {
 // pending-open album, then reuse the same openAlbumsAlbum route to land on Memories → Albums with it selected.
 useEffect(() => {
   const off = (window as any).pdr?.collage?.onNavigateAlbums?.((albumId: number | null) => {
+    // Latch pending-open for the case where AlbumsView mounts fresh (its path B), AND dispatch WITH
+    // detail.id so an ALREADY-mounted AlbumsView (its path A) selects the album too. A plain Event (no
+    // detail) made path A bail — which left the user on "All albums" instead of the saved collage's album.
     try { if (albumId != null) localStorage.setItem('pdr-albums-pending-open', String(albumId)); } catch { /* localStorage may be unavailable */ }
-    window.dispatchEvent(new Event('pdr:openAlbumsAlbum'));
+    window.dispatchEvent(albumId != null ? new CustomEvent('pdr:openAlbumsAlbum', { detail: { id: albumId } }) : new Event('pdr:openAlbumsAlbum'));
   });
   return () => { if (typeof off === 'function') off(); };
 }, []);
