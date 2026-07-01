@@ -1019,6 +1019,39 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
     return m;
   }, [memberships, albumsById]);
 
+  // v3.0 (Terry) — album ids filed in ANY descendant folder of a group (walks the whole sub-tree). Used to
+  // de-dup an AUTO source view (e.g. PDR Collages) so its folder tiles show but the foldered albums don't
+  // also appear loose beside them — mirrors the tree's de-dup.
+  const subtreeAlbumIds = useCallback((groupId: number): Set<number> => {
+    const out = new Set<number>();
+    const stack = [...(childGroups.get(groupId) ?? [])];
+    while (stack.length > 0) {
+      const g = stack.pop()!;
+      for (const aid of (albumIdsByGroup.get(g.id) ?? [])) out.add(aid);
+      for (const c of (childGroups.get(g.id) ?? [])) stack.push(c);
+    }
+    return out;
+  }, [childGroups, albumIdsByGroup]);
+
+  // v3.0 (Terry) — a folder tile's cover: the first album cover found anywhere in the folder's sub-tree (its
+  // own albums first, then its sub-folders). Lets the Carousels tile show a picture even though its photos
+  // live one level deeper in its category folders (it has no direct albums of its own).
+  const firstCoverInSubtree = useCallback((groupId: number): string | null => {
+    const queue: number[] = [groupId];
+    const seen = new Set<number>();
+    while (queue.length > 0) {
+      const gid = queue.shift()!;
+      if (seen.has(gid)) continue;
+      seen.add(gid);
+      for (const aid of (albumIdsByGroup.get(gid) ?? [])) {
+        const cp = albumsById.get(aid)?.coverPath;
+        if (cp) return cp;
+      }
+      for (const c of (childGroups.get(gid) ?? [])) queue.push(c.id);
+    }
+    return null;
+  }, [childGroups, albumIdsByGroup, albumsById]);
+
   // v2.0.15 (Terry 2026-06-02) — surface user-created albums that
   // aren't a member of any folder. Without this, an album created
   // via the Memories "Add to album → Create new" path lands in the
@@ -2529,7 +2562,16 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
 
   const selectedAlbum = selection?.type === 'album' ? (albumsById.get(selection.id) ?? null) : null;
   const selectedGroup = selection?.type === 'group' ? (groups.find((g) => g.id === selection.id) ?? null) : null;
-  const selectedGroupAlbumIds = selectedGroup ? (albumIdsByGroup.get(selectedGroup.id) ?? []) : [];
+  const selectedGroupAlbumIds = (() => {
+    if (!selectedGroup) return [];
+    const direct = albumIdsByGroup.get(selectedGroup.id) ?? [];
+    // v3.0 (Terry) — an AUTO source group (e.g. PDR Collages) has EVERY album auto-linked, including those
+    // filed in its sub-folders. Hide the foldered ones so the source view shows only its folder tiles +
+    // genuinely loose albums. User folders are left untouched (deliberate multi-folder membership).
+    if (selectedGroup.source_kind !== 'auto') return direct;
+    const inSub = subtreeAlbumIds(selectedGroup.id);
+    return direct.filter((id) => !inSub.has(id));
+  })();
 
   // ── Breadcrumb ───────────────────────────────────────────────────
   // Derives a clickable path from the current selection. Album drills
@@ -3290,10 +3332,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
               >
                 {childFolderList.map((folder, fidx) => {
                   const childAlbumIds = albumIdsByGroup.get(folder.id) ?? [];
-                  const childSubs = (childGroups.get(folder.id) ?? []).length;
-                  const total = childAlbumIds.length + childSubs;
-                  const noun = carouselCategoryFolderIds.has(folder.id) ? 'carousel' : 'album';
-                  const coverPath = childAlbumIds.length > 0 ? (albumsById.get(childAlbumIds[0])?.coverPath ?? null) : null;
+                  const nSub = (childGroups.get(folder.id) ?? []).length;
+                  const nAlb = childAlbumIds.length;
+                  const albNoun = carouselCategoryFolderIds.has(folder.id) ? 'carousel' : 'album';
+                  const folderCountLabel = [
+                    nSub > 0 ? `${nSub} folder${nSub === 1 ? '' : 's'}` : null,
+                    nAlb > 0 ? `${nAlb} ${albNoun}${nAlb === 1 ? '' : 's'}` : null,
+                  ].filter(Boolean).join(' · ') || 'Empty';
+                  const coverPath = firstCoverInSubtree(folder.id);
                   return (
                     <button
                       key={`subfolder-${folder.id}`}
@@ -3301,8 +3347,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                       onClick={() => navigateSelection({ type: 'group', id: folder.id })}
                       data-cover-path={coverPath ?? undefined}
                       // Folder tile — click drills into the sub-folder (its albums show on the right). Not
-                      // draggable; the tree row is the drag surface. Cover = its first album's cover when the
-                      // thumb is already cached, else a folder glyph so it never sticks on a shimmer.
+                      // draggable; the tree row is the drag surface. Cover = the first cover found anywhere in
+                      // its sub-tree when that thumb is cached, else a folder glyph so it never sticks on a shimmer.
                       className="flex flex-col rounded-lg bg-card overflow-hidden text-left hover:ring-2 hover:ring-primary/40 hover:-translate-y-[2px] hover:shadow-lg hover:z-10 relative transition-all duration-200 ease-out cursor-pointer animate-in fade-in-0 slide-in-from-bottom-1 fill-mode-both"
                       style={{ animationDelay: `${Math.min(fidx, 8) * 30}ms`, animationDuration: '400ms' }}
                     >
@@ -3323,7 +3369,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <IconTooltip content={folder.title}>
                           <p className="text-sm font-medium text-foreground truncate">{folder.title}</p>
                         </IconTooltip>
-                        <p className="text-xs text-muted-foreground mt-0.5">{total} {noun}{total === 1 ? '' : 's'}</p>
+                        <p className="text-xs text-muted-foreground mt-0.5">{folderCountLabel}</p>
                       </div>
                     </button>
                   );
