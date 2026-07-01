@@ -8151,6 +8151,12 @@ export function fixCarouselCovers(): number {
   ).all(carouselsKind.id) as Array<{ id: number; cover_file_id: number | null }>;
   let fixed = 0;
   for (const a of carouselAlbums) {
+    // Only re-point a cover that is a wide overview (the bug) or unset. Leave a PAGE cover ALONE — the user
+    // may have deliberately picked one via "Set as album thumbnail", and this pass must never override that.
+    const coverIsWideOrMissing = a.cover_file_id == null || !!db.prepare(
+      `SELECT 1 FROM indexed_files WHERE id=? AND filename LIKE '%\\_CW.%' ESCAPE '\\'`
+    ).get(a.cover_file_id);
+    if (!coverIsWideOrMissing) continue;
     // First PAGE = the album's file with the lowest id that ISN'T a wide overview (*_CW). Slides are indexed
     // after the overview in page order, so the lowest non-CW id is slide_01.
     const firstPage = db.prepare(
