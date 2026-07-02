@@ -14797,22 +14797,42 @@
         '<feMorphology operator="dilate" radius="' + half + '"/>';
       return fid;
     }
+    // v3.0 round 539 (Terry) — the backdrop BLUR is an SVG feGaussianBlur with
+    // edgeMode="duplicate", NOT a CSS blur(): a CSS blur on the clip averages the photo's
+    // edge pixels with the transparency OUTSIDE the clip, fading every edge to nothing —
+    // Terry saw it as a "gap at the bottom of the photo". edgeMode="duplicate" extends the
+    // edge pixels instead, so the photo stays hard-edged to its box with a soft interior.
+    function backdropBlurFilter(px) {
+      var fid = 'collage-bgph-blur';
+      var f = document.getElementById(fid);
+      if (!px || px <= 0) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
+      var host = ensureBgFxSvg();
+      var ns = 'http://www.w3.org/2000/svg';
+      if (!f) { f = document.createElementNS(ns, 'filter'); f.setAttribute('id', fid); host.appendChild(f); }
+      f.setAttribute('x', '0'); f.setAttribute('y', '0'); f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
+      f.innerHTML = '<feGaussianBlur stdDeviation="' + px + '" edgeMode="duplicate"/>';
+      return fid;
+    }
     function applyBackdropFx(it) {
       if (!it || !it.el || !it.bgPhoto) return;
       var clip = it.clipEl || it.el;
       var v = (it.on && !it.removed) ? backdropFxValues() : null;
       var fx = [];
-      if (v && v.blur > 0) fx.push('blur(' + Math.round(v.blur * 0.6) + 'px)');
+      if (v && v.blur > 0) { var bid = backdropBlurFilter(Math.round(v.blur * 0.6)); if (bid) fx.push('url(#' + bid + ')'); }
       if (v && v.pixelate > 0) { var pid = backdropPixelateFilter(v.pixelate); if (pid) fx.push('url(#' + pid + ')'); }
       clip.style.filter = fx.length ? fx.join(' ') : '';
-      var wraps = Array.prototype.slice.call(clip.querySelectorAll(':scope > .bgph-grain'));
+      // v3.0 round 539 (Terry) — grain lives on the TILE (a sibling ABOVE the clip), not
+      // inside it: inside, the clip's blur/pixelate filter smeared the grain to nothing.
+      // Same box (the clip fills the tile), so it still sits exactly over the photo.
+      try { clip.querySelectorAll(':scope > .bgph-grain').forEach(function (n) { n.remove(); }); } catch (_) {}   // migrate any r538-placed nodes
+      var wraps = Array.prototype.slice.call(it.el.querySelectorAll(':scope > .bgph-grain'));
       if (!v || v.grain <= 0) { wraps.forEach(function (n) { n.remove(); }); return; }
       var sz = bgFxGrainPx(v.grainSize);
       var need = (v.grain > 100) ? 2 : 1;
       while (wraps.length > need) { wraps.pop().remove(); }
       for (var i = 0; i < need; i++) {
         var gn = wraps[i];
-        if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;'; clip.appendChild(gn); }
+        if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;z-index:1;'; it.el.appendChild(gn); }
         gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
         gn.style.backgroundSize = sz + 'px ' + sz + 'px';
         gn.style.opacity = String(Math.max(0, Math.min(1, i === 0 ? v.grain / 100 : (v.grain - 100) / 50)));
