@@ -57,6 +57,7 @@ import {
   Smile,
   Maximize2,
   Scissors,
+  List,
 } from "lucide-react";
 import { toast } from "sonner";
 import { promptConfirm } from "@/components/trees/promptConfirm";
@@ -10444,6 +10445,154 @@ function ResultsModal({ onClose }: { onClose: () => void }) {
   );
 }
 
+// Section maps for the floating "On this page" index on the two long
+// guidance pages. `id` must match the id="" on the corresponding
+// <section> in the JSX below; `label` is the short menu wording.
+const GUIDE_INDEX_SECTIONS: Record<string, { id: string; label: string }[]> = {
+  'getting-started': [
+    { id: 'gs-what', label: 'What PDR Does' },
+    { id: 'gs-first-fix', label: 'Your First Fix' },
+    { id: 'gs-after', label: 'After You Run Fix' },
+    { id: 'gs-confidence', label: 'Confidence at a Glance' },
+    { id: 'gs-next', label: 'Where to Go Next' },
+  ],
+  'best-practices': [
+    { id: 'bp-mental-model', label: 'The Mental Model' },
+    { id: 'bp-library-drive', label: 'Picking Your Library Drive' },
+    { id: 'bp-source-types', label: 'Source Types' },
+    { id: 'bp-analysis-cards', label: 'Source Analysis Cards' },
+    { id: 'bp-output-format', label: 'Choosing an Output Format' },
+    { id: 'bp-filenames', label: 'Filename Conventions' },
+    { id: 'bp-collages', label: 'Collages' },
+    { id: 'bp-detailed', label: 'Detailed Guidance' },
+    { id: 'bp-beyond', label: 'Beyond the Fix' },
+  ],
+};
+
+// A floating "On this page" menu for the long guidance pages. A small
+// pill sits in the top-right of the sticky header (which is empty on the
+// right); clicking it drops a section list that scroll-spies the current
+// section and jumps to any section on click. It's a menu rather than a
+// permanent side-rail because these pages are read at the app's default
+// (~1200px) window width, where the centred content column leaves no
+// gutter for a rail — so the menu overlays on demand and works at any
+// width.
+function GuidePageIndex({ containerRef, sections }: { containerRef: React.RefObject<HTMLDivElement>, sections: { id: string; label: string }[] }) {
+  const [activeId, setActiveId] = React.useState<string>(sections[0]?.id ?? '');
+  const [open, setOpen] = React.useState(false);
+  const rootRef = React.useRef<HTMLDivElement>(null);
+
+  const headerOffset = React.useCallback(() => {
+    const c = containerRef.current;
+    const h = c?.querySelector('.sticky') as HTMLElement | null;
+    return (h?.offsetHeight ?? 120) + 20;
+  }, [containerRef]);
+
+  // Scroll-spy: the active section is the last one whose top has scrolled
+  // up past the sticky header.
+  React.useEffect(() => {
+    const c = containerRef.current;
+    if (!c) return;
+    let raf = 0;
+    const compute = () => {
+      raf = 0;
+      const cTop = c.getBoundingClientRect().top;
+      const threshold = headerOffset() + 12;
+      let current = sections[0]?.id ?? '';
+      for (const s of sections) {
+        const el = c.querySelector('#' + s.id) as HTMLElement | null;
+        if (!el) continue;
+        const top = el.getBoundingClientRect().top - cTop;
+        if (top <= threshold) current = s.id;
+        else break;
+      }
+      setActiveId(current);
+    };
+    const onScroll = () => { if (!raf) raf = requestAnimationFrame(compute); };
+    compute();
+    c.addEventListener('scroll', onScroll, { passive: true });
+    return () => {
+      c.removeEventListener('scroll', onScroll);
+      if (raf) cancelAnimationFrame(raf);
+    };
+  }, [containerRef, sections, headerOffset]);
+
+  // Close the menu on an outside click.
+  React.useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (rootRef.current && !rootRef.current.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [open]);
+
+  const jump = (id: string) => {
+    const c = containerRef.current;
+    if (!c) return;
+    const el = c.querySelector('#' + id) as HTMLElement | null;
+    if (!el) return;
+    const raw = c.scrollTop + (el.getBoundingClientRect().top - c.getBoundingClientRect().top) - headerOffset();
+    const target = Math.max(0, Math.min(raw, c.scrollHeight - c.clientHeight));
+    setActiveId(id);
+    setOpen(false);
+    // Native scrollTo({behavior:'smooth'}) is a no-op in this Electron
+    // build, so animate scrollTop by hand (and honour reduced-motion).
+    const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const start = c.scrollTop;
+    const dist = target - start;
+    if (reduce || Math.abs(dist) < 2) { c.scrollTop = target; return; }
+    const dur = 340;
+    let t0: number | null = null;
+    const step = (ts: number) => {
+      if (t0 === null) t0 = ts;
+      const p = Math.min(1, (ts - t0) / dur);
+      const ease = 1 - Math.pow(1 - p, 3);
+      c.scrollTop = start + dist * ease;
+      if (p < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
+  };
+
+  return (
+    <div ref={rootRef}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className={`absolute top-6 right-6 z-30 flex items-center gap-1.5 rounded-full border bg-background/90 backdrop-blur px-3 py-1.5 text-xs font-medium shadow-sm transition-colors ${
+          open ? 'border-primary/50 text-foreground' : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
+        }`}
+        title="Jump to a section"
+      >
+        <List className="w-3.5 h-3.5" />
+        On this page
+        <ChevronDown className={`w-3.5 h-3.5 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div className="absolute top-[3.75rem] right-6 z-30 w-64 rounded-xl border border-border/60 bg-background/95 backdrop-blur shadow-lg overflow-hidden">
+          <div className="px-3 py-2 border-b border-border/40">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">On this page</span>
+          </div>
+          <nav className="py-1 max-h-[60vh] overflow-y-auto">
+            {sections.map((s) => (
+              <button
+                key={s.id}
+                onClick={() => jump(s.id)}
+                className={`block w-full text-left px-3 py-1.5 text-xs leading-snug transition-colors border-l-2 ${
+                  activeId === s.id
+                    ? 'border-primary text-foreground font-medium bg-primary/5'
+                    : 'border-transparent text-muted-foreground hover:text-foreground hover:bg-secondary/40'
+                }`}
+              >
+                {s.label}
+              </button>
+            ))}
+          </nav>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
   // Pre-destination, Help & Support no longer reaches this panel — the
   // Welcome screen opens the HelpSupportModal directly instead. So
@@ -10498,6 +10647,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
   if (panelType === 'getting-started') {
     return (
+      <div className="relative h-full">
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="sticky top-0 z-10 bg-background border-b border-border/40">
           <div className="flex flex-col items-center px-8 pt-8 pb-4">
@@ -10520,7 +10670,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
             <div className="space-y-10">
               {/* What PDR Does */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">What Photo Date Rescue Does</h3>
+                <h3 id="gs-what" className="text-lg font-medium text-foreground mb-4">What Photo Date Rescue Does</h3>
                 <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>Photo Date Rescue restores correct dates to photos and videos by analyzing trusted metadata, structured filename patterns, and fallback rules — without ever modifying your originals.</p>
                   <p>It's designed to handle messy, real-world libraries safely and predictably, even at large scale — multi-GB Google Takeouts, decades of phone backups, mixed scanner output, the lot.</p>
@@ -10530,7 +10680,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Your First Fix */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Your First Fix (in 5 simple steps)</h3>
+                <h3 id="gs-first-fix" className="text-lg font-medium text-foreground mb-4">Your First Fix (in 5 simple steps)</h3>
                 <div className="space-y-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
                     <p className="font-medium text-foreground mb-1">Pick your Library Drive</p>
@@ -10558,7 +10708,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* What Happens After */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">What Happens After You Run Fix</h3>
+                <h3 id="gs-after" className="text-lg font-medium text-foreground mb-4">What Happens After You Run Fix</h3>
                 <div className="space-y-2">
                   <div className="flex items-center gap-3 p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <CheckCircle2 className="w-4 h-4 text-emerald-600 dark:text-emerald-400 shrink-0" />
@@ -10582,7 +10732,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Confidence at a Glance */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Confidence at a Glance</h3>
+                <h3 id="gs-confidence" className="text-lg font-medium text-foreground mb-4">Confidence at a Glance</h3>
                 <div className="space-y-3">
                   <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Confirmed</p>
@@ -10602,7 +10752,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Where to Go Next */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Where to Go Next</h3>
+                <h3 id="gs-next" className="text-lg font-medium text-foreground mb-4">Where to Go Next</h3>
                 <div className="space-y-3">
                   <button 
                     onClick={() => onNavigateToPanel?.('best-practices')}
@@ -10652,11 +10802,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
           </div>
         </div>
       </div>
+      <GuidePageIndex containerRef={scrollContainerRef} sections={GUIDE_INDEX_SECTIONS['getting-started']} />
+      </div>
     );
   }
 
   if (panelType === 'best-practices') {
     return (
+      <div className="relative h-full">
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
         <div className="sticky top-0 z-10 bg-background border-b border-border/40">
           <div className="flex flex-col items-center px-8 pt-8 pb-4">
@@ -10688,7 +10841,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Mental Model Section - Always Visible */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">The Mental Model</h3>
+                <h3 id="bp-mental-model" className="text-lg font-medium text-foreground mb-4">The Mental Model</h3>
                 <div className="space-y-4 text-sm text-muted-foreground leading-relaxed">
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     <div className="p-4 bg-secondary/50 rounded-lg text-center">
@@ -10715,7 +10868,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Picking the Library Drive - NEW for v2.0.0 */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Picking Your Library Drive</h3>
+                <h3 id="bp-library-drive" className="text-lg font-medium text-foreground mb-4">Picking Your Library Drive</h3>
                 <div className="space-y-3 text-sm text-muted-foreground leading-relaxed">
                   <p>v2.0.0 asks you to pick your Library Drive <em>before</em> adding Sources. Two helpers make that decision easier:</p>
                   <div className="p-4 bg-primary/5 border border-primary/10 rounded-lg">
@@ -10732,7 +10885,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Source Types - Updated for v2.0.0 */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Source Types at a Glance</h3>
+                <h3 id="bp-source-types" className="text-lg font-medium text-foreground mb-4">Source Types at a Glance</h3>
                 <div className="space-y-3">
                   <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Folders</p>
@@ -10755,7 +10908,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Source Analysis Cards - Updated to include Duplicates */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Understanding Source Analysis Cards</h3>
+                <h3 id="bp-analysis-cards" className="text-lg font-medium text-foreground mb-4">Understanding Source Analysis Cards</h3>
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="p-3 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="font-medium text-emerald-700 dark:text-emerald-300 text-sm">Confirmed</p>
@@ -10785,7 +10938,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   indigo/amber tinted card chrome as the Source Types
                   section above for visual consistency. */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Choosing an Output Format</h3>
+                <h3 id="bp-output-format" className="text-lg font-medium text-foreground mb-4">Choosing an Output Format</h3>
                 <div className="space-y-3">
                   <div className="p-4 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-700 rounded-lg">
                     <p className="text-sm font-medium text-emerald-700 dark:text-emerald-300 mb-1">Keep Originals (default)</p>
@@ -10816,7 +10969,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   per-suffix entry for quick lookup; this is the
                   "here's the whole pattern" overview. */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Filename Conventions</h3>
+                <h3 id="bp-filenames" className="text-lg font-medium text-foreground mb-4">Filename Conventions</h3>
                 <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-3">
                   <p className="text-sm text-muted-foreground">Every file PDR fixes is renamed to the same pattern, so you can read a folder of photos and instantly know when each was taken and how confident PDR was about that date:</p>
                   <p className="text-sm font-mono text-foreground bg-background/60 border border-border/60 rounded px-3 py-2">YYYY-MM-DD_HH-MM-SS_XX.ext</p>
@@ -10849,7 +11002,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* v3.0 (Terry) — Collages: the project-vs-finished-photo mental model + Save/Update/New version. */}
               <section>
-                <h3 className="text-lg font-medium text-foreground mb-4">Collages</h3>
+                <h3 id="bp-collages" className="text-lg font-medium text-foreground mb-4">Collages</h3>
                 <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-3">
                   <p className="text-sm text-muted-foreground">A collage has two lives, and knowing the difference is the whole trick:</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -10873,7 +11026,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Expandable Accordion Sections */}
               <div className="pt-6 border-t border-border">
-                <h3 className="text-lg font-medium text-foreground mb-4">Detailed Guidance</h3>
+                <h3 id="bp-detailed" className="text-lg font-medium text-foreground mb-4">Detailed Guidance</h3>
                 <Accordion type="multiple" className="space-y-3">
                   
                   {/* Detailed Source Selection */}
@@ -11806,7 +11959,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
               {/* v3.0 (Terry 2026-06-28) — Beyond the fix: best-practice tips for the
                   v3.0 creative + sharing tools, so Best Practices reflects them too. */}
               <section className="pt-6">
-                <h3 className="text-lg font-medium text-foreground mb-4">Beyond the fix</h3>
+                <h3 id="bp-beyond" className="text-lg font-medium text-foreground mb-4">Beyond the fix</h3>
                 <p className="text-sm text-muted-foreground leading-relaxed mb-4">Once your dates are clean, PDR is a full home for your photos. A few habits to get the best out of the newer tools:</p>
                 <div className="space-y-4">
                   <div className="p-4 bg-secondary/30 border border-border rounded-lg">
@@ -11857,9 +12010,11 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
           </div>
         </div>
       </div>
+      <GuidePageIndex containerRef={scrollContainerRef} sections={GUIDE_INDEX_SECTIONS['best-practices']} />
+      </div>
     );
   }
-  
+
   if (panelType === 'what-next') {
     return (
       <div ref={scrollContainerRef} className="flex-1 flex flex-col h-full overflow-y-auto bg-background">
