@@ -3299,6 +3299,17 @@
        collage mode only. */
     .tb-collage { display: none; }
     body.collage-mode .tb-collage { display: inline-flex; align-items: center; justify-content: center; font-size: 15px; }
+    /* v3.0 round 531 (Terry) — titlebar VIEW-zoom cluster (left of Enhance), the same
+       bordered zoom-out · fit · zoom-in group Trees uses, restyled for the dark titlebar.
+       Collage/carousel only (tb-collage), hidden on the welcome screen (no canvas yet). */
+    #collage-zoom-ctrl { border: 1px solid rgba(255,255,255,0.16); border-radius: 8px; background: rgba(255,255,255,0.03); margin-right: 8px; -webkit-app-region: no-drag; }
+    body.cws-open #collage-zoom-ctrl { display: none !important; }
+    #collage-zoom-ctrl button { display: inline-flex; align-items: center; justify-content: center; padding: 4px 9px; background: transparent; border: none; color: #cfc9e8; cursor: pointer; transition: background .12s ease, color .12s ease; }
+    #collage-zoom-ctrl button:first-of-type { border-radius: 7px 0 0 7px; }
+    #collage-zoom-ctrl button:last-of-type { border-radius: 0 7px 7px 0; }
+    #collage-zoom-ctrl button:hover { background: rgba(254,194,66,0.14); color: #fff; }
+    #collage-zoom-ctrl .czc-div { width: 1px; height: 16px; background: rgba(255,255,255,0.14); }
+    #collage-zoom-ctrl button svg { width: 15px; height: 15px; }
     /* Collage section in the Enhance panel — only in collage mode. */
     .enhance-collage-section { display: none; }
     /* v2.1 round 156 (Terry) — flex column with the same 14px gap as the
@@ -4022,6 +4033,22 @@
          controls (count, fit, zoom, rotate, playback) moved to the
          bottom status bar so they don't eat the drag area. -->
     <div class="toolbar-actions">
+      <!-- v3.0 round 531 (Terry) — Trees-style VIEW-zoom cluster for collages/carousels:
+           zoom out · fit · zoom in, sitting left of Enhance. Same view transform the
+           Ctrl+wheel drives (collageUserZoom); Fit = back to the fitted page. -->
+      <span class="tb-collage" id="collage-zoom-ctrl">
+        <button type="button" id="collage-zoom-out" data-pdr-tooltip="Zoom out" aria-label="Zoom out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+        <span class="czc-div"></span>
+        <button type="button" id="collage-zoom-fit" data-pdr-tooltip="Fit page to view" aria-label="Fit page to view">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+        </button>
+        <span class="czc-div"></span>
+        <button type="button" id="collage-zoom-in" data-pdr-tooltip="Zoom in" aria-label="Zoom in">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
+        </button>
+      </span>
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
       <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
       <!-- v2.1 round 290 (Terry) — keyboard-shortcuts legend; collage-only, sits beside Enhance. -->
@@ -5858,6 +5885,36 @@
     // reset, by reshape (canvas size change), and on entering collage mode.
     function resetCollageZoom() {
       collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
+      applyCollageZoom();
+    }
+    // v3.0 round 531 (Terry) — one VIEW-zoom step for the titlebar buttons (factor 1.1 in /
+    // 0.9 out). Mirrors the Ctrl+wheel handler's math exactly — same floor/max clamps and
+    // the same below-fit centring — but anchored at the STAGE CENTRE instead of the cursor,
+    // which is what a button zoom should do.
+    function collageZoomStep(factor) {
+      if (!collageCanvasEl || !collageStageEl) return;
+      const rect = collageCanvasEl.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      const z0 = collageUserZoom;
+      let z1 = z0 * factor;
+      z1 = Math.max(collageZoomFloor(), Math.min(COLLAGE_ZOOM_MAX, z1));
+      if (z1 === z0) return;
+      if (z1 < 1) {
+        // Below-fit: centre the shrunken canvas in the stage (same as the wheel's branch).
+        const fitW = collageCanvasEl.clientWidth || 0;
+        const fitH = collageCanvasEl.clientHeight || 0;
+        collagePanX = fitW * (1 - z1) / 2;
+        collagePanY = fitH * (1 - z1) / 2;
+        collageUserZoom = z1;
+        applyCollageZoom();
+        return;
+      }
+      const dz = z1 / z0;
+      const sr = collageStageEl.getBoundingClientRect();
+      const ax = sr.left + sr.width / 2, ay = sr.top + sr.height / 2;
+      collagePanX += (ax - rect.left) * (1 - dz);
+      collagePanY += (ay - rect.top) * (1 - dz);
+      collageUserZoom = z1;
       applyCollageZoom();
     }
     // v2.1 round 142 (Terry) — optional background PHOTO behind the tiles,
@@ -17232,6 +17289,13 @@
       // v2.1 round 290 (Terry) — open the keyboard-shortcuts legend.
       const shortcutsBtn = document.getElementById('btn-collage-shortcuts');
       if (shortcutsBtn) shortcutsBtn.addEventListener('click', () => { try { toggleCollageShortcuts(); } catch (_) {} });
+      // v3.0 round 531 (Terry) — titlebar VIEW-zoom cluster (Trees-style: out · fit · in).
+      const zOutBtn = document.getElementById('collage-zoom-out');
+      if (zOutBtn) zOutBtn.addEventListener('click', () => { try { collageZoomStep(0.9); } catch (_) {} });
+      const zFitBtn = document.getElementById('collage-zoom-fit');
+      if (zFitBtn) zFitBtn.addEventListener('click', () => { try { resetCollageZoom(); } catch (_) {} });
+      const zInBtn = document.getElementById('collage-zoom-in');
+      if (zInBtn) zInBtn.addEventListener('click', () => { try { collageZoomStep(1.1); } catch (_) {} });
       // v2.1 round 300 (Terry) — collapse/expand the Enhance panel for a full-width VIEW (the
       // panel can't close in collage — it's the editor — so this folds it away purely for
       // viewing; the canvas re-fits into the freed width, editing controls untouched).
