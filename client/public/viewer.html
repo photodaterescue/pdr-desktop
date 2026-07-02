@@ -3934,6 +3934,11 @@
     .bgfx-shape-btn.active { border-color: #FEC242; color: #fff; background: rgba(254,194,66,0.12); }
     .bgfx-color-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
     .bgfx-color-row label { font-size: 12px; color: #cfcbe0; }
+    /* v3.0 (Terry) — the Colour swatch arms the shared PDR palette (no native OS picker).
+       Gold ring while armed, matching the gradient-stop armed cue. */
+    .bgel-color-swatch { width: 34px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.28); padding: 0; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; }
+    .bgel-color-swatch:hover { border-color: rgba(254,194,66,0.6); }
+    .bgel-color-swatch.armed { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.45); }
     .bgel-color { width: 30px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; background: none; cursor: pointer; }
     /* v3.0 (Terry) — Base / Texture & Effects section headers + the Picture group row. */
     .bg-section-head { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FEC242; opacity: 0.85; margin: 14px 0 6px; padding-left: 2px; }
@@ -13522,6 +13527,7 @@
         }
         collageBgFxSel = (s.bgFxSel === 'blur') ? 'blur' : 'glow';
       } catch (_) { collageBgFx = { glow: defaultBgFxItem('glow'), blur: defaultBgFxItem('blur') }; collageBgFxSel = 'glow'; }
+      collageBgFxColorArmed = false;   // v3.0 (Terry) — undo/redo/reopen lands disarmed (the palette re-homes to Solid)
       try { renderCollageBgElementsList(); } catch (_) {}
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
       // snapshots predate these: sizeId '' = no highlight, exportPx null = legacy 2000px).
@@ -14512,6 +14518,20 @@
     // re-renders this same DOM, so the export matches.
     let collageBgFx = null;          // { glow:{...}, blur:{...} }
     let collageBgFxSel = 'glow';     // which element the shared sliders configure
+    // v3.0 (Terry) — the Glow/Blur Colour swatch ARMS the shared PDR colour palette (the same
+    // one Solid/Blended/Text/Frame use) instead of the native OS picker. While armed, the
+    // unified palette re-hosts under the Colour row and picks write the SELECTED element's
+    // colour — the exact pattern the Blended gradient stops use (collageGradStopEdit).
+    let collageBgFxColorArmed = false;
+    function syncBgFxColorSwatch() {
+      try {
+        var sw = document.getElementById('collage-bgfx-color-swatch');
+        if (!sw) return;
+        var el = ensureCollageBgFx()[collageBgFxSel];
+        sw.style.background = (el && el.color) || '#3aa0ff';
+        sw.classList.toggle('armed', !!collageBgFxColorArmed);
+      } catch (_) {}
+    }
     function defaultBgFxItem(kind) {
       return { kind: kind, on: false, shape: 'radial', color: (kind === 'blur' ? '#7f9cff' : '#3aa0ff'),
         size: 55, stretch: 0, angle: 135, blend: 50, opacity: 85, posX: 0.5, posY: 0.45,
@@ -14684,6 +14704,16 @@
         });
         chips.appendChild(chip);
       });
+      // v3.0 (Terry) — the shared palette block may be PARKED inside these controls (armed
+      // Colour). Rescue it to the Solid default host before the wipe, then re-park after
+      // the rebuild — the unified palette is a singleton that must never be destroyed.
+      try {
+        var _palBlock = document.getElementById('collage-unified-color');
+        if (_palBlock && ctrls.contains(_palBlock)) {
+          var _def = document.getElementById('collage-bg-palette-grp-body');
+          if (_def) _def.appendChild(_palBlock);
+        }
+      } catch (_) {}
       ctrls.innerHTML = '';
       var sel = f[collageBgFxSel] || f.glow;
       if (!sel.on) {
@@ -14699,12 +14729,26 @@
         shapeRow.appendChild(b);
       });
       ctrls.appendChild(shapeRow);
+      // v3.0 (Terry) — Colour opens the shared PDR palette (the one Solid/Blended/Text/Frame
+      // use), NOT the native OS picker. The swatch toggles an ARMED state; while armed the
+      // unified palette parks in the host right below and picks write this element's colour.
       var colRow = document.createElement('div'); colRow.className = 'bgfx-color-row';
       var colLab = document.createElement('label'); colLab.textContent = 'Colour'; colRow.appendChild(colLab);
-      var col = document.createElement('input'); col.type = 'color'; col.value = sel.color || '#3aa0ff'; col.className = 'bgel-color';
-      col.addEventListener('input', function () { sel.color = col.value; try { applyCanvasBgVisual(); } catch (_) {} });
-      col.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
+      var col = document.createElement('button'); col.type = 'button'; col.id = 'collage-bgfx-color-swatch'; col.className = 'bgel-color-swatch' + (collageBgFxColorArmed ? ' armed' : '');
+      col.style.background = sel.color || '#3aa0ff';
+      col.setAttribute('data-pdr-tooltip', 'Pick this circle’s colour');
+      col.addEventListener('click', function () {
+        collageBgFxColorArmed = !collageBgFxColorArmed;
+        if (collageBgFxColorArmed) { collageGradStopEdit = null; colorTarget = 'background'; }
+        try { positionBgPalette(); } catch (_) {}
+        try { renderTextColorPaletteForTarget(); } catch (_) {}
+        try { syncTextColorPaletteRings(); } catch (_) {}
+        syncBgFxColorSwatch();
+      });
       colRow.appendChild(col); ctrls.appendChild(colRow);
+      // The armed palette parks here (right under the Colour row).
+      var palHost = document.createElement('div'); palHost.id = 'collage-bgfx-palette-host';
+      ctrls.appendChild(palHost);
       var mk = function (label, key, min, max, isFrac, def) {
         if (def == null) def = isFrac ? 0.5 : 50;
         var cur = isFrac ? Math.round((sel[key] == null ? def : sel[key]) * 100) : Math.round(sel[key] == null ? def : sel[key]);
@@ -14731,6 +14775,13 @@
       mk('Grain', 'grain', 0, 100, false, 0);
       mk('Grain size', 'grainSize', 1, 100, false, 50);
       mk('Pixelate', 'pixelate', 0, 100, false, 0);
+      // Re-park the shared palette into the fresh host if the Colour is still armed
+      // (a chip/shape click rebuilt these controls around it).
+      if (collageBgFxColorArmed) {
+        try { positionBgPalette(); } catch (_) {}
+        try { renderTextColorPaletteForTarget(); } catch (_) {}
+        try { syncTextColorPaletteRings(); } catch (_) {}
+      }
       try { updateBgFxEpicentreVisibility(); } catch (_) {}
     }
     // v3.0 (Terry) — a small row of the Photo + Transparent base options, shown at the TOP of BOTH
@@ -15091,6 +15142,7 @@
     // swatch switches straight back to it without re-picking.
     function setCollageTransparent(on) {
       collageTransparent = !!on;
+      collageBgFxColorArmed = false; syncBgFxColorSwatch();   // v3.0 (Terry) — a base change disarms the Glow/Blur colour picker
       // v2.1 round 235 (Terry) — transparent + gradient are mutually exclusive bg
       // kinds; turning Transparent ON clears any gradient (it would otherwise hide
       // under the checkerboard and silently come back when Transparent is toggled off).
@@ -15108,6 +15160,15 @@
       // sentinels are kept so any saved state / older callers still route right.)
       if (hex === '__transparent__') { setCollageTransparent(true); return; }
       if (hex === '__bgphoto__') { setCollageTransparent(false); return; }
+      // v3.0 (Terry) — when a Glow/Blur Colour swatch is ARMED, the shared palette writes
+      // THAT element's colour (the base bg is untouched — the circle floats over it).
+      if (collageBgFxColorArmed && hex) {
+        try {
+          var _fx = ensureCollageBgFx()[collageBgFxSel];
+          if (_fx) { _fx.color = hex; applyCanvasBgVisual(); syncBgFxColorSwatch(); try { syncTextColorPaletteRings(); } catch (_) {} }
+        } catch (_) {}
+        return;
+      }
       // v2.1 round 235 (Terry) — when a gradient STOP is armed, the shared palette
       // writes to THAT stop's colour instead of the base colour (the gradient stays
       // the active bg). Empty hex ('' from the no-colour chip) is ignored for a stop.
@@ -15123,6 +15184,7 @@
     }
     function setCollageBg(hex) {
       collageBg = hex || '';
+      collageBgFxColorArmed = false; syncBgFxColorSwatch();   // v3.0 (Terry) — a base change disarms the Glow/Blur colour picker
       // v2.1 round 235 (Terry) — picking a plain base colour swaps AWAY from a
       // gradient (mutually exclusive bg kinds), mirroring how colour/photo/
       // transparent already swap each other. The stop-edit path bypasses this fn,
@@ -15161,6 +15223,7 @@
       // sits on top of the canvas bg, so clear both to make the gradient the bg).
       // v2.1 round 242 (Terry) — also clear any texture.
       collageTransparent = false; collageBgTexture = null;
+      collageBgFxColorArmed = false; syncBgFxColorSwatch();   // v3.0 (Terry) — a base change disarms the Glow/Blur colour picker
       if (collageBgImagePath) collageBgImagePath = '';
       applyCanvasBgVisual();
       renderCollageBgLayer();   // tears down the (now-cleared) photo layer
@@ -15258,6 +15321,7 @@
       if (!collageBgGradient) setCollageGradient(defaultCollageGradient());
       // v2.1 round 250 (Terry) — re-clicking the armed slot disarms (hides the palette);
       // re-home the palette to/from the gradient slot host on every toggle.
+      collageBgFxColorArmed = false; syncBgFxColorSwatch();   // v3.0 (Terry) — arming a stop disarms the Glow/Blur colour picker
       collageGradStopEdit = (collageGradStopEdit === idx) ? null : idx;
       try { renderTextColorPaletteForTarget(); } catch (_) {}
       try { positionBgPalette(); } catch (_) {}
@@ -18805,7 +18869,10 @@
           // v2.1 round 235 (Terry) — when a gradient STOP is armed, ring the stop's
           // colour (so the palette reflects what the next pick edits); otherwise ring
           // the base colour as before.
-          () => ((collageGradStopEdit != null && collageBgGradient && collageBgGradient.stops[collageGradStopEdit]) ? (collageBgGradient.stops[collageGradStopEdit].color || '') : (collageBg || '')),
+          // v3.0 (Terry) — an armed Glow/Blur Colour swatch wins: ring THAT element's colour.
+          () => (collageBgFxColorArmed
+            ? (((ensureCollageBgFx()[collageBgFxSel]) || {}).color || '')
+            : ((collageGradStopEdit != null && collageBgGradient && collageBgGradient.stops[collageGradStopEdit]) ? (collageBgGradient.stops[collageGradStopEdit].color || '') : (collageBg || ''))),
           // v2.1 round 200 (Terry) — BUG2: make each background colour pick exactly
           // ONE clean undo step. beginCollageChange()/commitCollageChange() wrap the
           // change; because commit nulls collagePendingSnap after pushing, the
@@ -19002,6 +19069,12 @@
     // v2.1 round 250 (Terry) — where the BACKGROUND palette parks: under the gradient
     // slots while a stop is being edited, else inside the Colour Palette style group.
     function bgPaletteHost() {
+      // v3.0 (Terry) — a Glow/Blur Colour swatch is armed → the palette parks under it
+      // (Texture & Effects), same precedence idea as an armed gradient stop.
+      if (collageBgFxColorArmed) {
+        const h = document.getElementById('collage-bgfx-palette-host');
+        if (h) return h;
+      }
       return (collageGradStopEdit != null)
         ? document.getElementById('collage-gradient-palette-host')
         : document.getElementById('collage-bg-palette-grp-body');
