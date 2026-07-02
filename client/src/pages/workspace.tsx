@@ -10561,7 +10561,6 @@ function GuidePageIndex({ containerRef, sections }: { containerRef: React.RefObj
         className={`absolute top-6 right-6 z-30 flex items-center gap-1.5 rounded-full border bg-background/90 backdrop-blur px-3 py-1.5 text-xs font-medium shadow-sm transition-colors ${
           open ? 'border-primary/50 text-foreground' : 'border-border/60 text-muted-foreground hover:text-foreground hover:border-border'
         }`}
-        title="Jump to a section"
       >
         <List className="w-3.5 h-3.5" />
         On this page
@@ -10973,8 +10972,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                 <div className="p-4 bg-secondary/40 border border-border rounded-lg space-y-3">
                   <p className="text-sm text-muted-foreground">Every file PDR fixes is renamed to the same pattern, so you can read a folder of photos and instantly know when each was taken and how confident PDR was about that date:</p>
                   <p className="text-sm font-mono text-foreground bg-background/60 border border-border/60 rounded px-3 py-2">YYYY-MM-DD_HH-MM-SS_XX.ext</p>
-                  <p className="text-sm text-muted-foreground">The <span className="font-mono text-xs">XX</span> is a two-letter suffix telling you how the date was determined or what was done to the file:</p>
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                  <p className="text-sm text-muted-foreground">The <span className="font-mono text-xs">XX</span> is a two-letter suffix. It tells you either how PDR worked out the date, or that the file was created or edited inside PDR:</p>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 pt-1">How the date was determined</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-emerald-100 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border border-emerald-300/50 shrink-0 mt-0.5">_CF</span>
                       <span className="text-muted-foreground"><span className="text-foreground font-medium">Confirmed</span> — date came directly from EXIF or a Takeout sidecar. Highest confidence.</span>
@@ -10987,6 +10987,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-slate-200 dark:bg-slate-700/60 text-slate-700 dark:text-slate-300 border border-slate-400/50 shrink-0 mt-0.5">_MK</span>
                       <span className="text-muted-foreground"><span className="text-foreground font-medium">Marked</span> — PDR couldn't determine a confident date; file is flagged for your review in Memories — Needs Dates.</span>
                     </div>
+                  </div>
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground/80 pt-2">Created or edited in PDR</p>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-purple-100 dark:bg-purple-950/40 text-purple-700 dark:text-purple-300 border border-purple-300/50 shrink-0 mt-0.5">_E</span>
                       <span className="text-muted-foreground"><span className="text-foreground font-medium">Enhanced</span> — a copy created by the PDR Viewer&apos;s Enhance panel (brightness / contrast / saturation / temperature / B&amp;W adjustments baked in). Original is untouched.</span>
@@ -10994,6 +10997,22 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-cyan-100 dark:bg-cyan-950/40 text-cyan-700 dark:text-cyan-300 border border-cyan-300/50 shrink-0 mt-0.5">_T</span>
                       <span className="text-muted-foreground"><span className="text-foreground font-medium">Trimmed</span> — a shorter video clip cut from the original via the PDR Viewer&apos;s Trim panel. The original is untouched; the clip inherits the original&apos;s date so it sorts alongside it in Memories.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-rose-100 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border border-rose-300/50 shrink-0 mt-0.5">_CO</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Collage</span> — a collage you designed in PDR, saved as a finished photo in your library (Memories — Albums — PDR Collages). Your editable project is kept separately so you can reopen it any time.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-300/50 shrink-0 mt-0.5">_CW</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Carousel</span> — an Instagram-style multi-page carousel made in PDR. The <span className="font-mono text-xs">_CW</span> file is the full wide design; its pages are saved beside it as <span className="font-mono text-xs">slide_01</span>, <span className="font-mono text-xs">slide_02</span>… to post left-to-right.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-300/50 shrink-0 mt-0.5">_SS</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Screenshot</span> — a still image captured with PDR&apos;s Capture tool.</span>
+                    </div>
+                    <div className="flex items-start gap-2 text-sm">
+                      <span className="font-mono text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-950/40 text-red-700 dark:text-red-300 border border-red-300/50 shrink-0 mt-0.5">_SR</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Screen recording</span> — a video recorded with PDR&apos;s screen recorder.</span>
                     </div>
                   </div>
                   <p className="text-xs text-muted-foreground/85 pt-1">The Glossary in Help &amp; Support has a more detailed entry for each suffix.</p>

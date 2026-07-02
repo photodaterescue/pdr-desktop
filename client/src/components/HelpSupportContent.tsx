@@ -315,9 +315,9 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     convention was completely undocumented before
                     this. PDR renames every fixed file with the
                     `YYYY-MM-DD_HH-MM-SS_XX.ext` pattern; the `XX`
-                    is one of four short codes that tells the user
-                    (and any other photo app) how confident PDR was
-                    about that file's date or what was done to it.
+                    is a short code that tells the user (and any
+                    other photo app) how confident PDR was about that
+                    file's date, or that it was born/edited in PDR.
                     Listed here as a single group so users hitting
                     e.g. `_CF.jpg` in File Explorer can decode it. */}
                 <div>
@@ -333,7 +333,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_MK — Marked</dt>
-                      <dd className="text-muted-foreground mt-0.5">PDR couldn&apos;t work out a date with enough confidence. The file was Marked for your review — open it in Date Editor to decide what to do (set the date manually, ignore, or delete).</dd>
+                      <dd className="text-muted-foreground mt-0.5">PDR couldn&apos;t work out a date with enough confidence. The file was Marked for your review — open <span className="font-medium text-foreground">Memories — Needs Dates</span> to set the real date when you know it (one at a time or in bulk).</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_E — Enhanced</dt>
@@ -342,6 +342,22 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_T — Trimmed</dt>
                       <dd className="text-muted-foreground mt-0.5">A new video clip created by the PDR Viewer&apos;s Trim panel — a shorter segment cut out of the original video, written as a sibling file next to it. The original is untouched; this is your shortened version. Clips inherit the original&apos;s date so they sort alongside it in Memories. If you trim the same video multiple times, you&apos;ll see <span className="font-mono">_T_2</span>, <span className="font-mono">_T_3</span>, etc.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_CO — Collage</dt>
+                      <dd className="text-muted-foreground mt-0.5">A collage you designed in PDR, flattened into a finished JPG (or PNG when it has a transparent background) and filed in <span className="font-medium text-foreground">Memories — Albums — PDR Collages</span> under the album you chose. Your editable project is stored separately, so you can reopen and keep editing it any time.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_CW — Carousel</dt>
+                      <dd className="text-muted-foreground mt-0.5">The full wide design of an Instagram-style carousel you built in PDR. Its individual pages are sliced out beside it as <span className="font-mono">slide_01</span>, <span className="font-mono">slide_02</span>… (inside a <span className="font-mono">Carousel_&lt;date&gt;</span> folder) so you can drag them into Instagram left-to-right, in order.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_SS — Screenshot</dt>
+                      <dd className="text-muted-foreground mt-0.5">A still image captured with PDR&apos;s Capture tool. It&apos;s dated the moment it was taken, so it carries Confirmed confidence.</dd>
+                    </div>
+                    <div className="p-3 bg-secondary/30 border border-border rounded-lg">
+                      <dt className="font-medium text-foreground">_SR — Screen recording</dt>
+                      <dd className="text-muted-foreground mt-0.5">A video recorded with PDR&apos;s screen recorder, dated when the recording was made.</dd>
                     </div>
                   </dl>
                 </div>
