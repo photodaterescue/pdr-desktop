@@ -3955,9 +3955,12 @@
     #collage-bgfx-controls.bgfx-off .enhance-control { opacity: 0.35; pointer-events: none; }
     /* v3.0 (Terry) — the Colour swatch arms the shared PDR palette (no native OS picker).
        Gold ring while armed, matching the gradient-stop armed cue. */
-    .bgel-color-swatch { width: 34px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.28); padding: 0; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; }
+    .bgel-color-swatch { position: relative; width: 34px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.28); padding: 0; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; }
     .bgel-color-swatch:hover { border-color: rgba(254,194,66,0.6); }
     .bgel-color-swatch.armed { border-color: #FEC242; box-shadow: 0 0 0 2px rgba(254,194,66,0.45); }
+    /* v3.0 round 534 (Terry) — armed = the palette is open FOR this swatch; the × says
+       "click me again to close it". Text-shadow keeps it readable on any colour. */
+    .bgel-color-swatch.armed::after { content: '×'; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 15px/1 system-ui, sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.9); pointer-events: none; }
     .bgel-color { width: 30px; height: 24px; padding: 0; border: 1px solid rgba(255,255,255,0.2); border-radius: 5px; background: none; cursor: pointer; }
     /* v3.0 (Terry) — Base / Texture & Effects section headers + the Picture group row. */
     .bg-section-head { font-size: 11px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: #FEC242; opacity: 0.85; margin: 14px 0 6px; padding-left: 2px; }
@@ -12681,7 +12684,17 @@
     // v2.1 round 347 (Terry) — the top-left title shows the project NAME (or "Untitled collage"), not
     // the stale "Empty collage" that lingered even after photos were added.
     function updateCollageTitle() {
-      try { const fn = document.getElementById('filename'); if (fn) { fn.textContent = currentCollageProjectName || 'Untitled collage'; fn.setAttribute('data-pdr-tooltip', 'Click to name this collage'); } } catch (_) {}
+      // v3.0 round 534 (Terry) — the placeholder is mode-aware: a fresh carousel reads
+      // "Untitled carousel", not "Untitled collage" (the autosave default name is already
+      // carousel-aware; this covers the moment BEFORE anything is worth autosaving).
+      try {
+        const fn = document.getElementById('filename');
+        if (fn) {
+          const isCar = (typeof carouselMode !== 'undefined') && carouselMode;
+          fn.textContent = currentCollageProjectName || (isCar ? 'Untitled carousel' : 'Untitled collage');
+          fn.setAttribute('data-pdr-tooltip', isCar ? 'Click to name this carousel' : 'Click to name this collage');
+        }
+      } catch (_) {}
       try { updateCollageGoto(); } catch (_) {}
     }
     // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
@@ -13757,6 +13770,9 @@
       // so the overlays re-append as the canvas's top children (above any tiles/text
       // rebuilt above) and reflect the restored values.
       try { syncCollageTreatmentsUi(); } catch (_) {}
+      // v3.0 round 534 (Terry) — re-light the Use-a-photo chip indicator from the RESTORED
+      // items (project reopen / undo / carousel page restore), after everything is rebuilt.
+      try { syncBgPhotoChipThumbs(); } catch (_) {}
       collageRestoring = false;   // v2.1 round 315 (Terry) — restore done; autosave may run again
     }
     function undoCollage() {
@@ -14602,6 +14618,9 @@
         var el = ensureCollageBgFx()[collageBgFxSel];
         sw.style.background = (el && el.color) || '#3aa0ff';
         sw.classList.toggle('armed', !!collageBgFxColorArmed);
+        // v3.0 round 534 (Terry) — make the armed state unmistakable: an × appears on the
+        // swatch (via CSS) and the tooltip flips to say a click closes the palette.
+        sw.setAttribute('data-pdr-tooltip', collageBgFxColorArmed ? 'Close the colour palette' : 'Pick this circle’s colour');
       } catch (_) {}
     }
     function defaultBgFxItem(kind) {
@@ -14813,11 +14832,19 @@
       var colLab = document.createElement('label'); colLab.textContent = 'Colour'; colRow.appendChild(colLab);
       var col = document.createElement('button'); col.type = 'button'; col.id = 'collage-bgfx-color-swatch'; col.className = 'bgel-color-swatch' + (collageBgFxColorArmed ? ' armed' : '');
       col.style.background = sel.color || '#3aa0ff';
-      col.setAttribute('data-pdr-tooltip', 'Pick this circle’s colour');
+      col.setAttribute('data-pdr-tooltip', collageBgFxColorArmed ? 'Close the colour palette' : 'Pick this circle’s colour');
       col.addEventListener('click', function () {
         collageBgFxColorArmed = !collageBgFxColorArmed;
         if (collageBgFxColorArmed) { collageGradStopEdit = null; colorTarget = 'background'; }
         try { positionBgPalette(); } catch (_) {}
+        // v3.0 round 534 (Terry) — closing the palette used to visibly re-home it into the
+        // Solid group above, making the whole panel jump. Now: disarm HIDES the palette
+        // where it stands (it re-appears the next time a colour context asks for it);
+        // arm shows it right here under the Colour row. No layout jump either way.
+        try {
+          var _blk = document.getElementById('collage-unified-color');
+          if (_blk) _blk.style.display = collageBgFxColorArmed ? '' : 'none';
+        } catch (_) {}
         try { renderTextColorPaletteForTarget(); } catch (_) {}
         try { syncTextColorPaletteRings(); } catch (_) {}
         syncBgFxColorSwatch();
@@ -14909,6 +14936,9 @@
       if (fxSum) fxSum.innerHTML = '<span>Texture &amp; Effects</span><span class="bg-section-sub">· optional</span>';
       list.appendChild(fx);
       list.dataset.based = '1';
+      // v3.0 round 534 (Terry) — the rows were just created: light the Use-a-photo chips
+      // immediately if a backdrop already exists (reopened project / late panel build).
+      try { syncBgPhotoChipThumbs(); } catch (_) {}
     }
     function applyCanvasBgVisual() {
       if (!collageCanvasEl) return;
@@ -15435,6 +15465,9 @@
       collageGradStopEdit = (collageGradStopEdit === idx) ? null : idx;
       try { renderTextColorPaletteForTarget(); } catch (_) {}
       try { positionBgPalette(); } catch (_) {}
+      // v3.0 round 534 (Terry) — a bgFx disarm may have HIDDEN the palette in place; arming a
+      // stop must bring it back at the stop's host.
+      try { if (collageGradStopEdit != null) { var _blk2 = document.getElementById('collage-unified-color'); if (_blk2) _blk2.style.display = ''; } } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}
     }
     // v2.1 round 252 (Terry) — TYPE A NUMBER into any slider's value. Every slider
