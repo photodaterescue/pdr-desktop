@@ -2611,6 +2611,14 @@
     /* Selection ring (mirrors .collage-item.selected — gold in collage mode). */
     #collage-chrome-box .chx-ring { position: absolute; inset: 0; outline: 2px solid #FEC242; outline-offset: 0; pointer-events: none; }
     #collage-chrome-box.locked .chx-ring { outline-style: dashed; }
+    /* v3.0 round 537 (Terry) — BACKGROUND photos are a special class: their selection chrome
+       is the AI violet→fuchsia (the Share-hint language), not gold, so they can't be mistaken
+       for a regular photo. Ring = violet outline + fuchsia/violet glow; handles + crop bars
+       swap their gold borders for the same violet. */
+    #collage-chrome-box.bgphoto .chx-ring { outline-color: #b45cf6; box-shadow: 0 0 0 1px rgba(217,70,239,0.35), 0 0 14px rgba(139,92,246,0.5); }
+    #collage-chrome-box.bgphoto .chx-crop { border-color: #b45cf6; }
+    #collage-chrome-box.bgphoto .chx-res { background: linear-gradient(135deg, #8b5cf6, #d946ef); }
+    #collage-chrome-box.bgphoto .chx-rotate { border-color: #b45cf6; color: #b45cf6; }
     /* v2.1 round 268 (Terry) — the box BODY is a drag surface for the SELECTED tile, so the
        photo can be grabbed-to-move ANYWHERE inside its selection box, including where it
        overhangs into the dark margin (the clipped tile content isn't there to grab). Appended
@@ -3956,6 +3964,11 @@
     #collage-bgfx-controls.bgfx-off .bgfx-shape,
     #collage-bgfx-controls.bgfx-off .bgfx-color-row,
     #collage-bgfx-controls.bgfx-off .enhance-control { opacity: 0.35; pointer-events: none; }
+    /* v3.0 round 537 (Terry) — the "apply to the background photo" opt-in. Violet accent =
+       the background-photo identity; greyed until a background photo exists. */
+    .bgfx-apply-photo { display: flex; align-items: center; gap: 8px; margin: 10px 0 2px; font-size: 12px; color: #cfcbe0; cursor: pointer; }
+    .bgfx-apply-photo input { accent-color: #b45cf6; width: 14px; height: 14px; margin: 0; cursor: pointer; flex: 0 0 auto; }
+    .bgfx-apply-photo.disabled { opacity: 0.4; pointer-events: none; }
     /* v3.0 (Terry) — the Colour swatch arms the shared PDR palette (no native OS picker).
        Gold ring while armed, matching the gradient-stop armed cue. */
     .bgel-color-swatch { position: relative; width: 34px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.28); padding: 0; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; }
@@ -8826,6 +8839,9 @@
       // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
       // clipping under the titlebar when the tile is near the top (Terry SS2).
       refreshTileToolbar(it);
+      // v3.0 round 537 (Terry) — a BACKGROUND photo re-applies its opt-in effects
+      // (blur/grain/pixelate from the Texture & Effects circles) whenever it re-renders.
+      if (it.bgPhoto) { try { applyBackdropFx(it); } catch (_) {} }
       // v2.1 round 266 (Terry) — Phase 4: re-glue the floating overlay to the selected
       // tile every frame it re-renders (drag/resize/rotate call renderCollageItem).
       if (it === collageSelected) { try { positionSelectionChrome(); } catch (_) {} }
@@ -9012,7 +9028,7 @@
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) duplicateCollageItem(collageSelected); });
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
       collageChromeBox = box;
-      collageChromeParts = { ring, tbar, tbLock, tbLockLayer, badge };
+      collageChromeParts = { ring, tbar, tbLock, tbLockLayer, badge, tbDup };   // v3.0 round 537 — tbDup exposed so the tooltip can say "Duplicate background photo"
       return box;
     }
     function hideSelectionChrome() {
@@ -9296,6 +9312,13 @@
       box.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
       box.classList.toggle('locked', !!it.locked);
       box.classList.toggle('coverfill', !!it.coverFill);
+      // v3.0 round 537 (Terry) — a BACKGROUND photo wears the AI violet/fuchsia chrome
+      // instead of gold, so it reads as a different class of object; its Duplicate
+      // button says so too.
+      box.classList.toggle('bgphoto', !!it.bgPhoto);
+      if (collageChromeParts && collageChromeParts.tbDup) {
+        collageChromeParts.tbDup.setAttribute('data-pdr-tooltip', it.bgPhoto ? 'Duplicate background photo' : 'Duplicate');
+      }
       // Lock badge mirrors the tile state (CSS shows it only when .locked).
       if (collageChromeParts && collageChromeParts.tbLock) {
         collageChromeParts.tbLock.classList.toggle('locked', !!it.locked);
@@ -13528,7 +13551,7 @@
         texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
-        bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur) }; })(),
+        bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
         bgFxSel: collageBgFxSel,
       });
     }
@@ -13617,6 +13640,7 @@
             if (Number.isFinite(src.pixelate)) d.pixelate = Math.max(0, Math.min(100, src.pixelate));
           });
         }
+        collageBgFx.applyToPhoto = !!(s.bgFx && s.bgFx.applyToPhoto);   // v3.0 round 537 — the backdrop-effects opt-in round-trips
         collageBgFxSel = (s.bgFxSel === 'blur') ? 'blur' : 'glow';
       } catch (_) { collageBgFx = { glow: defaultBgFxItem('glow'), blur: defaultBgFxItem('blur') }; collageBgFxSel = 'glow'; }
       collageBgFxColorArmed = false;   // v3.0 (Terry) — undo/redo/reopen lands disarmed (the palette re-homes to Solid)
@@ -13903,7 +13927,7 @@
       const tbar = document.createElement('div'); tbar.className = 'ch ch-toolbar';
       const tbLock = document.createElement('button'); tbLock.type = 'button'; tbLock.className = 'ch-tb-btn ch-tb-lock'; tbLock.setAttribute('data-pdr-tooltip', 'Lock (freeze position / size / rotation)');
       tbLock.innerHTML = '<svg viewBox="0 0 24 24"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>';
-      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn ch-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
+      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn ch-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', it.bgPhoto ? 'Duplicate background photo' : 'Duplicate');   // v3.0 round 537 (Terry) — honest label for the special class
       tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
       const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn ch-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
       tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -14009,6 +14033,7 @@
       const ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
       const clone = {
         idx: it.idx, path: it.path, on: true, placeholder: !!it.placeholder,   // v2.1 round 319 (Terry) — duplicating a frame keeps it a frame
+        bgPhoto: !!it.bgPhoto,   // v3.0 round 537 (Terry) — duplicating a background photo makes another background photo (same privileges: effects, purple chrome, chip indicator)
         xFrac: nx, yFrac: ny, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
         z: ++collageZTop, el: null, imgEl: null, clipEl: null,
         locked: false,
@@ -14737,8 +14762,68 @@
         '<feMorphology operator="dilate" radius="' + half + '"/>';
       return fid;
     }
+    // ── v3.0 round 537 (Terry) — "Apply these effects to the background photo". When the
+    // opt-in is ON, the ON circles' effect sliders (Blur / Grain+size / Pixelate) ALSO render
+    // on every BACKGROUND photo tile (the bgPhoto-marked class — a privilege only they get).
+    // Values are the per-effect MAX across the ON circles; filters go on the tile's CLIP so
+    // they never collide with the photo's own Enhance filters; grain is an overlay child.
+    function backdropFxValues() {
+      var f = ensureCollageBgFx();
+      if (!f.applyToPhoto) return null;
+      var on = [f.glow, f.blur].filter(function (e) { return e && e.on; });
+      if (!on.length) return null;
+      var mx = function (k) { var v = 0; on.forEach(function (e) { var n = +e[k] || 0; if (n > v) v = n; }); return v; };
+      var out = { blur: mx('blur'), grain: Math.min(150, mx('grain')), pixelate: mx('pixelate'), grainSize: 50 };
+      on.forEach(function (e) { if ((+e.grain || 0) > 0) out.grainSize = Math.max(out.grainSize, Math.min(200, +e.grainSize || 50)); });
+      if (out.blur <= 0 && out.grain <= 0 && out.pixelate <= 0) return null;
+      return out;
+    }
+    // The backdrop's own pixelate filter def (its own id; same recipe as the circles').
+    function backdropPixelateFilter(p) {
+      var fid = 'collage-bgph-pixelate';
+      var f = document.getElementById(fid);
+      if (!p || p <= 0) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
+      var host = ensureBgFxSvg();
+      var block = Math.round(3 + p * 0.7);
+      var half = Math.max(1, Math.round(block / 2));
+      var ns = 'http://www.w3.org/2000/svg';
+      if (!f) { f = document.createElementNS(ns, 'filter'); f.setAttribute('id', fid); host.appendChild(f); }
+      f.setAttribute('x', '0'); f.setAttribute('y', '0'); f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
+      f.innerHTML =
+        '<feFlood x="0" y="0" width="1" height="1"/>' +
+        '<feComposite width="' + block + '" height="' + block + '"/>' +
+        '<feTile result="a"/>' +
+        '<feComposite in="SourceGraphic" in2="a" operator="in"/>' +
+        '<feMorphology operator="dilate" radius="' + half + '"/>';
+      return fid;
+    }
+    function applyBackdropFx(it) {
+      if (!it || !it.el || !it.bgPhoto) return;
+      var clip = it.clipEl || it.el;
+      var v = (it.on && !it.removed) ? backdropFxValues() : null;
+      var fx = [];
+      if (v && v.blur > 0) fx.push('blur(' + Math.round(v.blur * 0.6) + 'px)');
+      if (v && v.pixelate > 0) { var pid = backdropPixelateFilter(v.pixelate); if (pid) fx.push('url(#' + pid + ')'); }
+      clip.style.filter = fx.length ? fx.join(' ') : '';
+      var wraps = Array.prototype.slice.call(clip.querySelectorAll(':scope > .bgph-grain'));
+      if (!v || v.grain <= 0) { wraps.forEach(function (n) { n.remove(); }); return; }
+      var sz = bgFxGrainPx(v.grainSize);
+      var need = (v.grain > 100) ? 2 : 1;
+      while (wraps.length > need) { wraps.pop().remove(); }
+      for (var i = 0; i < need; i++) {
+        var gn = wraps[i];
+        if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;'; clip.appendChild(gn); }
+        gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+        gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+        gn.style.opacity = String(Math.max(0, Math.min(1, i === 0 ? v.grain / 100 : (v.grain - 100) / 50)));
+      }
+    }
+    function syncBackdropFxAll() {
+      try { (collageItems || []).forEach(function (it) { if (it && it.bgPhoto) applyBackdropFx(it); }); } catch (_) {}
+    }
     function applyCanvasBgElements() {
       if (!collageCanvasEl) return;
+      try { syncBackdropFxAll(); } catch (_) {}   // v3.0 round 537 — the backdrop-photo effects track every bg-fx repaint
       var ov = document.getElementById('collage-bg-elements');
       var items = activeBgFxItems();
       if (!items.length) { if (ov) { ov.style.display = 'none'; ov.innerHTML = ''; } return; }
@@ -14845,6 +14930,24 @@
       // live. Also disarm the colour palette if it was armed for this element.
       if (!sel.on && collageBgFxColorArmed) { collageBgFxColorArmed = false; }
       ctrls.classList.toggle('bgfx-off', !sel.on);
+      // v3.0 round 537 (Terry) — opt-in: also render these effects on the BACKGROUND photo.
+      // A privilege only bgPhoto-marked tiles get; greyed until a background photo exists.
+      // Lives OUTSIDE the bgfx-off gating (it's about the photo, not the selected circle).
+      var hasBackdrop = (collageItems || []).some(function (x) { return x && x.on && !x.removed && x.bgPhoto; });
+      var apRow = document.createElement('label');
+      apRow.className = 'bgfx-apply-photo' + (hasBackdrop ? '' : ' disabled');
+      apRow.setAttribute('data-pdr-tooltip', hasBackdrop ? 'Blur / Grain / Pixelate from the circles above also render on your background photo' : 'Add a background photo first — the photo chip at the top of Solid or Blended');
+      var apCb = document.createElement('input'); apCb.type = 'checkbox';
+      apCb.checked = !!f.applyToPhoto; apCb.disabled = !hasBackdrop;
+      apCb.addEventListener('change', function () {
+        try { beginCollageChange(); } catch (_) {}
+        f.applyToPhoto = !!apCb.checked;
+        try { syncBackdropFxAll(); } catch (_) {}
+        try { commitCollageChange(); } catch (_) {}
+      });
+      var apTxt = document.createElement('span'); apTxt.textContent = 'Apply these effects to the background photo';
+      apRow.appendChild(apCb); apRow.appendChild(apTxt);
+      ctrls.appendChild(apRow);
       if (!sel.on) {
         var hint = document.createElement('div'); hint.className = 'ec-grad-hint'; hint.style.margin = '10px 0 2px';
         hint.textContent = (collageBgFxSel === 'blur' ? 'Blur circle' : 'Glow circle') + ' is off — click it above to add it to your background.';
@@ -18002,7 +18105,7 @@
           rows.push({ ic: I.copy, label: 'Copy', k: 'Ctrl+C', fn: function () { copyCollageSelection(); } });
           rows.push({ ic: I.cut, label: 'Cut', k: 'Ctrl+X', fn: function () { copyCollageSelection(); deleteCollageSelection(); } });
           if (collageHasClip()) rows.push({ ic: I.paste, label: 'Paste', k: 'Ctrl+V', fn: function () { collagePasteAny(x, y); } });
-          rows.push({ ic: I.dup, label: n > 1 ? 'Duplicate ' + n : 'Duplicate', k: 'Ctrl+D', fn: function () { if (n > 1) { collageSelection.slice().forEach(function (x2) { try { duplicateCollageItem(x2); } catch (_) {} }); } else { duplicateCollageItem(it); } } });
+          rows.push({ ic: I.dup, label: n > 1 ? 'Duplicate ' + n : (it.bgPhoto ? 'Duplicate background photo' : 'Duplicate'), k: 'Ctrl+D', fn: function () { if (n > 1) { collageSelection.slice().forEach(function (x2) { try { duplicateCollageItem(x2); } catch (_) {} }); } else { duplicateCollageItem(it); } } });   // v3.0 round 537 (Terry) — bg photos say what they are
           rows.push({ ic: I.del, label: n > 1 ? 'Delete ' + n : 'Delete', k: 'Del', dng: true, fn: function () { deleteCollageSelection(); } });
           rows.push({ sep: true });
           rows.push({ ic: I.align, label: 'Align to page', children: function () { return alignRows(it); } });
