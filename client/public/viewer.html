@@ -3948,6 +3948,11 @@
     .bgfx-shape-btn.active { border-color: #FEC242; color: #fff; background: rgba(254,194,66,0.12); }
     .bgfx-color-row { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
     .bgfx-color-row label { font-size: 12px; color: #cfcbe0; }
+    /* v3.0 round 533 (Terry) — the selected circle is OFF → its settings do nothing, so
+       they grey out and stop responding. The chips row + the "click it above" hint stay live. */
+    #collage-bgfx-controls.bgfx-off .bgfx-shape,
+    #collage-bgfx-controls.bgfx-off .bgfx-color-row,
+    #collage-bgfx-controls.bgfx-off .enhance-control { opacity: 0.35; pointer-events: none; }
     /* v3.0 (Terry) — the Colour swatch arms the shared PDR palette (no native OS picker).
        Gold ring while armed, matching the gradient-stop armed cue. */
     .bgel-color-swatch { width: 34px; height: 22px; border-radius: 6px; border: 1px solid rgba(255,255,255,0.28); padding: 0; cursor: pointer; transition: box-shadow .12s ease, border-color .12s ease; }
@@ -12656,9 +12661,11 @@
     function defaultCollageProjectName() {
       // A date-stamped default so several un-renamed projects stay distinguishable in the
       // gallery even before thumbnails land. Manual format avoids locale surprises.
+      // v3.0 round 533 (Terry) — a carousel defaults to "Carousel …", not "Collage …".
       try {
+        const kind = (typeof carouselMode !== 'undefined' && carouselMode) ? 'Carousel' : 'Collage';
         const d = new Date(); const pad = (n) => String(n).padStart(2, '0');
-        return `Collage ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}`;
+        return `${kind} ${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}.${pad(d.getMinutes())}`;
       } catch (_) { return 'Untitled collage'; }
     }
     // Worth saving = at least one LIVE photo OR any text. A blank canvas (or one holding only
@@ -12754,7 +12761,7 @@
       if (parts.length && cats.some((c) => c.toLowerCase() === parts[0].toLowerCase())) out.category = parts.shift();
       if (parts.length > 1 && /^v?\d/i.test(parts[parts.length - 1])) out.version = parts.pop().replace(/^v/i, '');
       out.name = parts.join(' · ');
-      if (/^Collage \d{4}-\d{2}-\d{2}/.test(out.name)) out.name = '';   // auto-names aren't meaningful — don't prefill
+      if (/^(Collage|Carousel) \d{4}-\d{2}-\d{2}/.test(out.name)) out.name = '';   // auto-names aren't meaningful — don't prefill (v3.0 round 533: carousels default to "Carousel …" now)
       return out;
     }
     // round 351 — rename a gallery project WITHOUT opening it: load → set name → save (the .png
@@ -13517,6 +13524,9 @@
         scheduleCollageAutosave();   // v2.1 round 315 (Terry) — persist this edit to the project (debounced)
       }
       collagePendingSnap = null;
+      // v3.0 round 533 (Terry) — keep the Use-a-photo chip indicator current (a backdrop
+      // tile may have been added / deleted / re-stacked by this change). Cheap DOM touch.
+      try { syncBgPhotoChipThumbs(); } catch (_) {}
       // v2.1 round 256 (Terry) — carousel P3: an edit to the live (active) page should be
       // reflected in its bottom thumbnail. The active thumb renders from the live snapshot,
       // so just rebuild the strip after each committed change while in carousel mode.
@@ -14778,6 +14788,11 @@
       } catch (_) {}
       ctrls.innerHTML = '';
       var sel = f[collageBgFxSel] || f.glow;
+      // v3.0 round 533 (Terry) — while the selected circle is OFF, its settings do nothing:
+      // grey + disable everything below the chips (the .bgfx-off CSS), keep only the hint
+      // live. Also disarm the colour palette if it was armed for this element.
+      if (!sel.on && collageBgFxColorArmed) { collageBgFxColorArmed = false; }
+      ctrls.classList.toggle('bgfx-off', !sel.on);
       if (!sel.on) {
         var hint = document.createElement('div'); hint.className = 'ec-grad-hint'; hint.style.margin = '10px 0 2px';
         hint.textContent = (collageBgFxSel === 'blur' ? 'Blur circle' : 'Glow circle') + ' is off — click it above to add it to your background.';
@@ -15131,6 +15146,37 @@
     // when the photo is currently the active bg. Plain-colour ringing is handled
     // by the shared syncTextColorPaletteRings(). Safe to call any time — it no-ops
     // when the locked specials aren't mounted (non-background target).
+    // v3.0 round 533 (Terry) — the CURRENT backdrop photo, for the Use-a-photo chip
+    // indicator. Backdrop tiles live at z < 1 (r263 coverFill legacy AND r267+ normal
+    // tiles born at --collageZBottom); among them the HIGHEST z paints on top = the one
+    // the user actually sees. Falls back to the legacy single canvas.bgImage path.
+    // '' = no backdrop photo.
+    function collageCurrentBackdropPath() {
+      try {
+        var best = null;
+        (collageItems || []).forEach(function (it) {
+          if (it && it.on && !it.removed && !it.placeholder && (it.z || 0) < 1 && (it.bgRemovedPath || it.path)) {
+            if (!best || (it.z || 0) > (best.z || 0)) best = it;
+          }
+        });
+        if (best) return best.bgRemovedPath || best.path;
+      } catch (_) {}
+      return collageBgImagePath || '';
+    }
+    // v3.0 round 533 (Terry) — paint the chosen backdrop INTO the Use-a-photo chips (both the
+    // Solid and Blended rows), so the little tile shows what's been picked. The chip stays a
+    // stateless ACTION (each click adds a backdrop tile) — this is purely the indicator Terry
+    // asked for; `.has-photo` hides the placeholder icon so the photo reads clearly.
+    function syncBgPhotoChipThumbs() {
+      try {
+        var p = collageCurrentBackdropPath();
+        var url = p ? ('url("file:///' + encodeURI(String(p).replace(/\\/g, '/')).replace(/"/g, '%22') + '")') : '';
+        document.querySelectorAll('#collage-bg-collapse .frame-bg-photo').forEach(function (el) {
+          el.classList.toggle('has-photo', !!p);
+          el.style.backgroundImage = url;
+        });
+      } catch (_) {}
+    }
     function markBgLockedSpecialsActive() {
       // v2.1 round 336 (Terry) — keep the Effects-for-bg gate live as the bg KIND changes: Fade
       // applies only to a background PHOTO (Blend/Curved/Blur/Pixelate are hidden for any bg via CSS).
@@ -15138,11 +15184,11 @@
       // v3.0 (Terry) — Photo + Transparent now appear in BOTH Solid and Blended, so mark ALL
       // transparent chips by class (not a single id).
       document.querySelectorAll('#collage-bg-collapse .frame-bg-transparent').forEach(function (el) { el.classList.toggle('active', !!collageTransparent); });
-      // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is now a STATELESS
-      // ACTION button, not a stateful bg indicator — so there's no thumbnail / .has-photo
-      // / .active state to maintain here any more (a background photo is a normal tile,
-      // not a single remembered canvas.bgImage). The whole photo-swatch block was removed;
-      // the Transparent swatch + the style-group sync below are KEPT.
+      // v3.0 round 533 (Terry) — keep the Use-a-photo chips showing the current backdrop.
+      try { syncBgPhotoChipThumbs(); } catch (_) {}
+      // v2.1 round 263 (Terry) — bg-tile: the Use-a-photo swatch is a STATELESS
+      // ACTION button (each click adds a backdrop tile); round 533 re-added a pure
+      // INDICATOR on top (syncBgPhotoChipThumbs above) without changing the action.
       // v2.1 round 245 (Terry) — refresh which Background STYLE group is "in use".
       // Hooked here because EVERY bg setter routes through markBgLockedSpecialsActive
       // (directly or via markCollageColorActive), incl. the undo/redo restore paths.
@@ -15281,14 +15327,16 @@
         strength: Number.isFinite(grad.strength) ? Math.max(0, Math.min(100, grad.strength)) : 50,
         stops: grad.stops.map((s) => ({ color: s.color, pos: Math.max(0, Math.min(100, Number(s.pos) || 0)) })),
       };
-      // Swap away from the other bg kinds (transparent hides the gradient; a photo
-      // sits on top of the canvas bg, so clear both to make the gradient the bg).
+      // Swap away from the other bg kinds (transparent hides the gradient).
       // v2.1 round 242 (Terry) — also clear any texture.
+      // v3.0 round 533 (Terry) — the background PHOTO is NO LONGER cleared: it belongs to
+      // either base (Photo sits at the top of BOTH Solid and Blended), so switching
+      // solid ↔ blended carries the photo across instead of forcing a re-pick. The photo
+      // layer fades over whichever base is underneath.
       collageTransparent = false; collageBgTexture = null;
       collageBgFxColorArmed = false; syncBgFxColorSwatch();   // v3.0 (Terry) — a base change disarms the Glow/Blur colour picker
-      if (collageBgImagePath) collageBgImagePath = '';
       applyCanvasBgVisual();
-      renderCollageBgLayer();   // tears down the (now-cleared) photo layer
+      renderCollageBgLayer();   // re-paints the (kept) photo layer over the new base
       markBgLockedSpecialsActive();
       try { syncTextColorPaletteRings(); } catch (_) {}
       try { syncCollageGradientUi(); } catch (_) {}

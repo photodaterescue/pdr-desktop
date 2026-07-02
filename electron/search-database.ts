@@ -7860,7 +7860,7 @@ export function createCarouselAlbum(title: string, categoryFolderId: number): nu
  *  Mirrors the renderer's collageTypeOf so carousel folder names line up with the Albums type filter. */
 export function collageTypeFromName(name?: string | null): string {
   if (!name) return '';
-  if (/^Collage \d{4}-\d{2}-\d{2}/.test(name)) return '';
+  if (/^(Collage|Carousel) \d{4}-\d{2}-\d{2}/.test(name)) return '';   // auto timestamp names aren't a type (v3.0 r533: carousels default to "Carousel …")
   let parts = String(name).split(' · ').map((s) => s.trim()).filter(Boolean);
   if (parts.length > 1 && /^v?\d+$/i.test(parts[parts.length - 1])) parts.pop();
   if (parts.length > 1) parts = parts.slice(1);
