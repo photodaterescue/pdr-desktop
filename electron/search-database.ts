@@ -8323,6 +8323,27 @@ export function listAlbumPhotos(albumId: number): IndexedFile[] {
 }
 
 /**
+ * Album ids that contain a given file, oldest membership first. Used by
+ * the collage "Locate in Albums" jump: a collage/carousel export is
+ * auto-filed into exactly one PDR Collages album at save time, so the
+ * earliest membership is its home album even if the file was later added
+ * to other albums by hand. Recycled files return [] (their memberships
+ * survive on disk but the file is hidden from album views).
+ */
+export function getAlbumsForFileId(fileId: number): number[] {
+  const db = getDb();
+  const rows = db.prepare(`
+    SELECT af.album_id AS album_id
+    FROM album_files af
+    JOIN indexed_files i ON i.id = af.file_id
+    WHERE af.file_id = ?
+      AND (i.in_recycle_bin IS NULL OR i.in_recycle_bin = 0)
+    ORDER BY af.added_at ASC
+  `).all(fileId) as Array<{ album_id: number }>;
+  return rows.map((r) => r.album_id);
+}
+
+/**
  * Bulk-add files to an album. `INSERT OR IGNORE` makes the call
  * idempotent under the composite PK, so callers can pass the user's full
  * selection without de-duping client-side. Returns the count of NEW rows

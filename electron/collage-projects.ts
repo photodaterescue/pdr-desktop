@@ -27,6 +27,9 @@ export interface CollageProjectData {
   // v2.1 round 323 (Terry) — 'template' = a reusable design (shown in the CWS Templates row,
   // opened AS A NEW collage so the template stays pristine); default/absent = a normal project.
   kind?: 'project' | 'template';
+  // v3.0 (Terry) — the library file id of the exported photo, set once the project has been Saved
+  // (absent/null until first save). Powers the "take me there" links (Open in Viewer / Locate in Albums).
+  exportedFileId?: number | null;
 }
 
 export interface CollageProjectSummary {
@@ -35,6 +38,7 @@ export interface CollageProjectSummary {
   savedAt: string;
   thumbnailDataUrl: string | null;
   kind: 'project' | 'template';
+  exportedFileId?: number | null;
 }
 
 const PROJECT_EXT = '.pdrcollage';
@@ -189,7 +193,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         for (const tp of [thumbPath(dir, rec.id), path.join(dir, `${rec.id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
           try { if (fs.existsSync(toLongPath(tp))) { thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; break; } } catch { /* no thumb */ }
         }
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project' });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));

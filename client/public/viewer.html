@@ -2517,6 +2517,27 @@
     }
     .cws-card:hover .cws-card-rename { opacity: 1; }
     .cws-card-rename:hover { background: rgba(254,194,66,0.92); border-color: #FEC242; color: #1a1a2e; }
+    /* v3.0 (Terry) — "take me there" links on a SAVED collage tile (only shown once it has an exported photo). */
+    .cws-card-go { display: flex; gap: 6px; margin-top: 9px; }
+    .cws-card-go button {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 10.5px; font-weight: 600; letter-spacing: .01em;
+      padding: 3px 8px; border-radius: 6px; cursor: pointer;
+      background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #c7c4da;
+      transition: background .12s ease, border-color .12s ease, color .12s ease;
+    }
+    .cws-card-go button:hover { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.6); color: #f3e9cf; }
+    .cws-card-go button svg { width: 12px; height: 12px; flex: 0 0 auto; }
+    /* v3.0 (Terry) — compact "take me there" pair in the collage titlebar, next to the project name (saved collages only). */
+    .collage-goto { display: none; align-items: center; gap: 4px; margin-left: 8px; }
+    .collage-goto button {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 7px; cursor: pointer;
+      background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.14); color: #d8d5e8;
+      transition: background .12s ease, border-color .12s ease, color .12s ease;
+    }
+    .collage-goto button:hover { background: rgba(254,194,66,0.9); border-color: #FEC242; color: #1a1a2e; }
+    .collage-goto button svg { width: 15px; height: 15px; }
     /* v2.1 round 348 (Terry) — Name-this-collage wizard (opt-in, reached by clicking the editor title). */
     .cnw-overlay { z-index: 200000; }   /* above the collage panel-toggle chevron (z 130000) so it can't poke through */
     .cnw-card { max-width: 460px; text-align: left; }
@@ -3929,6 +3950,16 @@
           <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
         </svg>
       </button>
+      <!-- v3.0 (Terry) — "take me there" pair for a SAVED collage: open the finished photo in the Viewer, or jump to
+           its album in Memories. Hidden until the collage has been Saved (updateCollageGoto toggles it). -->
+      <span id="collage-goto" class="collage-goto" aria-hidden="true">
+        <button type="button" id="collage-goto-view" data-pdr-tooltip="Open the saved photo in the Viewer" aria-label="Open the saved photo in the Viewer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>
+        </button>
+        <button type="button" id="collage-goto-albums" data-pdr-tooltip="Show this collage in Memories → Albums" aria-label="Show this collage in Memories → Albums">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+        </button>
+      </span>
       <!-- v2.1 round 278 (Terry) — drag-to-share handle, rebranded from
            the easy-to-miss "D&D" pill to a sparkle + "Share" with PDR's
            AI gradient so it draws the eye. The user drags this to
@@ -12567,6 +12598,7 @@
     // the stale "Empty collage" that lingered even after photos were added.
     function updateCollageTitle() {
       try { const fn = document.getElementById('filename'); if (fn) { fn.textContent = currentCollageProjectName || 'Untitled collage'; fn.setAttribute('data-pdr-tooltip', 'Click to name this collage'); } } catch (_) {}
+      try { updateCollageGoto(); } catch (_) {}
     }
     // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
     // hid the welcome screen, revealing the SAME collage underneath. Clears tiles / text / bg and starts
@@ -13112,6 +13144,17 @@
       ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
       ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
       ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
+      // v3.0 (Terry) — "take me there" links, shown only once the collage has been Saved (has an exported photo).
+      if (p.exportedFileId != null) {
+        const go = document.createElement('div'); go.className = 'cws-card-go';
+        const gv = document.createElement('button'); gv.type = 'button'; gv.setAttribute('data-pdr-tooltip', 'Open the saved photo in the Viewer');
+        gv.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>View';
+        gv.addEventListener('click', (e) => { e.stopPropagation(); collageGotoOpenViewer(p.exportedFileId); });
+        const ga = document.createElement('button'); ga.type = 'button'; ga.setAttribute('data-pdr-tooltip', 'Show this collage in Memories → Albums');
+        ga.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>Albums';
+        ga.addEventListener('click', (e) => { e.stopPropagation(); collageGotoAlbums(p.exportedFileId); });
+        go.appendChild(gv); go.appendChild(ga); meta.appendChild(go);
+      }
       card.addEventListener('click', async () => { const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome(); });
       card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del);
       return card;
@@ -16522,6 +16565,36 @@
     function collageCurrentAlbum() {
       try { var p = parseCollageName(currentCollageProjectName || ''); return (p && p.category) ? p.category : 'General'; } catch (_) { return 'General'; }
     }
+    // v3.0 (Terry) — "take me there" for a SAVED collage: resolve where its exported photo lives, then open it in
+    // the Viewer or jump to its album. Shared by the Home tile (per-project) and the titlebar (current project).
+    async function collageGotoResolve(fileId) {
+      try { if (fileId == null) return null; var info = await window.pdr.collage.getExportInfo(fileId); return (info && info.exists) ? info : null; } catch (_) { return null; }
+    }
+    async function collageGotoOpenViewer(fileId) {
+      var info = await collageGotoResolve(fileId);
+      if (!info) { try { collageToast('That saved photo isn’t in your library any more.', 4000); } catch (_) {} return; }
+      try { await window.pdr.search.openViewer([info.filePath], [info.fileName || 'Collage'], 0, false); } catch (_) {}
+    }
+    async function collageGotoAlbums(fileId) {
+      var info = await collageGotoResolve(fileId);
+      if (!info) { try { collageToast('That saved photo isn’t in your library any more.', 4000); } catch (_) {} return; }
+      try { await window.pdr.collage.viewInAlbums(info.albumId != null ? info.albumId : null); } catch (_) {}
+    }
+    // Titlebar "take me there" pair: visible only for a SAVED single collage (has an exported photo, not a carousel).
+    function updateCollageGoto() {
+      try {
+        var el = document.getElementById('collage-goto');
+        if (!el) return;
+        if (!el.dataset.wired) {
+          el.dataset.wired = '1';
+          var v = document.getElementById('collage-goto-view'); if (v) v.addEventListener('click', function (e) { e.stopPropagation(); collageGotoOpenViewer(collageExportedFileId); });
+          var a = document.getElementById('collage-goto-albums'); if (a) a.addEventListener('click', function (e) { e.stopPropagation(); collageGotoAlbums(collageExportedFileId); });
+        }
+        var inCollage = (typeof collageMode !== 'undefined') && collageMode;
+        var isCarousel = (typeof carouselMode !== 'undefined') && carouselMode;
+        el.style.display = (inCollage && !isCarousel && collageExportedFileId != null) ? 'inline-flex' : 'none';
+      } catch (_) {}
+    }
     // Reflect whether this collage has been saved yet: "Save" (first time) vs "Update", and reveal the chevron.
     function updateCollageSaveButton() {
       try {
@@ -16532,6 +16605,7 @@
         if (btn) btn.setAttribute('data-pdr-tooltip', saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library');
         var more = document.getElementById('collage-save-more');
         if (more) more.style.display = 'none';   // v3.0 round 496 (Terry) — v-numbers dropped; "Save as new version" was the chevron's only option, so the more-menu is retired.
+        try { updateCollageGoto(); } catch (_) {}
       } catch (_) {}
     }
     // "Save as new version": bump the version in the name, then save a NEW file (the previous version
@@ -16604,7 +16678,7 @@
           // v2.1 round 371 (Terry) — remember which photo this collage exported (set BEFORE opening the
           // Viewer) so the caption stays ONE shared thing across Collages / Viewer / Albums / Dates / S&D.
           // v3.0 (Terry) — Update overwrites this same photo; New version makes a fresh one + repoints here.
-          if (res.fileId != null) { collageExportedFileId = res.fileId; try { scheduleCollageAutosave(); } catch (_) {} }
+          if (res.fileId != null) { collageExportedFileId = res.fileId; try { scheduleCollageAutosave(); } catch (_) {} try { updateCollageGoto(); } catch (_) {} }
           const _alb = album || 'General';
           const _act = saveOpts.action || 'save';
           const _where = 'Memories › Albums › PDR Collages › ' + _alb;

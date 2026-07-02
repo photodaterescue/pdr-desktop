@@ -530,6 +530,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.0 (Terry) — "View in Albums" jump: bring the main window forward + navigate it to Memories → Albums
     // (opening `albumId` if given). onNavigateAlbums lets the main window's workspace react to the request.
     viewInAlbums: (albumId?: number | null) => ipcRenderer.invoke('collage:viewInAlbums', albumId ?? null) as Promise<{ success: boolean; error?: string }>,
+    // v3.0 (Terry) — resolve where a saved collage's exported photo lives (album to jump to + on-disk path to
+    // open in the Viewer), or exists:false if it was deleted. Feeds the Home-tile + titlebar "take me there" links.
+    getExportInfo: (fileId: number | null) => ipcRenderer.invoke('collage:getExportInfo', fileId ?? null) as Promise<{ exists: boolean; filePath?: string; fileName?: string; albumId?: number | null; error?: string }>,
     onNavigateAlbums: (callback: (albumId: number | null) => void) => {
       const handler = (_event: any, albumId: number | null) => callback(albumId);
       ipcRenderer.on('pdr:navigate-albums', handler);

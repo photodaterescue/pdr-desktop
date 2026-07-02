@@ -9504,6 +9504,26 @@ ipcMain.handle('collage:viewInAlbums', async (_event, albumId: number | null) =>
   } catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
+// v3.0 (Terry) — "take me there" resolver for a SAVED collage/carousel. Given the exported file id (stored on the
+// .pdrcollage project), return where its finished photo now lives: the album to jump to ("Locate in Albums") and the
+// on-disk path to open ("Open in Viewer"). exists:false when the export was since deleted, so the UI can say so
+// instead of jumping nowhere. Powers the Home-tile + titlebar links.
+ipcMain.handle('collage:getExportInfo', async (_event, fileId: number | null) => {
+  try {
+    if (fileId == null) return { exists: false };
+    const { getFileById, getAlbumsForFileId } = await import('./search-database.js');
+    const file = getFileById(fileId);
+    if (!file || !file.file_path || !fs.existsSync(file.file_path)) return { exists: false };
+    const albums = getAlbumsForFileId(fileId);
+    return {
+      exists: true,
+      filePath: file.file_path,
+      fileName: file.filename || path.basename(file.file_path),
+      albumId: albums.length ? albums[0] : null,
+    };
+  } catch (err) { return { exists: false, error: (err as Error).message }; }
+});
+
 ipcMain.handle('albumGroups:delete', async (_event, groupId: number) => {
   try {
     const { deleteAlbumGroup } = await import('./search-database.js');
