@@ -14762,81 +14762,125 @@
         '<feMorphology operator="dilate" radius="' + half + '"/>';
       return fid;
     }
-    // ── v3.0 round 537 (Terry) — "Apply these effects to the background photo". When the
-    // opt-in is ON, the ON circles' effect sliders (Blur / Grain+size / Pixelate) ALSO render
-    // on every BACKGROUND photo tile (the bgPhoto-marked class — a privilege only they get).
-    // Values are the per-effect MAX across the ON circles; filters go on the tile's CLIP so
-    // they never collide with the photo's own Enhance filters; grain is an overlay child.
-    function backdropFxValues() {
-      var f = ensureCollageBgFx();
-      if (!f.applyToPhoto) return null;
-      var on = [f.glow, f.blur].filter(function (e) { return e && e.on; });
-      if (!on.length) return null;
-      var mx = function (k) { var v = 0; on.forEach(function (e) { var n = +e[k] || 0; if (n > v) v = n; }); return v; };
-      var out = { blur: mx('blur'), grain: Math.min(150, mx('grain')), pixelate: mx('pixelate'), grainSize: 50 };
-      on.forEach(function (e) { if ((+e.grain || 0) > 0) out.grainSize = Math.max(out.grainSize, Math.min(200, +e.grainSize || 50)); });
-      if (out.blur <= 0 && out.grain <= 0 && out.pixelate <= 0) return null;
-      return out;
+    // ── v3.0 round 537/540 (Terry) — "Apply these effects to the background photo". When the
+    // opt-in is ON, each ON circle renders its Blur / Grain+size / Pixelate ON the background
+    // photo too — SPATIALLY, masked to the circle's own footprint translated into the photo's
+    // coordinate space (round 540: Terry — "the sliders must work in harmony with the location
+    // of the radial"; the first cut applied plain values uniformly, so moving the epicentre
+    // changed the background but not the photo). Structure per background photo:
+    //   clip > base img (never filtered — crisp outside the circles)
+    //        > .bgph-fx[kind]    — a masked COPY of the photo carrying that circle's blur/pixelate
+    //        > .bgph-grain[kind] — that circle's grain, masked to the same footprint
+    // Masks recompute on every render, so they track BOTH the circle (epicentre drags, shape,
+    // size, angle) AND the photo (move/resize) live. Known simplification: a ROTATED photo's
+    // mask rotates with it (the circle itself doesn't rotate) — acceptable for a soft mask.
+    function bgFxTileMask(el, it) {
+      var g = bgFxGeom(el);   // canvas-space geometry (% of the canvas)
+      var w = Math.max(0.0001, it.wFrac || 0);
+      var ih = Math.max(0.0001, itemHeightFrac(it) || 0);
+      if (el.shape === 'linear') {
+        // Map the canvas-space sweep onto the tile: project the tile's corners onto the
+        // gradient axis and remap the stop positions into the tile's own gradient line.
+        var ang = Number.isFinite(el.angle) ? el.angle : 135;
+        var blend = Math.max(1, Math.min(99, Number.isFinite(el.blend) ? el.blend : 50));
+        var cw = (collageCanvasEl && collageCanvasEl.clientWidth) || 1;
+        var chh = (collageCanvasEl && collageCanvasEl.clientHeight) || 1;
+        var rad = ang * Math.PI / 180;
+        var ux = Math.sin(rad), uy = -Math.cos(rad);   // CSS gradient direction (0deg = up)
+        var L = Math.abs(cw * ux) + Math.abs(chh * uy) || 1;
+        var proj = function (x, y) { return ((x - cw / 2) * ux + (y - chh / 2) * uy) / L + 0.5; };
+        var xs = [it.xFrac * cw, (it.xFrac + w) * cw], ys = [it.yFrac * chh, (it.yFrac + ih) * chh];
+        var mn = 1e9, mx = -1e9;
+        for (var xi = 0; xi < 2; xi++) for (var yi = 0; yi < 2; yi++) { var p = proj(xs[xi], ys[yi]); if (p < mn) mn = p; if (p > mx) mx = p; }
+        var span = Math.max(1e-6, mx - mn);
+        var m = function (sPct) { return (((sPct / 100) - mn) / span) * 100; };
+        if (el.kind === 'blur') return 'linear-gradient(' + ang + 'deg, #000 ' + m(0) + '%, #000 ' + m(blend) + '%, transparent ' + m(100) + '%)';
+        return 'linear-gradient(' + ang + 'deg, #000 ' + m(0) + '%, ' + m(blend) + '%, transparent ' + m(100) + '%)';
+      }
+      // Radial: centre + radii from canvas % into this tile's % space.
+      var cx = ((g.px / 100 - it.xFrac) / w) * 100;
+      var cy = ((g.py / 100 - it.yFrac) / ih) * 100;
+      var rx = g.rrX / w, ry = g.rrY / ih;
+      var at = rx + '% ' + ry + '% at ' + cx + '% ' + cy + '%';
+      if (el.kind === 'blur') return 'radial-gradient(' + at + ', #000 0%, #000 38%, transparent 100%)';
+      return 'radial-gradient(' + at + ', #000 0%, transparent 100%)';
     }
-    // The backdrop's own pixelate filter def (its own id; same recipe as the circles').
-    function backdropPixelateFilter(p) {
-      var fid = 'collage-bgph-pixelate';
+    // Per-circle SVG filter defs for the photo copies. Blur uses feGaussianBlur with
+    // edgeMode="duplicate" (round 539: a plain CSS blur fades the photo's edges into the
+    // transparency outside the clip — Terry's "gap at the bottom"); pixelate mirrors the
+    // circles' own recipe.
+    function backdropFxFilter(kind, blurPx, pixelate) {
+      var fid = 'collage-bgph-fx-' + kind;
       var f = document.getElementById(fid);
-      if (!p || p <= 0) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
+      if ((!blurPx || blurPx <= 0) && (!pixelate || pixelate <= 0)) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
       var host = ensureBgFxSvg();
-      var block = Math.round(3 + p * 0.7);
-      var half = Math.max(1, Math.round(block / 2));
       var ns = 'http://www.w3.org/2000/svg';
       if (!f) { f = document.createElementNS(ns, 'filter'); f.setAttribute('id', fid); host.appendChild(f); }
       f.setAttribute('x', '0'); f.setAttribute('y', '0'); f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
-      f.innerHTML =
-        '<feFlood x="0" y="0" width="1" height="1"/>' +
-        '<feComposite width="' + block + '" height="' + block + '"/>' +
-        '<feTile result="a"/>' +
-        '<feComposite in="SourceGraphic" in2="a" operator="in"/>' +
-        '<feMorphology operator="dilate" radius="' + half + '"/>';
-      return fid;
-    }
-    // v3.0 round 539 (Terry) — the backdrop BLUR is an SVG feGaussianBlur with
-    // edgeMode="duplicate", NOT a CSS blur(): a CSS blur on the clip averages the photo's
-    // edge pixels with the transparency OUTSIDE the clip, fading every edge to nothing —
-    // Terry saw it as a "gap at the bottom of the photo". edgeMode="duplicate" extends the
-    // edge pixels instead, so the photo stays hard-edged to its box with a soft interior.
-    function backdropBlurFilter(px) {
-      var fid = 'collage-bgph-blur';
-      var f = document.getElementById(fid);
-      if (!px || px <= 0) { if (f && f.parentNode) f.parentNode.removeChild(f); return null; }
-      var host = ensureBgFxSvg();
-      var ns = 'http://www.w3.org/2000/svg';
-      if (!f) { f = document.createElementNS(ns, 'filter'); f.setAttribute('id', fid); host.appendChild(f); }
-      f.setAttribute('x', '0'); f.setAttribute('y', '0'); f.setAttribute('width', '100%'); f.setAttribute('height', '100%');
-      f.innerHTML = '<feGaussianBlur stdDeviation="' + px + '" edgeMode="duplicate"/>';
+      var parts = [];
+      if (pixelate > 0) {
+        var block = Math.round(3 + pixelate * 0.7);
+        var half = Math.max(1, Math.round(block / 2));
+        parts.push('<feFlood x="0" y="0" width="1" height="1"/>');
+        parts.push('<feComposite width="' + block + '" height="' + block + '"/>');
+        parts.push('<feTile result="a"/>');
+        parts.push('<feComposite in="SourceGraphic" in2="a" operator="in"/>');
+        parts.push('<feMorphology operator="dilate" radius="' + half + '"/>');
+      }
+      if (blurPx > 0) parts.push('<feGaussianBlur stdDeviation="' + blurPx + '" edgeMode="duplicate"/>');
+      f.innerHTML = parts.join('');
       return fid;
     }
     function applyBackdropFx(it) {
       if (!it || !it.el || !it.bgPhoto) return;
       var clip = it.clipEl || it.el;
-      var v = (it.on && !it.removed) ? backdropFxValues() : null;
-      var fx = [];
-      if (v && v.blur > 0) { var bid = backdropBlurFilter(Math.round(v.blur * 0.6)); if (bid) fx.push('url(#' + bid + ')'); }
-      if (v && v.pixelate > 0) { var pid = backdropPixelateFilter(v.pixelate); if (pid) fx.push('url(#' + pid + ')'); }
-      clip.style.filter = fx.length ? fx.join(' ') : '';
-      // v3.0 round 539 (Terry) — grain lives on the TILE (a sibling ABOVE the clip), not
-      // inside it: inside, the clip's blur/pixelate filter smeared the grain to nothing.
-      // Same box (the clip fills the tile), so it still sits exactly over the photo.
-      try { clip.querySelectorAll(':scope > .bgph-grain').forEach(function (n) { n.remove(); }); } catch (_) {}   // migrate any r538-placed nodes
-      var wraps = Array.prototype.slice.call(it.el.querySelectorAll(':scope > .bgph-grain'));
-      if (!v || v.grain <= 0) { wraps.forEach(function (n) { n.remove(); }); return; }
-      var sz = bgFxGrainPx(v.grainSize);
-      var need = (v.grain > 100) ? 2 : 1;
-      while (wraps.length > need) { wraps.pop().remove(); }
-      for (var i = 0; i < need; i++) {
-        var gn = wraps[i];
-        if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;z-index:1;'; it.el.appendChild(gn); }
-        gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
-        gn.style.backgroundSize = sz + 'px ' + sz + 'px';
-        gn.style.opacity = String(Math.max(0, Math.min(1, i === 0 ? v.grain / 100 : (v.grain - 100) / 50)));
-      }
+      var f = ensureCollageBgFx();
+      var live = it.on && !it.removed && !!f.applyToPhoto;
+      // migrate: r538 grain lived in the clip unmasked, r539 on the tile — both retired shapes
+      try { Array.prototype.slice.call(it.el.querySelectorAll(':scope > .bgph-grain')).forEach(function (n) { n.remove(); }); } catch (_) {}
+      clip.style.filter = '';   // the base photo is NEVER filtered any more
+      ['glow', 'blur'].forEach(function (kind) {
+        var el = f[kind];
+        var on = live && el && el.on;
+        var blurPx = on ? Math.round(Math.max(0, Math.min(100, +el.blur || 0)) * 0.6) : 0;
+        var pix = on ? Math.max(0, Math.min(100, +el.pixelate || 0)) : 0;
+        var grain = on ? Math.max(0, Math.min(150, +el.grain || 0)) : 0;
+        var mask = on ? bgFxTileMask(el, it) : '';
+        // (a) the masked photo COPY carrying this circle's blur/pixelate
+        var wrap = clip.querySelector(':scope > .bgph-fx[data-k="' + kind + '"]');
+        if (blurPx > 0 || pix > 0) {
+          var fid = backdropFxFilter(kind, blurPx, pix);
+          if (!wrap) {
+            wrap = document.createElement('div'); wrap.className = 'bgph-fx'; wrap.setAttribute('data-k', kind);
+            wrap.style.cssText = 'position:absolute;inset:0;pointer-events:none;overflow:hidden;';
+            var im = document.createElement('img'); im.className = 'bgph-fx-img'; im.setAttribute('aria-hidden', 'true');
+            wrap.appendChild(im);
+            clip.appendChild(wrap);
+          }
+          wrap.style.filter = fid ? 'url(#' + fid + ')' : '';
+          wrap.style.webkitMaskImage = mask; wrap.style.maskImage = mask;
+          wrap.style.webkitMaskSize = '100% 100%'; wrap.style.maskSize = '100% 100%';
+          wrap.style.webkitMaskRepeat = 'no-repeat'; wrap.style.maskRepeat = 'no-repeat';
+          // mirror the base img exactly (same crop/zoom geometry — no duplicated math)
+          var base = it.imgEl, copy = wrap.querySelector('img');
+          if (base && copy) { if (copy.src !== base.src) copy.src = base.src; copy.style.cssText = base.style.cssText; }
+        } else if (wrap) { wrap.remove(); backdropFxFilter(kind, 0, 0); }
+        // (b) this circle's grain, masked to the same footprint (crisp — outside any filter)
+        var grains = Array.prototype.slice.call(clip.querySelectorAll(':scope > .bgph-grain[data-k="' + kind + '"]'));
+        var need = grain > 0 ? (grain > 100 ? 2 : 1) : 0;
+        while (grains.length > need) { grains.pop().remove(); }
+        for (var i = 0; i < need; i++) {
+          var gn = grains[i];
+          if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.setAttribute('data-k', kind); gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;'; clip.appendChild(gn); }
+          gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+          var sz = bgFxGrainPx(el ? el.grainSize : 50);
+          gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+          gn.style.opacity = String(Math.max(0, Math.min(1, i === 0 ? grain / 100 : (grain - 100) / 50)));
+          gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
+          gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
+          gn.style.webkitMaskRepeat = 'no-repeat'; gn.style.maskRepeat = 'no-repeat';
+        }
+      });
     }
     function syncBackdropFxAll() {
       try { (collageItems || []).forEach(function (it) { if (it && it.bgPhoto) applyBackdropFx(it); }); } catch (_) {}
