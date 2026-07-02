@@ -18008,7 +18008,14 @@
       // is inside either so they scroll normally and we never preventDefault on them.
       collageStageEl.addEventListener('wheel', (e) => {
         if (!e.ctrlKey) return;                        // round 259 — view zoom needs Ctrl
-        if ((collageSelected && !collageSelected.isBg && !collageSelected.locked) || selectedText) return;   // round 259/263 — a per-tile-zoomable photo uses the Ctrl+zoom above; the bg or a LOCKED tile can't be Ctrl-zoomed, so the VIEW zoom still works when they're selected (you can always zoom out)
+        // v3.0 round 530 (Terry) — "zoom out over the dark area stopped working": the old gate bailed
+        // whenever ANY photo/text was selected, so with something selected the dark margin was a dead
+        // zone (Terry hit this constantly — you're nearly always mid-edit with a tile selected). The
+        // per-photo Ctrl+zoom above only ever acts when the cursor is OVER the selected, unlocked,
+        // single-selected photo — so bail ONLY in that exact case (it owns the wheel there) and let
+        // every other spot — the dark margin included — VIEW-zoom regardless of selection.
+        const _selPhoto = (collageSelected && !collageSelected.isBg && !collageSelected.locked && !(collageSelection && collageSelection.length > 1)) ? collageSelected : null;
+        if (_selPhoto && topCollageItemAtPoint(e.clientX, e.clientY) === _selPhoto) return;   // the per-photo zoom above handles this wheel
         if (!document.body.classList.contains('collage-mode')) return;
         // Don't hijack wheels over the filmstrip pool or the Enhance panel — let them
         // scroll. (closest() walks up from the event target through the ancestors.)
