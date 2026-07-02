@@ -13521,7 +13521,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, bgPhoto: !!it.bgPhoto, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo; v3.0 round 536 (Terry) — carry `bgPhoto` (the permanent Background-pick mark) so the chip indicator survives undo/reopen
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -13651,6 +13651,7 @@
         it.on = si.on; it.removed = !!si.removed;   // round 304 (Terry) — X-removed-from-strip state round-trips
         it.placeholder = !!si.placeholder;   // v2.1 round 319 (Terry) — empty-frame state round-trips
         it.framed = !!si.framed;   // v2.1 round 325 (Terry) — a filled frame keeps its box aspect (no balloon on reload)
+        it.bgPhoto = !!si.bgPhoto;   // v3.0 round 536 (Terry) — the permanent Background-pick mark round-trips
         it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
         // lack both → a normal tile). boxAspect only matters for coverFill; default to the
@@ -14282,11 +14283,12 @@
       let tile = null;
       for (let i = collageItems.length - 1; i >= 0; i--) {
         const it = collageItems[i];
-        // v3.0 round 535 (Terry) — backdrop tiles (z<1) are NOT pool members: un-ticking a
+        // v3.0 round 535 (Terry) — backdrop tiles are NOT pool members: un-ticking a
         // photo in the picker must never switch off a background that happens to share the
         // same file (Terry's backdrop kept "disappearing" — its on flag was being flipped
-        // off by path-matched toggles).
-        if (it && it.on && !it.isBg && (it.z || 0) >= 1 && it.path === fp) { tile = it; break; }
+        // off by path-matched toggles). v3.0 round 536 — the permanent bgPhoto mark is the
+        // identity now (any z); the z<1 test stays for pre-mark backdrops.
+        if (it && it.on && !it.isBg && !it.bgPhoto && (it.z || 0) >= 1 && it.path === fp) { tile = it; break; }
       }
       if (tile) { try { setItemOn(tile, false); } catch (_) {} }
     }
@@ -14469,6 +14471,10 @@
       collageZBottom = Math.min(0, _liveMinZ) - 1;
       const it = {
         idx: -1, path: fp, on: true,
+        // v3.0 round 536 (Terry) — PERMANENT background mark: this tile was added via the
+        // Background "Use a photo" buttons, so the little photo chips show it FOREVER —
+        // no matter how it's later moved / resized / restacked — until it's deleted.
+        bgPhoto: true,
         xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
         // BACK of the stack — below every normal tile (z≥1) and earlier bg-tiles.
         z: collageZBottom, el: null, imgEl: null, clipEl: null,
@@ -15207,18 +15213,20 @@
     // by the shared syncTextColorPaletteRings(). Safe to call any time — it no-ops
     // when the locked specials aren't mounted (non-background target).
     // v3.0 round 533 (Terry) — the CURRENT backdrop photo, for the Use-a-photo chip
-    // indicator. Backdrop tiles live at z < 1 (r263 coverFill legacy AND r267+ normal
-    // tiles born at --collageZBottom); among them the HIGHEST z paints on top = the one
-    // the user actually sees. Falls back to the legacy single canvas.bgImage path.
-    // '' = no backdrop photo.
+    // indicator. v3.0 round 536 (Terry) — identity is now the PERMANENT `bgPhoto` mark
+    // (set when the photo is added via the Background buttons): a marked tile shows in
+    // the chips NO MATTER how it's later moved / resized / restacked, until deleted.
+    // Tiles from before the mark existed fall back to the old z<1 heuristic; the legacy
+    // single canvas.bgImage path last. '' = no backdrop photo.
     function collageCurrentBackdropPath() {
       try {
-        var best = null;
+        var marked = null, legacy = null;
         (collageItems || []).forEach(function (it) {
-          if (it && it.on && !it.removed && !it.placeholder && (it.z || 0) < 1 && (it.bgRemovedPath || it.path)) {
-            if (!best || (it.z || 0) > (best.z || 0)) best = it;
-          }
+          if (!(it && it.on && !it.removed && !it.placeholder && (it.bgRemovedPath || it.path))) return;
+          if (it.bgPhoto) { if (!marked || (it.z || 0) > (marked.z || 0)) marked = it; }
+          else if ((it.z || 0) < 1) { if (!legacy || (it.z || 0) > (legacy.z || 0)) legacy = it; }
         });
+        var best = marked || legacy;
         if (best) return best.bgRemovedPath || best.path;
       } catch (_) {}
       return collageBgImagePath || '';
