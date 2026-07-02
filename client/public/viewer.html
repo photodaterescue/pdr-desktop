@@ -1367,6 +1367,9 @@
     }
     .filmstrip-toggle:hover { background: rgba(40, 40, 70, 0.98); color: #eae4ff; }
     .filmstrip-toggle svg { width: 15px; height: 15px; transition: transform 0.2s; }
+    /* v3.0 round 535 (Terry) — while a VIDEO is showing, the video bar's gear/CC/fullscreen
+       cluster sits bottom-right and overlapped the chevron; shift the chevron left of it. */
+    body.pdrv-video:not(.collage-mode) .filmstrip-toggle { right: 150px; }
     /* v2.1 round 299 (Terry) — collage gets the SAME collapse chevron as the Viewer (the
        Enhance panel is NOT collapsed by it). Sit it to the LEFT of the pinned panel so it
        stays over the visible strip. */
@@ -7769,6 +7772,10 @@
       isVideo = isVideoPath(filePath);
       setImageControlsVisible(!isVideo);
       btnOpenExternal.hidden = !isVideo;
+      // v3.0 round 535 (Terry) — body-level video flag: the filmstrip collapse chevron moves
+      // LEFT while a video is showing, clear of the video bar's gear/CC/fullscreen cluster
+      // (they overlapped bottom-right).
+      try { document.body.classList.toggle('pdrv-video', isVideo); } catch (_) {}
       // v2.0.15 (Terry 2026-06-06 round 8) — top-toolbar speed button
       // is superseded by the gear menu in the custom controls bar.
       // Hide it permanently so the top toolbar isn't cluttered.
@@ -13605,8 +13612,8 @@
             if (Number.isFinite(src.posX)) d.posX = src.posX;
             if (Number.isFinite(src.posY)) d.posY = src.posY;
             if (Number.isFinite(src.blur)) d.blur = Math.max(0, Math.min(100, src.blur));
-            if (Number.isFinite(src.grain)) d.grain = Math.max(0, Math.min(100, src.grain));
-            if (Number.isFinite(src.grainSize)) d.grainSize = Math.max(1, Math.min(100, src.grainSize));
+            if (Number.isFinite(src.grain)) d.grain = Math.max(0, Math.min(150, src.grain));      // v3.0 r535 — range widened to 150
+            if (Number.isFinite(src.grainSize)) d.grainSize = Math.max(1, Math.min(200, src.grainSize));   // v3.0 r535 — range widened to 200
             if (Number.isFinite(src.pixelate)) d.pixelate = Math.max(0, Math.min(100, src.pixelate));
           });
         }
@@ -13732,7 +13739,7 @@
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
       collageZTop = maxZ;
-      collageZBottom = minZ;   // v2.1 round 263 (Terry) — bg-tile: restore the back-z floor
+      collageZBottom = Math.min(0, minZ);   // v2.1 round 263 (Terry) — bg-tile: restore the back-z floor. v3.0 round 535: floored at 0 so it can never drift into the normal (z≥1) range — a later background pick / send-to-back must stay genuinely BEHIND.
       // v2.1 round 235 (Terry) — repaint the canvas bg directly (NOT via
       // setCollageBg, which now nulls collageBgGradient as a "colour swaps away
       // from gradient" guard — that would wipe the gradient we just restored).
@@ -14275,7 +14282,11 @@
       let tile = null;
       for (let i = collageItems.length - 1; i >= 0; i--) {
         const it = collageItems[i];
-        if (it && it.on && !it.isBg && it.path === fp) { tile = it; break; }
+        // v3.0 round 535 (Terry) — backdrop tiles (z<1) are NOT pool members: un-ticking a
+        // photo in the picker must never switch off a background that happens to share the
+        // same file (Terry's backdrop kept "disappearing" — its on flag was being flipped
+        // off by path-matched toggles).
+        if (it && it.on && !it.isBg && (it.z || 0) >= 1 && it.path === fp) { tile = it; break; }
       }
       if (tile) { try { setItemOn(tile, false); } catch (_) {} }
     }
@@ -14448,11 +14459,19 @@
       // stays only for OLD saved collages); placeCenter gives the same default size
       // and centring as a normal added tile, and the natural aspect is applied when
       // the <img> loads, exactly as for an Add-photos tile.
+      // v3.0 round 535 (Terry) — the back-z is now GUARANTEED below every live tile AND
+      // below 1 (the backdrop convention). collageZBottom alone drifted: any snapshot
+      // restore reset it to the items' MIN z, so in a session whose tiles were all normal
+      // (z≥1) a "background" pick landed at z 8/9/… — among the photos instead of behind
+      // them, above the Glow/Blur layer, and invisible to the backdrop detector (unlit
+      // chip). Terry hit exactly this in his 12.38 carousel.
+      const _liveMinZ = collageItems.reduce(function (m, o) { return (o && o.on && !o.removed && typeof o.z === 'number') ? Math.min(m, o.z) : m; }, 1);
+      collageZBottom = Math.min(0, _liveMinZ) - 1;
       const it = {
         idx: -1, path: fp, on: true,
         xFrac: 0.1, yFrac: 0.1, wFrac: 0.3, aspect: 1, rot: 0,
         // BACK of the stack — below every normal tile (z≥1) and earlier bg-tiles.
-        z: --collageZBottom, el: null, imgEl: null, clipEl: null,
+        z: collageZBottom, el: null, imgEl: null, clipEl: null,
         locked: false,
         crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
         bgRemovedPath: null, bgRemoveStrength: 50,
@@ -14674,8 +14693,8 @@
     }
     // Grain bit SIZE on screen — bigger grainSize = chunkier specks. Reuses the one noise tile.
     function bgFxGrainPx(grainSize) {
-      var s = Math.max(1, Math.min(100, (grainSize == null ? 50 : grainSize)));
-      return Math.round(90 + s * 4.2);   // ~94px (fine) .. ~510px (chunky)
+      var s = Math.max(1, Math.min(200, (grainSize == null ? 50 : grainSize)));   // v3.0 r535 — range doubled to 200
+      return Math.round(90 + s * 4.2);   // ~94px (fine) .. ~930px (very chunky)
     }
     // A hidden <svg> holding the per-element pixelate filter defs (so filter:url(#id) works live AND
     // in the off-screen WYSIWYG bake, which re-renders this same DOM).
@@ -14741,20 +14760,28 @@
         var pxid = bgFxPixelateFilter(el);
         if (pxid) fx.push('url(#' + pxid + ')');
         if (fx.length) node.style.filter = fx.join(' ');
-        var gv = Math.max(0, Math.min(100, (el.grain == null ? 0 : el.grain)));
+        // v3.0 round 535 (Terry) — grain range widened to 150: 0–100 is the single overlay
+        // pass at opacity gv/100 exactly as before; 100–150 stacks a SECOND pass whose
+        // opacity ramps 0→1, so the top half genuinely adds strength (opacity alone
+        // saturates at 1).
+        var gv = Math.max(0, Math.min(150, (el.grain == null ? 0 : el.grain)));
         if (gv > 0) {
-          var gn = document.createElement('div');
           var sz = bgFxGrainPx(el.grainSize);
-          gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;';
-          gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
-          gn.style.backgroundSize = sz + 'px ' + sz + 'px';
-          gn.style.backgroundRepeat = 'repeat';
-          gn.style.opacity = String(gv / 100);
           var mask = bgFxImage(el, true);
-          gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
-          gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
-          gn.style.webkitMaskRepeat = 'no-repeat'; gn.style.maskRepeat = 'no-repeat';
-          node.appendChild(gn);
+          var mkGrain = function (op) {
+            var gn = document.createElement('div');
+            gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;';
+            gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
+            gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+            gn.style.backgroundRepeat = 'repeat';
+            gn.style.opacity = String(Math.max(0, Math.min(1, op)));
+            gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
+            gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
+            gn.style.webkitMaskRepeat = 'no-repeat'; gn.style.maskRepeat = 'no-repeat';
+            return gn;
+          };
+          node.appendChild(mkGrain(gv / 100));
+          if (gv > 100) node.appendChild(mkGrain((gv - 100) / 50));
         }
         ov.appendChild(node);
       });
@@ -14876,8 +14903,11 @@
       else { mk('Strength', 'size', 5, 150, false, 55); mk('Stretch', 'stretch', -100, 100, false, 0); }
       mk('Opacity', 'opacity', 0, 100, false, 85);
       mk('Blur', 'blur', 0, 100, false, 0);
-      mk('Grain', 'grain', 0, 100, false, 0);
-      mk('Grain size', 'grainSize', 1, 100, false, 50);
+      // v3.0 round 535 (Terry) — Grain range +50% (0–150; above 100 a second grain pass
+      // stacks in) and Grain size +100% (1–200; up to ~930px chunks). 0–100 render identically
+      // to before, so existing projects look the same.
+      mk('Grain', 'grain', 0, 150, false, 0);
+      mk('Grain size', 'grainSize', 1, 200, false, 50);
       mk('Pixelate', 'pixelate', 0, 100, false, 0);
       // Re-park the shared palette into the fresh host if the Colour is still armed
       // (a chip/shape click rebuilt these controls around it).
