@@ -608,8 +608,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:renderThumb', layout) as Promise<string | null>,
     // v2.1 round 346 (Terry) — WYSIWYG export TEST: capture the real collage DOM at full res (off-screen
     // window + capturePage) from a snapshotCollage() string; writes a temp PNG, returns its path.
-    captureExportTest: (snapshot: string, w: number, h: number) =>
-      ipcRenderer.invoke('collage:captureExportTest', snapshot, w, h) as Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>,
+    captureExportTest: (snapshot: string, w: number, h: number, transparent?: boolean) =>
+      ipcRenderer.invoke('collage:captureExportTest', snapshot, w, h, transparent) as Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>,
   },
 
   // v2.1 round 306 (Terry) — the floating "Capture region" prep bar (its own tiny

@@ -3254,6 +3254,16 @@
        (above all chrome) and the canvas (sized to export px by layoutCanvasSize) fills the stage. */
     body.collage-export-mode #collage-stage { position: fixed !important; inset: 0 !important; padding: 0 !important; z-index: 2147483600 !important; background: transparent !important; overflow: hidden !important; }
     body.collage-export-mode #collage-canvas { margin: 0 !important; }
+    /* v3.0 (Terry, Tier-3 #11) — TRANSPARENT export render: the capture window has an alpha channel, so
+       anything painting BEHIND the see-through canvas would end up IN the saved PNG (body background,
+       toolbar, filmstrip…). Blank the page background and hide everything except the stage subtree
+       (visibility is overridable by descendants, so the stage re-shows inside the hidden body; elements
+       the editor hid via display:none stay hidden). Opaque exports never get this class — unchanged. */
+    body.collage-export-transparent { background: transparent !important; }
+    body.collage-export-transparent * { visibility: hidden !important; }
+    body.collage-export-transparent #collage-stage,
+    body.collage-export-transparent #collage-stage * { visibility: visible !important; }
+    body.collage-export-transparent #collage-canvas { box-shadow: none !important; }
     /* v2.1 round 300 (Terry) — collapse the Enhance panel for a full-width VIEW (a viewing
        toggle; editing still needs it open). A tab on the panel's left edge folds it away and
        the canvas re-fits into the freed width. Editing controls are untouched — re-expand to edit. */
@@ -14784,7 +14794,10 @@
       // toggles). It self-hides when not radial / not bg-focused.
       try { updateGradEpicentreVisibility(); } catch (_) {}
       try { updateBgFxEpicentreVisibility(); } catch (_) {}
-      if (collageTransparent) { collageCanvasEl.style.background = COLLAGE_CHECKER_BG; return; }
+      // v3.0 (Terry, Tier-3 #11) — the checkerboard is an EDITOR cue only. In an export render
+      // (collageExportTarget set) the canvas paints nothing, so the alpha-capture window sees
+      // genuine transparency and the saved PNG is see-through where the canvas shows.
+      if (collageTransparent) { collageCanvasEl.style.background = collageExportTarget ? 'transparent' : COLLAGE_CHECKER_BG; return; }
       // v2.1 round 244 (Terry) — TEXTURE: paint the close-up MATERIAL SURFACE as ONE
       // continuous full-canvas image (NOT tiled). The surface SVG uses a FIXED viewBox
       // 1000×1000 (preserveAspectRatio="none") so its feTurbulence noise scale is
@@ -16338,6 +16351,15 @@
       collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
       try { restoreCollageSnapshot(opts.snapshot); } catch (e) { return { error: String((e && e.message) || e) }; }
       collageExportTarget = { w: W, h: H };   // restore loads the snapshot's exportPx into collageExportPx; re-assert the render target
+      // v3.0 (Terry, Tier-3 #11) — transparent collage: the capture window has alpha, so blank the page
+      // behind the canvas (html+body) and switch on the isolation CSS (hide everything but the stage).
+      if (collageTransparent) {
+        try {
+          document.body.classList.add('collage-export-transparent');
+          document.documentElement.style.background = 'transparent';
+          document.body.style.background = 'transparent';
+        } catch (_) {}
+      }
       try { layoutCanvasSize(); } catch (_) {}
       try { applyCollageZoom(); } catch (_) {}
       try { await waitForCollageImages(); } catch (_) {}

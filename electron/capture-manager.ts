@@ -2117,8 +2117,14 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
 // snapshotCollage() JSON string; the off-screen window restores it via window.__collageExportRender and
 // returns the canvas rect to clip. The window is shown with opacity 0 (off-screen-invisible) only so
 // Chromium paints a frame for capturePage — the user never sees it.
+// v3.0 (Terry, Tier-3 #11) — `transparent` renders the off-screen window WITH an alpha channel, so a
+// transparent-background collage exports as a true WYSIWYG see-through PNG (offscreen rendering supports
+// transparent windows; the paint frames carry the page's alpha). The renderer side cooperates by not
+// painting the checkerboard cue and hiding the editor chrome behind the canvas during a transparent
+// export render (the checkerboard is an EDITOR cue, not content). Opaque exports keep the exact same
+// non-transparent window as before — zero change to that path.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function captureCollageExport(snapshot: string, w: number, h: number): Promise<Buffer> {
+async function captureCollageExport(snapshot: string, w: number, h: number, transparent = false): Promise<Buffer> {
   const W = Math.max(16, Math.min(8000, Math.round(w || 1080)));
   const H = Math.max(16, Math.min(8000, Math.round(h || 1350)));
   // OFFSCREEN rendering: the page renders to a bitmap with no visible window (no flash), and the
@@ -2127,6 +2133,7 @@ async function captureCollageExport(snapshot: string, w: number, h: number): Pro
   // content is W×H and the export-mode CSS makes the canvas fill it, so each frame IS the collage.
   const win = new BrowserWindow({
     show: false, width: W, height: H, useContentSize: true, frame: false, enableLargerThanScreen: true,
+    ...(transparent ? { transparent: true, backgroundColor: '#00000000' } : {}),
     webPreferences: { offscreen: true, contextIsolation: true, nodeIntegration: false, preload: path.join(__dirname, 'preload.js') },
   });
   try { win.setContentSize(W, H); } catch { /* noop */ }   // enforce the FULL export size (a window is otherwise clamped to the screen work-area, which cropped tall exports)
@@ -2159,9 +2166,9 @@ async function captureCollageExport(snapshot: string, w: number, h: number): Pro
 
 // v2.1 round 346 (Terry) — TEMP test handler for the WYSIWYG capture: writes a temp PNG, returns its
 // path so the result can be inspected + compared to the editor before wiring Save over to it.
-ipcMain.handle('collage:captureExportTest', async (_e, snapshot: string, w: number, h: number) => {
+ipcMain.handle('collage:captureExportTest', async (_e, snapshot: string, w: number, h: number, transparent?: boolean) => {
   try {
-    const buf = await captureCollageExport(snapshot, w, h);
+    const buf = await captureCollageExport(snapshot, w, h, !!transparent);
     const p = path.join(app.getPath('temp'), 'pdr-wysiwyg-test.png');
     fs.writeFileSync(p, buf);
     return { ok: true, path: p, bytes: buf.length };
@@ -2186,18 +2193,24 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
     // the file is EXACTLY what's on screen. Falls back to the sharp re-draw (bakeCollageLayout) when
-    // there's no snapshot, on capture failure, or for a transparent collage (capture has no alpha yet).
+    // there's no snapshot or on capture failure.
+    // v3.0 (Terry, Tier-3 #11) — transparent collages now go through the SAME WYSIWYG path (the capture
+    // window renders with alpha), so a see-through PNG carries everything the editor shows — glow/blur
+    // background elements, effects, text — instead of the old feature-lagging sharp re-draw.
     const transparent = !!layout.canvas.transparent;
     let collageBuf: Buffer | null = null;
     let W = Math.max(600, Math.min(2400, Math.round(layout.canvas.w || 2000)));
     let H = Math.max(450, Math.min(2400, Math.round(layout.canvas.h || 1500)));
-    if (opts && opts.snapshot && !transparent) {
+    if (opts && opts.snapshot) {
       try {
-        const png = await captureCollageExport(opts.snapshot, opts.w || W, opts.h || H);
+        const png = await captureCollageExport(opts.snapshot, opts.w || W, opts.h || H, transparent);
         const sharpLib = (await import('sharp')).default;
         const meta = await sharpLib(png).metadata();
         if (meta.width && meta.height) { W = meta.width; H = meta.height; }
-        collageBuf = await sharpLib(png).jpeg({ quality: 92 }).toBuffer();
+        // Transparent → keep the alpha (PNG); opaque → JPEG as before.
+        collageBuf = transparent
+          ? await sharpLib(png).png().toBuffer()
+          : await sharpLib(png).jpeg({ quality: 92 }).toBuffer();
       } catch (capErr) {
         log.warn(`[collage] WYSIWYG capture failed, falling back to re-draw: ${(capErr as Error).message}`);
       }
