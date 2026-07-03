@@ -12363,6 +12363,8 @@
     function arrStack(n) { const o = []; const sz = 0.56, span = 0.13; for (let i = 0; i < n; i++) { const t = n > 1 ? (i / (n - 1) - 0.5) : 0; o.push({ x: 0.22 + t * span, y: 0.22 + t * span, w: sz, h: sz }); } return o; }
     function arrCascade(n) { const o = []; const sz = 0.52, step = n > 1 ? (1 - sz) / (n - 1) : 0; for (let i = 0; i < n; i++) o.push({ x: step * i, y: step * i, w: sz, h: sz }); return o; }
     const ARRANGE_LAYOUTS = [
+      // v3.0 round 547 (Terry) — Tier 3 #12: the YouTube-style JUSTIFIED layout, first in the list.
+      { key: 'orig', label: 'Original', justified: true, tip: 'Original sizes — every photo keeps its own shape, packed edge to edge into neat rows (nothing gets cropped)' },
       { key: 'grid', label: 'Grid', cells: arrGrid, tip: 'Even grid — fits every photo into a neat grid' },
       { key: 'row', label: 'Row', cells: arrRow, tip: 'One horizontal row' },
       { key: 'column', label: 'Column', cells: arrColumn, tip: 'One vertical column' },
@@ -12374,6 +12376,75 @@
       { key: 'cascade', label: 'Cascade', cells: arrCascade, tip: 'Step the photos diagonally, overlapping' },
       { key: 'scatter', label: 'Scatter', scatter: true, tip: 'Scatter the photos at jaunty random angles' },
     ];
+    // v3.0 round 547 (Terry) — Tier 3 #12: "Original sizes" — the YouTube-style JUSTIFIED layout.
+    // Every photo keeps its own natural shape (no cropping into uniform cells); rows pack edge to
+    // edge like Google Photos / a portfolio wall. Maths: work in canvas units (W = aspect, H = 1;
+    // a photo's width = its aspect × the row height). For each candidate row count R, deal the
+    // photos into rows balancing the summed aspect (so rows justify to the full width at similar
+    // heights: rowH = (W − gaps) / Σaspect), then pick the R whose stacked height lands closest to
+    // the canvas. Rows scale DOWN together to fit (never up past natural justified size — capping
+    // the scale at 1 is also the no-overflow guarantee); horizontal residue flexes into that row's
+    // gaps (a lone photo centres), vertical residue breathes evenly between the rows.
+    function justifiedArrange(on) {
+      const n = on.length;
+      if (!n) return;
+      const W = getCanvasAspect(), H = 1;
+      const g = 0.016;   // gutter, in canvas-height units
+      const ars = on.map((it) => { let a = Number(effectiveAspect(it)); if (!isFinite(a) || a <= 0) a = 4 / 3; return a; });
+      let best = null;
+      for (let R = 1; R <= Math.min(n, 12); R++) {
+        // Deal each photo (in the given order) into whichever row is currently the
+        // shortest in summed aspect — BALANCED rows are the whole game: near-equal
+        // sums → near-equal row heights → the fitted result reads as one clean wall.
+        // (The first cut kept strict order per row; one cinematic-wide photo then
+        // forced a tiny row next to towering portrait rows — Terry-visible mess.)
+        const rows = Array.from({ length: R }, () => []);
+        const sums = new Array(R).fill(0);
+        for (let i = 0; i < n; i++) {
+          let m = 0;
+          for (let r = 1; r < R; r++) if (sums[r] < sums[m] - 1e-9) m = r;
+          rows[m].push(i); sums[m] += ars[i];
+        }
+        const used = rows.filter((r) => r.length);
+        const heights = used.map((row) => (W - (row.length - 1) * g) / row.reduce((s, i) => s + ars[i], 0));
+        const content = heights.reduce((s, h) => s + h, 0);
+        const k = (H - (used.length - 1) * g) / content;   // uniform scale that would exactly fill the height
+        // k < 1 (rows must shrink → can't reach the side edges) reads as BROKEN and is
+        // penalised double; k > 1 (capped later → vertical bands) reads as intentional.
+        const score = k < 1 ? (1 - k) * 2 : (1 - 1 / k);
+        if (!best || score < best.score - 1e-9) best = { rows: used, heights, k, score };
+      }
+      if (!best) return;
+      const k = Math.min(best.k, 1);   // ≤1: shrink to fit, never upscale past natural justified size
+      const R = best.rows.length;
+      const scaledContent = best.heights.reduce((s, h) => s + h * k, 0);
+      const vSlack = Math.max(0, H - scaledContent - (R - 1) * g);
+      const vPad = vSlack / (R + 1);   // even breathing: top + between rows + bottom
+      let y = vPad;
+      best.rows.forEach((row, ri) => {
+        const h = best.heights[ri] * k;
+        const widths = row.map((i) => ars[i] * h);
+        const used2 = widths.reduce((s, w) => s + w, 0);
+        const slack = Math.max(0, W - used2 - (row.length - 1) * g);
+        // Tiny residue → justify it invisibly into the gaps (true edge-to-edge). A big
+        // residue stretched into gaps looks broken, so the row CENTRES instead —
+        // symmetric margins, gaps stay at the clean gutter width.
+        const justify = row.length > 1 && slack / W < 0.06;
+        const extra = justify ? slack / (row.length - 1) : 0;
+        let x = justify ? 0 : slack / 2;
+        row.forEach((idx, j) => {
+          const it = on[idx];
+          it.wFrac = widths[j] / W;
+          it.xFrac = x / W;
+          it.yFrac = y;
+          it.rot = 0;
+          it.z = ++collageZTop;
+          x += widths[j] + g + extra;
+        });
+        y += h + g + vPad;
+      });
+      renderAllCollage();
+    }
     function applyArrangeCells(on, cells) {
       const canvasAspect = getCanvasAspect();
       const margin = 0.04;
@@ -12405,11 +12476,17 @@
       // same layout again → shuffle the photos among the same positions.
       const order = (lastArrangeKey === layout.key) ? shuffleArr(on.slice()) : on;
       lastArrangeKey = layout.key;
+      if (layout.justified) { justifiedArrange(order); return; }   // v3.0 round 547 (Terry) — #12 Original sizes
       applyArrangeCells(order, layout.cells(on.length));
     }
     function arrangeThumbSvg(layout) {
       let cells;
       if (layout.scatter) cells = [{ x: 0.04, y: 0.18, w: 0.46, h: 0.46 }, { x: 0.42, y: 0.04, w: 0.46, h: 0.46 }, { x: 0.27, y: 0.46, w: 0.5, h: 0.5 }];
+      // v3.0 round 547 (Terry) — #12: two justified rows of mixed widths (the layout's signature look).
+      else if (layout.justified) cells = [
+        { x: 0, y: 0, w: 0.40, h: 0.47 }, { x: 0.43, y: 0, w: 0.22, h: 0.47 }, { x: 0.68, y: 0, w: 0.32, h: 0.47 },
+        { x: 0, y: 0.53, w: 0.30, h: 0.47 }, { x: 0.33, y: 0.53, w: 0.44, h: 0.47 }, { x: 0.80, y: 0.53, w: 0.20, h: 0.47 }
+      ];
       else cells = layout.cells(4);
       const W = 46, H = 34, pad = 3.5, iw = W - 2 * pad, ih = H - 2 * pad;
       const r = cells.map((c) => { const x = pad + c.x * iw, y = pad + c.y * ih, w = Math.max(3, c.w * iw - 2), h = Math.max(3, c.h * ih - 2); return '<rect x="' + x.toFixed(1) + '" y="' + y.toFixed(1) + '" width="' + w.toFixed(1) + '" height="' + h.toFixed(1) + '" rx="1.5"/>'; }).join('');
