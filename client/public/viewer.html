@@ -4,6 +4,9 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>PDR — Viewer</title>
+  <!-- v3.0 round 541 (Terry) — runs before first paint: a window opened AS Collages
+       (?collage=1 from main) brands the titlebar immediately (no "VIEWER" flash). -->
+  <script>try { if (/[?&]collage=1/.test(location.search)) document.documentElement.classList.add('collage-boot'); } catch (e) {}</script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     /* v2.1 round 190 (Terry) — 6 vendored decorative fonts for the collage Text
@@ -96,6 +99,11 @@
       -webkit-app-region: drag;
     }
     .window-kind::after { content: 'Viewer'; }
+    /* v3.0 round 541 (Terry) — a window OPENED as Collages (?collage=1) brands the centre
+       label from the very first paint via a tiny head script (html.collage-boot), so it
+       never flashes "VIEWER" while collage mode initialises. */
+    html.collage-boot .window-kind { color: rgba(254, 194, 66, 0.92); }
+    html.collage-boot .window-kind::after { content: 'Collages'; }
     body.collage-mode .window-kind { color: rgba(254, 194, 66, 0.92); }   /* gold = Collage */
     /* v2.1 round 241 (Terry) — user-facing feature rename Collage → Collages. */
     body.collage-mode .window-kind::after { content: 'Collages'; }
@@ -14838,7 +14846,11 @@
       var live = it.on && !it.removed && !!f.applyToPhoto;
       // migrate: r538 grain lived in the clip unmasked, r539 on the tile — both retired shapes
       try { Array.prototype.slice.call(it.el.querySelectorAll(':scope > .bgph-grain')).forEach(function (n) { n.remove(); }); } catch (_) {}
-      clip.style.filter = '';   // the base photo is NEVER filtered any more
+      // v3.0 round 541 (Terry) — do NOT touch clip.style.filter here: that property belongs to
+      // the tile's OWN Effects (applyTileFx — per-photo Blur/Pixelate). r540's unconditional
+      // clear was wiping them on every render of a background photo (Terry: "Effects Blur and
+      // Pixelate don't work on a BG photo"). The circle-driven effects live on the masked
+      // copies below and never needed the clip filter.
       ['glow', 'blur'].forEach(function (kind) {
         var el = f[kind];
         var on = live && el && el.on;
@@ -15061,7 +15073,12 @@
         var lab = document.createElement('label'); lab.textContent = label; lr.appendChild(lab);
         var vv = document.createElement('span'); vv.className = 'enhance-val'; vv.textContent = cur; lr.appendChild(vv);
         var inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = 1; inp.value = cur;
-        inp.addEventListener('input', function () { var n = parseInt(inp.value, 10); sel[key] = isFrac ? (n / 100) : n; vv.textContent = inp.value; try { applyCanvasBgVisual(); } catch (_) {} });
+        inp.addEventListener('input', function () {
+          var n = parseInt(inp.value, 10);
+          // v3.0 round 541 (Terry) — the Angle slider snaps to the four cardinals (up/right/down/left).
+          if (key === 'angle') { [0, 90, 180, 270, 360].forEach(function (c) { if (Math.abs(n - c) <= 7) n = c % 360; }); if (String(n) !== inp.value) inp.value = String(n); }
+          sel[key] = isFrac ? (n / 100) : n; vv.textContent = inp.value; try { applyCanvasBgVisual(); } catch (_) {}
+        });
         inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
         row.appendChild(lr); row.appendChild(inp); ctrls.appendChild(row);
       };
@@ -15846,8 +15863,13 @@
           // The slider gives fine linear control. Dragging forces the gradient linear
           // (radial has no angle) and records the custom angle into collageGradDir so
           // presets follow this exact angle.
+          // v3.0 round 541 (Terry) — magnetic 90° detents: near up/right/down/left the
+          // slider snaps to the exact cardinal, so the four common angles are easy to hit.
+          var _a = parseInt(angle.value, 10) || 0;
+          [0, 90, 180, 270, 360].forEach(function (c) { if (Math.abs(_a - c) <= 7) _a = c % 360; });
+          if (String(_a) !== angle.value) angle.value = String(_a);
           collageBgGradient.kind = 'linear';
-          collageBgGradient.angle = parseInt(angle.value, 10) || 0;
+          collageBgGradient.angle = _a;
           collageGradDir = Object.assign({}, collageGradDir, { kind: 'linear', angle: collageBgGradient.angle });
           const v = document.getElementById('collage-gradient-angle-val');
           if (v) v.textContent = collageBgGradient.angle + '°';
@@ -17121,7 +17143,7 @@
             : ('Saved to ' + _where + ' — safe in your library');
           // v3.0 (Terry) — the toast names the destination AND offers a "View in Albums" jump: it brings the
           // main window forward and lands on Memories → Albums with this collage's album selected.
-          collageToast(_msg, 8000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });
+          collageToast(_msg, 16000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });   // v3.0 round 541 (Terry) — save splash stays twice as long
           // First save + New version open the finished photo in the Viewer; a quick Update stays in the editor.
           if (_act !== 'update') {
             const name = res.filename || res.filePath.split(/[\\/]/).pop();
@@ -17166,7 +17188,12 @@
         }
         // v2.1 round 373 (Terry) — carousel export carries the NAME + caption note (like a single collage).
         const _carNote = (function () { try { const _t = document.getElementById('collageCaptionInput'); return (_t && typeof _t.value === 'string') ? _t.value.trim() : (collageCaptionText || '').trim(); } catch (_) { return (collageCaptionText || '').trim(); } })();
-        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined });
+        // v3.0 round 541 (Terry) — send the editor snapshot + the wide export px so the save is
+        // WYSIWYG (the off-screen render carries the layered background: gradients, circles,
+        // grain, background-photo effects). The sharp re-draw is only the on-failure fallback.
+        const _carW = (collageExportPx && collageExportPx.w) || (carouselPageCount * 1080);
+        const _carH = (collageExportPx && collageExportPx.h) || 1350;
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined, snapshot: snapshotCollage(), w: _carW, h: _carH });
         if (res && res.success && res.count > 0) {
           // v2.1 round 270 (Terry) — open ALL the slides in the Viewer (like a normal collage
           // save), instead of only revealing the folder. res.files = [{filePath,filename,..}] in
@@ -17179,7 +17206,7 @@
           // v3.0 (Terry) — same "saved to..." confirmation + "View in Albums" jump as a single collage,
           // pointing at the carousel's own album under PDR Collages › Carousels › ‹category›.
           var _carWhere = 'Memories › Albums › PDR Collages › Carousels › ' + (album || 'General');
-          collageToast('Saved to ' + _carWhere + ' — safe in your library', 8000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });
+          collageToast('Saved to ' + _carWhere + ' — safe in your library', 16000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });   // v3.0 round 541 (Terry) — save splash stays twice as long
           if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides — opened in Viewer';

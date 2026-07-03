@@ -551,7 +551,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // dedicated subfolder and returning the file list + folder (the renderer reveals the
     // folder rather than opening N files). Signature changed from (layouts[]) → (layout,
     // pageCount); the return shape is unchanged.
-    saveCarousel: (layout: unknown, pageCount: number, opts?: { name?: string; caption?: string; album?: string }) =>
+    saveCarousel: (layout: unknown, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number }) =>
       ipcRenderer.invoke('collage:saveCarousel', layout, pageCount, opts) as Promise<{
         success: boolean;
         files?: Array<{ filePath: string; filename: string; fileId: number | null }>;

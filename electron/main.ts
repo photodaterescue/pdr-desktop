@@ -11699,7 +11699,9 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
       // v2.1 round 234 (Terry) — crash recovery (wireCrashRecovery) is attached
       // once at window creation below and persists across reloads on the same
       // webContents, so a reused window already has it; nothing to wire here.
-      existing.loadFile(viewerHtml);
+      // v3.0 round 541 (Terry) — collage=1 lets viewer.html brand the titlebar "COLLAGES"
+      // from the very first paint (it briefly flashed "VIEWER" until collage mode entered).
+      existing.loadFile(viewerHtml, isCollage ? { query: { collage: '1' } } : undefined);
       existing.setTitle(title);
       // v2.1 round 153 — on Windows .focus() alone often just flashes the
       // taskbar instead of raising a window behind the main one.
@@ -11750,7 +11752,8 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
     pendingByWc.set(wcId, payload);
 
     releaseOn(win);
-    win.loadFile(viewerHtml);
+    // v3.0 round 541 (Terry) — collage=1: first-paint "COLLAGES" branding (no VIEWER flash).
+    win.loadFile(viewerHtml, isCollage ? { query: { collage: '1' } } : undefined);
 
     // v2.1 round 62 — wait for ready-to-show so focus + moveTop fire AFTER
     // paint; on Windows a pre-paint focus can be squashed by the OS focus-

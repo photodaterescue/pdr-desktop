@@ -2125,7 +2125,9 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
 // non-transparent window as before — zero change to that path.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function captureCollageExport(snapshot: string, w: number, h: number, transparent = false): Promise<Buffer> {
-  const W = Math.max(16, Math.min(8000, Math.round(w || 1080)));
+  // v3.0 round 541 (Terry) — width ceiling 8000 → 11000 so a full 10-page carousel
+  // (10×1080 = 10800 wide) can render WYSIWYG; offscreen windows aren't screen-clamped.
+  const W = Math.max(16, Math.min(11000, Math.round(w || 1080)));
   const H = Math.max(16, Math.min(8000, Math.round(h || 1350)));
   // OFFSCREEN rendering: the page renders to a bitmap with no visible window (no flash), and the
   // 'paint' event delivers full-window frames. (capturePage on a hidden / opacity-0 window came back
@@ -2313,15 +2315,29 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
 // unchanged: { success, files, folderPath, count, pending }.
 const CAROUSEL_SLICE_W = 1080;
 const CAROUSEL_SLICE_H = 1350;
-ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string; album?: string }) => {
+ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number }) => {
   try {
     const n = Math.max(1, Math.round(Number(pageCount) || 0));
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
       return { success: false, error: 'Nothing to save — the carousel is empty.' };
     }
-    // Bake the WHOLE wide canvas once. bakeCollageLayout throws on empty/unreadable,
-    // turning the same message strings into { success:false, error } via the catch.
-    const wideBuf = await bakeCollageLayout(layout);
+    // v3.0 round 541 (Terry) — the carousel now saves WYSIWYG like a single collage: render the
+    // REAL wide canvas (captureCollageExport → off-screen viewer.html at full wide px) so the
+    // layered background — Blended gradients, Glow/Blur circles, grain/pixelate, the new
+    // background-photo effects — lands in the slices exactly as on screen. Terry hit the gap:
+    // the sharp re-draw (bakeCollageLayout) pre-dates all of that, so his background changes
+    // silently vanished from the saved carousel. The re-draw stays as the on-failure fallback.
+    let wideBuf: Buffer | null = null;
+    if (opts && opts.snapshot) {
+      try {
+        wideBuf = await captureCollageExport(opts.snapshot, opts.w || layout.canvas.w, opts.h || layout.canvas.h, !!layout.canvas.transparent);
+      } catch (capErr) {
+        log.warn(`[collage] carousel WYSIWYG capture failed, falling back to re-draw: ${(capErr as Error).message}`);
+      }
+    }
+    // Bake fallback: bakeCollageLayout throws on empty/unreadable, turning the same
+    // message strings into { success:false, error } via the catch.
+    if (!wideBuf) wideBuf = await bakeCollageLayout(layout);
     const sharp = (await import('sharp')).default;
     // The wide bake width MUST equal pageCount*1080 so the crops land on clean 1080
     // boundaries (bakeCollageLayout's W ceiling is 11000, above 10*1080, so it never
