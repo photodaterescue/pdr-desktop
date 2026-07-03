@@ -12691,6 +12691,7 @@
     let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
     let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
     var collageExportedFileId = null;   // v2.1 round 371 (Terry) — fileId of this collage's EXPORTED photo; the link that keeps the caption SHARED (edits here update the photo; reopen syncs from it)
+    var carouselExportedAlbumId = null;   // v3.0 round 542 (Terry) — the album id of this CAROUSEL's previous save; set once saved, so the next save UPDATES (replaces) it instead of stacking a new copy
     var collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption. v2.1 round 368: VAR (hoisted) not let — the caption setup block runs earlier in the script + referenced this; a `let` here put it in the TDZ so the setup threw + the input-sync handler never attached.
     let collageAutosaveTimer = null;
     let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
@@ -12755,7 +12756,7 @@
         restoreCollageSnapshot(JSON.stringify(s));
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       updateCollageTitle();
@@ -12988,6 +12989,7 @@
         aspectKey: collageAspectKey,
         caption: collageCaptionText || '',   // v2.1 round 370 (Terry) — persist the caption NOTE so reopening the project keeps it
         exportedFileId: (collageExportedFileId != null) ? collageExportedFileId : undefined,   // v2.1 round 371 — link to the exported photo for the shared caption
+        carouselAlbumId: (carouselExportedAlbumId != null) ? carouselExportedAlbumId : undefined,   // v3.0 round 542 — the carousel's saved album, so a reopened project UPDATES it on the next save
         // v2.1 round 376 (Terry) — a carousel is now a single WIDE canvas (round 260), so snapshotCollage()
         // captures it fully; flag it + its page count so reopen re-enters carousel mode (guides + slice thumbs).
         carousel: !!carouselMode,
@@ -13079,6 +13081,7 @@
         // in the caption textarea).
         collageCaptionText = (typeof p.caption === 'string') ? p.caption : '';
         collageExportedFileId = (p.exportedFileId != null) ? p.exportedFileId : null;
+        carouselExportedAlbumId = (p.carouselAlbumId != null) ? p.carouselAlbumId : null;   // v3.0 round 542 — a reopened carousel keeps its Update link
         try { updateCollageSaveButton(); } catch (_) {}
         // v2.1 round 371 (Terry) — if this project exported a photo, THAT photo's caption is the live shared
         // one (it may have been edited in Viewer/Albums/Dates/S&D) → sync it into the editor on reopen.
@@ -13153,7 +13156,7 @@
       } finally { collageRestoring = false; }
       if (_arCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
@@ -13228,7 +13231,7 @@
         collageZTop = z;
       } finally { collageRestoring = false; }
       currentCollageProjectId = null; currentCollageProjectName = null;
-      try { collageCaptionText = ''; collageExportedFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
+      try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
       try { updateCollageTitle(); } catch (_) {}   // v2.1 round 374 — a new-from-template collage shows "Untitled", not the previous project's name
@@ -14731,9 +14734,15 @@
       return 'radial-gradient(' + at + ', ' + c0 + ' 0%, transparent 100%)';
     }
     // Grain bit SIZE on screen — bigger grainSize = chunkier specks. Reuses the one noise tile.
+    // v3.0 round 542 (Terry) — CANVAS-RELATIVE: the px size scales with the live canvas width
+    // (normalised to a 1000px reference), so the chunkiness you tune in the editor reproduces
+    // proportionally in the off-screen export render (a 5400px-wide carousel export previously
+    // used the same fixed px → the saved grain looked ~5× finer than the editor's).
     function bgFxGrainPx(grainSize) {
       var s = Math.max(1, Math.min(200, (grainSize == null ? 50 : grainSize)));   // v3.0 r535 — range doubled to 200
-      return Math.round(90 + s * 4.2);   // ~94px (fine) .. ~930px (very chunky)
+      var base = 90 + s * 4.2;   // ~94px (fine) .. ~930px (very chunky) at the 1000px reference
+      var cw = (collageCanvasEl && collageCanvasEl.clientWidth) || 1000;
+      return Math.max(24, Math.round(base * cw / 1000));
     }
     // A hidden <svg> holding the per-element pixelate filter defs (so filter:url(#id) works live AND
     // in the off-screen WYSIWYG bake, which re-renders this same DOM).
@@ -15071,13 +15080,17 @@
         var row = document.createElement('div'); row.className = 'enhance-control'; row.style.marginTop = '6px';
         var lr = document.createElement('div'); lr.className = 'enhance-label-row';
         var lab = document.createElement('label'); lab.textContent = label; lr.appendChild(lab);
-        var vv = document.createElement('span'); vv.className = 'enhance-val'; vv.textContent = cur; lr.appendChild(vv);
+        // v3.0 round 542 (Terry) — Stretch reads as WHAT IT DOES: + elongates the circle
+        // sideways ("Wide"), − elongates it vertically ("Tall"), 0 = a true circle. (It
+        // shapes the ellipse — position stays on the draggable blue dot.)
+        var disp = function (n) { return key === 'stretch' ? (n === 0 ? '0' : (n > 0 ? 'Wide +' + n : 'Tall ' + Math.abs(n))) : String(n); };
+        var vv = document.createElement('span'); vv.className = 'enhance-val'; vv.textContent = disp(cur); lr.appendChild(vv);
         var inp = document.createElement('input'); inp.type = 'range'; inp.min = min; inp.max = max; inp.step = 1; inp.value = cur;
         inp.addEventListener('input', function () {
           var n = parseInt(inp.value, 10);
           // v3.0 round 541 (Terry) — the Angle slider snaps to the four cardinals (up/right/down/left).
           if (key === 'angle') { [0, 90, 180, 270, 360].forEach(function (c) { if (Math.abs(n - c) <= 7) n = c % 360; }); if (String(n) !== inp.value) inp.value = String(n); }
-          sel[key] = isFrac ? (n / 100) : n; vv.textContent = inp.value; try { applyCanvasBgVisual(); } catch (_) {}
+          sel[key] = isFrac ? (n / 100) : n; vv.textContent = disp(n); try { applyCanvasBgVisual(); } catch (_) {}
         });
         inp.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} });
         row.appendChild(lr); row.appendChild(inp); ctrls.appendChild(row);
@@ -16504,7 +16517,9 @@
       // auto-populating "Personal · Sinta Portraits"). Both callers start a blank carousel, never a reopen.
       currentCollageProjectId = null;
       currentCollageProjectName = null;
+      carouselExportedAlbumId = null;   // v3.0 round 542 — a fresh carousel has no previous save to update
       try { updateCollageTitle(); } catch (_) {}
+      try { updateCollageSaveButton(); } catch (_) {}   // v3.0 round 542 — refresh "Save slides" (the Update label must not linger from a prior carousel)
       // Body class kept for the carousel-filmstrip CSS (pool hidden, slice thumbs shown).
       try { document.body.classList.add('carousel-mode'); } catch (_) {}
       // Empty the canvas first (carouselMode=true → restore's nOrig=0 clears all tiles),
@@ -17055,10 +17070,13 @@
     function updateCollageSaveButton() {
       try {
         var saved = (collageExportedFileId != null) && !carouselMode;
+        var carSaved = carouselMode && (carouselExportedAlbumId != null);   // v3.0 round 542 (Terry) — carousel Update parity
         var lbl = document.getElementById('collage-save-label');
-        if (lbl) lbl.textContent = carouselMode ? 'Save slides' : (saved ? 'Update' : 'Save');
+        if (lbl) lbl.textContent = carouselMode ? (carSaved ? 'Update slides' : 'Save slides') : (saved ? 'Update' : 'Save');
         var btn = document.getElementById('collage-save');
-        if (btn) btn.setAttribute('data-pdr-tooltip', saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library');
+        if (btn) btn.setAttribute('data-pdr-tooltip', carouselMode
+          ? (carSaved ? ('Update the saved carousel in PDR Collages › Carousels › ' + collageCurrentAlbum() + ' — replaces the previous save') : 'Save the pages as photos in your library')
+          : (saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library'));
         var more = document.getElementById('collage-save-more');
         if (more) more.style.display = 'none';   // v3.0 round 496 (Terry) — v-numbers dropped; "Save as new version" was the chevron's only option, so the more-menu is retired.
         try { updateCollageGoto(); } catch (_) {}
@@ -17193,14 +17211,21 @@
         // grain, background-photo effects). The sharp re-draw is only the on-failure fallback.
         const _carW = (collageExportPx && collageExportPx.w) || (carouselPageCount * 1080);
         const _carH = (collageExportPx && collageExportPx.h) || 1350;
-        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined, snapshot: snapshotCollage(), w: _carW, h: _carH });
+        // v3.0 round 542 (Terry) — UPDATE parity with collages: once saved, the next save
+        // REPLACES the previous carousel save (its album + files) instead of stacking a copy.
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined, snapshot: snapshotCollage(), w: _carW, h: _carH, replaceAlbumId: (carouselExportedAlbumId != null) ? carouselExportedAlbumId : undefined });
         if (res && res.success && res.count > 0) {
+          carouselExportedAlbumId = (res.albumId != null) ? res.albumId : carouselExportedAlbumId;   // v3.0 round 542 — remember for Update
+          try { scheduleCollageAutosave(); } catch (_) {}
+          try { updateCollageSaveButton(); } catch (_) {}
           // v2.1 round 270 (Terry) — open ALL the slides in the Viewer (like a normal collage
           // save), instead of only revealing the folder. res.files = [{filePath,filename,..}] in
-          // slide order, so the Viewer opens page 1 first and the user can flick through them.
+          // slide order. v3.0 round 542 (Terry) — the JOINED wide design opens FIRST (index 0),
+          // matching how the carousel album presents in Memories › Albums.
           try {
             const paths = (res.files || []).map((f) => f && f.filePath).filter(Boolean);
             const names = (res.files || []).map((f) => (f && f.filename) || ((f && f.filePath) || '').split(/[\\/]/).pop());
+            if (res.wideFile && res.wideFile.filePath) { paths.unshift(res.wideFile.filePath); names.unshift(res.wideFile.filename || 'Carousel design'); }
             if (paths.length) await window.pdr.search.openViewer(paths, names, 0, false);
           } catch (_) {}
           // v3.0 (Terry) — same "saved to..." confirmation + "View in Albums" jump as a single collage,

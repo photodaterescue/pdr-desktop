@@ -2315,7 +2315,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
 // unchanged: { success, files, folderPath, count, pending }.
 const CAROUSEL_SLICE_W = 1080;
 const CAROUSEL_SLICE_H = 1350;
-ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number }) => {
+ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number; replaceAlbumId?: number }) => {
   try {
     const n = Math.max(1, Math.round(Number(pageCount) || 0));
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
@@ -2356,6 +2356,34 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     const folderPath = path.join(baseDir, `Carousel_${stamp}`);
     fs.mkdirSync(toLongPath(folderPath), { recursive: true });
 
+    // v3.0 round 542 (Terry) — UPDATE parity with collages: a re-save REPLACES the previous
+    // carousel save (its slides + wide file + its album) instead of stacking a new copy per
+    // save. Runs only after the new wide render succeeded above, so a failed save can never
+    // destroy the previous good one. Same delete pattern as the single-collage replaceFileId.
+    if (opts && typeof opts.replaceAlbumId === 'number') {
+      try {
+        const sdb = await import('./search-database.js');
+        const oldPhotos = sdb.listAlbumPhotos(opts.replaceAlbumId);
+        const oldIds: number[] = [];
+        let oldDir: string | null = null;
+        for (const oldP of oldPhotos) {
+          oldIds.push(oldP.id);
+          if (oldP.file_path) {
+            if (!oldDir) oldDir = path.dirname(oldP.file_path);
+            try { fs.unlinkSync(toLongPath(oldP.file_path)); } catch { /* already gone */ }
+          }
+        }
+        if (oldIds.length) sdb.deleteIndexedFiles(oldIds);
+        sdb.deleteAlbum(opts.replaceAlbumId);
+        // The old per-carousel export folder is empty now — tidy it (best-effort; guarded to
+        // OUR Carousel_<stamp> naming so a mis-set path can never remove a user folder).
+        if (oldDir && /Carousel_\d{8}_\d{6}$/.test(oldDir)) { try { fs.rmdirSync(toLongPath(oldDir)); } catch { /* not empty / gone */ } }
+        log.info(`[collage] carousel update: replaced previous save (album ${opts.replaceAlbumId}, ${oldIds.length} file(s))`);
+      } catch (updErr) {
+        log.warn(`[collage] carousel update: removing the previous save failed (non-fatal): ${(updErr as Error).message}`);
+      }
+    }
+
     // Album helpers imported once (not per slide). Same Settings gate + lookup/create
     // pattern as the single save, but carousel slides land in PDR Collages › Carousels › ‹category›
     // (kept separate from single collages' "Collages" folder, under the one PDR Collages source).
@@ -2384,9 +2412,11 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     // long-dated library file, index it, and make it the carousel album's COVER + first photo. This is the
     // previously-missing carousel file; it also names + covers the carousel folder.
     let wideFileId: number | null = null;
+    let wideOutPath: string | null = null;   // v3.0 round 542 (Terry) — returned so the post-save Viewer can open the wide design FIRST
     if (libRoot) {
       try {
         const wideOut = uniqueCapturePath(folderPath, `${date}_${time}_CW`, transparent ? '.png' : '.jpg');
+        wideOutPath = wideOut;
         const wideOutBuf = transparent ? await sharp(wideBuf).png().toBuffer() : await sharp(wideBuf).jpeg({ quality: 92, mozjpeg: true }).toBuffer();
         fs.writeFileSync(toLongPath(wideOut), wideOutBuf);
         await stampCaptureMetadata(wideOut, capturedAt, 'collage', opts && opts.caption ? opts.caption : undefined, opts && opts.name ? opts.name : undefined);
@@ -2474,7 +2504,9 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
       if (firstPageId != null) { try { setAlbumCover(albumId, firstPageId); } catch { /* non-fatal */ } }
     }
     log.info(`[collage] saved carousel — ${files.length}/${n} slide(s) sliced from ${wideWidth}×${wideHeight} → ${folderPath}${libRoot ? '' : ' (pending)'}`);
-    return { success: true, files, folderPath, count: files.length, albumId, pending: !libRoot };
+    // v3.0 round 542 (Terry) — wideFile lets the renderer open the joined wide design FIRST in
+    // the Viewer (it sits at the front in Albums; the post-save Viewer should match).
+    return { success: true, files, folderPath, count: files.length, albumId, wideFile: wideOutPath ? { filePath: wideOutPath, filename: path.basename(wideOutPath) } : null, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };
