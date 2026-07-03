@@ -1506,6 +1506,11 @@
   </style>
 </head>
 <body>
+  <!-- v3.0 round 543 (Terry) — a window opened AS Collages gets the FULL collage chrome from
+       the first parsed byte: body.collage-mode applies all the collage-vs-viewer CSS (hides the
+       viewer-only Print/zoom buttons, gold accents, centre label) BEFORE anything paints, so no
+       Viewer chrome can flash while collage mode boots. enterCollageMode re-adds it later (no-op). -->
+  <script>try { if (document.documentElement.classList.contains('collage-boot')) document.body.classList.add('collage-mode'); } catch (e) {}</script>
   <!-- Cross-window Fix-in-progress chip — populated by JS at the
        bottom of this file via window.pdr.onFixProgress /
        onFixStateChanged. Same amber pill the rest of PDR shows. -->
@@ -4005,6 +4010,9 @@
          pushed far right by flex:1 on the title alone. -->
     <div class="toolbar-title-wrap">
       <span class="toolbar-title" id="filename">PDR Viewer</span>
+      <!-- v3.0 round 543 (Terry) — collage boot: never show "PDR Viewer" in the title slot,
+           not even for one frame; updateCollageTitle sets the real name once state loads. -->
+      <script>try { if (document.documentElement.classList.contains('collage-boot')) document.getElementById('filename').textContent = 'Untitled collage'; } catch (e) {}</script>
       <button class="toolbar-copy-btn" id="btn-copy-filename" type="button" data-pdr-tooltip="Copy filename to clipboard">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -16365,8 +16373,11 @@
         var f = collageBgFx; var el = f ? f[collageBgFxSel] : null; if (!el) return;
         var cRect = collageCanvasEl.getBoundingClientRect();
         if (!cRect.width || !cRect.height) return;
-        el.posX = Math.max(-0.5, Math.min(1.5, (e.clientX - cRect.left) / cRect.width));
-        el.posY = Math.max(-0.5, Math.min(1.5, (e.clientY - cRect.top) / cRect.height));
+        // v3.0 round 543 (Terry) — wider drag range: an extra 40% left/right and an extra
+        // 80% up/down beyond the old ±50% overshoot, so a huge circle can be pushed far
+        // off-canvas for edge-lighting looks.
+        el.posX = Math.max(-0.9, Math.min(1.9, (e.clientX - cRect.left) / cRect.width));
+        el.posY = Math.max(-1.3, Math.min(2.3, (e.clientY - cRect.top) / cRect.height));
         try { applyCanvasBgVisual(); } catch (_) {}
         positionBgFxEpicentre();
       };
@@ -17072,7 +17083,9 @@
         var saved = (collageExportedFileId != null) && !carouselMode;
         var carSaved = carouselMode && (carouselExportedAlbumId != null);   // v3.0 round 542 (Terry) — carousel Update parity
         var lbl = document.getElementById('collage-save-label');
-        if (lbl) lbl.textContent = carouselMode ? (carSaved ? 'Update slides' : 'Save slides') : (saved ? 'Update' : 'Save');
+        // v3.0 round 543 (Terry) — labels IDENTICAL to Collages: "Save" / "Update" (no "slides"
+        // suffix); the tooltip carries the carousel-specific detail.
+        if (lbl) lbl.textContent = (carouselMode ? carSaved : saved) ? 'Update' : 'Save';
         var btn = document.getElementById('collage-save');
         if (btn) btn.setAttribute('data-pdr-tooltip', carouselMode
           ? (carSaved ? ('Update the saved carousel in PDR Collages › Carousels › ' + collageCurrentAlbum() + ' — replaces the previous save') : 'Save the pages as photos in your library')
@@ -17235,7 +17248,10 @@
           if (saveBtn) {
             saveBtn.disabled = false;
             saveBtn.innerHTML = '✓ Saved ' + res.count + ' slides — opened in Viewer';
-            setTimeout(() => { if (saveBtn) saveBtn.innerHTML = originalHtml; }, 2600);
+            // v3.0 round 543 (Terry) — restoring the pre-save markup was WIPING the freshly-set
+            // "Update" label (Terry's SS: tooltip said Update, button still said Save). Re-run
+            // the label sync right after the restore so the button reflects the saved state.
+            setTimeout(() => { if (saveBtn) { saveBtn.innerHTML = originalHtml; try { updateCollageSaveButton(); } catch (_) {} } }, 2600);
           }
         } else {
           await showPdrAlert({ title: 'Save failed', body: 'Carousel save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
