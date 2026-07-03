@@ -597,7 +597,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }, thumbnailDataUrl?: string) =>
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
     listProjects: () =>
-      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template' }>>,
+      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null }>>,
     loadProject: (id: string) =>
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>

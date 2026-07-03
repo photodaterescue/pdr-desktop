@@ -946,7 +946,14 @@
       flex: 1;
       overflow: hidden;
       position: relative;
+      /* v3.0 round 545 (Terry) — glide with the Enhance panel (same curve/duration as its slide). */
+      transition: margin-right 520ms cubic-bezier(0.16, 0.84, 0.32, 1);
     }
+    /* v3.0 round 545 (Terry) — in the VIEWER the photo must not sit behind the Enhance panel:
+       while the panel is showing, the photo area is everything LEFT of it (the ResizeObserver
+       on the container refits the photo as the margin animates); collapsed = full width again.
+       Collage mode already reserves the space via #collage-stage padding, so it's excluded. */
+    body.enhance-panel-open:not(.collage-mode) .viewer-container { margin-right: 320px; }
     .viewer-container img {
       position: absolute;
       transform-origin: 0 0;
@@ -1001,7 +1008,9 @@
        arrow left so it sits just to the left of the panel instead
        of being hidden behind it. Terry's UX: navigate to next photo
        without having to close the panel first. */
-    body.enhance-panel-open .nav-arrow.right { right: 336px; }
+    /* v3.0 round 545 (Terry) — the container itself now stops at the panel edge (margin above),
+       so the arrow keeps its normal 16px inset instead of the old 336px overlay offset. */
+    body.enhance-panel-open .nav-arrow.right { right: 16px; }
     .nav-arrow:disabled { opacity: 0.2 !important; cursor: default; }
     /* Cross-window Fix-in-progress chip — same amber pill PDR shows
        on every other window so users always know a Fix is running.
@@ -2533,6 +2542,23 @@
     }
     .cws-card:hover .cws-card-rename { opacity: 1; }
     .cws-card-rename:hover { background: rgba(254,194,66,0.92); border-color: #FEC242; color: #1a1a2e; }
+    /* v3.0 round 545 (Terry) — Home-screen selection: the corner tick picks ONE project that the
+       titlebar View/Albums pair acts on; the project just edited comes back pre-selected with a
+       gold outline. Clicking anywhere else on the tile still opens it for editing. */
+    .cws-card.cws-selected { border-color: rgba(254,194,66,0.95); box-shadow: 0 0 0 2px rgba(254,194,66,0.55), 0 10px 30px rgba(0,0,0,0.4); }
+    .cws-card-sel {
+      position: absolute; top: 8px; left: 8px; width: 24px; height: 24px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      background: rgba(10,10,26,0.72); border: 1.5px solid rgba(230,227,243,0.55); color: rgba(230,227,243,0.9);
+      cursor: pointer; opacity: 0; transition: opacity .12s ease, background .12s ease, border-color .12s ease;
+    }
+    .cws-card:hover .cws-card-sel { opacity: 1; }
+    .cws-card.cws-selected .cws-card-sel { opacity: 1; background: #FEC242; border-color: #FEC242; color: #1a1a2e; }
+    .cws-card-sel svg { width: 13px; height: 13px; }
+    /* v3.0 round 545 (Terry) — titlebar View/Albums pair on the Home screen: dimmed until a
+       saved project is selected (the tooltip says why); pointer events stay on for the tooltip. */
+    .collage-goto button.goto-dim { opacity: 0.35; cursor: default; }
+    .collage-goto button.goto-dim:hover { background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); color: #d8d5e8; }
     /* v3.0 (Terry) — "take me there" links on a SAVED collage tile (only shown once it has an exported photo). */
     .cws-card-go { display: flex; gap: 6px; margin-top: 9px; }
     .cws-card-go button {
@@ -13264,11 +13290,22 @@
     // v3.0 (Terry) — "Your Collage Projects": filter state + helpers (one card; a project's album/date).
     let cwsFilterAlbum = '';
     let cwsFilterYear = '';
+    // v3.0 round 545 (Terry) — Home-screen selection: the titlebar View/Albums pair follows the
+    // SELECTED tile (corner tick). Coming Home from the editor pre-selects the project just edited.
+    let cwsSelectedProjectId = null;
+    let cwsProjectsById = {};
+    function cwsSelectProject(id) {
+      cwsSelectedProjectId = id;
+      try { document.querySelectorAll('.cws-card').forEach((c) => c.classList.toggle('cws-selected', id != null && c.dataset.projectId === String(id))); } catch (_) {}
+      try { updateCollageGoto(); } catch (_) {}
+    }
     function cwsProjectAlbum(p) { try { return parseCollageName((p && p.name) || '').category || ''; } catch (_) { return ''; } }
     function cwsProjectDate(p) { try { var d = new Date(p && p.savedAt); return isNaN(d.getTime()) ? null : d; } catch (_) { return null; } }
     function cwsMakeCard(p) {
       const card = document.createElement('div');
       card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
+      card.dataset.projectId = String(p.id);   // v3.0 round 545 (Terry) — selection targeting
+      if (p.id === cwsSelectedProjectId) card.classList.add('cws-selected');
       const thumb = document.createElement('div');
       thumb.className = 'cws-card-thumb';
       if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
@@ -13291,6 +13328,14 @@
       ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
       ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
       ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
+      // v3.0 round 545 (Terry) — the corner tick: selects this project (gold outline) so the
+      // titlebar View/Albums pair acts on it; clicking it again deselects. The rest of the
+      // tile still opens the project for editing as before.
+      const sel = document.createElement('button');
+      sel.type = 'button'; sel.className = 'cws-card-sel'; sel.setAttribute('aria-label', 'Select this collage');
+      sel.setAttribute('data-pdr-tooltip', 'Select — the View / Albums buttons up top act on this one');
+      sel.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      sel.addEventListener('click', (e) => { e.stopPropagation(); cwsSelectProject(p.id === cwsSelectedProjectId ? null : p.id); });
       // v3.0 (Terry) — "take me there" links, shown only once the collage has been Saved (has an exported photo).
       if (p.exportedFileId != null) {
         const go = document.createElement('div'); go.className = 'cws-card-go';
@@ -13303,7 +13348,7 @@
         go.appendChild(gv); go.appendChild(ga); meta.appendChild(go);
       }
       card.addEventListener('click', async () => { const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome(); });
-      card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del);
+      card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel);
       return card;
     }
     async function buildCwsRecent() {
@@ -13314,6 +13359,12 @@
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       list = list.filter((p) => p.kind !== 'template');   // v2.1 round 323 (Terry) — templates have their OWN row
+      // v3.0 round 545 (Terry) — cache the projects for the Home-screen selection (titlebar goto
+      // pair reads the selected one); drop a selection whose project was deleted meanwhile.
+      cwsProjectsById = {};
+      list.forEach((p) => { cwsProjectsById[p.id] = p; });
+      if (cwsSelectedProjectId != null && !cwsProjectsById[cwsSelectedProjectId]) cwsSelectedProjectId = null;
+      try { updateCollageGoto(); } catch (_) {}
       // Populate the Album + Date filters from ALL projects (preserve the current selection).
       const albumSel = document.getElementById('cws-filter-album');
       const yearSel = document.getElementById('cws-filter-year');
@@ -13466,6 +13517,10 @@
       }
       // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
+      // v3.0 round 545 (Terry) — the project just edited comes back pre-selected (gold outline;
+      // the titlebar View/Albums pair follows it). buildCwsRecent paints the outline + syncs the pair.
+      try { if (typeof currentCollageProjectId !== 'undefined' && currentCollageProjectId != null) cwsSelectedProjectId = currentCollageProjectId; } catch (_) {}
+      try { updateCollageGoto(); } catch (_) {}
       try { selectCollageItem(null); } catch (_) {}   // v2.1 round 360 (Terry) — deselect so no tile chrome seeps onto the welcome screen
       const blank = document.getElementById('cws-blank');
       if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => { newBlankCollage(); hideCollageWelcome(); }); }
@@ -16301,7 +16356,16 @@
         const fx = (e.clientX - cRect.left) / cRect.width;
         const fy = (e.clientY - cRect.top) / cRect.height;
         collageBgGradient.cx = Math.max(-1, Math.min(2, fx));
-        collageBgGradient.cy = Math.max(-1, Math.min(2, fy));
+        // v3.0 round 545 (Terry) — vertical travel is PAGE-relative, not canvas-relative. THIS
+        // gold dot is the one Terry drags (the Blended-radial centre) — r543/544 widened the
+        // BLUE glow/blur dot instead. On a wide carousel canvas ±1 canvas-HEIGHT was a few px
+        // of screen travel while the same ±1 sideways was enormous (his SS1/SS2). The dot can
+        // now reach the full visible stage top-to-bottom (never less than the old range);
+        // left/right is untouched per instruction ("not to be widened anymore").
+        const sR = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
+        const yLo = sR ? Math.min(-1, (sR.top + 6 - cRect.top) / cRect.height) : -1;
+        const yHi = sR ? Math.max(2, (sR.bottom - 6 - cRect.top) / cRect.height) : 2;
+        collageBgGradient.cy = Math.max(yLo, Math.min(yHi, fy));
         collageGradDir = Object.assign({}, collageGradDir, { kind: 'radial', cx: collageBgGradient.cx, cy: collageBgGradient.cy });
         applyCanvasBgVisual();
         positionGradEpicentre();
@@ -16374,12 +16438,16 @@
         var f = collageBgFx; var el = f ? f[collageBgFxSel] : null; if (!el) return;
         var cRect = collageCanvasEl.getBoundingClientRect();
         if (!cRect.width || !cRect.height) return;
-        // v3.0 round 543 (Terry) — wider drag range: an extra 40% left/right and an extra
-        // 80% up/down beyond the old ±50% overshoot, so a huge circle can be pushed far
-        // off-canvas for edge-lighting looks.
-        // v3.0 round 544 (Terry) — top/bottom range widened by ANOTHER 60% (width unchanged).
+        // v3.0 round 543 (Terry) — wider drag range: an extra 40% left/right beyond the old
+        // ±50% overshoot, so a huge circle can be pushed far off-canvas for edge-lighting looks.
+        // v3.0 round 545 (Terry) — vertical travel is PAGE-relative (same fix as the gold
+        // gradient dot): the dot reaches the full visible stage top-to-bottom regardless of
+        // how short the canvas is on screen; left/right unchanged.
         el.posX = Math.max(-0.9, Math.min(1.9, (e.clientX - cRect.left) / cRect.width));
-        el.posY = Math.max(-1.9, Math.min(2.9, (e.clientY - cRect.top) / cRect.height));
+        var _sR = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
+        var _yLo = _sR ? Math.min(-1.9, (_sR.top + 6 - cRect.top) / cRect.height) : -1.9;
+        var _yHi = _sR ? Math.max(2.9, (_sR.bottom - 6 - cRect.top) / cRect.height) : 2.9;
+        el.posY = Math.max(_yLo, Math.min(_yHi, (e.clientY - cRect.top) / cRect.height));
         try { applyCanvasBgVisual(); } catch (_) {}
         positionBgFxEpicentre();
       };
@@ -17064,19 +17132,62 @@
       if (!info) { try { collageToast('That saved photo isn’t in your library any more.', 4000); } catch (_) {} return; }
       try { await window.pdr.collage.viewInAlbums(info.albumId != null ? info.albumId : null); } catch (_) {}
     }
-    // Titlebar "take me there" pair: visible only for a SAVED single collage (has an exported photo, not a carousel).
+    // Titlebar "take me there" pair. In the EDITOR: visible only for a SAVED single collage (has an
+    // exported photo, not a carousel). On the HOME screen (r545): always visible, following the
+    // SELECTED tile — dimmed with an explanatory tooltip until a saved project is selected.
+    function collageGotoTarget() {
+      try {
+        if (document.body.classList.contains('cws-open')) {
+          var p = (cwsSelectedProjectId != null) ? cwsProjectsById[cwsSelectedProjectId] : null;
+          if (!p) return null;
+          return { fileId: (p.exportedFileId != null) ? p.exportedFileId : null, albumId: (p.carouselAlbumId != null) ? p.carouselAlbumId : null };
+        }
+        return { fileId: collageExportedFileId, albumId: null };
+      } catch (_) { return null; }
+    }
+    function setCollageGotoBtn(b, on, tip) { if (!b) return; b.classList.toggle('goto-dim', !on); if (tip) b.setAttribute('data-pdr-tooltip', tip); }
     function updateCollageGoto() {
       try {
         var el = document.getElementById('collage-goto');
         if (!el) return;
+        var vBtn = document.getElementById('collage-goto-view');
+        var aBtn = document.getElementById('collage-goto-albums');
         if (!el.dataset.wired) {
           el.dataset.wired = '1';
-          var v = document.getElementById('collage-goto-view'); if (v) v.addEventListener('click', function (e) { e.stopPropagation(); collageGotoOpenViewer(collageExportedFileId); });
-          var a = document.getElementById('collage-goto-albums'); if (a) a.addEventListener('click', function (e) { e.stopPropagation(); collageGotoAlbums(collageExportedFileId); });
+          if (vBtn) vBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var t = collageGotoTarget();
+            if (t && t.fileId != null) collageGotoOpenViewer(t.fileId);
+          });
+          if (aBtn) aBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            var t = collageGotoTarget();
+            if (!t) return;
+            if (t.fileId != null) collageGotoAlbums(t.fileId);
+            else if (t.albumId != null) { try { window.pdr.collage.viewInAlbums(t.albumId); } catch (_) {} }
+          });
         }
+        var cwsOpen = document.body.classList.contains('cws-open');
         var inCollage = (typeof collageMode !== 'undefined') && collageMode;
         var isCarousel = (typeof carouselMode !== 'undefined') && carouselMode;
-        el.style.display = (inCollage && !isCarousel && collageExportedFileId != null) ? 'inline-flex' : 'none';
+        if (inCollage && cwsOpen) {
+          el.style.display = 'inline-flex';
+          var p = (cwsSelectedProjectId != null) ? cwsProjectsById[cwsSelectedProjectId] : null;
+          var fid = (p && p.exportedFileId != null) ? p.exportedFileId : null;
+          var aid = (p && p.carouselAlbumId != null) ? p.carouselAlbumId : null;
+          setCollageGotoBtn(vBtn, fid != null,
+            fid != null ? 'Open the saved photo in the Viewer'
+              : !p ? 'Select a collage below first (the tick in a tile’s corner)'
+              : (aid != null ? 'Carousels open in Albums — use the button beside this one' : 'This collage hasn’t been saved to your library yet'));
+          setCollageGotoBtn(aBtn, fid != null || aid != null,
+            (fid != null || aid != null) ? 'Show it in Memories → Albums'
+              : !p ? 'Select a collage below first (the tick in a tile’s corner)'
+              : 'This collage hasn’t been saved to your library yet');
+        } else {
+          el.style.display = (inCollage && !isCarousel && collageExportedFileId != null) ? 'inline-flex' : 'none';
+          setCollageGotoBtn(vBtn, true, 'Open the saved photo in the Viewer');
+          setCollageGotoBtn(aBtn, true, 'Show this collage in Memories → Albums');
+        }
       } catch (_) {}
     }
     // Reflect whether this collage has been saved yet: "Save" (first time) vs "Update", and reveal the chevron.
