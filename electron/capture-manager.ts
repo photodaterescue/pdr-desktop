@@ -2506,7 +2506,9 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     log.info(`[collage] saved carousel — ${files.length}/${n} slide(s) sliced from ${wideWidth}×${wideHeight} → ${folderPath}${libRoot ? '' : ' (pending)'}`);
     // v3.0 round 542 (Terry) — wideFile lets the renderer open the joined wide design FIRST in
     // the Viewer (it sits at the front in Albums; the post-save Viewer should match).
-    return { success: true, files, folderPath, count: files.length, albumId, wideFile: wideOutPath ? { filePath: wideOutPath, filename: path.basename(wideOutPath) } : null, pending: !libRoot };
+    // v3.0 round 546 (Terry) — + its library file id, so the editor's "View" goto can open the
+    // wide design directly (mirrors a single collage's exportedFileId).
+    return { success: true, files, folderPath, count: files.length, albumId, wideFile: wideOutPath ? { filePath: wideOutPath, filename: path.basename(wideOutPath), fileId: wideFileId } : null, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
     return { success: false, error: (err as Error).message };

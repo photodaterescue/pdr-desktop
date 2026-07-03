@@ -33,6 +33,9 @@ export interface CollageProjectData {
   // v3.0 round 542 (Terry) — a CAROUSEL project's saved album id (carousels export an album of
   // slides, not a single photo). Set on carousel save; powers Update + the Home-screen Albums link.
   carouselAlbumId?: number | null;
+  // v3.0 round 546 (Terry) — the wide (joined) design's library file id, so View can open it
+  // directly — the carousel counterpart of exportedFileId.
+  carouselWideFileId?: number | null;
 }
 
 export interface CollageProjectSummary {
@@ -43,6 +46,7 @@ export interface CollageProjectSummary {
   kind: 'project' | 'template';
   exportedFileId?: number | null;
   carouselAlbumId?: number | null;   // v3.0 round 545 (Terry) — surfaced so the Home screen can link a carousel to its album
+  carouselWideFileId?: number | null;   // v3.0 round 546 (Terry) — the wide design's file id (Home View for carousels)
 }
 
 const PROJECT_EXT = '.pdrcollage';
@@ -197,7 +201,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         for (const tp of [thumbPath(dir, rec.id), path.join(dir, `${rec.id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
           try { if (fs.existsSync(toLongPath(tp))) { thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; break; } } catch { /* no thumb */ }
         }
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));

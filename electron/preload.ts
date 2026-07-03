@@ -555,7 +555,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:saveCarousel', layout, pageCount, opts) as Promise<{
         success: boolean;
         files?: Array<{ filePath: string; filename: string; fileId: number | null }>;
-        folderPath?: string; count?: number; albumId?: number | null; wideFile?: { filePath: string; filename: string } | null; pending?: boolean; error?: string;
+        folderPath?: string; count?: number; albumId?: number | null; wideFile?: { filePath: string; filename: string; fileId?: number | null } | null; pending?: boolean; error?: string;
       }>,
     // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
     // open the shared photo picker for a background, and listens for the
