@@ -11,18 +11,18 @@ interface WhatsNew30Props {
 }
 
 /**
- * v3.0 round 548 (Terry) — the "What's new in 3.0" SECOND SPLASH / feature showcase.
- *
- * Terry: "this is our chance to showcase/amaze customers (and free-testers), with all
- * that PDR brings to the table." Slogan pairing agreed 2026-07-03: headline "The Power
- * of 3", subline "They say good things come in threes." — the 3 carries triple weight:
- * version 3.0, the three marquee features, and PDR's three principles (Security /
- * Privacy / Ownership). The three feature cards are labelled Create / Connect / Capture.
+ * v3.0 round 549 (Terry) — the "What's new in 3.0" showcase, SECOND PASS on Terry's art
+ * direction: bigger, everything CENTRED (it's all titles/headings), and the Viewer Share
+ * button's violet→fuchsia palette woven through (gradient headline + "3", drifting glow
+ * blobs, gradient primary CTA) so it pops instead of reading as one flat lavender wash.
+ * Copy locked 2026-07-04: headline "The Power of 3"; subline = the "all in one place /
+ * all on your own hardware / all yours" ecosystem line; closer mirrors the Welcome
+ * screen's ethos trio — Security · Privacy · Ownership.
  *
  * Shown ONCE (localStorage 'pdr-whatsnew-30-shown', set by the workspace on dismiss),
- * replayable from About PDR. Visual + interaction language matches TrialLimitModal /
- * LicenseRequiredModal exactly (same backdrop, spring scale-in, gradient header, the
- * `Button` primitive from @/components/ui/button — modals consistently use that one).
+ * replayable from About PDR. Modal skeleton still matches TrialLimitModal (backdrop,
+ * spring scale-in, the `Button` primitive); the gradient accents are the Share button's
+ * own violet→fuchsia, per Terry's explicit reference.
  */
 
 const PILLARS = [
@@ -54,7 +54,8 @@ const ALSO_CHIPS = [
   'Print & PDF',
   'Drag out in bulk',
   'Photo captions',
-  'Video transcription',
+  'Video transcripts',
+  'Trim & send video clips',
   'Enhance & AI repair',
   'Recycle Bin',
   'Needs Dates',
@@ -70,25 +71,40 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
         animate={{ opacity: 1 }}
         exit={{ opacity: 0 }}
         onClick={onClose}
-        className="fixed inset-0 bg-black/[0.35] backdrop-blur-[3px] flex items-center justify-center z-50 p-4"
+        className="fixed inset-0 bg-black/[0.45] backdrop-blur-[4px] flex items-center justify-center z-50 p-4"
       >
         <motion.div
-          initial={{ scale: 0.95, opacity: 0, y: 10 }}
+          initial={{ scale: 0.92, opacity: 0, y: 16 }}
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0 }}
-          transition={{ type: 'spring', duration: 0.5, bounce: 0.3 }}
+          transition={{ type: 'spring', duration: 0.6, bounce: 0.32 }}
           onClick={(e) => e.stopPropagation()}
-          className="bg-background rounded-2xl shadow-2xl max-w-2xl w-full border border-border overflow-hidden"
+          className="bg-background rounded-2xl shadow-2xl max-w-3xl w-full border border-border overflow-hidden max-h-[94vh] overflow-y-auto"
         >
-          {/* Header — the standard primary gradient, with an oversized translucent "3"
-              as the brand motif behind the headline. */}
-          <div className="relative bg-gradient-to-br from-primary/10 via-primary/5 to-transparent px-8 pt-8 pb-6 overflow-hidden">
-            <span
+          {/* Header — violet→fuchsia wash with two slow-drifting glow blobs (the collage
+              glow-circle idea turned into chrome) and a gradient "3" behind the headline. */}
+          <div className="relative bg-gradient-to-br from-violet-500/15 via-fuchsia-400/10 to-transparent px-10 pt-10 pb-7 overflow-hidden text-center">
+            <motion.span
               aria-hidden="true"
-              className="absolute -top-6 right-6 text-[150px] leading-none font-bold text-primary/10 select-none pointer-events-none"
+              animate={{ x: [0, 26, 0], y: [0, -18, 0] }}
+              transition={{ repeat: Infinity, duration: 9, ease: 'easeInOut' }}
+              className="absolute -top-16 -left-10 w-64 h-64 rounded-full bg-violet-500/20 blur-3xl pointer-events-none"
+            />
+            <motion.span
+              aria-hidden="true"
+              animate={{ x: [0, -30, 0], y: [0, 14, 0] }}
+              transition={{ repeat: Infinity, duration: 11, ease: 'easeInOut' }}
+              className="absolute -bottom-20 -right-8 w-72 h-72 rounded-full bg-fuchsia-500/15 blur-3xl pointer-events-none"
+            />
+            <motion.span
+              aria-hidden="true"
+              initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
+              animate={{ scale: 1, opacity: 1, rotate: 0 }}
+              transition={{ delay: 0.15, type: 'spring', duration: 0.8, bounce: 0.35 }}
+              className="absolute -top-8 right-8 text-[190px] leading-none font-bold bg-gradient-to-br from-violet-400/30 to-fuchsia-400/20 bg-clip-text text-transparent select-none pointer-events-none"
             >
               3
-            </span>
+            </motion.span>
             <button
               onClick={onClose}
               className="absolute top-4 right-4 p-2 hover:bg-secondary/50 rounded-full transition-colors"
@@ -98,59 +114,81 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
             </button>
 
             <div className="relative">
-              <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mb-2">
+              <motion.p
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.08 }}
+                className="text-[11px] font-semibold tracking-[0.2em] uppercase text-muted-foreground mb-3"
+              >
                 Photo Date Rescue 3.0
-              </p>
-              <h2 className="text-3xl font-semibold text-foreground mb-1.5">The Power of 3</h2>
-              <p className="text-sm text-muted-foreground leading-relaxed">
-                They say good things come in threes. PDR is now a full home for your photos &mdash;
-                and everything still happens on your own hardware, nothing uploaded, ever.
-              </p>
+              </motion.p>
+              <motion.h2
+                initial={{ opacity: 0, y: 14 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.14, type: 'spring', duration: 0.6 }}
+                className="text-5xl font-bold mb-3 bg-gradient-to-r from-violet-600 via-fuchsia-500 to-violet-600 bg-clip-text text-transparent"
+              >
+                The Power of 3
+              </motion.h2>
+              <motion.p
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ delay: 0.22 }}
+                className="text-[15px] text-foreground/80 leading-relaxed max-w-xl mx-auto"
+              >
+                Everything you&apos;ll ever do with your photos &mdash; all in one place,
+                all on your own hardware, all yours.
+              </motion.p>
             </div>
           </div>
 
-          {/* The three pillars — Create / Connect / Capture. */}
-          <div className="px-8 pt-5 pb-2 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          {/* The three pillars — Create / Connect / Capture, centred. */}
+          <div className="px-10 pt-6 pb-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {PILLARS.map((p, i) => (
               <motion.div
                 key={p.key}
-                initial={{ opacity: 0, y: 12 }}
+                initial={{ opacity: 0, y: 16 }}
                 animate={{ opacity: 1, y: 0 }}
-                transition={{ delay: 0.12 + i * 0.09, type: 'spring', duration: 0.45, bounce: 0.25 }}
-                className="rounded-xl border border-border bg-secondary/30 p-4 flex flex-col"
+                transition={{ delay: 0.28 + i * 0.1, type: 'spring', duration: 0.5, bounce: 0.28 }}
+                className="rounded-xl border border-violet-200/50 dark:border-violet-400/15 bg-gradient-to-b from-violet-500/[0.06] to-fuchsia-500/[0.03] p-5 flex flex-col items-center text-center hover:border-fuchsia-300/60 transition-colors"
               >
-                <div className="w-10 h-10 bg-gradient-to-br from-primary/20 to-primary/5 rounded-xl flex items-center justify-center mb-3 border border-primary/20 shadow-sm shadow-primary/10">
-                  <p.Icon className="w-5 h-5 text-primary" />
+                <div className="w-12 h-12 bg-gradient-to-br from-violet-500/25 to-fuchsia-500/15 rounded-xl flex items-center justify-center mb-3 border border-violet-400/25 shadow-sm shadow-fuchsia-500/10">
+                  <p.Icon className="w-6 h-6 text-violet-500" />
                 </div>
-                <p className="text-[10px] font-semibold tracking-[0.16em] uppercase text-muted-foreground mb-0.5">{p.word}</p>
-                <h3 className="text-sm font-semibold text-foreground mb-1.5">{p.title}</h3>
+                <p className="text-[10px] font-semibold tracking-[0.18em] uppercase bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent mb-1">{p.word}</p>
+                <h3 className="text-[15px] font-semibold text-foreground mb-2">{p.title}</h3>
                 <p className="text-xs text-muted-foreground leading-relaxed">{p.body}</p>
               </motion.div>
             ))}
           </div>
 
           {/* And that's not all… */}
-          <div className="px-8 pt-3 pb-1">
-            <p className="text-[11px] font-semibold tracking-[0.16em] uppercase text-muted-foreground mb-2">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.6 }}
+            className="px-10 pt-5 pb-1 text-center"
+          >
+            <p className="text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground mb-2.5">
               And that&apos;s not all
             </p>
-            <div className="flex flex-wrap gap-1.5">
+            <div className="flex flex-wrap justify-center gap-1.5 max-w-xl mx-auto">
               {ALSO_CHIPS.map((c) => (
                 <span
                   key={c}
-                  className="inline-flex items-center h-6 px-2.5 rounded-full border border-border bg-secondary/40 text-[11px] text-foreground/80"
+                  className="inline-flex items-center h-6.5 px-3 py-1 rounded-full border border-violet-300/40 dark:border-violet-400/20 bg-violet-500/[0.05] text-[11.5px] text-foreground/85"
                 >
                   {c}
                 </span>
               ))}
             </div>
-          </div>
+          </motion.div>
 
-          {/* CTAs */}
-          <div className="px-8 pb-6 pt-4 space-y-2.5">
+          {/* CTAs + the ethos closer (mirrors the Welcome screen's trio line). */}
+          <div className="px-10 pb-8 pt-5 space-y-3 text-center">
             <Button
               onClick={onClose}
-              className="w-full h-12 text-base font-medium shadow-lg shadow-primary/25 hover:shadow-primary/40 transition-all duration-300"
+              className="w-full h-12 text-base font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 shadow-lg shadow-fuchsia-500/25 hover:shadow-fuchsia-500/40 transition-all duration-300"
             >
               <Sparkles className="w-4 h-4 mr-2" />
               Start exploring
@@ -158,7 +196,15 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
             <Button onClick={onSeeFullList} variant="secondary" className="w-full">
               See everything that&apos;s new
             </Button>
-            <p className="text-xs text-muted-foreground/70 text-center leading-relaxed">
+            <motion.p
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ delay: 0.8 }}
+              className="pt-3 text-[11px] font-semibold tracking-[0.2em] uppercase text-foreground/70"
+            >
+              Built on <span className="bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Security &middot; Privacy &middot; Ownership</span>
+            </motion.p>
+            <p className="text-xs text-muted-foreground/70 leading-relaxed">
               Replay this any time from Menu &rarr; About PDR.
             </p>
           </div>
