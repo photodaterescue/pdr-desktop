@@ -5895,13 +5895,14 @@
     // wide carousel canvas up enough for scrollViewToSlice to fill ONE 1080-wide slice
     // even at N=10 (slice fill needs zoom ≈ N). Single-collage zoom is unaffected — the
     // user simply has more headroom; nothing auto-zooms past 1 outside carousel mode.
-    const COLLAGE_ZOOM_MIN = 0.2, COLLAGE_ZOOM_MAX = 10;
+    const COLLAGE_ZOOM_MIN = 0.14, COLLAGE_ZOOM_MAX = 10;   // v3.0 round 544 (Terry) — max zoom-out goes an extra 30% further (0.2 → 0.14)
     // v2.1 round 266 (Terry) — Behaviour A: zoom-out floor. In carousel mode the user
     // can zoom OUT past the fit until the carousel takes up ~40% of the page width; single-
     // collage keeps the existing 0.2 floor. Used by the Ctrl+wheel view-zoom clamp.
     // v2.1 round 273 (Terry) — floor lowered 0.5 → 0.4 (20% more zoom-out; 0.5 was "borderline
     // not enough"). Pairs with the round-268 below-fit centring so the carousel stays centred.
-    function collageZoomFloor() { return carouselMode ? 0.4 : COLLAGE_ZOOM_MIN; }
+    // v3.0 round 544 (Terry) — both floors ×0.7: "the zoom to go out an additional 30% at its max".
+    function collageZoomFloor() { return carouselMode ? 0.28 : COLLAGE_ZOOM_MIN; }
     // v2.1 round 266 (Terry) — Behaviour B (Phase 3): a tile may grow LARGER than the
     // page (Canva allows it). Matches the backend bake ceiling (capture-manager.ts
     // TILE_WFRAC_MAX). Tiles can be up to 4× the (wide) canvas width.
@@ -16376,8 +16377,9 @@
         // v3.0 round 543 (Terry) — wider drag range: an extra 40% left/right and an extra
         // 80% up/down beyond the old ±50% overshoot, so a huge circle can be pushed far
         // off-canvas for edge-lighting looks.
+        // v3.0 round 544 (Terry) — top/bottom range widened by ANOTHER 60% (width unchanged).
         el.posX = Math.max(-0.9, Math.min(1.9, (e.clientX - cRect.left) / cRect.width));
-        el.posY = Math.max(-1.3, Math.min(2.3, (e.clientY - cRect.top) / cRect.height));
+        el.posY = Math.max(-1.9, Math.min(2.9, (e.clientY - cRect.top) / cRect.height));
         try { applyCanvasBgVisual(); } catch (_) {}
         positionBgFxEpicentre();
       };
@@ -17091,24 +17093,24 @@
           ? (carSaved ? ('Update the saved carousel in PDR Collages › Carousels › ' + collageCurrentAlbum() + ' — replaces the previous save') : 'Save the pages as photos in your library')
           : (saved ? ('Update the saved photo in PDR Collages › ' + collageCurrentAlbum()) : 'Save this collage as a photo in your library'));
         var more = document.getElementById('collage-save-more');
-        if (more) more.style.display = 'none';   // v3.0 round 496 (Terry) — v-numbers dropped; "Save as new version" was the chevron's only option, so the more-menu is retired.
+        // v3.0 round 544 (Terry) — the chevron is BACK (retired in r496 with v-numbers): once a save
+        // exists, it offers "Save as new collage/carousel" — a separate copy, no version numbers.
+        if (more) more.style.display = (carouselMode ? carSaved : saved) ? 'flex' : 'none';
         try { updateCollageGoto(); } catch (_) {}
       } catch (_) {}
     }
-    // "Save as new version": bump the version in the name, then save a NEW file (the previous version
-    // stays in the album untouched). The project then tracks the new version.
-    function collageSaveNewVersion() {
+    // v3.0 round 544 (Terry) — "Save as new collage/carousel": saves a SEPARATE copy alongside the
+    // one already in the library (nothing is replaced), and Update then tracks the NEW copy — the
+    // success handlers already repoint collageExportedFileId / carouselExportedAlbumId at the result.
+    function collageSaveAsNew() {
       try {
-        if (collageExportedFileId == null) { saveCollage(collageCurrentAlbum()); return; }
-        var p = parseCollageName(currentCollageProjectName || '');
-        var cur = p.version ? parseInt(p.version, 10) : 1;
-        if (!isFinite(cur) || cur < 1) cur = 1;
-        var next = cur + 1;
-        var nm = assembleCollageName(p.category, p.name, String(next));
-        // Unnamed / auto-named collage: keep a meaningful base so the version isn't a bare "v2".
-        if (!p.category && !p.name) { var _b = (currentCollageProjectName || 'Collage').replace(/\s*·\s*v\d+\s*$/i, '').trim() || 'Collage'; nm = _b + ' · v' + next; }
-        if (nm) { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
-        saveCollage(p.category || 'General', { action: 'version', version: next });
+        if (carouselMode) {
+          if (carouselExportedAlbumId == null) return;   // chevron only shows once saved
+          saveCarousel(collageCurrentAlbum(), { forceNew: true });
+          return;
+        }
+        if (collageExportedFileId == null) return;
+        saveCollage(collageCurrentAlbum(), { action: 'new' });
       } catch (_) {}
     }
     // The chevron menu next to Save/Update.
@@ -17117,7 +17119,6 @@
         var existing = document.querySelector('.collage-save-menu'); if (existing) { existing.remove(); return; }
         var anchor = document.getElementById('collage-save-more'); if (!anchor) return;
         var menu = document.createElement('div'); menu.className = 'collage-save-menu';
-        var nextV = (function () { try { var p = parseCollageName(currentCollageProjectName || ''); var c = p.version ? parseInt(p.version, 10) : 1; if (!isFinite(c) || c < 1) c = 1; return c + 1; } catch (_) { return 2; } })();
         function close() { try { menu.remove(); } catch (_) {} window.removeEventListener('mousedown', onDown, true); window.removeEventListener('keydown', onKey, true); }
         function row(title, sub, fn) {
           var b = document.createElement('button'); b.type = 'button';
@@ -17125,7 +17126,8 @@
           b.addEventListener('click', function (e) { e.stopPropagation(); close(); try { fn(); } catch (_) {} });
           menu.appendChild(b);
         }
-        row('Save as new version', 'Keeps this one — makes a fresh v' + nextV, collageSaveNewVersion);
+        // v3.0 round 544 (Terry) — version-free: one row, "Save as new collage/carousel".
+        row('Save as new ' + (carouselMode ? 'carousel' : 'collage'), 'Keeps the saved one — adds a separate copy', collageSaveAsNew);
         document.body.appendChild(menu);
         var r = anchor.getBoundingClientRect();
         var mw = menu.offsetWidth, mh = menu.offsetHeight;
@@ -17170,7 +17172,7 @@
           const _act = saveOpts.action || 'save';
           const _where = 'Memories › Albums › PDR Collages › ' + _alb;
           const _msg = (_act === 'update') ? ('Updated in ' + _where + ' — safe in your library')
-            : (_act === 'version') ? ('Saved v' + (saveOpts.version || '') + ' to ' + _where + ' — safe in your library')
+            : (_act === 'new') ? ('Saved a new copy to ' + _where + ' — the previous one is kept')   // v3.0 round 544 (Terry) — chevron "Save as new"
             : ('Saved to ' + _where + ' — safe in your library');
           // v3.0 (Terry) — the toast names the destination AND offers a "View in Albums" jump: it brings the
           // main window forward and lands on Memories → Albums with this collage's album selected.
@@ -17200,7 +17202,7 @@
     // the slice count to the IPC, which bakes the wide image once and crops it into N
     // 1080-wide slides (slide_01.jpg … slide_NN.jpg) in a dedicated folder. We do NOT open
     // the Viewer (wrong for N files) — on success we reveal the folder.
-    async function saveCarousel(album) { // v3.0 (Terry) — album = the category chosen in the wizard (→ PDR Collages › Carousels › ‹category›)
+    async function saveCarousel(album, carOpts) { // v3.0 (Terry) — album = the category chosen in the wizard (→ PDR Collages › Carousels › ‹category›). carOpts.forceNew (r544) = chevron "Save as new carousel": skip the replace, keep the previous album.
       const saveBtn = document.getElementById('collage-save');
       const originalHtml = saveBtn ? saveBtn.innerHTML : '';
       // Empty-carousel guard: nothing on the wide canvas → nothing to export.
@@ -17226,7 +17228,7 @@
         const _carH = (collageExportPx && collageExportPx.h) || 1350;
         // v3.0 round 542 (Terry) — UPDATE parity with collages: once saved, the next save
         // REPLACES the previous carousel save (its album + files) instead of stacking a copy.
-        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined, snapshot: snapshotCollage(), w: _carW, h: _carH, replaceAlbumId: (carouselExportedAlbumId != null) ? carouselExportedAlbumId : undefined });
+        const res = await window.pdr.collage.saveCarousel(layout, carouselPageCount, { name: currentCollageProjectName || undefined, caption: _carNote || undefined, album: album || undefined, snapshot: snapshotCollage(), w: _carW, h: _carH, replaceAlbumId: (carouselExportedAlbumId != null && !(carOpts && carOpts.forceNew)) ? carouselExportedAlbumId : undefined });   // v3.0 round 544 (Terry) — forceNew keeps the previous save
         if (res && res.success && res.count > 0) {
           carouselExportedAlbumId = (res.albumId != null) ? res.albumId : carouselExportedAlbumId;   // v3.0 round 542 — remember for Update
           try { scheduleCollageAutosave(); } catch (_) {}

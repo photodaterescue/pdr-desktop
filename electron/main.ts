@@ -3921,15 +3921,41 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}:r${userRotation}`).digest('hex');
     const cachePath = path.join(thumbCacheDir, `${cacheKey}.jpg`);
     const cachePathLong = toLongPath(cachePath);
+    // v3.0 round 544 (Terry) — extreme-aspect images (carousel wide composites, panoramas) get a
+    // separate "w" cache entry built with a min-edge-aware recipe: the plain recipe fits the LONG
+    // edge into `size`, so a 7-page carousel wide (≈6:1) at 200 became a 200×~33 sliver that the
+    // square Albums cover tile then upscaled ~7× — Terry: "so blurred".
+    const cachePathWide = path.join(thumbCacheDir, `${cacheKey}w.jpg`);
+    const cachePathWideLong = toLongPath(cachePathWide);
     // Long-path-wrap the source path too: deep library trees on Windows
     // routinely push individual photo paths past the 260-char MAX_PATH
     // boundary, and sharp / fs read through to Win32 APIs that respect
     // the `\\?\` prefix. See long-path.ts.
     const filePathLong = toLongPath(filePath);
+    const ext = path.extname(filePath).toLowerCase();
 
+    if (fs.existsSync(cachePathWideLong)) {
+      const cachedWide = await fs.promises.readFile(cachePathWideLong);
+      return { success: true, dataUrl: `data:image/jpeg;base64,${cachedWide.toString('base64')}` };
+    }
     if (fs.existsSync(cachePathLong)) {
       const cached = await fs.promises.readFile(cachePathLong);
-      return { success: true, dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` };
+      // Self-heal (r544): a cached thumb whose OWN aspect is extreme was built by the old
+      // long-edge-only recipe — fall through and rebuild it as the wide variant. The header
+      // parse on a ~15KB in-memory buffer is sub-millisecond, far cheaper than the base64
+      // below, so the hot path stays hot. Videos/HEIC keep the plain recipe (their pipelines
+      // don't take the wide branch), so they serve straight from cache with no check.
+      let staleWide = false;
+      if (ext !== '.heic' && ext !== '.heif' && !VIDEO_EXTS.has(ext)) {
+        try {
+          const cm = await sharp(cached).metadata();
+          const cw = cm.width || 0, ch = cm.height || 0;
+          staleWide = cw > 0 && ch > 0 && (cw / ch > 2.5 || ch / cw > 2.5);
+        } catch { /* unreadable cache entry — serve it as-is */ }
+      }
+      if (!staleWide) {
+        return { success: true, dataUrl: `data:image/jpeg;base64,${cached.toString('base64')}` };
+      }
     }
 
     // Check file exists
@@ -3938,7 +3964,9 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     }
 
     let jpegBuffer: Buffer | null = null;
-    const ext = path.extname(filePath).toLowerCase();
+    // r544 — set by the generic sharp path when the source is extreme-aspect; routes the
+    // cache write to the "w" entry so the plain key never holds a min-edge-aware thumb.
+    let wideThumb = false;
 
     // HEIC / HEIF: sharp on Windows can't decode the HEVC pixel
     // payload (libheif ships without the HEVC plugin under the
@@ -4033,11 +4061,31 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     // the wrong region of the same photo.
     if (!jpegBuffer) {
       try {
-        jpegBuffer = await sharp(filePathLong, { failOnError: false })
+        // r544 — read the header first: extreme-aspect sources (carousel wide composites,
+        // panoramas) resize by their SHORT edge instead (long edge capped at 10× size) so the
+        // thumb stays usable inside a square tile. metadata() on the same instance is one
+        // header read and doesn't consume the pipeline.
+        const inst = sharp(filePathLong, { failOnError: false });
+        let boxW = size, boxH = size, wantWide = false;
+        try {
+          const meta = await inst.metadata();
+          let mw = meta.width || 0, mh = meta.height || 0;
+          // EXIF orientations 5-8 rotate 90°: the pipeline's .rotate() swaps the axes, so the
+          // box has to be chosen in post-rotation space.
+          if (meta.orientation && meta.orientation >= 5) { const t = mw; mw = mh; mh = t; }
+          if (mw > 0 && mh > 0 && (mw / mh > 2.5 || mh / mw > 2.5)) {
+            wantWide = true;
+            if (mw >= mh) boxW = size * 10; else boxH = size * 10;
+          }
+        } catch { /* header unreadable — plain recipe */ }
+        jpegBuffer = await inst
           .rotate()
-          .resize(size, size, { fit: 'inside', withoutEnlargement: true })
+          .resize(boxW, boxH, { fit: 'inside', withoutEnlargement: true })
           .jpeg({ quality: 80 })
           .toBuffer();
+        // Only flag the wide variant once the pipeline actually produced it — if sharp threw,
+        // the nativeImage fallback below builds a PLAIN thumb that must not land on the w key.
+        wideThumb = wantWide;
       } catch {
         // Sharp failed — fall back to nativeImage
       }
@@ -4091,7 +4139,10 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
 
     // Save to disk cache (fire and forget). Long-path-wrap so cache
     // writes don't fail on unusually-long userData paths.
-    fs.promises.writeFile(cachePathLong, jpegBuffer).catch(() => {});
+    // r544 — wide-variant thumbs land on the "w" key; also drop a stale plain entry (the old
+    // long-edge sliver) so the self-heal check above runs once, not on every request.
+    if (wideThumb) fs.promises.unlink(cachePathLong).catch(() => {});
+    fs.promises.writeFile(wideThumb ? cachePathWideLong : cachePathLong, jpegBuffer).catch(() => {});
 
     return { success: true, dataUrl: `data:image/jpeg;base64,${jpegBuffer.toString('base64')}` };
   } catch {
