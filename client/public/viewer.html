@@ -2260,7 +2260,11 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      z-index: 10001;
+      /* v3.0 round 548 (Terry) — modal confirms/alerts must beat EVERY surface: at 10001 they
+         rendered UNDER the Collages Welcome Screen (z 90000) — the trial-cap dialog (and even
+         the delete-project confirm) fired invisibly beneath it. Caught by screenshot. 200001
+         also tops the naming wizard (200000): a confirm above a wizard is correct layering. */
+      z-index: 200001;
     }
     .enhance-ai-warning-card {
       background: #1e1b2e;
@@ -13556,7 +13560,7 @@
         const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Template';
         meta.appendChild(name); meta.appendChild(tag);
         card.appendChild(thumb); card.appendChild(meta);
-        card.addEventListener('click', () => { try { if (openBuiltinTemplate(spec)) hideCollageWelcome(); } catch (_) {} });
+        card.addEventListener('click', async () => { if (!(await collageTrialGate('collage'))) return; try { if (openBuiltinTemplate(spec)) hideCollageWelcome(); } catch (_) {} });   // v3.0 round 548 (Terry) — trial cap
         grid.appendChild(card);
       });
       let list = [];
@@ -13610,12 +13614,12 @@
       try { updateCollageGoto(); } catch (_) {}
       try { selectCollageItem(null); } catch (_) {}   // v2.1 round 360 (Terry) — deselect so no tile chrome seeps onto the welcome screen
       const blank = document.getElementById('cws-blank');
-      if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', () => { newBlankCollage(); hideCollageWelcome(); }); }
+      if (blank && !blank.dataset.wired) { blank.dataset.wired = '1'; blank.addEventListener('click', async () => { if (!(await collageTrialGate('collage'))) return; newBlankCollage(); hideCollageWelcome(); }); }   // v3.0 round 548 (Terry) — trial cap
       // v2.1 round 359 (Terry) — IG Carousel quick-start tile: jump straight into a multi-page carousel.
       const cwsCar = document.getElementById('cws-carousel');
       // v2.1 round 360 (Terry) — ALWAYS start a FRESH 2-page carousel (the old enterCarouselFromMenu
       // early-returned when already in carousel mode, so it reused the stale 6-page one).
-      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', () => { hideCollageWelcome(); try { if (carouselMode) exitCarouselMode(); enterCarouselMode(CAROUSEL_DEFAULT); } catch (_) {} }); }
+      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', async () => { if (!(await collageTrialGate('carousel'))) return; hideCollageWelcome(); try { if (carouselMode) exitCarouselMode(); enterCarouselMode(CAROUSEL_DEFAULT); } catch (_) {} }); }   // v3.0 round 548 (Terry) — trial cap
       buildCwsTemplates();
       buildCwsRecent();
       w.classList.add('active');
@@ -16925,6 +16929,7 @@
         const ok = await showPdrConfirm({ title: 'Start a carousel?', body: 'Starting a carousel will clear the current photos. Continue?', confirmLabel: 'Continue', cancelLabel: 'Cancel' });
         if (!ok) return;
       }
+      if (!(await collageTrialGate('carousel'))) return;   // v3.0 round 548 (Terry) — trial cap (converting via the Canvas Size carousel preset)
       // v2.1 round 257 (Terry) — enterCarouselMode now starts ALL pages blank (it clears
       // the live collage via the carousel restore path), so no separate pre-clear here.
       enterCarouselMode(CAROUSEL_DEFAULT);
@@ -17303,6 +17308,33 @@
           }
         }
       } catch (_) {}
+    }
+    // v3.0 round 548 (Terry) — FREE-TRIAL creation caps: 5 collages + 5 carousels (the 1000-file
+    // Fix cap is separate and unchanged). Counted LIVE from saved projects (templates excluded),
+    // so deleting an old one frees a slot. Paid plans — and any license-read failure — pass
+    // straight through: this gate must never be able to lock a paying customer out.
+    async function collageTrialGate(kind) {
+      try {
+        const st = await window.pdr.license.getStatus();
+        // Cap EXACTLY the Free Trial plan ('free'). Paid plans pass; so do 'none'/'invalid'/
+        // errors — an unlicensed DEV build reports status 'none' with no premium flag, and
+        // this gate must never block development (or a not-yet-signed-up install).
+        if (!st || st.plan !== 'free') return true;
+        const list = await window.pdr.collage.listProjects();
+        const projects = (list || []).filter((p) => p && p.kind !== 'template');
+        const cars = projects.filter((p) => !!p.carousel).length;
+        const count = kind === 'carousel' ? cars : (projects.length - cars);
+        if (count < 5) return true;
+        const what = kind === 'carousel' ? 'carousels' : 'collages';
+        const ok = await showPdrConfirm({
+          title: (kind === 'carousel' ? 'Carousel' : 'Collage') + ' limit reached',
+          body: 'The free trial includes 5 saved ' + what + ' — you’ve used them all. Upgrade for unlimited creating, or delete an old one to free a slot.',
+          confirmLabel: 'See plans',
+          cancelLabel: 'Maybe later'
+        });
+        if (ok) { try { window.pdr.openExternal('https://photodaterescue.com/#pricing'); } catch (_) {} }
+        return false;
+      } catch (_) { return true; }
     }
     // Reflect whether this collage has been saved yet: "Save" (first time) vs "Update", and reveal the chevron.
     function updateCollageSaveButton() {
@@ -20000,6 +20032,18 @@
       // v2.1 round 317 (Terry) — a blank open (no preselected photos) lands on the Collages
       // Welcome Screen; opening FROM selected photos skips it and goes straight to editing.
       if (files.length === 0) { try { showCollageWelcome(); } catch (_) {} }
+      else {
+        // v3.0 round 548 (Terry) — the photos→new-collage path from the main window is also a
+        // CREATION: at the free-trial cap, cancel the implicit new project (kill the pending
+        // autosave + drop the id) and land on the Welcome Screen instead — every route out of
+        // it re-checks the gate.
+        collageTrialGate('collage').then((ok) => {
+          if (ok) return;
+          try { if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; } } catch (_) {}
+          try { currentCollageProjectId = null; } catch (_) {}
+          try { showCollageWelcome(); } catch (_) {}
+        });
+      }
     }
 
     // v2.0.14 (Terry 2026-05-28) — filmstrip refresh on rotate. The

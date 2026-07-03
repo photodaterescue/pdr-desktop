@@ -129,6 +129,7 @@ import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
 import { TrialLimitModal } from "@/components/TrialLimitModal";
+import { WhatsNew30 } from "@/components/WhatsNew30";
 import { SendToPhoneModal } from "@/components/SendToPhoneModal";
 import { PrintModal } from "@/components/PrintModal";
 import { FolderBrowserModal } from "@/components/FolderBrowserModal";
@@ -689,6 +690,35 @@ useEffect(() => {
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | 'search' | null>(null);
+  // v3.0 round 548 (Terry) — the "What's new in 3.0" showcase splash ("The Power of 3").
+  // Shown once per install (localStorage). IMPORTANT: the Workspace stays MOUNTED (prewarmed)
+  // underneath the Welcome screen, so a mount-time trigger would fire while Welcome still
+  // covers this whole layer (caught by screenshot). Gate on the route instead: the splash
+  // fires ~1.6s after the user actually ENTERS the workspace. Replayable from About PDR.
+  const [showWhatsNew30, setShowWhatsNew30] = useState(false);
+  useEffect(() => {
+    if (!location || !location.startsWith('/workspace')) return;
+    let cancelled = false;
+    // No app-version check: this code only ships in 3.x builds, so the seen-flag is the
+    // whole gate. (A getVersion() check was tried first, but in DEV the IPC falls back to
+    // Electron's own version — "39.2.7" — so the splash could never fire outside a
+    // packaged build. Caught live.)
+    try {
+      if (localStorage.getItem('pdr-whatsnew-30-shown') !== '1') {
+        setTimeout(() => { if (!cancelled) setShowWhatsNew30(true); }, 1600);
+      }
+    } catch { /* never block boot on the showcase */ }
+    return () => { cancelled = true; };
+  }, [location]);
+  useEffect(() => {
+    const onReplay = () => setShowWhatsNew30(true);
+    window.addEventListener('pdr:replay-whatsnew30', onReplay);
+    return () => window.removeEventListener('pdr:replay-whatsnew30', onReplay);
+  }, []);
+  const dismissWhatsNew30 = () => {
+    try { localStorage.setItem('pdr-whatsnew-30-shown', '1'); } catch { /* non-fatal */ }
+    setShowWhatsNew30(false);
+  };
   // Top-level "view" currently occupying the main content area. Dashboard is
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
@@ -3511,6 +3541,15 @@ return (
               onReportProblem={() => setShowReportProblem(true)}
             />
           </div>
+        )}
+        {/* v3.0 round 548 (Terry) — the "Power of 3" showcase splash (z-50, above the
+            guidance-panel overlay so the About-PDR replay link can play it in place). */}
+        {showWhatsNew30 && (
+          <WhatsNew30
+            isOpen={showWhatsNew30}
+            onClose={dismissWhatsNew30}
+            onSeeFullList={() => { dismissWhatsNew30(); setActivePanel('about-pdr'); }}
+          />
         )}
 
         {/* Bottom action bar portal target — sibling of the zoom
@@ -12210,6 +12249,15 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                   <h2 className="text-2xl font-semibold text-foreground">Photo Date Rescue</h2>
                   <p className="text-sm italic text-muted-foreground">Bring every photo home.</p>
                   <p className="text-sm text-muted-foreground">Version {appVersion}</p>
+                  {/* v3.0 round 548 (Terry) — replay the "Power of 3" showcase splash. Muted
+                      text-link convention; the splash renders at z-50 above this panel. */}
+                  <button
+                    type="button"
+                    onClick={() => { try { window.dispatchEvent(new Event('pdr:replay-whatsnew30')); } catch { /* non-fatal */ } }}
+                    className="mt-1.5 text-xs text-muted-foreground underline underline-offset-2 hover:text-foreground transition-colors"
+                  >
+                    Replay the &ldquo;What&apos;s new in 3.0&rdquo; showcase
+                  </button>
                 </div>
               </div>
             </div>
@@ -12370,7 +12418,16 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Screen Capture</strong> &mdash; record your screen (or grab a screenshot) straight into your library. Blur sensitive areas live (as many as you need, with a confirmation overlay), mark zoom moments, drop in a webcam bubble, and add a microphone voiceover. Recordings save as MP4. The PDR Viewer&apos;s video timeline also gains scrub-to-preview so you can find the right frame at a glance.</li>
                         <li><strong className="text-foreground font-medium">Family Trees</strong> &mdash; turn the people you&apos;ve named in People Manager into a visual family tree. Focus any person to recentre the tree, expand or collapse the bloodline and extended-family branches one at a time, and explore generation after generation without the canvas getting tangled.</li>
                         <li><strong className="text-foreground font-medium">Sharing, the last mile</strong> &mdash; get photos out the moment you need them: drag several files out at once (with a &ldquo;Drag (N)&rdquo; count badge), Send to Phone over Wi-Fi by scanning a QR code, Print or Print to PDF, or Copy an image straight to the clipboard.</li>
-                        <li className="list-none -ml-5 mt-3 pt-3 border-t border-border/60"><strong className="text-foreground font-medium">Also in v3.0 (the work that had been lined up as v2.1):</strong> the toolbar view-pill and selection-banner recipes are now shared across Search &amp; Discovery, Memories &mdash; Dates, Memories &mdash; Albums and Needs Dates so the four surfaces behave as one family, and a round-trip between Memories and S&amp;D lets you pull selections out of a month or album for ad-hoc filtering and jump straight back. In detail:</li>
+                      </ul>
+                      {/* v3.0 round 548 (Terry, Tier 2 #8) — headlines by default: the four marquee bullets
+                          above stay visible; the ~60 detailed improvements collapse behind one expander. */}
+                      <details className="mt-3 pt-3 border-t border-border/60 group">
+                        <summary className="cursor-pointer select-none text-sm font-medium text-foreground list-none flex items-center gap-1.5 hover:text-primary transition-colors">
+                          <span className="inline-block transition-transform group-open:rotate-90 text-muted-foreground">&#9656;</span>
+                          Everything else in v3.0 &mdash; the full detail
+                        </summary>
+                        <p className="text-sm text-muted-foreground mt-2 mb-2 leading-relaxed"><strong className="text-foreground font-medium">Also in v3.0 (the work that had been lined up as v2.1):</strong> the toolbar view-pill and selection-banner recipes are now shared across Search &amp; Discovery, Memories &mdash; Dates, Memories &mdash; Albums and Needs Dates so the four surfaces behave as one family, and a round-trip between Memories and S&amp;D lets you pull selections out of a month or album for ad-hoc filtering and jump straight back. In detail:</p>
+                        <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">Video transcription (Whisper Large-v3 Turbo, on-device)</strong> &mdash; right-click any video in Memories, Albums, or Search &amp; Discovery and choose Transcribe. Progress modal with ETA. A lavender &ldquo;T&rdquo; badge appears on transcribed-video tiles, and the viewer overlays the spoken text. Everything runs locally on your machine &mdash; no API key, no upload, no rate limit. A new Settings switch under Privacy &amp; Security (&ldquo;Hide video transcripts&rdquo;) levers the T badge and the viewer subtitle overlay together.</li>
                         <li><strong className="text-foreground font-medium">Photo enhancement sliders in the PDR Viewer</strong> &mdash; manual brightness, contrast, saturation, and other live filter sliders with double-click reset. Save your changes back to the original file or to a new file (the original stays untouched in either case).</li>
                         <li><strong className="text-foreground font-medium">PDR Viewer Clip Trim</strong> &mdash; trim handles on the viewer&apos;s video timeline plus a Save button. Trim is non-destructive (a new file is written; the original stays put), saved as <code>_TR</code>, indexed automatically.</li>
@@ -12438,7 +12495,8 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Search &amp; Discovery survives large video-only result sets</strong> &mdash; scrolling thousands of videos in S&amp;D used to spawn a storm of ffmpeg subprocesses (retrying each unsupported codec four times), which could crash the renderer. Failed video paths are now remembered for the session so subsequent scroll-bys skip the cascade entirely; the cascade itself dropped from four attempts to two; and each ffmpeg attempt is killed after 5 s so a hung subprocess can&apos;t pile up.</li>
                         <li><strong className="text-foreground font-medium">Send to S&amp;D from Memories / Albums now starts fresh by default</strong> &mdash; right-clicking a photo (or selection) in a Memories &mdash; Dates drilldown or inside an album and choosing &ldquo;Send to S&amp;D&rdquo; now REPLACES the S&amp;D pile and clears any leftover filter state from earlier searches, so the arriving selection IS the S&amp;D contents. The sibling item &mdash; now labelled &ldquo;Add to S&amp;D pile&rdquo; &mdash; opts in to the previous accumulate behaviour for building up a review set across multiple visits.</li>
                         <li><strong className="text-foreground font-medium">LDM Done modal: two next-step buttons instead of one</strong> &mdash; after successfully changing your Library Drive the success screen now offers &ldquo;Back to Workspace&rdquo; (primary, closes the LDM as before) AND &ldquo;Back to libraries&rdquo; (secondary, returns to the LDM list inside the modal). Previously the single &ldquo;Close&rdquo; button always sent you back to the Workspace even if you were mid-way through a multi-library task.</li>
-                      </ul>
+                        </ul>
+                      </details>
                     </AccordionContent>
                   </AccordionItem>
 

@@ -47,6 +47,7 @@ export interface CollageProjectSummary {
   exportedFileId?: number | null;
   carouselAlbumId?: number | null;   // v3.0 round 545 (Terry) — surfaced so the Home screen can link a carousel to its album
   carouselWideFileId?: number | null;   // v3.0 round 546 (Terry) — the wide design's file id (Home View for carousels)
+  carousel?: boolean;   // v3.0 round 548 (Terry) — carousel-vs-collage kind, for the free-trial creation caps (5 of each)
 }
 
 const PROJECT_EXT = '.pdrcollage';
@@ -201,7 +202,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         for (const tp of [thumbPath(dir, rec.id), path.join(dir, `${rec.id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
           try { if (fs.existsSync(toLongPath(tp))) { thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; break; } } catch { /* no thumb */ }
         }
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));
