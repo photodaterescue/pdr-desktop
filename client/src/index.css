@@ -239,17 +239,24 @@
    State-driven: one class on the sidebar root (React-managed, survives re-renders); the per-link
    stagger comes from a `--ti` index the sweep sets on each item, so nothing depends on a
    DOM-added class React would reconcile away mid-animation. */
+/* r554→555 (Terry): the whole-menu glow BREATHES (soft, warm, inviting) and lingers for a few
+   seconds so the user can take it in and decide, rather than a hard static ring that rushes off. */
+@keyframes teach-sidebar-breathe {
+  0%, 100% { box-shadow: inset 0 0 0 2px rgba(217, 70, 239, 0.4), 0 0 20px 3px rgba(217, 70, 239, 0.16); }
+  50% { box-shadow: inset 0 0 0 2px rgba(232, 121, 249, 0.72), 0 0 40px 8px rgba(217, 70, 239, 0.34); }
+}
 .pdr-teaching {
-  box-shadow: inset 0 0 0 2px rgba(217, 70, 239, 0.6), 0 0 22px 2px rgba(217, 70, 239, 0.22) !important;
-  transition: box-shadow 0.35s ease;
+  animation: teach-sidebar-breathe 2.6s ease-in-out infinite;
+  border-radius: 3px;
 }
 @keyframes teach-nav-glow {
   0%, 100% { background-color: transparent; box-shadow: 0 0 0 0 rgba(217, 70, 239, 0); }
-  40% { background-color: rgba(217, 70, 239, 0.2); box-shadow: 0 0 16px 1px rgba(217, 70, 239, 0.5); }
+  45% { background-color: rgba(217, 70, 239, 0.2); box-shadow: 0 0 16px 1px rgba(217, 70, 239, 0.5); }
 }
 .pdr-teaching [data-teach-nav] {
-  animation: teach-nav-glow 0.75s ease-in-out;
-  animation-delay: calc(var(--ti, 0) * 0.15s);
+  /* r555 (Terry) — sequencing speed halved (0.15s → 0.3s per link) so it doesn't feel rushed. */
+  animation: teach-nav-glow 1s ease-in-out;
+  animation-delay: calc(var(--ti, 0) * 0.3s);
 }
 
 /* Amber sibling of outline-pulse. Used by the dup-source highlight

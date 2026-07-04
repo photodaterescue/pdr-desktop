@@ -4432,7 +4432,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         const items = document.querySelectorAll('.sidebar-container [data-teach-nav]');
         items.forEach((el, i) => (el as HTMLElement).style.setProperty('--ti', String(i)));
         setTeaching(true);
-        window.setTimeout(() => setTeaching(false), items.length * 150 + 1200);
+        // r555 (Terry) — 300ms/link sweep, THEN the warm glow lingers ~3.4s so the user can take
+        // it in and decide their first move (rather than the ring vanishing the instant it arrives).
+        window.setTimeout(() => setTeaching(false), items.length * 300 + 3400);
       } catch { /* the teach animation is non-essential */ }
     };
     window.addEventListener('pdr:teach-sidebar', onTeach);
