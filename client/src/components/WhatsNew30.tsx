@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, LayoutGrid, Network, Video, Sparkles } from 'lucide-react';
+import { X, LayoutGrid, Network, Video, Sparkles, ChevronDown, Zap, CalendarDays, Search, Users, CalendarClock, HardDrive } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 interface WhatsNew30Props {
@@ -61,7 +62,53 @@ const ALSO_CHIPS = [
   'Needs Dates',
 ];
 
+// v3.0 round 550 (Terry) — "the full picture": reviewers (and their viewers) skipped
+// straight past the FOUNDATION — Memories, S&D, the engine itself — so the splash now
+// carries the whole story behind one expander. Collapsed by default (no overwhelm);
+// the intrigued get the "what PDR is really capable of" reveal Terry asked for.
+const FOUNDATION = [
+  {
+    key: 'engine',
+    title: 'One engine, any source',
+    body: 'Phone dumps, SD cards, old drives — even a 50 GB Google Takeout. PDR fixes the dates and files everything into one clean, structured library. Nothing else on the market will do this.',
+    Icon: Zap,
+  },
+  {
+    key: 'memories',
+    title: 'Memories — Dates & Albums',
+    body: 'Every photo lands on a timeline of the day it was taken, with albums that organise your library without ever duplicating a file.',
+    Icon: CalendarDays,
+  },
+  {
+    key: 'search',
+    title: 'Search & Discovery',
+    body: 'Find any photo in seconds — by person, place, camera, caption or date. All of it offline, on your machine.',
+    Icon: Search,
+  },
+  {
+    key: 'people',
+    title: 'People Manager & faces',
+    body: 'Name a face once and PDR finds that person across your whole library — the same names that power Family Trees.',
+    Icon: Users,
+  },
+  {
+    key: 'pace',
+    title: 'Your pace, no pressure',
+    body: 'Photos that couldn’t be dated wait patiently in Needs Dates. Fix a handful today, a hundred next month — nothing rushes you.',
+    Icon: CalendarClock,
+  },
+  {
+    key: 'yours',
+    title: 'A library that survives anything',
+    body: 'Your library lives on your own drive and reconnects instantly after a reinstall or a new PC. It is yours, forever.',
+    Icon: HardDrive,
+  },
+];
+
 export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) {
+  // r550 — "the full picture" expander (collapsed by default). Hook sits above the
+  // early return per the rules of hooks.
+  const [showFull, setShowFull] = useState(false);
   if (!isOpen) return null;
 
   return (
@@ -101,7 +148,10 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
               initial={{ scale: 0.5, opacity: 0, rotate: -8 }}
               animate={{ scale: 1, opacity: 1, rotate: 0 }}
               transition={{ delay: 0.15, type: 'spring', duration: 0.8, bounce: 0.35 }}
-              className="absolute -top-8 right-8 text-[190px] leading-none font-bold bg-gradient-to-br from-violet-400/30 to-fuchsia-400/20 bg-clip-text text-transparent select-none pointer-events-none"
+              /* r550 (Terry queried the crop) — the bleed is deliberate, but at 190px it clipped
+                 timidly and read as an accident. Bigger + pushed harder off the corner = an
+                 unmistakably intentional poster crop. */
+              className="absolute -top-20 -right-3 text-[240px] leading-none font-bold bg-gradient-to-br from-violet-400/30 to-fuchsia-400/20 bg-clip-text text-transparent select-none pointer-events-none"
             >
               3
             </motion.span>
@@ -143,7 +193,15 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
           </div>
 
           {/* The three pillars — Create / Connect / Capture, centred. */}
-          <div className="px-10 pt-6 pb-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.26 }}
+            className="pt-6 text-center text-[11px] font-semibold tracking-[0.18em] uppercase text-muted-foreground"
+          >
+            New in 3.0
+          </motion.p>
+          <div className="px-10 pt-3 pb-2 grid grid-cols-1 sm:grid-cols-3 gap-4">
             {PILLARS.map((p, i) => (
               <motion.div
                 key={p.key}
@@ -183,6 +241,45 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
               ))}
             </div>
           </motion.div>
+
+          {/* r550 (Terry) — "the full picture": the FOUNDATION features behind one expander,
+              collapsed by default. Reviewers skipped straight past Memories/S&D/the engine, so
+              the splash now tells the whole story without assuming anyone knows v2. */}
+          <div className="px-10 pt-5 text-center">
+            <button
+              type="button"
+              onClick={() => setShowFull((v) => !v)}
+              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+            >
+              <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showFull ? 'rotate-180' : ''}`} />
+              {showFull ? 'Show less' : 'New to PDR? See the full picture — everything it already does'}
+            </button>
+            <AnimatePresence initial={false}>
+              {showFull && (
+                <motion.div
+                  initial={{ height: 0, opacity: 0 }}
+                  animate={{ height: 'auto', opacity: 1 }}
+                  exit={{ height: 0, opacity: 0 }}
+                  transition={{ duration: 0.35, ease: 'easeInOut' }}
+                  className="overflow-hidden"
+                >
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 text-left">
+                    {FOUNDATION.map((f) => (
+                      <div key={f.key} className="flex items-start gap-3 rounded-xl border border-border bg-secondary/25 p-3.5">
+                        <div className="w-8 h-8 shrink-0 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 rounded-lg flex items-center justify-center border border-violet-400/20">
+                          <f.Icon className="w-4 h-4 text-violet-500" />
+                        </div>
+                        <div>
+                          <h4 className="text-[13px] font-semibold text-foreground mb-0.5">{f.title}</h4>
+                          <p className="text-xs text-muted-foreground leading-relaxed">{f.body}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </div>
 
           {/* CTAs + the ethos closer (mirrors the Welcome screen's trio line). */}
           <div className="px-10 pb-8 pt-5 space-y-3 text-center">
