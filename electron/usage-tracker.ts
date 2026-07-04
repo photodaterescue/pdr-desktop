@@ -47,6 +47,19 @@ const WORKER_BASE = 'https://updates.photodaterescue.com';
  * the typical multi-GB library a paid tier targets. */
 export const FREE_TRIAL_FILE_LIMIT = 1_000;
 
+/** v3.0 round 560 (Terry) — additional Free-account creation caps. These
+ *  are enforced LOCALLY against the search DB (unlike the file cap, which
+ *  is a cloud counter), so they reset if the user deletes items — that's
+ *  fine, it just means they're using fewer. The intent (Terry): let people
+ *  genuinely experience PDR — "if they like it, they'll buy it" — while
+ *  the caps stop a free account from doing a whole family / library for
+ *  free. Numbers are Terry's: 12 people is "enough to get into the swing
+ *  of things, but not enough that it creates their whole family." */
+export const FREE_TREES_PEOPLE_LIMIT = 12;
+export const FREE_VIDEO_CLIP_LIMIT = 10;
+export const FREE_COLLAGE_LIMIT = 5;
+export const FREE_CAROUSEL_LIMIT = 5;
+
 /** Network timeout for the Worker fetch (ms). Short on purpose —
  * the user shouldn't wait more than a couple of seconds at the
  * pre-fix gate just to know how many files they've used. The

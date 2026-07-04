@@ -350,6 +350,8 @@ import {
   getUsage as getUsageFromWorker,
   incrementUsage as incrementUsageOnWorker,
   FREE_TRIAL_FILE_LIMIT,
+  FREE_TREES_PEOPLE_LIMIT,
+  FREE_VIDEO_CLIP_LIMIT,
 } from './usage-tracker.js';
 import {
   checkForUpdates,
@@ -496,6 +498,9 @@ import {
   setPersonCardBackground,
   updatePersonNotes,
   setPersonFaceFromLibraryFile,
+  removeManualFace,
+  countNamedPersons,
+  countTrimmedClips,
   setPersonGender,
   getFamilyGraph,
   getPersonCooccurrenceStats,
@@ -9998,6 +10003,14 @@ ipcMain.handle('trees:setPersonFaceFile', async (_event, args: { personId: numbe
   }
 });
 
+ipcMain.handle('trees:removeManualFace', async (_event, personId: number) => {
+  try {
+    return removeManualFace(personId);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('trees:setPersonGender', async (_event, args: { personId: number; gender: string | null }) => {
   try {
     return setPersonGender(args.personId, args.gender);
@@ -10093,8 +10106,27 @@ ipcMain.handle('trees:createPlaceholderPerson', async () => {
   }
 });
 
+// v3.0 round 560 (Terry) — is this a Free account (no premium)? Fail-OPEN
+// (treat as premium) on any error so a licensed user is never wrongly
+// blocked; getLicenseStatus is a local cached read, so this is cheap.
+async function isFreeAccount(): Promise<boolean> {
+  try {
+    const s = await getLicenseStatus();
+    return !s?.canUsePremiumFeatures;
+  } catch {
+    return false;
+  }
+}
+
+const FREE_PEOPLE_CAP_MESSAGE =
+  `Your free account can name up to ${FREE_TREES_PEOPLE_LIMIT} people in your family tree — ` +
+  `enough to get a real feel for Trees. Upgrade to build out your whole family.`;
+
 ipcMain.handle('trees:createNamedPerson', async (_event, name: string) => {
   try {
+    if (await isFreeAccount() && countNamedPersons() >= FREE_TREES_PEOPLE_LIMIT) {
+      return { success: false, error: FREE_PEOPLE_CAP_MESSAGE, limit: 'people' as const };
+    }
     return createNamedPerson(name);
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -10103,6 +10135,9 @@ ipcMain.handle('trees:createNamedPerson', async (_event, name: string) => {
 
 ipcMain.handle('trees:namePlaceholder', async (_event, args: { personId: number; name: string }) => {
   try {
+    if (await isFreeAccount() && countNamedPersons() >= FREE_TREES_PEOPLE_LIMIT) {
+      return { success: false, error: FREE_PEOPLE_CAP_MESSAGE, limit: 'people' as const };
+    }
     return namePlaceholder(args.personId, args.name);
   } catch (err) {
     return { success: false, error: (err as Error).message };
@@ -13395,6 +13430,14 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
     }
     if (typeof req.startSec !== 'number' || typeof req.endSec !== 'number' || req.endSec <= req.startSec) {
       return { success: false, error: 'Invalid trim range.' };
+    }
+    // v3.0 round 560 (Terry) — Free-account cap of 10 saved video clips.
+    if (await isFreeAccount() && countTrimmedClips() >= FREE_VIDEO_CLIP_LIMIT) {
+      return {
+        success: false,
+        error: `Your free account can save up to ${FREE_VIDEO_CLIP_LIMIT} video clips. Upgrade for unlimited clips.`,
+        limit: 'clips' as const,
+      };
     }
     if (!ffmpegPath) {
       return { success: false, error: 'ffmpeg not available — cannot trim.' };

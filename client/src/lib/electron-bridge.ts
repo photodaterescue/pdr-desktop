@@ -1942,6 +1942,15 @@ export async function saveCapturedImageToLibrary(dataUrl: string): Promise<{ suc
   return { success: false, error: 'Not running in Electron' };
 }
 
+// v3.0 round 560 (Terry) — unlink a screenshot/webcam photo from a person (leaves the
+// image in the library; only manually-added faces are removable this way).
+export async function removeManualFace(personId: number): Promise<{ success: boolean; error?: string; removed?: boolean }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.removeManualFace(personId);
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export type PersonGender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null;
 
 export async function setPersonGender(personId: number, gender: PersonGender): Promise<{ success: boolean; error?: string }> {
@@ -1973,6 +1982,9 @@ export interface FamilyGraphNode {
   notes: string | null;
   /** 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null */
   gender: string | null;
+  /** v3.0 round 560 (Terry) — true when the avatar came from the Trees
+   *  screenshot/webcam flow (removable); a PM-verified face is not. */
+  hasManualFace: boolean;
   hopsFromFocus: number;
   photoCount: number;
   /** Total parent_of count in the full DB — not limited to the

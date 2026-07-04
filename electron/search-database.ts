@@ -6735,6 +6735,10 @@ export interface FamilyGraphNode {
    *  | 'unknown' | null. null = not yet set. Drives gendered labels +
    *  the top-right symbol on the card. */
   gender: string | null;
+  /** True when the person's avatar was added via the Trees screenshot /
+   *  webcam flow (a full-frame, embedding-less face). Only these can be
+   *  UNLINKED from the tile; a real PM-verified face can only be hidden. */
+  hasManualFace: boolean;
   hopsFromFocus: number;
   photoCount: number;
   /** Total parent_of edges in the FULL DB where this person is the
@@ -7016,6 +7020,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   const faceCoordRows = db.prepare(`
     SELECT fd.id AS face_id, fd.person_id, fd.file_id,
            fd.box_x, fd.box_y, fd.box_w, fd.box_h,
+           (fd.embedding IS NULL) AS emb_null,
            f.file_path
     FROM face_detections fd
     JOIN indexed_files f ON fd.file_id = f.id
@@ -7024,13 +7029,18 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   `).all(...ids) as {
     face_id: number; person_id: number; file_id: number;
     box_x: number; box_y: number; box_w: number; box_h: number;
+    emb_null: number;
     file_path: string;
   }[];
   const faceByFaceId = new Map<number, typeof faceCoordRows[0]>();
   const firstFaceByPerson = new Map<number, typeof faceCoordRows[0]>();
+  // A person has a "manual" (screenshot/webcam) face if any of their faces
+  // is full-frame with no embedding — those are the removable ones.
+  const hasManualFaceByPerson = new Set<number>();
   for (const f of faceCoordRows) {
     faceByFaceId.set(f.face_id, f);
     if (!firstFaceByPerson.has(f.person_id)) firstFaceByPerson.set(f.person_id, f);
+    if (f.emb_null && f.box_w >= 0.999 && f.box_h >= 0.999) hasManualFaceByPerson.add(f.person_id);
   }
 
   const nodes: FamilyGraphNode[] = personRows.map(row => {
@@ -7051,6 +7061,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       cardBackground: row.card_background,
       notes: row.notes ?? null,
       gender: row.gender,
+      hasManualFace: hasManualFaceByPerson.has(row.id),
       hopsFromFocus: visited.get(row.id) ?? maxHops,
       photoCount: photoCountByPerson.get(row.id) ?? 0,
       totalParentCount: totalParentCountByPerson.get(row.id) ?? 0,
@@ -7549,6 +7560,54 @@ export function setPersonFaceFromLibraryFile(personId: number, fileId: number): 
   const faceId = info.lastInsertRowid as number;
   db.prepare(`UPDATE persons SET representative_face_id = ?, updated_at = datetime('now') WHERE id = ?`).run(faceId, personId);
   return { success: true, faceId };
+}
+
+/** A "manual" face is one added via the Trees screenshot / webcam flow:
+ *  full-frame box (0,0,1,1) with NO embedding. Those are the only faces
+ *  we let the user UNLINK — a real PM-verified face (a proper crop with an
+ *  embedding) is never removed this way; it can only be HIDDEN. Removing
+ *  deletes the face_detection row (so it stops being the person's avatar)
+ *  but LEAVES the captured image in the library, exactly as Terry framed
+ *  it: "unlink a screenshot, or webcam shot image". */
+export function removeManualFace(personId: number): { success: boolean; error?: string; removed?: boolean } {
+  const db = getDb();
+  const person = db.prepare(`SELECT id, representative_face_id FROM persons WHERE id = ?`).get(personId) as { id: number; representative_face_id: number | null } | undefined;
+  if (!person) return { success: false, error: 'Person not found.' };
+  const manual = db.prepare(
+    `SELECT id FROM face_detections WHERE person_id = ? AND box_w >= 0.999 AND box_h >= 0.999 AND embedding IS NULL`
+  ).all(personId) as { id: number }[];
+  if (manual.length === 0) return { success: false, error: 'No screenshot or webcam photo to remove for this person.' };
+  const ids = manual.map(m => m.id);
+  if (person.representative_face_id != null && ids.includes(person.representative_face_id)) {
+    db.prepare(`UPDATE persons SET representative_face_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(personId);
+  }
+  const del = db.prepare(`DELETE FROM face_detections WHERE id = ?`);
+  for (const id of ids) del.run(id);
+  return { success: true, removed: true };
+}
+
+/** Count of NAMED, non-discarded persons — the free-account Trees cap
+ *  ("add 12 people"). Deliberately excludes unnamed auto-detected face
+ *  clusters and unnamed placeholder bridges, so a free user who fixed a
+ *  lot of photos isn't blocked from ever building a tree; the cap is on
+ *  the people they've actually identified/created. */
+export function countNamedPersons(): number {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT COUNT(*) AS n FROM persons WHERE discarded_at IS NULL AND is_placeholder = 0 AND name IS NOT NULL AND TRIM(name) != ''`
+  ).get() as { n: number };
+  return row?.n ?? 0;
+}
+
+/** Count of trimmed video clips in the library — the free-account cap of
+ *  10. Clips are written as `<name>_T.<ext>` (collision-bumped to
+ *  `_T_2`, `_T_3`…) by viewer:trimVideo, so we match that naming. */
+export function countTrimmedClips(): number {
+  const db = getDb();
+  const row = db.prepare(
+    `SELECT COUNT(*) AS n FROM indexed_files WHERE file_type = 'video' AND (filename GLOB '*_T.*' OR filename GLOB '*_T_[0-9]*.*')`
+  ).get() as { n: number };
+  return row?.n ?? 0;
 }
 
 /** Set a person's gender. Writes to persons.gender and logs a

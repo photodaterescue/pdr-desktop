@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp, StickyNote, Camera, Video } from 'lucide-react';
-import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, updatePersonNotes, setPersonFaceFromFile, saveCapturedImageToLibrary, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, updatePersonNotes, setPersonFaceFromFile, saveCapturedImageToLibrary, removeManualFace, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm, promptChoice } from './promptConfirm';
@@ -775,6 +775,14 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
     const saved = await saveCapturedImageToLibrary(dataUrl);
     if (!saved?.success || saved.fileId == null) return;
     const res = await setPersonFaceFromFile(personId, saved.fileId);
+    if (res?.success) onGraphMutated();
+  }, [onGraphMutated]);
+
+  // v3.0 round 560 (Terry) — unlink a screenshot/webcam photo from a person. Only offered when the
+  // avatar is a manually-added one (hasManualFace); a PM-verified face is never removed this way.
+  // The captured image STAYS in the library — this just detaches it as the person's face.
+  const removeFaceFor = useCallback(async (personId: number) => {
+    const res = await removeManualFace(personId);
     if (res?.success) onGraphMutated();
   }, [onGraphMutated]);
 
@@ -5325,6 +5333,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           isFocus={contextMenu.personId === layout.focusPersonId}
           hasCardBackground={!!nodeById.get(contextMenu.personId)?.cardBackground}
           hasNotes={!!(nodeById.get(contextMenu.personId)?.notes || '').trim()}
+          hasManualFace={!!nodeById.get(contextMenu.personId)?.hasManualFace}
           ancestryHidden={!!hiddenAncestorPersonIds?.includes(contextMenu.personId)}
           canHideAncestry={contextMenu.personId !== layout.focusPersonId && !!onToggleHiddenAncestor}
           canShowPathway={!!onTriggerHighlight && triggerHighlightOnRightClick && contextMenu.personId !== layout.focusPersonId}
@@ -5338,6 +5347,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           onEditNotes={() => { editNotesFor(contextMenu.personId); setContextMenu(null); }}
           onSetFaceFromScreenshot={() => { setFaceFromScreenshotFor(contextMenu.personId); setContextMenu(null); }}
           onSetFaceFromWebcam={() => { openWebcamFor(contextMenu.personId); setContextMenu(null); }}
+          onRemoveFace={() => { removeFaceFor(contextMenu.personId); setContextMenu(null); }}
           onToggleAncestry={() => { onToggleHiddenAncestor?.(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
         />
@@ -6901,12 +6911,14 @@ function WebcamCaptureModal({ name, onCancel, onCapture }: { name: string; onCan
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onSetFaceFromWebcam, onToggleAncestry, onClose }: {
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, hasManualFace, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onSetFaceFromWebcam, onRemoveFace, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
   hasCardBackground: boolean;
   hasNotes: boolean;
+  /** True when the avatar is a screenshot/webcam photo (removable). */
+  hasManualFace: boolean;
   ancestryHidden: boolean;
   canHideAncestry: boolean;
   /** Whether the "Show pathway from focus" menu item should be
@@ -6923,6 +6935,7 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryH
   onEditNotes: () => void;
   onSetFaceFromScreenshot: () => void;
   onSetFaceFromWebcam: () => void;
+  onRemoveFace: () => void;
   onToggleAncestry: () => void;
   onClose: () => void;
 }) {
@@ -6959,6 +6972,11 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryH
       <MenuItem icon={<StickyNote className="w-4 h-4" />} label={hasNotes ? 'Edit note…' : 'Add a note…'} onClick={onEditNotes} />
       <MenuItem icon={<Camera className="w-4 h-4" />} label="Set face from screenshot…" onClick={onSetFaceFromScreenshot} />
       <MenuItem icon={<Video className="w-4 h-4" />} label="Set face from webcam…" onClick={onSetFaceFromWebcam} />
+      {/* v3.0 round 560 (Terry) — only a screenshot/webcam photo can be unlinked; a
+          PM-verified face is never removable here (it can be hidden instead). */}
+      {hasManualFace && (
+        <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Remove this photo" onClick={onRemoveFace} />
+      )}
       {canHideAncestry && (
         <>
           <div className="border-t border-border my-1" />

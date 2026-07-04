@@ -123,6 +123,7 @@ export function augmentWithVirtualGhosts(
           cardBackground: null,
           notes: null,
           gender: null,
+          hasManualFace: false,
           hopsFromFocus: node.hopsFromFocus + 1,
           photoCount: 0,
           totalParentCount: 0,

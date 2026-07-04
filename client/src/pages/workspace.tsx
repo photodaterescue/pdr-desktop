@@ -738,12 +738,15 @@ useEffect(() => {
     if (addSourceCoachTimer.current) { clearTimeout(addSourceCoachTimer.current); addSourceCoachTimer.current = null; }
     setAddSourceCoach(null);
   };
-  const runGetStartedTeach = () => {
+  const runGetStartedTeach = (opts?: { forcePreview?: boolean }) => {
     // r559 (Terry) — EVERYONE gets the side-menu hub-glow ("there should be something even if
     // you're not a beginner"); only genuine newcomers (no Library Drive yet) also get the Add
     // Source coach-mark, since "bring your photos in" is only the right first move for them.
     runSidebarTeach();
-    if (destinationPath !== null) return;   // veteran → glow only, no coach-mark
+    // r560 (Terry) — forcePreview lets a user who HAS a library see the newcomer coach-mark
+    // anyway (so onboarding can be replayed / previewed); the real Get Started stays glow-only
+    // for veterans.
+    if (destinationPath !== null && !opts?.forcePreview) return;   // veteran → glow only, no coach-mark
     window.setTimeout(() => {
       try {
         const el = document.querySelector('[data-tour="add-source"]');
@@ -1577,6 +1580,17 @@ const handleActivateLicense = () => {
   const [destinationPath, setDestinationPath] = useState<string | null>(null);
   const [destinationFreeGB, setDestinationFreeGB] = useState<number>(0);
   const [destinationTotalGB, setDestinationTotalGB] = useState<number>(0);
+
+  // r560 (Terry) — "how do I see what first-timers see?" A preview trigger anyone can fire; it
+  // shows the newcomer coach-mark regardless of library state. (Declared here, AFTER
+  // destinationPath, so the dep array isn't in its temporal dead zone.) Also the hook for a
+  // future "replay the getting-started tip" affordance.
+  useEffect(() => {
+    const onPreview = () => runGetStartedTeach({ forcePreview: true });
+    window.addEventListener('pdr:preview-getstarted-teach', onPreview);
+    return () => window.removeEventListener('pdr:preview-getstarted-teach', onPreview);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [destinationPath]);
 
   // On mount: still honour the `rememberSources` setting for the
   // SOURCES list — but NEVER touch destinationPath here. The library
