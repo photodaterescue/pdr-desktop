@@ -280,7 +280,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Recovered</dt>
-                      <dd className="text-muted-foreground mt-0.5">A date PDR worked out from less-direct signals — filename patterns, folder structure, neighbouring photos, file system timestamps.</dd>
+                      <dd className="text-muted-foreground mt-0.5">A date PDR worked out from less-direct signals — filename patterns, folder structure, neighboring photos, file system timestamps.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">Marked</dt>
@@ -329,7 +329,7 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_RC — Recovered</dt>
-                      <dd className="text-muted-foreground mt-0.5">The date was worked out from less-direct signals — filename patterns, folder structure, neighbouring photos, file system timestamps. Confident enough to use but not as bullet-proof as Confirmed.</dd>
+                      <dd className="text-muted-foreground mt-0.5">The date was worked out from less-direct signals — filename patterns, folder structure, neighboring photos, file system timestamps. Confident enough to use but not as bullet-proof as Confirmed.</dd>
                     </div>
                     <div className="p-3 bg-secondary/30 border border-border rounded-lg">
                       <dt className="font-medium text-foreground">_MK — Marked</dt>

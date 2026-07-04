@@ -12091,9 +12091,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div>
                           <p className="font-medium text-foreground mb-2">Making it look good</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li><span className="font-medium text-foreground">Per-photo enhance</span> &mdash; brightness, contrast, colour / tone, vignette, grain, curved corners, blur</li>
+                            <li><span className="font-medium text-foreground">Per-photo enhance</span> &mdash; brightness, contrast, color / tone, vignette, grain, curved corners, blur</li>
                             <li><span className="font-medium text-foreground">Effects</span> &mdash; glow, drop-shadow / 3-D lift, and blend</li>
-                            <li><span className="font-medium text-foreground">Background</span> &mdash; a solid colour, a gradient, a texture, or one of your own photos</li>
+                            <li><span className="font-medium text-foreground">Background</span> &mdash; a solid color, a gradient, a texture, or one of your own photos</li>
                             <li><span className="font-medium text-foreground">Text &amp; emojis</span> &mdash; captions in real fonts with Instagram-style effects, plus emoji stickers</li>
                             <li>A <span className="font-medium text-foreground">caption</span> on a collage carries through to the saved photo everywhere in PDR</li>
                           </ul>
@@ -12345,7 +12345,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <li><span className="font-medium text-foreground">Needs Dates</span> — work through the Marked files (the ones with no reliable date) and set dates yourself, individually or in bulk.</li>
                     <li><span className="font-medium text-foreground">Family Trees</span> — turn the people in your library into a visual family tree you can build out and explore.</li>
                     <li><span className="font-medium text-foreground">Collages &amp; Carousels</span> — arrange your photos into designed collages, saved as re-openable projects, plus multi-page carousels — with templates, frames, captions and text.</li>
-                    <li><span className="font-medium text-foreground">Enhance</span> — fine-tune your photos with brightness, contrast, colour and other adjustments right inside the Viewer.</li>
+                    <li><span className="font-medium text-foreground">Enhance</span> — fine-tune your photos with brightness, contrast, color and other adjustments right inside the Viewer.</li>
                     <li><span className="font-medium text-foreground">Screen Capture</span> — record your screen (or grab a screenshot) straight into your library, with on-the-fly blur, zoom, a webcam bubble and voiceover.</li>
                     <li><span className="font-medium text-foreground">Sharing</span> — get photos out the moment you need them: drag several at once, Send to Phone over Wi-Fi, Print or Print to PDF, or Copy.</li>
                   </ul>

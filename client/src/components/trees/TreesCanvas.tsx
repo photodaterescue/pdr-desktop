@@ -5880,7 +5880,7 @@ const ASSOCIATION_LABELS: Record<string, string> = {
   close_friend: 'close friend',
   best_friend: 'best friend',
   acquaintance: 'acquaintance',
-  neighbour: 'neighbour',
+  neighbour: 'neighbor',
   colleague: 'colleague',
   classmate: 'classmate',
   teammate: 'teammate',

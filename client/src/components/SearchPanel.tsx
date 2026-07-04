@@ -3923,14 +3923,15 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       both inputs in the same row; click flips the
                       labels + multiplier without losing the typed
                       values (storage stays in MB internally). */}
+                  <IconTooltip label="Switch unit between MB and GB">
                   <button
                     type="button"
                     onClick={toggleSizeUnit}
                     className="px-3 py-2 rounded-lg border border-border text-xs font-medium text-foreground/70 hover:bg-secondary hover:text-foreground transition-colors whitespace-nowrap"
-                    title="Switch unit between MB and GB"
                   >
                     Show in {sizeUnit === 'MB' ? 'GB' : 'MB'}
                   </button>
+                  </IconTooltip>
                 </div>
               )}
               {overflowModalGroup === 'destination' && (
@@ -5777,15 +5778,16 @@ function UnitInput({ placeholder, value, onChange, unit, step, onUnitClick, min 
         className="flex-1 min-w-0 bg-transparent pl-2 py-1 text-xs text-foreground focus:outline-none"
       />
       {onUnitClick ? (
+        <IconTooltip label="Click to switch unit">
         <button
           type="button"
           onClick={onUnitClick}
           className="px-1.5 py-1 text-[10px] text-muted-foreground hover:text-foreground hover:bg-secondary/60 transition-colors select-none whitespace-nowrap"
           aria-label={`Switch unit, currently ${unit} — tap to change`}
-          title="Click to switch unit"
         >
           {unit}
         </button>
+        </IconTooltip>
       ) : (
         <span className="px-1.5 text-[10px] text-muted-foreground pointer-events-none select-none whitespace-nowrap">{unit}</span>
       )}

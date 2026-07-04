@@ -276,7 +276,7 @@
     <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
     <button id="blur" type="button" title="Blur an area — pause, then drag a box; the saved video blurs it. Add as many as you like.">Blur</button>
     <button id="unblur" type="button" title="Remove the last blur area you added">Unblur</button>
-    <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the centre, click again to zoom back out. Applied to the saved video.">Zoom</button>
+    <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the center, click again to zoom back out. Applied to the saved video.">Zoom</button>
     <button id="autozoom" type="button" title="Auto-zoom toward where you click — eases in on each click, eases back out when you pause. Applied to the saved video.">Auto-zoom</button>
     <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
       <option value="compact">Compact</option>
@@ -731,7 +731,7 @@
     } else {
       zoomActive = false;
       zoomBtn.classList.remove('active');
-      zoomBtn.title = 'Zoom in on the action — click to zoom toward the centre, click again to zoom back out';
+      zoomBtn.title = 'Zoom in on the action — click to zoom toward the center, click again to zoom back out';
       try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'close', endMs: clockMs() }); } catch (e) {}
     }
   });

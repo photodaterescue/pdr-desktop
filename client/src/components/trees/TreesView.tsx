@@ -689,7 +689,7 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
       const survivor = active?.focusPersonId ?? null;
       if (survivor != null && allPersons.some(p => p.id === survivor)) {
         setFocusPersonId(survivor);
-        toast('The focus person was merged — the tree now centres on the merged person.');
+        toast('The focus person was merged — the tree now centers on the merged person.');
       } else {
         setFocusPersonId(null);
         setFocusPickerOpen(true);

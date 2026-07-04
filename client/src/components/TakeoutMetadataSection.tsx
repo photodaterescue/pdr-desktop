@@ -237,7 +237,7 @@ export function TakeoutMetadataSection() {
               </button>
               {showDetail && (
                 <div className="mt-2 text-xs text-muted-foreground leading-relaxed space-y-1.5 animate-in fade-in slide-in-from-top-1 duration-200">
-                  <p>The cache holds Google&apos;s sidecar JSONs &mdash; the dates, GPS, and captions that ride alongside your photos in a Takeout. Used to fill in metadata for photos that don&apos;t carry their own JSON sidecar in the part you&apos;re analysing.</p>
+                  <p>The cache holds Google&apos;s sidecar JSONs &mdash; the dates, GPS, and captions that ride alongside your photos in a Takeout. Used to fill in metadata for photos that don&apos;t carry their own JSON sidecar in the part you&apos;re analyzing.</p>
                   <p>Only the JSON metadata is stored here &mdash; not the photo bytes. You can safely delete the original Takeout zips after they&apos;ve been scanned.</p>
                   <p>Adding Takeouts from another Google account creates a separate export group below; they never overwrite each other.</p>
                 </div>

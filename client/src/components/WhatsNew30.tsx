@@ -81,7 +81,7 @@ const FOUNDATION = [
   {
     key: 'memories',
     title: 'Memories — Dates & Albums',
-    body: 'Every photo lands on a timeline of the day it was taken, with albums that organise your library without ever duplicating a file.',
+    body: 'Every photo lands on a timeline of the day it was taken, with albums that organize your library without ever duplicating a file.',
     Icon: CalendarDays,
     accent: '#FEC242', // Memories amber
   },

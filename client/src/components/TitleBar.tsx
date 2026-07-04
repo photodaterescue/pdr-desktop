@@ -345,11 +345,11 @@ export function TitleBar() {
   // baseline-aligned "3.0" chip. A subtle hover background makes it read as clickable at rest;
   // the tooltip confirms. Clicking replays the "What's new in 3.0" showcase.
   const renderTitle = (collapsed: boolean) => (
+    <IconTooltip label="What’s new in 3.0 — see everything PDR does" side="bottom">
     <button
       type="button"
       onClick={openWhatsNew}
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-      title="What’s new in 3.0 — see everything PDR does"
       aria-label="Photo Date Rescue 3.0 — see what’s new"
       className={`group inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-foreground/[0.06] transition-colors ${collapsed ? 'ml-1.5' : ''}`}
     >
@@ -360,6 +360,7 @@ export function TitleBar() {
         3.0
       </span>
     </button>
+    </IconTooltip>
   );
   return (
     <div
