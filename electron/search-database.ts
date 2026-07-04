@@ -7061,7 +7061,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       cardBackground: row.card_background,
       notes: row.notes ?? null,
       gender: row.gender,
-      hasManualFace: hasManualFaceByPerson.has(row.id),
+      hasManualFace: hasManualFaceByPerson.has(row.id) || row.avatar_data != null,
       hopsFromFocus: visited.get(row.id) ?? maxHops,
       photoCount: photoCountByPerson.get(row.id) ?? 0,
       totalParentCount: totalParentCountByPerson.get(row.id) ?? 0,
@@ -7571,16 +7571,23 @@ export function setPersonFaceFromLibraryFile(personId: number, fileId: number): 
  *  it: "unlink a screenshot, or webcam shot image". */
 export function removeManualFace(personId: number): { success: boolean; error?: string; removed?: boolean } {
   const db = getDb();
-  const person = db.prepare(`SELECT id, representative_face_id FROM persons WHERE id = ?`).get(personId) as { id: number; representative_face_id: number | null } | undefined;
+  const person = db.prepare(`SELECT id, representative_face_id, avatar_data FROM persons WHERE id = ?`).get(personId) as { id: number; representative_face_id: number | null; avatar_data: string | null } | undefined;
   if (!person) return { success: false, error: 'Person not found.' };
   const manual = db.prepare(
     `SELECT id FROM face_detections WHERE person_id = ? AND box_w >= 0.999 AND box_h >= 0.999 AND embedding IS NULL`
   ).all(personId) as { id: number }[];
-  if (manual.length === 0) return { success: false, error: 'No screenshot or webcam photo to remove for this person.' };
-  const ids = manual.map(m => m.id);
-  if (person.representative_face_id != null && ids.includes(person.representative_face_id)) {
-    db.prepare(`UPDATE persons SET representative_face_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(personId);
+  const hadAvatarData = person.avatar_data != null;
+  if (manual.length === 0 && !hadAvatarData) {
+    return { success: false, error: 'No screenshot or webcam photo to remove for this person.' };
   }
+  const ids = manual.map(m => m.id);
+  // Clear the representative pointer only if it's one of the manual faces being deleted; ALWAYS
+  // clear avatar_data (the old manually-set-avatar path — see r558; a stuck avatar_data with no
+  // face is exactly what left a photo that couldn't be removed).
+  const repIsManual = person.representative_face_id != null && ids.includes(person.representative_face_id);
+  db.prepare(
+    `UPDATE persons SET avatar_data = NULL${repIsManual ? ', representative_face_id = NULL' : ''}, updated_at = datetime('now') WHERE id = ?`
+  ).run(personId);
   const del = db.prepare(`DELETE FROM face_detections WHERE id = ?`);
   for (const id of ids) del.run(id);
   return { success: true, removed: true };

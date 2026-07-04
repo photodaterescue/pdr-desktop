@@ -396,6 +396,24 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
   // ─── Lazy-load avatar face crops ───────────────────────────────
   useEffect(() => {
     let cancelled = false;
+    // r560 (Terry) — PRUNE stale crops first. When a person's photo is removed (Remove this
+    // photo → representativeFaceFilePath goes null) the cached crop must be dropped, or the tile
+    // keeps showing the old image until a full reload (the bug Terry hit on Mary Louise). Only
+    // nodes that still have a face keep their cached crop; everyone else reverts to the monogram.
+    const liveFaceIds = new Set(
+      layout.nodes.filter(n => n.representativeFaceFilePath && n.representativeFaceBox).map(n => n.personId)
+    );
+    for (const id of Array.from(avatarSigRef.current.keys())) {
+      if (!liveFaceIds.has(id)) avatarSigRef.current.delete(id);
+    }
+    setAvatars(prev => {
+      let changed = false;
+      const next = new Map(prev);
+      for (const id of Array.from(next.keys())) {
+        if (!liveFaceIds.has(id)) { next.delete(id); changed = true; }
+      }
+      return changed ? next : prev;
+    });
     (async () => {
       for (const node of layout.nodes) {
         if (!node.representativeFaceFilePath || !node.representativeFaceBox) continue;
