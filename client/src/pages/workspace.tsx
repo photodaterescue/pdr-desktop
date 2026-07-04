@@ -719,6 +719,11 @@ useEffect(() => {
     try { localStorage.setItem('pdr-whatsnew-30-shown', '1'); } catch { /* non-fatal */ }
     setShowWhatsNew30(false);
   };
+  // v3.0 round 553 (Terry) — when About PDR is opened FROM the splash's "See everything that's
+  // new" button, the current release's changelog entry auto-opens, scrolls into view, and pulses
+  // a fuchsia ring — so it's obvious THAT is what you were sent to look at (vs. a normal, curious
+  // visit to About PDR, which stays fully collapsed). One-shot: consumed on the panel's mount.
+  const [aboutHighlightVersion, setAboutHighlightVersion] = useState<string | null>(null);
   // Top-level "view" currently occupying the main content area. Dashboard is
   // the default (the existing workspace/dashboard hybrid); other options are
   // separate destinations in the sidebar.
@@ -3535,10 +3540,12 @@ return (
                       ? 'Back to Trees'
                       : 'Back to Workspace'
               }
-              onBackToWorkspace={() => setActivePanel(null)}
-              onNavigateToPanel={(panel) => setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support')}
+              onBackToWorkspace={() => { setActivePanel(null); setAboutHighlightVersion(null); }}
+              onNavigateToPanel={(panel) => { setAboutHighlightVersion(null); setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support'); }}
               onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
               onReportProblem={() => setShowReportProblem(true)}
+              highlightVersion={activePanel === 'about-pdr' ? aboutHighlightVersion : null}
+              onHighlightConsumed={() => setAboutHighlightVersion(null)}
             />
           </div>
         )}
@@ -3548,7 +3555,7 @@ return (
           <WhatsNew30
             isOpen={showWhatsNew30}
             onClose={dismissWhatsNew30}
-            onSeeFullList={() => { dismissWhatsNew30(); setActivePanel('about-pdr'); }}
+            onSeeFullList={() => { dismissWhatsNew30(); setAboutHighlightVersion('3.0.0'); setActivePanel('about-pdr'); }}
           />
         )}
 
@@ -10631,7 +10638,25 @@ function GuidePageIndex({ containerRef, sections }: { containerRef: React.RefObj
   );
 }
 
-function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void }) {
+// v3.0 round 553 (Terry, Tier 2 #8) — collapse every release's detail behind a per-version
+// "Show the full detail" toggle so opening a version shows its summary highlight, not a wall of
+// text. The summary <p> stays visible ABOVE this (untouched); this wraps only the bullet list.
+// Matches the v3.0.0 "everything else" expander's ▸-chevron styling.
+function ChangelogDetail({ children }: { children: React.ReactNode }) {
+  return (
+    <details className="group mt-1">
+      <summary className="cursor-pointer select-none list-none inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary/80 transition-colors">
+        <span className="inline-block transition-transform group-open:rotate-90 text-muted-foreground">&#9656;</span>
+        Show the full detail
+      </summary>
+      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground mt-2">
+        {children}
+      </ul>
+    </details>
+  );
+}
+
+function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, highlightVersion, onHighlightConsumed }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void, highlightVersion?: string | null, onHighlightConsumed?: () => void }) {
   // Pre-destination, Help & Support no longer reaches this panel — the
   // Welcome screen opens the HelpSupportModal directly instead. So
   // every code path INTO this panel is now post-destination, and
@@ -10643,12 +10668,31 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   // selection are preserved automatically — no extra state-restore
   // logic needed).
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
-  
+
   React.useEffect(() => {
     if (scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = 0;
     }
   }, [panelType]);
+
+  // v3.0 round 553 (Terry) — arriving from the splash's "See everything that's new": scroll the
+  // highlighted release into view and pulse a fuchsia ring so it's clear THAT is the thing to read.
+  // Pulse is driven straight off the highlightVersion prop (which the parent clears on close /
+  // navigate — NOT mid-effect, which was resetting the ring), and auto-fades after 6s.
+  const [pulseFaded, setPulseFaded] = React.useState(false);
+  React.useEffect(() => {
+    if (panelType !== 'about-pdr' || !highlightVersion) return;
+    const scrollTimer = setTimeout(() => {
+      try {
+        const el = document.getElementById(`changelog-ver-${highlightVersion}`);
+        if (el) el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      } catch { /* non-fatal */ }
+    }, 280);   // let the accordion expand first
+    const stopTimer = setTimeout(() => setPulseFaded(true), 6000);
+    return () => { clearTimeout(scrollTimer); clearTimeout(stopTimer); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  const pulseVersion = (!pulseFaded && highlightVersion) ? highlightVersion : null;
 
   const appVersion = typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1';
   const [updateStatus, setUpdateStatus] = React.useState<'idle' | 'checking' | 'up-to-date' | 'update-available' | 'error'>('idle');
@@ -12355,9 +12399,10 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     expand any for the full detail). Previously the current + v3.0.0 entries auto-expanded,
                     which dumped the whole long v3.0 list on open. Only a PENDING download update auto-opens
                     now (so the "what's new to download" + button are visible); everything else is collapsed. */}
-                <Accordion type="multiple" defaultValue={
-                  updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : []
-                } className="space-y-2">
+                <Accordion type="multiple" defaultValue={[
+                  ...(updateStatus === 'update-available' && latestVersion ? [`ver-${latestVersion}`] : []),
+                  ...(highlightVersion ? [`ver-${highlightVersion}`] : []),   // v3.0 round 553 — auto-open when sent from the splash
+                ]} className="space-y-2">
 
                   {updateStatus === 'update-available' && latestVersion && (
                     <AccordionItem value={`ver-${latestVersion}`} className="border border-primary/30 rounded-lg px-4 bg-primary/5">
@@ -12400,7 +12445,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       shipped; it was REPLACED by v3.0.0, so this single entry covers
                       both the headline features AND the work that had been slated for
                       v2.1. The last shipped version before 3.0.0 was 2.0.14 (below). */}
-                  <AccordionItem value="ver-3.0.0" className="border border-border rounded-lg px-4">
+                  <AccordionItem
+                    value="ver-3.0.0"
+                    id="changelog-ver-3.0.0"
+                    /* v3.0 round 553 (Terry) — pulses a fuchsia ring when arrived-from-splash, so it's
+                       obvious this is the entry to read. Same outline-pulse-fuchsia as the splash expander. */
+                    className={`border rounded-lg px-4 transition-colors ${pulseVersion === '3.0.0' ? 'border-fuchsia-400' : 'border-border'}`}
+                    style={pulseVersion === '3.0.0' ? { animation: 'outline-pulse-fuchsia 2s ease-in-out infinite' } : undefined}
+                  >
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
                         <span>v3.0.0</span>
@@ -12413,7 +12465,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">The big v3.0 release: Collages &amp; Carousels, Screen Capture, Family Trees, and one-tap Sharing.</strong> PDR is now a full home for your photos &mdash; not just date repair, but creating, organising, restoring and sharing them, all on your own hardware with nothing uploaded. This release also folds in the work that had been lined up as v2.1 (which never shipped on its own): video transcription, manual photo enhancement, the Date Editor, a Recycle Bin, a working Photo Format converter, a smoother end-of-Fix experience, and a deep refresh of Search &amp; Discovery and Memories &mdash; all detailed below.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground v3keep">
                         <li><strong className="text-foreground font-medium">Collages &amp; Carousels</strong> &mdash; a full collage studio in its own window. Start from around ten ready-made layouts, drop in your photos, then style them with frames, curved corners, captions, text and fonts, and effects (glow, shadow, blend, vignette, grain). Marquee and Ctrl-click multi-select with Canva-style equidistant snapping and measurement guides; Magic Resize keeps your layout intact when you change the canvas size. Every collage saves as a re-openable <code>.pdrcollage</code> project you can come back to, and multi-page Carousels let you build a sequence.</li>
                         <li><strong className="text-foreground font-medium">Screen Capture</strong> &mdash; record your screen (or grab a screenshot) straight into your library. Blur sensitive areas live (as many as you need, with a confirmation overlay), mark zoom moments, drop in a webcam bubble, and add a microphone voiceover. Recordings save as MP4. The PDR Viewer&apos;s video timeline also gains scrub-to-preview so you can find the right frame at a glance.</li>
                         <li><strong className="text-foreground font-medium">Family Trees</strong> &mdash; turn the people you&apos;ve named in People Manager into a visual family tree. Focus any person to recentre the tree, expand or collapse the bloodline and extended-family branches one at a time, and explore generation after generation without the canvas getting tangled.</li>
@@ -12427,7 +12479,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           Everything else in v3.0 &mdash; the full detail
                         </summary>
                         <p className="text-sm text-muted-foreground mt-2 mb-2 leading-relaxed"><strong className="text-foreground font-medium">Also in v3.0 (the work that had been lined up as v2.1):</strong> the toolbar view-pill and selection-banner recipes are now shared across Search &amp; Discovery, Memories &mdash; Dates, Memories &mdash; Albums and Needs Dates so the four surfaces behave as one family, and a round-trip between Memories and S&amp;D lets you pull selections out of a month or album for ad-hoc filtering and jump straight back. In detail:</p>
-                        <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground v3keep">
                         <li><strong className="text-foreground font-medium">Video transcription (Whisper Large-v3 Turbo, on-device)</strong> &mdash; right-click any video in Memories, Albums, or Search &amp; Discovery and choose Transcribe. Progress modal with ETA. A lavender &ldquo;T&rdquo; badge appears on transcribed-video tiles, and the viewer overlays the spoken text. Everything runs locally on your machine &mdash; no API key, no upload, no rate limit. A new Settings switch under Privacy &amp; Security (&ldquo;Hide video transcripts&rdquo;) levers the T badge and the viewer subtitle overlay together.</li>
                         <li><strong className="text-foreground font-medium">Photo enhancement sliders in the PDR Viewer</strong> &mdash; manual brightness, contrast, saturation, and other live filter sliders with double-click reset. Save your changes back to the original file or to a new file (the original stays untouched in either case).</li>
                         <li><strong className="text-foreground font-medium">PDR Viewer Clip Trim</strong> &mdash; trim handles on the viewer&apos;s video timeline plus a Save button. Trim is non-destructive (a new file is written; the original stays put), saved as <code>_TR</code>, indexed automatically.</li>
@@ -12513,7 +12565,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">Responsiveness across the board, HEVC video playback, and drilldown sidebar navigation.</strong> A speed-focused release plus a handful of features the v2.0.13 dogfood surfaced.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Analysis runs off the main thread</strong> &mdash; adding a source no longer locks up the rest of PDR while it analyzes. The white-titlebar flash is gone.</li>
                         <li><strong className="text-foreground font-medium">Year drilldowns open instantly</strong> &mdash; Memories &mdash; By Date renders only the tiles currently on screen and brings in more as you scroll, instead of mounting every photo on entry. Even years with thousands of photos appear in tens of milliseconds.</li>
                         <li><strong className="text-foreground font-medium">Thumbnails follow you, not the queue</strong> &mdash; scrolling to mid-year used to leave tiles as empty placeholders while the background load crawled in order from January. Now PDR loads whatever&apos;s on your screen first.</li>
@@ -12525,7 +12577,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">&ldquo;Captioned only&rdquo; filter in By Date + Search &amp; Discovery</strong> &mdash; the gold chip from Albums is now mirrored to the By Date drilldown header and to S&amp;D.</li>
                         <li><strong className="text-foreground font-medium">Rotation updates everywhere immediately</strong> &mdash; rotating a photo in the viewer now updates that photo&apos;s thumbnail in the Memories grid, Albums tiles, S&amp;D results, and the viewer filmstrip without you having to navigate away first.</li>
                         <li><strong className="text-foreground font-medium">Video thumbnail extraction fix</strong> &mdash; the blank-thumbnail bug that affected every video regardless of path length is gone (it was a Windows long-path prefix that ffmpeg&apos;s mov/mp4 reader couldn&apos;t open).</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12542,7 +12594,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">Cross-part Google Takeout enrichment, photo captions, and a smarter By-Date timeline.</strong> Three substantial new features plus several robustness fixes from real-library testing.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Cross-part Takeout enrichment</strong> &mdash; Google&apos;s multi-part Takeouts split photos and their JSON sidecars across different ZIP parts. v2.0.13 pre-scans every part&apos;s sidecars into a cross-part cache and runs an Enrichment pass that retroactively upgrades each photo: writes the precise EXIF date, GPS coordinates, the original Google Photos caption, and seeds suggested face names. Strictly additive &mdash; never overrides a date you&apos;ve manually set, a face you&apos;ve named, or a caption you&apos;ve typed. Found under &ldquo;Takeout metadata&rdquo; in the Library Drive Manager.</li>
                         <li><strong className="text-foreground font-medium">Photo captions</strong> &mdash; right-click any photo in Albums, By Date, or Search &amp; Discovery and pick &ldquo;Add caption&rdquo; to type a note. Saved in your PDR library and (when possible) written into the photo&apos;s EXIF ImageDescription + XMP dc:description so it exports alongside the file. A small gold chat-bubble indicator marks captioned thumbnails; hovering anywhere on the photo reveals the caption in a PDR-gold tooltip &mdash; visually distinct from PDR&apos;s lavender system tooltips so personal notes feel personal. The photo viewer shows a dedicated caption row below the filmstrip.</li>
                         <li><strong className="text-foreground font-medium">Captioned-only filter in Albums</strong> &mdash; when an album contains any captioned photos, a gold &ldquo;Captioned only &middot; N&rdquo; chip appears in the header. Click to narrow the grid to just the captioned ones.</li>
@@ -12552,7 +12604,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Enrichment dedup</strong> &mdash; when the same photo has been Fixed twice from different sources (one with a sidecar, one without), PDR now SHA-256-compares the two copies and cleans up the redundant one. Same-size copies whose only difference is EXIF metadata get a smarter image-data hash so they&apos;re recognized as the same photo.</li>
                         <li><strong className="text-foreground font-medium">Custom monthly thumbnail refresh fix</strong> &mdash; setting &ldquo;Set as monthly thumbnail&rdquo; on a photo now refreshes the By-Date grid immediately. Previously the tile kept showing the auto-picked image until the page was reloaded.</li>
                         <li><strong className="text-foreground font-medium">Caption save no longer freezes the window</strong> &mdash; the EXIF write runs in the background instead of holding the IPC open while exiftool&apos;s subprocess is busy with another caller.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12569,12 +12621,12 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">Emergency follow-up to v2.0.11.</strong> v2.0.11 packaged its five background worker scripts (AI, cleanup, conversion, extract, startup) inside the app&apos;s compressed bundle where the operating system can&apos;t reach them &mdash; the workers crashed on launch with &quot;module not found&quot;, breaking post-Fix cleanup, AI face detection, ZIP extraction, format conversion, and startup database housekeeping. v2.0.11 was pulled from the public download immediately on discovery; v2.0.12 is the build to use. Plus a real recovery path for anyone whose library was damaged by an older version&apos;s startup cleanup.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Workers fixed</strong> &mdash; the five background scripts now sit outside the compressed app bundle, at a real filesystem path that <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">utilityProcess.fork()</code> can reach. Post-Fix cleanup, AI face detection, ZIP extraction, format conversion, and startup database housekeeping all work in packaged installs again.</li>
                         <li><strong className="text-foreground font-medium">One-click recovery for v2.0.10 upgrade victims</strong> &mdash; if you upgraded from v2.0.10 in the last 10 days and noticed photos disappearing from Search &amp; Discovery / Memories / Albums, a yellow banner now appears on the Dashboard at launch offering a one-click restore. PDR detects when your Library Drive&apos;s hidden backup database has materially more photos than the local index (the cascade-delete signature), pulls the backup back into the local database including all album memberships / AI faces / tags, and reloads. Photos on disk were never touched by the original bug &mdash; only the database forgot about them.</li>
                         <li><strong className="text-foreground font-medium">Pre-cleanup database snapshot, every launch</strong> &mdash; every PDR launch now copies the local database to your Library Drive&apos;s hidden <code className="font-mono text-xs bg-muted px-1.5 py-0.5 rounded">.pdr</code> folder BEFORE running any startup cleanup. If a future cleanup ever misbehaves, the pre-cleanup snapshot is sitting right there for the recovery banner to offer. Belt-and-braces safety on top of the original cascade-cleanup being disabled.</li>
                         <li><strong className="text-foreground font-medium">Release pipeline kills running PDR instances before packaging</strong> &mdash; the developer-side release script now closes any open PDR / Electron instances before the build step, so a stale developer session can never lock files the build needs to overwrite. Closes the door on a class of subtle packaging defects.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12589,7 +12641,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">No more &quot;Not Responding&quot; freezes on big Takeouts, plus an important data-integrity hotfix and polish.</strong> Opening a 50 GB Takeout used to hang the window for 5&ndash;15 seconds at several points along the way; all that heavy work now runs in background processes, so the window stays responsive end-to-end. A startup cleanup routine was also silently shrinking peoples&apos; indexed libraries by treating multiple Fix runs to the same Library Drive as duplicates &mdash; files on disk were never affected, but the database forgot about thousands of photos for anyone who&apos;d run more than one Fix. v2.0.11 stops that cleanup, makes the Library Drive Manager the single source of truth for where photos go, and adds a polished Analyzing pill plus a &quot;Reclaimed X GB&quot; toast. Spelling across the app is now consistent American English.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">No more freezes on big Takeouts</strong> &mdash; on a 50 GB archive the window used to lock up with &quot;Not Responding&quot; in the title bar at three points: when Analyze started (disk-space probes ran one after the other on the main thread), when Fix completed (the 50 GB of extracted files were being deleted on the main thread), and during startup (database housekeeping blocked the splash). All three are now off the main thread &mdash; the disk probes run in parallel, the delete runs in its own background process, and the database housekeeping runs in a worker before the workspace opens. The window stays interactive the whole way through.</li>
                         <li><strong className="text-foreground font-medium">Source Added modal can no longer be lost by an accidental click</strong> &mdash; the modal that confirms a freshly-extracted source used to dismiss if you clicked the dim area around it, which could silently throw away an hour-long extraction. It now stays put. The Change Source and &quot;Back to workspace&quot; buttons confirm with a warning before discarding the extracted files, and when you do choose to discard, the extraction is actually deleted from disk &mdash; no more orphan 50 GB folders sitting around.</li>
                         <li><strong className="text-foreground font-medium">Helpful tip when you&apos;ve added a big ZIP</strong> &mdash; PDR can only unpack one large ZIP at a time, but the rule wasn&apos;t surfaced anywhere. Adding a ZIP source now shows a one-line tip so you know to run that one through Fix before queueing the next part of a multi-part Takeout.</li>
@@ -12603,7 +12655,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Quick Access expanded by default in Add Source</strong> — the Desktop / Documents / Pictures / Downloads + saved-locations row is now open the moment the Add Source modal opens, so the shortcut to your common folders isn't hidden behind a chevron most users miss. The collapse arrow is still there if you want more room for the All Drives grid.</li>
                         <li><strong className="text-foreground font-medium">Keyboard receivers + empty card readers no longer show up as Library Drives</strong> — Windows assigns a drive letter to any device with a tiny embedded chip, which means wireless-keyboard receivers, empty SD-card-reader slots, and CD/DVD drives used to clutter the Pick Library Drive picker (all flagged "Too small" but still listed). v2.0.11 hides removable drives smaller than 1 GB and CD/DVD drives entirely. Real removable storage stays — USB sticks and SD cards have been 4 GB+ for over a decade.</li>
                         <li><strong className="text-foreground font-medium">Consistent American spelling across the UI</strong> — words like &quot;analyze&quot;, &quot;organize&quot;, &quot;recognize&quot;, &quot;color&quot; and &quot;favorite&quot; now read the same way everywhere they appear, in modals, tooltips, the Quick Tour, Best Practices, and About PDR.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12620,9 +12672,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">Hotfix.</strong> A small but consequential fix for users whose Library Drive showed correctly in the Library Drive Manager but was silently treated as "not set" when adding a Takeout — same family of issue as Jane&apos;s sleep-state bug, but a separate code path.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">&quot;Library Drive — not set&quot; modal on source-add</strong> — the LDM and the source-add flow were reading the Library Drive from two different places (live attach state vs. legacy persisted setting), which could diverge after switching libraries. Add Source now reads the same source of truth the LDM uses, so what you see in the Library Drive Manager is what every operation acts on.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12639,7 +12691,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">The biggest v2.x release yet.</strong> Premium boot splash, People Manager rebuilt for huge libraries, Search &amp; Discovery + Memories + Albums tightened up, USB drive wake-up and crash-recovery for libraries living on portable drives, plus a much deeper Best Practices guide covering every PDR feature.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Premium boot splash</strong> — a lavender brand splash with the PDR logo, app name, tagline and a thin progress bar replaces the blank-white launch flash. Staggered entrance animation, adaptive hold (3 s on fast machines, up to 6.5 s on slower ones — it waits until Welcome is genuinely ready), then a cinematic scale-up + fade into the Welcome screen.</li>
                         <li><strong className="text-foreground font-medium">People Manager handles huge libraries smoothly</strong> — drag-and-drop, scrolling, and merge-by-drag now stay responsive on clusters of 3,000+ faces. Lazy per-row mounting via IntersectionObserver, drag state moved off React state, the @dnd-kit/sortable backend, and the same treatment applied to both Unnamed and Named tabs.</li>
                         <li><strong className="text-foreground font-medium">People Manager reassign UI tightened</strong> — picking a suggestion from the dropdown now auto-closes it and fills the name immediately. The full-name field gets the same autocomplete as the short-name field, so typing "Sylvia" surfaces "Sylvia Mills" without you needing to type the short name first. Silent assign / name / unname failures now surface as a toast instead of failing invisibly.</li>
@@ -12664,7 +12716,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Memories month drilldown shows photos and videos separately</strong> — opening a month now reads <em>&quot;X photos · Y videos&quot;</em> in the header rather than the lumped &quot;X files&quot;, so you know the mix before you scroll.</li>
                         <li><strong className="text-foreground font-medium">&quot;On This Day&quot; AI suggestion can be hidden</strong> — small X in the corner of the suggestion card hides it across sessions. A small lavender <em>Show On This Day</em> pill appears in the controls row when it&apos;s hidden, so you can always bring it back.</li>
                         <li><strong className="text-foreground font-medium">Album-memberships protected from the duplicate-row consolidator</strong> — a startup pass that merges duplicate file records didn&apos;t know about the Albums feature added in v2.0.8 and could silently drop a photo&apos;s album memberships when it merged duplicates. The consolidator now copies album memberships and re-points album covers onto the kept row before deleting the duplicate. Going forward your album memberships are safe.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12681,7 +12733,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">Albums arrive in Memories.</strong> The headline of this release is a complete Memories &rarr; Albums surface, plus automatic album import from Google Photos Takeouts, plus a big polish pass on the Search &amp; Discovery filter ribbon. Curate, organize, and re-share groups of photos without ever leaving PDR.
                       </p>
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">New: Memories &rarr; Albums tab</strong> — Memories now has two top-level views, <em>By Date</em> and <em>Albums</em>. The Albums view is a two-pane surface: on the left, a tree of every album you have, split into <em>Album Sources</em> (the place each album originally came from — Google Photos, PDR-created, etc.) and <em>Folders</em> (your own organization). On the right, the contents of whatever you&apos;ve clicked. Pick an album, see its photos. Pick a folder, see its albums. Pick &quot;All albums&quot; and see the lot, sorted alphabetically.</li>
                         <li><strong className="text-foreground font-medium">Google Photos albums import automatically when you Fix a Takeout</strong> — every album folder in your Takeout becomes a real PDR album, complete with all its photos, the original filenames Google replaced (so &quot;IMG_1234(1).jpg&quot; becomes &quot;IMG_1234.jpg&quot; again), and any captions you wrote in Google Photos. A photo that lived in three Google Photos albums lands as one photo in PDR with three album memberships — same as iCloud, no duplication. There&apos;s also a backfill option for users who already Fixed their Takeout in an earlier PDR version: point PDR at the original ZIP and the album structure gets attached after the fact.</li>
                         <li><strong className="text-foreground font-medium">Add to Album from anywhere</strong> — selecting photos in Search &amp; Discovery or in Memories By Date now exposes an &quot;Add to Album&quot; button. One click shows your existing albums (with a live search) or lets you create a new album right there. Pick the destination and the photos drop in without you ever leaving the surface you were on.</li>
@@ -12700,7 +12752,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">&quot;On &lt;today&apos;s date&gt; in previous years&quot; feature card</strong> — the AI suggestion row at the top of By Date now reads as a curated event: lavender gradient card, AI badge, prominent heading, one-line subtitle. Distinct from the chronological year-group rows below it.</li>
                         <li><strong className="text-foreground font-medium">Various polish</strong> — single-click toggles for Spacious/Tight and the By Date/Albums switch (click anywhere on the pill to flip); cursor-grab affordance with persistent drag handles on every album row in the tree; folder drop targets show a dashed lavender outline (Finder/Explorer convention); Workspace zoom no longer mutates from background Memories or S&amp;D scrolling; Memories sidebar lands expanded on first launch.</li>
                         <li><strong className="text-foreground font-medium">Clearer message when your Library Drive isn&apos;t reachable</strong> — if PDR can&apos;t probe your Library Drive at the moment you add a ZIP source (USB drive in sleep state, NTFS metadata read failure, etc.), it now refuses up-front with a plain message naming which drive needs to be reconnected. Previously it would silently fall back to extracting on your system drive and only fail much later, with no clue why. Pairs with detailed pre-extract diagnostics in the log so the support team can pinpoint disk-routing decisions on first read.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12714,14 +12766,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Long-path support for big, deeply-nested Google Takeouts</strong> — Windows has a historic 260-character limit on file paths. Big Google Photos Takeouts (with shared-album folder names like *"Trip to &lt;long destination&gt; with &lt;friends&gt;"* under deeply-nested chronological folders) routinely push past it during extraction or when Fix copies them into a year-folder structure beneath an already-deep Library Drive path. PDR now uses Windows' extended-length path mechanism everywhere it touches the disk — extraction, the Fix copy, the library indexer, and face / thumbnail rendering — so paths up to ~32,000 characters work transparently. Resolves the "Unhandled Error: UNKNOWN: unknown error, read" some users hit mid-Takeout.</li>
                         <li><strong className="text-foreground font-medium">Extraction never silently lands on the wrong drive</strong> — when the Library Drive doesn't have room and PDR needs to fall back to your system drive's temporary folder, it now genuinely uses that folder. A previous subtle bug could route the fallback back onto the Library Drive while the space check had measured a different drive's free space. Now the chosen drive is honored end-to-end.</li>
                         <li><strong className="text-foreground font-medium">Network drives now work properly as Library Drives</strong> — if your Library Drive is a network share (a path that starts with &quot;\\&quot;), PDR can now read its free space and capacity directly through the filesystem instead of through a Windows tool that only handles letter drives. Earlier versions silently failed those probes, leaving the LDM unable to show details or proceed with &quot;change library drive&quot;. PDR also labels network shares clearly in the LDM so you know which drives are local vs over the network.</li>
                         <li><strong className="text-foreground font-medium">Plain-English error message when a ZIP can&apos;t be read</strong> — if PDR hits a corrupted compression stream during extraction (the technical signature is &quot;too many length or distance symbols&quot; from Node&apos;s decompressor), you now get a clear message naming both possibilities: the ZIP itself is corrupted, OR the connection to the source drive is unreliable (common with network drives or slow USB connections). The fix in either case is to copy the ZIP to a local drive first and try again.</li>
                         <li><strong className="text-foreground font-medium">One-time low-RAM heads-up</strong> — if your PC has less than 6 GB of RAM, the Dashboard now shows a one-time advisory at startup explaining that very large Takeouts (50 GB+) may be slow or run out of memory on this hardware, and that splitting your Takeout in Google&apos;s Takeout settings (e.g. into 10 GB pieces) is the easiest fix. Dismiss it once and it never shows again.</li>
                         <li><strong className="text-foreground font-medium">Updates now download automatically in the background</strong> — when a new PDR version becomes available, your installation will start downloading it silently as soon as it&apos;s detected, instead of waiting for you to click &quot;Get update&quot;. You&apos;ll see a &quot;Restart to apply&quot; prompt once the download finishes, or PDR will install it automatically the next time you close the app. No more lingering on outdated versions — everyone stays current.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12735,7 +12787,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Parallel Library no longer touches your master library</strong> — Parallel Library is now a pure file-copy operation. Earlier versions could silently change Recovered or Marked photos to Confirmed and clear Original Names on your original files when you used the "Add to PDR's search &amp; views" option. That option has been removed; Parallel Library copies stay out of Search &amp; Discovery, Memories, and Trees so your master Library Drive remains the canonical entry for every photo. A deliberate "Re-index a folder" tool is coming in v2.0.7 for anyone who wants to make a specific folder searchable on demand.</li>
                         <li><strong className="text-foreground font-medium">Pre-extract space check now accurate for big ZIPs</strong> — the disk-space precheck before extracting a large ZIP / RAR was under-counting the space needed for the Fix copy that follows. Same-drive Fixes now reserve enough room for both the extracted files and the Fixed copies. Cross-drive Fixes (where extraction lands on your system drive and the copy goes to another drive) now check both drives separately. The headroom is also drive-aware now — small drives get a smaller buffer, big drives get a bigger one.</li>
                         <li><strong className="text-foreground font-medium">Fix Complete file count matches what actually landed on disk</strong> — if a Fix ran out of space mid-copy, the "Output files" total still showed the count from the date analysis (what WOULD have been written if everything succeeded). It now shows the honest number of files that successfully made it to the destination.</li>
@@ -12745,7 +12797,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Parallel Library Browse opens the Library Drive Manager</strong> — Browse in the Parallel Library wizard now opens the full Library Drive Manager in pick-mode, so you can pick from your saved Library Drives in one place.</li>
                         <li><strong className="text-foreground font-medium">Parallel Library disk-space card matches the Dashboard</strong> — the disk-space readout in Parallel Library now uses the same calm progress bar + free/total figures as the Dashboard, including the TB tier above 1000 GB.</li>
                         <li><strong className="text-foreground font-medium">Library pill hidden on the Welcome screen</strong> — clicking the Library pill from Welcome silently did nothing because the Library Drive Manager only mounts on the Workspace route. It's now hidden on Welcome and reappears when you're in the Workspace.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12759,7 +12811,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Library Drive Manager</strong> — a new home for every drive in your library. Click the Library pill in the top-right to see your current Library Drive, every other drive that holds indexed photos, free space at a glance, and switch between them in one place.</li>
                         <li><strong className="text-foreground font-medium">"After Fix" settings tab</strong> — the toggles that decide what happens to your photos after a Fix (make them searchable, recognize people and content, automatically process new photos) now live in one tab. Each one's effect is explained where the decision is made, so no more guessing which toggle does what.</li>
                         <li><strong className="text-foreground font-medium">Library DB backup reminder</strong> — your library's "memory" (faces, names, dates, Trees) lives in a single file PDR keeps for you. A new persistent indicator on your Library Drive row and a Dashboard reminder let you save a copy off this PC in one click — so a stolen or broken PC doesn't take your work with it.</li>
@@ -12770,7 +12822,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Concrete "Coming in v2.1" labels</strong> — locked features (Trees, Date Editor, Photo Format conversion) now say "Coming in v2.1" instead of the vague "Released shortly" so you know exactly which release to wait for.</li>
                         <li><strong className="text-foreground font-medium">Premium Switch-Library-Drive confirmation</strong> — compact two-line confirmation showing exactly which drive you're switching to, with future Fixes going there and past Fixes staying where they are.</li>
                         <li><strong className="text-foreground font-medium">AI recognition dependency hint</strong> — when AI recognition is on but Fixed-photo indexing is off, PDR now flags the limitation right where the decision is made — new Fixed photos won't be recognized unless indexed first.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12784,14 +12836,14 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Manage devices and subscription from inside PDR</strong> — the License modal now lets you see every device your license is activated on, deactivate one if you've moved machines, and cancel or resume your subscription without leaving the app.</li>
                         <li><strong className="text-foreground font-medium">Smarter cancel flow with retention offers</strong> — clicking Cancel now shows a tailored menu of better-value options (discounted price for 3 months, switch to Yearly, upgrade to Lifetime). One click applies the change with no card re-entry.</li>
                         <li><strong className="text-foreground font-medium">RAR archives work as sources again</strong> — adding a folder containing <code>.rar</code> files would silently fail on some builds; the unpacker is now properly bundled in every build.</li>
                         <li><strong className="text-foreground font-medium">Faster startup, longer offline grace</strong> — the license badge no longer freezes on "Checking…" while a slow validate is in flight; cached state shows instantly and refreshes in the background. Offline grace extended from 60 seconds to 24 hours.</li>
                         <li><strong className="text-foreground font-medium">Smarter back-button on Guidance pages</strong> — opening Getting Started, Best Practices or What Happens Next from inside Search &amp; Discovery, Memories, or Trees now shows "Back to Search &amp; Discovery" / "Back to Memories" / "Back to Trees" instead of "Back to Workspace", and returns you to that app with your filters and selection still intact. Also fixed an overlap where the guidance content could peek through behind S&amp;D's filter chrome.</li>
                         <li><strong className="text-foreground font-medium">Sticky page headers on Guidance and App panels</strong> — when reading long pages like Getting Started, Best Practices, What Happens Next, About PDR, or Help &amp; Support, the page title and Back button now stay pinned at the top while the content scrolls underneath. No more losing track of which page you're in once the title scrolls off-screen.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12805,10 +12857,10 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Run Fix now actually starts the Fix</strong> — clicking Run Fix on v2.0.2 silently failed for licensed users due to an internal scoping bug; the S&D prompt and progress modal never opened. Resolved.</li>
                         <li><strong className="text-foreground font-medium">Sidebar scrolls on short windows</strong> — on smaller laptop screens the bottom sections (Settings, About PDR, Help &amp; Support) were clipped off the bottom with no scrollbar. The sidebar now scrolls naturally when its content is taller than the window.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12822,12 +12874,12 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Fixed a first-launch crash</strong> — some users on v2.0.1 saw a blank workspace immediately after adding their first folder source. Caused by an internal scoping bug in the Free Trial pre-fix gate; resolved.</li>
                         <li><strong className="text-foreground font-medium">License carries over from earlier installs</strong> — users upgrading from older builds were sometimes prompted to re-enter their license key, which consumed an extra device slot on Lemon Squeezy each time. Photo Date Rescue now migrates the license cache from the legacy install paths automatically on first launch of v2.0.2.</li>
                         <li><strong className="text-foreground font-medium">License modal more responsive</strong> — Activate / Deactivate calls now have a hard 8-second network timeout (previously could hang indefinitely), and the title-bar badge no longer freezes on "Checking..." during slow license validation; cached license state shows immediately at launch.</li>
                         <li><strong className="text-foreground font-medium">Free Trial counter copy</strong> — the warning chip in the title bar now correctly reflects your current allowance instead of an outdated number when you cross 70% usage.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12841,9 +12893,9 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">Free Trial cap raised to 1,000 files</strong> — enough to comfortably cover a typical 1 GB Google Takeout plus a folder of phone photos, so trial users can feel the full Fix flow before deciding.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12858,7 +12910,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3">What's changed since v1.0.1:</p>
-                      <ul className="list-disc ml-5 space-y-2 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li><strong className="text-foreground font-medium">A whole new look</strong> — v2.0.0 replaces v1.0.1's default Windows chrome with a custom PDR title bar, restructures the sidebar into Views / Tools / Guidance / App sections, adds independent windows for People Manager and the photo viewer, and threads a cross-window "Fix in progress" chip through every open PDR window. Buttons, modals and toasts have all been brought to a consistent design system, with a brand-colored palette (lavender / blue / gold / emerald / pink / teal) tying each app to its identity from the Welcome screen all the way through to the matching tour overlays.</li>
                         <li><strong className="text-foreground font-medium">Polished setup flow</strong> — v1.0.1 used Windows' native folder picker and asked you to pick a destination as an afterthought. v2.0.0 introduces a destination-first flow: pick your library drive before adding sources, with a Library Planner that sizes your collection, a Drive Advisor that rates each drive on speed and capacity, and a custom Folder Browser (grid / list / details views) that replaces the native picker.</li>
                         <li><strong className="text-foreground font-medium">New views</strong> — entirely new top-level surfaces: <strong className="text-foreground font-medium">Search &amp; Discovery</strong> (find any photo by date, person, location, tag, camera or scanner), <strong className="text-foreground font-medium">Memories</strong> (Year / Month timeline + On This Day), and <strong className="text-foreground font-medium">People Manager</strong> (AI-detected face clusters with naming and merging). Trees, Edit Dates and Photo Format conversion (PNG / JPG output) are released shortly.</li>
@@ -12874,7 +12926,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">Disk-fill safeguards</strong> — v1.0.1 extracted large ZIPs to %TEMP% on C:, slowly filling the system drive across multi-Takeout sessions. v2.0.0 extracts to your Library Drive instead, falls back to a "pick another drive" prompt when neither has room, caps the pre-extract pool at 55 GB to protect free space, warns before adding multiple multi-GB Takeouts in one session, and cleans up temp folders after each Takeout completes.</li>
                         <li><strong className="text-foreground font-medium">One-click diagnostic ZIP</strong> — v1.0.1's "Report a problem" asked you to find your log file inside %APPDATA% manually. v2.0.0's Help &amp; Support &rarr; Report a problem now bundles your log, system info and license state into a single .zip in your Documents folder ready to attach. Analysis errors that previously routed back silently now surface a "Send report" toast.</li>
                         <li><strong className="text-foreground font-medium">More reliable</strong> — v1.0.1 could hang for ~20 s on the license check when offline, stutter while hashing large videos, and (rarely) run two instances at once after a crash, causing "Tree empty" or "missing source" symptoms. v2.0.0 fixes all three: 5 s offline timeout, async chunked hashing that keeps the UI responsive, and a single-instance lock that prevents the duplicate-process scenario entirely. Settings, AI database and license are now stored at a single canonical path (<code className="text-xs">%APPDATA%\Photo Date Rescue\</code>) regardless of how PDR was launched.</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
@@ -12888,13 +12940,13 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       </div>
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
-                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                      <ChangelogDetail>
                         <li>Fixed Google Takeout archives larger than 2 GB not extracting correctly</li>
                         <li>Added RAR archive support for Apple Photos exports and other RAR sources</li>
                         <li>Added "About PDR" panel with version history and update checking</li>
                         <li>Version number now shown in Settings</li>
                         <li>Improved performance guidance tooltips for network and cloud drives</li>
-                      </ul>
+                      </ChangelogDetail>
                     </AccordionContent>
                   </AccordionItem>
 
