@@ -5,10 +5,12 @@ import { Button } from '@/components/ui/button';
 
 interface WhatsNew30Props {
   isOpen: boolean;
-  /** Dismiss (marks the splash as seen). */
+  /** Dismiss (marks the splash as seen). Used by the X + backdrop — stays where you are. */
   onClose: () => void;
   /** "See everything that's new" — closes + opens About PDR's version history. */
   onSeeFullList: () => void;
+  /** "Get started" — closes, plants the user in the Workspace, and teaches the sidebar. */
+  onGetStarted?: () => void;
 }
 
 /**
@@ -113,7 +115,7 @@ const FOUNDATION = [
   },
 ];
 
-export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) {
+export function WhatsNew30({ isOpen, onClose, onSeeFullList, onGetStarted }: WhatsNew30Props) {
   // r550 — "the full picture" expander (collapsed by default). Hook sits above the
   // early return per the rules of hooks.
   const [showFull, setShowFull] = useState(false);
@@ -299,7 +301,7 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
           {/* CTAs + the ethos closer (mirrors the Welcome screen's trio line). */}
           <div className="px-10 pb-8 pt-5 space-y-3 text-center">
             <Button
-              onClick={onClose}
+              onClick={onGetStarted ?? onClose}
               className="w-full h-12 text-base font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 shadow-lg shadow-fuchsia-500/25 hover:shadow-fuchsia-500/40 transition-all duration-300"
             >
               <Sparkles className="w-4 h-4 mr-2" />

@@ -243,6 +243,14 @@ interface PreScanStats {
   skippedFiles?: Array<{ filename: string; reason: string }>;
 }
 
+// v3.0 round 554 (Terry) — the "Get started" sidebar teach: outline the side menu, then glow
+// each nav link once in quick succession top-to-bottom, so a new user learns their next move is
+// to pick a destination from here (while planted in the Workspace, the app's engine). Fires a
+// window event the Sidebar owns (React-state-driven, so the effect survives re-renders).
+function runSidebarTeach() {
+  try { window.dispatchEvent(new CustomEvent('pdr:teach-sidebar')); } catch { /* non-essential */ }
+}
+
 export default function Workspace() {
 	// Workspace's zoom lives under its own pdr-workspace-zoom key so
 	// it doesn't bleed into Welcome / source-selection / People
@@ -3556,6 +3564,14 @@ return (
             isOpen={showWhatsNew30}
             onClose={dismissWhatsNew30}
             onSeeFullList={() => { dismissWhatsNew30(); setAboutHighlightVersion('3.0.0'); setActivePanel('about-pdr'); }}
+            /* v3.0 round 554 (Terry) — "Get started" plants the user in the Workspace (the engine),
+               NOT just whatever was behind the splash, then runs the sidebar teach sweep. */
+            onGetStarted={() => {
+              dismissWhatsNew30();
+              setActivePanel(null);
+              setActiveView('dashboard');
+              window.setTimeout(() => runSidebarTeach(), 480);
+            }}
           />
         )}
 
@@ -4406,6 +4422,22 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
   const [toolsCollapsed, setToolsCollapsed] = useState(false);
   const [guidanceCollapsed, setGuidanceCollapsed] = useState(false);
   const [appCollapsed, setAppCollapsed] = useState(false);
+  // v3.0 round 554 (Terry) — the "Get started" teach sweep. `pdr:teach-sidebar` (fired after the
+  // splash plants the user in the Workspace) sets a per-item --ti index for the CSS stagger, then
+  // flips `teaching` so the sidebar root wears .pdr-teaching (React-managed → survives re-renders).
+  const [teaching, setTeaching] = useState(false);
+  useEffect(() => {
+    const onTeach = () => {
+      try {
+        const items = document.querySelectorAll('.sidebar-container [data-teach-nav]');
+        items.forEach((el, i) => (el as HTMLElement).style.setProperty('--ti', String(i)));
+        setTeaching(true);
+        window.setTimeout(() => setTeaching(false), items.length * 150 + 1200);
+      } catch { /* the teach animation is non-essential */ }
+    };
+    window.addEventListener('pdr:teach-sidebar', onTeach);
+    return () => window.removeEventListener('pdr:teach-sidebar', onTeach);
+  }, []);
   const [userOverrode, setUserOverrode] = useState<{ views: boolean; tools: boolean; guidance: boolean; app: boolean }>({ views: false, tools: false, guidance: false, app: false });
 
   // Reset the user-override flags whenever a NEW source is added.
@@ -4552,7 +4584,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     return (
       <div
         data-tour="sd-sidebar-collapse"
-        className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass}`}
+        className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container items-center py-3 gap-1 overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass} ${teaching ? 'pdr-teaching' : ''}`}
         style={{ width: '48px' }}
       >
         {/* Expand button — must ALWAYS expand the sidebar, including
@@ -4730,7 +4762,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       // currently rendered, not vanish when the user has pinned the
       // sidebar open.
       data-tour="sd-sidebar-collapse"
-      className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass}`}
+      className={`bg-sidebar border-r flex flex-col h-full shrink-0 z-20 relative sidebar-container overflow-y-auto overflow-x-hidden ${sidebarAnimatedClass} ${teaching ? 'pdr-teaching' : ''}`}
       style={{ width: `${width}px` }}
     >
       {/* Pin / collapse controls — icons sized up from 3.5 to 4, padding
@@ -5221,6 +5253,7 @@ function SidebarItem({ icon, label, active = false, selected = false, selectable
   const accentColor = accent ? SIDEBAR_ACCENT[accent] : undefined;
   const content = (
     <div
+      data-teach-nav="1"
       className={`group relative w-full flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-all duration-200 cursor-pointer ${
         disabled
           ? 'text-muted-foreground/70 cursor-not-allowed'
