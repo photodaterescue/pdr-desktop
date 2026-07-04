@@ -255,22 +255,17 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
               collapsed by default. r551: a PULSING FUCHSIA PILL so it isn't missed; each
               revealed card wears its real sidebar-section accent. */}
           <div className="px-10 pt-5 text-center">
-            <motion.button
+            <button
               type="button"
               onClick={() => setShowFull((v) => !v)}
-              animate={showFull ? { boxShadow: '0 0 0 0 rgba(217,70,239,0)' } : {
-                boxShadow: [
-                  '0 0 0 0 rgba(217,70,239,0.0)',
-                  '0 0 20px 2px rgba(217,70,239,0.35)',
-                  '0 0 0 0 rgba(217,70,239,0.0)',
-                ],
-              }}
-              transition={showFull ? { duration: 0.3 } : { repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+              /* r552 (Terry) — gentle 5px-ring breathe, same rate as the Add Source CTA
+                 (outline-pulse); the pulse stops once the section is open. */
+              style={showFull ? undefined : { animation: 'outline-pulse-fuchsia 2s ease-in-out infinite' }}
               className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-fuchsia-400/60 bg-fuchsia-500/[0.07] text-sm font-medium text-fuchsia-600 dark:text-fuchsia-300 hover:bg-fuchsia-500/[0.12] transition-colors"
             >
               <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showFull ? 'rotate-180' : ''}`} />
               {showFull ? 'Show less' : 'New to PDR? See everything it already does'}
-            </motion.button>
+            </button>
             <AnimatePresence initial={false}>
               {showFull && (
                 <motion.div

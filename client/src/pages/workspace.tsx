@@ -16333,10 +16333,17 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
           <button
             type="button"
             onClick={() => { onClose(); try { window.dispatchEvent(new CustomEvent('pdr:replay-whatsnew30')); } catch { /* non-fatal */ } }}
-            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
-            title="What’s new in 3.0"
+            className="group inline-flex items-center gap-1.5 text-xs text-left"
+            title="Replay the What’s new in 3.0 showcase"
           >
-            PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+            <span className="text-muted-foreground group-hover:text-foreground transition-colors">
+              PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
+            </span>
+            {/* v3.0 round 552 (Terry) — SS2: the version alone gave no click affordance. This
+                fuchsia underlined link makes it unmistakably interactive. */}
+            <span className="text-fuchsia-600 dark:text-fuchsia-400 font-medium underline underline-offset-2 decoration-fuchsia-400/50 group-hover:decoration-fuchsia-500 transition-colors">
+              What’s new
+            </span>
           </button>
           <IconTooltip
             label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Restore every setting on this dialog to PDR defaults'}

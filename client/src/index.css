@@ -225,6 +225,14 @@
   50% { box-shadow: 0 0 0 5px rgba(169, 156, 255, 0.35); }
 }
 
+/* v3.0 round 552 (Terry) — fuchsia sibling of outline-pulse, for the "What's new in 3.0"
+   splash expander. Terry: the framer-motion glow was "too Vegas" — this is the SAME gentle
+   5px-ring breathe as the Add Source CTA (outline-pulse), just in the splash's fuchsia. */
+@keyframes outline-pulse-fuchsia {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(217, 70, 239, 0.45); }
+  50% { box-shadow: 0 0 0 5px rgba(217, 70, 239, 0.28); }
+}
+
 /* Amber sibling of outline-pulse. Used by the dup-source highlight
    in the Source Menu so the "Already added" attention pulse reads
    as a caution flag (matches the amber chip palette across the

@@ -340,16 +340,25 @@ export function TitleBar() {
       }
     } catch {}
   };
-  const whatsNewBadge = (
+  // r552 (Terry) — the loud gradient "3.0" pill was too much colour + sat proud of the title
+  // baseline. Now the whole app name is one quiet clickable link: "Photo Date Rescue" + a soft,
+  // baseline-aligned "3.0" chip. A subtle hover background makes it read as clickable at rest;
+  // the tooltip confirms. Clicking replays the "What's new in 3.0" showcase.
+  const renderTitle = (collapsed: boolean) => (
     <button
       type="button"
       onClick={openWhatsNew}
       style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
       title="What’s new in 3.0 — see everything PDR does"
-      aria-label="What’s new in 3.0"
-      className="inline-flex items-center h-[17px] px-1.5 rounded-full text-[10px] font-bold leading-none text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-sm shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 shrink-0"
+      aria-label="Photo Date Rescue 3.0 — see what’s new"
+      className={`group inline-flex items-center gap-1.5 rounded-md px-1.5 py-0.5 hover:bg-foreground/[0.06] transition-colors ${collapsed ? 'ml-1.5' : ''}`}
     >
-      3.0
+      <span className={`text-[12px] ${collapsed ? 'text-foreground/80' : 'text-foreground'} font-semibold tracking-wide whitespace-nowrap font-heading`}>
+        Photo Date Rescue
+      </span>
+      <span className="text-[10px] font-semibold leading-none text-fuchsia-600 dark:text-fuchsia-300 px-1 py-[3px] rounded bg-fuchsia-500/[0.12] group-hover:bg-fuchsia-500/[0.2] transition-colors">
+        3.0
+      </span>
     </button>
   );
   return (
@@ -377,24 +386,11 @@ export function TitleBar() {
           className="w-5 h-5 object-contain shrink-0"
           alt="PDR"
         />
-        {!isSidebarCollapsed && (
-          <span className="text-[12px] text-foreground font-semibold tracking-wide whitespace-nowrap font-heading">
-            Photo Date Rescue
-          </span>
-        )}
-        {!isSidebarCollapsed && whatsNewBadge}
+        {!isSidebarCollapsed && renderTitle(false)}
       </div>
 
-      {/* When collapsed: "Photo Date Rescue" title left-aligned, starting right after the white section */}
-      {isSidebarCollapsed && (
-        <span
-          className="flex items-center gap-1.5 text-[12px] text-foreground/80 font-semibold tracking-wide whitespace-nowrap font-heading pl-3"
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          Photo Date Rescue
-          {whatsNewBadge}
-        </span>
-      )}
+      {/* When collapsed: the clickable title sits left-aligned right after the white section */}
+      {isSidebarCollapsed && renderTitle(true)}
 
       {/* Back-to-album affordance (v2.0.8 step 6, Terry 2026-05-19).
           When the user reached S&D or Memories via an empty-album
