@@ -704,7 +704,7 @@ useEffect(() => {
   // gsRestoreScroll = the scrollTop to restore on the way back; gsTransition = the brief overlay.
   const [gsJump, setGsJump] = useState<{ stepId: string; scrollTop: number } | null>(null);
   const [gsRestoreScroll, setGsRestoreScroll] = useState<number | null>(null);
-  const [gsTransition, setGsTransition] = useState<{ label: string } | null>(null);
+  const [gsTransition, setGsTransition] = useState<{ label: string; num: number } | null>(null);
   // The highlight is a React-driven OVERLAY ring positioned over the target's rect — NOT a class
   // on the target (React re-renders reconcile a DOM-added class straight back off).
   const [gsHighlightRect, setGsHighlightRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
@@ -793,12 +793,12 @@ useEffect(() => {
   // in the Workspace (data-gs=…, plus the existing Add-Source data-tour). Steps 3–5 only exist
   // once a Source is added; if the target isn't on screen yet, the transition still orients them.
   // Reuse the existing (Quick-Tour-proven) data-tour anchors so there's one set of targets.
-  const GS_STEP_TARGETS: Record<string, { sel: string; label: string }> = {
-    'library-drive': { sel: '[data-tour="destination"]', label: 'Pick your Library Drive' },
-    'add-source': { sel: '[data-tour="add-source"]', label: 'Add a Source' },
-    'tick-checkbox': { sel: '[data-tour="sources-panel"]', label: 'Tick the Checkbox' },
-    'analysis': { sel: '[data-tour="combined-analysis"]', label: 'Review the Source Analysis' },
-    'run-fix': { sel: '[data-tour="apply-fixes"]', label: 'Run Fix' },
+  const GS_STEP_TARGETS: Record<string, { sel: string; label: string; num: number }> = {
+    'library-drive': { sel: '[data-tour="destination"]', label: 'Pick your Library Drive', num: 1 },
+    'add-source': { sel: '[data-tour="add-source"]', label: 'Add a Source', num: 2 },
+    'tick-checkbox': { sel: '[data-tour="sources-panel"]', label: 'Tick the Checkbox', num: 3 },
+    'analysis': { sel: '[data-tour="combined-analysis"]', label: 'Review the Source Analysis', num: 4 },
+    'run-fix': { sel: '[data-tour="apply-fixes"]', label: 'Run Fix', num: 5 },
   };
   const handleGsJump = (stepId: string, scrollTop: number) => {
     const target = GS_STEP_TARGETS[stepId];
@@ -806,25 +806,26 @@ useEffect(() => {
     setGsJump({ stepId, scrollTop });
     setActiveView('dashboard');   // the five First-Fix steps all live on the Workspace/dashboard
     setActivePanel(null);          // reveal it under the panel
-    setGsTransition({ label: target.label });
+    setGsTransition({ label: target.label, num: target.num });
     setGsHighlightRect(null);
+    // The overlay runs ~2.1s (readable). Near the end, reveal + ring the target UNDER the fading
+    // card, so the card feels like it delivers you to the spot rather than just blinking away.
     window.setTimeout(() => {
-      setGsTransition(null);
       try {
         const el = document.querySelector(target.sel) as HTMLElement | null;
         if (el) {
           el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-          // Let the smooth-scroll settle, then snapshot the rect for the overlay ring.
           window.setTimeout(() => {
             const r = el.getBoundingClientRect();
             if (r.width > 0 && r.height > 0) {
               setGsHighlightRect({ top: r.top, left: r.left, width: r.width, height: r.height });
               window.setTimeout(() => setGsHighlightRect(null), 4600);
             }
-          }, 400);
+          }, 350);
         }
       } catch { /* target may not exist yet (e.g. no Source added) — the transition still oriented them */ }
-    }, 780);
+    }, 1500);
+    window.setTimeout(() => setGsTransition(null), 2100);
   };
   const goBackToGettingStarted = () => {
     if (gsJump) setGsRestoreScroll(gsJump.scrollTop);
@@ -3667,11 +3668,18 @@ return (
         {/* r560 (Terry) — Getting Started "Show me" transition: a brief educational wipe so the
             jump feels like a guided tour, not a plain menu click. */}
         {gsTransition && (
-          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 backdrop-blur-sm gs-transition-fade pointer-events-none">
-            <div className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-primary text-primary-foreground shadow-2xl gs-transition-card">
-              <Sparkles className="w-5 h-5" />
-              <span className="text-base font-semibold">Show me — {gsTransition.label}</span>
-              <ChevronRight className="w-5 h-5" />
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/75 backdrop-blur-sm gs-transition-fade pointer-events-none">
+            <div className="gs-transition-card w-[min(90vw,420px)] rounded-2xl bg-primary text-primary-foreground shadow-2xl ring-1 ring-white/20 overflow-hidden">
+              <div className="px-7 pt-6 pb-5">
+                <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-white/15 text-xs font-semibold mb-3">
+                  <Sparkles className="w-3.5 h-3.5" /> Step {gsTransition.num} of 5
+                </div>
+                <div className="text-2xl font-bold leading-tight">{gsTransition.label}</div>
+                <div className="text-sm text-primary-foreground/85 mt-1.5 flex items-center gap-1.5">
+                  Taking you to where this happens <ChevronRight className="w-4 h-4" />
+                </div>
+              </div>
+              <div className="h-1.5 bg-white/20"><div className="h-full bg-white/90 gs-progress-fill" /></div>
             </div>
           </div>
         )}
