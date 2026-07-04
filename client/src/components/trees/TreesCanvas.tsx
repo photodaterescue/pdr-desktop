@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp } from 'lucide-react';
-import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp, StickyNote, Camera } from 'lucide-react';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, updatePersonNotes, setPersonFaceFromImage, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm, promptChoice } from './promptConfirm';
@@ -8,6 +8,7 @@ import { HiddenSuggestionsReview } from './HiddenSuggestionsReview';
 import { useDraggableModal } from './useDraggableModal';
 import { computeRelationshipLabels } from '@/lib/relationship-label';
 import { GenderPickerModal, genderMarkerSymbol } from './GenderPickerModal';
+import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
@@ -730,6 +731,35 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
   const clearCardBackgroundFor = useCallback(async (personId: number) => {
     await setPersonCardBackground(personId, null);
     onGraphMutated();
+  }, [onGraphMutated]);
+
+  // v3.0 round 557 (Terry) — free-text notes on a person tile.
+  const [notesEditor, setNotesEditor] = useState<{ personId: number; name: string; notes: string } | null>(null);
+  const [savingNotes, setSavingNotes] = useState(false);
+  const editNotesFor = useCallback((personId: number) => {
+    const node = layout.nodes.find(n => n.personId === personId);
+    setNotesEditor({ personId, name: node?.fullName?.trim() || node?.name?.trim() || 'this person', notes: node?.notes ?? '' });
+  }, [layout.nodes]);
+  const saveNotes = useCallback(async () => {
+    if (!notesEditor) return;
+    setSavingNotes(true);
+    try { await updatePersonNotes(notesEditor.personId, notesEditor.notes); } finally { setSavingNotes(false); }
+    setNotesEditor(null);
+    onGraphMutated();
+  }, [notesEditor, onGraphMutated]);
+
+  // v3.0 round 558 (Terry) — set a person's FACE from an ad-hoc screen-region screenshot, WITHOUT
+  // adding a source file + running Fix. Reuses the existing region-capture; attaches the crop as
+  // the person's representative face (a face row can exist with no embedding, so a name-only
+  // person can get a face). `facePicking` shows a spinner on the tile while capture is in flight.
+  const setFaceFromScreenshotFor = useCallback(async (personId: number) => {
+    try {
+      // The region-capture flow shows its own prep-bar + drag overlay, so no extra spinner needed.
+      const cap = await (window as { pdr?: { capture?: { faceRegion?: () => Promise<{ success: boolean; cancelled?: boolean; dataUrl?: string; error?: string }> } } }).pdr?.capture?.faceRegion?.();
+      if (!cap || cap.cancelled || !cap.success || !cap.dataUrl) return;
+      const res = await setPersonFaceFromImage(personId, cap.dataUrl);
+      if (res?.success) onGraphMutated();
+    } catch { /* non-fatal */ }
   }, [onGraphMutated]);
 
   // Rendered positions come straight from the deterministic layout;
@@ -5278,6 +5308,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           personId={contextMenu.personId}
           isFocus={contextMenu.personId === layout.focusPersonId}
           hasCardBackground={!!nodeById.get(contextMenu.personId)?.cardBackground}
+          hasNotes={!!(nodeById.get(contextMenu.personId)?.notes || '').trim()}
           ancestryHidden={!!hiddenAncestorPersonIds?.includes(contextMenu.personId)}
           canHideAncestry={contextMenu.personId !== layout.focusPersonId && !!onToggleHiddenAncestor}
           canShowPathway={!!onTriggerHighlight && triggerHighlightOnRightClick && contextMenu.personId !== layout.focusPersonId}
@@ -5288,9 +5319,44 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           onRemovePerson={() => { onRemovePerson(contextMenu.personId); setContextMenu(null); }}
           onSetCardBackground={() => { pickCardBackgroundFor(contextMenu.personId); setContextMenu(null); }}
           onClearCardBackground={() => { clearCardBackgroundFor(contextMenu.personId); setContextMenu(null); }}
+          onEditNotes={() => { editNotesFor(contextMenu.personId); setContextMenu(null); }}
+          onSetFaceFromScreenshot={() => { setFaceFromScreenshotFor(contextMenu.personId); setContextMenu(null); }}
           onToggleAncestry={() => { onToggleHiddenAncestor?.(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
         />
+      )}
+
+      {/* v3.0 round 557 (Terry) — the notes editor (free text on a person). */}
+      {notesEditor && (
+        <div
+          className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4"
+          onMouseDown={(e) => { if (e.target === e.currentTarget) setNotesEditor(null); }}
+        >
+          <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="px-5 pt-5 pb-3">
+              <h3 className="text-base font-semibold text-foreground flex items-center gap-2">
+                <StickyNote className="w-4 h-4 text-primary" />
+                Note on {notesEditor.name}
+              </h3>
+              <p className="text-xs text-muted-foreground mt-1">
+                Anything you know but can’t derive from photos — nicknames, trades, stories. Shown on the tile.
+              </p>
+            </div>
+            <div className="px-5">
+              <textarea
+                autoFocus
+                value={notesEditor.notes}
+                onChange={(e) => setNotesEditor(ne => ne ? { ...ne, notes: e.target.value } : ne)}
+                placeholder="e.g. Everyone called him Charlie — real name unknown. Was a tailor in Leeds."
+                className="w-full h-32 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
+              />
+            </div>
+            <div className="flex items-center justify-end gap-2 px-5 py-4">
+              <Button variant="secondary" onClick={() => setNotesEditor(null)} disabled={savingNotes}>Cancel</Button>
+              <Button onClick={saveNotes} disabled={savingNotes}>{savingNotes ? 'Saving…' : 'Save note'}</Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {edgeEditor && (
@@ -6157,6 +6223,25 @@ function PersonNode({ node, avatar, isFocus, opacity, hideChips, showDates, onEd
           </IconTooltip>
         );
       })()}
+      {/* v3.0 round 557 (Terry) — notes indicator, TOP-LEFT corner. A note glyph appears when the
+          person has notes; hover reads the full text. Edit via right-click → Edit note. */}
+      {!node.isPlaceholder && (node.notes || '').trim() && (() => {
+        const r = 10;
+        const cornerX = -CARD_W / 2 + (r + 2);
+        const cornerY = -CARD_H / 2 + (r + 2);
+        return (
+          <IconTooltip label={(node.notes || '').trim()} side="top">
+            <g onMouseDown={(e) => e.stopPropagation()} style={{ cursor: 'default' }}>
+              <circle cx={cornerX} cy={cornerY} r={r} fill="#ffffff" stroke="rgba(217,70,239,0.6)" strokeWidth={1.2} />
+              <g stroke="#d946ef" strokeWidth={1.3} strokeLinecap="round">
+                <line x1={cornerX - 4} y1={cornerY - 2.6} x2={cornerX + 4} y2={cornerY - 2.6} />
+                <line x1={cornerX - 4} y1={cornerY} x2={cornerX + 4} y2={cornerY} />
+                <line x1={cornerX - 4} y1={cornerY + 2.6} x2={cornerX + 1} y2={cornerY + 2.6} />
+              </g>
+            </g>
+          </IconTooltip>
+        );
+      })()}
       {/* Gender marker — top-right corner. Shows a small "G" button
           when no gender is set, or the Mars/Venus/Combined symbol
           when it is. Clicking either opens the gender picker. When
@@ -6730,11 +6815,12 @@ function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onToggleAncestry, onClose }: {
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
   hasCardBackground: boolean;
+  hasNotes: boolean;
   ancestryHidden: boolean;
   canHideAncestry: boolean;
   /** Whether the "Show pathway from focus" menu item should be
@@ -6748,6 +6834,8 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, can
   onRemovePerson: () => void;
   onSetCardBackground: () => void;
   onClearCardBackground: () => void;
+  onEditNotes: () => void;
+  onSetFaceFromScreenshot: () => void;
   onToggleAncestry: () => void;
   onClose: () => void;
 }) {
@@ -6779,6 +6867,10 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, ancestryHidden, can
       )}
       <MenuItem icon={<Link2 className="w-4 h-4" />} label="Set relationship…" onClick={onSetRelationship} />
       <MenuItem icon={<Pencil className="w-4 h-4" />} label="Edit relationships…" onClick={onEditRelationships} />
+      {/* v3.0 round 557/558 (Terry) — notes + screenshot-to-face */}
+      <div className="border-t border-border my-1" />
+      <MenuItem icon={<StickyNote className="w-4 h-4" />} label={hasNotes ? 'Edit note…' : 'Add a note…'} onClick={onEditNotes} />
+      <MenuItem icon={<Camera className="w-4 h-4" />} label="Set face from screenshot…" onClick={onSetFaceFromScreenshot} />
       {canHideAncestry && (
         <>
           <div className="border-t border-border my-1" />

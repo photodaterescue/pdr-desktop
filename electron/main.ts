@@ -317,6 +317,7 @@ import { toLongPath, fromLongPath } from './long-path.js';
 import {
   captureScreenshot,
   captureRegion,
+  captureFaceRegion,
   listCaptureDisplays,
   flushPendingCaptures,
   registerCaptureHotkey,
@@ -493,6 +494,8 @@ import {
   listAllRelationships,
   updatePersonLifeEvents,
   setPersonCardBackground,
+  updatePersonNotes,
+  setPersonAvatarImage,
   setPersonGender,
   getFamilyGraph,
   getPersonCooccurrenceStats,
@@ -9977,6 +9980,24 @@ ipcMain.handle('trees:setPersonCardBackground', async (_event, args: { personId:
   }
 });
 
+// v3.0 round 557 (Terry) — set/clear a person's free-text notes (shown on the Trees tile).
+ipcMain.handle('trees:updatePersonNotes', async (_event, args: { personId: number; notes: string | null }) => {
+  try {
+    return updatePersonNotes(args.personId, args.notes);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v3.0 round 558 (Terry) — set a person's face/avatar from a screenshot data URL (no source file).
+ipcMain.handle('trees:setPersonFaceImage', async (_event, args: { personId: number; dataUrl: string }) => {
+  try {
+    return setPersonAvatarImage(args.personId, args.dataUrl);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 ipcMain.handle('trees:setPersonGender', async (_event, args: { personId: number; gender: string | null }) => {
   try {
     return setPersonGender(args.personId, args.gender);
@@ -13787,6 +13808,16 @@ ipcMain.handle('capture:screenshot', async (_event, opts?: { displayId?: string 
 ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string }) => {
   try {
     return await captureRegion({ displayId: opts?.displayId, trigger: 'button' });
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// v3.0 round 558 (Terry) — grab a screen region and return it as a data URL (no library file),
+// for Trees "Set face from screenshot".
+ipcMain.handle('capture:faceRegion', async (event) => {
+  try {
+    return await captureFaceRegion(BrowserWindow.fromWebContents(event.sender));
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

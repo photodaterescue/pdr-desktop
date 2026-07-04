@@ -1917,6 +1917,22 @@ export async function setPersonCardBackground(personId: number, dataUrl: string 
   return { success: false, error: 'Not running in Electron' };
 }
 
+// v3.0 round 557 (Terry) — set/clear a person's free-text notes (shown on the Trees tile).
+export async function updatePersonNotes(personId: number, notes: string | null): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.updatePersonNotes({ personId, notes });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// v3.0 round 558 (Terry) — set a person's face/avatar from a screenshot data URL (no source file).
+export async function setPersonFaceFromImage(personId: number, dataUrl: string): Promise<{ success: boolean; error?: string }> {
+  if (isElectron() && (window as any).pdr?.trees) {
+    return (window as any).pdr.trees.setPersonFaceImage({ personId, dataUrl });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
 export type PersonGender = 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null;
 
 export async function setPersonGender(personId: number, gender: PersonGender): Promise<{ success: boolean; error?: string }> {
@@ -1944,6 +1960,8 @@ export interface FamilyGraphNode {
   deceasedMarker: string | null;
   /** Optional per-card background image (data URL). */
   cardBackground: string | null;
+  /** v3.0 round 557 (Terry) — free-text notes shown on the Trees tile. */
+  notes: string | null;
   /** 'male' | 'female' | 'non_binary' | 'prefer_not_to_say' | 'unknown' | null */
   gender: string | null;
   hopsFromFocus: number;

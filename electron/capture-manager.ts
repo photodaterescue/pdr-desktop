@@ -679,6 +679,18 @@ async function regionCaptureWithPrep(
   }
 }
 
+// v3.0 round 558 (Terry) — grab a screen region and return it as a data URL WITHOUT persisting
+// anywhere. Used by Trees "Set face from screenshot": the crop becomes a person's avatar directly,
+// so you can put a face to a name without adding a source file + running Fix.
+export async function captureFaceRegion(
+  callingWin: BrowserWindow | null,
+): Promise<{ success: boolean; dataUrl?: string; cancelled?: boolean; error?: string }> {
+  const r = await regionCaptureWithPrep(callingWin);
+  if ('cancelled' in r) return { success: false, cancelled: true };
+  if ('error' in r) return { success: false, error: r.error };
+  return { success: true, dataUrl: `data:image/png;base64,${r.buffer.toString('base64')}` };
+}
+
 export async function captureCollageRegion(
   callingWin: BrowserWindow | null,
 ): Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }> {

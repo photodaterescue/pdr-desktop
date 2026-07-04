@@ -121,6 +121,7 @@ export function augmentWithVirtualGhosts(
           deathDate: null,
           deceasedMarker: null,
           cardBackground: null,
+          notes: null,
           gender: null,
           hopsFromFocus: node.hopsFromFocus + 1,
           photoCount: 0,

@@ -356,6 +356,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
         error?: string;
       }>,
+    // v3.0 round 558 (Terry) — grab a screen region as a data URL (no library file) for Trees "Set face from screenshot".
+    faceRegion: () => ipcRenderer.invoke('capture:faceRegion') as Promise<{ success: boolean; dataUrl?: string; cancelled?: boolean; error?: string }>,
     listDisplays: () => ipcRenderer.invoke('capture:listDisplays'),
     setHotkey: (accelerator: string) =>
       ipcRenderer.invoke('capture:setHotkey', accelerator) as Promise<{
@@ -790,6 +792,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     listAllRelationships: () => ipcRenderer.invoke('trees:listAllRelationships'),
     updatePersonLifeEvents: (args: { personId: number; patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null } }) => ipcRenderer.invoke('trees:updatePersonLifeEvents', args),
     setPersonCardBackground: (args: { personId: number; dataUrl: string | null }) => ipcRenderer.invoke('trees:setPersonCardBackground', args),
+    updatePersonNotes: (args: { personId: number; notes: string | null }) => ipcRenderer.invoke('trees:updatePersonNotes', args) as Promise<{ success: boolean; error?: string }>,
+    setPersonFaceImage: (args: { personId: number; dataUrl: string }) => ipcRenderer.invoke('trees:setPersonFaceImage', args) as Promise<{ success: boolean; error?: string }>,
     setPersonGender: (args: { personId: number; gender: string | null }) => ipcRenderer.invoke('trees:setPersonGender', args),
     getFamilyGraph: (args: { focusPersonId: number; maxHops?: number }) => ipcRenderer.invoke('trees:getFamilyGraph', args),
     getCooccurrenceStats: (args: { limit?: number; minSharedPhotos?: number }) => ipcRenderer.invoke('trees:getCooccurrenceStats', args),

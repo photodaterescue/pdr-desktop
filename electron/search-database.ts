@@ -1345,6 +1345,11 @@ export function initDatabase(): { success: boolean; error?: string } {
     if (!personColNames.has('full_name')) {
       try { db.exec(`ALTER TABLE persons ADD COLUMN full_name TEXT`); } catch {}
     }
+    // v3.0 round 557 (Terry) — free-text NOTES on a person, for the bits of history you know
+    // but can't derive ("people called him Charlie", "was a tailor"). Shows on the Trees tile.
+    if (!personColNames.has('notes')) {
+      try { db.exec(`ALTER TABLE persons ADD COLUMN notes TEXT`); } catch {}
+    }
 
     // Normalise any legacy double-backslash destination paths
     db.exec(`UPDATE indexed_runs SET destination_path = REPLACE(destination_path, '\\\\', '\\') WHERE destination_path LIKE '%\\\\%'`);
@@ -6724,6 +6729,8 @@ export interface FamilyGraphNode {
   deceasedMarker: string | null;
   /** Optional per-card background image (data URL). Rendered faded. */
   cardBackground: string | null;
+  /** v3.0 round 557 (Terry) — free-text notes (`persons.notes`), shown on the Trees tile. */
+  notes: string | null;
   /** One of: 'male' | 'female' | 'non_binary' | 'prefer_not_to_say'
    *  | 'unknown' | null. null = not yet set. Drives gendered labels +
    *  the top-right symbol on the card. */
@@ -6774,6 +6781,7 @@ interface PersonRow {
   death_date: string | null;
   deceased_marker: string | null;
   card_background: string | null;
+  notes: string | null;
   gender: string | null;
   is_placeholder: number;
 }
@@ -6937,7 +6945,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
   const placeholders = ids.map(() => '?').join(',');
   const personRows = db.prepare(`
     SELECT id, name, full_name, avatar_data, representative_face_id,
-           birth_date, death_date, deceased_marker, card_background,
+           birth_date, death_date, deceased_marker, card_background, notes,
            gender,
            COALESCE(is_placeholder, 0) AS is_placeholder
     FROM persons
@@ -7041,6 +7049,7 @@ export function getFamilyGraph(focusPersonId: number, maxHops: number = 3): Fami
       deathDate: row.death_date,
       deceasedMarker: row.deceased_marker,
       cardBackground: row.card_background,
+      notes: row.notes ?? null,
       gender: row.gender,
       hopsFromFocus: visited.get(row.id) ?? maxHops,
       photoCount: photoCountByPerson.get(row.id) ?? 0,
@@ -7509,6 +7518,29 @@ export function setPersonCardBackground(personId: number, dataUrl: string | null
   const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
   if (!existing) return { success: false, error: 'Person not found.' };
   db.prepare(`UPDATE persons SET card_background = ?, updated_at = datetime('now') WHERE id = ?`).run(dataUrl, personId);
+  return { success: true };
+}
+
+/** v3.0 round 557 (Terry) — set/clear a person's free-text notes. Empty/whitespace clears it. */
+export function updatePersonNotes(personId: number, notes: string | null): { success: boolean; error?: string } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
+  if (!existing) return { success: false, error: 'Person not found.' };
+  const trimmed = (typeof notes === 'string' && notes.trim().length > 0) ? notes.trim() : null;
+  db.prepare(`UPDATE persons SET notes = ?, updated_at = datetime('now') WHERE id = ?`).run(trimmed, personId);
+  return { success: true };
+}
+
+/** v3.0 round 558 (Terry) — set a person's avatar straight from an image data URL (a screen-region
+ *  screenshot), no source file / Fix needed. Writes persons.avatar_data (the avatar shown when the
+ *  person has no representative face) and clears any stale representative_face_id so the new image
+ *  wins for a face-less person. */
+export function setPersonAvatarImage(personId: number, dataUrl: string): { success: boolean; error?: string } {
+  const db = getDb();
+  const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
+  if (!existing) return { success: false, error: 'Person not found.' };
+  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { success: false, error: 'Invalid image.' };
+  db.prepare(`UPDATE persons SET avatar_data = ?, representative_face_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(dataUrl, personId);
   return { success: true };
 }
 

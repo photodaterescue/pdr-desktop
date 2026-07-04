@@ -32,7 +32,7 @@ function node(personId: number, name: string): FamilyGraphNode {
   return {
     personId, name, fullName: null, avatarData: null, representativeFaceId: null,
     representativeFaceFilePath: null, representativeFaceBox: null, birthDate: null,
-    deathDate: null, deceasedMarker: null, cardBackground: null, gender: null,
+    deathDate: null, deceasedMarker: null, cardBackground: null, notes: null, gender: null,
     hopsFromFocus: 0, photoCount: 0, totalParentCount: 0, totalChildCount: 0,
     isPlaceholder: false,
   };
