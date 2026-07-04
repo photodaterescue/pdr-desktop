@@ -16324,13 +16324,20 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             text-link, paired with the version line so the footer is
             ~80px slimmer than before. */}
         <div className="mt-4 pt-3 border-t border-border flex items-center justify-between gap-4">
-          <p className="text-xs text-muted-foreground">
-            {/* PDR Photos brand line — soft slip-in alongside the
-                established product name + version. Both names appear
-                side-by-side so users gradually associate the two
-                without "Photo Date Rescue" being replaced. */}
+          {/* PDR Photos brand line — soft slip-in alongside the
+              established product name + version. Both names appear
+              side-by-side so users gradually associate the two
+              without "Photo Date Rescue" being replaced.
+              v3.0 round 551 (Terry) — the version is now a quiet link that
+              closes Settings and replays the "What's new in 3.0" showcase. */}
+          <button
+            type="button"
+            onClick={() => { onClose(); try { window.dispatchEvent(new CustomEvent('pdr:replay-whatsnew30')); } catch { /* non-fatal */ } }}
+            className="text-xs text-muted-foreground hover:text-foreground transition-colors text-left"
+            title="What’s new in 3.0"
+          >
             PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
-          </p>
+          </button>
           <IconTooltip
             label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Restore every setting on this dialog to PDR defaults'}
             side="top"

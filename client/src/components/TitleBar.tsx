@@ -325,6 +325,33 @@ export function TitleBar() {
   const broadcastTitlebarPointer = () => {
     try { window.dispatchEvent(new CustomEvent('pdr:titlebar-pointer')); } catch {}
   };
+  // v3.0 round 551 (Terry) — the "3.0" badge next to the app name replays the "What's new in
+  // 3.0" showcase (a quick reminder of everything PDR does, for word-of-mouth). The splash lives
+  // in the Workspace layer, which is hidden on the Welcome screen — so if we're not already in
+  // the workspace, hop there first (hash-routed) THEN fire the replay event the workspace listens
+  // for. Rendered no-drag so the click isn't swallowed by the titlebar drag region.
+  const openWhatsNew = () => {
+    try {
+      if (!window.location.hash.includes('/workspace')) {
+        window.location.hash = '#/workspace?view=dashboard';
+        window.setTimeout(() => { try { window.dispatchEvent(new CustomEvent('pdr:replay-whatsnew30')); } catch {} }, 450);
+      } else {
+        window.dispatchEvent(new CustomEvent('pdr:replay-whatsnew30'));
+      }
+    } catch {}
+  };
+  const whatsNewBadge = (
+    <button
+      type="button"
+      onClick={openWhatsNew}
+      style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
+      title="What’s new in 3.0 — see everything PDR does"
+      aria-label="What’s new in 3.0"
+      className="inline-flex items-center h-[17px] px-1.5 rounded-full text-[10px] font-bold leading-none text-white bg-gradient-to-r from-violet-500 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 transition-all shadow-sm shadow-fuchsia-500/30 hover:shadow-fuchsia-500/50 shrink-0"
+    >
+      3.0
+    </button>
+  );
   return (
     <div
       className="custom-title-bar flex items-center shrink-0 select-none z-50 relative"
@@ -355,15 +382,17 @@ export function TitleBar() {
             Photo Date Rescue
           </span>
         )}
+        {!isSidebarCollapsed && whatsNewBadge}
       </div>
 
       {/* When collapsed: "Photo Date Rescue" title left-aligned, starting right after the white section */}
       {isSidebarCollapsed && (
         <span
-          className="text-[12px] text-foreground/80 font-semibold tracking-wide whitespace-nowrap font-heading pl-3"
+          className="flex items-center gap-1.5 text-[12px] text-foreground/80 font-semibold tracking-wide whitespace-nowrap font-heading pl-3"
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           Photo Date Rescue
+          {whatsNewBadge}
         </span>
       )}
 

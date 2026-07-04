@@ -12,18 +12,20 @@ interface WhatsNew30Props {
 }
 
 /**
- * v3.0 round 549 (Terry) — the "What's new in 3.0" showcase, SECOND PASS on Terry's art
- * direction: bigger, everything CENTRED (it's all titles/headings), and the Viewer Share
- * button's violet→fuchsia palette woven through (gradient headline + "3", drifting glow
- * blobs, gradient primary CTA) so it pops instead of reading as one flat lavender wash.
- * Copy locked 2026-07-04: headline "The Power of 3"; subline = the "all in one place /
- * all on your own hardware / all yours" ecosystem line; closer mirrors the Welcome
- * screen's ethos trio — Security · Privacy · Ownership.
+ * v3.0 round 551 (Terry) — the "What's new in 3.0" showcase, THIRD pass on art + copy:
+ *  - Subline is now the tagline callback "Bring your photos home." (was the wishy-washy
+ *    "Everything you'll ever do…") — memorable, and it echoes the Welcome/About tagline.
+ *  - The "full picture" expander is a PULSING FUCHSIA PILL so it's noticed (it was easily
+ *    missed as a plain grey link).
+ *  - Primary CTA reads "Get started" (it dismisses into the workspace — "Start exploring"
+ *    over-promised); the secondary genuinely opens the full changelog.
+ *  - The FOUNDATION cards carry each section's real SIDEBAR ACCENT colour (Memories amber,
+ *    S&D blue, People fuchsia, etc. — SIDEBAR_ACCENT in workspace.tsx) so the identity users
+ *    see in the side menu is reinforced here. The three NEW-in-3.0 pillars keep the
+ *    violet→fuchsia "new" gradient, so new-vs-foundation reads at a glance.
  *
- * Shown ONCE (localStorage 'pdr-whatsnew-30-shown', set by the workspace on dismiss),
- * replayable from About PDR. Modal skeleton still matches TrialLimitModal (backdrop,
- * spring scale-in, the `Button` primitive); the gradient accents are the Share button's
- * own violet→fuchsia, per Terry's explicit reference.
+ * Shown ONCE (localStorage 'pdr-whatsnew-30-shown', set by the workspace on dismiss);
+ * replayable from About PDR, the titlebar "3.0" pill, and the Settings footer version.
  */
 
 const PILLARS = [
@@ -64,44 +66,50 @@ const ALSO_CHIPS = [
 
 // v3.0 round 550 (Terry) — "the full picture": reviewers (and their viewers) skipped
 // straight past the FOUNDATION — Memories, S&D, the engine itself — so the splash now
-// carries the whole story behind one expander. Collapsed by default (no overwhelm);
-// the intrigued get the "what PDR is really capable of" reveal Terry asked for.
+// carries the whole story behind one expander. r551: each card wears its section's real
+// sidebar accent (SIDEBAR_ACCENT hexes) so the identity is consistent app-wide.
 const FOUNDATION = [
   {
     key: 'engine',
     title: 'One engine, any source',
     body: 'Phone dumps, SD cards, old drives — even a 50 GB Google Takeout. PDR fixes the dates and files everything into one clean, structured library. Nothing else on the market will do this.',
     Icon: Zap,
+    accent: '#a99cff', // Dashboard / primary lavender
   },
   {
     key: 'memories',
     title: 'Memories — Dates & Albums',
     body: 'Every photo lands on a timeline of the day it was taken, with albums that organise your library without ever duplicating a file.',
     Icon: CalendarDays,
+    accent: '#FEC242', // Memories amber
   },
   {
     key: 'search',
     title: 'Search & Discovery',
     body: 'Find any photo in seconds — by person, place, camera, caption or date. All of it offline, on your machine.',
     Icon: Search,
+    accent: '#3b82f6', // S&D blue
   },
   {
     key: 'people',
     title: 'People Manager & faces',
     body: 'Name a face once and PDR finds that person across your whole library — the same names that power Family Trees.',
     Icon: Users,
+    accent: '#d946ef', // People Manager fuchsia
   },
   {
     key: 'pace',
     title: 'Your pace, no pressure',
     body: 'Photos that couldn’t be dated wait patiently in Needs Dates. Fix a handful today, a hundred next month — nothing rushes you.',
     Icon: CalendarClock,
+    accent: '#fda4af', // calm pastel rose — "here when you need it"
   },
   {
     key: 'yours',
     title: 'A library that survives anything',
     body: 'Your library lives on your own drive and reconnects instantly after a reinstall or a new PC. It is yours, forever.',
     Icon: HardDrive,
+    accent: '#10b981', // evergreen emerald — permanent, safe
   },
 ];
 
@@ -184,15 +192,16 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ delay: 0.22 }}
-                className="text-[15px] text-foreground/80 leading-relaxed max-w-xl mx-auto"
+                className="text-[15px] text-muted-foreground leading-relaxed max-w-xl mx-auto"
               >
-                Everything you&apos;ll ever do with your photos &mdash; all in one place,
-                all on your own hardware, all yours.
+                <span className="text-lg font-semibold text-foreground">Bring your photos home.</span>
+                <br />
+                All in one place, all on your own hardware, all yours.
               </motion.p>
             </div>
           </div>
 
-          {/* The three pillars — Create / Connect / Capture, centred. */}
+          {/* The three NEW-in-3.0 pillars — Create / Connect / Capture, centred. */}
           <motion.p
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
@@ -243,17 +252,25 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
           </motion.div>
 
           {/* r550 (Terry) — "the full picture": the FOUNDATION features behind one expander,
-              collapsed by default. Reviewers skipped straight past Memories/S&D/the engine, so
-              the splash now tells the whole story without assuming anyone knows v2. */}
+              collapsed by default. r551: a PULSING FUCHSIA PILL so it isn't missed; each
+              revealed card wears its real sidebar-section accent. */}
           <div className="px-10 pt-5 text-center">
-            <button
+            <motion.button
               type="button"
               onClick={() => setShowFull((v) => !v)}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground transition-colors"
+              animate={showFull ? { boxShadow: '0 0 0 0 rgba(217,70,239,0)' } : {
+                boxShadow: [
+                  '0 0 0 0 rgba(217,70,239,0.0)',
+                  '0 0 20px 2px rgba(217,70,239,0.35)',
+                  '0 0 0 0 rgba(217,70,239,0.0)',
+                ],
+              }}
+              transition={showFull ? { duration: 0.3 } : { repeat: Infinity, duration: 2.2, ease: 'easeInOut' }}
+              className="inline-flex items-center gap-2 px-4 py-2 rounded-full border border-fuchsia-400/60 bg-fuchsia-500/[0.07] text-sm font-medium text-fuchsia-600 dark:text-fuchsia-300 hover:bg-fuchsia-500/[0.12] transition-colors"
             >
               <ChevronDown className={`w-4 h-4 transition-transform duration-300 ${showFull ? 'rotate-180' : ''}`} />
-              {showFull ? 'Show less' : 'New to PDR? See the full picture — everything it already does'}
-            </button>
+              {showFull ? 'Show less' : 'New to PDR? See everything it already does'}
+            </motion.button>
             <AnimatePresence initial={false}>
               {showFull && (
                 <motion.div
@@ -266,8 +283,11 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-4 text-left">
                     {FOUNDATION.map((f) => (
                       <div key={f.key} className="flex items-start gap-3 rounded-xl border border-border bg-secondary/25 p-3.5">
-                        <div className="w-8 h-8 shrink-0 bg-gradient-to-br from-violet-500/20 to-fuchsia-500/10 rounded-lg flex items-center justify-center border border-violet-400/20">
-                          <f.Icon className="w-4 h-4 text-violet-500" />
+                        <div
+                          className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center border"
+                          style={{ backgroundColor: `${f.accent}22`, borderColor: `${f.accent}55` }}
+                        >
+                          <f.Icon className="w-4 h-4" style={{ color: f.accent }} />
                         </div>
                         <div>
                           <h4 className="text-[13px] font-semibold text-foreground mb-0.5">{f.title}</h4>
@@ -288,7 +308,7 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
               className="w-full h-12 text-base font-medium text-white bg-gradient-to-r from-violet-600 to-fuchsia-500 hover:from-violet-600 hover:to-fuchsia-600 shadow-lg shadow-fuchsia-500/25 hover:shadow-fuchsia-500/40 transition-all duration-300"
             >
               <Sparkles className="w-4 h-4 mr-2" />
-              Start exploring
+              Get started
             </Button>
             <Button onClick={onSeeFullList} variant="secondary" className="w-full">
               See everything that&apos;s new
@@ -302,7 +322,7 @@ export function WhatsNew30({ isOpen, onClose, onSeeFullList }: WhatsNew30Props) 
               Built on <span className="bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">Security &middot; Privacy &middot; Ownership</span>
             </motion.p>
             <p className="text-xs text-muted-foreground/70 leading-relaxed">
-              Replay this any time from Menu &rarr; About PDR.
+              Replay this any time from the <span className="font-medium text-foreground/80">3.0</span> badge up top, or Menu &rarr; About PDR.
             </p>
           </div>
         </motion.div>
