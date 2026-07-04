@@ -727,6 +727,32 @@ useEffect(() => {
     try { localStorage.setItem('pdr-whatsnew-30-shown', '1'); } catch { /* non-fatal */ }
     setShowWhatsNew30(false);
   };
+  // v3.0 round 556 (Terry) — "Get started" teach, REWORKED to be directive, not decorative.
+  // The old sweep showed all 14 nav items (several of them empty until you add photos) and fired
+  // for veterans too. Now it fires ONLY for genuine newcomers (no Library Drive configured yet),
+  // gives the side menu one gentle "this is your hub" glow, AND — the actual teaching — drops a
+  // coach-mark on Add Source: the real first move. Veterans just land in the Workspace.
+  const [addSourceCoach, setAddSourceCoach] = useState<{ top: number; left: number } | null>(null);
+  const addSourceCoachTimer = useRef<number | null>(null);
+  const dismissAddSourceCoach = () => {
+    if (addSourceCoachTimer.current) { clearTimeout(addSourceCoachTimer.current); addSourceCoachTimer.current = null; }
+    setAddSourceCoach(null);
+  };
+  const runGetStartedTeach = () => {
+    // Newcomer = no Library Drive set yet (destinationPath null is the first-run state).
+    if (destinationPath !== null) return;   // veteran → no teach, just the Workspace
+    runSidebarTeach();
+    window.setTimeout(() => {
+      try {
+        const el = document.querySelector('[data-tour="add-source"]');
+        if (!el) return;
+        const r = el.getBoundingClientRect();
+        setAddSourceCoach({ top: Math.round(r.bottom + 12), left: Math.round(r.left) });
+        if (addSourceCoachTimer.current) clearTimeout(addSourceCoachTimer.current);
+        addSourceCoachTimer.current = window.setTimeout(() => setAddSourceCoach(null), 11000);
+      } catch { /* non-essential */ }
+    }, 650);
+  };
   // v3.0 round 553 (Terry) — when About PDR is opened FROM the splash's "See everything that's
   // new" button, the current release's changelog entry auto-opens, scrolls into view, and pulses
   // a fuchsia ring — so it's obvious THAT is what you were sent to look at (vs. a normal, curious
@@ -3570,9 +3596,35 @@ return (
               dismissWhatsNew30();
               setActivePanel(null);
               setActiveView('dashboard');
-              window.setTimeout(() => runSidebarTeach(), 480);
+              window.setTimeout(() => runGetStartedTeach(), 480);
             }}
           />
+        )}
+        {/* v3.0 round 556 (Terry) — "Get started" coach-mark: the directive pointer at the real
+            first move (Add Source), for newcomers only. Sits just below the Add Source button in
+            the empty source area, with an up-arrow. Auto-dismisses; click to close early. */}
+        {addSourceCoach && (
+          <div
+            className="fixed z-[70] pointer-events-none"
+            style={{ top: addSourceCoach.top, left: addSourceCoach.left }}
+          >
+            <div className="relative pointer-events-auto max-w-[210px]">
+              <span className="absolute -top-1.5 left-6 w-3 h-3 rotate-45 bg-violet-600" />
+              <div className="relative flex items-start gap-2 rounded-lg px-3.5 py-2.5 text-white bg-gradient-to-br from-violet-600 to-fuchsia-500 shadow-lg shadow-fuchsia-500/30">
+                <Sparkles className="w-4 h-4 mt-0.5 shrink-0" />
+                <div className="text-[13px] leading-snug">
+                  <span className="font-semibold">Start here</span> — bring your photos in, and PDR takes it from there.
+                </div>
+                <button
+                  onClick={dismissAddSourceCoach}
+                  className="shrink-0 -mr-1 -mt-1 p-1 rounded hover:bg-white/20 transition-colors"
+                  aria-label="Dismiss"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
         )}
 
         {/* Bottom action bar portal target — sibling of the zoom
