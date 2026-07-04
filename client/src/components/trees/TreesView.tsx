@@ -312,6 +312,36 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
   const [showDates, setShowDates] = useState(
     typeof window !== 'undefined' && localStorage.getItem('pdr-trees-show-dates') === 'true'
   );
+  // r560 (Terry) — hide faces on the tree (show monograms instead). Global switch lives in Trees
+  // Settings → Display; individual people are toggled from the right-click menu; "Show all faces"
+  // clears both. Persisted to localStorage so the choice sticks across sessions.
+  const [hideAllFaces, setHideAllFaces] = useState(
+    typeof window !== 'undefined' && localStorage.getItem('pdr-trees-hide-all-faces') === 'true'
+  );
+  const [hiddenFacePersonIds, setHiddenFacePersonIds] = useState<Set<number>>(() => {
+    try {
+      const raw = typeof window !== 'undefined' ? localStorage.getItem('pdr-trees-hidden-face-ids') : null;
+      if (raw) return new Set(JSON.parse(raw) as number[]);
+    } catch { /* ignore malformed */ }
+    return new Set<number>();
+  });
+  const setHideAllFacesPersisted = (v: boolean) => {
+    setHideAllFaces(v);
+    try { localStorage.setItem('pdr-trees-hide-all-faces', v ? 'true' : 'false'); } catch { /* ignore */ }
+  };
+  const toggleHideFace = (personId: number) => {
+    setHiddenFacePersonIds(prev => {
+      const next = new Set(prev);
+      if (next.has(personId)) next.delete(personId); else next.add(personId);
+      try { localStorage.setItem('pdr-trees-hidden-face-ids', JSON.stringify(Array.from(next))); } catch { /* ignore */ }
+      return next;
+    });
+  };
+  const unhideAllFaces = () => {
+    setHideAllFacesPersisted(false);
+    setHiddenFacePersonIds(new Set<number>());
+    try { localStorage.removeItem('pdr-trees-hidden-face-ids'); } catch { /* ignore */ }
+  };
   /** Visual-effects toggles. Master switch + per-effect on/off.
    *  Persisted to localStorage; default ON for the first launch so
    *  the comet trail is visible without the user having to opt in. */
@@ -2778,6 +2808,9 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
             onExpandAllStateChange={setExpandAllState}
             hideQuickAddChips={!stepsEnabled && !generationsEnabled}
             showDates={showDates}
+            hideAllFaces={hideAllFaces}
+            hiddenFacePersonIds={hiddenFacePersonIds}
+            onToggleHideFace={toggleHideFace}
             onEditDates={(personId, screenX, screenY) => {
               setDateEditor({ personId, x: screenX, y: screenY });
             }}
@@ -3388,6 +3421,35 @@ export function TreesView({ onRequestCanvasBackgroundPick, onRequestCardBackgrou
                         data-testid="checkbox-dates-living"
                       />
                     </label>
+
+                    {/* r560 (Terry) — Faces: hide photos on the tree (show monograms). Global
+                        switch here; individual people are hidden from the right-click menu;
+                        "Show all faces" clears both. */}
+                    <div className="pt-3 border-t border-border space-y-3">
+                      <p className="text-xs text-muted-foreground px-1">Faces</p>
+                      <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 rounded-lg bg-primary/10 flex items-center justify-center shrink-0">
+                            <EyeOff className="w-4 h-4 text-primary" />
+                          </div>
+                          <div className="flex flex-col">
+                            <span className="text-sm font-medium text-foreground">Hide all faces</span>
+                            <span className="text-xs text-muted-foreground">Show initials on every card instead of photos.</span>
+                          </div>
+                        </div>
+                        <Checkbox
+                          checked={hideAllFaces}
+                          onCheckedChange={(checked) => setHideAllFacesPersisted(!!checked)}
+                          data-testid="checkbox-hide-all-faces"
+                        />
+                      </label>
+                      {(hideAllFaces || hiddenFacePersonIds.size > 0) && (
+                        <Button variant="secondary" className="w-full" onClick={unhideAllFaces}>
+                          <Eye className="w-4 h-4 mr-2" />
+                          Show all faces{hiddenFacePersonIds.size > 0 ? ` (${hiddenFacePersonIds.size} hidden)` : ''}
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
 

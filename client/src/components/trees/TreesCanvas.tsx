@@ -67,6 +67,11 @@ interface TreesCanvasProps {
   /** Show the optional birth–death dates line inside each card. Toggled
    *  from the header's 'Add Info' dropdown. */
   showDates?: boolean;
+  /** r560 (Terry) — hide faces on the tree (show monograms instead). Global switch + a
+   *  per-person hidden set; toggled individually from the right-click menu. */
+  hideAllFaces?: boolean;
+  hiddenFacePersonIds?: Set<number>;
+  onToggleHideFace?: (personId: number) => void;
   /** Called when the user clicks the date strip on a card to edit
    *  birth/death years inline. Parent opens DateQuickEditor. */
   onEditDates?: (personId: number, screenX: number, screenY: number) => void;
@@ -256,7 +261,7 @@ const STEP_BADGE_FILL: Record<number, string> = {
   8: '#f5f5dc', // eggshell
 };
 
-export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip, onExpandAllStateChange }: TreesCanvasProps, ref) {
+export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(function TreesCanvas({ layout, highlightTargetId = null, highlightNonce = 0, highlightMode = {}, onHighlightComplete, onTriggerHighlight, triggerHighlightOnRightClick = false, triggerHighlightOnAltClick = false, triggerHighlightOnHover = false, onRefocus, onSetRelationship, onEditRelationships, onRemovePerson, onQuickAddParent, onQuickAddPartner, onQuickAddChild, onQuickAddSibling, hideQuickAddChips, showDates, hideAllFaces = false, hiddenFacePersonIds, onToggleHideFace, onEditDates, onEditName, onGraphMutated, canvasBackground, canvasBackgroundOpacity = 0.15, treeContrast = 0.3, useGenderedLabels = false, simplifyHalfLabels = false, hideGenderMarker = false, showFamilyLanes = true, showFamilyDividers = false, hiddenAncestorPersonIds, onToggleHiddenAncestor, onRequestCardBackgroundPick, allReachablePersonIds, excludedSuggestionIds, hiddenSuggestions, onHideSuggestion, onUnhideSuggestion, nameConflictLookup, onParentResolved, onExpandAncestors, onExpandDescendants, onExpandAllDescendants, onCollapseDescendants, onSetGenerationExpanded, expandedAncestorsOf, expandedDescendantsOf, collapsedDescendantsOf, openSiblingChips, onToggleSiblingChip, openSiblingFamilyChips, onToggleSiblingFamilyChip, onExpandAllStateChange }: TreesCanvasProps, ref) {
   const svgRef = useRef<SVGSVGElement>(null);
   const [viewport, setViewport] = useState<Viewport>({ tx: 0, ty: 0, scale: 1 });
   const [avatars, setAvatars] = useState<Map<number, string>>(new Map());
@@ -2694,7 +2699,9 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
             // stay genuinely off the canvas.
             if (hiddenExtendedIds.has(node.personId)) return null;
             if (hiddenSideBranchIds.has(node.personId)) return null;
-            const avatar = avatars.get(node.personId);
+            // r560 (Terry) — face hidden globally or for this person → fall back to the monogram.
+            const faceHidden = hideAllFaces || !!hiddenFacePersonIds?.has(node.personId);
+            const avatar = faceHidden ? undefined : avatars.get(node.personId);
             const isFocus = node.personId === layout.focusPersonId;
             const dimOpacity = Math.max(0.5, 1 - node.hopsFromFocus * 0.1);
             if (node.isPlaceholder) {
@@ -5000,7 +5007,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                         <PersonNode
                           key={p.personId}
                           node={nodeAtPanelCoords}
-                          avatar={avatars.get(p.personId)}
+                          avatar={(hideAllFaces || !!hiddenFacePersonIds?.has(p.personId)) ? undefined : avatars.get(p.personId)}
                           isFocus={false}
                           opacity={1}
                           hideChips={hideQuickAddChips}
@@ -5352,6 +5359,8 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           hasCardBackground={!!nodeById.get(contextMenu.personId)?.cardBackground}
           hasNotes={!!(nodeById.get(contextMenu.personId)?.notes || '').trim()}
           hasManualFace={!!nodeById.get(contextMenu.personId)?.hasManualFace}
+          faceHidden={!!hiddenFacePersonIds?.has(contextMenu.personId)}
+          canHideFace={avatars.has(contextMenu.personId) || !!hiddenFacePersonIds?.has(contextMenu.personId)}
           ancestryHidden={!!hiddenAncestorPersonIds?.includes(contextMenu.personId)}
           canHideAncestry={contextMenu.personId !== layout.focusPersonId && !!onToggleHiddenAncestor}
           canShowPathway={!!onTriggerHighlight && triggerHighlightOnRightClick && contextMenu.personId !== layout.focusPersonId}
@@ -5366,6 +5375,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           onSetFaceFromScreenshot={() => { setFaceFromScreenshotFor(contextMenu.personId); setContextMenu(null); }}
           onSetFaceFromWebcam={() => { openWebcamFor(contextMenu.personId); setContextMenu(null); }}
           onRemoveFace={() => { removeFaceFor(contextMenu.personId); setContextMenu(null); }}
+          onToggleHideFace={() => { onToggleHideFace?.(contextMenu.personId); setContextMenu(null); }}
           onToggleAncestry={() => { onToggleHiddenAncestor?.(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
         />
@@ -6877,59 +6887,152 @@ function WebcamCaptureModal({ name, onCancel, onCapture }: { name: string; onCan
   const streamRef = useRef<MediaStream | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
-        streamRef.current = stream;
-        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => {}); }
-        setReady(true);
-      } catch (e) {
-        const name = (e as Error).name;
-        setError(name === 'NotAllowedError'
-          ? 'Camera access was blocked. Allow the camera in Windows Settings → Privacy → Camera, then try again.'
-          : 'No camera found, or it’s in use by another app.');
-      }
-    })();
-    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  // r560 (Terry) — two-stage: live preview → Capture freezes a still → drag/size a square crop
+  // over just the face → Use photo saves the CROP to the library + sets it as the face.
+  const [snapped, setSnapped] = useState<string | null>(null);
+  const imgRef = useRef<HTMLImageElement | null>(null);
+  const [crop, setCrop] = useState<{ x: number; y: number; size: number } | null>(null);
+  const [disp, setDisp] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+  const dragRef = useRef<{ px: number; py: number; ox: number; oy: number } | null>(null);
+
+  const startCamera = useCallback(async () => {
+    setError(null); setReady(false);
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+      streamRef.current = stream;
+      if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => {}); }
+      setReady(true);
+    } catch (e) {
+      setError((e as Error).name === 'NotAllowedError'
+        ? 'Camera access was blocked. Allow the camera in Windows Settings → Privacy → Camera, then try again.'
+        : 'No camera found, or it’s in use by another app.');
+    }
   }, []);
-  const snap = () => {
+  const stopCamera = () => { if (streamRef.current) { streamRef.current.getTracks().forEach(t => t.stop()); streamRef.current = null; } };
+  useEffect(() => { startCamera(); return () => stopCamera(); }, [startCamera]);
+
+  // Freeze the current frame; keep the stream so "Retake" is instant.
+  const capture = () => {
     const v = videoRef.current; if (!v) return;
     const w = v.videoWidth || 640, h = v.videoHeight || 480;
     const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
     const ctx = canvas.getContext('2d'); if (!ctx) return;
     ctx.drawImage(v, 0, 0, w, h);
-    const dataUrl = canvas.toDataURL('image/png');
-    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
-    onCapture(dataUrl);
+    setSnapped(canvas.toDataURL('image/png'));
   };
+  const retake = () => { setSnapped(null); setCrop(null); if (!streamRef.current) startCamera(); };
+
+  // Init a centered square crop once the still is laid out.
+  const onImgLoad = () => {
+    const el = imgRef.current; if (!el) return;
+    const w = el.clientWidth, h = el.clientHeight;
+    setDisp({ w, h });
+    const size = Math.round(Math.min(w, h) * 0.7);
+    setCrop({ x: Math.round((w - size) / 2), y: Math.round((h - size) / 2), size });
+  };
+  const clamp = (x: number, y: number, size: number) => ({
+    x: Math.max(0, Math.min(x, disp.w - size)),
+    y: Math.max(0, Math.min(y, disp.h - size)),
+    size,
+  });
+  const onBoxDown = (e: React.PointerEvent) => {
+    if (!crop) return;
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+    dragRef.current = { px: e.clientX, py: e.clientY, ox: crop.x, oy: crop.y };
+  };
+  const onBoxMove = (e: React.PointerEvent) => {
+    if (!dragRef.current || !crop) return;
+    const d = dragRef.current;
+    setCrop(clamp(d.ox + (e.clientX - d.px), d.oy + (e.clientY - d.py), crop.size));
+  };
+  const onBoxUp = (e: React.PointerEvent) => {
+    if (dragRef.current) { try { (e.target as HTMLElement).releasePointerCapture(e.pointerId); } catch { /* noop */ } dragRef.current = null; }
+  };
+  const onSize = (v: number) => {
+    if (!crop) return;
+    const size = Math.round(Math.min(v, Math.min(disp.w, disp.h)));
+    const cx = crop.x + crop.size / 2, cy = crop.y + crop.size / 2;
+    setCrop(clamp(Math.round(cx - size / 2), Math.round(cy - size / 2), size));
+  };
+  // Crop the full-res still to the selected square and hand back a data URL.
+  const usePhoto = () => {
+    const el = imgRef.current; if (!el || !crop || !snapped) return;
+    const scale = el.naturalWidth / (el.clientWidth || 1);
+    const sx = Math.round(crop.x * scale), sy = Math.round(crop.y * scale), ss = Math.round(crop.size * scale);
+    const canvas = document.createElement('canvas'); canvas.width = ss; canvas.height = ss;
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    ctx.drawImage(el, sx, sy, ss, ss, 0, 0, ss, ss);
+    stopCamera();
+    onCapture(canvas.toDataURL('image/png'));
+  };
+
+  const cropStage = snapped != null;
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
       <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
         <div className="px-5 pt-5 pb-3">
           <h3 className="text-base font-semibold text-foreground flex items-center gap-2"><Video className="w-4 h-4 text-primary" /> Webcam face for {name}</h3>
-          <p className="text-xs text-muted-foreground mt-1">Point the camera at the photo (or the person), then Capture. It’s saved to your library and set as their face.</p>
+          <p className="text-xs text-muted-foreground mt-1">
+            {cropStage
+              ? 'Drag the square over just the face and set its size, then Use photo. The crop is saved to your library and set as their face.'
+              : 'Point the camera at the photo (or the person), then Capture.'}
+          </p>
         </div>
         <div className="px-5">
-          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/80 border border-border flex items-center justify-center">
-            {error
-              ? <p className="text-sm text-muted-foreground text-center px-6">{error}</p>
-              : <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />}
-            {!ready && !error && <p className="absolute text-xs text-white/70">Starting camera…</p>}
-          </div>
+          {!cropStage ? (
+            <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/80 border border-border flex items-center justify-center">
+              {error
+                ? <p className="text-sm text-muted-foreground text-center px-6">{error}</p>
+                : <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />}
+              {!ready && !error && <p className="absolute text-xs text-white/70">Starting camera…</p>}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center gap-3">
+              <div className="relative inline-block leading-none select-none">
+                <img ref={imgRef} src={snapped!} alt="Captured still" onLoad={onImgLoad} className="block max-h-[52vh] w-auto rounded-lg" draggable={false} />
+                {crop && (
+                  <div
+                    className="absolute border-2 border-primary rounded-md cursor-move shadow-[0_0_0_9999px_rgba(0,0,0,0.45)] touch-none"
+                    style={{ left: crop.x, top: crop.y, width: crop.size, height: crop.size }}
+                    onPointerDown={onBoxDown}
+                    onPointerMove={onBoxMove}
+                    onPointerUp={onBoxUp}
+                  />
+                )}
+              </div>
+              {crop && disp.w > 0 && (
+                <div className="w-full flex items-center gap-3 px-1">
+                  <span className="text-xs text-muted-foreground shrink-0">Size</span>
+                  <input
+                    type="range"
+                    min={Math.round(Math.min(disp.w, disp.h) * 0.25)}
+                    max={Math.round(Math.min(disp.w, disp.h))}
+                    value={crop.size}
+                    onChange={(e) => onSize(Number(e.target.value))}
+                    className="w-full accent-primary"
+                  />
+                </div>
+              )}
+            </div>
+          )}
         </div>
-        <div className="flex items-center justify-end gap-2 px-5 py-4">
+        <div className="flex items-center justify-between gap-2 px-5 py-4">
           <Button variant="secondary" onClick={onCancel}>Cancel</Button>
-          <Button onClick={snap} disabled={!ready || !!error}><Camera className="w-4 h-4 mr-2" />Capture</Button>
+          {!cropStage ? (
+            <Button onClick={capture} disabled={!ready || !!error}><Camera className="w-4 h-4 mr-2" />Capture</Button>
+          ) : (
+            <div className="flex items-center gap-2">
+              <Button variant="secondary" onClick={retake}>Retake</Button>
+              <Button onClick={usePhoto} disabled={!crop}><Camera className="w-4 h-4 mr-2" />Use photo</Button>
+            </div>
+          )}
         </div>
       </div>
     </div>
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, hasManualFace, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onSetFaceFromWebcam, onRemoveFace, onToggleAncestry, onClose }: {
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, hasManualFace, faceHidden, canHideFace, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onSetFaceFromWebcam, onRemoveFace, onToggleHideFace, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
@@ -6954,6 +7057,11 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, hasManual
   onSetFaceFromScreenshot: () => void;
   onSetFaceFromWebcam: () => void;
   onRemoveFace: () => void;
+  /** r560 (Terry) — whether this person's face is individually hidden, and whether a
+   *  hide/show toggle is meaningful (they have a photo, or are already hidden). */
+  faceHidden: boolean;
+  canHideFace: boolean;
+  onToggleHideFace: () => void;
   onToggleAncestry: () => void;
   onClose: () => void;
 }) {
@@ -6994,6 +7102,14 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, hasManual
           PM-verified face is never removable here (it can be hidden instead). */}
       {hasManualFace && (
         <MenuItem icon={<Trash2 className="w-4 h-4" />} label="Remove this photo" onClick={onRemoveFace} />
+      )}
+      {/* r560 (Terry) — hide/show just this person's face (monogram instead). */}
+      {canHideFace && (
+        <MenuItem
+          icon={faceHidden ? <Eye className="w-4 h-4" /> : <EyeOff className="w-4 h-4" />}
+          label={faceHidden ? 'Show photo' : 'Hide photo'}
+          onClick={onToggleHideFace}
+        />
       )}
       {canHideAncestry && (
         <>
