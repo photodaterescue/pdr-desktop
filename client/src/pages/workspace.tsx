@@ -698,6 +698,16 @@ useEffect(() => {
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | 'search' | null>(null);
+  // r560 (Terry) — Getting Started "jump to this step": clicking a First-Fix step closes the
+  // panel, transitions to the real spot in the app + highlights it, and drops a "Back to Getting
+  // Started" pill that returns you to the EXACT reading position. gsJump = the active jump;
+  // gsRestoreScroll = the scrollTop to restore on the way back; gsTransition = the brief overlay.
+  const [gsJump, setGsJump] = useState<{ stepId: string; scrollTop: number } | null>(null);
+  const [gsRestoreScroll, setGsRestoreScroll] = useState<number | null>(null);
+  const [gsTransition, setGsTransition] = useState<{ label: string } | null>(null);
+  // The highlight is a React-driven OVERLAY ring positioned over the target's rect — NOT a class
+  // on the target (React re-renders reconcile a DOM-added class straight back off).
+  const [gsHighlightRect, setGsHighlightRect] = useState<{ top: number; left: number; width: number; height: number } | null>(null);
   // v3.0 round 548 (Terry) — the "What's new in 3.0" showcase splash ("The Power of 3").
   // Shown once per install (localStorage). IMPORTANT: the Workspace stays MOUNTED (prewarmed)
   // underneath the Welcome screen, so a mount-time trigger would fire while Welcome still
@@ -778,6 +788,50 @@ useEffect(() => {
   // canonical state. Handlers registered above (where `activeView`
   // isn't in scope yet) read the ref instead.
   useEffect(() => { activeViewRef.current = activeView; }, [activeView]);
+
+  // r560 (Terry) — Getting Started "Show me" jumps. Each First-Fix step maps to the real element
+  // in the Workspace (data-gs=…, plus the existing Add-Source data-tour). Steps 3–5 only exist
+  // once a Source is added; if the target isn't on screen yet, the transition still orients them.
+  // Reuse the existing (Quick-Tour-proven) data-tour anchors so there's one set of targets.
+  const GS_STEP_TARGETS: Record<string, { sel: string; label: string }> = {
+    'library-drive': { sel: '[data-tour="destination"]', label: 'Pick your Library Drive' },
+    'add-source': { sel: '[data-tour="add-source"]', label: 'Add a Source' },
+    'tick-checkbox': { sel: '[data-tour="sources-panel"]', label: 'Tick the Checkbox' },
+    'analysis': { sel: '[data-tour="combined-analysis"]', label: 'Review the Source Analysis' },
+    'run-fix': { sel: '[data-tour="apply-fixes"]', label: 'Run Fix' },
+  };
+  const handleGsJump = (stepId: string, scrollTop: number) => {
+    const target = GS_STEP_TARGETS[stepId];
+    if (!target) return;
+    setGsJump({ stepId, scrollTop });
+    setActiveView('dashboard');   // the five First-Fix steps all live on the Workspace/dashboard
+    setActivePanel(null);          // reveal it under the panel
+    setGsTransition({ label: target.label });
+    setGsHighlightRect(null);
+    window.setTimeout(() => {
+      setGsTransition(null);
+      try {
+        const el = document.querySelector(target.sel) as HTMLElement | null;
+        if (el) {
+          el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          // Let the smooth-scroll settle, then snapshot the rect for the overlay ring.
+          window.setTimeout(() => {
+            const r = el.getBoundingClientRect();
+            if (r.width > 0 && r.height > 0) {
+              setGsHighlightRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+              window.setTimeout(() => setGsHighlightRect(null), 4600);
+            }
+          }, 400);
+        }
+      } catch { /* target may not exist yet (e.g. no Source added) — the transition still oriented them */ }
+    }, 780);
+  };
+  const goBackToGettingStarted = () => {
+    if (gsJump) setGsRestoreScroll(gsJump.scrollTop);
+    setGsHighlightRect(null);
+    setActivePanel('getting-started');
+    setGsJump(null);
+  };
 
   // Pre-warm Memories — By Date in the background so clicking the
   // sidebar Memories link doesn't show a wall of empty thumbnail
@@ -3596,8 +3650,40 @@ return (
               onReportProblem={() => setShowReportProblem(true)}
               highlightVersion={activePanel === 'about-pdr' ? aboutHighlightVersion : null}
               onHighlightConsumed={() => setAboutHighlightVersion(null)}
+              onJumpToStep={handleGsJump}
+              restoreScrollTop={gsRestoreScroll}
+              onScrollRestored={() => setGsRestoreScroll(null)}
             />
           </div>
+        )}
+        {/* r560 (Terry) — the pulsing ring that lands on the real element (overlay, so a React
+            re-render can't strip it like a class on the target). */}
+        {gsHighlightRect && (
+          <div
+            className="fixed z-[64] pointer-events-none gs-highlight-ring"
+            style={{ top: gsHighlightRect.top - 6, left: gsHighlightRect.left - 6, width: gsHighlightRect.width + 12, height: gsHighlightRect.height + 12 }}
+          />
+        )}
+        {/* r560 (Terry) — Getting Started "Show me" transition: a brief educational wipe so the
+            jump feels like a guided tour, not a plain menu click. */}
+        {gsTransition && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center bg-background/70 backdrop-blur-sm gs-transition-fade pointer-events-none">
+            <div className="flex items-center gap-3 px-6 py-4 rounded-2xl bg-primary text-primary-foreground shadow-2xl gs-transition-card">
+              <Sparkles className="w-5 h-5" />
+              <span className="text-base font-semibold">Show me — {gsTransition.label}</span>
+              <ChevronRight className="w-5 h-5" />
+            </div>
+          </div>
+        )}
+        {/* The return pill — brings the reader straight back to the exact spot in Getting Started. */}
+        {gsJump && !gsTransition && (
+          <button
+            onClick={goBackToGettingStarted}
+            className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[65] inline-flex items-center gap-2 px-4 py-2.5 rounded-full bg-primary text-primary-foreground shadow-xl hover:brightness-110 transition-all gs-back-pill-in text-sm font-medium"
+            data-testid="gs-back-pill"
+          >
+            <ChevronRight className="w-4 h-4 rotate-180" /> Back to Getting Started
+          </button>
         )}
         {/* v3.0 round 548 (Terry) — the "Power of 3" showcase splash (z-50, above the
             guidance-panel overlay so the About-PDR replay link can play it in place). */}
@@ -10759,7 +10845,7 @@ function ChangelogDetail({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, highlightVersion, onHighlightConsumed }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void, highlightVersion?: string | null, onHighlightConsumed?: () => void }) {
+function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, highlightVersion, onHighlightConsumed, onJumpToStep, restoreScrollTop, onScrollRestored }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void, highlightVersion?: string | null, onHighlightConsumed?: () => void, onJumpToStep?: (stepId: string, scrollTop: number) => void, restoreScrollTop?: number | null, onScrollRestored?: () => void }) {
   // Pre-destination, Help & Support no longer reaches this panel — the
   // Welcome screen opens the HelpSupportModal directly instead. So
   // every code path INTO this panel is now post-destination, and
@@ -10773,9 +10859,17 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
 
   React.useEffect(() => {
-    if (scrollContainerRef.current) {
+    if (!scrollContainerRef.current) return;
+    // r560 (Terry) — when returning from a "jump to this step" (the Getting Started 5-step cards
+    // send you to the real spot in the app), restore the EXACT reading position instead of
+    // snapping to the top, so it doesn't get tedious.
+    if (panelType === 'getting-started' && restoreScrollTop != null) {
+      scrollContainerRef.current.scrollTop = restoreScrollTop;
+      onScrollRestored?.();
+    } else {
       scrollContainerRef.current.scrollTop = 0;
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [panelType]);
 
   // v3.0 round 553 (Terry) — arriving from the splash's "See everything that's new": scroll the
@@ -10865,29 +10959,34 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
 
               {/* Your First Fix */}
               <section>
-                <h3 id="gs-first-fix" className="text-lg font-medium text-foreground mb-4">Your First Fix (in 5 simple steps)</h3>
+                <h3 id="gs-first-fix" className="text-lg font-medium text-foreground mb-1">Your First Fix (in 5 simple steps)</h3>
+                {/* r560 (Terry) — each step is clickable: it takes you to the exact spot in PDR,
+                    highlights it, then a "Back to Getting Started" pill brings you back to this
+                    exact place in the reading. */}
+                <p className="text-xs text-primary/80 mb-4 flex items-center gap-1"><Sparkles className="w-3.5 h-3.5" /> Click any step to see exactly where it lives in the app.</p>
                 <div className="space-y-4">
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Pick your Library Drive</p>
-                    <p className="text-sm text-muted-foreground">PDR asks you to pick a Library Drive <em>before</em> you add any Sources — the place your fixed library will live for years to come. The Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed and capacity, so you can pick confidently rather than guess.</p>
-                  </div>
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Add a Source</p>
-                    <p className="text-sm text-muted-foreground">Click Add Source to open the Folder Browser. Pick a folder, ZIP, RAR, or drive containing the photos or videos you want to fix. You can add multiple Sources and PDR will analyze them together.</p>
-                  </div>
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Tick the Checkbox</p>
-                    <p className="text-sm text-muted-foreground">Only checked Sources are included in the run — this is how you tell PDR exactly what to process.</p>
-                  </div>
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Review the Source Analysis</p>
-                    <p className="text-sm text-muted-foreground">Check how many files are Confirmed, Recovered, Marked, or Duplicates before running the fix. The numbers are estimates here — the authoritative figures land in the Fix Report once the run completes.</p>
-                  </div>
-                  <div className="p-4 bg-secondary/30 border border-border rounded-lg">
-                    <p className="font-medium text-foreground mb-1">Run Fix</p>
-                    <p className="text-sm text-muted-foreground">PDR copies your files to the Library Drive with corrected dates, organized in your chosen folder structure (Year / Year-Month / Year-Month-Day), and skips identical duplicates automatically.</p>
-                    <p className="text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately. Your originals are never modified.</p>
-                  </div>
+                  {([
+                    ['library-drive', 'Pick your Library Drive', <>PDR asks you to pick a Library Drive <em>before</em> you add any Sources — the place your fixed library will live for years to come. The Library Planner sizes your collection across seven buckets and the Drive Advisor rates each available drive on speed and capacity, so you can pick confidently rather than guess.</>],
+                    ['add-source', 'Add a Source', <>Click Add Source to open the Folder Browser. Pick a folder, ZIP, RAR, or drive containing the photos or videos you want to fix. You can add multiple Sources and PDR will analyze them together.</>],
+                    ['tick-checkbox', 'Tick the Checkbox', <>Only checked Sources are included in the run — this is how you tell PDR exactly what to process.</>],
+                    ['analysis', 'Review the Source Analysis', <>Check how many files are Confirmed, Recovered, Marked, or Duplicates before running the fix. The numbers are estimates here — the authoritative figures land in the Fix Report once the run completes.</>],
+                    ['run-fix', 'Run Fix', <>PDR copies your files to the Library Drive with corrected dates, organized in your chosen folder structure (Year / Year-Month / Year-Month-Day), and skips identical duplicates automatically.<span className="block text-xs text-muted-foreground mt-2">Nothing is overwritten — output is always written separately. Your originals are never modified.</span></>],
+                  ] as [string, string, React.ReactNode][]).map(([stepId, title, body], i) => (
+                    <button
+                      key={stepId}
+                      type="button"
+                      onClick={() => onJumpToStep?.(stepId, scrollContainerRef.current?.scrollTop ?? 0)}
+                      className="group w-full text-left p-4 bg-secondary/30 border border-border rounded-lg hover:border-primary/50 hover:bg-secondary/50 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="font-medium text-foreground mb-1"><span className="text-primary/70 mr-1.5">{i + 1}.</span>{title}</p>
+                          <p className="text-sm text-muted-foreground">{body}</p>
+                        </div>
+                        <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-primary/60 group-hover:text-primary group-hover:translate-x-0.5 transition-all whitespace-nowrap mt-0.5">Show me <ChevronRight className="w-3.5 h-3.5" /></span>
+                      </div>
+                    </button>
+                  ))}
                 </div>
               </section>
 

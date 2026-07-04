@@ -6988,7 +6988,9 @@ function WebcamCaptureModal({ name, onCancel, onCapture }: { name: string; onCan
             </div>
           ) : (
             <div className="flex flex-col items-center gap-3">
-              <div className="relative inline-block leading-none select-none">
+              {/* overflow-hidden clips the crop box's big dimming shadow to JUST the image, so the
+                  Size slider + buttons below don't look greyed-out (Terry r560 SS1). */}
+              <div className="relative inline-block leading-none select-none overflow-hidden rounded-lg">
                 <img ref={imgRef} src={snapped!} alt="Captured still" onLoad={onImgLoad} className="block max-h-[52vh] w-auto rounded-lg" draggable={false} />
                 {crop && (
                   <div
