@@ -7531,17 +7531,24 @@ export function updatePersonNotes(personId: number, notes: string | null): { suc
   return { success: true };
 }
 
-/** v3.0 round 558 (Terry) — set a person's avatar straight from an image data URL (a screen-region
- *  screenshot), no source file / Fix needed. Writes persons.avatar_data (the avatar shown when the
- *  person has no representative face) and clears any stale representative_face_id so the new image
- *  wins for a face-less person. */
-export function setPersonAvatarImage(personId: number, dataUrl: string): { success: boolean; error?: string } {
+/** v3.0 round 559 (Terry) — set a person's face from a LIBRARY FILE (a screenshot or webcam still
+ *  that's just been captured + indexed like every other PDR photo). Creates a full-frame,
+ *  user-verified face_detection on that file and makes it the person's representative face — so it
+ *  ALWAYS shows on the tile (representative wins over any auto-detected face), and the image lives in
+ *  the library. No embedding (this is a hand-picked avatar, not a clustered detection). */
+export function setPersonFaceFromLibraryFile(personId: number, fileId: number): { success: boolean; error?: string; faceId?: number } {
   const db = getDb();
-  const existing = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
-  if (!existing) return { success: false, error: 'Person not found.' };
-  if (typeof dataUrl !== 'string' || !dataUrl.startsWith('data:image/')) return { success: false, error: 'Invalid image.' };
-  db.prepare(`UPDATE persons SET avatar_data = ?, representative_face_id = NULL, updated_at = datetime('now') WHERE id = ?`).run(dataUrl, personId);
-  return { success: true };
+  const person = db.prepare(`SELECT id FROM persons WHERE id = ?`).get(personId);
+  if (!person) return { success: false, error: 'Person not found.' };
+  const file = getFileById(fileId);
+  if (!file) return { success: false, error: 'Captured image not found in the library.' };
+  const info = db.prepare(`
+    INSERT INTO face_detections (file_id, person_id, box_x, box_y, box_w, box_h, embedding, confidence, cluster_id, verified)
+    VALUES (?, ?, 0, 0, 1, 1, NULL, 1.0, NULL, 1)
+  `).run(fileId, personId);
+  const faceId = info.lastInsertRowid as number;
+  db.prepare(`UPDATE persons SET representative_face_id = ?, updated_at = datetime('now') WHERE id = ?`).run(faceId, personId);
+  return { success: true, faceId };
 }
 
 /** Set a person's gender. Writes to persons.gender and logs a

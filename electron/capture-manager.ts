@@ -679,16 +679,25 @@ async function regionCaptureWithPrep(
   }
 }
 
-// v3.0 round 558 (Terry) — grab a screen region and return it as a data URL WITHOUT persisting
-// anywhere. Used by Trees "Set face from screenshot": the crop becomes a person's avatar directly,
-// so you can put a face to a name without adding a source file + running Fix.
-export async function captureFaceRegion(
-  callingWin: BrowserWindow | null,
-): Promise<{ success: boolean; dataUrl?: string; cancelled?: boolean; error?: string }> {
-  const r = await regionCaptureWithPrep(callingWin);
-  if ('cancelled' in r) return { success: false, cancelled: true };
-  if ('error' in r) return { success: false, error: r.error };
-  return { success: true, dataUrl: `data:image/png;base64,${r.buffer.toString('base64')}` };
+// v3.0 round 559 (Terry) — save an arbitrary image (a webcam still) into the library exactly like a
+// screenshot: PDR Captures, indexed, _SS suffix, broadcast. Returns the new library fileId so Trees
+// can attach it as a person's face. (The screen-region path uses the existing captureRegion, which
+// already persists + returns a fileId — everything lands in the library, per Terry.)
+export async function saveCapturedImageToLibrary(
+  dataUrl: string,
+): Promise<CaptureScreenshotResult> {
+  try {
+    const m = /^data:image\/\w+;base64,(.+)$/.exec(dataUrl || '');
+    if (!m) return { success: false, error: 'Invalid image data.' };
+    const buffer = Buffer.from(m[1], 'base64');
+    const img = nativeImage.createFromBuffer(buffer);
+    const size = img.isEmpty() ? { width: null as number | null, height: null as number | null } : img.getSize();
+    // Normalise to PNG bytes so persistCapture's format branch behaves like a screenshot.
+    const png = img.isEmpty() ? buffer : img.toPNG();
+    return await persistCapture(png, new Date(), size.width, size.height, 'screenshot');
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
 }
 
 export async function captureCollageRegion(

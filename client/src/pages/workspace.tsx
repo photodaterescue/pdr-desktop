@@ -739,9 +739,11 @@ useEffect(() => {
     setAddSourceCoach(null);
   };
   const runGetStartedTeach = () => {
-    // Newcomer = no Library Drive set yet (destinationPath null is the first-run state).
-    if (destinationPath !== null) return;   // veteran → no teach, just the Workspace
+    // r559 (Terry) — EVERYONE gets the side-menu hub-glow ("there should be something even if
+    // you're not a beginner"); only genuine newcomers (no Library Drive yet) also get the Add
+    // Source coach-mark, since "bring your photos in" is only the right first move for them.
     runSidebarTeach();
+    if (destinationPath !== null) return;   // veteran → glow only, no coach-mark
     window.setTimeout(() => {
       try {
         const el = document.querySelector('[data-tour="add-source"]');

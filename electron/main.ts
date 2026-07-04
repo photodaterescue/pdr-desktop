@@ -317,7 +317,7 @@ import { toLongPath, fromLongPath } from './long-path.js';
 import {
   captureScreenshot,
   captureRegion,
-  captureFaceRegion,
+  saveCapturedImageToLibrary,
   listCaptureDisplays,
   flushPendingCaptures,
   registerCaptureHotkey,
@@ -495,7 +495,7 @@ import {
   updatePersonLifeEvents,
   setPersonCardBackground,
   updatePersonNotes,
-  setPersonAvatarImage,
+  setPersonFaceFromLibraryFile,
   setPersonGender,
   getFamilyGraph,
   getPersonCooccurrenceStats,
@@ -9989,10 +9989,10 @@ ipcMain.handle('trees:updatePersonNotes', async (_event, args: { personId: numbe
   }
 });
 
-// v3.0 round 558 (Terry) — set a person's face/avatar from a screenshot data URL (no source file).
-ipcMain.handle('trees:setPersonFaceImage', async (_event, args: { personId: number; dataUrl: string }) => {
+// v3.0 round 559 (Terry) — make a just-captured LIBRARY file the person's face (screenshot/webcam).
+ipcMain.handle('trees:setPersonFaceFile', async (_event, args: { personId: number; fileId: number }) => {
   try {
-    return setPersonAvatarImage(args.personId, args.dataUrl);
+    return setPersonFaceFromLibraryFile(args.personId, args.fileId);
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -13813,11 +13813,11 @@ ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string }) =
   }
 });
 
-// v3.0 round 558 (Terry) — grab a screen region and return it as a data URL (no library file),
-// for Trees "Set face from screenshot".
-ipcMain.handle('capture:faceRegion', async (event) => {
+// v3.0 round 559 (Terry) — save a captured image (webcam still) into the library, for Trees
+// "Set face from webcam". The screen-region path uses capture:region (already persists).
+ipcMain.handle('capture:saveImage', async (_event, args: { dataUrl: string }) => {
   try {
-    return await captureFaceRegion(BrowserWindow.fromWebContents(event.sender));
+    return await saveCapturedImageToLibrary(args.dataUrl);
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

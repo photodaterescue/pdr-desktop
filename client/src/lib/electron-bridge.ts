@@ -1925,10 +1925,19 @@ export async function updatePersonNotes(personId: number, notes: string | null):
   return { success: false, error: 'Not running in Electron' };
 }
 
-// v3.0 round 558 (Terry) — set a person's face/avatar from a screenshot data URL (no source file).
-export async function setPersonFaceFromImage(personId: number, dataUrl: string): Promise<{ success: boolean; error?: string }> {
+// v3.0 round 559 (Terry) — make a just-captured LIBRARY file (screenshot/webcam still) the person's
+// representative face. The image is already saved + indexed in the library like every other photo.
+export async function setPersonFaceFromFile(personId: number, fileId: number): Promise<{ success: boolean; error?: string; faceId?: number }> {
   if (isElectron() && (window as any).pdr?.trees) {
-    return (window as any).pdr.trees.setPersonFaceImage({ personId, dataUrl });
+    return (window as any).pdr.trees.setPersonFaceFile({ personId, fileId });
+  }
+  return { success: false, error: 'Not running in Electron' };
+}
+
+// v3.0 round 559 (Terry) — save a webcam still into the library, returns the new fileId.
+export async function saveCapturedImageToLibrary(dataUrl: string): Promise<{ success: boolean; fileId?: number | null; error?: string }> {
+  if (isElectron() && (window as any).pdr?.capture) {
+    return (window as any).pdr.capture.saveImage(dataUrl);
   }
   return { success: false, error: 'Not running in Electron' };
 }

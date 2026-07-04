@@ -1,6 +1,6 @@
 import { useRef, useState, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
-import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp, StickyNote, Camera } from 'lucide-react';
-import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, updatePersonNotes, setPersonFaceFromImage, type FamilyGraphEdge } from '@/lib/electron-bridge';
+import { Link2, Trash2, Eye, EyeOff, Pencil, HelpCircle, UserPlus, X, Image as ImageIcon, Move, Zap, ChevronsUpDown, ChevronsDownUp, StickyNote, Camera, Video } from 'lucide-react';
+import { getFaceCrop, updateRelationship, removeRelationship, namePlaceholder, mergePlaceholderIntoPerson, removePlaceholder, listPersons, listRelationshipsForPerson, createPlaceholderPerson, createNamedPerson, addRelationship, setPersonCardBackground, updatePersonNotes, setPersonFaceFromFile, saveCapturedImageToLibrary, type FamilyGraphEdge } from '@/lib/electron-bridge';
 import type { TreeLayout, LaidOutNode, LaidOutEdge } from '@/lib/trees-layout';
 import { DateTripleInput } from './DateTripleInput';
 import { promptConfirm, promptChoice } from './promptConfirm';
@@ -752,14 +752,30 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
   // adding a source file + running Fix. Reuses the existing region-capture; attaches the crop as
   // the person's representative face (a face row can exist with no embedding, so a name-only
   // person can get a face). `facePicking` shows a spinner on the tile while capture is in flight.
+  // Screenshot → face. Reuses the existing region capture, which SAVES the crop into the library
+  // (PDR Captures, indexed) and returns its fileId; that file then becomes the person's face.
   const setFaceFromScreenshotFor = useCallback(async (personId: number) => {
     try {
-      // The region-capture flow shows its own prep-bar + drag overlay, so no extra spinner needed.
-      const cap = await (window as { pdr?: { capture?: { faceRegion?: () => Promise<{ success: boolean; cancelled?: boolean; dataUrl?: string; error?: string }> } } }).pdr?.capture?.faceRegion?.();
-      if (!cap || cap.cancelled || !cap.success || !cap.dataUrl) return;
-      const res = await setPersonFaceFromImage(personId, cap.dataUrl);
+      const cap = await (window as { pdr?: { capture?: { region?: () => Promise<{ success: boolean; cancelled?: boolean; fileId?: number | null; error?: string }> } } }).pdr?.capture?.region?.();
+      if (!cap || cap.cancelled || !cap.success || cap.fileId == null) return;
+      const res = await setPersonFaceFromFile(personId, cap.fileId);
       if (res?.success) onGraphMutated();
     } catch { /* non-fatal */ }
+  }, [onGraphMutated]);
+
+  // Webcam → face. Opens a live preview modal; the snapped frame is saved to the library, then set
+  // as the person's face — same destination as the screenshot path.
+  const [webcamFor, setWebcamFor] = useState<{ personId: number; name: string } | null>(null);
+  const openWebcamFor = useCallback((personId: number) => {
+    const node = layout.nodes.find(n => n.personId === personId);
+    setWebcamFor({ personId, name: node?.fullName?.trim() || node?.name?.trim() || 'this person' });
+  }, [layout.nodes]);
+  const onWebcamCaptured = useCallback(async (personId: number, dataUrl: string) => {
+    setWebcamFor(null);
+    const saved = await saveCapturedImageToLibrary(dataUrl);
+    if (!saved?.success || saved.fileId == null) return;
+    const res = await setPersonFaceFromFile(personId, saved.fileId);
+    if (res?.success) onGraphMutated();
   }, [onGraphMutated]);
 
   // Rendered positions come straight from the deterministic layout;
@@ -5321,6 +5337,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
           onClearCardBackground={() => { clearCardBackgroundFor(contextMenu.personId); setContextMenu(null); }}
           onEditNotes={() => { editNotesFor(contextMenu.personId); setContextMenu(null); }}
           onSetFaceFromScreenshot={() => { setFaceFromScreenshotFor(contextMenu.personId); setContextMenu(null); }}
+          onSetFaceFromWebcam={() => { openWebcamFor(contextMenu.personId); setContextMenu(null); }}
           onToggleAncestry={() => { onToggleHiddenAncestor?.(contextMenu.personId); setContextMenu(null); }}
           onClose={() => setContextMenu(null)}
         />
@@ -5347,7 +5364,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
                 autoFocus
                 value={notesEditor.notes}
                 onChange={(e) => setNotesEditor(ne => ne ? { ...ne, notes: e.target.value } : ne)}
-                placeholder="e.g. Everyone called him Charlie — real name unknown. Was a tailor in Leeds."
+                placeholder="e.g. Known to friends and family as Charlie — real name unknown. Was a tailor in London."
                 className="w-full h-32 resize-none rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground placeholder:text-muted-foreground/60 focus:outline-none focus:ring-2 focus:ring-primary/40"
               />
             </div>
@@ -5357,6 +5374,15 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
             </div>
           </div>
         </div>
+      )}
+
+      {/* v3.0 round 559 (Terry) — the webcam snapshot capture for "Set face from webcam". */}
+      {webcamFor && (
+        <WebcamCaptureModal
+          name={webcamFor.name}
+          onCancel={() => setWebcamFor(null)}
+          onCapture={(dataUrl) => onWebcamCaptured(webcamFor.personId, dataUrl)}
+        />
       )}
 
       {edgeEditor && (
@@ -6815,7 +6841,67 @@ function EdgeQuickEditor({ edge, x, y, personNameLookup, onSaved, onClose }: {
   );
 }
 
-function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onToggleAncestry, onClose }: {
+// v3.0 round 559 (Terry) — snap a face from the USB webcam (live preview → freeze → save to
+// library → becomes the person's face). For when the photo you have is a physical print or on
+// another screen, not a file — no source-add + Fix needed.
+function WebcamCaptureModal({ name, onCancel, onCapture }: { name: string; onCancel: () => void; onCapture: (dataUrl: string) => void }) {
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { width: 1280, height: 720 }, audio: false });
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        if (videoRef.current) { videoRef.current.srcObject = stream; await videoRef.current.play().catch(() => {}); }
+        setReady(true);
+      } catch (e) {
+        const name = (e as Error).name;
+        setError(name === 'NotAllowedError'
+          ? 'Camera access was blocked. Allow the camera in Windows Settings → Privacy → Camera, then try again.'
+          : 'No camera found, or it’s in use by another app.');
+      }
+    })();
+    return () => { cancelled = true; if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop()); };
+  }, []);
+  const snap = () => {
+    const v = videoRef.current; if (!v) return;
+    const w = v.videoWidth || 640, h = v.videoHeight || 480;
+    const canvas = document.createElement('canvas'); canvas.width = w; canvas.height = h;
+    const ctx = canvas.getContext('2d'); if (!ctx) return;
+    ctx.drawImage(v, 0, 0, w, h);
+    const dataUrl = canvas.toDataURL('image/png');
+    if (streamRef.current) streamRef.current.getTracks().forEach(t => t.stop());
+    onCapture(dataUrl);
+  };
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px] p-4" onMouseDown={(e) => { if (e.target === e.currentTarget) onCancel(); }}>
+      <div className="bg-background border border-border rounded-2xl shadow-2xl w-full max-w-lg overflow-hidden">
+        <div className="px-5 pt-5 pb-3">
+          <h3 className="text-base font-semibold text-foreground flex items-center gap-2"><Video className="w-4 h-4 text-primary" /> Webcam face for {name}</h3>
+          <p className="text-xs text-muted-foreground mt-1">Point the camera at the photo (or the person), then Capture. It’s saved to your library and set as their face.</p>
+        </div>
+        <div className="px-5">
+          <div className="relative w-full aspect-video rounded-lg overflow-hidden bg-black/80 border border-border flex items-center justify-center">
+            {error
+              ? <p className="text-sm text-muted-foreground text-center px-6">{error}</p>
+              : <video ref={videoRef} muted playsInline className="w-full h-full object-cover" />}
+            {!ready && !error && <p className="absolute text-xs text-white/70">Starting camera…</p>}
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-4">
+          <Button variant="secondary" onClick={onCancel}>Cancel</Button>
+          <Button onClick={snap} disabled={!ready || !!error}><Camera className="w-4 h-4 mr-2" />Capture</Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryHidden, canHideAncestry, canShowPathway, onShowPathway, onSetRelationship, onEditRelationships, onRefocus, onRemovePerson, onSetCardBackground, onClearCardBackground, onEditNotes, onSetFaceFromScreenshot, onSetFaceFromWebcam, onToggleAncestry, onClose }: {
   x: number; y: number;
   personId: number;
   isFocus: boolean;
@@ -6836,6 +6922,7 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryH
   onClearCardBackground: () => void;
   onEditNotes: () => void;
   onSetFaceFromScreenshot: () => void;
+  onSetFaceFromWebcam: () => void;
   onToggleAncestry: () => void;
   onClose: () => void;
 }) {
@@ -6871,6 +6958,7 @@ function NodeContextMenu({ x, y, isFocus, hasCardBackground, hasNotes, ancestryH
       <div className="border-t border-border my-1" />
       <MenuItem icon={<StickyNote className="w-4 h-4" />} label={hasNotes ? 'Edit note…' : 'Add a note…'} onClick={onEditNotes} />
       <MenuItem icon={<Camera className="w-4 h-4" />} label="Set face from screenshot…" onClick={onSetFaceFromScreenshot} />
+      <MenuItem icon={<Video className="w-4 h-4" />} label="Set face from webcam…" onClick={onSetFaceFromWebcam} />
       {canHideAncestry && (
         <>
           <div className="border-t border-border my-1" />
