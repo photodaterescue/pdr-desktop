@@ -14628,7 +14628,36 @@
       placeCenter(it);   // initial default (the grid below overrides the position)
       collageItems.push(it);
       buildCollageItemEl(it);
-      if (noGrid) {
+      if (carouselMode) {
+        // v3.0 (Terry 2026-07-05) — CAROUSEL: never gridArrange (that re-tiles + scrambles the pages).
+        // Add a new page-slice at the END — rescaleSlicesForCount shrinks every EXISTING tile's
+        // xFrac/wFrac by oldN/newN so they stay exactly where they were — then drop the new photo into
+        // that new slice as a full-page slide. If the carousel is already at the max page count, just
+        // cascade it into view (still no scramble).
+        const oldN = carouselPageCount;
+        let grew = false;
+        if (carouselPageCount < CAROUSEL_MAX) {
+          carouselPageCount = oldN + 1;
+          rescaleSlicesForCount(oldN, carouselPageCount);   // keeps the existing pages in place
+          try { resetCarouselCanvasShape(); } catch (_) {}
+          try { renderCarouselGuides(); } catch (_) {}
+          grew = true;
+        }
+        if (grew) {
+          const N = Math.max(1, carouselPageCount), sliceIdx = N - 1;
+          it.coverFill = true; it.boxAspect = 1080 / 1350;   // fill the new 1080×1350 page
+          it.wFrac = 1 / N; it.xFrac = sliceIdx / N; it.yFrac = 0;
+          it.zoom = 1; it.panX = 0; it.panY = 0;
+        } else {
+          const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
+          const off = (((n - 1) % 6)) * 0.035;
+          it.xFrac = Math.max(0, Math.min(1 - it.wFrac, (it.xFrac || 0.35) + off));
+          it.yFrac = Math.max(0, Math.min(1 - itemHeightFrac(it), (it.yFrac || 0.35) + off));
+        }
+        renderCollageItem(it);
+        try { resetCollageZoom(); } catch (_) {}
+        try { updateCarouselFilmstrip(); } catch (_) {}
+      } else if (noGrid) {
         // v2.1 round 299 (Terry) — keep the existing arrangement; cascade the new tile a
         // little off-centre (by the current tile count) so several don't perfectly stack.
         const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
