@@ -106,8 +106,9 @@ export function TrialLimitsButton() {
     };
   }, []);
   if (!isTrial && !preview) return null;
-  // Neutral = fuchsia (matches the 3.0 release chip → instantly reads as "free trial"). Alert = amber,
-  // shown while a reached limit is still unacknowledged. Preview always shows the neutral state.
+  // Neutral = the Viewer "Share" button's violet→fuchsia AI gradient + WHITE text (Terry's reference)
+  // so it's release-branded and crisp, not a pale tint. Alert = a warm amber→orange gradient (white
+  // text) that clearly contrasts, shown while a reached limit is still unacknowledged. Preview = neutral.
   const alerting = !preview && !!usage?.features?.some((f) => f.reached && !ack.includes(f.key));
   return (
     <IconTooltip label={alerting ? 'Trial Limits — you’ve hit a limit' : 'Trial Limits — you’re on the free trial'} side="bottom">
@@ -115,16 +116,16 @@ export function TrialLimitsButton() {
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent('pdr:openTrialUsage'))}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 hover:scale-[1.02] ${
+        className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold tracking-wide text-white border transition-all duration-150 hover:brightness-110 ${
           alerting
-            ? 'bg-amber-100 text-amber-800 border-amber-400/70 hover:bg-amber-200'
-            : 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-400/40 hover:bg-fuchsia-500/25 hover:text-fuchsia-800'
+            ? 'bg-gradient-to-r from-amber-500 to-orange-500 border-orange-400/70 shadow-[0_0_10px_rgba(245,158,11,0.5)]'
+            : 'bg-gradient-to-r from-violet-500 to-fuchsia-500 border-fuchsia-500/60 shadow-[0_0_10px_rgba(139,92,246,0.45)]'
         }`}
         data-testid="trial-limits-button"
       >
         <Gauge className="w-3 h-3" />
         Trial Limits
-        {alerting && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+        {alerting && <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />}
       </button>
     </IconTooltip>
   );
