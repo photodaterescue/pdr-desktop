@@ -8794,12 +8794,13 @@
       var e = it.enh || {};
       if (!it.bgRemovedPath || !collageTileHasEdgeFx(e) || !it.on || it.removed || it.placeholder) { it.glowEl.style.display = 'none'; return; }
       var wb = Math.max(16, Math.round(iwPx / 24) * 24), hb = Math.max(16, Math.round(ihPx / 24) * 24);
-      var key = it.bgRemovedPath + '|' + collageGlowEdgeKey(e) + '|' + wb + 'x' + hb;
+      var cropSig = it.crop ? [it.crop.l, it.crop.t, it.crop.r, it.crop.b].map(function (n) { return Math.round((n || 0) * 1000); }).join(',') : '';
+      var key = it.bgRemovedPath + '|' + collageGlowEdgeKey(e) + '|' + cropSig + '|' + wb + 'x' + hb;
       var cached = collageGlowCache[key];
       if (cached) { if (it.glowEl.getAttribute('data-glowkey') !== key) { it.glowEl.src = cached.dataUrl; it.glowEl.setAttribute('data-glowkey', key); } it._lastGlowCache = cached; positionTileGlow(it, iwPx, ihPx, cached); return; }
       if (it._lastGlowCache) positionTileGlow(it, iwPx, ihPx, it._lastGlowCache);   // keep the old glow visible while re-baking
       var doBake = function () {
-        return Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb })).then(function (r) {
+        return Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb, crop: it.crop })).then(function (r) {
           if (r && r.ok && r.dataUrl) { var val = { dataUrl: r.dataUrl, fullW: r.w, fullH: r.h, innerW: wb, innerH: hb }; collageGlowPut(key, val); it._lastGlowCache = val; if (it.glowEl) { it.glowEl.src = r.dataUrl; it.glowEl.setAttribute('data-glowkey', key); var cw = collageCanvasEl.clientWidth, iw = it.wFrac * cw; positionTileGlow(it, iw, iw / effectiveAspect(it), val); } }
         }).catch(function () {});
       };
@@ -8821,7 +8822,7 @@
           if (!it.bgRemovedPath || !collageTileHasEdgeFx(e) || !it.on || it.removed || it.placeholder) { it.glowEl.style.display = 'none'; return; }
           dbg.n++;
           var iwPx = it.wFrac * cw, ihPx = iwPx / effectiveAspect(it), wb = Math.max(16, Math.round(iwPx)), hb = Math.max(16, Math.round(ihPx));
-          jobs.push(Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb }).then(function (r) {
+          jobs.push(Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb, crop: it.crop }).then(function (r) {
             if (!(r && r.ok && r.dataUrl && it.glowEl)) { if (it.glowEl) it.glowEl.style.display = 'none'; if (r && r.error) dbg.err = r.error; return; }
             dbg.ok++;
             var val = { dataUrl: r.dataUrl, fullW: r.w, fullH: r.h, innerW: wb, innerH: hb };

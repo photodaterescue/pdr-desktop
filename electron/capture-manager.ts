@@ -2222,14 +2222,28 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
 // live photo so the live preview + the saved (WYSIWYG) photo match the thumbnail's crisp outline
 // instead of a CSS box-shadow rectangle / smudge. Returns a data URL + pad (extra px each side for the
 // glow spill) so the client can position it. Returns ok:false when there's no edge fx (nothing to show).
-ipcMain.handle('collage:bakeCutoutGlow', async (_e, args: { path: string; enh: CollageEnhance; w: number; h: number; op?: number }) => {
+ipcMain.handle('collage:bakeCutoutGlow', async (_e, args: { path: string; enh: CollageEnhance; w: number; h: number; op?: number; crop?: { l: number; t: number; r: number; b: number } }) => {
   try {
-    const a = args || ({} as { path?: string; enh?: CollageEnhance; w?: number; h?: number; op?: number });
+    const a = args || ({} as { path?: string; enh?: CollageEnhance; w?: number; h?: number; op?: number; crop?: { l: number; t: number; r: number; b: number } });
     if (!a.path || !a.w || !a.h) return { ok: false };
     const w = Math.max(4, Math.round(a.w)), h = Math.max(4, Math.round(a.h));
     const sharp = (await import('sharp')).default;
     const src = await fs.promises.readFile(toLongPath(a.path));
-    const tile = await sharp(src).resize(w, h, { fit: 'fill' }).ensureAlpha().png().toBuffer();
+    let img = sharp(src).ensureAlpha();
+    // v3.0 (Terry 2026-07-05) — honour the tile's CROP so the glow follows the VISIBLE (cropped)
+    // silhouette, not the full photo. Without this, a cropped cut-out's glow was offset/scaled wrong.
+    const cr = a.crop;
+    if (cr && (cr.l > 0.001 || cr.t > 0.001 || cr.r < 0.999 || cr.b < 0.999)) {
+      const meta = await img.metadata();
+      const W = meta.width || 0, H = meta.height || 0;
+      if (W > 0 && H > 0) {
+        const left = Math.max(0, Math.round(cr.l * W)), top = Math.max(0, Math.round(cr.t * H));
+        const cw = Math.max(1, Math.min(W - left, Math.round((cr.r - cr.l) * W)));
+        const ch = Math.max(1, Math.min(H - top, Math.round((cr.b - cr.t) * H)));
+        img = sharp(await img.extract({ left, top, width: cw, height: ch }).png().toBuffer()).ensureAlpha();
+      }
+    }
+    const tile = await img.resize(w, h, { fit: 'fill' }).ensureAlpha().png().toBuffer();
     const r = await buildTileEdgeFx(sharp, tile, w, h, a.enh || {}, typeof a.op === 'number' ? a.op : 1, true);
     if (!r) return { ok: false };
     return { ok: true, dataUrl: 'data:image/png;base64,' + r.buf.toString('base64'), w: r.w, h: r.h, pad: Math.round((r.w - w) / 2) };
