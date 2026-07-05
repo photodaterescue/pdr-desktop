@@ -91,21 +91,24 @@ export function TrialLimitsButton() {
     return () => window.removeEventListener('pdr:preview-trial-limits', on);
   }, []);
   if (!isTrial && !preview) return null;
-  const alert = !!usage?.anyReached || (preview && true);
+  // Alert (amber) only when a real limit is hit. Preview shows the everyday indigo resting state.
+  const alert = !!usage?.anyReached;
+  // Match the sibling title-bar pills (Licensed / grace badges): a SOLID light pill with saturated
+  // text + a subtle border. Translucent --primary tints read as bleached lavender-on-lavender here.
   return (
     <IconTooltip label={alert ? 'Trial Limits — you’ve hit a limit' : 'Trial Limits — see your free-trial usage'} side="bottom">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent('pdr:openTrialUsage'))}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        className={`inline-flex items-center gap-1.5 rounded-full pl-2 pr-2.5 py-1 text-[11px] font-semibold transition-colors ${
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.02] ${
           alert
-            ? 'bg-amber-500/20 text-amber-700 dark:text-amber-300 ring-1 ring-amber-500/40 hover:bg-amber-500/30'
-            : 'bg-primary/10 text-primary hover:bg-primary/20'
+            ? 'bg-amber-50 text-amber-700 border-amber-300/70 hover:bg-amber-100 hover:text-amber-800'
+            : 'bg-indigo-50 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100 hover:text-indigo-800'
         }`}
         data-testid="trial-limits-button"
       >
-        <Gauge className="w-3.5 h-3.5" />
+        <Gauge className="w-3 h-3" />
         Trial Limits
         {alert && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
       </button>
@@ -128,8 +131,12 @@ function FeatureRow({ f }: { f: TrialUsageFeature }) {
       <div className="flex-1 min-w-0">
         <div className="flex items-center justify-between gap-2">
           <span className="text-sm font-medium text-foreground truncate">{f.label}</span>
-          <span className={`text-xs font-semibold tabular-nums shrink-0 ${f.reached ? 'text-red-500' : near ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
-            {f.reached ? 'Limit reached' : countText}
+          {/* Always show the count — even at the limit (Terry). "Limit reached" is a tag beside it, not a replacement. */}
+          <span className="flex items-center gap-1.5 shrink-0">
+            {f.reached && <span className="text-[10px] font-semibold uppercase tracking-wide text-red-500">Limit reached</span>}
+            <span className={`text-xs font-semibold tabular-nums ${f.reached ? 'text-red-600 dark:text-red-400' : near ? 'text-amber-600 dark:text-amber-400' : 'text-muted-foreground'}`}>
+              {countText}
+            </span>
           </span>
         </div>
         <div className="mt-1 h-1.5 rounded-full bg-secondary overflow-hidden">
