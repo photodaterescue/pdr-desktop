@@ -352,6 +352,13 @@ import {
   FREE_TRIAL_FILE_LIMIT,
   FREE_TREES_PEOPLE_LIMIT,
   FREE_VIDEO_CLIP_LIMIT,
+  FREE_FACE_SCREENSHOT_LIMIT,
+  FREE_FACE_WEBCAM_LIMIT,
+  FREE_SCREENSHOT_LIMIT,
+  FREE_RECORDING_LIMIT,
+  FREE_COLLAGE_LIMIT,
+  FREE_CAROUSEL_LIMIT,
+  TRIAL_FEATURES,
 } from './usage-tracker.js';
 import {
   checkForUpdates,
@@ -501,6 +508,9 @@ import {
   removeManualFace,
   countNamedPersons,
   countTrimmedClips,
+  incrementTrialUsage,
+  getTrialUsageCount,
+  getAllTrialUsage,
   setPersonGender,
   getFamilyGraph,
   getPersonCooccurrenceStats,
@@ -9995,9 +10005,18 @@ ipcMain.handle('trees:updatePersonNotes', async (_event, args: { personId: numbe
 });
 
 // v3.0 round 559 (Terry) — make a just-captured LIBRARY file the person's face (screenshot/webcam).
-ipcMain.handle('trees:setPersonFaceFile', async (_event, args: { personId: number; fileId: number }) => {
+ipcMain.handle('trees:setPersonFaceFile', async (_event, args: { personId: number; fileId: number; source?: 'screenshot' | 'webcam' }) => {
   try {
-    return setPersonFaceFromLibraryFile(args.personId, args.fileId);
+    // v3.0 (Terry) — Free-account caps: 3 faces from a screenshot + 3 from a webcam (each lifetime).
+    const capKey = args.source === 'webcam' ? 'faceWebcam' : args.source === 'screenshot' ? 'faceScreenshot' : null;
+    const capLimit = args.source === 'webcam' ? FREE_FACE_WEBCAM_LIMIT : FREE_FACE_SCREENSHOT_LIMIT;
+    if (capKey && await trialCapReached(capKey, capLimit)) {
+      const how = args.source === 'webcam' ? 'from a webcam' : 'from a screenshot';
+      return { success: false, error: `Your free account can set up to ${capLimit} faces ${how}. Upgrade for unlimited.`, limit: capKey };
+    }
+    const r = setPersonFaceFromLibraryFile(args.personId, args.fileId);
+    if (r && r.success && capKey) await bumpTrialUsage(capKey);
+    return r;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -10118,16 +10137,46 @@ async function isFreeAccount(): Promise<boolean> {
   }
 }
 
+// v3.0 (Terry) — trial cap helpers. Pattern for a capped action: `if (await trialCapReached(key,
+// limit)) return { success:false, error, limit:key }` (the renderer shows the upsell), do the work,
+// then `await bumpTrialUsage(key)`. Paid accounts are never blocked and never accrue usage.
+async function trialCapReached(key: string, limit: number): Promise<boolean> {
+  if (!(await isFreeAccount())) return false;   // paid = uncapped
+  return getTrialUsageCount(key) >= limit;
+}
+async function bumpTrialUsage(key: string): Promise<void> {
+  try { if (await isFreeAccount()) incrementTrialUsage(key); } catch { /* non-fatal */ }
+}
+
+// Unified Trial-usage snapshot for the Trial Limits button + modal. `licenseKey` (optional) folds
+// in the cloud file-fix count; every other counter is local (trial_usage table). `unknown` marks a
+// cloud value we couldn't fetch (offline) so the UI shows "—" rather than a false 0.
+ipcMain.handle('trial:getUsage', async (_event, licenseKey?: string) => {
+  const status = await getLicenseStatus().catch(() => null);
+  const isTrial = !status?.canUsePremiumFeatures;
+  const local = getAllTrialUsage();
+  let filesUsed: number | null = null;
+  if (licenseKey) { try { filesUsed = await getUsageFromWorker(licenseKey); } catch { filesUsed = null; } }
+  const features = TRIAL_FEATURES.map((f) => {
+    const unknown = !!f.cloud && filesUsed == null;
+    const used = f.cloud ? (filesUsed == null ? 0 : filesUsed) : (local[f.key] || 0);
+    return { key: f.key, label: f.label, used, limit: f.limit, reached: used >= f.limit, unknown };
+  });
+  return { isTrial, plan: status?.plan ?? null, features, anyReached: features.some((x) => x.reached && !x.unknown) };
+});
+
 const FREE_PEOPLE_CAP_MESSAGE =
   `Your free account can name up to ${FREE_TREES_PEOPLE_LIMIT} people in your family tree — ` +
   `enough to get a real feel for Trees. Upgrade to build out your whole family.`;
 
 ipcMain.handle('trees:createNamedPerson', async (_event, name: string) => {
   try {
-    if (await isFreeAccount() && countNamedPersons() >= FREE_TREES_PEOPLE_LIMIT) {
+    if (await trialCapReached('people', FREE_TREES_PEOPLE_LIMIT)) {
       return { success: false, error: FREE_PEOPLE_CAP_MESSAGE, limit: 'people' as const };
     }
-    return createNamedPerson(name);
+    const r = createNamedPerson(name);
+    if (r && r.success) await bumpTrialUsage('people');
+    return r;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -10135,10 +10184,12 @@ ipcMain.handle('trees:createNamedPerson', async (_event, name: string) => {
 
 ipcMain.handle('trees:namePlaceholder', async (_event, args: { personId: number; name: string }) => {
   try {
-    if (await isFreeAccount() && countNamedPersons() >= FREE_TREES_PEOPLE_LIMIT) {
+    if (await trialCapReached('people', FREE_TREES_PEOPLE_LIMIT)) {
       return { success: false, error: FREE_PEOPLE_CAP_MESSAGE, limit: 'people' as const };
     }
-    return namePlaceholder(args.personId, args.name);
+    const r = namePlaceholder(args.personId, args.name);
+    if (r && (r as { success?: boolean }).success) await bumpTrialUsage('people');
+    return r;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -13431,8 +13482,8 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
     if (typeof req.startSec !== 'number' || typeof req.endSec !== 'number' || req.endSec <= req.startSec) {
       return { success: false, error: 'Invalid trim range.' };
     }
-    // v3.0 round 560 (Terry) — Free-account cap of 10 saved video clips.
-    if (await isFreeAccount() && countTrimmedClips() >= FREE_VIDEO_CLIP_LIMIT) {
+    // v3.0 round 560 (Terry) — Free-account cap of 10 saved video clips (lifetime usage).
+    if (await trialCapReached('clips', FREE_VIDEO_CLIP_LIMIT)) {
       return {
         success: false,
         error: `Your free account can save up to ${FREE_VIDEO_CLIP_LIMIT} video clips. Upgrade for unlimited clips.`,
@@ -13561,6 +13612,7 @@ ipcMain.handle('viewer:trimVideo', async (_event, req: TrimVideoRequest) => {
       log.warn(`[viewer:trimVideo] index pass failed (clip still saved): ${(idxErr as Error).message}`);
     }
 
+    await bumpTrialUsage('clips');
     return { success: true, newFilePath: outPath };
   } catch (err) {
     return { success: false, error: (err as Error).message };

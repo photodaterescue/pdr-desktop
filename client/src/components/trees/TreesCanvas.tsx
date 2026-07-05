@@ -781,8 +781,9 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
     try {
       const cap = await (window as { pdr?: { capture?: { region?: () => Promise<{ success: boolean; cancelled?: boolean; fileId?: number | null; error?: string }> } } }).pdr?.capture?.region?.();
       if (!cap || cap.cancelled || !cap.success || cap.fileId == null) return;
-      const res = await setPersonFaceFromFile(personId, cap.fileId);
+      const res = await setPersonFaceFromFile(personId, cap.fileId, 'screenshot');
       if (res?.success) onGraphMutated();
+      else if (res?.limit) window.dispatchEvent(new CustomEvent('pdr:trial-limit', { detail: { limit: res.limit, message: res.error } }));
     } catch { /* non-fatal */ }
   }, [onGraphMutated]);
 
@@ -797,8 +798,9 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
     setWebcamFor(null);
     const saved = await saveCapturedImageToLibrary(dataUrl);
     if (!saved?.success || saved.fileId == null) return;
-    const res = await setPersonFaceFromFile(personId, saved.fileId);
+    const res = await setPersonFaceFromFile(personId, saved.fileId, 'webcam');
     if (res?.success) onGraphMutated();
+    else if (res?.limit) window.dispatchEvent(new CustomEvent('pdr:trial-limit', { detail: { limit: res.limit, message: res.error } }));
   }, [onGraphMutated]);
 
   // v3.0 round 560 (Terry) — unlink a screenshot/webcam photo from a person. Only offered when the

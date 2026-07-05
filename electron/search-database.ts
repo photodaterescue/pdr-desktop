@@ -7617,6 +7617,42 @@ export function countTrimmedClips(): number {
   return row?.n ?? 0;
 }
 
+// ═══════════════════════════════════════════════════════════════
+// v3.0 (Terry) — Free-trial LIFETIME usage counters.
+// One row per feature key ('people', 'collages', 'screenshots'…); increment-ONLY (never
+// decremented when the user deletes an item), so a trial cap reads as "X of N used" and can't
+// be gamed by make-then-delete. The 'files' cap is NOT here — it's the cloud counter.
+// ═══════════════════════════════════════════════════════════════
+function ensureTrialUsageTable(db: ReturnType<typeof getDb>): void {
+  db.exec(`CREATE TABLE IF NOT EXISTS trial_usage (key TEXT PRIMARY KEY, count INTEGER NOT NULL DEFAULT 0)`);
+}
+/** Add `by` to a feature's lifetime usage; returns the new total. */
+export function incrementTrialUsage(key: string, by = 1): number {
+  const db = getDb();
+  ensureTrialUsageTable(db);
+  db.prepare(
+    `INSERT INTO trial_usage (key, count) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET count = count + ?`
+  ).run(key, by, by);
+  const row = db.prepare(`SELECT count FROM trial_usage WHERE key = ?`).get(key) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+/** A single feature's lifetime usage (0 if never used). */
+export function getTrialUsageCount(key: string): number {
+  const db = getDb();
+  ensureTrialUsageTable(db);
+  const row = db.prepare(`SELECT count FROM trial_usage WHERE key = ?`).get(key) as { count: number } | undefined;
+  return row?.count ?? 0;
+}
+/** Every local feature's lifetime usage as { key: count }, for the Trial Limits modal. */
+export function getAllTrialUsage(): Record<string, number> {
+  const db = getDb();
+  ensureTrialUsageTable(db);
+  const rows = db.prepare(`SELECT key, count FROM trial_usage`).all() as { key: string; count: number }[];
+  const out: Record<string, number> = {};
+  for (const r of rows) out[r.key] = r.count;
+  return out;
+}
+
 /** Set a person's gender. Writes to persons.gender and logs a
  *  reversible entry in graph_history so Ctrl+Z flips it back. */
 export function setPersonGender(personId: number, gender: string | null): { success: boolean; error?: string } {

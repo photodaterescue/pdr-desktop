@@ -655,7 +655,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         { success: true; used: number; limit: number } | { success: false; error: string }
       >,
   },
-  
+
+  // v3.0 (Terry) — the full trial usage snapshot (all caps) for the Trial Limits button + modal.
+  trial: {
+    getUsage: (licenseKey?: string) => ipcRenderer.invoke('trial:getUsage', licenseKey) as Promise<{
+      isTrial: boolean; plan: string | null; anyReached: boolean;
+      features: Array<{ key: string; label: string; used: number; limit: number; reached: boolean; unknown: boolean }>;
+    }>,
+  },
+
   updates: {
     check: () => ipcRenderer.invoke('updates:check'),
     getVersion: () => ipcRenderer.invoke('updates:getVersion'),
@@ -793,7 +801,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     updatePersonLifeEvents: (args: { personId: number; patch: { birthDate?: string | null; deathDate?: string | null; deceasedMarker?: string | null } }) => ipcRenderer.invoke('trees:updatePersonLifeEvents', args),
     setPersonCardBackground: (args: { personId: number; dataUrl: string | null }) => ipcRenderer.invoke('trees:setPersonCardBackground', args),
     updatePersonNotes: (args: { personId: number; notes: string | null }) => ipcRenderer.invoke('trees:updatePersonNotes', args) as Promise<{ success: boolean; error?: string }>,
-    setPersonFaceFile: (args: { personId: number; fileId: number }) => ipcRenderer.invoke('trees:setPersonFaceFile', args) as Promise<{ success: boolean; error?: string; faceId?: number }>,
+    setPersonFaceFile: (args: { personId: number; fileId: number; source?: 'screenshot' | 'webcam' }) => ipcRenderer.invoke('trees:setPersonFaceFile', args) as Promise<{ success: boolean; error?: string; faceId?: number; limit?: string }>,
     removeManualFace: (personId: number) => ipcRenderer.invoke('trees:removeManualFace', personId) as Promise<{ success: boolean; error?: string; removed?: boolean }>,
     setPersonGender: (args: { personId: number; gender: string | null }) => ipcRenderer.invoke('trees:setPersonGender', args),
     getFamilyGraph: (args: { focusPersonId: number; maxHops?: number }) => ipcRenderer.invoke('trees:getFamilyGraph', args),

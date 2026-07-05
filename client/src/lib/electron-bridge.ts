@@ -1927,11 +1927,21 @@ export async function updatePersonNotes(personId: number, notes: string | null):
 
 // v3.0 round 559 (Terry) — make a just-captured LIBRARY file (screenshot/webcam still) the person's
 // representative face. The image is already saved + indexed in the library like every other photo.
-export async function setPersonFaceFromFile(personId: number, fileId: number): Promise<{ success: boolean; error?: string; faceId?: number }> {
+export async function setPersonFaceFromFile(personId: number, fileId: number, source?: 'screenshot' | 'webcam'): Promise<{ success: boolean; error?: string; faceId?: number; limit?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
-    return (window as any).pdr.trees.setPersonFaceFile({ personId, fileId });
+    return (window as any).pdr.trees.setPersonFaceFile({ personId, fileId, source });
   }
   return { success: false, error: 'Not running in Electron' };
+}
+
+// v3.0 (Terry) — Trial usage snapshot for the Trial Limits button + modal.
+export interface TrialUsageFeature { key: string; label: string; used: number; limit: number; reached: boolean; unknown: boolean }
+export interface TrialUsage { isTrial: boolean; plan: string | null; features: TrialUsageFeature[]; anyReached: boolean }
+export async function getTrialUsage(licenseKey?: string): Promise<TrialUsage | null> {
+  if (isElectron() && (window as any).pdr?.trial) {
+    try { return await (window as any).pdr.trial.getUsage(licenseKey); } catch { return null; }
+  }
+  return null;
 }
 
 // v3.0 round 559 (Terry) — save a webcam still into the library, returns the new fileId.

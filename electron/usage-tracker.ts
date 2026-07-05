@@ -47,18 +47,37 @@ const WORKER_BASE = 'https://updates.photodaterescue.com';
  * the typical multi-GB library a paid tier targets. */
 export const FREE_TRIAL_FILE_LIMIT = 1_000;
 
-/** v3.0 round 560 (Terry) — additional Free-account creation caps. These
- *  are enforced LOCALLY against the search DB (unlike the file cap, which
- *  is a cloud counter), so they reset if the user deletes items — that's
- *  fine, it just means they're using fewer. The intent (Terry): let people
- *  genuinely experience PDR — "if they like it, they'll buy it" — while
- *  the caps stop a free account from doing a whole family / library for
- *  free. Numbers are Terry's: 12 people is "enough to get into the swing
- *  of things, but not enough that it creates their whole family." */
+/** v3.0 (Terry) — the full Free-trial usage caps. Enforced as LIFETIME USAGE (like the
+ *  1,000-file cloud counter): a running count of what you've USED on the trial that does NOT
+ *  refund when you delete an item — so it can't be gamed by make-then-delete, and the Trial
+ *  Limits view reads cleanly as "X of N used". Paid plans (monthly / yearly / lifetime) are
+ *  UNCAPPED — none of this applies the moment they buy. Numbers are Terry's: 12 people is
+ *  "enough to get into the swing of things, but not enough that it creates their whole family." */
 export const FREE_TREES_PEOPLE_LIMIT = 12;
 export const FREE_VIDEO_CLIP_LIMIT = 10;
 export const FREE_COLLAGE_LIMIT = 5;
 export const FREE_CAROUSEL_LIMIT = 5;
+export const FREE_FACE_SCREENSHOT_LIMIT = 3;
+export const FREE_FACE_WEBCAM_LIMIT = 3;
+export const FREE_SCREENSHOT_LIMIT = 20;
+export const FREE_RECORDING_LIMIT = 5;
+
+/** Canonical list of trial-capped features — the single source of truth for enforcement keys,
+ *  the local usage store, and the Trial Limits modal (label + limit per feature, in display
+ *  order). `files` is the CLOUD counter (getUsage); every other key is a LOCAL lifetime counter
+ *  in the `trial_usage` table. */
+export interface TrialFeatureMeta { key: string; label: string; limit: number; cloud?: boolean }
+export const TRIAL_FEATURES: TrialFeatureMeta[] = [
+  { key: 'files', label: 'Photos & videos fixed', limit: FREE_TRIAL_FILE_LIMIT, cloud: true },
+  { key: 'people', label: 'People named in your tree', limit: FREE_TREES_PEOPLE_LIMIT },
+  { key: 'faceScreenshot', label: 'Faces set from a screenshot', limit: FREE_FACE_SCREENSHOT_LIMIT },
+  { key: 'faceWebcam', label: 'Faces set from a webcam', limit: FREE_FACE_WEBCAM_LIMIT },
+  { key: 'clips', label: 'Video clips', limit: FREE_VIDEO_CLIP_LIMIT },
+  { key: 'collages', label: 'Collages saved', limit: FREE_COLLAGE_LIMIT },
+  { key: 'carousels', label: 'Carousels saved', limit: FREE_CAROUSEL_LIMIT },
+  { key: 'screenshots', label: 'Screenshots', limit: FREE_SCREENSHOT_LIMIT },
+  { key: 'recordings', label: 'Screen recordings', limit: FREE_RECORDING_LIMIT },
+];
 
 /** Network timeout for the Worker fetch (ms). Short on purpose —
  * the user shouldn't wait more than a couple of seconds at the
