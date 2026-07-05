@@ -783,7 +783,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
       if (!cap || cap.cancelled || !cap.success || cap.fileId == null) return;
       const res = await setPersonFaceFromFile(personId, cap.fileId, 'screenshot');
       if (res?.success) onGraphMutated();
-      else if (res?.limit) window.dispatchEvent(new CustomEvent('pdr:trial-limit', { detail: { limit: res.limit, message: res.error } }));
+      // A Free-trial cap block fires pdr:trial-limit centrally from the bridge → the upsell shows.
     } catch { /* non-fatal */ }
   }, [onGraphMutated]);
 
@@ -800,7 +800,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
     if (!saved?.success || saved.fileId == null) return;
     const res = await setPersonFaceFromFile(personId, saved.fileId, 'webcam');
     if (res?.success) onGraphMutated();
-    else if (res?.limit) window.dispatchEvent(new CustomEvent('pdr:trial-limit', { detail: { limit: res.limit, message: res.error } }));
+    // A Free-trial cap block fires pdr:trial-limit centrally from the bridge → the upsell shows.
   }, [onGraphMutated]);
 
   // v3.0 round 560 (Terry) — unlink a screenshot/webcam photo from a person. Only offered when the

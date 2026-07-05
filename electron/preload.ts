@@ -4,6 +4,13 @@
 // Preload MUST be CommonJS when run by Electron
 const { contextBridge, ipcRenderer } = require('electron');
 
+// v3.0 (Terry) — main process asks the main window to open its licence modal (e.g. "Upgrade" from a
+// Free-trial cap hit in the Collage window). Convert that IPC into the pdr:openLicenseModal window
+// event the workspace already listens for. Harmless in the Collage/Viewer window (no listener there).
+ipcRenderer.on('pdr:open-license-modal', () => {
+  try { window.dispatchEvent(new CustomEvent('pdr:openLicenseModal')); } catch { /* non-fatal */ }
+});
+
 contextBridge.exposeInMainWorld('pdr', {
   // v2.0.11 (Terry 2026-05-24) — renderer-side workspace-ready signal.
   // Sent from main.tsx after React commits its first frame so the
@@ -532,6 +539,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.0 (Terry) — "View in Albums" jump: bring the main window forward + navigate it to Memories → Albums
     // (opening `albumId` if given). onNavigateAlbums lets the main window's workspace react to the request.
     viewInAlbums: (albumId?: number | null) => ipcRenderer.invoke('collage:viewInAlbums', albumId ?? null) as Promise<{ success: boolean; error?: string }>,
+    // v3.0 (Terry) — "Upgrade" from a Free-trial cap hit in this window: focus the main window + open its licence modal.
+    openUpgrade: () => ipcRenderer.invoke('collage:openUpgrade') as Promise<{ success: boolean; error?: string }>,
     // v3.0 (Terry) — resolve where a saved collage's exported photo lives (album to jump to + on-disk path to
     // open in the Viewer), or exists:false if it was deleted. Feeds the Home-tile + titlebar "take me there" links.
     getExportInfo: (fileId: number | null) => ipcRenderer.invoke('collage:getExportInfo', fileId ?? null) as Promise<{ exists: boolean; filePath?: string; fileName?: string; albumId?: number | null; error?: string }>,

@@ -7477,6 +7477,12 @@
             trimStatus.innerHTML =
               '<div style="font-size:12px;color:#d1fae5;margin-bottom:3px;"><span style="font-weight:600;">✓ Saved as</span> <span style="font-family:monospace;color:#fff;">' + name + '</span></div>' +
               '<div style="font-size:11px;color:#c4b5fd;line-height:1.45;max-width:480px;">Find it next to the original in <strong style="color:#fff;">Memories &mdash; Dates</strong> and <strong style="color:#fff;">Search &amp; Discovery</strong>. The <span style="font-family:monospace;">_T</span> in the filename marks it as trimmed. See Help &rarr; Glossary for the full suffix guide.</div>';
+          } else if (r && r.limit) {
+            // v3.0 (Terry) — Free-trial clip cap: upsell, not a red error line.
+            trimStatus.textContent = '';
+            trimSaveBtn.disabled = false;
+            trimCancelBtn.disabled = false;
+            await showTrialLimitUpsell((r && r.error) || 'You’ve reached your free limit of video clips.');
           } else {
             trimStatus.textContent = '✗ ' + (r && r.error ? r.error : 'Trim failed');
             console.warn('[trim] failed:', r && r.error);
@@ -17467,6 +17473,9 @@
           if (saveLbl) saveLbl.textContent = (_act === 'update') ? '✓ Updated' : '✓ Saved';
           try { var _more = document.getElementById('collage-save-more'); if (_more) _more.style.display = ''; } catch (_) {}
           setTimeout(() => { try { updateCollageSaveButton(); } catch (_) {} }, 2200);
+        } else if (res && res.limit) {
+          await showTrialLimitUpsell((res && res.error) || 'You’ve reached your free limit of collages.');  // v3.0 (Terry) — cap hit → upsell, not "Save failed"
+          if (saveBtn) saveBtn.disabled = false; if (saveLbl) saveLbl.textContent = originalLbl;
         } else {
           await showPdrAlert({ title: 'Save failed', body: 'Collage save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           if (saveBtn) saveBtn.disabled = false; if (saveLbl) saveLbl.textContent = originalLbl;
@@ -17537,6 +17546,9 @@
             // the label sync right after the restore so the button reflects the saved state.
             setTimeout(() => { if (saveBtn) { saveBtn.innerHTML = originalHtml; try { updateCollageSaveButton(); } catch (_) {} } }, 2600);
           }
+        } else if (res && res.limit) {
+          await showTrialLimitUpsell((res && res.error) || 'You’ve reached your free limit of carousels.');  // v3.0 (Terry) — cap hit → upsell, not "Save failed"
+          if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
         } else {
           await showPdrAlert({ title: 'Save failed', body: 'Carousel save failed:\n\n' + ((res && res.error) || 'Unknown error.') });  // v2.1 round 273 (Terry) — styled alert, no native dialog
           if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = originalHtml; }
@@ -22379,6 +22391,20 @@ function zoomTo(newZoom, centreX, centreY) {
       window.showPdrConfirm = showPdrConfirm;
       window.showPdrPrompt = showPdrPrompt;
       window.showPdrAlert = showPdrAlert;
+
+      // v3.0 (Terry) — a Free-trial cap blocked something in THIS window (collage/carousel save, video
+      // clip). Show it as an upsell, not a scary "Save failed": a two-button prompt whose "Upgrade"
+      // brings the main window forward + opens the licence modal. Uncapped plans never reach here.
+      async function showTrialLimitUpsell(message) {
+        const go = await showPdrConfirm({
+          title: 'Free-trial limit reached',
+          body: (message || 'You’ve reached a free-trial limit.') + '\n\nUpgrade for unlimited — monthly, yearly, or a one-time lifetime licence.',
+          confirmLabel: 'Upgrade for unlimited',
+          cancelLabel: 'Not now',
+        });
+        if (go) { try { await window.pdr.collage.openUpgrade(); } catch (_) {} }
+      }
+      window.showTrialLimitUpsell = showTrialLimitUpsell;
 
       // v2.1 round 11 — click delegation on the face-boxes layer for
       // name + delete actions. One listener instead of per-box

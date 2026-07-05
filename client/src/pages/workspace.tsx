@@ -126,6 +126,7 @@ import {
   ContextMenuSeparator,
 } from "@/components/ui/context-menu";
 import { LicenseModal, LicenseStatusBadge } from "@/components/LicenseModal";
+import { TrialLimitsHost } from "@/components/TrialLimits";
 import { LicenseRequiredModal } from "@/components/LicenseRequiredModal";
 import { FeatureTeaserModal, type TeaserFeature } from "@/components/FeatureTeaserModal";
 import { TrialLimitModal } from "@/components/TrialLimitModal";
@@ -3743,6 +3744,8 @@ return (
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
       {showResultsModal && <ResultsModal onClose={() => setShowResultsModal(false)} />}
       {showLicenseModal && <LicenseModal onClose={() => setShowLicenseModal(false)} />}
+      {/* Free-trial usage modals + upsell + post-activation nudge (mounted once). Renders nothing for paid plans. */}
+      <TrialLimitsHost />
 		<LicenseRequiredModal
 		  isOpen={showLicenseRequired}
 		  onClose={() => setShowLicenseRequired(false)}

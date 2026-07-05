@@ -9574,6 +9574,21 @@ ipcMain.handle('collage:viewInAlbums', async (_event, albumId: number | null) =>
   } catch (err) { return { success: false, error: (err as Error).message }; }
 });
 
+// v3.0 (Terry) — "Upgrade" from a Free-trial cap hit in the Collage/Viewer window. That window has
+// no React licence UI, so bring the main window forward and tell its renderer to open the licence
+// modal (the same pdr:openLicenseModal the title-bar badge fires).
+ipcMain.handle('collage:openUpgrade', async () => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('pdr:open-license-modal');
+    }
+    return { success: true };
+  } catch (err) { return { success: false, error: (err as Error).message }; }
+});
+
 // v3.0 (Terry) — "take me there" resolver for a SAVED collage/carousel. Given the exported file id (stored on the
 // .pdrcollage project), return where its finished photo now lives: the album to jump to ("Locate in Albums") and the
 // on-disk path to open ("Open in Viewer"). exists:false when the export was since deleted, so the UI can say so

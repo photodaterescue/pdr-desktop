@@ -1929,7 +1929,7 @@ export async function updatePersonNotes(personId: number, notes: string | null):
 // representative face. The image is already saved + indexed in the library like every other photo.
 export async function setPersonFaceFromFile(personId: number, fileId: number, source?: 'screenshot' | 'webcam'): Promise<{ success: boolean; error?: string; faceId?: number; limit?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
-    return (window as any).pdr.trees.setPersonFaceFile({ personId, fileId, source });
+    return signalTrialLimit(await (window as any).pdr.trees.setPersonFaceFile({ personId, fileId, source }));
   }
   return { success: false, error: 'Not running in Electron' };
 }
@@ -1942,6 +1942,21 @@ export async function getTrialUsage(licenseKey?: string): Promise<TrialUsage | n
     try { return await (window as any).pdr.trial.getUsage(licenseKey); } catch { return null; }
   }
   return null;
+}
+
+/**
+ * v3.0 (Terry) — when a Free-trial cap blocks an action, the IPC result carries `limit`. This
+ * fires the `pdr:trial-limit` event so <TrialLimitsHost/> shows the upsell — centralised here so
+ * every caller of a capped bridge fn gets the upsell without repeating the dispatch. Returns the
+ * result unchanged so callers still see success/error as before.
+ */
+export function signalTrialLimit<T extends { limit?: string; error?: string } | null | undefined>(res: T): T {
+  try {
+    if (res && (res as { limit?: string }).limit && typeof window !== 'undefined') {
+      window.dispatchEvent(new CustomEvent('pdr:trial-limit', { detail: { limit: (res as { limit?: string }).limit, message: (res as { error?: string }).error } }));
+    }
+  } catch { /* non-fatal */ }
+  return res;
 }
 
 // v3.0 round 559 (Terry) — save a webcam still into the library, returns the new fileId.
@@ -2182,16 +2197,16 @@ export async function createPlaceholderPerson(): Promise<{ success: boolean; dat
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function createNamedPerson(name: string): Promise<{ success: boolean; data?: number; error?: string }> {
+export async function createNamedPerson(name: string): Promise<{ success: boolean; data?: number; error?: string; limit?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
-    return (window as any).pdr.trees.createNamedPerson(name);
+    return signalTrialLimit(await (window as any).pdr.trees.createNamedPerson(name));
   }
   return { success: false, error: 'Not running in Electron' };
 }
 
-export async function namePlaceholder(personId: number, name: string): Promise<{ success: boolean; error?: string }> {
+export async function namePlaceholder(personId: number, name: string): Promise<{ success: boolean; error?: string; limit?: string }> {
   if (isElectron() && (window as any).pdr?.trees) {
-    return (window as any).pdr.trees.namePlaceholder({ personId, name });
+    return signalTrialLimit(await (window as any).pdr.trees.namePlaceholder({ personId, name }));
   }
   return { success: false, error: 'Not running in Electron' };
 }
@@ -2934,11 +2949,13 @@ export interface CaptureScreenshotResult {
   needsDisplayPick?: boolean;
   displays?: CaptureDisplayInfo[];
   error?: string;
+  /** Free-trial cap hit — which limit blocked it (e.g. 'screenshots'). */
+  limit?: string;
 }
 
 export async function captureScreenshot(opts?: { displayId?: string }): Promise<CaptureScreenshotResult> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
-  try { return await (window as any).pdr?.capture?.screenshot?.(opts); }
+  try { return signalTrialLimit(await (window as any).pdr?.capture?.screenshot?.(opts)); }
   catch (e) { return { success: false, error: (e as Error).message }; }
 }
 
@@ -3005,11 +3022,13 @@ export interface StartRecordingResult {
   needsDisplayPick?: boolean;
   displays?: CaptureDisplayInfo[];
   error?: string;
+  /** Free-trial cap hit — which limit blocked it (e.g. 'recordings'). */
+  limit?: string;
 }
 
 export async function captureStartRecording(opts?: { displayId?: string }): Promise<StartRecordingResult> {
   if (!isElectron()) return { success: false, error: 'Not running in Electron' };
-  try { return await (window as any).pdr?.capture?.startRecording?.(opts); }
+  try { return signalTrialLimit(await (window as any).pdr?.capture?.startRecording?.(opts)); }
   catch (e) { return { success: false, error: (e as Error).message }; }
 }
 

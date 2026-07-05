@@ -182,6 +182,15 @@ export function LicenseModal({ onClose }: LicenseModalProps) {
                   Cancel subscription
                 </button>
               )}
+              {/* Your plan is uncapped, so the trial-usage meter never shows for you — this lets
+                  you see exactly what a free-trial user sees (sample numbers). */}
+              <button
+                onClick={() => { onClose(); window.dispatchEvent(new CustomEvent('pdr:preview-trial-limits')); }}
+                className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                data-testid="button-preview-trial-limits"
+              >
+                Preview the free-trial limits screen
+              </button>
             </div>
           </div>
         ) : (

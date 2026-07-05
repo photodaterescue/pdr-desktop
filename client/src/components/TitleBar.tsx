@@ -4,6 +4,7 @@ import { Sun, Moon, Brain, Pause, Play, X as XIcon, ChevronLeft, ChevronRight, A
 import { toast } from 'sonner';
 import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
+import { TrialLimitsButton } from '@/components/TrialLimits';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
 import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, captureCancelRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
@@ -392,6 +393,12 @@ export function TitleBar() {
 
       {/* When collapsed: the clickable title sits left-aligned right after the white section */}
       {isSidebarCollapsed && renderTitle(true)}
+
+      {/* Free-trial usage meter — sits right of the app name. Renders only on the free trial
+          (or when a paid licence previews it via pdr:preview-trial-limits). */}
+      <div className="ml-2 shrink-0" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+        <TrialLimitsButton />
+      </div>
 
       {/* Back-to-album affordance (v2.0.8 step 6, Terry 2026-05-19).
           When the user reached S&D or Memories via an empty-album
