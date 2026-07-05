@@ -81,36 +81,50 @@ function useTrialUsage() {
   return { isTrial, usage, refresh };
 }
 
+// ─── Limit acknowledgement ───────────────────────────────────────────────────
+// Caps are LIFETIME (a reached limit never un-reaches), so an alert keyed purely on "anyReached"
+// would nag forever. Instead we remember which reached limits the user has SEEN (opened the usage
+// modal since they hit) in localStorage; the button alerts only for reached-but-unacknowledged
+// limits, then falls back to its neutral fuchsia (free-trial) look. A brand-new limit re-alerts.
+const ACK_KEY = 'pdr-trial-ack-reached';
+function getAckReached(): string[] { try { return JSON.parse(localStorage.getItem(ACK_KEY) || '[]'); } catch { return []; } }
+function setAckReached(keys: string[]): void { try { localStorage.setItem(ACK_KEY, JSON.stringify(keys)); } catch { /* ignore */ } }
+
 // ─── Title-bar button ────────────────────────────────────────────────────────
 export function TrialLimitsButton() {
   const { isTrial, usage } = useTrialUsage();
   const [preview, setPreview] = useState(false);
+  const [ack, setAck] = useState<string[]>(() => getAckReached());
   useEffect(() => {
-    const on = () => setPreview(true);
-    window.addEventListener('pdr:preview-trial-limits', on);
-    return () => window.removeEventListener('pdr:preview-trial-limits', on);
+    const onPreview = () => setPreview(true);
+    const onAck = () => setAck(getAckReached());
+    window.addEventListener('pdr:preview-trial-limits', onPreview);
+    window.addEventListener('pdr:trial-ack-changed', onAck);
+    return () => {
+      window.removeEventListener('pdr:preview-trial-limits', onPreview);
+      window.removeEventListener('pdr:trial-ack-changed', onAck);
+    };
   }, []);
   if (!isTrial && !preview) return null;
-  // Alert (amber) only when a real limit is hit. Preview shows the everyday indigo resting state.
-  const alert = !!usage?.anyReached;
-  // Match the sibling title-bar pills (Licensed / grace badges): a SOLID light pill with saturated
-  // text + a subtle border. Translucent --primary tints read as bleached lavender-on-lavender here.
+  // Neutral = fuchsia (matches the 3.0 release chip → instantly reads as "free trial"). Alert = amber,
+  // shown while a reached limit is still unacknowledged. Preview always shows the neutral state.
+  const alerting = !preview && !!usage?.features?.some((f) => f.reached && !ack.includes(f.key));
   return (
-    <IconTooltip label={alert ? 'Trial Limits — you’ve hit a limit' : 'Trial Limits — see your free-trial usage'} side="bottom">
+    <IconTooltip label={alerting ? 'Trial Limits — you’ve hit a limit' : 'Trial Limits — you’re on the free trial'} side="bottom">
       <button
         type="button"
         onClick={() => window.dispatchEvent(new CustomEvent('pdr:openTrialUsage'))}
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-200 hover:scale-[1.02] ${
-          alert
-            ? 'bg-amber-50 text-amber-700 border-amber-300/70 hover:bg-amber-100 hover:text-amber-800'
-            : 'bg-indigo-50 text-indigo-700 border-indigo-200/70 hover:bg-indigo-100 hover:text-indigo-800'
+        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border transition-all duration-200 hover:scale-[1.02] ${
+          alerting
+            ? 'bg-amber-100 text-amber-800 border-amber-400/70 hover:bg-amber-200'
+            : 'bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-300 border-fuchsia-400/40 hover:bg-fuchsia-500/25 hover:text-fuchsia-800'
         }`}
         data-testid="trial-limits-button"
       >
         <Gauge className="w-3 h-3" />
         Trial Limits
-        {alert && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
+        {alerting && <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse" />}
       </button>
     </IconTooltip>
   );
@@ -191,6 +205,21 @@ export function TrialLimitsHost() {
       } }));
     }, 1400);
   }, [license.plan, storedLicenseKey]);
+
+  // Opening the REAL usage modal acknowledges whatever limits are currently reached, so the
+  // title-bar button drops its amber alert back to neutral fuchsia (and won't nag until a NEW
+  // limit hits). Preview never acknowledges (it isn't the user's real state).
+  useEffect(() => {
+    if (!usageOpen || preview || !usage) return;
+    const reached = usage.features.filter((f) => f.reached).map((f) => f.key);
+    if (!reached.length) return;
+    const cur = getAckReached();
+    const merged = Array.from(new Set([...cur, ...reached]));
+    if (merged.length !== cur.length) {
+      setAckReached(merged);
+      window.dispatchEvent(new CustomEvent('pdr:trial-ack-changed'));
+    }
+  }, [usageOpen, preview, usage]);
 
   // Always render SOMETHING the instant the modal opens: real usage if fetched, else the static
   // fallback. Preview overlays illustrative numbers on whichever base we have.
