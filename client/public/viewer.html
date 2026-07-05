@@ -14904,6 +14904,28 @@
       var cw = (collageCanvasEl && collageCanvasEl.clientWidth) || 1000;
       return Math.max(24, Math.round(base * cw / 1000));
     }
+    // v3.0 (Terry) — RADIAL grain now RELATES TO THE CIRCLE, not the canvas: the speck size scales
+    // with the circle's diameter (so a small circle isn't chunky + a big one isn't over-fine — the
+    // texture reads the same relative to the circle) AND the tiling origin sits at the circle's
+    // centre (so the grain travels WITH the circle when you re-plot it). Linear has no circle → keep
+    // the canvas-relative size, tiled from the origin. All fractions of the live canvas width → the
+    // off-screen export bakes proportionally (same reason r542 kept bgFxGrainPx canvas-relative).
+    function bgFxGrainStyle(el) {
+      var gs = Math.max(1, Math.min(200, (el && el.grainSize == null ? 50 : (el ? el.grainSize : 50))));
+      if (el && el.shape === 'linear') {
+        var s = bgFxGrainPx(gs);
+        return { size: s + 'px ' + s + 'px', position: '0px 0px' };
+      }
+      var geom = bgFxGeom(el || {});
+      var cw = (collageCanvasEl && collageCanvasEl.clientWidth) || 1000;
+      var ch = (collageCanvasEl && collageCanvasEl.clientHeight) || 1000;
+      var diaPx = Math.max(geom.rrX, geom.rrY) / 100 * cw * 2;   // circle diameter in px (width ref)
+      var frac = 0.02 + (gs / 200) * 0.28;                        // ~2% (fine) .. ~30% (chunky) of the circle
+      var sz = Math.max(6, Math.round(diaPx * frac));
+      var bgX = Math.round(geom.px / 100 * cw);                   // tiling origin = the circle's centre
+      var bgY = Math.round(geom.py / 100 * ch);
+      return { size: sz + 'px ' + sz + 'px', position: bgX + 'px ' + bgY + 'px' };
+    }
     // A hidden <svg> holding the per-element pixelate filter defs (so filter:url(#id) works live AND
     // in the off-screen WYSIWYG bake, which re-renders this same DOM).
     function ensureBgFxSvg() {
@@ -15054,8 +15076,9 @@
           var gn = grains[i];
           if (!gn) { gn = document.createElement('div'); gn.className = 'bgph-grain'; gn.setAttribute('data-k', kind); gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;background-repeat:repeat;'; clip.appendChild(gn); }
           gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
-          var sz = bgFxGrainPx(el ? el.grainSize : 50);
-          gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+          var gst = bgFxGrainStyle(el || {});
+          gn.style.backgroundSize = gst.size;
+          gn.style.backgroundPosition = gst.position;
           gn.style.opacity = String(Math.max(0, Math.min(1, i === 0 ? grain / 100 : (grain - 100) / 50)));
           gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
           gn.style.webkitMaskSize = '100% 100%'; gn.style.maskSize = '100% 100%';
@@ -15102,13 +15125,14 @@
         // saturates at 1).
         var gv = Math.max(0, Math.min(150, (el.grain == null ? 0 : el.grain)));
         if (gv > 0) {
-          var sz = bgFxGrainPx(el.grainSize);
+          var gst = bgFxGrainStyle(el);
           var mask = bgFxImage(el, true);
           var mkGrain = function (op) {
             var gn = document.createElement('div');
             gn.style.cssText = 'position:absolute;inset:0;pointer-events:none;mix-blend-mode:overlay;';
             gn.style.backgroundImage = 'url("' + collageGrainDataUri() + '")';
-            gn.style.backgroundSize = sz + 'px ' + sz + 'px';
+            gn.style.backgroundSize = gst.size;
+            gn.style.backgroundPosition = gst.position;
             gn.style.backgroundRepeat = 'repeat';
             gn.style.opacity = String(Math.max(0, Math.min(1, op)));
             gn.style.webkitMaskImage = mask; gn.style.maskImage = mask;
