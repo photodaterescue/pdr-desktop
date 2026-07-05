@@ -8722,7 +8722,33 @@
       if (bl > 0) parts.push('blur(' + (bl / 100 * 0.0225 * shortPx).toFixed(2) + 'px)');   // v2.1 round 329 (Terry) — range halved (was 0.045)
       var px = Math.max(0, Math.min(100, e.pixelate || 0));
       if (px > 0) parts.push('url(#' + ensureCollagePixFilter(px / 100 * 0.044 * shortPx) + ')');   // v2.1 round 330 (Terry) — a further 20% less than the r329 halving (0.055 -> 0.044)
+      // v3.0 (Terry 2026-07-05) — for a BG-REMOVED (cut-out) tile, the Glow & Shadow edge effects must
+      // hug the SILHOUETTE, not the rectangular box. box-shadow (used for normal tiles in applyTileEdgeFx)
+      // can't follow alpha; drop-shadow can. Emit them HERE, on the clip (which holds only the image, so
+      // handles never get shadowed, and it composes with blur/pixelate). Matches the export bake. Only a
+      // few layers, only on cut-outs → the round-338 8-layer-outline lag doesn't apply.
+      var cutoutGlow = it.bgRemovedPath ? edgeDropShadows(e, shortPx) : '';
+      if (cutoutGlow) parts.push(cutoutGlow);
       it.clipEl.style.filter = parts.length ? parts.join(' ') : '';
+      // Let the silhouette glow spill beyond the tile box (like the export). Reverts to the CSS default
+      // (hidden) for normal tiles + cut-outs with no edge fx, so a rectangular crop/frame still clips.
+      it.clipEl.style.overflow = cutoutGlow ? 'visible' : '';
+    }
+    // v3.0 (Terry) — the cut-out edge effects as ALPHA-respecting drop-shadows (mirrors applyTileEdgeFx's
+    // box-shadow sizing). Kept tiny: glow 1, neon 2, the rest 1 layer each.
+    function edgeDropShadows(e, s) {
+      var f = [];
+      var glow = Math.max(0, Math.min(100, e.glow || 0));
+      if (glow > 0) { var gb = glow / 100 * 0.14 * s; f.push('drop-shadow(0 0 ' + gb.toFixed(1) + 'px ' + edgeRgba(e.glowColor, '#ffffff', 0.9) + ')'); }
+      var neon = Math.max(0, Math.min(100, e.neon || 0));
+      if (neon > 0) { var nb = neon / 100 * 0.10 * s, nc = e.neonColor || '#ff2bd6'; f.push('drop-shadow(0 0 ' + nb.toFixed(1) + 'px ' + nc + ')', 'drop-shadow(0 0 ' + (nb * 2).toFixed(1) + 'px ' + nc + ')'); }
+      var lift = Math.max(0, Math.min(100, e.lift || 0));
+      if (lift > 0) f.push('drop-shadow(0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px ' + edgeRgba(e.liftColor, '#000000', 0.5) + ')');
+      var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
+      if (ds > 0) { var d = ds / 100 * 0.07 * s; f.push('drop-shadow(' + d.toFixed(1) + 'px ' + d.toFixed(1) + 'px ' + d.toFixed(1) + 'px ' + edgeRgba(e.dropShadowColor, '#000000', 0.55) + ')'); }
+      var ol = Math.max(0, Math.min(100, e.outline || 0));
+      if (ol > 0) { var ob = Math.max(1, ol / 100 * 0.05 * s); f.push('drop-shadow(0 0 ' + ob.toFixed(1) + 'px ' + (e.outlineColor || '#ffffff') + ')'); }   // soft ring approximates the crisp outline on a silhouette
+      return f.join(' ');
     }
     // v2.1 round 337 (Terry) — Glow & shadow EDGE effects: stacked drop-shadows on the tile BOX
     // (it.el, which doesn't clip → they show beyond it + follow the photo's masked shape). Sizes
@@ -8736,6 +8762,10 @@
     }
     function applyTileEdgeFx(it, iwPx, ihPx) {
       if (!it || !it.el) return;
+      // v3.0 (Terry 2026-07-05) — a BG-removed (cut-out) tile draws its edge effects as
+      // silhouette-following drop-shadows in applyTileFx (on the clip). Skip the rectangular
+      // box-shadow here so the glow doesn't ALSO draw around the tile box.
+      if (it.bgRemovedPath) { it.el.style.boxShadow = ''; it.el.style.filter = ''; it.el.style.borderRadius = ''; return; }
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
       // v2.1 round 338 (Terry) — switched from filter:drop-shadow to BOX-SHADOW. The round-337
