@@ -11916,6 +11916,9 @@ ipcMain.handle('search:openViewer', async (_event, filePaths: string[], fileName
         contextIsolation: true,
         nodeIntegration: false,
         preload: path.join(__dirname, 'preload.js'),
+        // v3.0 (Terry 2026-07-05) — same restore-from-minimize fix as the main window (r574): keep
+        // the Collages/Viewer window warm so grabbing its title bar after a minimize is instant.
+        backgroundThrottling: false,
       },
     });
     hardenWindowAgainstNavigation(win);
@@ -12145,6 +12148,8 @@ function createPeopleWindow(opts: { show: boolean }): BrowserWindow {
       contextIsolation: true,
       nodeIntegration: false,
       zoomFactor: 1.0,
+      // v3.0 (Terry 2026-07-05) — keep the People Manager window warm too (restore-from-minimize fix, r574).
+      backgroundThrottling: false,
     },
   });
   hardenWindowAgainstNavigation(win);
@@ -12320,6 +12325,8 @@ ipcMain.handle('dateEditor:open', async (_event, seedQuery?: any) => {
         contextIsolation: true,
         nodeIntegration: false,
         zoomFactor: 1.0,
+        // v3.0 (Terry 2026-07-05) — keep the Date Editor window warm too (restore-from-minimize fix, r574).
+        backgroundThrottling: false,
       },
     });
     hardenWindowAgainstNavigation(dateEditorWindow);
