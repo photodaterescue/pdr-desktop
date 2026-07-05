@@ -13398,6 +13398,31 @@
     }
     function cwsProjectAlbum(p) { try { return parseCollageName((p && p.name) || '').category || ''; } catch (_) { return ''; } }
     function cwsProjectDate(p) { try { var d = new Date(p && p.savedAt); return isNaN(d.getTime()) ? null : d; } catch (_) { return null; } }
+    // v3.0 (Terry 2026-07-05) — lazy thumbnails for the Collages gallery. listProjects now returns
+    // metadata only (fast, non-blocking); each card's thumbnail is fetched on demand as it scrolls
+    // into view, so opening Collages no longer freezes the window while every thumbnail decodes. One
+    // shared observer; each thumb is unobserved once loaded. Eager fallback if no IntersectionObserver.
+    let cwsThumbObserver = null;
+    function cwsLoadThumbNow(el, id) {
+      try {
+        Promise.resolve(window.pdr.collage.getProjectThumbnail(String(id))).then((url) => {
+          if (url && el) { el.style.backgroundImage = 'url("' + url + '")'; el.innerHTML = ''; }
+        }).catch(() => {});
+      } catch (_) {}
+    }
+    function cwsObserveThumb(el, id) {
+      if (typeof IntersectionObserver === 'undefined') { cwsLoadThumbNow(el, id); return; }
+      el.dataset.thumbId = String(id);
+      if (!cwsThumbObserver) {
+        cwsThumbObserver = new IntersectionObserver((entries) => {
+          entries.forEach((en) => {
+            if (!en.isIntersecting) return;
+            const t = en.target; cwsThumbObserver.unobserve(t); cwsLoadThumbNow(t, t.dataset.thumbId);
+          });
+        }, { rootMargin: '300px' });
+      }
+      cwsThumbObserver.observe(el);
+    }
     function cwsMakeCard(p) {
       const card = document.createElement('div');
       card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
@@ -13405,8 +13430,8 @@
       if (p.id === cwsSelectedProjectId) card.classList.add('cws-selected');
       const thumb = document.createElement('div');
       thumb.className = 'cws-card-thumb';
-      if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
-      else thumb.innerHTML = CWS_THUMB_GLYPH;
+      if (p.thumbnailDataUrl) { thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")'; }
+      else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0 (Terry) — lazy-load the thumbnail when this card scrolls into view (was bulk-loaded → froze the window)
       const meta = document.createElement('div'); meta.className = 'cws-card-meta';
       const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
       const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);

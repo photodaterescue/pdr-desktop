@@ -609,6 +609,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
     listProjects: () =>
       ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null; carouselWideFileId?: number | null; carousel?: boolean }>>,
+    // v3.0 (Terry 2026-07-05) — lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
+    getProjectThumbnail: (id: string) =>
+      ipcRenderer.invoke('collage:getProjectThumbnail', id) as Promise<string | null>,
     loadProject: (id: string) =>
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>

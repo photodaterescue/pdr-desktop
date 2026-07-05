@@ -196,13 +196,15 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
     const out: CollageProjectSummary[] = [];
     for (const f of recs) {
       try {
-        const rec = JSON.parse(fs.readFileSync(toLongPath(path.join(dir, f)), 'utf8')) as CollageProjectData;
+        // v3.0 (Terry 2026-07-05) — PERF: read the record ASYNC and DON'T bulk-load the thumbnail
+        // here. Previously each project's thumbnail PNG was readFileSync'd + base64'd inline, so the
+        // whole gallery's thumbnails were decoded on the UI thread before returning — which froze the
+        // Collages window (couldn't grab the title bar until every thumbnail loaded). Thumbnails now
+        // lazy-load per card via collage:getProjectThumbnail as each scrolls into view.
+        const raw = await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8');
+        const rec = JSON.parse(raw) as CollageProjectData;
         if (!rec || !rec.id) continue;
-        let thumb: string | null = null;
-        for (const tp of [thumbPath(dir, rec.id), path.join(dir, `${rec.id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
-          try { if (fs.existsSync(toLongPath(tp))) { thumb = `data:image/png;base64,${fs.readFileSync(toLongPath(tp)).toString('base64')}`; break; } } catch { /* no thumb */ }
-        }
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: thumb, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));
@@ -211,6 +213,23 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
     log.warn(`[collage-projects] list failed: ${(err as Error).message}`);
     return [];
   }
+});
+
+// v3.0 (Terry 2026-07-05) — lazy per-card thumbnail for the gallery. listProjects no longer bulk-loads
+// thumbnails (that blocked the UI thread); the Collages welcome screen calls this once per card as it
+// scrolls into view. Async read so it never stalls the main process → the window stays draggable.
+ipcMain.handle('collage:getProjectThumbnail', async (_e, id: string): Promise<string | null> => {
+  try {
+    if (!id) return null;
+    const dir = projectsDir();
+    for (const tp of [thumbPath(dir, id), path.join(dir, `${id}.png`)]) {   // new <id>_CP.png, else legacy <id>.png
+      try {
+        const buf = await fs.promises.readFile(toLongPath(tp));
+        return `data:image/png;base64,${buf.toString('base64')}`;
+      } catch { /* try next path / no thumb */ }
+    }
+    return null;
+  } catch { return null; }
 });
 
 // Load the full editable record (files + names + snapshot) to reopen.
