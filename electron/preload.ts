@@ -612,6 +612,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.0 (Terry 2026-07-05) — lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
     getProjectThumbnail: (id: string) =>
       ipcRenderer.invoke('collage:getProjectThumbnail', id) as Promise<string | null>,
+    // v3.0 (Terry 2026-07-05) — bake a cut-out tile's crisp glow (silhouette outline) for the editor to lay behind the live photo.
+    bakeCutoutGlow: (args: { path: string; enh: unknown; w: number; h: number; op?: number }) =>
+      ipcRenderer.invoke('collage:bakeCutoutGlow', args) as Promise<{ ok: boolean; dataUrl?: string; w?: number; h?: number; pad?: number; error?: string }>,
     loadProject: (id: string) =>
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>

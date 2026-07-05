@@ -1594,7 +1594,7 @@ function edgeFxExtent(enh: CollageEnhance | undefined, s: number): number {
 // scale by the tile's short side `s` (same fractions as the preview) → matches at any export size.
 // Returns the combined buffer + dims (tile centred), or null when no effect is active.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-async function buildTileEdgeFx(sharp: any, tile: Buffer, w: number, h: number, enh: CollageEnhance, op: number = 1): Promise<{ buf: Buffer; w: number; h: number } | null> {
+async function buildTileEdgeFx(sharp: any, tile: Buffer, w: number, h: number, enh: CollageEnhance, op: number = 1, glowOnly: boolean = false): Promise<{ buf: Buffer; w: number; h: number } | null> {
   const s = Math.min(w, h);
   const P = edgeFxExtent(enh, s);
   if (P <= 0) return null;
@@ -1639,6 +1639,10 @@ async function buildTileEdgeFx(sharp: any, tile: Buffer, w: number, h: number, e
   const tileCentre = await sharp({ create: { width: W2, height: H2, channels: 4, background: { r: 0, g: 0, b: 0, alpha: 0 } } })
     .composite([{ input: tile, left: P, top: P }]).png().toBuffer();
   shadows = await sharp(shadows).composite([{ input: tileCentre, blend: 'dest-out' }]).png().toBuffer();
+  // v3.0 (Terry 2026-07-05) — glowOnly: return JUST the crisp glow (tile shape cut out, transparent
+  // centre) so the EDITOR can lay it behind the live photo. The live <img> then covers the centre,
+  // leaving the crisp silhouette outline showing — pixel-matching this same engine's thumbnail bake.
+  if (glowOnly) return { buf: shadows, w: W2, h: H2 };
   // The photo on top — "Fade" (opacity) fades the PHOTO only (in the editor it's on the <img>, so the
   // glow / shadow stay at full strength), so apply it to the tile here, not to the whole buffer.
   let topTile = tile;
@@ -2212,6 +2216,24 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
     log.warn(`[collage] renderThumb failed (non-fatal): ${(err as Error).message}`);
     return null;
   }
+});
+// v3.0 (Terry 2026-07-05) — bake JUST the crisp glow for a single cut-out tile (silhouette outline,
+// transparent centre) through the SAME sharp engine as the thumbnail. The editor lays this behind the
+// live photo so the live preview + the saved (WYSIWYG) photo match the thumbnail's crisp outline
+// instead of a CSS box-shadow rectangle / smudge. Returns a data URL + pad (extra px each side for the
+// glow spill) so the client can position it. Returns ok:false when there's no edge fx (nothing to show).
+ipcMain.handle('collage:bakeCutoutGlow', async (_e, args: { path: string; enh: CollageEnhance; w: number; h: number; op?: number }) => {
+  try {
+    const a = args || ({} as { path?: string; enh?: CollageEnhance; w?: number; h?: number; op?: number });
+    if (!a.path || !a.w || !a.h) return { ok: false };
+    const w = Math.max(4, Math.round(a.w)), h = Math.max(4, Math.round(a.h));
+    const sharp = (await import('sharp')).default;
+    const src = await fs.promises.readFile(toLongPath(a.path));
+    const tile = await sharp(src).resize(w, h, { fit: 'fill' }).ensureAlpha().png().toBuffer();
+    const r = await buildTileEdgeFx(sharp, tile, w, h, a.enh || {}, typeof a.op === 'number' ? a.op : 1, true);
+    if (!r) return { ok: false };
+    return { ok: true, dataUrl: 'data:image/png;base64,' + r.buf.toString('base64'), w: r.w, h: r.h, pad: Math.round((r.w - w) / 2) };
+  } catch (e) { return { ok: false, error: (e as Error).message }; }
 });
 ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string; replaceFileId?: number }) => {
   try {

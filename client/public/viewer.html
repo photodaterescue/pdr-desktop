@@ -8741,6 +8741,10 @@
     }
     function applyTileEdgeFx(it, iwPx, ihPx) {
       if (!it || !it.el) return;
+      // v3.0 (Terry 2026-07-05) — a BG-removed (cut-out) tile's Glow/Neon can't follow the silhouette
+      // via box-shadow (rectangular). It's drawn instead by a SHARP-baked glow layer behind the photo
+      // (updateTileCutoutGlow). Clear any rectangular box-shadow here so it doesn't draw around the box.
+      if (it.bgRemovedPath) { it.el.style.boxShadow = ''; it.el.style.filter = ''; it.el.style.borderRadius = ''; return; }
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
       // v2.1 round 338 (Terry) — switched from filter:drop-shadow to BOX-SHADOW. The round-337
@@ -8765,6 +8769,69 @@
       if (sh.length && Array.isArray(c) && c.some(function (v) { return (v || 0) > 0.001; })) {
         it.el.style.borderRadius = (c[0] * half).toFixed(1) + 'px ' + (c[1] * half).toFixed(1) + 'px ' + (c[2] * half).toFixed(1) + 'px ' + (c[3] * half).toFixed(1) + 'px';
       } else { it.el.style.borderRadius = ''; }
+    }
+    // ─── Cut-out glow layer (v3.0, Terry 2026-07-05) ────────────────────────────────────────────────
+    // A BG-removed tile's Glow/Neon must hug the SILHOUETTE (a crisp outline), which CSS can't do. We
+    // bake the glow through the SAME sharp engine as the thumbnail (collage:bakeCutoutGlow → a PNG of
+    // just the outline, transparent centre) and lay it behind the live photo (it.glowEl). The live
+    // <img> covers the centre, so only the crisp outline shows — editor == saved (WYSIWYG) == thumbnail.
+    // Cached per (path, edge-fx, size-bucket) + debounced so drag/resize doesn't spam the baker.
+    var collageGlowCache = {}, collageGlowOrder = [];
+    var collageIsExportRender = false;   // set true while the offscreen WYSIWYG export renders (bakes sync, no debounce)
+    function collageTileHasEdgeFx(e) { e = e || {}; return (e.glow||0)>0 || (e.neon||0)>0 || (e.lift||0)>0 || (e.dropShadow||0)>0 || (e.outline||0)>0; }
+    function collageGlowEdgeKey(e) { e = e || {}; return [e.glow||0,e.glowColor||'',e.neon||0,e.neonColor||'',e.lift||0,e.liftColor||'',e.dropShadow||0,e.dropShadowColor||'',e.outline||0,e.outlineColor||''].join(','); }
+    function collageGlowPut(key, val) { collageGlowCache[key] = val; collageGlowOrder.push(key); if (collageGlowOrder.length > 80) { delete collageGlowCache[collageGlowOrder.shift()]; } }
+    function positionTileGlow(it, iwPx, ihPx, c) {
+      var g = it.glowEl; if (!g || !c) return;
+      var scale = c.innerW > 0 ? (iwPx / c.innerW) : 1;
+      var w = c.fullW * scale, h = c.fullH * scale;
+      g.style.width = w.toFixed(1) + 'px'; g.style.height = h.toFixed(1) + 'px';
+      g.style.left = (iwPx / 2 - w / 2).toFixed(1) + 'px'; g.style.top = (ihPx / 2 - h / 2).toFixed(1) + 'px';
+      g.style.display = '';
+    }
+    function updateTileCutoutGlow(it, iwPx, ihPx) {
+      if (!it || !it.glowEl) return;
+      var e = it.enh || {};
+      if (!it.bgRemovedPath || !collageTileHasEdgeFx(e) || !it.on || it.removed || it.placeholder) { it.glowEl.style.display = 'none'; return; }
+      var wb = Math.max(16, Math.round(iwPx / 24) * 24), hb = Math.max(16, Math.round(ihPx / 24) * 24);
+      var key = it.bgRemovedPath + '|' + collageGlowEdgeKey(e) + '|' + wb + 'x' + hb;
+      var cached = collageGlowCache[key];
+      if (cached) { if (it.glowEl.getAttribute('data-glowkey') !== key) { it.glowEl.src = cached.dataUrl; it.glowEl.setAttribute('data-glowkey', key); } it._lastGlowCache = cached; positionTileGlow(it, iwPx, ihPx, cached); return; }
+      if (it._lastGlowCache) positionTileGlow(it, iwPx, ihPx, it._lastGlowCache);   // keep the old glow visible while re-baking
+      var doBake = function () {
+        return Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb })).then(function (r) {
+          if (r && r.ok && r.dataUrl) { var val = { dataUrl: r.dataUrl, fullW: r.w, fullH: r.h, innerW: wb, innerH: hb }; collageGlowPut(key, val); it._lastGlowCache = val; if (it.glowEl) { it.glowEl.src = r.dataUrl; it.glowEl.setAttribute('data-glowkey', key); var cw = collageCanvasEl.clientWidth, iw = it.wFrac * cw; positionTileGlow(it, iw, iw / effectiveAspect(it), val); } }
+        }).catch(function () {});
+      };
+      if (collageIsExportRender) return doBake();   // export: caller awaits (see bakeCutoutGlowsForExport)
+      if (it._glowBakeKey === key) return;   // already scheduled/in-flight
+      it._glowBakeKey = key;
+      if (it._glowBakeTimer) clearTimeout(it._glowBakeTimer);
+      it._glowBakeTimer = setTimeout(function () { it._glowBakeTimer = null; if (it._glowBakeKey === key) doBake(); }, 150);
+    }
+    // Export path: bake every cut-out tile's glow at FULL px synchronously (awaited) so capturePage sees it.
+    async function bakeCutoutGlowsForExport() {
+      collageIsExportRender = true;
+      var dbg = { n: 0, ok: 0, err: null, hasFn: !!(window.pdr && window.pdr.collage && window.pdr.collage.bakeCutoutGlow) };
+      try {
+        var cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight, jobs = [];
+        (collageItems || []).forEach(function (it) {
+          if (!it || !it.glowEl) return;
+          var e = it.enh || {};
+          if (!it.bgRemovedPath || !collageTileHasEdgeFx(e) || !it.on || it.removed || it.placeholder) { it.glowEl.style.display = 'none'; return; }
+          dbg.n++;
+          var iwPx = it.wFrac * cw, ihPx = iwPx / effectiveAspect(it), wb = Math.max(16, Math.round(iwPx)), hb = Math.max(16, Math.round(ihPx));
+          jobs.push(Promise.resolve(window.pdr.collage.bakeCutoutGlow({ path: it.bgRemovedPath, enh: e, w: wb, h: hb }).then(function (r) {
+            if (!(r && r.ok && r.dataUrl && it.glowEl)) { if (it.glowEl) it.glowEl.style.display = 'none'; if (r && r.error) dbg.err = r.error; return; }
+            dbg.ok++;
+            var val = { dataUrl: r.dataUrl, fullW: r.w, fullH: r.h, innerW: wb, innerH: hb };
+            positionTileGlow(it, iwPx, ihPx, val);
+            return new Promise(function (res) { it.glowEl.onload = function () { res(); }; it.glowEl.src = r.dataUrl; setTimeout(res, 2500); });
+          })).catch(function (err) { dbg.err = String((err && err.message) || err); }));
+        });
+        await Promise.all(jobs);
+      } catch (err) { dbg.err = String((err && err.message) || err); } finally { collageIsExportRender = false; }
+      return dbg;
     }
     function renderCollageItem(it) {
       if (!it || !it.el) return;
@@ -8846,6 +8913,7 @@
         applyShapeMask(it.clipEl, it.enh && it.enh.corners, it.enh && it.enh.blend, iwPx, ihPx);
         applyTileFx(it, iwPx, ihPx);   // v2.1 round 327 (Terry) — blur / pixelate
         applyTileEdgeFx(it, iwPx, ihPx);   // v2.1 round 337 (Terry) — glow / shadow / lift / neon / outline
+        updateTileCutoutGlow(it, iwPx, ihPx);   // v3.0 (Terry) — sharp-baked silhouette glow for a cut-out
         try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 335 (Terry) — per-photo Vignette + Grain on coverFill tiles
         refreshTileToolbar(it);
         // v2.1 round 266 (Terry) — Phase 4: keep the floating overlay glued to THIS tile
@@ -8900,6 +8968,7 @@
       }
       applyTileFx(it, iwPx, ihPx);   // v2.1 round 327 (Terry) — blur / pixelate (clip filter)
       applyTileEdgeFx(it, iwPx, ihPx);   // v2.1 round 337 (Terry) — glow / shadow / lift / neon / outline
+      updateTileCutoutGlow(it, iwPx, ihPx);   // v3.0 (Terry) — sharp-baked silhouette glow for a cut-out
       try { applyTileTreatments(it); } catch (_) {}   // v2.1 round 294 (Terry) — per-photo vignette + grain overlays
       // v2.1 round 204 (Terry) — keep the floating quick-action toolbar from
       // clipping under the titlebar when the tile is near the top (Terry SS2).
@@ -14117,6 +14186,12 @@
         clip.appendChild(ph);
         it.phEl = ph;
       }
+      // v3.0 (Terry 2026-07-05) — cut-out glow layer: a sharp-baked silhouette outline that sits BEHIND
+      // the photo (appended before clip → paints behind it). Hidden unless the tile is a cut-out with an
+      // edge effect; driven by updateTileCutoutGlow. pointer-events:none so it never intercepts drags.
+      var glowEl = document.createElement('img'); glowEl.className = 'collage-cutout-glow'; glowEl.alt = ''; glowEl.decoding = 'async';
+      glowEl.style.cssText = 'position:absolute;display:none;pointer-events:none;';
+      el.appendChild(glowEl);
       el.appendChild(clip);
       const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
       // v2.1 round 227 (Terry) — single clean CENTRED circular-arrow glyph (was the
@@ -14199,7 +14274,7 @@
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageItem(it); });
       tbRep.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); requestFillFrame(it); });   // v2.1 round 359 (Terry) — swap the photo
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
-      it.el = el; it.imgEl = img; it.clipEl = clip;
+      it.el = el; it.imgEl = img; it.clipEl = clip; it.glowEl = glowEl;
       collageCanvasEl.appendChild(el);
     }
 
@@ -17016,7 +17091,9 @@
     // full export px and returns the canvas rect for capturePage — so the saved image IS the editor
     // render (no sharp re-draw drift).
     function waitForCollageImages() {
-      const imgs = Array.prototype.slice.call(document.querySelectorAll('#collage-canvas img'));
+      // v3.0 (Terry 2026-07-05) — EXCLUDE the cut-out glow <img>s: they get their src set LATER (in
+      // bakeCutoutGlowsForExport); a src-less img never fires 'load', so waiting on it would hang the export.
+      const imgs = Array.prototype.slice.call(document.querySelectorAll('#collage-canvas img:not(.collage-cutout-glow)'));
       // v2.1 round 365 (Terry) — wait for LOAD *and* DECODE. The off-screen export grabs a paint frame
       // right after this resolves; for large camera JPEGs the pixels finish LOADING (naturalWidth>0) well
       // before they finish DECODING, so capturePage caught a half-painted image (top decoded, bottom dark)
@@ -17055,13 +17132,17 @@
       try { layoutCanvasSize(); } catch (_) {}
       try { applyCollageZoom(); } catch (_) {}
       try { await waitForCollageImages(); } catch (_) {}
+      // v3.0 (Terry 2026-07-05) — bake every cut-out tile's sharp glow at FULL export px + wait for the
+      // <img>s to load, so capturePage sees the crisp silhouette outline (matches the editor + thumbnail).
+      let _glowDbg = null;
+      try { _glowDbg = await bakeCutoutGlowsForExport(); } catch (e) { _glowDbg = { err: String((e && e.message) || e) }; }
       try { await document.fonts.ready; } catch (_) {}
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const cr = collageCanvasEl.getBoundingClientRect();
       const _imgs = document.querySelectorAll('#collage-canvas img');
       let _loaded = 0; _imgs.forEach((im) => { if (im.complete && im.naturalWidth > 0) _loaded++; });
       return { x: Math.round(cr.left), y: Math.round(cr.top), w: Math.round(cr.width), h: Math.round(cr.height),
-        dbg: { cw: collageCanvasEl.offsetWidth, ch: collageCanvasEl.offsetHeight, nImgs: _imgs.length, nLoaded: _loaded, items: (typeof collageItems !== 'undefined' ? collageItems.length : -1) } };
+        dbg: { cw: collageCanvasEl.offsetWidth, ch: collageCanvasEl.offsetHeight, nImgs: _imgs.length, nLoaded: _loaded, items: (typeof collageItems !== 'undefined' ? collageItems.length : -1), glow: _glowDbg } };
     };
     function layoutCanvasSize() {
       if (!collageStageEl) return;
