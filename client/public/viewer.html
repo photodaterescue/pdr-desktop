@@ -14070,6 +14070,10 @@
       clip.className = 'collage-clip';
       const img = document.createElement('img');
       img.alt = '';
+      // v3.0 (Terry 2026-07-05) — decode tile photos OFF the critical path so reopening a collage
+      // (especially a carousel = many full-res photos at once) doesn't block the window/paint while
+      // they decode. The window stays interactive; each tile paints when its own decode finishes.
+      img.decoding = 'async';
       let imgRetried = false;
       img.onerror = () => { if (!imgRetried) { imgRetried = true; img.src = getFileSrcFallback(it.path); } };
       img.onload = () => {
