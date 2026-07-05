@@ -2205,12 +2205,32 @@ ipcMain.handle('collage:captureExportTest', async (_e, snapshot: string, w: numb
     return { ok: false, error: (err as Error).message };
   }
 });
-ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
+ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout, pageCount?: number) => {
   try {
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) return null;
     const sharp = (await import('sharp')).default;
-    const buf = await bakeCollageLayout(layout);
-    const png = await sharp(buf).resize(360, 360, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+    let buf = await bakeCollageLayout(layout);
+    // v3.0 (Terry 2026-07-05) — a CAROUSEL bakes as a wide N-page strip; squished into the 4:3 gallery
+    // card it looked broken (sparse pages + background). Crop to the FIRST PAGE so the card shows a
+    // clean representative slide (like IG shows a carousel's first frame); the card gets a "pages" badge.
+    const N = Math.max(0, Math.round(pageCount || 0));
+    if (N > 1) {
+      const meta = await sharp(buf).metadata();
+      const W = meta.width || 0, H = meta.height || 0;
+      if (W > 0 && H > 0) {
+        const pw = Math.max(1, Math.min(W, Math.round(W / N)));
+        const page1 = await sharp(buf).extract({ left: 0, top: 0, width: pw, height: H }).png().toBuffer();
+        // v3.0 round 584 (Terry) — only ADOPT the page-1 crop if it actually has content. A carousel
+        // whose page 1 is still empty (photo sits on a later page) would otherwise thumbnail to a blank
+        // slide; in that case keep the FULL strip so the visible content still shows in the card.
+        try {
+          const st = await sharp(page1).stats();
+          const maxStd = Math.max(...st.channels.map((c) => c.stdev));
+          if (maxStd >= 12) buf = page1;
+        } catch { buf = page1; }
+      }
+    }
+    const png = await sharp(buf).resize(360, 540, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
     return 'data:image/png;base64,' + png.toString('base64');
   } catch (err) {
     log.warn(`[collage] renderThumb failed (non-fatal): ${(err as Error).message}`);

@@ -608,7 +608,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }, thumbnailDataUrl?: string) =>
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
     listProjects: () =>
-      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null; carouselWideFileId?: number | null; carousel?: boolean }>>,
+      ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null; carouselWideFileId?: number | null; carousel?: boolean; carouselPages?: number | null }>>,
     // v3.0 (Terry 2026-07-05) — lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
     getProjectThumbnail: (id: string) =>
       ipcRenderer.invoke('collage:getProjectThumbnail', id) as Promise<string | null>,
@@ -621,8 +621,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:deleteProject', id) as Promise<{ success: boolean; error?: string }>,
     // v2.1 round 333 (Terry) — bake a small thumbnail of a collage layout (no library save) for the
     // Welcome Screen recent/template cards.
-    renderThumb: (layout: unknown) =>
-      ipcRenderer.invoke('collage:renderThumb', layout) as Promise<string | null>,
+    renderThumb: (layout: unknown, pageCount?: number) =>
+      ipcRenderer.invoke('collage:renderThumb', layout, pageCount) as Promise<string | null>,
     // v2.1 round 346 (Terry) — WYSIWYG export TEST: capture the real collage DOM at full res (off-screen
     // window + capturePage) from a snapshotCollage() string; writes a temp PNG, returns its path.
     captureExportTest: (snapshot: string, w: number, h: number, transparent?: boolean) =>

@@ -48,6 +48,7 @@ export interface CollageProjectSummary {
   carouselAlbumId?: number | null;   // v3.0 round 545 (Terry) — surfaced so the Home screen can link a carousel to its album
   carouselWideFileId?: number | null;   // v3.0 round 546 (Terry) — the wide design's file id (Home View for carousels)
   carousel?: boolean;   // v3.0 round 548 (Terry) — carousel-vs-collage kind, for the free-trial creation caps (5 of each)
+  carouselPages?: number | null;   // v3.0 round 584 (Terry) — page count, for the gallery card's "N pages" badge
 }
 
 const PROJECT_EXT = '.pdrcollage';
@@ -204,7 +205,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         const raw = await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8');
         const rec = JSON.parse(raw) as CollageProjectData;
         if (!rec || !rec.id) continue;
-        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel });
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel, carouselPages: (typeof (rec as { carouselPages?: number }).carouselPages === 'number') ? (rec as { carouselPages?: number }).carouselPages : null });
       } catch { /* skip a corrupt record */ }
     }
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));

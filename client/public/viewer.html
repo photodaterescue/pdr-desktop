@@ -2528,10 +2528,22 @@
     }
     .cws-card:hover { transform: translateY(-2px); border-color: rgba(254,194,66,0.55); box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
     .cws-card-thumb {
+      position: relative;   /* v3.0 round 584 (Terry) — anchors the carousel "N pages" badge */
       aspect-ratio: 4 / 3; background: #14141c;
       display: flex; align-items: center; justify-content: center;
       background-size: cover; background-position: center; background-repeat: no-repeat;
     }
+    /* v3.0 round 584 (Terry) — carousel cards now show their FIRST page as the thumbnail (like
+       Instagram), so a small stacked-pages badge in the corner signals "there's more than one page". */
+    .cws-card-pages {
+      position: absolute; bottom: 8px; left: 8px;
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 7px 3px 6px; border-radius: 999px;
+      background: rgba(10,10,26,0.78); border: 1px solid rgba(255,255,255,0.16);
+      color: #e6e3f3; font-size: 10.5px; font-weight: 700; letter-spacing: .2px;
+      backdrop-filter: blur(3px); pointer-events: none;
+    }
+    .cws-card-pages svg { width: 12px; height: 12px; opacity: .92; }
     .cws-card-meta { padding: 10px 12px 12px; }
     .cws-card-name { font-size: 13px; font-weight: 600; color: #e6e3f3; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .cws-card-date { margin-top: 3px; font-size: 11px; color: #8b8b9a; }
@@ -13221,8 +13233,12 @@
             const layout = buildCollageLayout();
             if (layout && layout.canvas) {
               const lw = layout.canvas.w || 0, lh = layout.canvas.h || 0, mx = Math.max(lw, lh);
-              if (mx > 600) { const sc = 600 / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
-              thumb = await window.pdr.collage.renderThumb(layout);
+              // v3.0 round 584 (Terry) — carousels bake to their FIRST PAGE (1/N of the wide strip), so
+              // cap the wide canvas higher (1200 vs 600) — otherwise a 6-page strip caps to 600 wide and
+              // page 1 is only ~100px → a soft card. 1200 keeps page 1 crisp without a costly full bake.
+              const cap = carouselMode ? 1200 : 600;
+              if (mx > cap) { const sc = cap / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
+              thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);   // v3.0 (Terry) — carousels thumbnail as their FIRST PAGE
             }
           } catch (_) { /* thumb is best-effort */ }
           collageThumbBusy = false;
@@ -13481,7 +13497,14 @@
     function cwsLoadThumbNow(el, id) {
       try {
         Promise.resolve(window.pdr.collage.getProjectThumbnail(String(id))).then((url) => {
-          if (url && el) { el.style.backgroundImage = 'url("' + url + '")'; el.innerHTML = ''; }
+          if (url && el) {
+            el.style.backgroundImage = 'url("' + url + '")';
+            // v3.0 round 584 (Terry) — drop the placeholder glyph but KEEP overlay children (the
+            // carousel "N pages" badge lives inside the thumb) — a blanket innerHTML='' wiped it.
+            Array.prototype.slice.call(el.childNodes).forEach((n) => {
+              if (!(n.nodeType === 1 && n.classList && n.classList.contains('cws-card-pages'))) el.removeChild(n);
+            });
+          }
         }).catch(() => {});
       } catch (_) {}
     }
@@ -13507,6 +13530,14 @@
       thumb.className = 'cws-card-thumb';
       if (p.thumbnailDataUrl) { thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")'; }
       else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0 (Terry) — lazy-load the thumbnail when this card scrolls into view (was bulk-loaded → froze the window)
+      // v3.0 round 584 (Terry) — carousels now thumbnail to their FIRST page; a small stacked-pages
+      // badge signals there are more pages behind it (so the wide strip isn't crammed into a 4:3 tile).
+      if (p.carousel) {
+        const pagesN = (typeof p.carouselPages === 'number' && p.carouselPages > 0) ? p.carouselPages : 0;
+        const badge = document.createElement('div'); badge.className = 'cws-card-pages';
+        badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="13" rx="2"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/></svg>' + (pagesN ? ('<span>' + pagesN + ' pages</span>') : '<span>Carousel</span>');
+        thumb.appendChild(badge);
+      }
       const meta = document.createElement('div'); meta.className = 'cws-card-meta';
       const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
       const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
