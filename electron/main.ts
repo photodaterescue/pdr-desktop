@@ -20,6 +20,18 @@ import log from 'electron-log/main.js';
 // still allocate larger transient arrays.
 app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 
+// v3.0 (Terry 2026-07-05) — FIX: after PDR is minimised (or covered by other apps) for a while,
+// restoring it and grabbing the title bar to move the window frequently did nothing for the first
+// 1–2 tries, showing the Windows "busy" spinner for a few seconds. Root cause is Chromium's native
+// window-occlusion detection: when the window is occluded/minimised it marks the renderer occluded
+// and hard-throttles it; on restore the browser/UI thread has to wake + re-establish the GPU surface
+// (worse once Windows has trimmed the working set), stalling the message pump so the OS can't service
+// the title-bar drag. Word/Paint aren't Chromium-compositor apps, so they never pay this. Disabling
+// the occlusion heuristic (a very common, safe Electron-on-Windows remedy — it does NOT lower process
+// priority, so it won't make the apps Terry switches to feel slower) keeps the window "warm" and makes
+// restore instantly interactive. Paired with backgroundThrottling:false on the window (below).
+app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
+
 // Pin the app name BEFORE electron-log resolves its file path. In
 // production the packaged `productName` from package.json takes
 // effect automatically, but in development `npx electron` reports
@@ -1147,6 +1159,11 @@ function createWindow() {
       contextIsolation: true,
       nodeIntegration: false,
       zoomFactor: 1.0,
+      // v3.0 (Terry 2026-07-05) — keep the renderer's timers/rAF running while the window is hidden
+      // or minimised, so a restore never has to "thaw" a frozen renderer + re-raster the whole page
+      // (part of the busy-spinner-can't-drag-after-minimise fix; see disable occlusion switch above).
+      // PDR is static when idle, so the background cost is negligible.
+      backgroundThrottling: false,
     },
   });
   hardenWindowAgainstNavigation(mainWindow);
