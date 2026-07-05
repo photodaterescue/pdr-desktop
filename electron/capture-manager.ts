@@ -38,6 +38,8 @@ import { toLongPath } from './long-path.js';
 import { getLibraryStatus } from './library-sidecar.js';
 import { getSettings, setSetting } from './settings-store.js';
 import { indexCapturedFile } from './search-database.js';
+import { trialCapReached, bumpTrialUsage } from './trial-gate.js';
+import { FREE_COLLAGE_LIMIT, FREE_CAROUSEL_LIMIT, FREE_SCREENSHOT_LIMIT, FREE_RECORDING_LIMIT } from './usage-tracker.js';
 // v3.0 round 411 (Terry) — global mouse hook for click-ripple. N-API (ABI-stable
 // across Electron, no rebuild); the .node binary needs asarUnpack when packaging.
 import { uIOhook } from 'uiohook-napi';
@@ -2213,6 +2215,12 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout) => {
 });
 ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?: { snapshot?: string; w?: number; h?: number; album?: string; name?: string; caption?: string; replaceFileId?: number }) => {
   try {
+    // v3.0 (Terry) — Free-account cap of 5 saved collages (lifetime usage; a NEW save only —
+    // Updating an existing collage doesn't count again).
+    const isNewCollage = !(opts && typeof opts.replaceFileId === 'number');
+    if (isNewCollage && await trialCapReached('collages', FREE_COLLAGE_LIMIT)) {
+      return { success: false, error: `Your free account can save up to ${FREE_COLLAGE_LIMIT} collages. Upgrade for unlimited.`, limit: 'collages' as const };
+    }
     // v2.1 round 346 (Terry) — WYSIWYG export: when the renderer sends the editor snapshot, save the
     // REAL collage render (captureCollageExport → off-screen viewer.html at full px → capturePage), so
     // the file is EXACTLY what's on screen. Falls back to the sharp re-draw (bakeCollageLayout) when
@@ -2309,6 +2317,7 @@ ipcMain.handle('collage:saveLayout', async (_event, layout: CollageLayout, opts?
       }
     }
     log.info(`[collage] saved freeform composite ${filename} (${W}×${H})${fileId != null ? ` → id ${fileId}` : libRoot ? '' : ' → pending'}`);
+    if (isNewCollage) await bumpTrialUsage('collages');
     return { success: true, filePath: outPath, filename, fileId, albumId: savedAlbumId, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveLayout failed: ${(err as Error).message}`);
@@ -2338,6 +2347,11 @@ const CAROUSEL_SLICE_W = 1080;
 const CAROUSEL_SLICE_H = 1350;
 ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number; replaceAlbumId?: number }) => {
   try {
+    // v3.0 (Terry) — Free-account cap of 5 saved carousels (lifetime usage; a NEW save only).
+    const isNewCarousel = !(opts && typeof opts.replaceAlbumId === 'number');
+    if (isNewCarousel && await trialCapReached('carousels', FREE_CAROUSEL_LIMIT)) {
+      return { success: false, error: `Your free account can save up to ${FREE_CAROUSEL_LIMIT} carousels. Upgrade for unlimited.`, limit: 'carousels' as const };
+    }
     const n = Math.max(1, Math.round(Number(pageCount) || 0));
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) {
       return { success: false, error: 'Nothing to save — the carousel is empty.' };
@@ -2529,6 +2543,7 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
     // the Viewer (it sits at the front in Albums; the post-save Viewer should match).
     // v3.0 round 546 (Terry) — + its library file id, so the editor's "View" goto can open the
     // wide design directly (mirrors a single collage's exportedFileId).
+    if (isNewCarousel) await bumpTrialUsage('carousels');
     return { success: true, files, folderPath, count: files.length, albumId, wideFile: wideOutPath ? { filePath: wideOutPath, filename: path.basename(wideOutPath), fileId: wideFileId } : null, pending: !libRoot };
   } catch (err) {
     log.warn(`[collage] saveCarousel failed: ${(err as Error).message}`);
@@ -2970,6 +2985,12 @@ export interface StartRecordingResult {
 }
 
 export async function startRecording(opts: { displayId?: string; trigger: 'button' }): Promise<StartRecordingResult> {
+  // v3.0 (Terry) — Free-account cap of 5 screen recordings (lifetime usage). Blocked at the START
+  // so the user can't set up a recording they can't save; the completed-save bump lives in the
+  // recording persist tail.
+  if (await trialCapReached('recordings', FREE_RECORDING_LIMIT)) {
+    return { success: false, error: `Your free account can save up to ${FREE_RECORDING_LIMIT} screen recordings. Upgrade for unlimited.`, limit: 'recordings' } as StartRecordingResult;
+  }
   if (recordingState !== 'idle') {
     return {
       success: false,
@@ -3335,6 +3356,8 @@ async function persistRecording(
     width,
     height,
   });
+  // v3.0 (Terry) — count a completed screen recording toward the Free-account cap of 5 (lifetime).
+  await bumpTrialUsage('recordings');
   return { success: true, filePath: outPath, filename, fileId, pending: !libRoot };
 }
 

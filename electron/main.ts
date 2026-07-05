@@ -360,6 +360,7 @@ import {
   FREE_CAROUSEL_LIMIT,
   TRIAL_FEATURES,
 } from './usage-tracker.js';
+import { isFreeAccount, trialCapReached, bumpTrialUsage } from './trial-gate.js';
 import {
   checkForUpdates,
   initAutoUpdater,
@@ -10125,28 +10126,9 @@ ipcMain.handle('trees:createPlaceholderPerson', async () => {
   }
 });
 
-// v3.0 round 560 (Terry) — is this a Free account (no premium)? Fail-OPEN
-// (treat as premium) on any error so a licensed user is never wrongly
-// blocked; getLicenseStatus is a local cached read, so this is cheap.
-async function isFreeAccount(): Promise<boolean> {
-  try {
-    const s = await getLicenseStatus();
-    return !s?.canUsePremiumFeatures;
-  } catch {
-    return false;
-  }
-}
-
-// v3.0 (Terry) — trial cap helpers. Pattern for a capped action: `if (await trialCapReached(key,
-// limit)) return { success:false, error, limit:key }` (the renderer shows the upsell), do the work,
-// then `await bumpTrialUsage(key)`. Paid accounts are never blocked and never accrue usage.
-async function trialCapReached(key: string, limit: number): Promise<boolean> {
-  if (!(await isFreeAccount())) return false;   // paid = uncapped
-  return getTrialUsageCount(key) >= limit;
-}
-async function bumpTrialUsage(key: string): Promise<void> {
-  try { if (await isFreeAccount()) incrementTrialUsage(key); } catch { /* non-fatal */ }
-}
+// v3.0 (Terry) — trial cap helpers now live in ./trial-gate (shared with capture-manager). Pattern
+// for a capped action: `if (await trialCapReached(key, limit)) return { success:false, error,
+// limit:key }` (renderer shows the upsell), do the work, then `await bumpTrialUsage(key)`.
 
 // Unified Trial-usage snapshot for the Trial Limits button + modal. `licenseKey` (optional) folds
 // in the cloud file-fix count; every other counter is local (trial_usage table). `unknown` marks a
@@ -13891,7 +13873,13 @@ ipcMain.handle('viewer:saveEnhanced', async (_event, req: SaveEnhancedRequest) =
 
 ipcMain.handle('capture:screenshot', async (_event, opts?: { displayId?: string }) => {
   try {
-    return await captureScreenshot({ displayId: opts?.displayId, trigger: 'button' });
+    // v3.0 (Terry) — Free-account cap of 20 screenshots (lifetime usage).
+    if (await trialCapReached('screenshots', FREE_SCREENSHOT_LIMIT)) {
+      return { success: false, error: `Your free account can take up to ${FREE_SCREENSHOT_LIMIT} screenshots. Upgrade for unlimited.`, limit: 'screenshots' as const };
+    }
+    const r = await captureScreenshot({ displayId: opts?.displayId, trigger: 'button' });
+    if (r && (r as { success?: boolean; fileId?: number }).success && (r as { fileId?: number }).fileId != null) await bumpTrialUsage('screenshots');
+    return r;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
@@ -13900,9 +13888,16 @@ ipcMain.handle('capture:screenshot', async (_event, opts?: { displayId?: string 
 // v2.1 step 2 — region capture. Resolves after the user finishes (or
 // cancels) the drag-to-select overlay; same needsDisplayPick contract
 // as capture:screenshot on multi-monitor machines.
-ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string }) => {
+// v3.0 (Terry) — `forFace` marks the Trees "Set face from screenshot" path so it does NOT count
+// toward the 20-screenshot cap (it's capped separately as a face-from-screenshot at 3).
+ipcMain.handle('capture:region', async (_event, opts?: { displayId?: string; forFace?: boolean }) => {
   try {
-    return await captureRegion({ displayId: opts?.displayId, trigger: 'button' });
+    if (!opts?.forFace && await trialCapReached('screenshots', FREE_SCREENSHOT_LIMIT)) {
+      return { success: false, error: `Your free account can take up to ${FREE_SCREENSHOT_LIMIT} screenshots. Upgrade for unlimited.`, limit: 'screenshots' as const };
+    }
+    const r = await captureRegion({ displayId: opts?.displayId, trigger: 'button' });
+    if (!opts?.forFace && r && (r as { success?: boolean; fileId?: number }).success && (r as { fileId?: number }).fileId != null) await bumpTrialUsage('screenshots');
+    return r;
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }

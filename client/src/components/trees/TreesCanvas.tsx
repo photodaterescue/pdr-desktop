@@ -779,7 +779,7 @@ export const TreesCanvas = forwardRef<TreesCanvasHandle, TreesCanvasProps>(funct
   // (PDR Captures, indexed) and returns its fileId; that file then becomes the person's face.
   const setFaceFromScreenshotFor = useCallback(async (personId: number) => {
     try {
-      const cap = await (window as { pdr?: { capture?: { region?: () => Promise<{ success: boolean; cancelled?: boolean; fileId?: number | null; error?: string }> } } }).pdr?.capture?.region?.();
+      const cap = await (window as { pdr?: { capture?: { region?: (o?: { forFace?: boolean }) => Promise<{ success: boolean; cancelled?: boolean; fileId?: number | null; error?: string }> } } }).pdr?.capture?.region?.({ forFace: true });
       if (!cap || cap.cancelled || !cap.success || cap.fileId == null) return;
       const res = await setPersonFaceFromFile(personId, cap.fileId, 'screenshot');
       if (res?.success) onGraphMutated();
