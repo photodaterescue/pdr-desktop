@@ -4582,7 +4582,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         // r601 (Terry) — once the links reach the BOTTOM, carry the glow ACROSS the titlebar
         // (screenshot → Licensed) to spotlight the new top-bar features, THEN let the whole-menu
         // glow linger ~3.4s as the finale. The sidebar keeps breathing throughout (ambient outline).
-        const TB_SWEEP_MS = 2200;
+        // r602 (Terry) — halved the sweep speed (2.2s → 4.4s); the pass was too quick to read.
+        const TB_SWEEP_MS = 4400;
         window.setTimeout(() => runTitlebarTeachSweep(TB_SWEEP_MS), sidebarSweepMs);
         window.setTimeout(() => setTeaching(false), sidebarSweepMs + TB_SWEEP_MS + 3400);
       } catch { /* the teach animation is non-essential */ }
