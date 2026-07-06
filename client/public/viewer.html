@@ -8756,7 +8756,12 @@
       // v3.0 (Terry 2026-07-05) — a BG-removed (cut-out) tile's Glow/Neon can't follow the silhouette
       // via box-shadow (rectangular). It's drawn instead by a SHARP-baked glow layer behind the photo
       // (updateTileCutoutGlow). Clear any rectangular box-shadow here so it doesn't draw around the box.
-      if (it.bgRemovedPath) { it.el.style.boxShadow = ''; it.el.style.filter = ''; it.el.style.borderRadius = ''; return; }
+      // v3.0 round 586 (Terry) — MUST be 'none', not '': '' drops the inline value so the tile's DEFAULT
+      // depth/lift drop-shadow (the .collage-item CSS rule) shows through — a soft dark rectangle around
+      // the ORIGINAL photo bounds (invisible photo-on-white-canvas, but the shadow reveals the box). That
+      // was the "rectangle where the full photo used to be" Terry saw; the neon + silhouette lift stay
+      // (they're in the baked glow layer, not this box-shadow).
+      if (it.bgRemovedPath) { it.el.style.boxShadow = 'none'; it.el.style.filter = ''; it.el.style.borderRadius = ''; return; }
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
       // v2.1 round 338 (Terry) — switched from filter:drop-shadow to BOX-SHADOW. The round-337
