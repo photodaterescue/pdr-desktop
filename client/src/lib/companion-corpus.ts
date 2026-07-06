@@ -176,9 +176,9 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   // ── Safety / privacy / originals ─────────────────────────────────────────────────────
   {
     id: 'originals-safe',
-    q: 'Will PDR change or damage my original photos?',
-    a: 'No. Your originals are never modified. Every change PDR makes is written to a fresh copy on the Library Drive you choose, so the source files stay exactly as they were.',
-    keywords: ['damage', 'safe', 'overwrite', 'change originals', 'ruin', 'break my photos', 'modify', 'lose photos', 'risk'],
+    q: 'Are my source photos safe — will PDR change, move or delete them?',
+    a: 'Your source files are completely safe. PDR only ever READS your originals and writes fresh, dated copies to the Library Drive you choose — it never edits, renames, moves or deletes anything in your source folders, ZIPs or drives. Afterwards you can keep or delete your sources yourself; PDR won’t have touched them.',
+    keywords: ['are my source photos safe', 'source photos safe', 'source files safe', 'are my originals safe', 'original photos safe', 'is my data safe', 'damage', 'safe', 'overwrite', 'change originals', 'delete my photos', 'move my photos', 'ruin', 'break my photos', 'modify', 'lose photos', 'risk'],
     panel: 'help-support', section: 'faq',
   },
   {
@@ -711,5 +711,145 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     a: 'PDR is a Windows desktop app that runs entirely on your own computer — no cloud or account needed. It runs on a normal modern PC; the AI features (face recognition, enhancement) use your processor rather than a special graphics card, and go faster with more memory. For the exact minimums, see the website or Help & Support.',
     keywords: ['system requirements', 'specs', 'minimum requirements', 'what do i need to run it', 'ram', 'windows', 'hardware', 'will it run on my pc', 'requirements'],
     panel: 'help-support', section: 'contact-support',
+  },
+
+  // ─────────────────────────────────────────────────────────────────────────────────────
+  // v3.1 round 591 (Terry) — batch two: the next likely band (reassurance / expectations /
+  // "what's the difference"). Verified: AI/face detection can be turned off in Settings; fixed
+  // photos file into chosen Year / Year-Month / Year-Month-Day folders. (originals-safe above
+  // was also broadened to answer "are my source photos safe" cleanly.)
+  // ─────────────────────────────────────────────────────────────────────────────────────
+  {
+    id: 'where-fixed-photos-go',
+    q: 'Where exactly does PDR put my fixed photos?',
+    a: 'Every fixed photo is copied to the Library Drive you chose, into clean date folders — you pick the depth: Year, Year-Month, or Year-Month-Day. The corrected date is written into the file name and the EXIF too, so it sorts correctly anywhere.',
+    keywords: ['where do fixed photos go', 'folder structure', 'what folders', 'how are photos organised', 'year folders', 'where are my photos saved', 'output folders', 'how does it organise'],
+    panel: 'getting-started', section: 'gs-after',
+  },
+  {
+    id: 'keeps-my-folders',
+    q: 'Does PDR keep my folders, or reorganize everything by date?',
+    a: 'Your original folders are left exactly as they are. In your new library, PDR files the copies by date (Year / Year-Month / Year-Month-Day) rather than mirroring your old folders — the whole point is a clean, consistent timeline. Your source structure is never changed.',
+    keywords: ['keep my folders', 'reorganize', 'reorganise', 'will it move my folders', 'change my folders', 'keep my organization', 'mess up my folders', 'keep my folder structure'],
+    panel: 'best-practices', section: 'bp-mental-model',
+  },
+  {
+    id: 'photo-quality',
+    q: 'Does PDR lower my photo quality when it fixes them?',
+    a: 'If you choose Keep Originals, nothing about the picture changes at all. If you output JPG, it saves at quality 92 — virtually indistinguishable from the original. PNG (Full Quality) is lossless and keeps every pixel exactly. Either way, your source files stay untouched.',
+    keywords: ['quality', 'lower quality', 'compress', 'recompress', 'lose quality', 'degrade', 'ruin quality', 'reduce quality', 'jpg quality'],
+    panel: 'best-practices', section: 'bp-output-format',
+  },
+  {
+    id: 'videos-included',
+    q: 'Does PDR date and organize my videos too, not just photos?',
+    a: 'Yes — videos are fixed and filed right alongside your photos, dated the same careful way, and they show up together in Memories and Search. You can also trim clips and transcribe their audio in the Viewer.',
+    keywords: ['videos too', 'does it do videos', 'video organizing', 'date my videos', 'movies', 'video files', 'photos and videos', 'does it handle videos'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'fix-time',
+    q: 'How long will a Fix take?',
+    a: 'It depends on how many files there are and how fast your drives are. Reading the dates and copying is quick; a large Google Takeout has to be unpacked first, which adds time. Face and tag analysis then runs in the background afterwards, so your photos are searchable and in Memories almost right away while recognition catches up.',
+    keywords: ['how long', 'how long does it take', 'fix time', 'duration', 'how fast', 'time to fix', 'takes ages', 'processing time'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'add-more-later',
+    q: 'Can I add more photos or run another Fix later?',
+    a: 'Absolutely — add Sources and run Fix as many times as you like. Each run adds its new photos to the same unified library and files its own report. Identical duplicates are skipped, so re-running over a folder you have already done will not make copies.',
+    keywords: ['add more later', 'run again later', 'more photos later', 'another fix', 'add more folders', 'keep adding photos', 'fix more photos', 'add to my library'],
+    panel: 'help-support', section: 'faq',
+  },
+  {
+    id: 'disable-ai',
+    q: 'Can I turn off face recognition or the AI features?',
+    a: 'Yes — you can switch off face detection (and AI tagging) in Settings. Everything else — dating, organizing, search, albums — keeps working exactly the same; you just will not get automatic people/face grouping until you turn it back on.',
+    keywords: ['turn off face recognition', 'disable ai', 'switch off faces', 'no ai', 'stop face detection', 'turn off ai', 'disable face recognition', 'opt out of ai'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'fix-finished',
+    q: 'How do I know a Fix finished, and where is the summary?',
+    a: 'When a run completes, PDR shows you the results — how many files were Confirmed, Recovered or Marked — and the full breakdown is saved in Reports History, which you can reopen or export any time.',
+    keywords: ['fix finished', 'did it finish', 'is it done', 'completed', 'summary', 'results', 'the report', 'how do i know it worked'],
+    panel: 'help-support', section: 'understanding-results',
+  },
+  {
+    id: 'pause-fix',
+    q: 'Can I stop a Fix partway and carry on later?',
+    a: 'Yes — you can stop a running Fix, and whatever it has already copied stays safe and is recorded in Reports History. To carry on, run Fix again on the remaining sources; already-done files are skipped as duplicates.',
+    keywords: ['pause fix', 'stop fix', 'resume', 'continue later', 'interrupt', 'carry on', 'part way', 'stop halfway', 'cancel and resume'],
+    panel: 'help-support', section: 'faq',
+  },
+  {
+    id: 'recognition-accuracy',
+    q: 'How accurate is the face recognition — can I trust it?',
+    a: 'It is good, but you always have the final say. PDR groups faces it thinks match, and YOU confirm each person, so nothing is named without your OK. If it groups too loosely or too tightly, the Match slider and Improve Facial Recognition let you tune it.',
+    keywords: ['face recognition accurate', 'can i trust it', 'accuracy', 'is it reliable', 'wrong faces', 'how good is recognition', 'does it get faces right', 'trustworthy'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'memories-vs-search',
+    q: 'What is the difference between Memories and Search & Discovery?',
+    a: 'Memories is for BROWSING — your photos laid out by date (and in Albums), the way you would flip through a shoebox. Search & Discovery is for FINDING — filter by person, place, camera, date, file type and more to pull up exactly the photos you want.',
+    keywords: ['memories vs search', 'difference between memories and search', 'when to use search', 'memories or search', 'browse vs search', 'which one do i use'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'mac',
+    q: 'Can I run PDR on a Mac?',
+    a: 'PDR is currently a Windows app; a Mac version is not available today. For the latest on platform support, check the website or Help & Support.',
+    keywords: ['mac', 'macos', 'apple computer', 'macbook', 'imac', 'is there a mac version', 'osx', 'linux', 'does it run on mac'],
+    panel: 'help-support', section: 'contact-support',
+  },
+  {
+    id: 'nas-library',
+    q: 'Can my Library Drive be a network drive or NAS?',
+    a: 'You can add photos FROM a NAS or network drive as a source with no trouble. For the Library Drive itself — where your organized library lives — a fast, reliable internal or USB drive is the recommended pick; a network drive can work but is slower, and the Library Drive Advisor will steer you.',
+    keywords: ['nas', 'network drive', 'library on a nas', 'network attached storage', 'shared drive', 'server', 'network storage'],
+    panel: 'best-practices', section: 'bp-library-drive',
+  },
+  {
+    id: 'same-photo-two-sources',
+    q: 'What happens if two of my sources contain the same photo?',
+    a: 'PDR spots files that are identical in content (by a content fingerprint, not the name or date) and keeps just one — so importing overlapping folders or backups will not fill your library with duplicates.',
+    keywords: ['same photo twice', 'duplicate across sources', 'overlapping folders', 'two copies', 'same file in two places', 'import duplicates', 'backup overlap'],
+    panel: 'help-support', section: 'faq',
+  },
+  {
+    id: 'what-pdr-did',
+    q: 'How do I see what PDR did to one specific photo?',
+    a: 'Right-click a photo and open its info to see its date, how confident PDR was about it (Confirmed / Recovered / Marked) and where that date came from, plus camera and location. For a whole run, Reports History shows every file it touched.',
+    keywords: ['what did pdr do', 'photo info', 'why this date', 'see the date source', 'confidence of a photo', 'details of a photo', 'inspect a photo', 'photo details'],
+    panel: 'help-support', section: 'understanding-results',
+  },
+  {
+    id: 'date-still-wrong',
+    q: 'Why is a photo’s date still not right after a Fix?',
+    a: 'If no rock-solid date survived, PDR either Recovered its best estimate from clues like the filename, or Marked it because nothing reliable was found. When you know the true date, set it yourself in Memories → Needs Dates — one photo or many at once.',
+    keywords: ['date still wrong', 'wrong date after fix', 'date not right', 'incorrect date', 'bad date', 'date is off', 'still wrong date'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'album-vs-parallel',
+    q: 'What is the difference between an Album and a Parallel Library?',
+    a: 'An Album is a grouping inside your one library — the same photo can sit in several albums without being copied. A Parallel Library is a whole separate sub-library on its own drive (say Family-only) that you can give away or back up independently, while PDR still shows everything unified in its views.',
+    keywords: ['album vs parallel library', 'difference between album and library', 'what is a parallel library', 'sub library vs album', 'separate library vs album'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'antivirus-admin',
+    q: 'Will my antivirus flag PDR, or does it need admin rights?',
+    a: 'PDR is code-signed and installs like a normal Windows app — you should not need special permissions for everyday use. If a security tool ever queries a signed app, that is a false positive you can safely allow. If an install will not go through, Help & Support can assist.',
+    keywords: ['antivirus', 'virus', 'flagged', 'admin rights', 'administrator', 'permissions', 'blocked install', 'security warning', 'windows defender', 'smartscreen'],
+    panel: 'help-support', section: 'contact-support',
+  },
+  {
+    id: 'keep-open',
+    q: 'Do I have to keep PDR open while it works?',
+    a: 'Yes — keep PDR open while a Fix runs. Face and tag analysis also happens in the background whenever PDR is open and catches up over time, so it is fine to leave it running while you get on with other things.',
+    keywords: ['keep it open', 'leave it running', 'close the app', 'run in the background', 'do i have to wait', 'minimise', 'background processing', 'can i close it'],
+    panel: 'help-support', section: 'glossary',
   },
 ];
