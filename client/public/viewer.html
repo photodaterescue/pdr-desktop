@@ -14675,40 +14675,37 @@
       collageItems.push(it);
       buildCollageItemEl(it);
       if (carouselMode) {
-        // v3.0 (Terry 2026-07-05) — CAROUSEL: never gridArrange (that re-tiles + scrambles the pages).
-        // Add a new page-slice at the END — rescaleSlicesForCount shrinks every EXISTING tile's
-        // xFrac/wFrac by oldN/newN so they stay exactly where they were — then drop the new photo into
-        // that new slice as a full-page slide. If the carousel is already at the max page count, just
-        // cascade it into view (still no scramble).
-        const oldN = carouselPageCount;
-        let grew = false;
-        if (carouselPageCount < CAROUSEL_MAX) {
-          carouselPageCount = oldN + 1;
-          rescaleSlicesForCount(oldN, carouselPageCount);   // keeps the existing pages in place
-          try { resetCarouselCanvasShape(); } catch (_) {}
-          try { renderCarouselGuides(); } catch (_) {}
-          grew = true;
-        }
-        if (grew) {
-          // Place as a NORMAL tile fitted into the new slice — NOT coverFill. coverFill tiles crop/resize
-          // like a background photo (edge handles resize the box + pan; top/bottom don't trim), which
-          // Terry hit as broken. A normal tile crops/resizes like every other carousel photo.
-          it.coverFill = false;
-          placeInCarouselSliceFit(it, carouselPageCount - 1);
-          it.zoom = 1; it.panX = 0; it.panY = 0;
-        } else {
-          const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
-          const off = (((n - 1) % 6)) * 0.035;
-          it.xFrac = Math.max(0, Math.min(1 - it.wFrac, (it.xFrac || 0.35) + off));
-          it.yFrac = Math.max(0, Math.min(1 - itemHeightFrac(it), (it.yFrac || 0.35) + off));
-        }
-        renderCollageItem(it);
+        // v3.0 round 585 (Terry) — adding a photo NO LONGER auto-grows the carousel. r581 added a fresh
+        // page per photo; Terry: "I don't really think this should happen — the user can add pages via the
+        // filmstrip." Instead drop the new photo onto the ACTIVE page (carouselFocusPage — the page the
+        // user navigated to via the filmstrip / page nav; the original design already earmarks it for new
+        // items), fitted like any other slide. Only the NEW tile is touched — no grow, no rescale, no
+        // gridArrange — so existing pages/tiles never move (that was the r581 scramble we're avoiding).
+        it.coverFill = false;
+        const slice = Math.max(0, Math.min(carouselPageCount - 1, carouselFocusPage | 0));
+        const sliceOf = (t) => Math.floor((((t.xFrac || 0) + (t.wFrac || 0) / 2)) * carouselPageCount);
+        const occ = collageItems.filter((t) => t && t.on && !t.isBg && t !== it && sliceOf(t) === slice).length;
+        const fitToPage = () => {
+          placeInCarouselSliceFit(it, slice);   // first photo on the page fills it, like a proper slide
+          if (occ > 0) {
+            // the page already has a photo — drop this one SMALLER + offset so it's a distinct, draggable
+            // card (a full-page fit would sit exactly on top of the existing one → looks like nothing happened).
+            const sL = slice / carouselPageCount, sR = (slice + 1) / carouselPageCount;
+            it.wFrac = it.wFrac * 0.72;
+            const h = itemHeightFrac(it);
+            const step = 0.03 * (((occ - 1) % 4) + 1);
+            it.xFrac = Math.max(sL, Math.min(sR - it.wFrac, sL + (sR - sL - it.wFrac) / 2 + step));
+            it.yFrac = Math.max(0, Math.min(1 - h, (1 - h) / 2 + step));
+          }
+          renderCollageItem(it);
+        };
+        it.zoom = 1; it.panX = 0; it.panY = 0;
+        fitToPage();
         // Re-fit once the real photo aspect is known (mirrors gridArrange's reGrid-on-load).
-        if (grew && it.imgEl) {
-          const _re = () => { it.imgEl.removeEventListener('load', _re); try { placeInCarouselSliceFit(it, carouselPageCount - 1); renderCollageItem(it); } catch (_) {} };
+        if (it.imgEl) {
+          const _re = () => { it.imgEl.removeEventListener('load', _re); try { fitToPage(); } catch (_) {} };
           if (it.imgEl.complete && it.imgEl.naturalWidth) _re(); else it.imgEl.addEventListener('load', _re);
         }
-        try { resetCollageZoom(); } catch (_) {}
         try { updateCarouselFilmstrip(); } catch (_) {}
       } else if (noGrid) {
         // v2.1 round 299 (Terry) — keep the existing arrangement; cascade the new tile a
