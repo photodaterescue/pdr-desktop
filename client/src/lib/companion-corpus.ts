@@ -395,7 +395,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     id: 'large-libraries',
     q: 'Can PDR handle very large libraries?',
     a: 'Yes — it\'s designed for scale. The reports and interface stay responsive even on very large runs, and large ZIPs are unpacked one at a time so a big job can\'t overwhelm your drive.',
-    keywords: ['large library', 'lots of photos', 'thousands of photos', 'big collection', 'huge', 'performance', 'slow'],
+    keywords: ['large library', 'lots of photos', 'thousands of photos', 'big collection', 'huge', 'performance', 'handle a lot'],
     panel: 'help-support', section: 'faq',
   },
   {
@@ -700,7 +700,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   },
   {
     id: 'slow-frozen',
-    q: 'The app feels slow or froze — what should I do?',
+    q: 'PDR feels slow or froze — what should I do?',
     a: 'Heavy jobs (analysis, face recognition, big imports) run in the background and can make things feel busy for a moment — it usually catches up. If it stays stuck, close and reopen PDR; your work is safe (it auto-snapshots the database on every launch). If a problem persists, use Report a problem in Help & Support so we get your logs.',
     keywords: ['slow', 'frozen', 'stuck', 'not responding', 'hang', 'lag', 'crashing', 'busy', 'spinning', 'unresponsive'],
     panel: 'help-support', section: 'contact-support',
@@ -798,9 +798,9 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   },
   {
     id: 'mac',
-    q: 'Can I run PDR on a Mac?',
-    a: 'PDR is currently a Windows app; a Mac version is not available today. For the latest on platform support, check the website or Help & Support.',
-    keywords: ['mac', 'macos', 'apple computer', 'macbook', 'imac', 'is there a mac version', 'osx', 'linux', 'does it run on mac'],
+    q: 'Is PDR available on Mac? When will it be?',
+    a: 'PDR is a Windows app today, and a Mac version is planned for later in 2026. For the latest word on timing, check the website or Help & Support.',
+    keywords: ['mac', 'macos', 'apple computer', 'macbook', 'imac', 'is there a mac version', 'when will there be a mac version', 'mac coming', 'osx', 'linux', 'does it run on mac'],
     panel: 'help-support', section: 'contact-support',
   },
   {
@@ -849,7 +849,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     id: 'keep-open',
     q: 'Do I have to keep PDR open while it works?',
     a: 'Yes — keep PDR open while a Fix runs. Face and tag analysis also happens in the background whenever PDR is open and catches up over time, so it is fine to leave it running while you get on with other things.',
-    keywords: ['keep it open', 'leave it running', 'close the app', 'run in the background', 'do i have to wait', 'minimise', 'background processing', 'can i close it'],
+    keywords: ['keep it open', 'leave it running', 'close pdr', 'run in the background', 'do i have to wait', 'minimise', 'background processing', 'can i close it'],
     panel: 'help-support', section: 'glossary',
   },
 
@@ -881,5 +881,70 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     a: 'No — your library does not live on the computer, it lives on your Library Drive. A hidden Library Database on that drive holds everything PDR knows (names, faces, trees, date fixes), so you just connect the drive to a new PC, install PDR, and it picks up exactly where you left off. The one thing to protect is the DRIVE itself — keep a backup copy of it, because if the drive is lost too, so are the files on it.',
     keywords: ['lost computer', 'stolen computer', 'computer died', 'new pc', 'broken computer', 'is my library gone', 'lost my pc', 'computer stolen', 'hard drive died', 'start over on new computer', 'library gone forever', 'lose everything', 'will i lose everything', 'lose my library'],
     panel: 'help-support', section: 'glossary',
+  },
+
+  // ── v3.1 round 593 (Terry) — the fundamental "what / why / how does it compare" questions ──
+  {
+    id: 'what-is-pdr',
+    q: 'What is Photo Date Rescue?',
+    a: 'Photo Date Rescue is a private, all-on-your-computer home for your photo memories. Its heart is rescuing DATES — sorting out the wrong and missing dates that pile up when photos move between phones, apps and cloud services — then organizing everything into a clean timeline. From there it also finds and names people, builds family trees, makes collages and carousels, and captures your screen — all offline, with nothing uploaded, and your library staying yours.',
+    keywords: ['what is pdr', 'what is photo date rescue', 'what does pdr do', 'what is this app', 'what is this', 'explain pdr', 'tell me about pdr', 'what does it do', 'pdr', 'purpose of pdr'],
+    panel: 'getting-started', section: 'gs-what',
+  },
+  {
+    id: 'who-is-pdr-for',
+    q: 'Who is PDR for?',
+    a: 'Anyone with a pile of photos and videos gathered from all over — old phones, cameras, WhatsApp, Google or iCloud exports, scans — where the dates are a mess and nothing is organized. If you want that turned into one clean, properly-dated, private library you actually own, that is exactly who PDR is for.',
+    keywords: ['who is it for', 'who should use pdr', 'is it for me', 'right for me', 'who uses pdr', 'target user', 'is this for me'],
+    panel: 'getting-started', section: 'gs-what',
+  },
+  {
+    id: 'compare-other-apps',
+    q: 'How does PDR compare to other photo apps?',
+    a: 'Most photo apps live in the cloud — your photos get uploaded, tied to an account, and often locked behind a subscription. PDR is the opposite: it runs entirely on your own machine, nothing is uploaded, and there is no subscription holding your library hostage. It also does something they mostly do not — deeply rescue and correct the DATES on photos gathered from many sources — and everything it organizes stays yours, forever.',
+    keywords: ['compare', 'vs other apps', 'how does it compare', 'google photos', 'icloud', 'mylio', 'better than', 'difference from other apps', 'why use pdr', 'alternative to', 'versus'],
+    panel: 'help-support', section: 'start-here',
+  },
+  {
+    id: 'pdr-strengths',
+    q: 'What are PDR\'s strengths?',
+    a: 'It runs completely offline — private, secure and yours, with no cloud and no subscription. It rescues dates that other tools ignore, so scattered photos snap back into a proper timeline. It brings everything together in one place — dates, faces, family trees, collages, screen capture — and your whole library, with all your names and tags, survives a reinstall or a new PC because it lives on your drive, not on the app.',
+    keywords: ['strengths', 'what is pdr good at', 'why is it good', 'best features', 'advantages', 'what makes it good', 'pros', 'usp', 'why choose pdr', 'what is special'],
+    panel: 'help-support', section: 'start-here',
+  },
+  {
+    id: 'pdr-weaknesses',
+    q: 'What are PDR\'s weaknesses or limits?',
+    a: 'Honestly: it is Windows-only for now (Mac is planned for later in 2026), and by design it does not connect to the internet or sync to the cloud. That is the privacy-and-security point, but it does mean you look after your own backups and it is not a see-my-photos-on-every-device service. It is a focused desktop tool for owning and organizing your library, not a cloud platform.',
+    keywords: ['weaknesses', 'limits', 'limitations', 'downsides', 'cons', 'what is it not good at', 'drawbacks', 'what can it not do', 'no internet', 'bad points'],
+    panel: 'help-support', section: 'start-here',
+  },
+  {
+    id: 'why-no-cloud-sync',
+    q: 'Why can\'t I sync my library to my cloud storage?',
+    a: 'That is a deliberate design choice, not a missing feature. PDR\'s whole promise is that your photos stay on YOUR hardware — private, secure and yours, with no uploading and no account. Syncing your library up to a cloud service would send it off your machine, which is exactly what PDR is built to avoid. For safety, keep your own backup of your Library Drive (a second drive or an offsite copy) rather than a cloud sync.',
+    keywords: ['sync to cloud', 'cloud storage', 'save to cloud', 'why no cloud', 'upload my library', 'onedrive sync', 'google drive sync', 'dropbox sync', 'store in the cloud', 'back up to cloud', 'why not cloud'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'phone-app',
+    q: 'Do you have a phone app? Why not?',
+    a: 'No — and that is on purpose. Rescuing and organizing a whole photo library is heavy work that belongs on a computer: it needs the storage to hold your master library, the processing power to crunch dates and faces, and the privacy of keeping everything local rather than on a device that is easily lost. A phone simply is not the safe, capable home for a lifetime of photos. When you do want some on the go, Send to Phone hands them over instantly over your Wi-Fi.',
+    keywords: ['phone app', 'mobile app', 'ios app', 'android app', 'app for my phone', 'is there an app', 'why no phone app', 'iphone app', 'tablet app'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'train-ai',
+    q: 'Do you use my photos to train AI?',
+    a: 'No. Everything — face recognition, tagging, enhancement — runs on your own computer, and nothing about your photos is ever uploaded or shared. Your images are never used to train anyone\'s AI. Privacy is the whole point.',
+    keywords: ['train ai', 'used to train', 'my photos train ai', 'data used', 'ai training', 'do you use my data', 'harvest my photos', 'sell my data', 'privacy of ai'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'request-feature',
+    q: 'Can you add a feature I\'d like?',
+    a: 'Yes — we genuinely welcome ideas. Send your suggestion in through Help & Support (Report a problem / feedback) or the form on the website, and we will consider it for a future update. A lot of what is in PDR today came from exactly this kind of request.',
+    keywords: ['add a feature', 'feature request', 'suggest a feature', 'can you add', 'i wish it could', 'future feature', 'feedback', 'suggestion', 'request a feature', 'idea'],
+    panel: 'help-support', section: 'contact-support',
   },
 ];

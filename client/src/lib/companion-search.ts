@@ -33,7 +33,7 @@ const STOPWORDS = new Set([
   'how', 'what', 'where', 'when', 'why', 'which', 'who', 'whose', 'whom', 'can', 'could', 'would',
   'should', 'will', 'shall', 'so', 'if', 'then', 'than', 'there', 'here', 'as', 'by', 'about', 'into',
   'onto', 'just', 'also', 'some', 'any', 'all', 'more', 'most', 'very', 'really', 'please', 'need',
-  'want', 'im', 'ive', 'dont', 'cant', 'does', 'not', 'no', 'use', 'using', 'used', 'app',
+  'want', 'im', 'ive', 'dont', 'cant', 'does', 'not', 'no', 'use', 'using', 'used',
 ]);
 
 function tokenize(text: string): string[] {

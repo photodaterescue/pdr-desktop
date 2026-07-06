@@ -139,12 +139,12 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
                   return (
                     <div
                       key={r.entry.id}
-                      className="rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 p-[1.5px] shadow-[0_0_10px_rgba(139,92,246,0.45)]"
+                      className="rounded-lg bg-gradient-to-r from-[#c026d3] to-[#f062f5] p-[1.5px] shadow-[0_0_12px_rgba(217,70,239,0.5)]"
                     >
                       <div className="rounded-[6.5px] bg-background px-4 py-3.5">
                         <div className="flex items-center gap-1.5 mb-1.5">
                           <AiSparkle className="w-3.5 h-3.5" />
-                          <span className="text-[0.66rem] font-bold uppercase tracking-[0.06em] bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
+                          <span className="text-[0.66rem] font-bold uppercase tracking-[0.06em] bg-gradient-to-r from-[#c026d3] to-[#f062f5] bg-clip-text text-transparent">
                             Best answer
                           </span>
                         </div>
