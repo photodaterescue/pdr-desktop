@@ -1748,6 +1748,9 @@ const handleActivateLicense = () => {
       // identifier in both places. PNG assets live alongside the
       // sidebar's references; double-slash in the path matches the
       // existing convention in this file.
+      // v3.1 (Terry) — the Companion (Ask PDR) gets pride of place at the top of the guidance list, on
+      // every page via the titlebar menu. Opens Help & Support (where the box lives) + focuses it ready to type.
+      { id: 'open-ask-pdr', label: 'Ask PDR', icon: <Sparkles className="w-4 h-4 text-primary" />, onClick: () => { (window as unknown as { __pdrAskFocus?: boolean }).__pdrAskFocus = true; setActivePanel('help-support'); setTimeout(() => window.dispatchEvent(new CustomEvent('pdr:ask-pdr-focus')), 360); } },
       { id: 'open-getting-started', label: 'Getting Started', icon: <img src="./assets//pdr-getting-started.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('getting-started') },
       { id: 'open-best-practices', label: 'Best Practices', icon: <img src="./assets//pdr-best-practices.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('best-practices') },
       { id: 'open-what-next', label: 'What Happens Next', icon: <img src="./assets//pdr-what-happens-next.png" className="w-4 h-4 object-contain" alt="" />, onClick: () => setActivePanel('what-next') },

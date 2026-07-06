@@ -1,6 +1,6 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { Search, Sparkles, X, ArrowRight } from 'lucide-react';
-import { searchCompanion } from '@/lib/companion-search';
+import { searchCompanion, type CompanionResult } from '@/lib/companion-search';
 import { COMPANION_PANEL_LABEL, type CompanionPanel } from '@/lib/companion-corpus';
 
 /**
@@ -13,6 +13,9 @@ import { COMPANION_PANEL_LABEL, type CompanionPanel } from '@/lib/companion-corp
  * Lives at the top of Help & Support. The optional onNavigate lets a result jump to a Getting
  * Started / Best Practices section; when it's absent (e.g. the pre-Library-Drive Welcome modal) the
  * self-contained answer card is shown without the jump link.
+ *
+ * The single BEST answer (when the match is confident) wears the fuchsia→violet "Share" gradient
+ * outline + glow (r588, Terry) — the same AI accent used across PDR — to signal "this is the answer".
  */
 const EXAMPLES = [
   'How do I get my photos in?',
@@ -24,10 +27,46 @@ const EXAMPLES = [
 
 export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: CompanionPanel, section: string) => void }) {
   const [query, setQuery] = useState('');
+  const inputRef = useRef<HTMLInputElement>(null);
   const outcome = useMemo(() => searchCompanion(query), [query]);
   const trimmed = query.trim();
   const showResults = trimmed.length >= 2;
   const results = outcome.results.slice(0, 4);
+
+  // v3.1 (Terry) — the titlebar "Ask PDR" menu item opens Help & Support then fires this so the box is
+  // focused and ready to type on arrival.
+  useEffect(() => {
+    const onFocus = () => {
+      const el = inputRef.current;
+      if (!el) return;
+      try { el.scrollIntoView({ block: 'center' }); } catch { /* noop */ }
+      el.focus();
+      el.select();
+    };
+    // Fresh open from the titlebar menu: the box mounts AFTER the menu click, so a flag (not just the
+    // event, which can fire before this listener exists) makes the focus land reliably — and after the
+    // dropdown has restored+released focus from its trigger.
+    const w = window as unknown as { __pdrAskFocus?: boolean };
+    if (w.__pdrAskFocus) { w.__pdrAskFocus = false; setTimeout(onFocus, 140); }
+    window.addEventListener('pdr:ask-pdr-focus', onFocus);
+    return () => window.removeEventListener('pdr:ask-pdr-focus', onFocus);
+  }, []);
+
+  const cardBody = (r: CompanionResult) => (
+    <>
+      <p className="font-medium text-foreground text-sm mb-1">{r.entry.q}</p>
+      <p className="text-sm text-muted-foreground leading-relaxed">{r.entry.a}</p>
+      {onNavigate && r.entry.panel !== 'help-support' && (
+        <button
+          type="button"
+          onClick={() => onNavigate(r.entry.panel, r.entry.section)}
+          className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
+        >
+          Read more in {COMPANION_PANEL_LABEL[r.entry.panel]} <ArrowRight className="w-3 h-3" />
+        </button>
+      )}
+    </>
+  );
 
   return (
     <div className="rounded-xl border border-primary/25 bg-primary/[0.04] p-4 mb-10" data-testid="companion-search">
@@ -40,6 +79,7 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
       <div className="relative">
         <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground pointer-events-none" />
         <input
+          ref={inputRef}
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           onKeyDown={(e) => {
@@ -92,27 +132,29 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
                 <p className="text-xs text-muted-foreground">Not sure exactly — here are the closest matches:</p>
               )}
               {results.map((r, i) => {
-                const highlight = i === 0 && outcome.quality === 'good';
+                const best = i === 0 && outcome.quality === 'good';
+                if (best) {
+                  // The confident top answer wears the AI fuchsia→violet Share-gradient outline + glow.
+                  return (
+                    <div
+                      key={r.entry.id}
+                      className="rounded-lg bg-gradient-to-r from-violet-500 to-fuchsia-500 p-[1.5px] shadow-[0_0_10px_rgba(139,92,246,0.45)]"
+                    >
+                      <div className="rounded-[6.5px] bg-background px-4 py-3.5">
+                        <div className="flex items-center gap-1.5 mb-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
+                          <span className="text-[0.66rem] font-bold uppercase tracking-[0.06em] bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
+                            Best answer
+                          </span>
+                        </div>
+                        {cardBody(r)}
+                      </div>
+                    </div>
+                  );
+                }
                 return (
-                  <div
-                    key={r.entry.id}
-                    className={
-                      highlight
-                        ? 'p-4 rounded-lg border border-primary/25 bg-primary/5'
-                        : 'p-4 rounded-lg border border-border bg-secondary/30'
-                    }
-                  >
-                    <p className="font-medium text-foreground text-sm mb-1">{r.entry.q}</p>
-                    <p className="text-sm text-muted-foreground leading-relaxed">{r.entry.a}</p>
-                    {onNavigate && r.entry.panel !== 'help-support' && (
-                      <button
-                        type="button"
-                        onClick={() => onNavigate(r.entry.panel, r.entry.section)}
-                        className="mt-2 inline-flex items-center gap-1 text-xs text-primary hover:underline cursor-pointer"
-                      >
-                        Read more in {COMPANION_PANEL_LABEL[r.entry.panel]} <ArrowRight className="w-3 h-3" />
-                      </button>
-                    )}
+                  <div key={r.entry.id} className="p-4 rounded-lg border border-border bg-secondary/30">
+                    {cardBody(r)}
                   </div>
                 );
               })}
