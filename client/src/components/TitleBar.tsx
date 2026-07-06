@@ -11,6 +11,7 @@ import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { TourLauncher, type TourMenuItem } from '@/components/TourLauncher';
+import { AiSparkle } from '@/components/AiSparkle';
 import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 import { useMemoriesReturnSource, setMemoriesReturnSource } from '@/lib/memories-return-source';
 import type { TourStep, TourMeta } from '@/components/ui/tour-overlay';
@@ -731,6 +732,24 @@ export function TitleBar() {
             <RotateCcw className="w-3.5 h-3.5" />
           </button>
         </IconTooltip>
+        {/* v3.1 (Terry) — dedicated Ask PDR launcher, LEFT of the "?" Tours menu.
+            The titlebar never collapses, so the offline AI helper stays one click
+            away even when the sidebar is condensed on a small screen. Hidden on
+            Welcome (its panel isn't mounted there). Reuses the exact 'open-ask-pdr'
+            action the Tours menu already wires up + a fuchsia AI tooltip. */}
+        {!onWelcome && tourMenuItems?.some(i => i.id === 'open-ask-pdr') && (
+          <IconTooltip label="Ask PDR — the offline AI helper" side="bottom" tone="ai">
+            <button
+              type="button"
+              onClick={() => tourMenuItems.find(i => i.id === 'open-ask-pdr')?.onClick?.()}
+              className="flex items-center justify-center w-7 h-7 rounded-full hover:bg-white/20 transition-all"
+              data-testid="titlebar-ask-pdr"
+              aria-label="Ask PDR"
+            >
+              <AiSparkle className="w-4 h-4" />
+            </button>
+          </IconTooltip>
+        )}
         {tourMenuItems && tourMenuItems.length > 0 && (
           <TourLauncher
             items={tourMenuItems}

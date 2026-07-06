@@ -154,6 +154,7 @@ import { TakeoutMultiPartBanner } from "@/components/TakeoutMultiPartBanner";
 import { EnrichingModal } from "@/components/EnrichingModal";
 import { HelpSupportContent } from "@/components/HelpSupportContent";
 import { AiSparkle } from "@/components/AiSparkle";
+import { AskPdrTip, isAskPdrTipHidden, setAskPdrTipHidden } from "@/components/AskPdrTip";
 import { useLicense } from "@/contexts/LicenseContext";
 import { TourOverlay, TOUR_STEPS, SD_TOUR_STEPS, MEMORIES_TOUR_STEPS, TREES_TOUR_STEPS, REPORTS_TOUR_STEPS, WORKSPACE_TOUR_META, SD_TOUR_META, MEMORIES_TOUR_META, TREES_TOUR_META, REPORTS_TOUR_META, hasTourBeenCompleted, resetTourCompletion, type TourStep, type TourMeta } from "@/components/ui/tour-overlay";
 import type { TourMenuItem } from "@/components/TourLauncher";
@@ -1089,6 +1090,29 @@ useEffect(() => {
       window.removeEventListener('keydown', onEsc, true);
     };
   }, [collageBgPick, collageBgPickMulti, cancelCollageBgPick, markPickedTile]);
+
+  // v3.1 (Terry) — one way to summon Ask PDR from anywhere in the workspace:
+  // opens Help & Support and focuses the box, ready to type. Shared by the Ctrl+/
+  // (⌘/) shortcut AND the `pdr:open-ask-pdr` event (fired by the empty-state tip).
+  // Same action as the titlebar sparkle + the Tours-menu item. Scoped to the
+  // workspace (this component isn't mounted on Welcome, where the panel wouldn't exist).
+  useEffect(() => {
+    const openAskPdr = () => {
+      (window as unknown as { __pdrAskFocus?: boolean }).__pdrAskFocus = true;
+      setActivePanel('help-support');
+      setTimeout(() => window.dispatchEvent(new CustomEvent('pdr:ask-pdr-focus')), 360);
+    };
+    const onAskKey = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === '/') { e.preventDefault(); openAskPdr(); }
+    };
+    const onAskEvent = () => openAskPdr();
+    window.addEventListener('keydown', onAskKey);
+    window.addEventListener('pdr:open-ask-pdr', onAskEvent as EventListener);
+    return () => {
+      window.removeEventListener('keydown', onAskKey);
+      window.removeEventListener('pdr:open-ask-pdr', onAskEvent as EventListener);
+    };
+  }, []);
 
   // On mount: restore cached analysis results from localStorage
   useEffect(() => {
@@ -7527,6 +7551,9 @@ function EmptyState({ onAddFirstSource, isLicensed, onActivateLicense, onNavigat
                   >
                     <FileText className="w-4 h-4 mr-2" /> View Reports History
                   </Button>
+                  {/* v3.1 (Terry) — dismissible "Ask PDR" learning tip for new users
+                      (re-enable from Settings → General, beside "Show tooltips"). */}
+                  <AskPdrTip />
                 </div>
               </>
             ) : (
@@ -13628,6 +13655,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const [saveCollagesToAlbum, setSaveCollagesToAlbumState] = useState<boolean>(true);
   // v2.1 round 167 (Terry) — global Show-tooltips toggle (default on).
   const [showTooltips, setShowTooltipsState] = useState<boolean>(true);
+  // v3.1 (Terry) — mirror of the localStorage "Ask PDR tip" flag so Settings can re-enable it.
+  const [showAskPdrTip, setShowAskPdrTipState] = useState<boolean>(() => !isAskPdrTipHidden());
   // v2.1 round 170 (Terry) — separate toggle for the Viewer/Collage editor tips.
   const [showViewerTooltips, setShowViewerTooltipsState] = useState<boolean>(true);
   // v2.1 round 126 — recording quality preset (bitrate + save-time
@@ -13742,6 +13771,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
       setCaptureRecordAudioState(((settings as any).captureRecordAudio as boolean) ?? true);
       setSaveCollagesToAlbumState(((settings as any).saveCollagesToAlbum as boolean) ?? true);
       setShowTooltipsState(((settings as any).showTooltips as boolean) ?? true);
+      setShowAskPdrTipState(!isAskPdrTipHidden());
       setShowViewerTooltipsState(((settings as any).showViewerTooltips as boolean) ?? true);
       setCaptureRecordQualityState(((settings as any).captureRecordQuality as 'high' | 'standard' | 'compact') ?? 'standard');
       setCaptureCamEnabledState(((settings as any).captureCamEnabled as boolean) ?? false);
@@ -13838,6 +13868,12 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
   const handleShowTooltipsToggle = (checked: boolean) => {
     setShowTooltipsState(checked);
     setSetting('showTooltips' as any, checked);
+  };
+
+  // v3.1 (Terry) — re-enable the empty-state "Ask PDR" learning tip (localStorage-backed).
+  const handleShowAskPdrTipToggle = (checked: boolean) => {
+    setShowAskPdrTipState(checked);
+    setAskPdrTipHidden(!checked);
   };
 
   const handleShowViewerTooltipsToggle = (checked: boolean) => {
@@ -14475,6 +14511,21 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     checked={showTooltips}
                     onCheckedChange={(checked) => handleShowTooltipsToggle(!!checked)}
                     data-testid="checkbox-show-tooltips"
+                  />
+                </label>
+              </div>
+
+              {/* v3.1 (Terry) — re-enable the empty-state "Ask PDR" learning tip. */}
+              <div className="pt-4">
+                <label className="flex items-center justify-between p-3 rounded-lg border border-border hover:border-primary/50 cursor-pointer transition-colors">
+                  <div className="flex flex-col pr-3">
+                    <span className="text-sm font-medium text-foreground">Show the &ldquo;Ask PDR&rdquo; tip on empty screens</span>
+                    <span className="text-xs text-muted-foreground">A small nudge on empty screens pointing new users at Ask PDR, the offline AI helper. Handy while you&apos;re learning PDR; turn it off once you know your way around. You can always reach Ask PDR from the &#10022; button in the title bar or with Ctrl + /.</span>
+                  </div>
+                  <Switch
+                    checked={showAskPdrTip}
+                    onCheckedChange={(checked) => handleShowAskPdrTipToggle(!!checked)}
+                    data-testid="checkbox-show-askpdr-tip"
                   />
                 </label>
               </div>
