@@ -254,6 +254,45 @@ function runSidebarTeach() {
   try { window.dispatchEvent(new CustomEvent('pdr:teach-sidebar')); } catch { /* non-essential */ }
 }
 
+// v3.1 round 601 (Terry) — once the sidebar links have glowed to the bottom, sweep a
+// soft fuchsia spotlight ACROSS the titlebar — from the screenshot button to the
+// Licensed badge — so a new user's eye is drawn to the new top-bar features (Capture,
+// Record, Ask PDR, …) before the side-menu's ending glow. Imperative + self-cleaning,
+// so it needs no titlebar JSX and can't leak a stuck element if anything throws.
+function runTitlebarTeachSweep(durationMs: number) {
+  try {
+    const cam = document.querySelector('[data-testid="titlebar-capture"]') as HTMLElement | null;
+    if (!cam) return;
+    const camR = cam.getBoundingClientRect();
+    // The Licensed badge testid varies by state (active/grace/expired/…) — match any.
+    const lic = document.querySelector('[data-testid^="badge-license-"]') as HTMLElement | null;
+    const licR = lic?.getBoundingClientRect();
+    const startX = camR.left + camR.width / 2;
+    const endX = licR ? (licR.left + licR.width / 2) : (startX + 340);
+    const y = camR.top + camR.height / 2;
+    const glow = document.createElement('div');
+    glow.setAttribute('aria-hidden', 'true');
+    glow.style.cssText = [
+      'position:fixed', `top:${Math.round(y)}px`, `left:${Math.round(startX)}px`,
+      'width:70px', 'height:70px', 'border-radius:9999px', 'pointer-events:none',
+      'z-index:2147483000',
+      'background:radial-gradient(circle, rgba(240,152,255,0.6) 0%, rgba(217,70,239,0.32) 42%, rgba(217,70,239,0) 70%)',
+      'opacity:0', 'will-change:transform,opacity',
+    ].join(';');
+    document.body.appendChild(glow);
+    const anim = glow.animate([
+      { transform: 'translate(-50%,-50%) translateX(0px)', opacity: 0 },
+      { opacity: 1, offset: 0.12 },
+      { opacity: 1, offset: 0.88 },
+      { transform: `translate(-50%,-50%) translateX(${Math.round(endX - startX)}px)`, opacity: 0 },
+    ], { duration: durationMs, easing: 'ease-in-out' });
+    const cleanup = () => { try { glow.remove(); } catch { /* noop */ } };
+    anim.onfinish = cleanup;
+    anim.oncancel = cleanup;
+    window.setTimeout(cleanup, durationMs + 500); // safety net if the anim events don't fire
+  } catch { /* the teach animation is non-essential */ }
+}
+
 export default function Workspace() {
 	// Workspace's zoom lives under its own pdr-workspace-zoom key so
 	// it doesn't bleed into Welcome / source-selection / People
@@ -4538,9 +4577,14 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         const items = document.querySelectorAll('.sidebar-container [data-teach-nav]');
         items.forEach((el, i) => (el as HTMLElement).style.setProperty('--ti', String(i)));
         setTeaching(true);
-        // r555 (Terry) — 300ms/link sweep, THEN the warm glow lingers ~3.4s so the user can take
-        // it in and decide their first move (rather than the ring vanishing the instant it arrives).
-        window.setTimeout(() => setTeaching(false), items.length * 300 + 3400);
+        // r555 (Terry) — 300ms/link sweep top-to-bottom.
+        const sidebarSweepMs = items.length * 300;
+        // r601 (Terry) — once the links reach the BOTTOM, carry the glow ACROSS the titlebar
+        // (screenshot → Licensed) to spotlight the new top-bar features, THEN let the whole-menu
+        // glow linger ~3.4s as the finale. The sidebar keeps breathing throughout (ambient outline).
+        const TB_SWEEP_MS = 2200;
+        window.setTimeout(() => runTitlebarTeachSweep(TB_SWEEP_MS), sidebarSweepMs);
+        window.setTimeout(() => setTeaching(false), sidebarSweepMs + TB_SWEEP_MS + 3400);
       } catch { /* the teach animation is non-essential */ }
     };
     window.addEventListener('pdr:teach-sidebar', onTeach);
