@@ -254,9 +254,10 @@
   45% { background-color: rgba(217, 70, 239, 0.2); box-shadow: 0 0 16px 1px rgba(217, 70, 239, 0.5); }
 }
 .pdr-teaching [data-teach-nav] {
-  /* r555 (Terry) — sequencing speed halved (0.15s → 0.3s per link) so it doesn't feel rushed. */
+  /* r555 (Terry) — sequencing speed halved (0.15s → 0.3s per link) so it doesn't feel rushed.
+     r603 (Terry) — slowed a further 25% (0.3s → 0.375s per link). */
   animation: teach-nav-glow 1s ease-in-out;
-  animation-delay: calc(var(--ti, 0) * 0.3s);
+  animation-delay: calc(var(--ti, 0) * 0.375s);
 }
 
 /* Amber sibling of outline-pulse. Used by the dup-source highlight

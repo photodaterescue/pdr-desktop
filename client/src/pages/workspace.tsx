@@ -4577,8 +4577,9 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         const items = document.querySelectorAll('.sidebar-container [data-teach-nav]');
         items.forEach((el, i) => (el as HTMLElement).style.setProperty('--ti', String(i)));
         setTeaching(true);
-        // r555 (Terry) — 300ms/link sweep top-to-bottom.
-        const sidebarSweepMs = items.length * 300;
+        // r555 (Terry) — link sweep top-to-bottom; r603 slowed 25% (300ms → 375ms/link). Keep in
+        // step with the CSS `--ti * 0.375s` stagger so the titlebar sweep starts as the links finish.
+        const sidebarSweepMs = items.length * 375;
         // r601 (Terry) — once the links reach the BOTTOM, carry the glow ACROSS the titlebar
         // (screenshot → Licensed) to spotlight the new top-bar features, THEN let the whole-menu
         // glow linger ~3.4s as the finale. The sidebar keeps breathing throughout (ambient outline).
