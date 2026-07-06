@@ -15,8 +15,8 @@ export function AiSparkle({ className }: { className?: string }) {
     <svg viewBox="0 0 24 24" fill="none" className={className} aria-hidden="true">
       <defs>
         <linearGradient id={id} x1="2" y1="3" x2="22" y2="20" gradientUnits="userSpaceOnUse">
-          <stop offset="0" stopColor="#8b5cf6" />
-          <stop offset="1" stopColor="#d946ef" />
+          <stop offset="0" stopColor="#c026d3" />
+          <stop offset="1" stopColor="#f062f5" />
         </linearGradient>
       </defs>
       <g stroke={`url(#${id})`} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

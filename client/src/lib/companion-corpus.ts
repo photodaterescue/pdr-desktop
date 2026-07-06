@@ -340,9 +340,9 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   },
   {
     id: 'trim-video',
-    q: 'How do I trim a video?',
-    a: 'Open a video in the Viewer and use the Trim panel to cut out a shorter segment. It writes a new clip (named with _T) next to the original, keeping the original\'s date so it sorts alongside it in Memories.',
-    keywords: ['trim video', 'cut video', 'shorten video', 'clip', 'edit video', 'video segment'],
+    q: 'How do I cut a clip from a video to send or share?',
+    a: 'Open the video in the Viewer and use the Trim panel to cut out a shorter segment, then Save clip — it writes a new clip (named _T) next to the original, keeping its date. That clip is a normal library file, so you can drag it out, Send to Phone, or Copy it to share, without touching the full video.',
+    keywords: ['trim video', 'cut a clip', 'clip a video', 'cut clips from videos', 'cut a clip to send', 'make a clip to share', 'shorten a video to send', 'shorten video', 'clip', 'edit video', 'video segment', 'snip a video'],
     panel: 'help-support', section: 'glossary',
   },
 
@@ -600,7 +600,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     id: 'video-transcript',
     q: 'Can PDR transcribe what is said in a video?',
     a: 'Yes — right-click a video and choose Transcribe. PDR uses an on-device speech model (nothing is uploaded); a small model downloads the first time. Transcribed videos get a “T” badge and the Viewer shows the spoken words as subtitles. You can hide transcripts under Settings → Privacy & Security.',
-    keywords: ['transcribe', 'transcript', 'captions', 'subtitles', 'what is said in a video', 'speech to text', 'video words', 'voice to text'],
+    keywords: ['transcribe', 'transcript', 'transcripts for videos', 'video transcript', 'transcribe a video', 'captions', 'subtitles', 'what is said in a video', 'speech to text', 'video words', 'voice to text'],
     panel: 'help-support', section: 'glossary',
   },
   {
@@ -850,6 +850,36 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     q: 'Do I have to keep PDR open while it works?',
     a: 'Yes — keep PDR open while a Fix runs. Face and tag analysis also happens in the background whenever PDR is open and catches up over time, so it is fine to leave it running while you get on with other things.',
     keywords: ['keep it open', 'leave it running', 'close the app', 'run in the background', 'do i have to wait', 'minimise', 'background processing', 'can i close it'],
+    panel: 'help-support', section: 'glossary',
+  },
+
+  // ── v3.1 round 592 (Terry) — licensing / backup / recovery (Companion was thin here) ──────
+  {
+    id: 'cancel-subscription',
+    q: 'How do I cancel my subscription?',
+    a: 'A Lifetime licence has nothing to cancel — it is yours to keep. For a Monthly or Yearly subscription, manage or cancel it through your account with the store you bought it from (the link is in your purchase confirmation email). If it is really about cost, a cheaper plan may be available — Help & Support can point you to the right place.',
+    keywords: ['cancel subscription', 'cancel my plan', 'stop paying', 'end subscription', 'unsubscribe', 'refund', 'cancel monthly', 'cancel yearly', 'stop my subscription', 'get my money back'],
+    panel: 'help-support', section: 'contact-support',
+  },
+  {
+    id: 'change-device',
+    q: 'I have too many devices / a new computer — how do I move my licence?',
+    a: 'A paid licence covers up to 3 devices at once. If you have hit the limit or replaced a computer, open Manage Devices, remove a device you no longer use to free a slot, then activate PDR on the new one. Your library itself lives on your Library Drive, so it comes straight back when you connect that drive.',
+    keywords: ['too many devices', 'move my licence', 'move my license', 'new computer', 'change device', 'deactivate a device', 'remove a device', 'free a slot', 'device limit reached', 'transfer licence', 'replaced my pc', 'activate on new computer'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'library-backed-up',
+    q: 'Is my library backed up?',
+    a: 'Two separate things. PDR automatically backs up its DATABASE — your names, face tags, trees and date corrections — as snapshots (Settings → Backup), and a copy also rides along on your Library Drive. Your actual PHOTO FILES are NOT duplicated by PDR; they live on your Library Drive, so you should keep your own backup of that drive (a second drive or offsite copy) for true safety.',
+    keywords: ['is my library backed up', 'library backup', 'are my photos backed up', 'is it backed up', 'do you back up my photos', 'backup my library', 'photos safe if drive dies', 'second copy'],
+    panel: 'help-support', section: 'glossary',
+  },
+  {
+    id: 'lost-computer',
+    q: 'If my computer is lost, stolen or dies, is my library gone forever?',
+    a: 'No — your library does not live on the computer, it lives on your Library Drive. A hidden Library Database on that drive holds everything PDR knows (names, faces, trees, date fixes), so you just connect the drive to a new PC, install PDR, and it picks up exactly where you left off. The one thing to protect is the DRIVE itself — keep a backup copy of it, because if the drive is lost too, so are the files on it.',
+    keywords: ['lost computer', 'stolen computer', 'computer died', 'new pc', 'broken computer', 'is my library gone', 'lost my pc', 'computer stolen', 'hard drive died', 'start over on new computer', 'library gone forever', 'lose everything', 'will i lose everything', 'lose my library'],
     panel: 'help-support', section: 'glossary',
   },
 ];
