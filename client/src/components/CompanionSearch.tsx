@@ -1,7 +1,8 @@
 import { useState, useMemo, useRef, useEffect } from 'react';
-import { Search, Sparkles, X, ArrowRight } from 'lucide-react';
+import { Search, X, ArrowRight } from 'lucide-react';
 import { searchCompanion, type CompanionResult } from '@/lib/companion-search';
 import { COMPANION_PANEL_LABEL, type CompanionPanel } from '@/lib/companion-corpus';
+import { AiSparkle } from '@/components/AiSparkle';
 
 /**
  * Companion Phase A — "Ask PDR" smart help search (v3.1, Terry).
@@ -71,7 +72,7 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
   return (
     <div className="rounded-xl border border-primary/25 bg-primary/[0.04] p-4 mb-10" data-testid="companion-search">
       <div className="flex items-center gap-2 mb-2.5">
-        <Sparkles className="w-4 h-4 text-primary" />
+        <AiSparkle className="w-4 h-4" />
         <h3 className="text-sm font-semibold text-foreground">Ask PDR</h3>
         <span className="text-xs text-muted-foreground">— type a question in your own words</span>
       </div>
@@ -142,7 +143,7 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
                     >
                       <div className="rounded-[6.5px] bg-background px-4 py-3.5">
                         <div className="flex items-center gap-1.5 mb-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-fuchsia-500" />
+                          <AiSparkle className="w-3.5 h-3.5" />
                           <span className="text-[0.66rem] font-bold uppercase tracking-[0.06em] bg-gradient-to-r from-violet-500 to-fuchsia-500 bg-clip-text text-transparent">
                             Best answer
                           </span>
