@@ -58,6 +58,13 @@ interface TourLauncherProps {
    * Falls back to the default trigger styling when omitted.
    */
   triggerAccent?: string;
+  /**
+   * Greys out the "?" trigger and blocks the popover. Used on the Welcome
+   * screen (Terry 2026-07-06) — that screen is for entering the app, and its
+   * guidance entries open Workspace panels that aren't mounted yet, so the
+   * launcher would dead-end. Same rationale as hiding the Library pill there.
+   */
+  disabled?: boolean;
 }
 
 /**
@@ -70,20 +77,24 @@ interface TourLauncherProps {
  * so users have one consistent affordance ("?" top-right) regardless
  * of which PDR window is active.
  */
-export function TourLauncher({ items, onStartTour, triggerStyle = 'titlebar', className, triggerAccent }: TourLauncherProps) {
+export function TourLauncher({ items, onStartTour, triggerStyle = 'titlebar', className, triggerAccent, disabled = false }: TourLauncherProps) {
   const [open, setOpen] = useState(false);
 
   // Trigger styles. When triggerAccent is supplied the button takes the
   // brand-coloured pill; otherwise it falls back to the standard
   // titlebar/bare styling. White icon on a tinted pill mirrors the
   // primary CTA convention (text-primary-foreground = white on lavender).
+  // When `disabled`, the trigger greys right down and the accent pill is
+  // dropped so it reads as inert (Welcome-screen case).
   const baseClasses = 'flex items-center justify-center w-7 h-7 rounded-full transition-all';
-  const triggerClasses = triggerAccent
-    ? `${baseClasses} text-white hover:opacity-90`
-    : triggerStyle === 'titlebar'
-      ? `${baseClasses} hover:bg-white/20 text-white/80 hover:text-white`
-      : `${baseClasses} hover:bg-secondary text-muted-foreground hover:text-foreground`;
-  const triggerStyleObj = triggerAccent ? { backgroundColor: triggerAccent } : undefined;
+  const triggerClasses = disabled
+    ? `${baseClasses} cursor-not-allowed ${triggerStyle === 'titlebar' ? 'text-white/30' : 'text-muted-foreground/40'}`
+    : triggerAccent
+      ? `${baseClasses} text-white hover:opacity-90`
+      : triggerStyle === 'titlebar'
+        ? `${baseClasses} hover:bg-white/20 text-white/80 hover:text-white`
+        : `${baseClasses} hover:bg-secondary text-muted-foreground hover:text-foreground`;
+  const triggerStyleObj = disabled ? undefined : triggerAccent ? { backgroundColor: triggerAccent } : undefined;
 
   const handleItemClick = (item: TourMenuItem) => {
     setOpen(false);
@@ -101,11 +112,12 @@ export function TourLauncher({ items, onStartTour, triggerStyle = 'titlebar', cl
   const otherItems = items.filter(i => !i.primary);
 
   return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <IconTooltip label="Tours & guidance" side="bottom">
+    <Popover open={disabled ? false : open} onOpenChange={(o) => { if (!disabled) setOpen(o); }}>
+      <IconTooltip label={disabled ? 'Tours & guidance — open your Workspace to use these' : 'Tours & guidance'} side="bottom">
         <PopoverTrigger asChild>
           <button
             type="button"
+            disabled={disabled}
             className={className ?? triggerClasses}
             style={triggerStyleObj}
             data-testid="tour-launcher-trigger"

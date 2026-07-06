@@ -42,6 +42,12 @@ export function TitleBar() {
   // using it anyhow.")
   const location = useLocation();
   const showLibraryPill = location.pathname !== '/';
+  // Welcome screen ("/"). The Tours & Guidance "?" launcher greys out here for
+  // the same reason the Library pill is hidden: its entries open Workspace
+  // panels that aren't mounted on Welcome, so they'd dead-end. The Welcome
+  // screen is for entering the app, not for guidance navigation (Terry
+  // 2026-07-06). It comes alive as soon as the user is in the Workspace.
+  const onWelcome = location.pathname === '/';
 
   // Back-to-album affordance — non-null when the user navigated INTO
   // S&D or Memories from an empty album's CTA. Cleared by workspace
@@ -730,7 +736,8 @@ export function TitleBar() {
             items={tourMenuItems}
             onStartTour={handleStartTour}
             triggerStyle="titlebar"
-            triggerAccent={primaryAccent}
+            triggerAccent={onWelcome ? undefined : primaryAccent}
+            disabled={onWelcome}
           />
         )}
         <IconTooltip label={isDarkMode ? 'Switch to light mode' : 'Switch to dark mode'} side="bottom">
