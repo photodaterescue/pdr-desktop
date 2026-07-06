@@ -1,8 +1,13 @@
 import { PlayCircle, AlertTriangle } from 'lucide-react';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Button } from '@/components/ui/custom-button';
+import { CompanionSearch } from '@/components/CompanionSearch';
+import type { CompanionPanel } from '@/lib/companion-corpus';
 
 interface HelpSupportContentProps {
+  /** v3.1 (Terry) — Companion "Read more in ‹panel›" jump. Opens a Getting Started / Best Practices
+   *  section. Omitted on the Welcome modal (no workspace panels to jump to there). */
+  onNavigate?: (panel: CompanionPanel, section: string) => void;
   /** Fires when the user clicks the in-content "Start Tour" button.
    *  When omitted, the entire "Take a Quick Tour" accordion is
    *  hidden — used by the Welcome modal so the user can't short-cut
@@ -29,7 +34,7 @@ interface HelpSupportContentProps {
  * chrome (page padding vs modal shell) and the back/close button —
  * which is the part that actually differs between the two surfaces.
  */
-export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: HelpSupportContentProps & { hideTitle?: boolean }) {
+export function HelpSupportContent({ onStartTour, onReportProblem, onNavigate, hideTitle }: HelpSupportContentProps & { hideTitle?: boolean }) {
   return (
     <>
       {!hideTitle && (
@@ -38,6 +43,10 @@ export function HelpSupportContent({ onStartTour, onReportProblem, hideTitle }: 
           <p className="text-muted-foreground mb-4">Everything you need to use Photo Date Rescue confidently — without guesswork, fear, or unnecessary emails.</p>
         </>
       )}
+
+      {/* v3.1 (Terry) — Companion Phase A: "Ask PDR" smart help search, front and centre so a question
+          in plain words is the first thing offered when someone opens Help & Support. */}
+      <CompanionSearch onNavigate={onNavigate} />
 
       {/* v2.0.15 (Terry 2026-06-04) — PDR Photos USP card. Lives
           OUTSIDE the {!hideTitle} gate so it shows on BOTH render

@@ -699,6 +699,9 @@ useEffect(() => {
   const [showCompletionScreen, setShowCompletionScreen] = useState(false);
   const [analysisResults, setAnalysisResults] = useState<AnalysisResults>({ fixed: 0, unchanged: 0, skipped: 0 });
   const [activePanel, setActivePanel] = useState<'getting-started' | 'best-practices' | 'what-next' | 'help-support' | 'about-pdr' | 'search' | null>(null);
+  // v3.1 (Terry) — when the Companion's "Read more in ‹panel›" opens a guide panel, this holds the
+  // section id to scroll to once that panel mounts (PanelPlaceholder consumes + clears it).
+  const [guideScrollTarget, setGuideScrollTarget] = useState<string | null>(null);
   // v3.0 round 548 (Terry) — the "What's new in 3.0" showcase splash ("The Power of 3").
   // Shown once per install (localStorage). IMPORTANT: the Workspace stays MOUNTED (prewarmed)
   // underneath the Welcome screen, so a mount-time trigger would fire while Welcome still
@@ -3585,11 +3588,13 @@ return (
                       : 'Back to Workspace'
               }
               onBackToWorkspace={() => { setActivePanel(null); setAboutHighlightVersion(null); }}
-              onNavigateToPanel={(panel) => { setAboutHighlightVersion(null); setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support'); }}
+              onNavigateToPanel={(panel, section) => { setAboutHighlightVersion(null); setGuideScrollTarget(section ?? null); setActivePanel(panel as 'getting-started' | 'best-practices' | 'what-next' | 'help-support'); }}
               onStartTour={() => { setActivePanel(null); resetTourCompletion(); setShowTour(true); }}
               onReportProblem={() => setShowReportProblem(true)}
               highlightVersion={activePanel === 'about-pdr' ? aboutHighlightVersion : null}
               onHighlightConsumed={() => setAboutHighlightVersion(null)}
+              scrollToSection={guideScrollTarget}
+              onScrollConsumed={() => setGuideScrollTarget(null)}
             />
           </div>
         )}
@@ -10764,7 +10769,7 @@ function ChangelogDetail({ children }: { children: React.ReactNode }) {
   );
 }
 
-function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, highlightVersion, onHighlightConsumed }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string) => void, onStartTour?: () => void, onReportProblem?: () => void, highlightVersion?: string | null, onHighlightConsumed?: () => void }) {
+function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateToPanel, onStartTour, onReportProblem, highlightVersion, onHighlightConsumed, scrollToSection, onScrollConsumed }: { panelType: string, backLabel: string, onBackToWorkspace: () => void, onNavigateToPanel?: (panel: string, section?: string) => void, onStartTour?: () => void, onReportProblem?: () => void, highlightVersion?: string | null, onHighlightConsumed?: () => void, scrollToSection?: string | null, onScrollConsumed?: () => void }) {
   // Pre-destination, Help & Support no longer reaches this panel — the
   // Welcome screen opens the HelpSupportModal directly instead. So
   // every code path INTO this panel is now post-destination, and
@@ -10776,6 +10781,36 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   // selection are preserved automatically — no extra state-restore
   // logic needed).
   const scrollContainerRef = React.useRef<HTMLDivElement>(null);
+
+  // v3.1 (Terry) — Companion "Read more in ‹panel›": when this panel opens with a scroll target,
+  // smooth-scroll its container to that section id (Getting Started / Best Practices sections carry
+  // ids), then clear the target. rAF tween because native smooth scroll is a no-op in this Electron
+  // build (same reason as GuidePageIndex.jump). Guarded + one-shot per target so it can't loop.
+  React.useEffect(() => {
+    if (!scrollToSection) return;
+    let raf1 = 0, raf2 = 0;
+    const run = () => {
+      const c = scrollContainerRef.current;
+      const el = c ? (c.querySelector('#' + (window.CSS && CSS.escape ? CSS.escape(scrollToSection) : scrollToSection)) as HTMLElement | null) : null;
+      if (c && el) {
+        const raw = c.scrollTop + (el.getBoundingClientRect().top - c.getBoundingClientRect().top) - 96;
+        const target = Math.max(0, Math.min(raw, c.scrollHeight - c.clientHeight));
+        const reduce = typeof window !== 'undefined' && window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        const start = c.scrollTop, dist = target - start;
+        if (reduce || Math.abs(dist) < 2) { c.scrollTop = target; }
+        else {
+          const dur = 340; let t0: number | null = null;
+          const stepFn = (ts: number) => { if (t0 === null) t0 = ts; const p = Math.min(1, (ts - t0) / dur); c.scrollTop = start + dist * (1 - Math.pow(1 - p, 3)); if (p < 1) requestAnimationFrame(stepFn); };
+          requestAnimationFrame(stepFn);
+        }
+      }
+      onScrollConsumed?.();
+    };
+    // Wait two frames so the destination panel's content has laid out before we measure.
+    raf1 = requestAnimationFrame(() => { raf2 = requestAnimationFrame(run); });
+    return () => { cancelAnimationFrame(raf1); cancelAnimationFrame(raf2); };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [panelType, scrollToSection]);
 
   React.useEffect(() => {
     if (scrollContainerRef.current) {
@@ -13116,6 +13151,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
             <HelpSupportContent
               onStartTour={onStartTour ?? (() => {})}
               onReportProblem={onReportProblem}
+              onNavigate={(panel, section) => onNavigateToPanel?.(panel, section)}
               hideTitle
             />
 
