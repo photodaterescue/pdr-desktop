@@ -1355,10 +1355,6 @@ function createWindow() {
         peopleWindow.destroy();
         peopleWindow = null;
       }
-      if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
-        dateEditorWindow.destroy();
-        dateEditorWindow = null;
-      }
     }
   });
 
@@ -12256,99 +12252,6 @@ ipcMain.handle('people:changed', async () => {
     try { win.webContents.send('people:dataChanged'); } catch { /* non-fatal */ }
   }
   return { success: true };
-});
-
-// ─── Date Editor window ───────────────────────────────────────────────────────
-
-let dateEditorWindow: BrowserWindow | null = null;
-
-ipcMain.handle('dateEditor:open', async (_event, seedQuery?: any) => {
-  try {
-    // URL-encode the seed query so the Date Editor renderer can restore
-    // exactly the main window's current S&D filter. Capped at ~16 KiB to
-    // defend against pathological filter strings.
-    const seedParam = seedQuery
-      ? (() => {
-          try {
-            const s = JSON.stringify(seedQuery);
-            return s.length <= 16 * 1024 ? s : '';
-          } catch { return ''; }
-        })()
-      : '';
-
-    if (dateEditorWindow && !dateEditorWindow.isDestroyed()) {
-      // Window already open — reload it with the new seed query so the user
-      // sees the photos matching whatever they've just filtered to.
-      const isDark = await mainWindow?.webContents.executeJavaScript(
-        'document.documentElement.classList.contains("dark")'
-      ).catch(() => false) ?? false;
-      const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
-      dateEditorWindow.loadFile(dateEditorPage, {
-        query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
-      });
-      dateEditorWindow.focus();
-      return { success: true };
-    }
-
-    const isDark = await mainWindow?.webContents.executeJavaScript(
-      'document.documentElement.classList.contains("dark")'
-    ).catch(() => false) ?? false;
-
-    dateEditorWindow = new BrowserWindow({
-      width: 1280,
-      height: 820,
-      minWidth: 900,
-      minHeight: 560,
-      backgroundColor: isDark ? '#1a1a2e' : '#f6f6fb',
-      title: 'Date Editor — Photo Date Rescue',
-      // See peopleWindow above: independent top-level window, no skipTaskbar
-      // so Alt-Tab works and the user can restore a minimised window.
-      // Custom-frame title bar matches the main PDR window so the
-      // Fix-status chip can sit IN the title bar consistently across
-      // every PDR window. titleBarOverlay renders the native OS
-      // window controls in PDR's lavender theme.
-      titleBarStyle: process.platform === 'win32' ? 'hidden' : 'hiddenInset',
-      ...(process.platform === 'win32' ? {
-        titleBarOverlay: {
-          color: '#a99cff',
-          symbolColor: '#ffffff',
-          height: 32,
-        },
-      } : {}),
-      roundedCorners: true,
-      thickFrame: true,
-      icon: app.isPackaged
-        ? path.join(process.resourcesPath, 'assets', 'pdr-logo_transparent.png')
-        : path.join(__dirname, '../client/public/assets/pdr-logo_transparent.png'),
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        zoomFactor: 1.0,
-        // v3.0 (Terry 2026-07-05) — keep the Date Editor window warm too (restore-from-minimize fix, r574).
-        backgroundThrottling: false,
-      },
-    });
-    hardenWindowAgainstNavigation(dateEditorWindow);
-
-    const dateEditorPage = path.join(__dirname, '../dist/public/date-editor.html');
-    dateEditorWindow.loadFile(dateEditorPage, {
-      query: { dark: isDark ? '1' : '0', ...(seedParam ? { seed: seedParam } : {}) },
-    });
-
-    dateEditorWindow.on('closed', () => {
-      dateEditorWindow = null;
-      // Any corrections landed while the window was open — nudge the main
-      // window so the grid / filters re-fetch.
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('dateEditor:dataChanged');
-      }
-    });
-
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: (err as Error).message };
-  }
 });
 
 // Open settings page in main window with a specific tab active

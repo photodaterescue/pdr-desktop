@@ -35,7 +35,6 @@ export default defineConfig({
       input: {
         main: path.resolve(__dirname, "client", "index.html"),
         people: path.resolve(__dirname, "client", "people.html"),
-        dateEditor: path.resolve(__dirname, "client", "date-editor.html"),
       },
     },
   },

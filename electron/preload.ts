@@ -1449,20 +1449,6 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  dateEditor: {
-    open: (seedQuery?: any) => ipcRenderer.invoke('dateEditor:open', seedQuery),
-    onThemeChange: (callback: (isDark: boolean) => void) => {
-      const handler = (_event: any, isDark: boolean) => callback(isDark);
-      ipcRenderer.on('dateEditor:themeChange', handler);
-      return () => ipcRenderer.removeListener('dateEditor:themeChange', handler);
-    },
-    onDataChanged: (callback: () => void) => {
-      const handler = () => callback();
-      ipcRenderer.on('dateEditor:dataChanged', handler);
-      return () => ipcRenderer.removeListener('dateEditor:dataChanged', handler);
-    },
-  },
-
   prescan: {
     run: (sourcePath: string, sourceType: 'folder' | 'zip', noTimeout: boolean = false) => ipcRenderer.invoke('prescan:run', sourcePath, sourceType, noTimeout),
     cancel: () => ipcRenderer.invoke('prescan:cancel'),

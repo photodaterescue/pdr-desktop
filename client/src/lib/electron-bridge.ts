@@ -2242,23 +2242,6 @@ export async function getQuickAccessPaths(): Promise<QuickAccessPaths> {
   return { desktop: null, downloads: null, documents: null, pictures: null, videos: null, music: null, home: null };
 }
 
-// Open the standalone Date Editor window.
-export async function openDateEditor(seedQuery?: SearchQuery): Promise<{ success: boolean; error?: string }> {
-  if (isElectron() && (window as any).pdr?.dateEditor?.open) {
-    return (window as any).pdr.dateEditor.open(seedQuery);
-  }
-  return { success: false, error: 'Not running in Electron' };
-}
-
-// Subscribe to "data changed" notifications from the Date Editor window so
-// the main window can refresh its search results when corrections land.
-export function onDateEditorDataChanged(callback: () => void): () => void {
-  if (isElectron() && (window as any).pdr?.dateEditor?.onDataChanged) {
-    return (window as any).pdr.dateEditor.onDataChanged(callback);
-  }
-  return () => {};
-}
-
 /**
  * Open the PDR Viewer.
  *
