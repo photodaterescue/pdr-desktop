@@ -12,6 +12,11 @@
 // WHEN EDITING: keep answers short + plain-English (2–4 sentences), and load `keywords` with the
 // words REAL users type (synonyms, phrasings) — keywords drive retrieval quality. Never reference the
 // retired "Date Editor" — it is "Needs Dates" (see reference_surface_names).
+//
+// ⛔ PRICING — READ THIS. PDR HAS SUBSCRIPTIONS: Monthly AND Yearly, PLUS a one-off Lifetime licence.
+// NEVER write "no subscription" / "not a subscription" / "subscription-free" / "one-off only" anywhere.
+// The honest positioning vs cloud apps is CHOICE (sub OR Lifetime) + "your library stays yours even if
+// you stop paying" — NOT "no subscription". (Terry, hard rule; see feedback_pricing_model_dual.)
 
 export type CompanionPanel = 'help-support' | 'getting-started' | 'best-practices';
 
@@ -901,14 +906,14 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'compare-other-apps',
     q: 'How does PDR compare to other photo apps?',
-    a: 'Most photo apps live in the cloud — your photos get uploaded, tied to an account, and often locked behind a subscription. PDR is the opposite: it runs entirely on your own machine, nothing is uploaded, and there is no subscription holding your library hostage. It also does something they mostly do not — deeply rescue and correct the DATES on photos gathered from many sources — and everything it organizes stays yours, forever.',
+    a: 'Most cloud photo apps upload your pictures, tie them to an account, and lock them behind a subscription — stop paying and you can lose access to your own memories. PDR keeps everything on your own machine, nothing uploaded, and lets you choose how to pay: a Monthly or Yearly plan, or a one-off Lifetime licence. Either way your library and photos stay yours even if you stop paying. It also does something cloud apps mostly do not — deeply rescue and correct the DATES on photos gathered from many sources.',
     keywords: ['compare', 'vs other apps', 'how does it compare', 'google photos', 'icloud', 'mylio', 'better than', 'difference from other apps', 'why use pdr', 'alternative to', 'versus'],
     panel: 'help-support', section: 'start-here',
   },
   {
     id: 'pdr-strengths',
     q: 'What are PDR\'s strengths?',
-    a: 'It runs completely offline — private, secure and yours, with no cloud and no subscription. It rescues dates that other tools ignore, so scattered photos snap back into a proper timeline. It brings everything together in one place — dates, faces, family trees, collages, screen capture — and your whole library, with all your names and tags, survives a reinstall or a new PC because it lives on your drive, not on the app.',
+    a: 'It runs completely offline — private, secure and yours, with no cloud. It rescues dates that other tools ignore, so scattered photos snap back into a proper timeline. It brings everything together in one place — dates, faces, family trees, collages, screen capture. Your whole library, with all your names and tags, survives a reinstall or a new PC because it lives on your drive, not on the app. And you choose how to pay — a monthly or yearly plan, or a one-off Lifetime licence — with your library staying yours either way.',
     keywords: ['strengths', 'what is pdr good at', 'why is it good', 'best features', 'advantages', 'what makes it good', 'pros', 'usp', 'why choose pdr', 'what is special'],
     panel: 'help-support', section: 'start-here',
   },
