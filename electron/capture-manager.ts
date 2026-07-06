@@ -2981,7 +2981,10 @@ let ffmpegPathCached: string | null | undefined;
 function ffmpegPath(): string | null {
   if (ffmpegPathCached !== undefined) return ffmpegPathCached;
   try {
-    const p = esmRequire('ffmpeg-static') as string;
+    let p = esmRequire('ffmpeg-static') as string;
+    // v3.0.0 (Terry 2026-07-06) — remap the asar path to app.asar.unpacked so the exe is runnable
+    // in packaged builds (same fix as main.ts; the bare asar path can't be spawned).
+    if (p) p = p.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
     ffmpegPathCached = p && fs.existsSync(p) ? p : null;
   } catch {
     ffmpegPathCached = null;

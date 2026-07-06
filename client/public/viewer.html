@@ -14650,6 +14650,10 @@
       const N = Math.max(1, carouselPageCount);
       const cw = collageCanvasEl.clientWidth || 1, ch = collageCanvasEl.clientHeight || 1;
       const a = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (it.aspect || 1);
+      // v3.0.0 (Terry 2026-07-06) — shape the tile BOX to the photo. Without this, it.aspect stayed
+      // at the default 1 (square), so a landscape photo's box rendered TALLER than the photo →
+      // spare empty space below it in the carousel (and collage). effectiveAspect() reads it.aspect.
+      it.aspect = a;
       const sliceWpx = cw / N, sliceHpx = ch;
       let wpx = sliceWpx, hpx = wpx / a;
       if (hpx > sliceHpx) { hpx = sliceHpx; wpx = hpx * a; }

@@ -206,6 +206,12 @@ const esmRequire = createRequire(import.meta.url);
 let ffmpegPath: string | null = null;
 try {
   ffmpegPath = esmRequire('ffmpeg-static');
+  // v3.0.0 (Terry 2026-07-06) — ffmpeg-static returns a path built from __dirname, which in a
+  // packaged build points INSIDE app.asar. The binary is asarUnpack'd, so the real exe lives in
+  // app.asar.unpacked, and the OS can't execute a path inside the asar archive — so ffmpeg
+  // silently "killed/crashed" and every video thumbnail (and capture/transcode) failed. Remap it.
+  // (fs.existsSync is asar-redirected and returns true for the packed path, so it can't catch this.)
+  if (ffmpegPath) ffmpegPath = ffmpegPath.replace(/app\.asar([\\/])/, 'app.asar.unpacked$1');
   if (ffmpegPath && !fs.existsSync(ffmpegPath)) ffmpegPath = null;
 } catch { ffmpegPath = null; }
 console.log('[ffmpeg] path =', ffmpegPath);
