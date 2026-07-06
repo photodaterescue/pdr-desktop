@@ -614,10 +614,18 @@ let mainWindow: BrowserWindow | null = null;
 function workerEnv(): NodeJS.ProcessEnv {
   if (!app.isPackaged) return process.env as NodeJS.ProcessEnv;
   const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', 'node_modules');
+  // v3.0.0 (Terry 2026-07-06) — ALSO add the asar's node_modules. The unpacked dir
+  // only holds NATIVE modules electron-builder auto-extracts; a worker's PURE-JS deps
+  // (unzipper, exif-parser, sharp's JS layer, bindings, + their transitive deps) live
+  // INSIDE the asar and were unresolvable, so packaged workers crashed with e.g.
+  // "Cannot find module 'unzipper'" (masked at first by the better-sqlite3 'bindings'
+  // crash). Electron's require is asar-aware, so a NODE_PATH entry pointing into
+  // app.asar resolves them; native .node deps keep resolving from the unpacked dir.
+  const packed = path.join(process.resourcesPath, 'app.asar', 'node_modules');
   const existing = process.env.NODE_PATH || '';
   return {
     ...process.env,
-    NODE_PATH: existing ? `${existing}${path.delimiter}${unpacked}` : unpacked,
+    NODE_PATH: [existing, unpacked, packed].filter(Boolean).join(path.delimiter),
   } as NodeJS.ProcessEnv;
 }
 

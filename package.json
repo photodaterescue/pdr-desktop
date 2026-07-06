@@ -45,7 +45,10 @@
     "asarUnpack": [
       "**/node_modules/ffmpeg-static/**",
       "**/node_modules/koffi/**",
-      "**/node_modules/uiohook-napi/**"
+      "**/node_modules/uiohook-napi/**",
+      "**/node_modules/better-sqlite3/**",
+      "**/node_modules/bindings/**",
+      "**/node_modules/file-uri-to-path/**"
     ],
     "extraResources": [
       {
@@ -57,7 +60,11 @@
           "cleanup-worker.cjs",
           "conversion-worker.cjs",
           "extract-worker.cjs",
-          "startup-worker.cjs"
+          "startup-worker.cjs",
+          "analysis-engine.cjs",
+          "date-extraction-engine.cjs",
+          "scanner-detection.cjs",
+          "source-classifier.cjs"
         ]
       },
       {
