@@ -249,7 +249,7 @@ export function TrialLimitsHost() {
               <Button className="w-full" onClick={() => { closeUsage(); openUpgrade(); }}>
                 <Sparkles className="w-4 h-4 mr-2" /> Upgrade for unlimited
               </Button>
-              <p className="text-[11px] text-muted-foreground text-center mt-2">Monthly, yearly, or a one-time lifetime licence — your call.</p>
+              <p className="text-[11px] text-muted-foreground text-center mt-2">Monthly, yearly, or a one-time lifetime license — your call.</p>
             </div>
           </div>
         </div>

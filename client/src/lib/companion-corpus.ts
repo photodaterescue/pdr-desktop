@@ -13,7 +13,7 @@
 // words REAL users type (synonyms, phrasings) — keywords drive retrieval quality. Never reference the
 // retired "Date Editor" — it is "Needs Dates" (see reference_surface_names).
 //
-// ⛔ PRICING — READ THIS. PDR HAS SUBSCRIPTIONS: Monthly AND Yearly, PLUS a one-off Lifetime licence.
+// ⛔ PRICING — READ THIS. PDR HAS SUBSCRIPTIONS: Monthly AND Yearly, PLUS a one-off Lifetime license.
 // NEVER write "no subscription" / "not a subscription" / "subscription-free" / "one-off only" anywhere.
 // The honest positioning vs cloud apps is CHOICE (sub OR Lifetime) + "your library stays yours even if
 // you stop paying" — NOT "no subscription". (Terry, hard rule; see feedback_pricing_model_dual.)
@@ -97,7 +97,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'run-fix',
     q: 'What does Run Fix actually do?',
-    a: 'It is one processing pass. PDR analyses every file across all your Sources, works out the correct date, then copies each file to your Library Drive with the corrected date written into the EXIF, the filename, and a clean year-by-year folder. Your originals are never touched.',
+    a: 'It is one processing pass. PDR analyzes every file across all your Sources, works out the correct date, then copies each file to your Library Drive with the corrected date written into the EXIF, the filename, and a clean year-by-year folder. Your originals are never touched.',
     keywords: ['run fix', 'what does fix do', 'process', 'what happens when i fix', 'rescue', 'sort my photos'],
     panel: 'getting-started', section: 'gs-first-fix',
   },
@@ -127,7 +127,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'library-drive',
     q: 'What is the Library Drive and where do my fixed photos go?',
-    a: 'The Library Drive is the drive your organised photos and videos live on — you pick it once during setup. Every fixed photo is copied there, dated and filed in clean year-by-year folders. Your original files are left exactly as they were.',
+    a: 'The Library Drive is the drive your organized photos and videos live on — you pick it once during setup. Every fixed photo is copied there, dated and filed in clean year-by-year folders. Your original files are left exactly as they were.',
     keywords: ['library drive', 'where do photos go', 'destination', 'where are my photos saved', 'output location', 'storage'],
     panel: 'best-practices', section: 'bp-library-drive',
   },
@@ -173,7 +173,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'output-format',
     q: 'Should I choose JPG or PNG (Full Quality)?',
-    a: 'JPG is the universal format — small files, quality 92, virtually indistinguishable from the original. PNG (labelled "Full Quality") preserves every pixel exactly but files are 2.5–3× larger and slower to write. Pick JPG for everyday use; PNG for photos you\'ll edit, print or archive long-term. Or keep originals untouched.',
+    a: 'JPG is the universal format — small files, quality 92, virtually indistinguishable from the original. PNG (labeled "Full Quality") preserves every pixel exactly but files are 2.5–3× larger and slower to write. Pick JPG for everyday use; PNG for photos you\'ll edit, print or archive long-term. Or keep originals untouched.',
     keywords: ['jpg or png', 'output format', 'file format', 'full quality', 'lossless', 'which format', 'best format', 'keep originals'],
     panel: 'best-practices', section: 'bp-output-format',
   },
@@ -428,21 +428,21 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'collage-text',
     q: 'How do I add text or a caption to a collage?',
-    a: 'In the collage editor, open the Text section on the right and click Add text — then just start typing. Drag the text onto the collage, and double-click to edit it again. You can choose from around two dozen fonts (grouped System, Essentials, Fun, Premium and more), change the colour, and add effects like Outline, Shadow or Neon.',
+    a: 'In the collage editor, open the Text section on the right and click Add text — then just start typing. Drag the text onto the collage, and double-click to edit it again. You can choose from around two dozen fonts (grouped System, Essentials, Fun, Premium and more), change the color, and add effects like Outline, Shadow or Neon.',
     keywords: ['add text', 'text on collage', 'caption', 'write on collage', 'add words', 'title on collage', 'add a caption', 'lettering', 'change font'],
     panel: 'best-practices', section: 'bp-collages',
   },
   {
     id: 'collage-background',
     q: 'How do I change a collage background?',
-    a: 'Click an empty part of the canvas, then open the Background section on the right. Under Base you pick a Solid colour or a Blended gradient; under Texture & Effects you can add a Glow circle or Blur circle on top. You can also set the background to a photo, or make it transparent for a see-through PNG export.',
+    a: 'Click an empty part of the canvas, then open the Background section on the right. Under Base you pick a Solid color or a Blended gradient; under Texture & Effects you can add a Glow circle or Blur circle on top. You can also set the background to a photo, or make it transparent for a see-through PNG export.',
     keywords: ['change background', 'collage background', 'background colour', 'background color', 'gradient background', 'background photo', 'transparent background', 'backdrop'],
     panel: 'best-practices', section: 'bp-collages',
   },
   {
     id: 'collage-effects',
     q: 'How do I add effects like glow, neon or a shadow to a collage photo?',
-    a: 'Select the photo, then open the Glow & shadow section on the right. It has sliders for Glow, Drop shadow / 3D, Lift, Neon and Outline — each with its own colour swatch. There are also per-photo Blur and Pixelate sliders, plus whole-collage Vignette and Grain.',
+    a: 'Select the photo, then open the Glow & shadow section on the right. It has sliders for Glow, Drop shadow / 3D, Lift, Neon and Outline — each with its own color swatch. There are also per-photo Blur and Pixelate sliders, plus whole-collage Vignette and Grain.',
     keywords: ['collage effects', 'glow', 'neon', 'drop shadow', 'shadow on photo', 'lift', 'outline', 'make photo pop', 'vignette', 'grain', 'blur a photo'],
     panel: 'best-practices', section: 'bp-collages',
   },
@@ -493,7 +493,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'tree-focus',
     q: 'How do I change who the family tree is focused on?',
-    a: 'Click the “Focused on ‹name›” chip in the tree header and pick a new person from the search list — the tree re-centres around them. You can also double-click a card to bring that person to the middle.',
+    a: 'Click the “Focused on ‹name›” chip in the tree header and pick a new person from the search list — the tree re-centers around them. You can also double-click a card to bring that person to the middle.',
     keywords: ['change focus', 'tree focus', 'centre the tree', 'who the tree is about', 're-center tree', 'focus person', 'focus on someone else'],
     panel: 'help-support', section: 'glossary',
   },
@@ -546,7 +546,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'create-album',
     q: 'How do I create an album and add photos to it?',
-    a: 'Select some photos in Search & Discovery (or Memories), click Add to Album, and either pick an existing album or use Create new album to make one and add them in a step. To reorganise later, the Move or copy window lets you copy photos into another album or move them between albums.',
+    a: 'Select some photos in Search & Discovery (or Memories), click Add to Album, and either pick an existing album or use Create new album to make one and add them in a step. To reorganize later, the Move or copy window lets you copy photos into another album or move them between albums.',
     keywords: ['create an album', 'make an album', 'new album', 'add to album', 'put photos in an album', 'organise into albums', 'group photos', 'move to album'],
     panel: 'help-support', section: 'glossary',
   },
@@ -597,7 +597,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'capture-location',
     q: 'Where do my screenshots and screen recordings get saved?',
-    a: 'Into your library under a PDR Captures folder (organised by month), and they appear in Memories like any photo — screenshots dated the moment they were taken. If your Library Drive is disconnected they wait in a pending folder and flush across automatically when it reconnects.',
+    a: 'Into your library under a PDR Captures folder (organized by month), and they appear in Memories like any photo — screenshots dated the moment they were taken. If your Library Drive is disconnected they wait in a pending folder and flush across automatically when it reconnects.',
     keywords: ['where do screenshots go', 'where recordings save', 'find my screenshots', 'capture folder', 'pdr captures', 'where are my recordings', 'saved screenshots'],
     panel: 'help-support', section: 'glossary',
   },
@@ -653,25 +653,25 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
     panel: 'help-support', section: 'glossary',
   },
 
-  // ── Account / licence / formats / general ─────────────────────────────────────────────
+  // ── Account / license / formats / general ─────────────────────────────────────────────
   {
     id: 'trial-limits',
-    q: 'What are the free trial limits, and what does a licence unlock?',
-    a: 'The free trial lets you try everything with gentle caps — around 1000 files fixed, 12 named people, 10 video clips, 5 collages, 5 carousels, 20 screenshots and 5 recordings, on 1 device. A paid licence removes those caps and allows up to 3 devices. You can see your usage against the caps in the app.',
-    keywords: ['free trial', 'trial limits', 'what do i get free', 'limits', 'caps', 'free version', 'what does the licence unlock', 'upgrade', 'free vs paid'],
+    q: 'What are the free trial limits, and what does a license unlock?',
+    a: 'The free trial lets you try everything with gentle caps — around 1000 files fixed, 12 named people, 10 video clips, 5 collages, 5 carousels, 20 screenshots and 5 recordings, on 1 device. A paid license removes those caps and allows up to 3 devices. You can see your usage against the caps in the app.',
+    keywords: ['free trial', 'trial limits', 'what do i get free', 'limits', 'caps', 'free version', 'what does the license unlock', 'upgrade', 'free vs paid'],
     panel: 'help-support', section: 'glossary',
   },
   {
     id: 'pricing-model',
     q: 'Is PDR a subscription or a one-time purchase?',
-    a: 'Both options exist: a Monthly or Yearly subscription, or a one-off Lifetime licence — whichever you prefer. Any paid plan removes the trial caps and works on up to 3 devices.',
+    a: 'Both options exist: a Monthly or Yearly subscription, or a one-off Lifetime license — whichever you prefer. Any paid plan removes the trial caps and works on up to 3 devices.',
     keywords: ['subscription', 'one-off', 'one time purchase', 'lifetime', 'monthly', 'yearly', 'pricing', 'cost', 'how much does it cost', 'buy', 'purchase'],
     panel: 'help-support', section: 'glossary',
   },
   {
     id: 'devices',
-    q: 'How many devices can I use one licence on?',
-    a: 'A paid licence works on up to 3 devices at once; the free trial is 1 device. If you hit the limit, open Manage Devices and remove an old device to free a slot for a new install.',
+    q: 'How many devices can I use one license on?',
+    a: 'A paid license works on up to 3 devices at once; the free trial is 1 device. If you hit the limit, open Manage Devices and remove an old device to free a slot for a new install.',
     keywords: ['how many devices', 'how many computers', 'multiple devices', 'device limit', 'another computer', 'install on two computers', 'manage devices', 'free a slot'],
     panel: 'help-support', section: 'glossary',
   },
@@ -685,7 +685,7 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'video-formats',
     q: 'Does PDR handle my videos (MOV and others)?',
-    a: 'Yes — PDR indexes and dates videos like MOV and MP4 alongside your photos, and you can trim clips and transcribe their audio. Video isn’t re-encoded by the photo converter; it’s kept and organised as it is.',
+    a: 'Yes — PDR indexes and dates videos like MOV and MP4 alongside your photos, and you can trim clips and transcribe their audio. Video isn’t re-encoded by the photo converter; it’s kept and organized as it is.',
     keywords: ['video formats', 'mov', 'mp4', 'does it handle video', 'convert video', 'video support', 'avi', 'iphone video'],
     panel: 'help-support', section: 'glossary',
   },
@@ -862,15 +862,15 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'cancel-subscription',
     q: 'How do I cancel my subscription?',
-    a: 'A Lifetime licence has nothing to cancel — it is yours to keep. For a Monthly or Yearly subscription, manage or cancel it through your account with the store you bought it from (the link is in your purchase confirmation email). If it is really about cost, a cheaper plan may be available — Help & Support can point you to the right place.',
+    a: 'A Lifetime license has nothing to cancel — it is yours to keep. For a Monthly or Yearly subscription, manage or cancel it through your account with the store you bought it from (the link is in your purchase confirmation email). If it is really about cost, a cheaper plan may be available — Help & Support can point you to the right place.',
     keywords: ['cancel subscription', 'cancel my plan', 'stop paying', 'end subscription', 'unsubscribe', 'refund', 'cancel monthly', 'cancel yearly', 'stop my subscription', 'get my money back'],
     panel: 'help-support', section: 'contact-support',
   },
   {
     id: 'change-device',
-    q: 'I have too many devices / a new computer — how do I move my licence?',
-    a: 'A paid licence covers up to 3 devices at once. If you have hit the limit or replaced a computer, open Manage Devices, remove a device you no longer use to free a slot, then activate PDR on the new one. Your library itself lives on your Library Drive, so it comes straight back when you connect that drive.',
-    keywords: ['too many devices', 'move my licence', 'move my license', 'new computer', 'change device', 'deactivate a device', 'remove a device', 'free a slot', 'device limit reached', 'transfer licence', 'replaced my pc', 'activate on new computer'],
+    q: 'I have too many devices / a new computer — how do I move my license?',
+    a: 'A paid license covers up to 3 devices at once. If you have hit the limit or replaced a computer, open Manage Devices, remove a device you no longer use to free a slot, then activate PDR on the new one. Your library itself lives on your Library Drive, so it comes straight back when you connect that drive.',
+    keywords: ['too many devices', 'move my license', 'move my license', 'new computer', 'change device', 'deactivate a device', 'remove a device', 'free a slot', 'device limit reached', 'transfer license', 'replaced my pc', 'activate on new computer'],
     panel: 'help-support', section: 'glossary',
   },
   {
@@ -906,14 +906,14 @@ export const COMPANION_CORPUS: CompanionEntry[] = [
   {
     id: 'compare-other-apps',
     q: 'How does PDR compare to other photo apps?',
-    a: 'Three things set PDR apart, and most cloud apps can’t honestly claim even one: Security — your photos live on your own hardware; Privacy — nothing is uploaded, shared, or tied to an account; and Ownership — your library is yours forever. And PDR isn’t just storage, it’s a whole workshop for your memories: it deeply rescues and corrects the DATES that get scrambled as photos move between phones, apps and services; finds and names the people in them and weaves them into family trees; lets you hunt down a photo from the vaguest clue and view your photos and videos in genuinely beautiful ways; turns them into collages and carousels ready for print or social; and shares them to any app, email or phone by simple drag-and-drop. On price, PDR is a subscription like most good software — Monthly or Yearly — or you can own it outright with a one-off Lifetime licence; the real difference from the cloud is that your photos are always yours, never deleted or locked away if you stop paying.',
+    a: 'Three things set PDR apart, and most cloud apps can’t honestly claim even one: Security — your photos live on your own hardware; Privacy — nothing is uploaded, shared, or tied to an account; and Ownership — your library is yours forever. And PDR isn’t just storage, it’s a whole workshop for your memories: it deeply rescues and corrects the DATES that get scrambled as photos move between phones, apps and services; finds and names the people in them and weaves them into family trees; lets you hunt down a photo from the vaguest clue and view your photos and videos in genuinely beautiful ways; turns them into collages and carousels ready for print or social; and shares them to any app, email or phone by simple drag-and-drop. On price, PDR is a subscription like most good software — Monthly or Yearly — or you can own it outright with a one-off Lifetime license; the real difference from the cloud is that your photos are always yours, never deleted or locked away if you stop paying.',
     keywords: ['compare', 'vs other apps', 'how does it compare', 'google photos', 'icloud', 'mylio', 'better than', 'difference from other apps', 'why use pdr', 'alternative to', 'versus'],
     panel: 'help-support', section: 'start-here',
   },
   {
     id: 'pdr-strengths',
     q: 'What are PDR\'s strengths?',
-    a: 'It runs completely offline — private, secure and yours, with no cloud. It rescues dates that other tools ignore, so scattered photos snap back into a proper timeline. It brings everything together in one place — dates, faces, family trees, collages, screen capture. Your whole library, with all your names and tags, survives a reinstall or a new PC because it lives on your drive, not on the app. And you choose how to pay — a monthly or yearly plan, or a one-off Lifetime licence — with your library staying yours either way.',
+    a: 'It runs completely offline — private, secure and yours, with no cloud. It rescues dates that other tools ignore, so scattered photos snap back into a proper timeline. It brings everything together in one place — dates, faces, family trees, collages, screen capture. Your whole library, with all your names and tags, survives a reinstall or a new PC because it lives on your drive, not on the app. And you choose how to pay — a monthly or yearly plan, or a one-off Lifetime license — with your library staying yours either way.',
     keywords: ['strengths', 'what is pdr good at', 'why is it good', 'best features', 'advantages', 'what makes it good', 'pros', 'usp', 'why choose pdr', 'what is special'],
     panel: 'help-support', section: 'start-here',
   },
