@@ -384,7 +384,11 @@ export function TitleBar() {
           WebkitAppRegion: 'drag',
           width: `${whiteSectionWidth}px`,
           transition: 'width 0.35s cubic-bezier(0.22, 1, 0.36, 1), padding 0.35s cubic-bezier(0.22, 1, 0.36, 1)',
-          willChange: 'width',
+          // v3.0.0 (Terry 2026-07-06) — NO permanent will-change here. This section (logo +
+          // "Photo Date Rescue") is a natural grab spot, and a permanent will-change promotes it
+          // to its own compositor layer, which makes Chromium's -webkit-app-region: drag hit-test
+          // unreliable — the "takes several tries to move the window" bug. will-change is meant to
+          // be transient; leaving it on permanently was the cause. The width transition still works.
           justifyContent: isSidebarCollapsed ? 'center' : 'flex-start',
           paddingLeft: isSidebarCollapsed ? 0 : '16px',
           paddingRight: isSidebarCollapsed ? 0 : '16px',
