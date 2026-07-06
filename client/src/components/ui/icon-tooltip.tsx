@@ -11,8 +11,10 @@ interface IconTooltipProps {
   disabled?: boolean;
   /** Colour tone. Default = lavender (bg-primary). 'gold' = the warm
    *  amber used for married-in / extended-family affordances in Trees,
-   *  so the bubble matches the gold pill it labels. */
-  tone?: 'default' | 'gold';
+   *  so the bubble matches the gold pill it labels. 'ai' = the fuchsia→
+   *  violet "Share" gradient (Terry v3.1) — marks the intelligent
+   *  affordances (Ask PDR / Help & Support) so users spot them. */
+  tone?: 'default' | 'gold' | 'ai';
   /** v3.0 (Terry) — extra classes for the tooltip bubble, e.g. a higher z-index so it shows ABOVE a
    *  modal overlay (the caption dialog is z-[80]; the default tooltip is z-50 and would hide behind it). */
   contentClassName?: string;
@@ -53,7 +55,7 @@ export function IconTooltip({ label, side = 'top', delayMs = 120, children, disa
         <TooltipTrigger asChild>
           {isDisabledChild ? <span className="inline-flex">{children}</span> : children}
         </TooltipTrigger>
-        <TooltipContent side={side} className={cn(tone === 'gold' ? 'bg-[#c2740a] text-white' : undefined, contentClassName)}>{label}</TooltipContent>
+        <TooltipContent side={side} className={cn(tone === 'gold' ? 'bg-[#c2740a] text-white' : tone === 'ai' ? 'bg-gradient-to-r from-[#8b5cf6] to-[#d946ef] text-white border-transparent' : undefined, contentClassName)}>{label}</TooltipContent>
       </Tooltip>
     </TooltipProvider>
   );

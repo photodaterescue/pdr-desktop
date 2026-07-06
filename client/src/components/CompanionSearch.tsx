@@ -70,7 +70,7 @@ export function CompanionSearch({ onNavigate }: { onNavigate?: (panel: Companion
   );
 
   return (
-    <div className="rounded-xl border border-primary/25 bg-primary/[0.04] p-4 mb-10" data-testid="companion-search">
+    <div className="rounded-xl border border-[#8b5cf6]/50 bg-primary/[0.04] p-4 mb-10" data-testid="companion-search">
       <div className="flex items-center gap-2 mb-2.5">
         <AiSparkle className="w-4 h-4" />
         <h3 className="text-sm font-semibold text-foreground">Ask PDR</h3>

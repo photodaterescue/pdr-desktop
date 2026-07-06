@@ -517,6 +517,47 @@ describe('trees layout invariants (every shape × every focus)', () => {
   }
 });
 
+// ── Pinned-focus: the focus's OWN children stay centred beneath it ─────────
+// Terry 2026-07-06. checkParentsCentred exempts the FOCUS couple (their child may
+// sit off-centre when its subtree is lopsided — by design). But when the focus's
+// children are LEAVES (no subtree to justify it), they MUST hang dead-centre under
+// the focus, even when unrelated cousins crowd their row. This is the exact bug
+// Terry hit: focus=Colin, Expand Bloodline, and Lilly+Daisy slid left toward the
+// Day grandchildren. It reproduces ONLY with the focus pinned (a non-focus parent
+// re-seats over its kids and hides it), so the every-focus sweep can't catch it —
+// this asserts it directly.
+describe('the focus couple keeps its own childless kids centred (Lilly/Daisy)', () => {
+  const names = {
+    1: 'GP1', 2: 'GP2',
+    3: 'Alan', 4: 'Sally', 5: 'Patricia', 6: 'Brian',
+    7: 'Colin', 8: 'Lindsay', 9: 'TerryJohn', 10: 'Amie',
+    11: 'DayCousin1', 12: 'DayC1sp', 13: 'DayCousin2', 14: 'DayC2sp',
+    15: 'Lilly', 16: 'Daisy', 17: 'DayGK1', 18: 'DayGK2', 19: 'DayGK3',
+  };
+  const edges: E[] = [
+    [1, 2, 'spouse_of'], [1, 3, 'parent_of'], [2, 3, 'parent_of'], [1, 5, 'parent_of'], [2, 5, 'parent_of'],
+    [3, 4, 'spouse_of'], [3, 7, 'parent_of'], [4, 7, 'parent_of'], [3, 9, 'parent_of'], [4, 9, 'parent_of'], [3, 10, 'parent_of'], [4, 10, 'parent_of'],
+    [5, 6, 'spouse_of'], [5, 11, 'parent_of'], [6, 11, 'parent_of'], [5, 13, 'parent_of'], [6, 13, 'parent_of'],
+    [7, 8, 'spouse_of'], [7, 15, 'parent_of'], [8, 15, 'parent_of'], [7, 16, 'parent_of'], [8, 16, 'parent_of'],
+    [11, 12, 'spouse_of'], [11, 17, 'parent_of'], [12, 17, 'parent_of'], [11, 18, 'parent_of'], [12, 18, 'parent_of'],
+    [13, 14, 'spouse_of'], [13, 19, 'parent_of'], [14, 19, 'parent_of'],
+  ];
+  // Guard the drift at every realistic focus — Colin himself (Expand Bloodline),
+  // his spouse, his parents, and his grandparents (Expand from an ancestor down).
+  // Before the fix, focus=Colin drifted Lilly+Daisy 220px left onto the cousins.
+  for (const [fid, fname] of [[7, 'Colin'], [8, 'Lindsay'], [3, 'Alan'], [4, 'Sally'], [1, 'GP1'], [5, 'Patricia']] as const) {
+    it(`focus=${fname}, everything expanded → Lilly+Daisy sit under Colin+Lindsay`, () => {
+      const g = graphFor(names, edges, fid);
+      const by = new Map(layoutAll(g).nodes.filter(n => n.slotted).map(n => [n.personId, n]));
+      const colin = by.get(7)!, lindsay = by.get(8)!, lilly = by.get(15)!, daisy = by.get(16)!;
+      const parentMid = (colin.x + lindsay.x) / 2;
+      const kidMid = (lilly.x + daisy.x) / 2;
+      // Same generous tolerance the general checker uses for every other parent.
+      expect(Math.abs(parentMid - kidMid), `Colin+Lindsay mid ${Math.round(parentMid)} vs Lilly+Daisy mid ${Math.round(kidMid)} (Δ=${Math.round(Math.abs(parentMid - kidMid))})`).toBeLessThanOrEqual(SPINE_CENTRE_TOL);
+    });
+  }
+});
+
 // ── PARTIAL-expansion (collapsed) corpus ──────────────────────────────────
 // The spine-drift bug only appeared in PARTIAL states: with some branch heads
 // collapsed, their descendants panel away (not slotted), so the focus's parents

@@ -4626,6 +4626,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
       locked: boolean = false,
       active: boolean = false,
       accent?: keyof typeof SIDEBAR_ACCENT,
+      tone: 'default' | 'gold' | 'ai' = 'default',
     ) => {
       // v2.0.15 (Terry 2026-05-29) — tint the collapsed-rail icon to
       // match its expanded-sidebar accent crescent so the two
@@ -4639,7 +4640,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
         ? <span style={{ color: accentColor }} className="inline-flex">{icon}</span>
         : icon;
       return (
-        <IconTooltip label={title + (locked ? ' (Premium feature)' : '')} side="right">
+        <IconTooltip label={title + (locked ? ' (Premium feature)' : '')} side="right" tone={tone}>
           <button
             onClick={onClick}
             className={`w-9 h-9 flex items-center justify-center transition-colors relative ${
@@ -4826,12 +4827,17 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           false,
           isActivePanel('about-pdr'),
         )}
+        {/* v3.1 (Terry) — Ask PDR (the offline AI Companion) lives inside Help &
+            Support, so this entry wears the AI fuchsia: a fuchsia "?" glyph + the
+            Share-gradient tooltip, marking it as the intelligent place to ask. */}
         {iconBtn(
           'Help & Support',
-          <img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="" />,
+          <HelpCircle className="w-4 h-4 text-[#d946ef]" />,
           () => onPanelChange('help-support'),
           false,
           isActivePanel('help-support'),
+          undefined,
+          'ai',
         )}
       </div>
     );
@@ -5275,7 +5281,7 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
           <div className="space-y-1">
             <SidebarItem icon={<img src="./assets//pdr-settings.png" className="w-4 h-4 object-contain" alt="Settings" />} label="Settings" onClick={onSettingsClick} />
             <SidebarItem icon={<Info className="w-4 h-4 opacity-60" />} label="About PDR" onClick={() => onPanelChange('about-pdr')} active={activePanel === 'about-pdr'} />
-            <SidebarItem icon={<img src="./assets//pdr-help&support.png" className="w-4 h-4 object-contain" alt="Help & Support" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
+            <SidebarItem icon={<HelpCircle className="w-4 h-4 text-[#d946ef]" />} label="Help & Support" onClick={() => onPanelChange('help-support')} active={activePanel === 'help-support'} />
           </div>
         )}
       </div>

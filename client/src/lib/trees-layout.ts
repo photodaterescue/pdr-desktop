@@ -1593,22 +1593,32 @@ export function computePedigreeLayout(graph: FamilyGraph, options: LayoutOptions
           // With pins on BOTH sides, position by the desired centre clamped between them.
           const runLeaves = keys.slice(i, j + 1);
           const pinIsSib = (pinIdx: number) => pinIdx >= 0 && runLeaves.some(lf => (sibUnitsOf.get(lf) ?? []).includes(keys[pinIdx]));
-          let start: number;
-          if (lo === -Infinity && hi2 !== Infinity) start = hi2 - internal;          // no left pin → hug the right pin
-          else if (lo !== -Infinity && hi2 === Infinity) start = lo;                  // no right pin → hug the left pin
-          else if (lo !== -Infinity) {
-            // Both pins present: a childless leaf must hug its SIBLING, not sit at
-            // its stale cone-desired X (Terry: a great-aunt drifting from her brother
-            // even with an unrelated couple on her far side). Hug the sibling pin when
-            // exactly one neighbouring pin is a sibling; otherwise use the desired.
-            const lSib = pinIsSib(leftPin), rSib = pinIsSib(rightPin);
-            if (rSib && !lSib) start = hi2 - internal;
-            else if (lSib && !rSib) start = lo;
-            else { start = firstDesired; if (start < lo) start = lo; if (start + internal > hi2) start = hi2 - internal; }
+          if (lo === -Infinity && hi2 === Infinity) {
+            // NO pins anywhere — the whole row is leaves (e.g. Lilly, Daisy AND their
+            // cousins' children filling the youngest row when the bloodline is fully
+            // expanded). Tight-packing this mixed-family run against its leftmost leaf
+            // dragged Lilly & Daisy ~220px left onto the Day grandchildren, off their
+            // own parents (Terry 2026-07-06). Instead keep EACH leaf at its own cone X
+            // (under its own parent), pushing right only to clear an actual overlap;
+            // any corridor this leaves is closed rigidly by the final compaction.
+            for (let k = i + 1; k <= j; k++) { const mn = c[k - 1] + gap(k - 1, k); if (c[k] < mn) c[k] = mn; }
+          } else {
+            let start: number;
+            if (lo === -Infinity) start = hi2 - internal;                            // no left pin → hug the right pin
+            else if (hi2 === Infinity) start = lo;                                    // no right pin → hug the left pin
+            else {
+              // Both pins present: a childless leaf must hug its SIBLING, not sit at
+              // its stale cone-desired X (Terry: a great-aunt drifting from her brother
+              // even with an unrelated couple on her far side). Hug the sibling pin when
+              // exactly one neighbouring pin is a sibling; otherwise use the desired.
+              const lSib = pinIsSib(leftPin), rSib = pinIsSib(rightPin);
+              if (rSib && !lSib) start = hi2 - internal;
+              else if (lSib && !rSib) start = lo;
+              else { start = firstDesired; if (start < lo) start = lo; if (start + internal > hi2) start = hi2 - internal; }
+            }
+            let acc = start;
+            for (let k = i; k <= j; k++) { c[k] = acc; if (k < j) acc += gap(k, k + 1); }
           }
-          else start = c[i];                                                          // no pins at all → keep position
-          let acc = start;
-          for (let k = i; k <= j; k++) { c[k] = acc; if (k < j) acc += gap(k, k + 1); }
           i = j + 1;
         }
         // 3) Apply as rigid subtree shifts so each moved parent carries its children.
