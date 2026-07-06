@@ -14,6 +14,8 @@ import { COMPANION_CORPUS, COMPANION_SYNONYMS, type CompanionEntry } from './com
 export interface CompanionResult {
   entry: CompanionEntry;
   score: number;
+  /** Fraction of the question's words this entry actually answered (0..1). */
+  coverageFrac?: number;
 }
 
 export interface CompanionSearchOutcome {
@@ -124,18 +126,21 @@ export function searchCompanion(query: string, limit = 6): CompanionSearchOutcom
     // Scale by how much of the question was covered, so a single common word can't top the list.
     const coverageFrac = coverage / qTokens.length;
     const score = raw * (0.4 + 0.6 * coverageFrac);
-    scored.push({ entry: ix.entry, score });
+    scored.push({ entry: ix.entry, score, coverageFrac });
   }
 
   scored.sort((a, b) => b.score - a.score);
   const results = scored.slice(0, limit);
 
-  // Quality: judge the top hit against how much of the question it covered.
+  // Quality: a confident ("good") answer must both score well AND actually cover most of the question —
+  // so a topical near-miss (e.g. a carousel answer for a "collage" question) reads as a "closest match",
+  // not a fuchsia "Best answer". Otherwise it's "weak".
   let quality: 'good' | 'weak' | 'none' = 'none';
   if (results.length > 0) {
-    const top = results[0].score;
-    // A confident answer generally covers most of a short question with strong-field hits.
-    quality = top >= 3.2 ? 'good' : 'weak';
+    const top = results[0];
+    // "good" = fully-covered + a strong-field hit (a single strong keyword fully covering a short
+    // question counts). A topical near-miss with low coverage stays "weak" (a "closest match").
+    quality = (top.score >= 3.0 && (top.coverageFrac || 0) >= 0.55) ? 'good' : 'weak';
   }
   return { results, quality };
 }
