@@ -1299,6 +1299,10 @@ export async function listAlbums(): Promise<{ success: boolean; data?: AlbumSumm
   if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.list();
   return { success: false, error: 'Not running in Electron' };
 }
+export async function getAlbumMembershipCounts(fileIds: number[]): Promise<Record<number, number>> {
+  try { const r = await (window as any).pdr.albums.membershipCounts(fileIds); return r && r.success && r.counts ? r.counts : {}; }
+  catch { return {}; }
+}
 export async function createAlbum(title: string): Promise<{ success: boolean; id?: number; error?: string }> {
   if (isElectron() && (window as any).pdr?.albums) return (window as any).pdr.albums.create(title);
   return { success: false, error: 'Not running in Electron' };

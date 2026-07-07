@@ -3752,11 +3752,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                               openCreateTrigger → handleCreateAndAdd makes
                               the album + adds these photos in one go. */}
                           <DropdownMenuItem
-                            onSelect={() => { setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
+                            onSelect={() => { setAddToAlbumCreateMode(false); setAddToAlbumOpen(true); }}
                             data-testid="albums-actions-create-album"
                           >
                             <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                            Create new album from {selectedAlbumPhotoIds.size} photo{selectedAlbumPhotoIds.size === 1 ? '' : 's'}…
+                            Add to / create album…
                           </DropdownMenuItem>
                           {/* Create Collage from 2+ selected photos →
                               composer → PDRV. Photos only (videos can't be
@@ -4422,11 +4422,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             setSelectedAlbumPhotoIds(new Set([p.id]));
                             lastAlbumClickedIndexRef.current = null;
                           }
-                          setAddToAlbumCreateMode(true); setAddToAlbumOpen(true);
+                          setAddToAlbumCreateMode(false); setAddToAlbumOpen(true);
                         }}
                       >
                         <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                        Create new album…
+                        Add to / create album…
                       </ContextMenuItem>
                       <ContextMenuItem
                         onSelect={() => {

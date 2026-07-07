@@ -1192,7 +1192,7 @@ export default function MemoriesPendingView({
               })()}
               <DropdownMenuItem onSelect={() => setAddToAlbumOpen(true)}>
                 <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                Add to album…
+                Add to / create album…
               </DropdownMenuItem>
               {selectedVideos.length > 0 && (
                 <DropdownMenuItem
@@ -1611,7 +1611,7 @@ export default function MemoriesPendingView({
                             }}
                           >
                             <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                            Add to album…
+                            Add to / create album…
                           </ContextMenuItem>
                           <ContextMenuItem
                             onSelect={() => { void editPhotoCaption({ fileId: f.id, filename: f.filename }); }}

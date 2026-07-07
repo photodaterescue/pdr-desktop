@@ -852,6 +852,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v2.0.13 — set / clear the album's user-chosen cover photo. Pass
     // fileId=null to revert to the auto-picked first-by-date default.
     setCoverPhoto: (albumId: number, fileId: number | null) => ipcRenderer.invoke('albums:setCoverPhoto', { albumId, fileId }),
+    // v3.0.1 — album membership counts for a set of files (Add-to-album "already in" indicators).
+    membershipCounts: (fileIds: number[]) => ipcRenderer.invoke('albums:membershipCounts', fileIds),
 
     // v2.0.8 — Album group (folder) CRUD. Drives the AlbumsView's
     // hierarchical multi-membership tree.

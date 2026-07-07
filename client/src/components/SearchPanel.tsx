@@ -5134,17 +5134,10 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       an existing one. */}
                   <DropdownMenuItem
                     disabled={fixActive}
-                    onSelect={() => { if (fixActive) return; setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
-                  >
-                    <Plus className="w-3.5 h-3.5 mr-2" />
-                    Create new PDR album from {selectedFiles.size.toLocaleString()} selected
-                  </DropdownMenuItem>
-                  <DropdownMenuItem
-                    disabled={fixActive}
                     onSelect={() => { if (fixActive) return; setAddToAlbumCreateMode(false); setAddToAlbumOpen(true); }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                    Add to album…
+                    Add to / create album…
                   </DropdownMenuItem>
                   {/* v2.1 round 138 (Terry) — Create Collage from 2+
                       selected photos → composer → PDRV. Photos only. */}
@@ -6104,16 +6097,10 @@ function FileCard({ file, thumbnail, isSelected, isMultiSelected, onClick, onChe
             Add), then a separator, then the share actions. Parent (SearchPanel)
             resolves the paths / selection for each. */}
         {(onCreateAlbum || onAddToAlbum) && <ContextMenuSeparator />}
-        {onCreateAlbum && (
-          <ContextMenuItem onSelect={() => onCreateAlbum()} data-testid={`filecard-create-album-${file.id}`}>
-            <FolderPlus className="w-3.5 h-3.5 mr-2" />
-            Create new album…
-          </ContextMenuItem>
-        )}
         {onAddToAlbum && (
           <ContextMenuItem onSelect={() => onAddToAlbum()} data-testid={`filecard-add-to-album-${file.id}`}>
             <FolderPlus className="w-3.5 h-3.5 mr-2" />
-            Add to album…
+            Add to / create album…
           </ContextMenuItem>
         )}
         {(onSendToPhone || onPrint) && <ContextMenuSeparator />}

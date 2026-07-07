@@ -9511,6 +9511,11 @@ ipcMain.handle('albums:setCoverPhoto', async (_event, args: { albumId: number; f
   }
 });
 
+ipcMain.handle('albums:membershipCounts', async (_e, fileIds: number[]) => {
+  try { const { getAlbumMembershipCounts } = await import('./search-database.js'); return { success: true, counts: getAlbumMembershipCounts(Array.isArray(fileIds) ? fileIds : []) }; }
+  catch (e) { return { success: false, error: (e as Error).message, counts: {} }; }
+});
+
 // v2.1 round 162 (Terry) — one-shot back-fill: gather every collage already
 // in the library into the "PDR Collages" album (the save-time auto-add only
 // catches NEW saves). Collages are born-in-PDR "_CO" files (collision suffix

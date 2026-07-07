@@ -12761,7 +12761,12 @@
       }
       box.style.setProperty('--ar', String(aspect || 1));
       name.textContent = label;
-      const canDefault = !!presetId && !carouselMode;
+      // v3.0.1 (Terry 2026-07-07) — a carousel size can't be a "default for new collages"
+      // (toggleCanvasSizeDefault excludes carousel presets). Keep canDefault in step with it so the
+      // star doesn't look settable-but-inert on a carousel — it now clearly greys out + the tooltip
+      // says why, instead of doing nothing on click.
+      const curPreset = presetId ? COLLAGE_PRESETS.find((x) => x.id === presetId) : null;
+      const canDefault = !!presetId && !carouselMode && !(curPreset && curPreset.carousel);
       const def = readCanvasDefault();
       star.classList.toggle('on', canDefault && def === presetId);
       star.classList.toggle('disabled', !canDefault);

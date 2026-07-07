@@ -2815,18 +2815,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   data-testid="memories-actions-add-to-album"
                 >
                   <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                  Add to album…
-                </DropdownMenuItem>
-                {/* v2.1 round 275 (Terry) — NEW: create a fresh album
-                    straight from the selection (parity with Albums).
-                    Opens the AddToAlbumPopover directly in create mode
-                    via openCreateTrigger. */}
-                <DropdownMenuItem
-                  onSelect={() => { setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
-                  data-testid="memories-actions-create-album"
-                >
-                  <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                  Create new album from {selectedFileIds.size} photo{selectedFileIds.size === 1 ? '' : 's'}…
+                  Add to / create album…
                 </DropdownMenuItem>
                 {/* v2.1 round 138 (Terry) — Create Collage from 2+
                     selected photos. Opens the composer → PDRV. Photos
@@ -3613,17 +3602,6 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   <ContextMenuItem
                     onSelect={() => {
                       const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
-                      if (!alreadyInMulti) setSelectedFileIds(new Set([f.id]));
-                      lastClickedIndexRef.current = idx;
-                      setAddToAlbumCreateMode(true); setAddToAlbumOpen(true);
-                    }}
-                  >
-                    <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                    Create new album…
-                  </ContextMenuItem>
-                  <ContextMenuItem
-                    onSelect={() => {
-                      const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
                       if (!alreadyInMulti) {
                         setSelectedFileIds(new Set([f.id]));
                       }
@@ -3632,7 +3610,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
-                    Add to album…
+                    Add to / create album…
                   </ContextMenuItem>
                   <ContextMenuSeparator />
                   <ContextMenuItem

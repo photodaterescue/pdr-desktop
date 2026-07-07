@@ -8484,6 +8484,24 @@ export function getAlbumsForFileId(fileId: number): number[] {
   return rows.map((r) => r.album_id);
 }
 
+/** For a set of files, count how many are members of each album. albumId -> count.
+ *  Powers the Add-to-album picker "already in" indicators (v3.0.1, Terry 2026-07-07). */
+export function getAlbumMembershipCounts(fileIds: number[]): Record<number, number> {
+  if (!fileIds.length) return {};
+  const db = getDb();
+  const ph = fileIds.map(() => '?').join(',');
+  const rows = db.prepare(`
+    SELECT af.album_id AS album_id, COUNT(*) AS n
+    FROM album_files af
+    JOIN indexed_files i ON i.id = af.file_id
+    WHERE af.file_id IN (${ph}) AND (i.in_recycle_bin IS NULL OR i.in_recycle_bin = 0)
+    GROUP BY af.album_id
+  `).all(...fileIds) as Array<{ album_id: number; n: number }>;
+  const out: Record<number, number> = {};
+  for (const r of rows) out[r.album_id] = r.n;
+  return out;
+}
+
 /**
  * Bulk-add files to an album. `INSERT OR IGNORE` makes the call
  * idempotent under the composite PK, so callers can pass the user's full
