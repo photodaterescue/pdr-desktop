@@ -3069,8 +3069,8 @@
        on-screen size at any zoom (== 24px/-12px at zoom 1). The inner SVG is scaled to match
        so the arrow icon stays crisp + proportional. Per-kind offsets (left/top/margins) are
        counter-scaled in the .is-emoji / :not(.is-emoji) rules above. */
-    .collage-text .ch-rotate { width: calc(24px * var(--ch-inv,1)); height: calc(24px * var(--ch-inv,1)); margin-left: calc(-12px * var(--ch-inv,1)); }
-    .collage-text .ch-rotate svg { width: calc(16px * var(--ch-inv,1)); height: calc(16px * var(--ch-inv,1)); }
+    .collage-text .ch-rotate { width: calc(20px * var(--ch-inv,1)); height: calc(20px * var(--ch-inv,1)); margin-left: calc(-10px * var(--ch-inv,1)); }   /* v3.1 (Terry) — 24→20px, Canva-slim */
+    .collage-text .ch-rotate svg { width: calc(14px * var(--ch-inv,1)); height: calc(14px * var(--ch-inv,1)); }
     .collage-text .ch-rotate::before { content: none; }
     .ch-remove {
       width: 20px; height: 20px;
@@ -3185,17 +3185,19 @@
        be stretched (see startTextResize). Handle geometry is unchanged — the sides
        sit on the mid-edges of the stretched bounding box. */
     .collage-text .ch-resize {
-      width: calc(14px * var(--ch-inv,1)); height: calc(14px * var(--ch-inv,1));   /* v3.0 (Terry) — counter-scaled by --ch-inv → fixed on-screen grab-dot size at any zoom (== 14px at zoom 1) */
+      width: calc(11px * var(--ch-inv,1)); height: calc(11px * var(--ch-inv,1));   /* v3.0 (Terry) — counter-scaled by --ch-inv → fixed on-screen grab-dot size at any zoom. v3.1 (Terry) — 14→11px: Canva-slim corner dots, "not disproportionate in size to the rest of the box" */
+      border-width: calc(2px * var(--ch-inv,1));   /* v3.1 (Terry) — the base 2px WHITE border must counter-scale too: border-box floors the handle at the border sum, so at zoom 4+ every dot/bar inflated to a big WHITE circle (live-measured 17px instead of 11/5 at zoom 4.2 — the "ballooned grips" + the white-bauble look in Terry's SS) */
       right: auto; bottom: auto;       /* corner/side classes below set position */
       box-shadow: 0 1px 3px rgba(0,0,0,0.35);
     }
+    .collage-text .ch-rotate { border-width: calc(2px * var(--ch-inv,1)); }   /* v3.1 (Terry) — same border floor guard at extreme zoom (carousel max is 10×) */
     /* 4 CORNERS — same offsets + diagonal cursors as the tile corners. v3.0 (Terry) — the
        -7px OUTSIDE offset is counter-scaled by --ch-inv so each corner dot keeps a FIXED
        overhang past the box edge at any zoom (== -7px at zoom 1). */
-    .collage-text .ch-res-tl { left: calc(-7px * var(--ch-inv,1)); top: calc(-7px * var(--ch-inv,1)); right: auto; bottom: auto; cursor: nwse-resize; }
-    .collage-text .ch-res-tr { right: calc(-7px * var(--ch-inv,1)); top: calc(-7px * var(--ch-inv,1)); left: auto; bottom: auto; cursor: nesw-resize; }
-    .collage-text .ch-res-bl { left: calc(-7px * var(--ch-inv,1)); bottom: calc(-7px * var(--ch-inv,1)); right: auto; top: auto; cursor: nesw-resize; }
-    .collage-text .ch-res-br { right: calc(-7px * var(--ch-inv,1)); bottom: calc(-7px * var(--ch-inv,1)); left: auto; top: auto; cursor: nwse-resize; }
+    .collage-text .ch-res-tl { left: calc(-5.5px * var(--ch-inv,1)); top: calc(-5.5px * var(--ch-inv,1)); right: auto; bottom: auto; cursor: nwse-resize; }
+    .collage-text .ch-res-tr { right: calc(-5.5px * var(--ch-inv,1)); top: calc(-5.5px * var(--ch-inv,1)); left: auto; bottom: auto; cursor: nesw-resize; }
+    .collage-text .ch-res-bl { left: calc(-5.5px * var(--ch-inv,1)); bottom: calc(-5.5px * var(--ch-inv,1)); right: auto; top: auto; cursor: nesw-resize; }
+    .collage-text .ch-res-br { right: calc(-5.5px * var(--ch-inv,1)); bottom: calc(-5.5px * var(--ch-inv,1)); left: auto; top: auto; cursor: nwse-resize; }
     /* 4 SIDE mid-edges — Terry explicitly asked for "corners AND sides". Photos
        have corners only (the tile's edge bars are CROP, not resize), so these are
        NEW to the bounding box. Centred on each edge; ew/ns cursors. v2.1 round 222
@@ -3211,10 +3213,10 @@
        scaled by --ch-inv so each bar holds a fixed on-screen size + overhang + stays
        centred on its edge at any zoom (== the old values at zoom 1). top/left 50% and
        border-radius 3px are left untouched (percentages don't scale; 3px is negligible). */
-    .collage-text .ch-res-l { left: calc(-7px * var(--ch-inv,1)); top: 50%; width: calc(7px * var(--ch-inv,1)); height: calc(28px * var(--ch-inv,1)); margin-top: calc(-14px * var(--ch-inv,1)); border-radius: 3px; right: auto; bottom: auto; cursor: ew-resize; }
-    .collage-text .ch-res-r { right: calc(-7px * var(--ch-inv,1)); top: 50%; width: calc(7px * var(--ch-inv,1)); height: calc(28px * var(--ch-inv,1)); margin-top: calc(-14px * var(--ch-inv,1)); border-radius: 3px; left: auto; bottom: auto; cursor: ew-resize; }
-    .collage-text .ch-res-t { top: calc(-7px * var(--ch-inv,1)); left: 50%; width: calc(28px * var(--ch-inv,1)); height: calc(7px * var(--ch-inv,1)); margin-left: calc(-14px * var(--ch-inv,1)); border-radius: 3px; right: auto; bottom: auto; cursor: ns-resize; }
-    .collage-text .ch-res-b { bottom: calc(-7px * var(--ch-inv,1)); left: 50%; width: calc(28px * var(--ch-inv,1)); height: calc(7px * var(--ch-inv,1)); margin-left: calc(-14px * var(--ch-inv,1)); border-radius: 3px; right: auto; top: auto; cursor: ns-resize; }
+    .collage-text .ch-res-l { left: calc(-5px * var(--ch-inv,1)); top: 50%; width: calc(5px * var(--ch-inv,1)); height: calc(22px * var(--ch-inv,1)); margin-top: calc(-11px * var(--ch-inv,1)); border-radius: 3px; right: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-r { right: calc(-5px * var(--ch-inv,1)); top: 50%; width: calc(5px * var(--ch-inv,1)); height: calc(22px * var(--ch-inv,1)); margin-top: calc(-11px * var(--ch-inv,1)); border-radius: 3px; left: auto; bottom: auto; cursor: ew-resize; }
+    .collage-text .ch-res-t { top: calc(-5px * var(--ch-inv,1)); left: 50%; width: calc(22px * var(--ch-inv,1)); height: calc(5px * var(--ch-inv,1)); margin-left: calc(-11px * var(--ch-inv,1)); border-radius: 3px; right: auto; bottom: auto; cursor: ns-resize; }
+    .collage-text .ch-res-b { bottom: calc(-5px * var(--ch-inv,1)); left: 50%; width: calc(22px * var(--ch-inv,1)); height: calc(5px * var(--ch-inv,1)); margin-left: calc(-11px * var(--ch-inv,1)); border-radius: 3px; right: auto; top: auto; cursor: ns-resize; }
     /* Floating quick-action toolbar reveal for text/emoji (mirrors the tile rule
        at .collage-item.selected .ch-toolbar — the .ch-toolbar box style is shared
        from the unscoped rule above). */
@@ -3227,7 +3229,7 @@
        any zoom. The margin-bottom gap is counter-scaled too so the clearance is fixed. (This
        is SCOPED to .collage-text — the shared base .ch-toolbar / photo-tile chrome is
        untouched. == translateX(-50%) + 8px gap at zoom 1.) */
-    .collage-text .ch-toolbar { transform: translateX(-50%) scale(var(--ch-inv,1)); transform-origin: bottom center; margin-bottom: calc(8px * var(--ch-inv,1)); }
+    .collage-text .ch-toolbar { transform: translateX(-50%) scale(var(--ch-inv,1)); transform-origin: bottom center; margin-bottom: calc(30px * var(--ch-inv,1)); }   /* v3.1 (Terry) — gap raised 8→30px to match Canva's clear air between the bar and the box top (SS1) */
     /* v3.1 (Terry) — Canva-style TEXT controls added to the floating toolbar (Font,
        Size, B/I/U/S, Align, Effect, Line-spacing, Transparency, Case). They live
        INSIDE .ch-toolbar so they inherit the --ch-inv counter-scale (fixed on-screen
@@ -11189,6 +11191,14 @@
       if (prev !== layer) { try { closeTbPop(); } catch (_) {} }
       selectedText = layer || null;
       if (prev && prev !== layer && prev.el) prev.el.classList.remove('selected');
+      // v3.1 (Terry) — HARDEN: sweep .selected off EVERY other text el, not just prev.
+      // A stale .selected surviving on a rebuilt/cloned el left a second layer wearing
+      // full chrome (outline + handles + toolbar) — an unclickable "phantom box" that
+      // tracked no selection state (Terry's SS4). One selected text = one chrome, always.
+      for (let _si = 0; _si < collageTexts.length; _si++) {
+        const _st = collageTexts[_si];
+        if (_st && _st !== layer && _st.el && _st.el.classList.contains('selected')) _st.el.classList.remove('selected');
+      }
       if (selectedText && selectedText.el) selectedText.el.classList.add('selected');
       syncTextControls();
       // v2.1 round 195 (Terry) — syncTextControls early-returns when nothing is
@@ -11864,15 +11874,34 @@
         // was findable, so you couldn't centre text on page 1.
         for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
       }
+      // v3.1 (Terry) — PER-PAGE reference box. In carousel mode the dragged tile's page
+      // (the 1080-wide slice its centre sits on) is the symmetry/distribute/corner-equal
+      // reference — matching showCollageMeasurements round 373, which already measures to
+      // the PAGE. Before this, the snap referenced the WHOLE N-page strip (lRef/rRef init
+      // 0..width, mirrors about the strip centre, corner-equal only at the strip's outer
+      // edges) — so the badges showed page-relative equality but the snap never locked on
+      // interior pages (Terry: "pages that are not on the external edge of the entire
+      // canvas are being neglected"). Single collages: pgL/pgR == the canvas → unchanged.
+      let pgL = 0, pgR = cRect.width;
+      if (carouselMode) {
+        const _N = Math.max(1, carouselPageCount);
+        const _pw = cRect.width / _N;
+        const _pi = Math.max(0, Math.min(_N - 1, Math.floor(dCx / Math.max(1, _pw))));
+        pgL = _pi * _pw; pgR = (_pi + 1) * _pw;
+      }
       // v2.1 round 297 (Terry) — SYMMETRY snap. Besides aligning to each other tile's edges
       // + centres, also offer the MIRROR of those edges about the canvas centre: snapping the
       // dragged tile's LEFT edge onto the mirror of another tile's RIGHT edge makes the two
       // equidistant from their nearest page edges (true left↔right symmetry). Same for
       // top↔bottom. So "this photo, same gap from the left as that one has from the right".
+      // v3.1 (Terry) — carousel: ALSO mirror about the dragged tile's OWN PAGE centreline
+      // (pgL + pgR − x), so within-page left↔right symmetry snaps on EVERY page, not just
+      // where the strip's outer edges happen to coincide with a page edge.
       const pushEdgesWithMirror = (r) => {
         const oL = r.left - cRect.left, oR = r.right - cRect.left, oCx = oL + r.width / 2;
         const oT = r.top - cRect.top, oB = r.bottom - cRect.top, oCy = oT + r.height / 2;
         vCand.push(oL, oCx, oR, cRect.width - oL, cRect.width - oCx, cRect.width - oR);
+        if (carouselMode) vCand.push(pgL + pgR - oL, pgL + pgR - oCx, pgL + pgR - oR);
         hCand.push(oT, oCy, oB, cRect.height - oT, cRect.height - oCy, cRect.height - oB);
       };
       for (let i = 0; i < collageItems.length; i++) {
@@ -11892,7 +11921,7 @@
       // case, so the green showed yet the tile didn't stick (Terry: "not configured to do so
       // from the centre"). Add the MIDPOINT of the nearest L/R (and T/B) refs as a CENTRE
       // candidate, mirroring showCollageMeasurements' nearest-reference logic exactly.
-      let lRef = 0, rRef = cRect.width, tRef = 0, bRef = cRect.height;
+      let lRef = pgL, rRef = pgR, tRef = 0, bRef = cRect.height;   // v3.1 (Terry) — L/R refs start at the PAGE edges (carousel), so distribute/centre-between + corner-equal are page-relative on every page (single collage: pgL/pgR == 0/width, unchanged)
       // v3.0 r386 (Terry) — the distribute / "centre-between" snap now considers BOTH photo tiles AND
       // text/emoji layers (matches showCollageMeasurements), so the snap STICKS wherever the green shows.
       const distCands = collageItems.filter(function (o) { return o && o.el && o.el !== draggedEl && o.on && !o.isBg; }).concat(collageTexts.filter(function (o) { return o && o.el && o.el !== draggedEl; }));
@@ -11954,7 +11983,7 @@
         const mL = dLeft - lRef, mR = rRef - dRight, mT = dTop - tRef, mB = bRef - dBottom;
         const vIsTop = mT <= mB, vM = vIsTop ? mT : mB;   // nearest horizontal-edge margin
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
-        const hVsPage = hIsLeft ? (lRef <= 0.5) : (rRef >= cRect.width - 0.5);   // chosen H ref is the page edge
+        const hVsPage = hIsLeft ? (lRef <= pgL + 0.5) : (rRef >= pgR - 0.5);   // chosen H ref is the page edge — v3.1 (Terry): the tile's OWN page's edge (divider or outer), so corner-equal fires on interior carousel pages too
         const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
         if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && !xIsEqui && !yIsEqui) {
           // v2.1 round 310 (Terry) — with Shift, one axis is LOCKED, so that margin is fixed and
