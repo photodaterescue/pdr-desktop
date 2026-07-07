@@ -28,6 +28,7 @@ import {
   addPhotosToAlbum,
   removePhotosFromAlbum,
   getAlbumMembershipCounts,
+  getThumbnail,
   type AlbumSummary,
 } from '../lib/electron-bridge';
 import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
@@ -92,11 +93,10 @@ export default function AddToAlbumPopover({ open, onOpenChange, createMode = fal
     albums.forEach((a) => {
       const cp = a.coverPath;
       if (!cp || thumbs[cp]) return;
-      try {
-        Promise.resolve((window as any).pdr?.browser?.thumbnail?.(cp, 80)).then((url: string) => {
-          if (!cancelled && url) setThumbs((prev) => (prev[cp] ? prev : { ...prev, [cp]: url }));
-        }).catch(() => {});
-      } catch { /* best-effort cover */ }
+      // Same bridge + size (200) Albums uses, so the cover cache is shared and covers appear instantly.
+      getThumbnail(cp, 200).then((r) => {
+        if (!cancelled && r && r.success && r.dataUrl) setThumbs((prev) => (prev[cp] ? prev : { ...prev, [cp]: r.dataUrl }));
+      }).catch(() => {});
     });
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
