@@ -11756,10 +11756,15 @@
       var bX = T + 1, sX = null; for (var c = 0; c < xc.length; c++) { var g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
       var bY = T + 1, sY = null; for (var d = 0; d < yc.length; d++) { var g2 = Math.abs(grabY - yc[d]); if (g2 < bY) { bY = g2; sY = yc[d]; } }
       var okX = sX != null && bX <= T, okY = sY != null && bY <= T;
-      if (okX && (!okY || bX <= bY)) { out.nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw)); out.vGuide = sX - rect.left; }
-      else if (okY) { out.nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch))); out.hGuide = sY - rect.top; }
+      if (okX && (!okY || bX <= bY)) { out.nw = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw)); out.vGuide = sX - rect.left; }
+      else if (okY) { out.nw = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch))); out.hGuide = sY - rect.top; }
       return out;
     }
+    // v3.0.1 (Terry 2026-07-07) — minimum tile WIDTH as a fraction of the canvas. The old flat 0.05
+    // floor was 5% of the WHOLE canvas, so on an N-page carousel the wide canvas made 0.05 ≈ 5%×N of a
+    // single page — huge (you couldn't shrink a logo below ~30% of a page on a 6-pager). Make it
+    // page-relative for carousels so the floor is a consistent ~5%-of-a-page (~54px) everywhere.
+    function collageMinWFrac() { return carouselMode ? (0.05 / Math.max(1, carouselPageCount)) : 0.05; }
     function startItemResize(it, e, corner) {
       e.preventDefault(); e.stopPropagation();
       // Locked tile: select but don't resize.
@@ -11794,7 +11799,7 @@
         // v2.1 round 374 (Terry) — HOLD Shift (or Ctrl) while dragging a corner to KEEP the current shape
         // (enlarge a square AS a square): the modifier falls through to the aspect-locked uniform path below.
         if (it.isFrame && !ev.shiftKey && !ev.ctrlKey) {
-          const _nwF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
+          const _nwF = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
           const _nhF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientY - anchorY) / ch));
           it.wFrac = _nwF;
           const _caF = getCanvasAspect();
@@ -11810,7 +11815,7 @@
         let nw = startW * (dist / startDist);
         // v2.1 round 266 (Terry) — Phase 3: allow a tile LARGER than the page (ceiling
         // 1.4 → TILE_WFRAC_MAX=4, matching the backend bake). Keep the 0.05 floor.
-        nw = Math.max(0.05, Math.min(TILE_WFRAC_MAX, nw));
+        nw = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, nw));
         // Snap the grabbed X-edge to the nearest carousel page boundary, keeping the
         // anchor fixed: the grabbed edge sits at anchorX ∓ nw*cw (left/right of the
         // anchor); snapping it to a boundary screen-x just rescales nw. ALT bypasses.
@@ -14242,6 +14247,78 @@
     // (rotate, 4-corner resize, remove, crop edges), and the Canva-style floating
     // quick-action toolbar (Lock / Duplicate / Remove) for one tile model `it`,
     // wire every gesture, and append it to the canvas. Sets it.el/imgEl/clipEl.
+    // v3.0.1 (Terry 2026-07-07) — AUTO-TRIM a transparent PNG's empty margins so the tile (and its
+    // selection box) hugs the VISIBLE content instead of the full PNG bounds. A circular logo centred in
+    // a transparent square would otherwise make the box = the whole square with a padding gap around the
+    // art. We detect the opaque bounds and set it.crop to them; the existing renderer already shows only
+    // the crop region + fills the tile, and effectiveAspect() = it.aspect × (cropW/cropH) automatically
+    // reshapes the box to the CONTENT's aspect — so we DON'T touch it.aspect (the crop alone reshapes it,
+    // exactly as a manual crop via startItemCrop does; multiplying aspect too would double-count the ratio
+    // and stretch the art). Position (xFrac/yFrac/wFrac) is left as-is: the box width is unchanged and its
+    // height shrinks to hug the content, which now fills the box.
+    //
+    // Guards (all must hold, so this fires ONLY for a genuine transparent-margin PNG and never clobbers a
+    // user crop or a reopened/cloned tile): runs once per tile (it._alphaTrimmed); only when the tile is
+    // untrimmed (it.crop absent or the default {0,0,1,1}); never on a background / cover-fill / framed /
+    // placeholder tile. A tainted/unreadable canvas or an opaque photo (full-box alpha) just returns.
+    function alphaTrimTile(it) {
+      if (!it || it._alphaTrimmed) return;
+      // Only normal photo tiles: skip backgrounds, cover-fill frames, and empty/placeholder frames — those
+      // use their own box/cover-crop semantics and an auto-trim would fight them.
+      if (it.isBg || it.coverFill || it.bgPhoto || it.framed || it.placeholder || it.isFrame) return;
+      const img = it.imgEl;
+      if (!img || !img.naturalWidth || !img.naturalHeight) return;
+      // Only when UNTRIMMED: crop absent or still the default full box. A user crop (or a restored /
+      // duplicated tile whose crop was carried over) differs from the default → leave it completely alone.
+      // This is also why _alphaTrimmed need not be serialized: a reopened, already-trimmed tile has a
+      // non-default crop and is skipped here anyway.
+      const c = it.crop;
+      const EPS = 0.0005;
+      const isDefaultCrop = !c || (Math.abs((c.l || 0) - 0) < EPS && Math.abs((c.t || 0) - 0) < EPS && Math.abs((c.r == null ? 1 : c.r) - 1) < EPS && Math.abs((c.b == null ? 1 : c.b) - 1) < EPS);
+      if (!isDefaultCrop) return;
+      it._alphaTrimmed = true;   // mark first: a tainted/opaque image should still count as "checked" (no re-scan)
+      try {
+        const nW = img.naturalWidth, nH = img.naturalHeight;
+        // Scale so the long edge ≈ 256px — plenty to locate the opaque bounds cheaply.
+        const scale = Math.min(1, 256 / Math.max(nW, nH));
+        const w = Math.max(1, Math.round(nW * scale)), h = Math.max(1, Math.round(nH * scale));
+        const cv = document.createElement('canvas');
+        cv.width = w; cv.height = h;
+        const ctx = cv.getContext('2d', { willReadFrequently: true });
+        if (!ctx) return;
+        ctx.clearRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const data = ctx.getImageData(0, 0, w, h).data;   // throws on a tainted canvas → caught below
+        let minX = w, minY = h, maxX = -1, maxY = -1;
+        const A_THRESH = 12;   // alpha above this counts as "opaque content"
+        for (let y = 0; y < h; y++) {
+          let row = y * w * 4;
+          for (let x = 0; x < w; x++) {
+            if (data[row + x * 4 + 3] > A_THRESH) {
+              if (x < minX) minX = x;
+              if (x > maxX) maxX = x;
+              if (y < minY) minY = y;
+              if (y > maxY) maxY = y;
+            }
+          }
+        }
+        // Nothing opaque found (fully transparent image) → nothing to trim.
+        if (maxX < 0 || maxY < 0) return;
+        // Content fractions of the (downscaled) image; identical to the full-res fractions.
+        const cl = minX / w, ct = minY / h, cr = (maxX + 1) / w, cb = (maxY + 1) / h;
+        // If the opaque box already fills the image (every margin < 1.5% of that dimension) it's an opaque
+        // photo or an already-tight PNG — leave it untouched (no visible gap to close).
+        const MARGIN = 0.015;
+        if (cl < MARGIN && ct < MARGIN && (1 - cr) < MARGIN && (1 - cb) < MARGIN) return;
+        // Real margin found — crop the tile to the content. effectiveAspect() reshapes the box to the
+        // content's aspect via the crop; it.aspect (the natural box aspect) is intentionally left as-is.
+        it.crop = { l: cl, t: ct, r: cr, b: cb };
+        renderCollageItem(it);
+        // Persist the trim to the project (debounced), matching every other tile edit. Skipped during a
+        // restore (a reopened tile is guarded out above anyway); guarded so an early load can't throw.
+        try { if (typeof scheduleCollageAutosave === 'function' && !collageRestoring) scheduleCollageAutosave(); } catch (_) {}
+      } catch (_) { /* tainted/unreadable canvas → skip silently, tile keeps its full bounds */ }
+    }
     // Shared by buildCollageItems (initial build) and duplicateCollageItem (clone)
     // so a duplicate is built identically — keyed off it.idx/it.path, not a
     // forEach index, so it works for both. (Extracted from the old inline block.)
@@ -14287,6 +14364,14 @@
           if (it.framed) applyFrameCoverCrop(it, img.naturalWidth / img.naturalHeight);
           else it.aspect = img.naturalWidth / img.naturalHeight;
         }
+        // v3.0.1 (Terry 2026-07-07) — AUTO-TRIM transparent margins: a logo/sticker PNG centred in a
+        // transparent square makes its tile (+ selection box) the FULL PNG bounds, leaving a padding gap
+        // to the visible content. Detect the opaque bounds once and crop the tile down to hug them so the
+        // box hugs the VISIBLE pixels. Runs ONCE per tile, only on an untrimmed normal photo tile, and
+        // NEVER over a user's own crop (guarded inside). Must come AFTER it.aspect is set above (the crop
+        // reshapes effectiveAspect off the natural aspect). Opaque JPEGs + already-tight PNGs return a full
+        // box and are left untouched.
+        try { alphaTrimTile(it); } catch (_) {}
         renderCollageItem(it);
       };
       // v2.1 round 173 — show the background-removed cut-out if this tile has one
