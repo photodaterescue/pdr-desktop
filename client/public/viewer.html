@@ -3247,6 +3247,13 @@
        top by positionTextToolbarInView), counter-scale the inside inset too so it holds a
        fixed on-screen gap at any zoom (the generic .ch-toolbar-inside rule is photo-tile px). */
     .collage-text .ch-toolbar.ch-toolbar-inside { top: calc(8px * var(--ch-inv,1)); margin-top: 0; margin-bottom: 0; transform-origin: top center; }
+    /* v3.1 (Terry SS1/SS2) — the TEXT/EMOJI toolbar is REPARENTED into #collage-chrome (stage
+       level, un-clipped — see renderTextLayer): the two rules above no longer match it; this
+       one positions it. left/top are set in screen px by positionTextToolbarInView();
+       translateX(-50%) keeps it centred on the layer (it may run off the WINDOW edge — that
+       beats sliding it laterally off-centre). The base rule's bottom:100% / margins are
+       neutralised; no --ch-inv — stage level is naturally zoom-independent. */
+    #collage-chrome .ch-toolbar[data-text-tb] { bottom: auto; margin: 0; transform: translateX(-50%); z-index: 30; }
     /* v3.1 (Terry) — Canva-style TEXT controls added to the floating toolbar (Font,
        Size, B/I/U/S, Align, Effect, Line-spacing, Transparency, Case). They live
        INSIDE .ch-toolbar so they inherit the --ch-inv counter-scale (fixed on-screen
@@ -6136,25 +6143,37 @@
     // is zoom-independent. Re-run on every render + zoom/pan step; transform resets to ''
     // (pure CSS centring) whenever no clamp is needed.
     function positionTextToolbarInView() {
-      const t = (typeof selectedText !== 'undefined') ? selectedText : null;
-      if (!t || !t.el) return;
-      const tb = t.el.querySelector('.ch-toolbar');
-      if (!tb) return;
-      tb.style.transform = '';
-      if (!t.el.classList.contains('selected')) { tb.classList.remove('ch-toolbar-inside'); return; }
-      const stage = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
-      const cv = collageCanvasEl.getBoundingClientRect();
-      const L = Math.max(cv.left, stage ? stage.left : cv.left) + 4;
-      const R = Math.min(cv.right, stage ? stage.right : cv.right) - 4;
-      let r = tb.getBoundingClientRect();
-      let shift = 0;
-      if (r.left < L) shift = L - r.left;
-      else if (r.right > R) shift = -(r.right - R);
-      if (r.width > (R - L)) shift = L - r.left;   // bar wider than the visible run: pin its left edge
-      if (shift) tb.style.transform = 'translateX(calc(-50% + ' + Math.round(shift) + 'px)) scale(var(--ch-inv,1))';
-      const T = Math.max(cv.top, stage ? stage.top : cv.top);
-      r = tb.getBoundingClientRect();
-      tb.classList.toggle('ch-toolbar-inside', r.top < T + 2);
+      // v3.1 (Terry SS1/SS2) — REWRITTEN for the stage-level toolbar (reparented into
+      // #collage-chrome; see renderTextLayer). The old in-canvas version clamped the bar
+      // laterally to dodge the canvas overflow:hidden clip — Terry: it must stay CENTRED
+      // on the text and remain fully visible over the dark stage, even hanging past the
+      // canvas edge. Only the selected layer's bar shows; no horizontal clamping at all;
+      // flips BELOW the box when there's no room above the stage top.
+      if (!collageChromeEl) return;
+      // Self-healing sweep: any text bar whose layer no longer owns it (teardown path
+      // that missed tbarEl) is removed on the spot — no orphaned bars, ever. Scoped to
+      // [data-text-tb] so the photo overlay bar (same .ch-toolbar class) is untouched.
+      try {
+        collageChromeEl.querySelectorAll('.ch-toolbar[data-text-tb]').forEach((n) => {
+          const owned = collageTexts.some((t) => t && t.tbarEl === n);
+          if (!owned) { try { n.remove(); } catch (_) {} }
+        });
+      } catch (_) {}
+      const sel = (typeof selectedText !== 'undefined') ? selectedText : null;
+      const st = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
+      for (let i = 0; i < collageTexts.length; i++) {
+        const L = collageTexts[i];
+        if (!L || !L.tbarEl) continue;
+        if (L !== sel || !L.el || !L.el.classList.contains('selected') || !st) { L.tbarEl.style.display = 'none'; continue; }
+        const r = L.el.getBoundingClientRect();
+        L.tbarEl.style.display = 'inline-flex';
+        collageChromeEl.classList.add('active');   // the container gates all chrome visibility
+        const tbH = L.tbarEl.offsetHeight || 38;
+        let top = r.top - st.top - 21 - tbH;                 // 21px clear air above the box
+        if (top < 4) top = r.bottom - st.top + 21;           // no room above → flip BELOW the box
+        L.tbarEl.style.left = (r.left + r.width / 2 - st.left) + 'px';
+        L.tbarEl.style.top = top + 'px';
+      }
     }
     // Reset the view to the fit (zoom 1, no pan). Used by the double-click-empty-stage
     // reset, by reshape (canvas size change), and on entering collage mode.
@@ -10690,7 +10709,18 @@
         el.appendChild(tRot);
         el.appendChild(tResTL); el.appendChild(tResTR); el.appendChild(tResBL); el.appendChild(tResBR);
         el.appendChild(tResL); el.appendChild(tResR); el.appendChild(tResT); el.appendChild(tResB);
-        el.appendChild(tbar);
+        // v3.1 (Terry SS1/SS2) — the toolbar lives at STAGE level (#collage-chrome, un-clipped)
+        // like the photo overlay toolbar, NOT inside the canvas: #collage-canvas is
+        // overflow:hidden, so an in-canvas bar was CUT OFF at the canvas edge — and the earlier
+        // lateral clamp slid it off-centre, which cascaded into the same clipping (Terry SS1/SS2).
+        // positionTextToolbarInView() centres it on the layer's SCREEN rect every render / zoom
+        // step: always centred (may run off the WINDOW edge — never slides laterally), fully
+        // visible over the dark stage, fixed screen size at any zoom (stage level needs no
+        // --ch-inv), flipped BELOW the box when there's no room above. data-text-tb marks it so
+        // the self-healing sweep never touches the photo overlay bar (which shares .ch-toolbar).
+        tbar.dataset.textTb = '1';
+        if (collageChromeEl) { collageChromeEl.appendChild(tbar); layer.tbarEl = tbar; }
+        else { el.appendChild(tbar); }   // safety net if the stage chrome container is missing
         collageCanvasEl.appendChild(el);
         layer.el = el;
       }
@@ -11479,6 +11509,8 @@
       const i = collageTexts.indexOf(layer);
       if (i !== -1) collageTexts.splice(i, 1);
       if (layer.el && layer.el.parentNode) layer.el.parentNode.removeChild(layer.el);
+      if (layer.tbarEl && layer.tbarEl.parentNode) layer.tbarEl.parentNode.removeChild(layer.tbarEl);   // v3.1 (Terry) — the stage-level toolbar goes with the layer
+      layer.tbarEl = null;
       if (selectedText === layer) selectedText = null;
       syncTextControls();
       commitCollageChange();
@@ -11577,7 +11609,7 @@
         // v3.0 (Terry) — under ALT still SHOW the gap numbers (snap + guides off only), for precise free placement.
         if (ev.altKey) { hideCollageSnapGuides(); try { showCollageMeasurements(layer); } catch (_) {} return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 14);   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate.
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 14, { lockY: yLock !== null });   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate. v3.1 (Terry SS3) — pass lockY while Shift holds Y, so corner-equal takes the round-310 ONE-AXIS path: X snaps until the margin MATCHES the fixed vertical margin (the purple number) — Shift-slide into a page corner now locks.
         if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
         // Shift locks the vertical position (same composition as the tile drag).
@@ -15104,7 +15136,7 @@
       // down the live els, recreate plain layer objects (renderAllTexts below
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
-      collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
+      collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; });   // v3.1 (Terry) — stage-level toolbars torn down with the els (they live OUTSIDE the canvas now)
       collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
@@ -16019,7 +16051,7 @@
       collageCanvasEl.innerHTML = '';
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
       // text els; null them so renderAllTexts (end of this fn) recreates them.
-      collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper
+      collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper. v3.1 (Terry) — the stage-level toolbar survives the canvas innerHTML wipe, so remove it explicitly or it orphans
       // v2.1 round 206 (Terry) — the innerHTML clear also removed the snap-guide
       // overlay nodes; drop the cached refs so they're lazily recreated.
       collageSnapVEl = null; collageSnapHEl = null;
