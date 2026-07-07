@@ -3773,6 +3773,12 @@
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
     body.collage-mode .enhance-collage-only { display: flex; }
+    /* v3.1 (Terry) — PAGE OUTLINES section: CAROUSEL-only (a single-page collage has no pages to
+       outline). id-based rules mirror #enhance-fx so an [open] <details> can't leak in via
+       .enhance-collapse[open]'s specificity — hidden everywhere except body.carousel-mode. */
+    #collage-pageoutline-collapse { display: none; }
+    body.carousel-mode #collage-pageoutline-collapse[open] { display: flex; flex-direction: column; gap: 14px; }
+    body.carousel-mode #collage-pageoutline-collapse:not([open]) { display: block; }
     /* v2.1 round 154 (Terry) — the "Effects" chevron (Fade + Blend) is
        collage-only. id-based rules so an [open] <details> can't leak into
        the single-photo viewer via .enhance-collapse[open]'s specificity. */
@@ -4552,6 +4558,40 @@
           <!-- v2.1 round 249 (Terry) — the Vignette + Grain treatments block that used to
                sit here (at the foot of the Background section) has MOVED into the Effects
                subcategory below (#enhance-fx). See that block for the full note. -->
+        </details>
+        <!-- v3.1 (Terry) — PAGE OUTLINES: a stylable frame around each carousel page. Carousel-only
+             (gated by body.carousel-mode via .enhance-pageoutline-only), placed with the other
+             canvas-level controls (Canvas size / Background). Reuses the Frame section's chevron +
+             swatch palette + the shared toggle / slider primitives so it reads as one system.
+             The colour swatch + weight slider live inside the panel, so the panel-wide
+             pointerdown→begin / pointerup→commit wrapper makes each change ONE undo step and
+             autosaves it; on change we update collagePageOutline + repaint the page frames. -->
+        <details class="enhance-collapse enhance-pageoutline-only" id="collage-pageoutline-collapse" open>
+          <summary>Page outlines</summary>
+          <!-- On/off toggle — default ON so pages are clearly outlined out of the box. -->
+          <div class="enhance-label-row" style="margin-top:8px">
+            <label for="toggle-page-outline" style="cursor:pointer" data-pdr-tooltip="Draw a frame around each page. The frame sits inside the page edge and never extends past the canvas.">Show page outlines</label>
+            <input type="checkbox" class="enhance-toggle" id="toggle-page-outline" checked>
+          </div>
+          <!-- Colour: the shared Frame swatch palette (same look as Frame) + a native picker for
+               any custom colour. data-color drives collagePageOutline.color. -->
+          <div class="frame-palette" id="pageoutline-swatches" style="margin-top:6px">
+            <button class="frame-add" id="pageoutline-add" type="button" data-pdr-tooltip="Pick a custom color">
+              <span class="frame-add-plus">+</span>
+            </button>
+            <input type="color" id="pageoutline-custom" value="#FEC242" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+            <button class="frame-swatch active" type="button" data-color="#FEC242" style="background:#FEC242" data-pdr-tooltip="Gold"></button>
+            <button class="frame-swatch" type="button" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+            <button class="frame-swatch" type="button" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+            <button class="frame-swatch" type="button" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
+            <button class="frame-swatch" type="button" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
+            <button class="frame-swatch" type="button" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
+          </div>
+          <!-- Weight: 1–8 px, same slider primitive as Frame thickness. -->
+          <div class="enhance-control" id="pageoutline-weight-row" style="margin-top:8px">
+            <div class="enhance-label-row"><label for="slider-pageoutline-weight" data-pdr-tooltip="How thick the page outline is, in pixels. Double-click to reset.">Outline weight</label><span class="enhance-val" id="val-pageoutline-weight">2 px</span></div>
+            <input class="enhance-slider" id="slider-pageoutline-weight" type="range" min="1" max="8" step="1" value="2">
+          </div>
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
@@ -5916,6 +5956,12 @@
     // (scrollViewToSlice). New items (photo / text / emoji) are placed on THIS page so they
     // land in the view the user just framed, instead of the middle of the whole strip.
     let carouselFocusPage = 0;
+    // v3.1 (Terry) — PAGE OUTLINES: a stylable frame drawn around EACH carousel page (inside the
+    // page bounds, so it never spills past the canvas). on/colour/weight are user-set in the
+    // Enhance panel's "Page outlines" section, round-trip through the collage snapshot, and bake
+    // into the exported slides (renderCarouselGuides also runs in the export render — see below).
+    // Default ON in PDR gold so the pages read as clearly-outlined cards out of the box.
+    var collagePageOutline = { on: true, color: '#FEC242', weight: 2 };
     // x-fraction (of the WIDE canvas) of the focused page's CENTRE; 0.5 outside carousel mode.
     function carouselCenterXFrac() {
       if (!carouselMode) return 0.5;
@@ -13896,6 +13942,9 @@
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
         bgFxSel: collageBgFxSel,
+        // v3.1 (Terry) — PAGE OUTLINES: carry the carousel page-frame setting so a reopened
+        // carousel keeps its outline on/off + colour + weight (old projects lack it → default gold).
+        pageOutline: (collagePageOutline ? { on: !!collagePageOutline.on, color: collagePageOutline.color || '#FEC242', weight: collagePageOutline.weight || 2 } : { on: true, color: '#FEC242', weight: 2 }),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -13986,6 +14035,16 @@
         collageBgFx.applyToPhoto = !!(s.bgFx && s.bgFx.applyToPhoto);   // v3.0 round 537 — the backdrop-effects opt-in round-trips
         collageBgFxSel = (s.bgFxSel === 'blur') ? 'blur' : 'glow';
       } catch (_) { collageBgFx = { glow: defaultBgFxItem('glow'), blur: defaultBgFxItem('blur') }; collageBgFxSel = 'glow'; }
+      // v3.1 (Terry) — PAGE OUTLINES: restore the carousel page-frame setting. Old snapshots lack
+      // it → fall back to the default ON gold 2px frame. Validate each field defensively.
+      try {
+        var _po = s.pageOutline;
+        collagePageOutline = {
+          on: _po ? !!_po.on : true,
+          color: (_po && /^#[0-9a-fA-F]{3,6}$/.test(String(_po.color || ''))) ? _po.color : '#FEC242',
+          weight: (_po && Number.isFinite(_po.weight)) ? Math.max(1, Math.min(8, _po.weight)) : 2,
+        };
+      } catch (_) { collagePageOutline = { on: true, color: '#FEC242', weight: 2 }; }
       collageBgFxColorArmed = false;   // v3.0 (Terry) — undo/redo/reopen lands disarmed (the palette re-homes to Solid)
       try { renderCollageBgElementsList(); } catch (_) {}
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
@@ -14145,6 +14204,9 @@
       // so the overlays re-append as the canvas's top children (above any tiles/text
       // rebuilt above) and reflect the restored values.
       try { syncCollageTreatmentsUi(); } catch (_) {}
+      // v3.1 (Terry) — PAGE OUTLINES: reflect the restored outline setting into the panel
+      // controls and repaint the page frames (reopen / undo / redo / carousel page restore).
+      try { syncPageOutlineUi(); } catch (_) {}
       // v3.0 round 534 (Terry) — re-light the Use-a-photo chip indicator from the RESTORED
       // items (project reopen / undo / carousel page restore), after everything is rebuilt.
       try { syncBgPhotoChipThumbs(); } catch (_) {}
@@ -14965,7 +15027,10 @@
       renderAllTexts();   // v2.1 round 185 (Text #1) — recreate text els on top
       // v2.1 round 260 (Terry) — carousel wide: the innerHTML clear at the top also
       // removed the slice-divider overlay; re-create it (no-op outside carousel mode).
-      if (carouselMode) { try { renderCarouselGuides(); } catch (_) {} }
+      // v3.1 (Terry) — also re-create it during the off-screen carousel EXPORT render (which
+      // runs with carouselMode=false but a carousel-size export target), so the page OUTLINES
+      // bake into the exported slides. renderCarouselGuides() self-guards for both cases.
+      if (carouselMode || (collageExportTarget && collageSizeId === CAROUSEL_SIZE_ID)) { try { renderCarouselGuides(); } catch (_) {} }
     }
 
     // v2.1 round 140 — background swatches live in the Enhance panel's
@@ -16392,6 +16457,65 @@
           else { collageGrain = val; applyCollageTreatments(); }
         });
       }
+      // v3.1 (Terry) — PAGE OUTLINES controls: on/off toggle + colour swatches + custom picker +
+      // weight slider. Each change updates collagePageOutline and repaints the page frames; the
+      // panel-wide pointerdown/up wrapper makes it one undo step AND autosaves (same as the
+      // vignette/grain sliders above). markPageOutlineSwatch rings the active colour.
+      function markPageOutlineSwatch(color) {
+        var row = document.getElementById('pageoutline-swatches');
+        if (!row) return;
+        var c = String(color || '').toLowerCase();
+        row.querySelectorAll('.frame-swatch').forEach(function (sw) {
+          sw.classList.toggle('active', String(sw.getAttribute('data-color') || '').toLowerCase() === c);
+        });
+      }
+      var poToggle = document.getElementById('toggle-page-outline');
+      if (poToggle) {
+        poToggle.addEventListener('change', function () {
+          collagePageOutline.on = !!poToggle.checked;
+          var wr = document.getElementById('pageoutline-weight-row');
+          var sr = document.getElementById('pageoutline-swatches');
+          if (wr) wr.style.display = poToggle.checked ? '' : 'none';
+          if (sr) sr.style.display = poToggle.checked ? '' : 'none';
+          renderCarouselGuides();
+        });
+      }
+      var poSwatches = document.getElementById('pageoutline-swatches');
+      if (poSwatches) {
+        poSwatches.addEventListener('click', function (e) {
+          var sw = e.target.closest ? e.target.closest('.frame-swatch') : null;
+          if (!sw || !poSwatches.contains(sw)) return;
+          var col = sw.getAttribute('data-color') || '#FEC242';
+          collagePageOutline.color = col;
+          markPageOutlineSwatch(col);
+          var cust = document.getElementById('pageoutline-custom'); if (cust) cust.value = col;
+          renderCarouselGuides();
+        });
+      }
+      var poAdd = document.getElementById('pageoutline-add');
+      var poCustom = document.getElementById('pageoutline-custom');
+      if (poAdd && poCustom) {
+        // + button opens the native picker; the panel wrapper's pointerdown already snapshotted.
+        poAdd.addEventListener('click', function () { try { poCustom.click(); } catch (_) {} });
+        poCustom.addEventListener('input', function () {
+          collagePageOutline.color = poCustom.value || '#FEC242';
+          markPageOutlineSwatch(collagePageOutline.color);
+          renderCarouselGuides();
+        });
+        // A custom pick settles on 'change'; commit its own undo step (the picker steals the
+        // pointerup that the panel wrapper relies on, like the frame custom picker).
+        poCustom.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} try { beginCollageChange(); } catch (_) {} });
+      }
+      var poWeight = document.getElementById('slider-pageoutline-weight');
+      var poWeightVal = document.getElementById('val-pageoutline-weight');
+      if (poWeight) {
+        poWeight.addEventListener('input', function () {
+          var wt = Math.max(1, Math.min(8, parseInt(poWeight.value, 10) || 2));
+          collagePageOutline.weight = wt;
+          if (poWeightVal) poWeightVal.textContent = wt + ' px';
+          renderCarouselGuides();
+        });
+      }
       // v2.1 round 252 (Terry) — CUSTOM gradient slots: populate + wire once (inside the
       // collageGradientWired guard so the delegated handler attaches a single time). Empty
       // slot saves the CURRENT gradient; filled slot applies it; the × clears it. Undo is one
@@ -16489,6 +16613,34 @@
       if (gs) gs.value = String(collageGrain || 0);
       if (gv) gv.textContent = String(collageGrain || 0);
       applyCollageTreatments();
+    }
+    // v3.1 (Terry) — PAGE OUTLINES: reflect collagePageOutline into the toggle + colour swatch ring
+    // + custom picker + weight slider/readout, then repaint the page frames. Called on collage
+    // enter, undo/redo, and project/carousel-page restore (so the controls always show the truth).
+    function syncPageOutlineUi() {
+      var po = collagePageOutline || { on: true, color: '#FEC242', weight: 2 };
+      var tog = document.getElementById('toggle-page-outline');
+      if (tog) tog.checked = !!po.on;
+      var sr = document.getElementById('pageoutline-swatches');
+      if (sr) sr.style.display = po.on ? '' : 'none';
+      var wr = document.getElementById('pageoutline-weight-row');
+      if (wr) wr.style.display = po.on ? '' : 'none';
+      var col = po.color || '#FEC242';
+      var swRow = document.getElementById('pageoutline-swatches');
+      if (swRow) {
+        var c = String(col).toLowerCase();
+        swRow.querySelectorAll('.frame-swatch').forEach(function (sw) {
+          sw.classList.toggle('active', String(sw.getAttribute('data-color') || '').toLowerCase() === c);
+        });
+      }
+      var cust = document.getElementById('pageoutline-custom');
+      if (cust && /^#[0-9a-fA-F]{3,6}$/.test(String(col))) cust.value = col;
+      var wSl = document.getElementById('slider-pageoutline-weight');
+      var wVal = document.getElementById('val-pageoutline-weight');
+      var wt = Math.max(1, Math.min(8, po.weight || 2));
+      if (wSl) wSl.value = String(wt);
+      if (wVal) wVal.textContent = wt + ' px';
+      try { renderCarouselGuides(); } catch (_) {}
     }
     // v2.1 round 294 (Terry) — reflect the SELECTION's vignette/grain onto the sliders: a
     // selected PHOTO shows its own per-tile enh; the background / nothing falls back to the
@@ -16971,6 +17123,7 @@
       // zoomed into page 1 is removed.
       resetCollageZoom();
       renderCarouselGuides();
+      try { syncPageOutlineUi(); } catch (_) {}   // v3.1 (Terry) — init the Page-outlines controls for the fresh carousel
       updateCarouselFilmstrip();
     }
     function exitCarouselMode() {
@@ -17037,12 +17190,22 @@
     // PERCENT (left:(i/N)*100%), so they scale with the canvas + view transform for free.
     // pointer-events:none; z just below text (COLLAGE_TEXT_Z=100000) so the lines sit above
     // ALL tiles (tile z is small, from collageZTop) but text reads cleanly over them, and
-    // well below the gold snap guides (max z-index). NOT part of the bake (the bake reads
-    // only layout.items/canvas/texts).
+    // well below the gold snap guides (max z-index).
+    // v3.1 (Terry) — this overlay IS now captured by the WYSIWYG export: the off-screen render
+    // window rebuilds it (renderAllCollage re-runs this in the carousel-export context), so the
+    // page OUTLINES bake into the exported slides. The faint divider LINES (outline OFF) draw the
+    // same way but are, by design, only a boundary hint. The bg-photo/gradient/grain/text bake
+    // via layout.items/canvas/texts as before; the outline is a DOM element captured by capturePage.
     function renderCarouselGuides() {
       if (!collageCanvasEl) return;
       let g = document.getElementById('carousel-guides');
-      if (!carouselMode) { if (g && g.parentNode) g.parentNode.removeChild(g); return; }
+      // v3.1 (Terry) — page count for the overlay. Live carousel: carouselPageCount. During the
+      // off-screen WYSIWYG export the render window is NOT in carouselMode (restoreCollageSnapshot
+      // doesn't flip it), so derive N from the restored carousel export px (N slices × 1080 wide)
+      // — this is what lets the page OUTLINES bake into the exported slides like a frame.
+      const isCarouselExport = (!carouselMode && collageExportTarget && collageSizeId === CAROUSEL_SIZE_ID && collageExportPx && collageExportPx.w);
+      if (!carouselMode && !isCarouselExport) { if (g && g.parentNode) g.parentNode.removeChild(g); return; }
+      const N = Math.max(1, isCarouselExport ? Math.round(collageExportPx.w / CAROUSEL_EXPORT_PX.w) : carouselPageCount);
       if (!g) {
         g = document.createElement('div');
         g.id = 'carousel-guides';
@@ -17053,14 +17216,28 @@
       // lazily later at z 2147483646, still win).
       collageCanvasEl.appendChild(g);
       g.innerHTML = '';
-      const N = Math.max(1, carouselPageCount);
-      for (let i = 1; i < N; i++) {
-        const line = document.createElement('div');
-        // v2.1 round 262 (Terry) — page separators in PDR gold (was a faint 1px dark line
-        // that read as "a slight gap"). Centred on the boundary via translateX(-50%).
-        line.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:#FEC242;transform:translateX(-50%);';
-        line.style.left = ((i / N) * 100) + '%';
-        g.appendChild(line);
+      // v3.1 (Terry) — PAGE OUTLINES: when on, draw a stylable frame around EACH page (i = 0..N-1)
+      // with box-sizing:border-box so the border sits INSIDE the page and never spills past the
+      // canvas. When off, keep the original faint gold divider LINES on the N-1 boundaries.
+      if (collagePageOutline && collagePageOutline.on) {
+        const wt = Math.max(1, (collagePageOutline.weight || 2));
+        const col = collagePageOutline.color || '#FEC242';
+        for (let i = 0; i < N; i++) {
+          const box = document.createElement('div');
+          box.style.cssText = 'position:absolute;top:0;bottom:0;box-sizing:border-box;pointer-events:none;border:' + wt + 'px solid ' + col + ';';
+          box.style.left = ((i / N) * 100) + '%';
+          box.style.width = (100 / N) + '%';
+          g.appendChild(box);
+        }
+      } else {
+        for (let i = 1; i < N; i++) {
+          const line = document.createElement('div');
+          // v2.1 round 262 (Terry) — page separators in PDR gold (was a faint 1px dark line
+          // that read as "a slight gap"). Centred on the boundary via translateX(-50%).
+          line.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:#FEC242;transform:translateX(-50%);';
+          line.style.left = ((i / N) * 100) + '%';
+          g.appendChild(line);
+        }
       }
     }
     // growCarousel() / shrinkCarousel(i) — change the slice count, keeping every existing
