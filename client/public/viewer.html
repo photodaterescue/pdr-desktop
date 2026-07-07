@@ -26,24 +26,39 @@
        declared in COLLAGE_FONT_GROUPS and rendered by the custom Font dropdown).
        Same wiring as round 190: woff2 served alongside this page; the canvas only
        renders these once document.fonts.load() resolves (see FUN_FAMILIES). */
-    @font-face { font-family: 'Montserrat'; src: url('fonts/montserrat.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Poppins'; src: url('fonts/poppins.woff2') format('woff2'); font-display: swap; }
+    /* v3.1 (Terry SS1) — TRUE FONT WEIGHTS (Canva parity): the 12 families below now load
+       their VARIABLE woff2 (full weight axis in one file, latin subset, vendored from Google
+       Fonts) with a font-weight range descriptor — so Thin→Black render genuinely on canvas.
+       Poppins has no variable version → 8 static weight files + the original 400. Display
+       faces (Anton, Bebas, Lobster…) are single-weight by design and keep their one file —
+       the Weight menu greys their other weights out, exactly like Canva. Weight availability
+       is mirrored in COLLAGE_FONT_WEIGHTS (script) — keep the two in step. */
+    @font-face { font-family: 'Montserrat'; src: url('fonts/montserrat-var.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins.woff2') format('woff2'); font-weight: 400; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-100.woff2') format('woff2'); font-weight: 100; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-200.woff2') format('woff2'); font-weight: 200; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-300.woff2') format('woff2'); font-weight: 300; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-500.woff2') format('woff2'); font-weight: 500; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-600.woff2') format('woff2'); font-weight: 600; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-700.woff2') format('woff2'); font-weight: 700; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-800.woff2') format('woff2'); font-weight: 800; font-display: swap; }
+    @font-face { font-family: 'Poppins'; src: url('fonts/poppins-900.woff2') format('woff2'); font-weight: 900; font-display: swap; }
     @font-face { font-family: 'Bebas Neue'; src: url('fonts/bebas-neue.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Anton'; src: url('fonts/anton.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Playfair Display'; src: url('fonts/playfair-display.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Fredoka'; src: url('fonts/fredoka.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Dancing Script'; src: url('fonts/dancing-script.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Playfair Display'; src: url('fonts/playfair-display-var.woff2') format('woff2'); font-weight: 400 900; font-display: swap; }
+    @font-face { font-family: 'Fredoka'; src: url('fonts/fredoka-var.woff2') format('woff2'); font-weight: 300 700; font-display: swap; }
+    @font-face { font-family: 'Dancing Script'; src: url('fonts/dancing-script-var.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
     @font-face { font-family: 'Luckiest Guy'; src: url('fonts/luckiest-guy.woff2') format('woff2'); font-display: swap; }
     @font-face { font-family: 'Bangers'; src: url('fonts/bangers.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Raleway'; src: url('fonts/raleway.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'DM Sans'; src: url('fonts/dm-sans.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'League Spartan'; src: url('fonts/league-spartan.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Oswald'; src: url('fonts/oswald.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Raleway'; src: url('fonts/raleway-var.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'DM Sans'; src: url('fonts/dm-sans-var.woff2') format('woff2'); font-weight: 100 1000; font-display: swap; }
+    @font-face { font-family: 'League Spartan'; src: url('fonts/league-spartan-var.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Oswald'; src: url('fonts/oswald-var.woff2') format('woff2'); font-weight: 200 700; font-display: swap; }
     @font-face { font-family: 'Permanent Marker'; src: url('fonts/permanent-marker.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Caveat'; src: url('fonts/caveat.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Quicksand'; src: url('fonts/quicksand.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Jost'; src: url('fonts/jost.woff2') format('woff2'); font-display: swap; }
-    @font-face { font-family: 'Manrope'; src: url('fonts/manrope.woff2') format('woff2'); font-display: swap; }
+    @font-face { font-family: 'Caveat'; src: url('fonts/caveat-var.woff2') format('woff2'); font-weight: 400 700; font-display: swap; }
+    @font-face { font-family: 'Quicksand'; src: url('fonts/quicksand-var.woff2') format('woff2'); font-weight: 300 700; font-display: swap; }
+    @font-face { font-family: 'Jost'; src: url('fonts/jost-var.woff2') format('woff2'); font-weight: 100 900; font-display: swap; }
+    @font-face { font-family: 'Manrope'; src: url('fonts/manrope-var.woff2') format('woff2'); font-weight: 200 800; font-display: swap; }
     body {
       background: #1a1a2e;
       color: #e0e0e0;
@@ -3276,6 +3291,16 @@
     .ch-tb-size .ch-tb-num:focus { border-color: rgba(169,156,255,0.6); }
     /* Style B/I/U/S pressed state (reuse the icon button; add the toggled look). */
     .ch-tb-btn.ch-tb-toggle.active { color: #fff; background: rgba(169,156,255,0.24); }
+    /* v3.1 (Terry SS1) — WEIGHT chevron (a thin dropdown arrow next to B) + the
+       Thin…Black weight menu rows. Each row previews its own weight in the layer's
+       family; weights the family can't render are greyed out (Canva SS1). */
+    .ch-tb-btn.ch-tb-wchev { width: 15px; padding: 0; margin-left: -3px; }
+    .ch-tb-btn.ch-tb-wchev svg { width: 12px; height: 12px; }
+    .ch-tb-pop.ch-tb-weightpop { padding: 4px; min-width: 156px; }
+    .ch-tb-pop .ch-tb-w-opt { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #eee; padding: 6px 10px; border-radius: 6px; font-size: 14px; cursor: pointer; }
+    .ch-tb-pop .ch-tb-w-opt:hover:not(:disabled) { background: rgba(169,156,255,0.14); }
+    .ch-tb-pop .ch-tb-w-opt.active { background: rgba(169,156,255,0.24); color: #fff; }
+    .ch-tb-pop .ch-tb-w-opt:disabled { color: #5b5578; cursor: default; }
     /* Popover that hangs off a toolbar button. position:fixed, placed in JS. */
     .ch-tb-pop {
       position: fixed; z-index: 210; display: none;
@@ -4771,6 +4796,8 @@
                     <button class="ec-toggle-btn" data-style="bold" type="button" data-pdr-tooltip="Bold" aria-label="Bold" style="font-weight:700">B</button>
                     <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
                     <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
+                    <!-- v3.1 (Terry SS1) — Weight menu in the SIDE PANEL too (Thin…Black; same popover as the toolbar chevron) -->
+                    <button class="ec-toggle-btn" id="collage-text-weight-btn" type="button" data-pdr-tooltip="Font weight (Thin to Black)" aria-label="Font weight" style="width:auto;padding:0 8px;letter-spacing:0.02em">W<span aria-hidden="true" style="font-size:9px;opacity:0.75;margin-left:3px">&#9662;</span></button>
                   </div>
                 </div>
               </div>
@@ -9770,6 +9797,80 @@
       const to2 = (n) => ('0' + n.toString(16)).slice(-2);
       return '#' + to2(mix(r)) + to2(mix(g)) + to2(mix(b));
     }
+    // ── v3.1 (Terry SS1) — FONT WEIGHTS (Canva parity) ─────────────────────────
+    // Which weights each family can genuinely render (must mirror the @font-face
+    // block: variable files carry a range; families not listed = single-weight
+    // display faces → Regular + the browser's synthetic Bold, like today).
+    const COLLAGE_WEIGHT_STEPS = [[100, 'Thin'], [200, 'ExtraLight'], [300, 'Light'], [400, 'Regular'], [500, 'Medium'], [600, 'SemiBold'], [700, 'Bold'], [800, 'ExtraBold'], [900, 'Black']];
+    const COLLAGE_FONT_WEIGHTS = (function () {
+      const all9 = [100, 200, 300, 400, 500, 600, 700, 800, 900];
+      return {
+        'Montserrat': all9, 'Poppins': all9, 'Raleway': all9, 'Jost': all9, 'League Spartan': all9, 'DM Sans': all9,
+        'Manrope': [200, 300, 400, 500, 600, 700, 800],
+        'Oswald': [200, 300, 400, 500, 600, 700],
+        'Quicksand': [300, 400, 500, 600, 700],
+        'Fredoka': [300, 400, 500, 600, 700],
+        'Caveat': [400, 500, 600, 700],
+        'Dancing Script': [400, 500, 600, 700],
+        'Playfair Display': [400, 500, 600, 700, 800, 900],
+      };
+    })();
+    function collageFontWeights(fam) { return COLLAGE_FONT_WEIGHTS[fam] || [400, 700]; }
+    // The layer's EFFECTIVE weight: fontWeight when set, else the legacy bold flag.
+    function textWeightOf(layer) { return (typeof layer.fontWeight === 'number') ? layer.fontWeight : (layer.bold ? 700 : 400); }
+    // B button semantics with weights in play: toggle 400 ↔ 700 (and keep the legacy
+    // bold flag in step so old code paths + old snapshots stay coherent).
+    function toggleTextBoldWeight(layer) {
+      if (textWeightOf(layer) >= 600) { layer.fontWeight = 400; layer.bold = false; }
+      else { layer.fontWeight = 700; layer.bold = true; }
+    }
+    // ONE shared weight menu (toolbar chevron + the side panel's Weight button both
+    // anchor it). Rebuilt per open for the CURRENT layer's family: each row previews
+    // its own weight; weights the family lacks are greyed out (Canva SS1).
+    let collageWeightMenuEl = null;
+    function openTextWeightMenu(anchorBtn) {
+      const layer = selectedText;
+      if (!layer || layer.isEmoji || !anchorBtn) return;
+      if (!collageWeightMenuEl) {
+        collageWeightMenuEl = document.createElement('div');
+        collageWeightMenuEl.className = 'ch-tb-pop ch-tb-weightpop';
+        document.body.appendChild(collageWeightMenuEl);
+      }
+      const pop = collageWeightMenuEl;
+      openTbPop_(pop, anchorBtn, () => {
+        try { kickFunFonts(); } catch (_) {}
+        pop.innerHTML = '';
+        const fam = layer.font || 'Impact';
+        const avail = collageFontWeights(fam);
+        const cur = textWeightOf(layer);
+        COLLAGE_WEIGHT_STEPS.forEach((step) => {
+          const w = step[0], name = step[1];
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'ch-tb-w-opt';
+          b.textContent = name;
+          b.style.fontFamily = "'" + fam + "'";
+          b.style.fontWeight = String(w);
+          const ok = avail.indexOf(w) !== -1;
+          if (!ok) b.disabled = true;
+          if (w === cur) b.classList.add('active');
+          if (ok) b.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const L = selectedText; if (!L) return;
+            beginCollageChange();
+            L.fontWeight = w; L.bold = w >= 600;
+            renderTextLayer(L);
+            commitCollageChange();
+            // Poppins ships per-weight FILES — if this weight's file wasn't loaded yet the
+            // canvas drew a fallback; re-render once it lands (variable families no-op).
+            try { document.fonts.load(w + ' 16px "' + fam + '"').then(() => { try { if (selectedText === L) renderTextLayer(L); } catch (_) {} }); } catch (_) {}
+            pop.querySelectorAll('.ch-tb-w-opt').forEach((x) => x.classList.toggle('active', x === b));
+            try { refreshTextToolbar(L); } catch (_) {}
+            try { syncTextControls(); } catch (_) {}
+          });
+          pop.appendChild(b);
+        });
+      });
+    }
     // v3.1 (Terry) — apply the layer's letterCase transform (from the toolbar's aA
     // button) to a display string WITHOUT mutating layer.text (which stays the raw
     // editable source). 'title' = capitalise the first letter of each whitespace-run.
@@ -9848,7 +9949,7 @@
         _fixW = Math.max(4, layer.boxWFrac * shortPx);
         _fixH = (typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? Math.max(4, layer.boxHFrac * shortPx) : null;
         const _lhMul = (typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25;
-        const _fontAt = (px) => (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + px + 'px "' + (layer.font || 'Impact') + '"';
+        const _fontAt = (px) => (layer.italic ? 'italic ' : '') + textWeightOf(layer) + ' ' + px + 'px "' + (layer.font || 'Impact') + '"';   // v3.1 (Terry SS1) — numeric weight (Thin…Black); 400/700 == the old normal/bold
         const _paras = lines;
         const _wrapAt = (px) => {
           ctx.font = _fontAt(px);
@@ -9906,7 +10007,7 @@
       // v2.1 round 192 (Terry) — QUOTE the family so multi-word names (Bebas Neue,
       // Playfair Display, DM Sans, Cinzel Decorative, …) resolve in canvas instead
       // of silently falling back to a system face. Only the family quoting changed.
-      const fontStr = (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + fontPx + 'px "' + (layer.font || 'Impact') + '"';
+      const fontStr = (layer.italic ? 'italic ' : '') + textWeightOf(layer) + ' ' + fontPx + 'px "' + (layer.font || 'Impact') + '"';   // v3.1 (Terry SS1) — numeric weight from the Weight menu (fontWeight; legacy bold → 700)
       ctx.font = fontStr;
       // v2.1 round 219 (Terry) — EMOJI layers are a single colour glyph, not
       // styled text. Render the native OS emoji (Segoe UI Emoji on Windows; the
@@ -10402,8 +10503,10 @@
           e.stopPropagation(); e.preventDefault();
           ensureSel();
           beginCollageChange();
-          layer[d.key] = !layer[d.key];   // bold/italic/underline == panel flags; strike is the new field
-          b.classList.toggle('active', !!layer[d.key]);
+          // v3.1 (Terry SS1) — B now drives the WEIGHT (400 ↔ 700) so it composes with
+          // the Weight menu; the other three stay simple flag flips.
+          if (d.key === 'bold') { toggleTextBoldWeight(layer); b.classList.toggle('active', textWeightOf(layer) >= 600); }
+          else { layer[d.key] = !layer[d.key]; b.classList.toggle('active', !!layer[d.key]); }
           renderTextLayer(layer);
           commitCollageChange();
           try { syncTextControls(); } catch (_) {}
@@ -10411,6 +10514,16 @@
         ctl.styleBtns[d.key] = b;
         ins(b); push(b);
       });
+      // ---- WEIGHT: thin chevron NEXT TO B (Terry SS1) → the Thin…Black menu. One
+      // shared popover (openTextWeightMenu) serves this and the side panel's button;
+      // rows preview their own weight; unavailable weights grey out (Canva). ----
+      const wChev = document.createElement('button');
+      wChev.type = 'button'; wChev.className = 'ch-tb-btn ch-tb-open ch-tb-wchev';
+      wChev.setAttribute('data-pdr-tooltip', 'Font weight (Thin to Black)');
+      wChev.innerHTML = '<svg viewBox="0 0 16 16"><polyline points="4 6 8 10 12 6"/></svg>';
+      wChev.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); ensureSel(); openTextWeightMenu(wChev); });
+      try { tbar.insertBefore(wChev, ctl.styleBtns.italic); } catch (_) { ins(wChev); }   // sits between B and I
+      push(wChev);
 
       ins(document.createElement('div')).className = 'ch-tb-sep';
 
@@ -10599,7 +10712,7 @@
       if (!ctl) return;
       if (ctl.fontLbl) { const f = layer.font || 'Impact'; ctl.fontLbl.textContent = (typeof COLLAGE_FONT_LABELS === 'object' && COLLAGE_FONT_LABELS[f]) ? COLLAGE_FONT_LABELS[f] : f; ctl.fontLbl.style.fontFamily = "'" + f + "'"; }
       if (ctl.sizeNum && ctl.sizeNum.dataset.editing !== '1' && document.activeElement !== ctl.sizeNum) ctl.sizeNum.value = String(Math.round((layer.sizeFrac || 0.08) * 100));
-      if (ctl.styleBtns) { ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (ctl.styleBtns[k]) ctl.styleBtns[k].classList.toggle('active', !!layer[k]); }); }
+      if (ctl.styleBtns) { ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (!ctl.styleBtns[k]) return; const on = (k === 'bold') ? (textWeightOf(layer) >= 600) : !!layer[k]; ctl.styleBtns[k].classList.toggle('active', on); }); }   // v3.1 (Terry SS1) — B reflects the WEIGHT (≥600), not just the legacy flag
       if (ctl.alignBtns) { const a = layer.align || 'center'; Object.keys(ctl.alignBtns).forEach((k) => ctl.alignBtns[k].classList.toggle('active', k === a)); }
       if (ctl.caseLbl && ctl.caseGlyph) {
         const c = layer.letterCase || 'none';
@@ -11556,6 +11669,7 @@
         color: layer.color, align: layer.align, rot: layer.rot, z: topZ,
         bold: !!layer.bold, italic: !!layer.italic, underline: !!layer.underline,
         strike: !!layer.strike,   // v3.1 (Terry) — the clone copies the new toolbar text styling
+        fontWeight: (typeof layer.fontWeight === 'number') ? layer.fontWeight : null,   // v3.1 (Terry SS1) — clone keeps the weight
         lineHeight: (typeof layer.lineHeight === 'number') ? layer.lineHeight : 1.25,
         opacity: (typeof layer.opacity === 'number') ? layer.opacity : 100,
         letterCase: layer.letterCase || 'none',
@@ -12108,7 +12222,8 @@
       });
       // v2.1 round 188 (Terry) — Style toggles: pressed-state per B/I/U flag.
       document.querySelectorAll('#collage-text-style .ec-toggle-btn').forEach((b) => {
-        b.classList.toggle('active', !!selectedText[b.dataset.style]);
+        if (!b.dataset.style) return;   // v3.1 (Terry SS1) — skip the Weight trigger (no data-style)
+        b.classList.toggle('active', b.dataset.style === 'bold' ? (textWeightOf(selectedText) >= 600) : !!selectedText[b.dataset.style]);   // v3.1 (Terry SS1) — B reflects the weight
       });
       // v2.1 round 188 (Terry) — Effect chips: ring the active effect.
       document.querySelectorAll('#collage-text-effect .ec-effect-btn').forEach((b) => {
@@ -14913,7 +15028,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -15137,7 +15252,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; });   // v3.1 (Terry) — stage-level toolbars torn down with the els (they live OUTSIDE the canvas now)
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -20343,10 +20458,20 @@
         const key = b.dataset.style;
         if (key !== 'bold' && key !== 'italic' && key !== 'underline') return;
         beginCollageChange();
-        selectedText[key] = !selectedText[key];
-        b.classList.toggle('active', !!selectedText[key]);
+        // v3.1 (Terry SS1) — B == weight 400 ↔ 700 so it composes with the Weight menu.
+        if (key === 'bold') { toggleTextBoldWeight(selectedText); b.classList.toggle('active', textWeightOf(selectedText) >= 600); }
+        else { selectedText[key] = !selectedText[key]; b.classList.toggle('active', !!selectedText[key]); }
         renderTextLayer(selectedText);
         commitCollageChange();
+        try { refreshTextToolbar(selectedText); } catch (_) {}   // keep the floating bar's B in step
+      });
+      // v3.1 (Terry SS1) — the panel's Weight button opens the SAME Thin…Black menu
+      // the toolbar chevron uses (anchored to this button; acts on selectedText).
+      const panelWeightBtn = document.getElementById('collage-text-weight-btn');
+      if (panelWeightBtn) panelWeightBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        if (!selectedText || selectedText.isEmoji) return;
+        openTextWeightMenu(panelWeightBtn);
       });
       // v2.1 round 188 (Terry) — Effect chips. Set layer.effect, ring the
       // active chip, re-render, one undo step.
