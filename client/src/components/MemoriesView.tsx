@@ -1364,13 +1364,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   // Bumped by the per-tile context menu's "Add to album…" item so
   // the picker opens directly instead of requiring the user to then
   // hunt down the pill in the header.
-  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  const [addToAlbumOpen, setAddToAlbumOpen] = useState(false);
   // v2.1 round 275 (Terry) — sibling open-tick that opens the
   // AddToAlbumPopover DIRECTLY in "create new album" mode (parity
   // with the new Albums toolbar). Powers the Actions item "Create
   // new album from N photos…" → handleCreateAndAdd makes the album
   // and adds the selection in one transaction.
-  const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
+  const [addToAlbumCreateMode, setAddToAlbumCreateMode] = useState(false);
   const toggleSelection = (file: IndexedFile, mode?: 'add' | 'remove') => {
     setSelectedFileIds(prev => {
       const next = new Set(prev);
@@ -2811,7 +2811,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                 </DropdownMenuItem>
                 <DropdownMenuSeparator />
                 <DropdownMenuItem
-                  onSelect={() => { setAddToAlbumOpenTick(t => t + 1); }}
+                  onSelect={() => { setAddToAlbumCreateMode(false); setAddToAlbumOpen(true); }}
                   data-testid="memories-actions-add-to-album"
                 >
                   <FolderPlus className="w-3.5 h-3.5 mr-2" />
@@ -2822,7 +2822,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                     Opens the AddToAlbumPopover directly in create mode
                     via openCreateTrigger. */}
                 <DropdownMenuItem
-                  onSelect={() => { setAddToAlbumCreateTick(t => t + 1); }}
+                  onSelect={() => { setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
                   data-testid="memories-actions-create-album"
                 >
                   <FolderPlus className="w-3.5 h-3.5 mr-2" />
@@ -3008,8 +3008,9 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               <AddToAlbumPopover
                 fileIds={Array.from(selectedFileIds)}
                 onAdded={clearSelection}
-                openTrigger={addToAlbumOpenTick}
-                openCreateTrigger={addToAlbumCreateTick}
+                open={addToAlbumOpen}
+                onOpenChange={setAddToAlbumOpen}
+                createMode={addToAlbumCreateMode}
               />
             </div>
           </>
@@ -3614,7 +3615,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       const alreadyInMulti = selectedFileIds.size > 0 && selectedFileIds.has(f.id);
                       if (!alreadyInMulti) setSelectedFileIds(new Set([f.id]));
                       lastClickedIndexRef.current = idx;
-                      setAddToAlbumCreateTick(t => t + 1);
+                      setAddToAlbumCreateMode(true); setAddToAlbumOpen(true);
                     }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
@@ -3627,7 +3628,7 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                         setSelectedFileIds(new Set([f.id]));
                       }
                       lastClickedIndexRef.current = idx;
-                      setAddToAlbumOpenTick(t => t + 1);
+                      setAddToAlbumCreateMode(false); setAddToAlbumOpen(true);
                     }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />

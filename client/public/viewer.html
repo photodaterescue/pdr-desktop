@@ -2835,7 +2835,11 @@
       position: absolute;
       cursor: grab;
       user-select: none;
-      box-shadow: 0 2px 10px rgba(0,0,0,0.25);
+      /* v3.0.1 (Terry 2026-07-07) — NO resting depth shadow by default. This hardcoded box-shadow
+         lifted EVERY tile independently of the Glow & Shadow panel (which reads 0), so it couldn't be
+         turned off there; on a transparent PNG it drew a dark rectangle around the invisible edges.
+         Photos now sit flat by default — a lift / drop-shadow is opt-in via the Glow & Shadow panel
+         (applied inline in the edge-fx pass, which overrides this rule when an effect is set). */
       will-change: transform, left, top, width, height;
     }
     /* v2.1 round 145 (Terry) — crop. The image lives in a clip wrapper
@@ -13350,9 +13354,30 @@
         snapshot: snapshotCollage(),
         aspectKey: collageAspectKey,
         kind: 'template',
+        // v3.0.1 (Terry 2026-07-07) — carry carousel mode so a carousel template reopens AS a carousel
+        // and its thumbnail bakes to page 1 (matches serializeCollageProject / autosave).
+        carousel: !!carouselMode,
+        carouselPages: carouselMode ? carouselPageCount : undefined,
       };
+      // v3.0.1 (Terry 2026-07-07) — bake a REAL preview thumbnail, same path as autosaveCollageProject.
+      // Without this, saveProject wrote no <id>_CP.png sidecar and the Templates row fell back to the
+      // broken-image glyph. Guarded on collageThumbBusy + renderThumb; carousels bake their FIRST page.
+      let thumb;
+      if (!collageThumbBusy && window.pdr && window.pdr.collage && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
+        collageThumbBusy = true;
+        try {
+          const layout = buildCollageLayout();
+          if (layout && layout.canvas) {
+            const lw = layout.canvas.w || 0, lh = layout.canvas.h || 0, mx = Math.max(lw, lh);
+            const cap = carouselMode ? 1200 : 600;
+            if (mx > cap) { const sc = cap / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
+            thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);
+          }
+        } catch (_) { /* thumb is best-effort */ }
+        collageThumbBusy = false;
+      }
       try {
-        const res = (window.pdr && window.pdr.collage && window.pdr.collage.saveProject) ? await window.pdr.collage.saveProject(proj) : null;
+        const res = (window.pdr && window.pdr.collage && window.pdr.collage.saveProject) ? await window.pdr.collage.saveProject(proj, thumb || undefined) : null;
         if (res && res.success) { try { showPdrAlert({ title: 'Template saved', body: '"' + proj.name + '" is now in your Templates — find it on the welcome screen.' }); } catch (_) {} }
       } catch (_) { /* best-effort */ }
     }
@@ -13714,7 +13739,7 @@
         card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Template';
         const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb';
         if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
-        else thumb.innerHTML = CWS_THUMB_GLYPH;
+        else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0.1 (Terry) — lazy-fetch the baked PNG like Recent cards do; this row omitted it, so templates never showed their thumbnail
         const meta = document.createElement('div'); meta.className = 'cws-card-meta';
         const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Template';
         const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Your template';

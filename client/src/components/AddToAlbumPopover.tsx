@@ -1,23 +1,24 @@
 /**
- * AddToAlbumPopover (v2.0.8 step 4).
+ * AddToAlbumPopover (v2.0.8 step 4; converted to a centred Dialog in v3.0.1).
  *
- * Drop-in popover for any selection-bar surface (S&D today; Memories By
- * Date and Memories Albums detail-view land once those surfaces gain
- * selection state). Lists existing albums with a live filter, plus a
- * "Create new album" inline path that creates AND adds in one
- * transaction so the user never has to do "create → switch view → add".
+ * v3.0.1 (Terry 2026-07-07) — this was a Popover anchored to a hidden element parked
+ * at -left-[9999px], so Radix rendered its content ~9800px off the left edge of the
+ * screen and it was NEVER visible from any of the four selection surfaces (S&D,
+ * Memories Dates, Albums, Needs Dates) — "Create/Add to album did nothing". Rebuilt
+ * as a CENTRED Dialog (mirrors MoveCopyToAlbumDialog), controlled purely by
+ * open/onOpenChange, so its position never depends on an anchor. Because the parent
+ * owns the open state, opening it from a right-click on an UNSELECTED tile works too
+ * (no mount-timing race — the old openTrigger/ref mechanism blocked that path).
  *
- * Encapsulates its own trigger pill (matching the S&D selection bar's
- * existing chip pattern) and content, so call sites just render
- * `<AddToAlbumPopover fileIds={...} />`. The pill is freehand to
- * stay visually consistent with the surrounding PL pill — both lift to
- * the Button primitive together in step 7's PL discoverability pass.
+ * Lists existing albums with a live filter, plus a "Create new album" inline path
+ * that creates AND adds in one transaction so the user never has to do
+ * "create → switch view → add".
  */
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FolderPlus, Search, Plus, Check, X, ImageIcon, Sparkles, PencilLine, ArrowLeft, ArrowRight } from 'lucide-react';
 import { toast } from 'sonner';
-import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import {
@@ -31,89 +32,23 @@ import { isAlbumSourceUserEditable } from '../lib/albumSourceProfile';
 import { useAlbumReturnSource, setAlbumReturnSource, setPendingAlbumOpen } from '@/lib/album-return-source';
 
 interface AddToAlbumPopoverProps {
-  /** Indexed_files.id list to add. Empty array disables the trigger. */
+  /** Controlled open state — owned by the parent surface (v3.0.1). */
+  open: boolean;
+  /** Fired when the dialog requests open/close (backdrop, Esc, the X, or an internal action). */
+  onOpenChange: (o: boolean) => void;
+  /** When true, the dialog opens directly on the "Create new album" form instead of the list. */
+  createMode?: boolean;
+  /** Indexed_files.id list to add. */
   fileIds: number[];
-  /** Optional callback fired after a successful add (any path). Use to
-   *  clear the selection or refresh dependent UI. */
+  /** Optional callback fired after a successful add (any path). Use to clear the selection. */
   onAdded?: () => void;
-  /** Override the disabled state from the outside (e.g. when a Fix is
-   *  running and PDR globally blocks mutations). */
-  disabled?: boolean;
-  /** Optional tooltip-style label that callers can use to explain WHY
-   *  the action is unavailable (mirrors the PL button's pattern). */
-  disabledReason?: string;
-  /** v2.0.15 (Terry 2026-06-01) — increment to open the popover from
-   *  the outside. Lets the Memories tile context menu open the
-   *  picker directly without forcing the user to find the pill in
-   *  the header. Each new value opens once; closing is handled by
-   *  the popover's own onOpenChange. */
-  openTrigger?: number;
-  /** v2.1 round 116 (Terry 2026-06-11) — like `openTrigger` but
-   *  opens the popover DIRECTLY in "create new album" mode instead
-   *  of the album list. Powers the S&D banner More-menu item
-   *  "Create new PDR album", which is the one-click path for the
-   *  common case of stamping a fresh album from the current pile.
-   *  Bumping this is equivalent to bumping `openTrigger` then
-   *  clicking the inline "Create new" footer button. Each bump
-   *  opens once; close behaviour identical to `openTrigger`. */
-  openCreateTrigger?: number;
   /** v3.0 (Terry 2026-06-22) — MOVE mode. When set to a source album id, a successful add to a
    *  DIFFERENT album also REMOVES the photos from this album → a MOVE (vs the default copy/add).
    *  The header + toasts switch to "Move" wording and the source album is hidden from the dest list. */
   moveFromAlbumId?: number | null;
 }
 
-export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, disabledReason, openTrigger, openCreateTrigger, moveFromAlbumId }: AddToAlbumPopoverProps) {
-  const [open, setOpen] = useState(false);
-  // v2.0.15 (Terry 2026-06-01) — bridge for openTrigger. Watching
-  // the value (skip null/undefined) lets the parent reopen the
-  // popover by bumping it — even from a state it had already been
-  // opened+closed in. A 250 ms setTimeout defers the open until well
-  // past any pointer-up / click events from the dismissing right-
-  // click context menu — otherwise Radix's "outside click" detector
-  // on the popover sees the trailing pointer event from the menu
-  // dismissal and immediately closes the popover that just opened.
-  // 50 ms wasn't enough in practice (Terry confirmed 2026-06-02 the
-  // modal still flashed); 250 ms is the conservative ceiling that
-  // still feels instant to the user.
-  //
-  // v2.0.15 (Terry 2026-06-02) — only react to openTrigger CHANGES,
-  // not to a stale value present at mount. SearchPanel conditionally
-  // mounts the popover (selectedFiles.size > 0 gate). When the user
-  // unchecked everything then re-checked one tile, the popover
-  // remounted with openTrigger still at the value from an earlier
-  // right-click → the effect fired immediately on mount and opened
-  // the popover with no user action. The ref tracks the value seen
-  // at mount; only later bumps trigger the open.
-  const lastSeenTriggerRef = useRef<number | undefined>(openTrigger);
-  useEffect(() => {
-    if (typeof openTrigger !== 'number' || openTrigger <= 0) return;
-    if (openTrigger === lastSeenTriggerRef.current) return;
-    lastSeenTriggerRef.current = openTrigger;
-    let cancelled = false;
-    const tId = setTimeout(() => { if (!cancelled) setOpen(true); }, 250);
-    return () => { cancelled = true; clearTimeout(tId); };
-  }, [openTrigger]);
-  // v2.1 round 116 (Terry 2026-06-11) — sibling effect for
-  // openCreateTrigger. Same mount-stale-value guard via a separate
-  // ref (the popover may receive non-zero values for both triggers
-  // at mount and we never want a stale value to auto-open the
-  // popover). Same 250 ms debounce so it survives any trailing
-  // pointer events from the dismissing menu. On open we also set
-  // `creating` true so the popover lands directly on the
-  // "Create new album" inline form instead of the album list.
-  // The close cleanup (effect on `open` below) already resets
-  // creating to false, so subsequent normal-openTrigger opens
-  // come back up in the list view.
-  const lastSeenCreateTriggerRef = useRef<number | undefined>(openCreateTrigger);
-  useEffect(() => {
-    if (typeof openCreateTrigger !== 'number' || openCreateTrigger <= 0) return;
-    if (openCreateTrigger === lastSeenCreateTriggerRef.current) return;
-    lastSeenCreateTriggerRef.current = openCreateTrigger;
-    let cancelled = false;
-    const tId = setTimeout(() => { if (!cancelled) { setCreating(true); setOpen(true); } }, 250);
-    return () => { cancelled = true; clearTimeout(tId); };
-  }, [openCreateTrigger]);
+export default function AddToAlbumPopover({ open, onOpenChange, createMode = false, fileIds, onAdded, moveFromAlbumId }: AddToAlbumPopoverProps) {
   const [albums, setAlbums] = useState<AlbumSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState('');
@@ -121,25 +56,22 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
   const [newAlbumTitle, setNewAlbumTitle] = useState('');
   const [busy, setBusy] = useState(false);
 
-  // Source-album context — non-null when the user reached this
-  // surface via the empty-album CTA. Drives the "Add to <album>"
-  // hero rendered at the top of the popover (v2.0.8 step 6 polish,
-  // Terry 2026-05-19: "it should say… Add to <Empty Folder Name>
-  // and go back to albums? Add and continue looking around? or
-  // create a new album").
+  // Source-album context — non-null when the user reached this surface via the
+  // empty-album CTA. Drives the "Add to <album>" hero at the top of the dialog.
   const albumReturnSource = useAlbumReturnSource();
 
-  // Refresh album list when popover opens. Cached for the lifetime of
-  // the open state; closing + reopening re-fetches so freshly-created
-  // albums elsewhere in the app show up.
+  // Load albums when the dialog opens (and land on the create form when createMode).
+  // Reset transient state on close. Re-fetches on each open so freshly-created albums
+  // elsewhere in the app show up.
   useEffect(() => {
     if (!open) {
-      // Reset transient state when popover closes.
       setSearch('');
       setCreating(false);
       setNewAlbumTitle('');
+      setBusy(false);
       return;
     }
+    setCreating(!!createMode);
     let cancelled = false;
     setLoading(true);
     listAlbums().then((r) => {
@@ -148,19 +80,13 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
       setLoading(false);
     });
     return () => { cancelled = true; };
+    // createMode is read at open-time; a fresh open re-applies it.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
 
-  const triggerDisabled = disabled || fileIds.length === 0;
-
-  // Filter to user-created albums only — source-imported albums
-  // (Takeout / iCloud / OneDrive / etc.) are content-locked because
-  // they represent factual snapshots of what came from the source.
-  // Adding new photos to them would dilute the source identity, the
-  // same way auto-source MEMBERSHIPS are immutable. Users who want
-  // to extend a source album create a new PDR album beside it and
-  // drop the source album link into the same folder — both visible
-  // in one basket, each carrying its own source identity. (Terry
-  // 2026-05-18.)
+  // Filter to user-created albums only — source-imported albums (Takeout / iCloud /
+  // OneDrive / etc.) are content-locked because they represent factual snapshots of
+  // what came from the source.
   // v3.0 (Terry) — MOVE mode (moveFromAlbumId set): a pick adds to the dest AND removes from the source
   // album. Hide the source album from the destination list (can't move into where they already live).
   const isMove = typeof moveFromAlbumId === 'number';
@@ -172,7 +98,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
   const handleAddToExisting = async (album: AlbumSummary) => {
     if (busy) return;
     // v3.0 (Terry) — moving INTO the same album is a no-op; just close.
-    if (isMove && album.id === moveFromAlbumId) { setOpen(false); return; }
+    if (isMove && album.id === moveFromAlbumId) { onOpenChange(false); return; }
     setBusy(true);
     const r = await addPhotosToAlbum(album.id, fileIds);
     if (!r.success) {
@@ -203,47 +129,26 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
         { description: `${total - inserted} were already in the album.` }
       );
     }
-    setOpen(false);
-    // Refresh any mounted AlbumsView so counts + tiles update
-    // without a manual refresh click.
+    onOpenChange(false);
+    // Refresh any mounted AlbumsView so counts + tiles update without a manual refresh click.
     window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
     onAdded?.();
   };
 
-  // Hero action — add to the source album (the one the user came
-  // from via the empty-album CTA). `goBack=true` also routes the
-  // user back to that album in the Albums view; `goBack=false`
-  // adds silently and keeps them where they are so they can pick
-  // more photos.
-  //
-  // OPTIMISTIC NAVIGATION (Terry 2026-05-19: "Add and go back to
-  // album has a delay"). Dispatch the back-nav event BEFORE
-  // awaiting the add IPC so the user gets immediate visual feedback.
-  // The add IPC runs in parallel; once it completes we fire
-  // `pdr:albumsRefresh` so AlbumsView reloads photo counts + tiles.
+  // Hero action — add to the source album (the one the user came from via the
+  // empty-album CTA). `goBack=true` also routes back to that album in the Albums view.
   const handleAddToSourceAlbum = async (goBack: boolean) => {
     if (busy || !albumReturnSource) return;
     const captured = albumReturnSource;
     setBusy(true);
-    setOpen(false);
+    onOpenChange(false);
 
-    // Fire nav synchronously — no await between user click and
-    // the page changing.
+    // Fire nav synchronously — no await between the click and the page changing.
     if (goBack) {
       setAlbumReturnSource(null);
       setPendingAlbumOpen(captured.albumId);
       window.dispatchEvent(new CustomEvent('pdr:openAlbumsAlbum', { detail: { id: captured.albumId } }));
     }
-    // ELSE: "Add & keep picking" — leave the back-pill in place.
-    // The user is still actively adding to this album, so the
-    // hero CTA + the title-bar pill should both persist until
-    // either they click the X to dismiss, switch to a non-S&D /
-    // non-Memories app, or explicitly click "Add & go back".
-    // Terry 2026-05-19: "the orange pill disappears and then the
-    // custom add files to the album no longer appears. This isn't
-    // the desired outcome, it should continue until I've finished
-    // or closed the orange pill, or come out of S&D to go to the
-    // workspace, or trees, etc."
 
     // Now do the actual add. Result toasts as usual.
     const r = await addPhotosToAlbum(captured.albumId, fileIds);
@@ -266,9 +171,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
           : `${inserted} of ${total} added to "${captured.title}"`
       );
     }
-    // Refresh AlbumsView so the (possibly newly-mounted) view
-    // reflects the new photo count + tiles without a manual
-    // refresh click.
+    // Refresh AlbumsView so the (possibly newly-mounted) view reflects the new count + tiles.
     window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
     onAdded?.();
   };
@@ -298,26 +201,16 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
         ? (inserted === 1 ? `Moved 1 photo to new "${title}"` : `Moved ${inserted} photos to new "${title}"`)
         : (inserted === 1 ? `Created "${title}" with 1 photo` : `Created "${title}" with ${inserted} photos`)
     );
-    setOpen(false);
+    onOpenChange(false);
     window.dispatchEvent(new CustomEvent('pdr:albumsRefresh'));
     onAdded?.();
   };
 
   return (
-    <Popover open={open} onOpenChange={(o) => { if (triggerDisabled && o) return; setOpen(o); }}>
-      <PopoverTrigger asChild>
-        <button
-          type="button"
-          disabled={triggerDisabled}
-          title={triggerDisabled && disabledReason ? disabledReason : undefined}
-          className="text-xs font-medium text-primary-foreground bg-primary hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed px-3 py-1 rounded-full flex items-center gap-1.5 transition-colors"
-          data-testid="button-add-to-album"
-        >
-          <FolderPlus className="w-3 h-3" />
-          Add to Album
-        </button>
-      </PopoverTrigger>
-      <PopoverContent align="end" className="w-80 p-0 overflow-hidden">
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-sm p-0 overflow-hidden gap-0" data-testid="add-to-album-dialog">
+        {/* a11y title (Radix requires one); the visible header below carries the same text. */}
+        <DialogTitle className="sr-only">{isMove ? 'Move' : 'Add'} photos to an album</DialogTitle>
         {/* Header */}
         <div className="px-4 py-3 border-b border-border">
           <p className="text-sm font-medium text-foreground">
@@ -331,10 +224,8 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 onKeyDown={(e) => {
-                  // Prevent Enter/Escape from bubbling to SearchPanel's
-                  // global keydown handler (which opens the focused
-                  // photo's viewer on Enter). See note on the create-
-                  // album input below for the same fix.
+                  // Prevent Enter/Escape from bubbling to SearchPanel's global keydown
+                  // handler (which opens the focused photo's viewer on Enter).
                   if (e.key === 'Enter' || e.key === 'Escape') e.stopPropagation();
                 }}
                 placeholder="Find an album"
@@ -345,12 +236,8 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
           )}
         </div>
 
-        {/* Source-album hero — only shown when the user reached this
-            surface via the empty-album CTA. Two prominent actions
-            (Add & go back / Add & stay) plus a quiet "or pick a
-            different album below" hint. Gold-tinted card so it
-            reads as the obvious thing to do, matching the gold
-            back-pill in the title bar. */}
+        {/* Source-album hero — only shown when the user reached this surface via the
+            empty-album CTA. */}
         {albumReturnSource && !creating && (
           <div className="px-4 py-3 border-b border-border" style={{ backgroundColor: '#fff8eb' }} data-testid="add-to-album-source-hero">
             <p className="text-[10px] uppercase tracking-wider font-semibold text-muted-foreground mb-1.5">
@@ -396,11 +283,8 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
               value={newAlbumTitle}
               onChange={(e) => setNewAlbumTitle(e.target.value)}
               onKeyDown={(e) => {
-                // stopPropagation: SearchPanel.tsx has a global Enter
-                // handler at line 685 that opens the focused photo in
-                // the viewer. Without this, pressing Enter to confirm
-                // the new album name ALSO opens a photo behind the
-                // popover. Same for Escape — keep both from leaking.
+                // stopPropagation: SearchPanel has a global Enter handler that opens the
+                // focused photo. Without this, Enter to confirm the name ALSO opens a photo.
                 if (e.key === 'Enter') { e.preventDefault(); e.stopPropagation(); handleCreateAndAdd(); }
                 if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); setCreating(false); }
               }}
@@ -454,11 +338,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
                         </IconTooltip>
                         <p className="text-xs text-muted-foreground">{album.photoCount} photo{album.photoCount === 1 ? '' : 's'}</p>
                       </div>
-                      {/* Source icon — Sparkles violet for Takeout
-                          imports, PencilLine muted for user-created.
-                          Mirrors the AlbumsView grid card badges so
-                          the same fact reads the same way across
-                          surfaces. */}
+                      {/* Source icon — Sparkles violet for Takeout imports, PencilLine muted for user-created. */}
                       {album.source === 'takeout_imported' ? (
                         <Sparkles className="w-3.5 h-3.5 text-violet-500 shrink-0" />
                       ) : (
@@ -472,8 +352,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
           </div>
         )}
 
-        {/* Footer — "Create new album" CTA. Hidden while the create form is
-            already showing (it becomes the form). */}
+        {/* Footer — "Create new album" CTA. Hidden while the create form is showing. */}
         {!creating && (
           <div className="border-t border-border">
             <button
@@ -490,7 +369,7 @@ export default function AddToAlbumPopover({ fileIds, onAdded, disabled = false, 
             </button>
           </div>
         )}
-      </PopoverContent>
-    </Popover>
+      </DialogContent>
+    </Dialog>
   );
 }

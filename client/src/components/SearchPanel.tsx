@@ -333,14 +333,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
   // Bumped by the per-tile context menu's "Add to album…" item so the
   // popover opens directly instead of forcing the user to find the
   // pill in the selection bar. Same pattern as MemoriesView.
-  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  const [addToAlbumOpen, setAddToAlbumOpen] = useState(false);
   // v2.1 round 116 (Terry 2026-06-11) — sibling tick that opens the
   // AddToAlbumPopover DIRECTLY in create-new mode. Bumped by the
   // gold selection banner's "Create new PDR album" More-menu item;
   // the popover's `openCreateTrigger` effect sets `creating = true`
   // before opening so the user lands on the inline create form
   // instead of the album list.
-  const [addToAlbumCreateOpenTick, setAddToAlbumCreateOpenTick] = useState(0);
+  const [addToAlbumCreateMode, setAddToAlbumCreateMode] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [filterOptions, setFilterOptions] = useState<FilterOptions | null>(null);
   const [stats, setStats] = useState<IndexStats | null>(null);
@@ -5134,14 +5134,14 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                       an existing one. */}
                   <DropdownMenuItem
                     disabled={fixActive}
-                    onSelect={() => setAddToAlbumCreateOpenTick(t => t + 1)}
+                    onSelect={() => { if (fixActive) return; setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
                   >
                     <Plus className="w-3.5 h-3.5 mr-2" />
                     Create new PDR album from {selectedFiles.size.toLocaleString()} selected
                   </DropdownMenuItem>
                   <DropdownMenuItem
                     disabled={fixActive}
-                    onSelect={() => setAddToAlbumOpenTick(t => t + 1)}
+                    onSelect={() => { if (fixActive) return; setAddToAlbumCreateMode(false); setAddToAlbumOpen(true); }}
                   >
                     <FolderPlus className="w-3.5 h-3.5 mr-2" />
                     Add to album…
@@ -5286,10 +5286,9 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
               <div className="absolute -left-[9999px] top-0">
                 <AddToAlbumPopover
                   fileIds={Array.from(selectedFiles)}
-                  disabled={fixActive}
-                  disabledReason={fixActive ? FIX_BLOCKED_TOOLTIP : undefined}
-                  openTrigger={addToAlbumOpenTick}
-                  openCreateTrigger={addToAlbumCreateOpenTick}
+                  open={addToAlbumOpen}
+                  onOpenChange={setAddToAlbumOpen}
+                  createMode={addToAlbumCreateMode}
                 />
               </div>
             </div>
@@ -5376,7 +5375,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               setSelectedFiles(new Set([file.id]));
                               setSelectedFilesMap(new Map([[file.id, file]]));
                             }
-                            setAddToAlbumOpenTick(t => t + 1);
+                            setAddToAlbumCreateMode(false); setAddToAlbumOpen(true);
                           }}
                           onSendToPhone={() => {
                             const paths = selectedFiles.size > 0 && selectedFiles.has(file.id)
@@ -5395,7 +5394,7 @@ export function SearchRibbon({ isIndexing, indexingProgress, searchDbReady: exte
                               setSelectedFiles(new Set([file.id]));
                               setSelectedFilesMap(new Map([[file.id, file]]));
                             }
-                            setAddToAlbumCreateOpenTick(t => t + 1);
+                            setAddToAlbumCreateMode(true); setAddToAlbumOpen(true);
                           }}
                           onTranscribe={() => {
                             // v2.1 round 35 (Terry 2026-06-08) — same

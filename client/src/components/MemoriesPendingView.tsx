@@ -311,7 +311,7 @@ export default function MemoriesPendingView({
     el.addEventListener('wheel', handler, { passive: false });
     return () => el.removeEventListener('wheel', handler);
   }, []);
-  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
+  const [addToAlbumOpen, setAddToAlbumOpen] = useState(false);
   const [panelBulkFiles, setPanelBulkFiles] = useState<PendingFile[] | null>(null);
   const { transcribe: transcribeSelectedVideos } = useTranscribeVideos();
 
@@ -1190,7 +1190,7 @@ export default function MemoriesPendingView({
                   </DropdownMenuItem>
                 );
               })()}
-              <DropdownMenuItem onSelect={() => setAddToAlbumOpenTick((t) => t + 1)}>
+              <DropdownMenuItem onSelect={() => setAddToAlbumOpen(true)}>
                 <FolderPlus className="w-3.5 h-3.5 mr-2" />
                 Add to album…
               </DropdownMenuItem>
@@ -1283,7 +1283,8 @@ export default function MemoriesPendingView({
             <AddToAlbumPopover
               fileIds={Array.from(selectedFileIds)}
               onAdded={clearSelection}
-              openTrigger={addToAlbumOpenTick}
+              open={addToAlbumOpen}
+              onOpenChange={setAddToAlbumOpen}
             />
           </div>
         </div>
@@ -1606,7 +1607,7 @@ export default function MemoriesPendingView({
                                 setSelectedFileIds(new Set([f.id]));
                               }
                               lastClickedIndexRef.current = idx;
-                              setAddToAlbumOpenTick((t) => t + 1);
+                              setAddToAlbumOpen(true);
                             }}
                           >
                             <FolderPlus className="w-3.5 h-3.5 mr-2" />

@@ -1996,8 +1996,8 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // list mode ("Add to album…"), addToAlbumCreateTick opens it
   // directly in create-new mode ("Create new album from selection").
   const actionsGrace = usePopoverGraceClose(1500);
-  const [addToAlbumOpenTick, setAddToAlbumOpenTick] = useState(0);
-  const [addToAlbumCreateTick, setAddToAlbumCreateTick] = useState(0);
+  const [addToAlbumOpen, setAddToAlbumOpen] = useState(false);
+  const [addToAlbumCreateMode, setAddToAlbumCreateMode] = useState(false);
   // v3.0 (Terry 2026-06-22) — Move/Copy to album modal target. Replaces the off-screen popover-anchor that
   // did nothing from the Actions dropdown. null = closed; set {fileIds, sourceAlbumId, sourceEditable} to open.
   const [moveCopyState, setMoveCopyState] = useState<{ fileIds: number[]; sourceAlbumId: number | null; sourceEditable: boolean } | null>(null);
@@ -3752,7 +3752,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                               openCreateTrigger → handleCreateAndAdd makes
                               the album + adds these photos in one go. */}
                           <DropdownMenuItem
-                            onSelect={() => { setAddToAlbumCreateTick(t => t + 1); }}
+                            onSelect={() => { setAddToAlbumCreateMode(true); setAddToAlbumOpen(true); }}
                             data-testid="albums-actions-create-album"
                           >
                             <FolderPlus className="w-3.5 h-3.5 mr-2" />
@@ -3935,8 +3935,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <AddToAlbumPopover
                           fileIds={Array.from(selectedAlbumPhotoIds)}
                           onAdded={clearAlbumSelection}
-                          openTrigger={addToAlbumOpenTick}
-                          openCreateTrigger={addToAlbumCreateTick}
+                          open={addToAlbumOpen}
+                          onOpenChange={setAddToAlbumOpen}
+                          createMode={addToAlbumCreateMode}
                         />
                       </div>
                     </>
@@ -4421,7 +4422,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             setSelectedAlbumPhotoIds(new Set([p.id]));
                             lastAlbumClickedIndexRef.current = null;
                           }
-                          setAddToAlbumCreateTick(t => t + 1);
+                          setAddToAlbumCreateMode(true); setAddToAlbumOpen(true);
                         }}
                       >
                         <FolderPlus className="w-3.5 h-3.5 mr-2" />
