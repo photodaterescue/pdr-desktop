@@ -3228,6 +3228,53 @@
        is SCOPED to .collage-text — the shared base .ch-toolbar / photo-tile chrome is
        untouched. == translateX(-50%) + 8px gap at zoom 1.) */
     .collage-text .ch-toolbar { transform: translateX(-50%) scale(var(--ch-inv,1)); transform-origin: bottom center; margin-bottom: calc(8px * var(--ch-inv,1)); }
+    /* v3.1 (Terry) — Canva-style TEXT controls added to the floating toolbar (Font,
+       Size, B/I/U/S, Align, Effect, Line-spacing, Transparency, Case). They live
+       INSIDE .ch-toolbar so they inherit the --ch-inv counter-scale (fixed on-screen
+       size at any zoom) + the shared dark pill. Reuse the .ch-tb-btn base; these are
+       the extra variants (a wider labelled button, a thin divider, the size stepper).
+       The rich controls (Font / Effect / Spacing / Transparency) open small popovers
+       appended to <body> as position:fixed (like #collage-font-menu) so the canvas
+       overflow can't clip them. */
+    .ch-tb-sep { width: 1px; align-self: stretch; margin: 2px 2px; background: rgba(255,255,255,0.16); flex: 0 0 auto; }
+    /* Labelled button (Font trigger, Case cycle) — wider than the icon buttons, shows text. */
+    .ch-tb-btn.ch-tb-text { width: auto; min-width: 28px; padding: 0 8px; gap: 5px; font-size: 12px; font-weight: 600; color: #d8d8e6; white-space: nowrap; max-width: 120px; }
+    .ch-tb-btn.ch-tb-text .ch-tb-lbl { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ch-tb-btn.ch-tb-text .ch-tb-cv { flex: 0 0 auto; opacity: 0.6; font-size: 10px; }
+    .ch-tb-btn.ch-tb-open.active { color: #fff; background: rgba(169,156,255,0.22); }
+    /* Size stepper: − [number] + as one grouped control inside the pill. */
+    .ch-tb-size { display: inline-flex; align-items: center; gap: 1px; flex: 0 0 auto; }
+    .ch-tb-size .ch-tb-step { width: 22px; height: 28px; font-size: 15px; line-height: 1; }
+    .ch-tb-size .ch-tb-num { width: 34px; height: 24px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.16); border-radius: 5px; color: #eee; font: inherit; font-size: 12px; text-align: center; padding: 0; outline: none; -moz-appearance: textfield; }
+    .ch-tb-size .ch-tb-num::-webkit-inner-spin-button, .ch-tb-size .ch-tb-num::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+    .ch-tb-size .ch-tb-num:focus { border-color: rgba(169,156,255,0.6); }
+    /* Style B/I/U/S pressed state (reuse the icon button; add the toggled look). */
+    .ch-tb-btn.ch-tb-toggle.active { color: #fff; background: rgba(169,156,255,0.24); }
+    /* Popover that hangs off a toolbar button. position:fixed, placed in JS. */
+    .ch-tb-pop {
+      position: fixed; z-index: 210; display: none;
+      background: rgba(28,26,46,0.98); border: 1px solid rgba(255,255,255,0.16);
+      border-radius: 9px; box-shadow: 0 6px 20px rgba(0,0,0,0.5);
+      padding: 9px; min-width: 150px; color: #eee; font-size: 12px;
+    }
+    .ch-tb-pop.open { display: block; }
+    .ch-tb-pop .ch-tb-pop-lbl { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: #b9b3d6; margin-bottom: 6px; }
+    /* Font list inside the popover — mirrors #collage-font-menu rows. */
+    .ch-tb-pop.ch-tb-fontpop { padding: 4px; max-height: 260px; overflow-y: auto; overflow-x: hidden; min-width: 190px; }
+    .ch-tb-pop .cfm-group { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; color: #8f88b5; padding: 6px 8px 3px; }
+    .ch-tb-pop .cfm-opt { display: block; width: 100%; text-align: left; background: transparent; border: none; color: #eee; padding: 6px 8px; border-radius: 6px; font-size: 14px; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .ch-tb-pop .cfm-opt:hover { background: rgba(169,156,255,0.14); }
+    .ch-tb-pop .cfm-opt.active { background: rgba(169,156,255,0.24); color: #fff; }
+    /* Effect chips inside the popover — mirror .ec-effect-row / .ec-effect-btn. */
+    .ch-tb-pop .ch-tb-eff-row { display: flex; flex-wrap: wrap; gap: 6px; max-width: 200px; }
+    .ch-tb-pop .ch-tb-eff-btn { flex: 0 0 auto; background: transparent; border: 1px solid rgba(169,156,255,0.3); color: #cfc8ff; font-size: 11px; padding: 5px 9px; border-radius: 7px; cursor: pointer; }
+    .ch-tb-pop .ch-tb-eff-btn:hover { background: rgba(169,156,255,0.10); }
+    .ch-tb-pop .ch-tb-eff-btn.active { background: rgba(169,156,255,0.22); border-color: #a78bfa; color: #fff; }
+    /* Slider popover (Line spacing, Transparency) — reuse the enhance slider look. */
+    .ch-tb-pop .ch-tb-slider-row { display: flex; align-items: center; gap: 8px; min-width: 170px; }
+    .ch-tb-pop .ch-tb-slider-row input[type=range] { flex: 1 1 auto; }
+    .ch-tb-pop .ch-tb-slider-val { flex: 0 0 auto; min-width: 3.2em; text-align: right; color: #cfc8ff; font-size: 12px; cursor: text; }
+    .ch-tb-pop .ch-tb-slider-val:hover { text-decoration: underline dotted; text-underline-offset: 2px; }
     /* Locked text/emoji: freeze geometry → hide the resize + rotate handles
        (mirror .collage-item.locked.selected), dashed outline + a corner padlock
        badge. The Lock + Duplicate + Remove toolbar buttons stay usable. */
@@ -9601,9 +9648,21 @@
       const to2 = (n) => ('0' + n.toString(16)).slice(-2);
       return '#' + to2(mix(r)) + to2(mix(g)) + to2(mix(b));
     }
+    // v3.1 (Terry) — apply the layer's letterCase transform (from the toolbar's aA
+    // button) to a display string WITHOUT mutating layer.text (which stays the raw
+    // editable source). 'title' = capitalise the first letter of each whitespace-run.
+    function applyLetterCase(str, mode) {
+      const s = String(str == null ? '' : str);
+      if (mode === 'upper') return s.toUpperCase();
+      if (mode === 'lower') return s.toLowerCase();
+      if (mode === 'title') return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+      return s;
+    }
     function renderTextToCanvas(layer, shortPx) {
       const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);
-      const lines = String(layer.text == null ? '' : layer.text).split('\n');
+      // v3.1 (Terry) — the CASE transform is applied to the RENDERED text only; the
+      // underlying layer.text stays editable/unchanged (mirrors Canva's aA).
+      const lines = applyLetterCase(layer.text, layer.letterCase).split('\n');
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
       const color = layer.color || '#ffffff';
@@ -9681,7 +9740,10 @@
       // glow / 3D extrude / shadow never clips. Still symmetric on all 4 sides,
       // so centre-anchor (preview==bake) holds; at low k it's just clear margin.
       const pad = Math.ceil(fontPx * 0.95);
-      const lineH = fontPx * 1.25;
+      // v3.1 (Terry) — LINE SPACING from the toolbar slider (layer.lineHeight, default
+      // 1.25 = today's look). Clamped 0.5–3 so a snapshot can't produce a degenerate box.
+      const lineHMul = (typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25;
+      const lineH = fontPx * lineHMul;
       // v2.1 round 216 (Terry) — CENTRE the glyph INK BLOCK in the canvas (was
       // top-aligned: textBaseline='top', y=pad+i*lineH, so the ink sat high with
       // line-height leading dangling below → the box bottom-gap rounds 214/215
@@ -9746,6 +9808,13 @@
       ctx.textBaseline = 'top';
       const align = layer.align || 'center';
       ctx.textAlign = align;
+      // v3.1 (Terry) — TRANSPARENCY from the toolbar slider (layer.opacity, 0–100;
+      // default 100 = fully opaque = today's look). Set once here: globalAlpha
+      // multiplies EVERY subsequent fill/stroke/shadow (text, effects, underline,
+      // strikethrough) uniformly, so the whole glyph block fades as one. The canvas
+      // is discarded per render, so no restore is needed.
+      const _opac = (typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100;
+      ctx.globalAlpha = _opac / 100;
       // Per-line x within the padded content box, honouring alignment.
       let x = pad;
       if (align === 'center') x = canvas.width / 2;
@@ -9847,6 +9916,19 @@
           ctx.stroke();
           ctx.restore();
         }
+        // v3.1 (Terry) — STRIKETHROUGH (the toolbar's S button): a rule THROUGH the
+        // line, drawn like the underline but at ~mid-x-height in the text colour.
+        if (layer.strike) {
+          ctx.save();
+          ctx.strokeStyle = color;
+          ctx.lineWidth = Math.max(2, fontPx * 0.06);
+          const sy = y + fontPx * 0.42;
+          ctx.beginPath();
+          ctx.moveTo(lineLeft, sy);
+          ctx.lineTo(lineLeft + lineW, sy);
+          ctx.stroke();
+          ctx.restore();
+        }
       });
       // v2.1 round 216 (Terry) — stash the symmetric pad + the centred ink block
       // size so renderTextLayer can size the .collage-text box to ink + a uniform
@@ -9879,6 +9961,422 @@
     function collageShortPx() {
       if (!collageCanvasEl) return 0;
       return Math.min(collageCanvasEl.clientWidth, collageCanvasEl.clientHeight);
+    }
+    // ===== v3.1 (Terry) — Canva-style TEXT controls on the floating toolbar ======
+    // The selected text layer's .ch-toolbar gains Font · Size · B/I/U/S · Align ·
+    // Effect · Line-spacing · Transparency · aA(case), ALONGSIDE the existing
+    // Lock/Duplicate/Delete. Every control REUSES the same model fields + render +
+    // begin/commit undo path the Enhance-panel TEXT section already uses (so there
+    // is ONE source of truth): align/style/effect flip the exact same layer flags;
+    // font reuses applyTextFont; size mirrors the panel's sizeFrac math. The richer
+    // controls (Font, Effect, Line-spacing, Transparency) open small popovers that
+    // are position:fixed on <body> (like #collage-font-menu) so the canvas overflow
+    // can't clip them. Only ONE toolbar popover is open at a time.
+    //
+    // A single shared open/close + a live outside-click handler for whichever
+    // toolbar popover is showing. The popover element itself is passed in.
+    let openTbPop = null;                 // the currently-open .ch-tb-pop element (or null)
+    let tbPopOutsideHandler = null;       // bound document pointerdown handler while open
+    function positionTbPop(pop, anchorBtn) {
+      if (!pop || !anchorBtn) return;
+      const r = anchorBtn.getBoundingClientRect();
+      // Show first (off-screen) so scroll/offset sizes are real, then place.
+      pop.style.visibility = 'hidden';
+      pop.classList.add('open');
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      const gap = 6;
+      // Centre the popover under the button; clamp into the viewport.
+      let left = r.left + r.width / 2 - pw / 2;
+      left = Math.max(6, Math.min(window.innerWidth - pw - 6, left));
+      // Prefer below; flip above if it would overflow the bottom.
+      let top = r.bottom + gap;
+      if (top + ph > window.innerHeight - 6 && r.top - gap - ph > 6) top = r.top - gap - ph;
+      pop.style.left = left + 'px';
+      pop.style.top = top + 'px';
+      pop.style.visibility = '';
+    }
+    function closeTbPop() {
+      if (openTbPop) { openTbPop.classList.remove('open'); }
+      // Drop the active ring on whatever trigger owned it.
+      try { document.querySelectorAll('.ch-tb-open.active').forEach((b) => b.classList.remove('active')); } catch (_) {}
+      openTbPop = null;
+      if (tbPopOutsideHandler) {
+        document.removeEventListener('pointerdown', tbPopOutsideHandler, true);
+        window.removeEventListener('resize', tbPopReposition, true);
+        tbPopOutsideHandler = null;
+      }
+      tbPopAnchor = null;
+    }
+    let tbPopAnchor = null;
+    function tbPopReposition() { if (openTbPop && tbPopAnchor) positionTbPop(openTbPop, tbPopAnchor); }
+    function openTbPop_(pop, anchorBtn, onOpen) {
+      // Toggle: clicking the same open trigger closes it.
+      const already = (openTbPop === pop);
+      closeTbPop();
+      if (already) return;
+      if (typeof onOpen === 'function') { try { onOpen(); } catch (_) {} }
+      openTbPop = pop;
+      tbPopAnchor = anchorBtn;
+      if (anchorBtn) anchorBtn.classList.add('active');
+      positionTbPop(pop, anchorBtn);
+      // Close on a pointerdown outside the popover AND outside its trigger.
+      tbPopOutsideHandler = (e) => {
+        if (pop.contains(e.target) || (anchorBtn && anchorBtn.contains(e.target))) return;
+        closeTbPop();
+      };
+      document.addEventListener('pointerdown', tbPopOutsideHandler, true);
+      window.addEventListener('resize', tbPopReposition, true);
+    }
+    // Small helper: an editable numeric readout INSIDE a toolbar popover (mirrors
+    // the panel's .enhance-val click-to-type, but self-contained so it doesn't
+    // depend on the panel's global .enhance-val handler / findSliderForVal). Click
+    // the value → type → Enter/blur commits (clamped to the slider's min/max), Escape
+    // cancels. The slider's own input handler already applies + re-renders on change.
+    function wireTbValEdit(valEl, slider, fmt) {
+      valEl.addEventListener('click', (e) => {
+        e.stopPropagation();
+        if (valEl.dataset.editing === '1') return;
+        valEl.dataset.editing = '1';
+        const orig = valEl.textContent;
+        const num = parseFloat(String(orig).replace(/[^0-9.\-]/g, ''));
+        const inp = document.createElement('input');
+        inp.type = 'text'; inp.inputMode = 'decimal'; inp.className = 'enhance-val-edit';
+        inp.value = Number.isFinite(num) ? String(num) : '';
+        valEl.textContent = ''; valEl.appendChild(inp); inp.focus(); inp.select();
+        let done = false;
+        const finish = (apply) => {
+          if (done) return; done = true; valEl.dataset.editing = '';
+          if (apply) {
+            let v = parseFloat(inp.value);
+            if (Number.isFinite(v)) {
+              const mn = parseFloat(slider.min), mx = parseFloat(slider.max);
+              if (Number.isFinite(mn)) v = Math.max(mn, v);
+              if (Number.isFinite(mx)) v = Math.min(mx, v);
+              slider.value = String(v);
+              slider.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+          // The slider's input handler rewrites valEl via fmt(); if it didn't, restore.
+          if (valEl.contains(inp)) valEl.textContent = (typeof fmt === 'function') ? fmt(parseFloat(slider.value)) : orig;
+        };
+        inp.addEventListener('keydown', (ev) => { ev.stopPropagation(); if (ev.key === 'Enter') { ev.preventDefault(); finish(true); } else if (ev.key === 'Escape') { ev.preventDefault(); finish(false); } });
+        inp.addEventListener('blur', () => finish(true));
+        inp.addEventListener('click', (ev) => ev.stopPropagation());
+      });
+    }
+    // Build + append ALL the Canva-style text controls into `tbar`, BEFORE the
+    // Lock/Duplicate/Delete buttons (Canva puts editing controls left, actions
+    // right). Every created interactive element is pushed into `handles` so a
+    // pointerdown on it never starts a wrapper drag. Called ONCE per text layer's
+    // toolbar (non-emoji only). Stores refs on `layer._tbCtl` so refreshTextToolbar
+    // can update their displayed state. `beforeNode` = the first action button
+    // (tbLock) to insert ahead of.
+    function buildTextToolbarControls(layer, tbar, handles, beforeNode) {
+      const ctl = {};
+      layer._tbCtl = ctl;
+      const push = (node) => { handles.push(node); return node; };
+      const ins = (node) => { tbar.insertBefore(node, beforeNode); return node; };
+      // Any control interaction must first guarantee THIS layer is the selection
+      // (so reused handlers that read selectedText act on it) and stop the gesture
+      // from starting a drag. pointerdown on the toolbar already stops propagation
+      // (wired below in the caller), but selecting here keeps selectedText correct.
+      const ensureSel = () => { if (selectedText !== layer) { try { selectText(layer); } catch (_) {} } };
+
+      // ---- FONT: a labelled button → a font-list popover (COLLAGE_FONT_GROUPS) ----
+      const fontBtn = document.createElement('button');
+      fontBtn.type = 'button'; fontBtn.className = 'ch-tb-btn ch-tb-text ch-tb-open ch-tb-font';
+      fontBtn.setAttribute('data-pdr-tooltip', 'Font');
+      fontBtn.innerHTML = '<span class="ch-tb-lbl">Font</span><span class="ch-tb-cv" aria-hidden="true">&#9662;</span>';
+      ctl.fontLbl = fontBtn.querySelector('.ch-tb-lbl');
+      let fontPop = null;
+      const buildFontPop = () => {
+        if (fontPop) return fontPop;
+        fontPop = document.createElement('div');
+        fontPop.className = 'ch-tb-pop ch-tb-fontpop';
+        (COLLAGE_FONT_GROUPS || []).forEach((g) => {
+          const h = document.createElement('div'); h.className = 'cfm-group'; h.textContent = g.group; fontPop.appendChild(h);
+          g.fonts.forEach((f) => {
+            const b = document.createElement('button'); b.type = 'button'; b.className = 'cfm-opt'; b.dataset.fam = f.fam;
+            b.textContent = f.label; b.style.fontFamily = "'" + f.fam + "'";
+            b.addEventListener('click', (e) => {
+              e.stopPropagation();
+              ensureSel();
+              applyTextFont(f.fam);   // REUSE the panel's font-apply (begin/commit + decorative-font load + re-render)
+              fontPop.querySelectorAll('.cfm-opt').forEach((x) => x.classList.toggle('active', x === b));
+              refreshTextToolbar(layer);
+              try { syncTextControls(); } catch (_) {}   // keep the side-panel Font trigger in step
+            });
+            fontPop.appendChild(b);
+          });
+        });
+        document.body.appendChild(fontPop);
+        return fontPop;
+      };
+      fontBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const pop = buildFontPop();
+        openTbPop_(pop, fontBtn, () => {
+          try { kickFunFonts(); } catch (_) {}
+          const cur = (layer.font || 'Impact');
+          let active = null;
+          pop.querySelectorAll('.cfm-opt').forEach((x) => { const on = x.dataset.fam === cur; x.classList.toggle('active', on); if (on) active = x; });
+          if (active) { try { active.scrollIntoView({ block: 'nearest' }); } catch (_) {} }
+        });
+      });
+      push(ins(fontBtn));
+
+      // ---- SIZE: − [number] + (percent of the collage short side, == the panel) ----
+      const sizeWrap = document.createElement('div'); sizeWrap.className = 'ch-tb-size';
+      const sizeMinus = document.createElement('button'); sizeMinus.type = 'button'; sizeMinus.className = 'ch-tb-btn ch-tb-step'; sizeMinus.textContent = '−'; sizeMinus.setAttribute('data-pdr-tooltip', 'Smaller');
+      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Text size (% of the collage short side)');
+      const sizePlus = document.createElement('button'); sizePlus.type = 'button'; sizePlus.className = 'ch-tb-btn ch-tb-step'; sizePlus.textContent = '+'; sizePlus.setAttribute('data-pdr-tooltip', 'Bigger');
+      ctl.sizeNum = sizeNum;
+      const curSizePct = () => Math.round((layer.sizeFrac || 0.08) * 100);
+      const applySizePct = (pct) => {
+        const p = Math.max(2, Math.min(40, Math.round(pct)));
+        ensureSel();
+        beginCollageChange();
+        layer.sizeFrac = p / 100;   // SAME model field + math the panel size slider uses
+        renderTextLayer(layer);
+        commitCollageChange();
+        sizeNum.value = String(p);
+        try { syncTextControls(); } catch (_) {}   // mirror the side-panel size slider + readout
+      };
+      sizeMinus.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); applySizePct(curSizePct() - 1); });
+      sizePlus.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); applySizePct(curSizePct() + 1); });
+      sizeNum.addEventListener('click', (e) => e.stopPropagation());
+      sizeNum.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); applySizePct(parseInt(sizeNum.value, 10) || curSizePct()); sizeNum.blur(); } });
+      sizeNum.addEventListener('change', (e) => { e.stopPropagation(); applySizePct(parseInt(sizeNum.value, 10) || curSizePct()); });
+      sizeWrap.appendChild(sizeMinus); sizeWrap.appendChild(sizeNum); sizeWrap.appendChild(sizePlus);
+      ins(sizeWrap); push(sizeWrap); push(sizeMinus); push(sizeNum); push(sizePlus);
+
+      ins(document.createElement('div')).className = 'ch-tb-sep';
+
+      // ---- STYLE: B / I / U / S toggles (flip the SAME layer flags as the panel) ----
+      const styleDefs = [
+        { key: 'bold', label: 'B', tip: 'Bold', css: 'font-weight:700' },
+        { key: 'italic', label: 'I', tip: 'Italic', css: 'font-style:italic;font-family:Georgia,serif' },
+        { key: 'underline', label: 'U', tip: 'Underline', css: 'text-decoration:underline' },
+        { key: 'strike', label: 'S', tip: 'Strikethrough', css: 'text-decoration:line-through' },
+      ];
+      ctl.styleBtns = {};
+      styleDefs.forEach((d) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-btn ch-tb-toggle'; b.dataset.style = d.key;
+        b.textContent = d.label; b.setAttribute('style', d.css); b.setAttribute('data-pdr-tooltip', d.tip);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation(); e.preventDefault();
+          ensureSel();
+          beginCollageChange();
+          layer[d.key] = !layer[d.key];   // bold/italic/underline == panel flags; strike is the new field
+          b.classList.toggle('active', !!layer[d.key]);
+          renderTextLayer(layer);
+          commitCollageChange();
+          try { syncTextControls(); } catch (_) {}
+        });
+        ctl.styleBtns[d.key] = b;
+        ins(b); push(b);
+      });
+
+      ins(document.createElement('div')).className = 'ch-tb-sep';
+
+      // ---- ALIGN: L / C / R (sets the SAME layer.align the panel does) ----
+      const alignDefs = [
+        { v: 'left', tip: 'Align left', svg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="2" y1="8" x2="10" y2="8"/><line x1="2" y1="12" x2="13" y2="12"/></svg>' },
+        { v: 'center', tip: 'Center', svg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="4" y1="8" x2="12" y2="8"/><line x1="3" y1="12" x2="13" y2="12"/></svg>' },
+        { v: 'right', tip: 'Align right', svg: '<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><line x1="2" y1="4" x2="14" y2="4"/><line x1="6" y1="8" x2="14" y2="8"/><line x1="3" y1="12" x2="14" y2="12"/></svg>' },
+      ];
+      ctl.alignBtns = {};
+      alignDefs.forEach((d) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-btn ch-tb-toggle ch-tb-align'; b.dataset.align = d.v;
+        b.innerHTML = d.svg; b.setAttribute('data-pdr-tooltip', d.tip);
+        b.addEventListener('click', (e) => {
+          e.stopPropagation(); e.preventDefault();
+          ensureSel();
+          beginCollageChange();
+          layer.align = d.v;
+          Object.keys(ctl.alignBtns).forEach((k) => ctl.alignBtns[k].classList.toggle('active', k === d.v));
+          renderTextLayer(layer);
+          commitCollageChange();
+          try { syncTextControls(); } catch (_) {}
+        });
+        ctl.alignBtns[d.v] = b;
+        ins(b); push(b);
+      });
+
+      ins(document.createElement('div')).className = 'ch-tb-sep';
+
+      // ---- CASE: one aA button cycling none → UPPER → lower → Title ----
+      const caseOrder = ['none', 'upper', 'lower', 'title'];
+      const caseGlyph = { none: 'aA', upper: 'AA', lower: 'aa', title: 'Aa' };
+      const caseTip = { none: 'Case: as typed', upper: 'Case: UPPERCASE', lower: 'Case: lowercase', title: 'Case: Title Case' };
+      const caseBtn = document.createElement('button'); caseBtn.type = 'button'; caseBtn.className = 'ch-tb-btn ch-tb-text ch-tb-case'; caseBtn.setAttribute('data-pdr-tooltip', 'Change case (cycles UPPER / lower / Title)');
+      caseBtn.innerHTML = '<span class="ch-tb-lbl">aA</span>';
+      ctl.caseLbl = caseBtn.querySelector('.ch-tb-lbl');
+      caseBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const cur = layer.letterCase || 'none';
+        const next = caseOrder[(caseOrder.indexOf(cur) + 1) % caseOrder.length];
+        beginCollageChange();
+        layer.letterCase = next;
+        renderTextLayer(layer);   // CASE is a render-time transform; layer.text stays editable
+        commitCollageChange();
+        refreshTextToolbar(layer);
+      });
+      ctl.caseGlyph = caseGlyph; ctl.caseTip = caseTip;
+      ins(caseBtn); push(caseBtn);
+
+      // ---- EFFECT: a popover with the SAME None/Outline/Shadow/Neon/3D chips ----
+      const effBtn = document.createElement('button'); effBtn.type = 'button'; effBtn.className = 'ch-tb-btn ch-tb-open ch-tb-eff'; effBtn.setAttribute('data-pdr-tooltip', 'Effects (outline / shadow / neon / 3D)');
+      effBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M12 3v2M12 19v2M3 12h2M19 12h2M6 6l1.5 1.5M16.5 16.5L18 18M18 6l-1.5 1.5M7.5 16.5L6 18"/><circle cx="12" cy="12" r="3.2"/></svg>';
+      const effDefs = [
+        { v: 'none', label: 'None' }, { v: 'outline', label: 'Outline' }, { v: 'shadow', label: 'Shadow' }, { v: 'neon', label: 'Neon' }, { v: '3d', label: '3D' },
+      ];
+      let effPop = null;
+      const buildEffPop = () => {
+        if (effPop) return effPop;
+        effPop = document.createElement('div'); effPop.className = 'ch-tb-pop ch-tb-effpop';
+        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.textContent = 'Effect'; effPop.appendChild(lbl);
+        const row = document.createElement('div'); row.className = 'ch-tb-eff-row';
+        effDefs.forEach((d) => {
+          const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-eff-btn'; b.dataset.effect = d.v; b.textContent = d.label;
+          b.addEventListener('click', (ev) => {
+            ev.stopPropagation();
+            ensureSel();
+            beginCollageChange();
+            layer.effect = d.v;   // SAME layer.effect the panel sets; renderTextToCanvas reads it
+            row.querySelectorAll('.ch-tb-eff-btn').forEach((x) => x.classList.toggle('active', x === b));
+            renderTextLayer(layer);
+            commitCollageChange();
+            try { setStrengthRowVisible((layer.effect || 'none') !== 'none'); } catch (_) {}
+            try { syncTextControls(); } catch (_) {}   // mirror the panel Effect chips + Strength row
+          });
+          row.appendChild(b);
+        });
+        effPop.appendChild(row);
+        document.body.appendChild(effPop);
+        return effPop;
+      };
+      effBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const pop = buildEffPop();
+        openTbPop_(pop, effBtn, () => {
+          const cur = (layer.effect || 'none');
+          pop.querySelectorAll('.ch-tb-eff-btn').forEach((x) => x.classList.toggle('active', x.dataset.effect === cur));
+        });
+      });
+      ins(effBtn); push(effBtn);
+
+      // ---- LINE SPACING: a slider popover (editable value). NEW field lineHeight ----
+      const spBtn = document.createElement('button'); spBtn.type = 'button'; spBtn.className = 'ch-tb-btn ch-tb-open ch-tb-space'; spBtn.setAttribute('data-pdr-tooltip', 'Line spacing');
+      spBtn.innerHTML = '<svg viewBox="0 0 24 24"><line x1="9" y1="6" x2="20" y2="6"/><line x1="9" y1="12" x2="20" y2="12"/><line x1="9" y1="18" x2="20" y2="18"/><polyline points="5 8 5 4 5 4"/><polyline points="3 6 5 4 7 6"/><polyline points="3 18 5 20 7 18"/></svg>';
+      let spPop = null;
+      const buildSpPop = () => {
+        if (spPop) return spPop;
+        spPop = document.createElement('div'); spPop.className = 'ch-tb-pop ch-tb-spacepop';
+        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span>Line spacing</span>';
+        spPop.appendChild(lbl);
+        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
+        const sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0.5'; sl.max = '3'; sl.step = '0.05';
+        const val = document.createElement('span'); val.className = 'ch-tb-slider-val';
+        const fmt = (v) => (Number.isFinite(v) ? v.toFixed(2) : '1.25');
+        sl.addEventListener('input', (ev) => {
+          ev.stopPropagation();
+          const v = Math.max(0.5, Math.min(3, parseFloat(sl.value) || 1.25));
+          ensureSel();
+          beginCollageChange();
+          layer.lineHeight = v;
+          val.textContent = fmt(v);
+          renderTextLayer(layer);
+          commitCollageChange();
+        });
+        sl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        wireTbValEdit(val, sl, fmt);
+        ctl.spSlider = sl; ctl.spVal = val; ctl.spFmt = fmt;
+        row.appendChild(sl); row.appendChild(val); spPop.appendChild(row);
+        document.body.appendChild(spPop);
+        return spPop;
+      };
+      spBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const pop = buildSpPop();
+        openTbPop_(pop, spBtn, () => {
+          const v = (typeof layer.lineHeight === 'number') ? layer.lineHeight : 1.25;
+          ctl.spSlider.value = String(v); ctl.spVal.textContent = ctl.spFmt(v);
+        });
+      });
+      ins(spBtn); push(spBtn);
+
+      // ---- TRANSPARENCY: a slider popover (editable value). NEW field opacity ----
+      const opBtn = document.createElement('button'); opBtn.type = 'button'; opBtn.className = 'ch-tb-btn ch-tb-open ch-tb-opacity'; opBtn.setAttribute('data-pdr-tooltip', 'Transparency');
+      opBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>';
+      let opPop = null;
+      const buildOpPop = () => {
+        if (opPop) return opPop;
+        opPop = document.createElement('div'); opPop.className = 'ch-tb-pop ch-tb-opacitypop';
+        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span>Transparency</span>';
+        opPop.appendChild(lbl);
+        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
+        const sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0'; sl.max = '100'; sl.step = '1';
+        const val = document.createElement('span'); val.className = 'ch-tb-slider-val';
+        const fmt = (v) => (Number.isFinite(v) ? Math.round(v) + '%' : '100%');
+        sl.addEventListener('input', (ev) => {
+          ev.stopPropagation();
+          const v = Math.max(0, Math.min(100, parseInt(sl.value, 10)));
+          ensureSel();
+          beginCollageChange();
+          layer.opacity = v;
+          val.textContent = fmt(v);
+          renderTextLayer(layer);
+          commitCollageChange();
+        });
+        sl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        wireTbValEdit(val, sl, fmt);
+        ctl.opSlider = sl; ctl.opVal = val; ctl.opFmt = fmt;
+        row.appendChild(sl); row.appendChild(val); opPop.appendChild(row);
+        document.body.appendChild(opPop);
+        return opPop;
+      };
+      opBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const pop = buildOpPop();
+        openTbPop_(pop, opBtn, () => {
+          const v = (typeof layer.opacity === 'number') ? layer.opacity : 100;
+          ctl.opSlider.value = String(v); ctl.opVal.textContent = ctl.opFmt(v);
+        });
+      });
+      ins(opBtn); push(opBtn);
+
+      ins(document.createElement('div')).className = 'ch-tb-sep';
+      // Prime the displayed state once.
+      refreshTextToolbar(layer);
+    }
+    // Update every toolbar control's DISPLAYED state to match the layer (font label,
+    // size number, B/I/U/S + align pressed states, aA case glyph). Called after a
+    // render/selection so the toolbar mirrors the model (and stays in step with the
+    // side-panel, which syncTextControls handles). No-op for layers without controls
+    // (emoji) or before the toolbar is built.
+    function refreshTextToolbar(layer) {
+      const ctl = layer && layer._tbCtl;
+      if (!ctl) return;
+      if (ctl.fontLbl) { const f = layer.font || 'Impact'; ctl.fontLbl.textContent = (typeof COLLAGE_FONT_LABELS === 'object' && COLLAGE_FONT_LABELS[f]) ? COLLAGE_FONT_LABELS[f] : f; ctl.fontLbl.style.fontFamily = "'" + f + "'"; }
+      if (ctl.sizeNum && ctl.sizeNum.dataset.editing !== '1' && document.activeElement !== ctl.sizeNum) ctl.sizeNum.value = String(Math.round((layer.sizeFrac || 0.08) * 100));
+      if (ctl.styleBtns) { ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (ctl.styleBtns[k]) ctl.styleBtns[k].classList.toggle('active', !!layer[k]); }); }
+      if (ctl.alignBtns) { const a = layer.align || 'center'; Object.keys(ctl.alignBtns).forEach((k) => ctl.alignBtns[k].classList.toggle('active', k === a)); }
+      if (ctl.caseLbl && ctl.caseGlyph) {
+        const c = layer.letterCase || 'none';
+        ctl.caseLbl.textContent = ctl.caseGlyph[c] || 'aA';
+        const cb = ctl.caseLbl.closest('.ch-tb-case');
+        if (cb) {
+          if (ctl.caseTip) cb.setAttribute('data-pdr-tooltip', ctl.caseTip[c] || 'Change case');
+          cb.classList.toggle('ch-tb-toggle', true);   // borrow the pressed look
+          cb.classList.toggle('active', c !== 'none');
+        }
+      }
     }
     // Create/update a layer's live DOM wrapper: an absolutely-positioned div
     // in collageCanvasEl, CENTERED at xFrac/yFrac (translate -50%), rotated,
@@ -9929,6 +10427,12 @@
         tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRem);
         // Every handle + the toolbar (and its buttons) are excluded from the drag.
         const handles = [tRot, tResTL, tResTR, tResBL, tResBR, tResL, tResR, tResT, tResB, tbar, tbLock, tbDup, tbRem];
+        // v3.1 (Terry) — a TEXT (non-emoji) layer gets the full Canva-style text
+        // controls INSERTED into the same pill, ahead of Lock/Duplicate/Delete. Each
+        // control it creates is pushed into `handles` (so it never starts a drag) and
+        // reuses the panel's model fields + render + begin/commit undo path. An EMOJI
+        // layer has no text styling, so it keeps just the Lock/Duplicate/Delete pill.
+        if (!layer.isEmoji) { try { buildTextToolbarControls(layer, tbar, handles, tbLock); } catch (_) {} }
         // Drag the wrapper to move the text — but IGNORE pointerdowns that land
         // on a handle (mirror the tile guard) so resize/rotate don't also drag.
         el.addEventListener('pointerdown', (e) => {
@@ -10090,6 +10594,10 @@
         lockBtn.classList.toggle('locked', !!layer.locked);
         lockBtn.setAttribute('data-pdr-tooltip', layer.locked ? 'Unlock' : 'Lock (freeze position / size / rotation)');
       }
+      // v3.1 (Terry) — keep the new floating text controls' displayed state (font
+      // label, size, B/I/U/S + align pressed, aA case) in step with the model after
+      // every render, incl. undo/redo, size-handle resize, and font/style changes.
+      try { refreshTextToolbar(layer); } catch (_) {}
     }
     function renderAllTexts() {
       for (const layer of collageTexts) renderTextLayer(layer);
@@ -10301,7 +10809,7 @@
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -10675,6 +11183,10 @@
         if (collageSelected) selectCollageItem(null);   // drop tile/bg selection
       }
       const prev = selectedText;
+      // v3.1 (Terry) — switching or clearing the text selection closes any open
+      // toolbar popover (Font/Effect/Spacing/Transparency), which belonged to the
+      // layer whose toolbar is going away.
+      if (prev !== layer) { try { closeTbPop(); } catch (_) {} }
       selectedText = layer || null;
       if (prev && prev !== layer && prev.el) prev.el.classList.remove('selected');
       if (selectedText && selectedText.el) selectedText.el.classList.add('selected');
@@ -10700,6 +11212,7 @@
       // down WITHOUT committing it (we're about to remove the layer entirely).
       if (editingText === layer) { editingText = null; textEditSnap = null; if (layer.editEl) { try { layer.editEl.remove(); } catch (_) {} layer.editEl = null; } }
       beginCollageChange();
+      try { closeTbPop(); } catch (_) {}   // v3.1 (Terry) — close any toolbar popover for the layer being removed
       const i = collageTexts.indexOf(layer);
       if (i !== -1) collageTexts.splice(i, 1);
       if (layer.el && layer.el.parentNode) layer.el.parentNode.removeChild(layer.el);
@@ -10742,6 +11255,10 @@
         font: layer.font,
         color: layer.color, align: layer.align, rot: layer.rot, z: topZ,
         bold: !!layer.bold, italic: !!layer.italic, underline: !!layer.underline,
+        strike: !!layer.strike,   // v3.1 (Terry) — the clone copies the new toolbar text styling
+        lineHeight: (typeof layer.lineHeight === 'number') ? layer.lineHeight : 1.25,
+        opacity: (typeof layer.opacity === 'number') ? layer.opacity : 100,
+        letterCase: layer.letterCase || 'none',
         effect: layer.effect || 'none',
         effectStrength: (typeof layer.effectStrength === 'number') ? layer.effectStrength : 50,
         effectColor: layer.effectColor || '',
@@ -13973,7 +14490,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -14197,7 +14714,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
