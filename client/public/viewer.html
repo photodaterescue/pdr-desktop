@@ -2847,6 +2847,15 @@
        cropped region while the frame border (on the .collage-item box)
        still surrounds it. */
     .collage-clip { position: absolute; inset: 0; overflow: hidden; }
+    /* v3.1 (Terry) — SS4: edge-effect holder between the tile box and the clip. The Glow & Shadow
+       panel effects are drop-shadow FILTERS on this element (applyTileEdgeFx), not box-shadows on
+       the box, so they follow the photo's REAL alpha — a transparent PNG (logo/sticker) gets its
+       glow around the visible shape, not the invisible rectangle. As the clip's PARENT it sees the
+       clip's FINAL composited output (crop overflow + corner/blend mask + blur/pixelate applied) —
+       a filter on the clip itself would be sliced off by the clip's own mask, which CSS applies
+       AFTER filters. No overflow:hidden here, so the shadow can spill past the tile box; the
+       selection handles / frame border live on the box and stay un-shadowed. */
+    .collage-fx { position: absolute; inset: 0; }
     /* v2.1 round 294 (Terry) — per-photo vignette + grain overlays, inside the clip so they
        follow the tile's corners/shape; above the photo, below the selection chrome. */
     .collage-clip > .ct-vig { position: absolute; inset: 0; pointer-events: none; z-index: 3; }
@@ -3111,10 +3120,14 @@
       align-items: center;
       gap: 4px;
       padding: 4px;
-      background: rgba(28,26,46,0.96);
-      border: 1px solid rgba(255,255,255,0.14);
+      /* v3.1 (Terry SS3) — the pill clashed with dark canvases (near-identical surface).
+         Keep PDR's dark premium look (not Canva's light grey) but SEPARATE it hard:
+         slightly lifted surface, a clearly visible outline (Terry's own suggestion) and
+         a deeper drop shadow + a 1px dark ring so it pops on light AND dark backgrounds. */
+      background: rgba(40,38,62,0.98);
+      border: 1px solid rgba(255,255,255,0.32);
       border-radius: 9px;
-      box-shadow: 0 4px 14px rgba(0,0,0,0.4);
+      box-shadow: 0 6px 22px rgba(0,0,0,0.55), 0 0 0 1px rgba(0,0,0,0.4);
       z-index: 7;
       white-space: nowrap;
     }
@@ -3229,7 +3242,11 @@
        any zoom. The margin-bottom gap is counter-scaled too so the clearance is fixed. (This
        is SCOPED to .collage-text — the shared base .ch-toolbar / photo-tile chrome is
        untouched. == translateX(-50%) + 8px gap at zoom 1.) */
-    .collage-text .ch-toolbar { transform: translateX(-50%) scale(var(--ch-inv,1)); transform-origin: bottom center; margin-bottom: calc(30px * var(--ch-inv,1)); }   /* v3.1 (Terry) — gap raised 8→30px to match Canva's clear air between the bar and the box top (SS1) */
+    .collage-text .ch-toolbar { transform: translateX(-50%) scale(var(--ch-inv,1)); transform-origin: bottom center; margin-bottom: calc(21px * var(--ch-inv,1)); }   /* v3.1 (Terry) — Canva-style clear air over the box top; tuned 8→30→21px ("30% closer") */
+    /* v3.1 (Terry SS3) — when the bar flips INSIDE the box top (clamped at the canvas/stage
+       top by positionTextToolbarInView), counter-scale the inside inset too so it holds a
+       fixed on-screen gap at any zoom (the generic .ch-toolbar-inside rule is photo-tile px). */
+    .collage-text .ch-toolbar.ch-toolbar-inside { top: calc(8px * var(--ch-inv,1)); margin-top: 0; margin-bottom: 0; transform-origin: top center; }
     /* v3.1 (Terry) — Canva-style TEXT controls added to the floating toolbar (Font,
        Size, B/I/U/S, Align, Effect, Line-spacing, Transparency, Case). They live
        INSIDE .ch-toolbar so they inherit the --ch-inv counter-scale (fixed on-screen
@@ -4988,8 +5005,10 @@
           </div>
       </details>
       <!-- v2.1 round 337 (Terry) — GLOW & SHADOW: per-photo edge / depth effects, each a slider.
-           Live preview = stacked CSS drop-shadows on the tile box (it doesn't clip, so they show
-           BEYOND the tile and follow the photo's masked shape). Export-matching bake comes next. -->
+           v3.1 (Terry) — SS4: live preview = drop-shadow()/dilate FILTERS on the tile's .collage-fx
+           holder (applyTileEdgeFx), so every effect follows the photo's REAL alpha — a transparent
+           PNG glows around its visible shape, not the invisible box. Bake parity: the sharp export
+           (buildTileEdgeFx) is silhouette-based already; the WYSIWYG export renders this same DOM. -->
       <details class="enhance-collapse" id="enhance-edge">
         <summary>Glow &amp; shadow</summary>
         <div class="enhance-control">
@@ -6105,6 +6124,37 @@
       // canvas transform is written, so pan/zoom (incl. Behaviour A below-fit centring)
       // keep the ring/handles on the tile. positionSelectionChrome reads the LIVE rect.
       try { positionSelectionChrome(); } catch (_) {}
+      try { positionTextToolbarInView(); } catch (_) {}
+    }
+    // v3.1 (Terry SS3) — keep the selected TEXT layer's floating toolbar fully VISIBLE.
+    // #collage-canvas is overflow:hidden, so a bar hanging past the canvas edge (or the
+    // stage edge) was cut off mid-button. Clamp: shift it horizontally back inside the
+    // canvas∩stage box, and if its top would clip, flip it INSIDE the box top (the same
+    // .ch-toolbar-inside flip the photo toolbar uses). The shift composes with the CSS
+    // centring + --ch-inv counter-scale — a px translate inside this transform nets out
+    // to a 1:1 SCREEN-px shift at any zoom (the inv × zoom factors cancel), so the clamp
+    // is zoom-independent. Re-run on every render + zoom/pan step; transform resets to ''
+    // (pure CSS centring) whenever no clamp is needed.
+    function positionTextToolbarInView() {
+      const t = (typeof selectedText !== 'undefined') ? selectedText : null;
+      if (!t || !t.el) return;
+      const tb = t.el.querySelector('.ch-toolbar');
+      if (!tb) return;
+      tb.style.transform = '';
+      if (!t.el.classList.contains('selected')) { tb.classList.remove('ch-toolbar-inside'); return; }
+      const stage = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
+      const cv = collageCanvasEl.getBoundingClientRect();
+      const L = Math.max(cv.left, stage ? stage.left : cv.left) + 4;
+      const R = Math.min(cv.right, stage ? stage.right : cv.right) - 4;
+      let r = tb.getBoundingClientRect();
+      let shift = 0;
+      if (r.left < L) shift = L - r.left;
+      else if (r.right > R) shift = -(r.right - R);
+      if (r.width > (R - L)) shift = L - r.left;   // bar wider than the visible run: pin its left edge
+      if (shift) tb.style.transform = 'translateX(calc(-50% + ' + Math.round(shift) + 'px)) scale(var(--ch-inv,1))';
+      const T = Math.max(cv.top, stage ? stage.top : cv.top);
+      r = tb.getBoundingClientRect();
+      tb.classList.toggle('ch-toolbar-inside', r.top < T + 2);
     }
     // Reset the view to the fit (zoom 1, no pan). Used by the double-click-empty-stage
     // reset, by reshape (canvas size change), and on entering collage mode.
@@ -8852,6 +8902,41 @@
       _collagePixIds[cell] = true;
       return id;
     }
+    // v3.1 (Terry) — SS4: crisp OUTLINE ring that follows the photo's real alpha. CSS has no
+    // "dilate": box-shadow spread only rings the BOX, and emulating a ring with 8 chained
+    // drop-shadows is the round-337 lag path. So build a cached SVG feMorphology filter (same
+    // engine + hidden <svg> as the pixelate above): dilate SourceAlpha by the ring width, flood
+    // it with the outline colour, and lay the photo back on top. Referenced from the tile's
+    // .collage-fx holder via CSS filter: url(#…), composing with the drop-shadow effects there.
+    var _collageOutlineIds = {};
+    function ensureCollageOutlineFilter(widthPx, colour) {
+      var wq = Math.max(1, Math.round((widthPx || 0) * 2) / 2);   // ½px steps keep the cache small
+      colour = /^#[0-9a-fA-F]{3,8}$/.test(String(colour || '')) ? String(colour) : '#ffffff';
+      var key = wq + '|' + colour;
+      var id = 'collage-outline-' + key.replace(/[^a-zA-Z0-9]+/g, '-');
+      if (_collageOutlineIds[key]) return id;
+      var SVGNS = 'http://www.w3.org/2000/svg';
+      if (!_collagePixSvg) {
+        _collagePixSvg = document.createElementNS(SVGNS, 'svg');
+        _collagePixSvg.setAttribute('aria-hidden', 'true');
+        _collagePixSvg.style.cssText = 'position:absolute;width:0;height:0;overflow:hidden;pointer-events:none;';
+        document.body.appendChild(_collagePixSvg);
+      }
+      var f = document.createElementNS(SVGNS, 'filter');
+      f.setAttribute('id', id);
+      // The ring dilates OUTWARD (an alpha-trimmed logo touches its box edges), so give the filter
+      // region margins — unlike the pixelate filter above, which clips to the box on purpose.
+      f.setAttribute('x', '-25%'); f.setAttribute('y', '-25%'); f.setAttribute('width', '150%'); f.setAttribute('height', '150%');
+      f.setAttribute('primitiveUnits', 'userSpaceOnUse');
+      f.innerHTML =
+        '<feMorphology in="SourceAlpha" operator="dilate" radius="' + wq + '" result="d"/>' +
+        '<feFlood flood-color="' + colour + '"/>' +
+        '<feComposite in2="d" operator="in" result="ring"/>' +
+        '<feMerge><feMergeNode in="ring"/><feMergeNode in="SourceGraphic"/></feMerge>';
+      _collagePixSvg.appendChild(f);
+      _collageOutlineIds[key] = true;
+      return id;
+    }
     // v2.1 round 327 (Terry) — apply per-photo Blur + Pixelate to a tile's CLIP (so any
     // frame/border drawn on it.el stays crisp). Both scale with the tile's short side so the
     // look is size-independent (preview canvas-px ↔ bake export-px share the same fraction).
@@ -8864,16 +8949,15 @@
       if (bl > 0) parts.push('blur(' + (bl / 100 * 0.0225 * shortPx).toFixed(2) + 'px)');   // v2.1 round 329 (Terry) — range halved (was 0.045)
       var px = Math.max(0, Math.min(100, e.pixelate || 0));
       if (px > 0) parts.push('url(#' + ensureCollagePixFilter(px / 100 * 0.044 * shortPx) + ')');   // v2.1 round 330 (Terry) — a further 20% less than the r329 halving (0.055 -> 0.044)
-      // v3.0 (Terry 2026-07-05) — for a BG-REMOVED (cut-out) tile, the Glow & Shadow edge effects must
-      // hug the SILHOUETTE, not the rectangular box. box-shadow (used for normal tiles in applyTileEdgeFx)
-      // can't follow alpha; drop-shadow can. Emit them HERE, on the clip (which holds only the image, so
-      // handles never get shadowed, and it composes with blur/pixelate). Matches the export bake. Only a
-      // few layers, only on cut-outs → the round-338 8-layer-outline lag doesn't apply.
+      // v3.1 (Terry) — the Glow & Shadow edge effects live on the .collage-fx holder ABOVE this
+      // clip (applyTileEdgeFx), NOT here: a parent filter reads the clip's FINAL alpha (this
+      // blur/pixelate + the corner/blend mask included), so they hug cut-outs AND transparent
+      // PNGs without ever colliding with this clip filter.
       it.clipEl.style.filter = parts.length ? parts.join(' ') : '';
     }
-    // v2.1 round 337 (Terry) — Glow & shadow EDGE effects: stacked drop-shadows on the tile BOX
-    // (it.el, which doesn't clip → they show beyond it + follow the photo's masked shape). Sizes
-    // scale with the tile's short side so the look is resolution-independent. (Export bake next.)
+    // v3.1 (Terry) — SS4: Glow & shadow EDGE effects now follow the OBJECT's alpha, not the tile
+    // box — drop-shadow()/url() FILTERS on the .collage-fx holder (see applyTileEdgeFx). Sizes
+    // still scale with the tile's short side so the look is resolution-independent.
     // v2.1 round 339 (Terry) — hex (+ fallback) → rgba string for the alpha-blended edge shadows.
     function edgeRgba(hex, fallback, a) {
       hex = (hex || fallback || '#000000').replace('#', '');
@@ -8883,39 +8967,45 @@
     }
     function applyTileEdgeFx(it, iwPx, ihPx) {
       if (!it || !it.el) return;
-      // v3.0 (Terry 2026-07-05) — a BG-removed (cut-out) tile's Glow/Neon can't follow the silhouette
-      // via box-shadow (rectangular). It's drawn instead by a SHARP-baked glow layer behind the photo
-      // (updateTileCutoutGlow). Clear any rectangular box-shadow here so it doesn't draw around the box.
-      // v3.0 round 586 (Terry) — MUST be 'none', not '': '' drops the inline value so the tile's DEFAULT
-      // depth/lift drop-shadow (the .collage-item CSS rule) shows through — a soft dark rectangle around
-      // the ORIGINAL photo bounds (invisible photo-on-white-canvas, but the shadow reveals the box). That
-      // was the "rectangle where the full photo used to be" Terry saw; the neon + silhouette lift stay
-      // (they're in the baked glow layer, not this box-shadow).
-      if (it.bgRemovedPath) { it.el.style.boxShadow = 'none'; it.el.style.filter = ''; it.el.style.borderRadius = ''; return; }
+      var fxEl = it.fxEl || it.clipEl;   // the filter holder (.collage-fx; clip fallback for safety)
+      // v3.0 (Terry 2026-07-05) — a BG-removed (cut-out) tile's Glow/Neon is drawn by a SHARP-baked
+      // silhouette glow layer behind the photo (updateTileCutoutGlow) — keep every CSS effect off it.
+      // v3.0 round 586 (Terry) — boxShadow MUST be 'none', not '': '' drops the inline value so a
+      // stale rule could show a soft dark rectangle around the ORIGINAL photo bounds (invisible
+      // photo-on-white-canvas, but the shadow reveals the box) — the "rectangle where the full
+      // photo used to be" Terry saw; the neon + silhouette lift stay (they're in the baked layer).
+      if (it.bgRemovedPath) { it.el.style.boxShadow = 'none'; it.el.style.filter = ''; it.el.style.borderRadius = ''; if (fxEl) fxEl.style.filter = ''; return; }
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
-      // v2.1 round 338 (Terry) — switched from filter:drop-shadow to BOX-SHADOW. The round-337
-      // outline used 8 chained drop-shadows + each effect re-rasterized the whole tile, which lagged
-      // badly (Terry: ">5s"). box-shadow is a cheap compositor effect: glow/neon/lift/shadow are blur
-      // shadows, and OUTLINE is a single crisp ring via spread (no blur, no 8 layers). Rounded via
-      // it.el border-radius (from Curved corners) so the shadow follows the corner rounding.
-      var sh = [];
-      var glow = Math.max(0, Math.min(100, e.glow || 0));
-      if (glow > 0) { var gb = glow / 100 * 0.14 * s; sh.push('0 0 ' + gb.toFixed(1) + 'px ' + (gb * 0.35).toFixed(1) + 'px ' + edgeRgba(e.glowColor, '#ffffff', 0.9)); }
-      var neon = Math.max(0, Math.min(100, e.neon || 0));
-      if (neon > 0) { var nb = neon / 100 * 0.10 * s, nc = e.neonColor || '#ff2bd6'; sh.push('0 0 ' + nb.toFixed(1) + 'px ' + (nb * 0.3).toFixed(1) + 'px ' + nc, '0 0 ' + (nb * 2).toFixed(1) + 'px ' + nc); }
-      var lift = Math.max(0, Math.min(100, e.lift || 0));
-      if (lift > 0) sh.push('0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px ' + edgeRgba(e.liftColor, '#000000', 0.5));
-      var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
-      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); sh.push(d + 'px ' + d + 'px ' + d + 'px ' + edgeRgba(e.dropShadowColor, '#000000', 0.55)); }
+      // v3.1 (Terry) — SS4: Glow & Shadow follow the OBJECT's alpha, not the tile box. The round-338
+      // box-shadows on it.el ringed the RECTANGLE — on a transparent PNG (logo/sticker) the pink glow
+      // outlined the invisible square instead of the visible shape. Emit drop-shadow() FILTERS on the
+      // .collage-fx holder instead: a filter on the clip's PARENT reads its final composited alpha
+      // (crop + corner/blend mask + blur/pixelate baked in), so effects hug the real silhouette — and
+      // on a fully opaque photo the rendered result matches the old box look, so one code path serves
+      // both. Sizes keep the round-338 formulas (drop-shadow's blur radius = box-shadow's); the lost
+      // spread strength is recovered by stacking a tighter second layer (2 for glow, 3 for neon) —
+      // few layers total, so the round-337 8-chain lag doesn't return. OUTLINE (a crisp ring, which
+      // drop-shadow can't spread) is a cached SVG dilate filter (ensureCollageOutlineFilter), placed
+      // FIRST so glow/shadows wrap the outlined shape. Blur/pixelate stay on the clip and the enhance
+      // levels on the <img> — separate elements, so composing here can never clobber them — and with
+      // every slider at 0 this holder's filter clears back to ''. The round-338 border-radius juggle
+      // (rounding the BOX shadow to match Curved corners) is obsolete: the clip's mask already shapes
+      // the filter input, so the shadow follows the rounded/feathered edge by construction.
+      var fl = [];
       var ol = Math.max(0, Math.min(100, e.outline || 0));
-      if (ol > 0) sh.push('0 0 0 ' + Math.max(1, ol / 100 * 0.05 * s).toFixed(1) + 'px ' + (e.outlineColor || '#ffffff'));   // crisp ring via spread (cheap, no blur)
-      if (sh.length) it.el.style.boxShadow = sh.join(', ');   // else: leave renderCollageItem's depth shadow
-      it.el.style.filter = '';   // drop the round-337 drop-shadow filter (the laggy path)
-      var c = e.corners, half = s / 2;
-      if (sh.length && Array.isArray(c) && c.some(function (v) { return (v || 0) > 0.001; })) {
-        it.el.style.borderRadius = (c[0] * half).toFixed(1) + 'px ' + (c[1] * half).toFixed(1) + 'px ' + (c[2] * half).toFixed(1) + 'px ' + (c[3] * half).toFixed(1) + 'px';
-      } else { it.el.style.borderRadius = ''; }
+      if (ol > 0) fl.push('url(#' + ensureCollageOutlineFilter(Math.max(1, ol / 100 * 0.05 * s), e.outlineColor || '#ffffff') + ')');
+      var glow = Math.max(0, Math.min(100, e.glow || 0));
+      if (glow > 0) { var gb = glow / 100 * 0.14 * s, gc = edgeRgba(e.glowColor, '#ffffff', 0.9); fl.push('drop-shadow(0 0 ' + (gb * 0.5).toFixed(1) + 'px ' + gc + ')', 'drop-shadow(0 0 ' + gb.toFixed(1) + 'px ' + gc + ')'); }
+      var neon = Math.max(0, Math.min(100, e.neon || 0));
+      if (neon > 0) { var nb = neon / 100 * 0.10 * s, nc = e.neonColor || '#ff2bd6'; fl.push('drop-shadow(0 0 ' + (nb * 0.5).toFixed(1) + 'px ' + nc + ')', 'drop-shadow(0 0 ' + nb.toFixed(1) + 'px ' + nc + ')', 'drop-shadow(0 0 ' + (nb * 2).toFixed(1) + 'px ' + nc + ')'); }
+      var lift = Math.max(0, Math.min(100, e.lift || 0));
+      if (lift > 0) fl.push('drop-shadow(0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px ' + edgeRgba(e.liftColor, '#000000', 0.5) + ')');
+      var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
+      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); fl.push('drop-shadow(' + d + 'px ' + d + 'px ' + d + 'px ' + edgeRgba(e.dropShadowColor, '#000000', 0.55) + ')'); }
+      if (fxEl) fxEl.style.filter = fl.length ? fl.join(' ') : '';
+      it.el.style.filter = '';         // nothing draws on the box any more (retire the r337/r338 inline paths)
+      it.el.style.borderRadius = '';   // renderCollageItem owns the box's resting shadow; no shadow-rounding needed
     }
     // ─── Cut-out glow layer (v3.0, Terry 2026-07-05) ────────────────────────────────────────────────
     // A BG-removed tile's Glow/Neon must hug the SILHOUETTE (a crisp outline), which CSS can't do. We
@@ -9315,6 +9405,13 @@
     }
     function hideSelectionChrome() {
       if (collageChromeEl) collageChromeEl.classList.remove('active');
+      // v3.1 (Terry) — ALSO hide the single-item handle box + its toolbar, not just the
+      // container. showCollageMeasurements re-activates #collage-chrome during TEXT drags
+      // (the measurement badges live inside it), and the box kept display:'' from the last
+      // photo selection — so the stale box + 5-button toolbar re-appeared as an undeletable
+      // "phantom" square whose buttons all no-op (collageSelected is null → every handler
+      // early-returns). positionSelectionChrome restores the box when a tile is selected.
+      if (collageChromeBox) collageChromeBox.style.display = 'none';
     }
     // ─── v2.1 round 289 (Terry) — MULTI-SELECT floating chrome ───────────────
     // A marquee / Ctrl+click selection of 2+ tiles. Mirrors positionSelectionChrome's
@@ -9562,6 +9659,10 @@
       badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
+      // v3.1 (Terry) — activating the container for a TEXT/EMOJI measure must not resurrect
+      // the photo handle box: without a live tile selection, force the box hidden (belt-and-
+      // braces alongside the hideSelectionChrome fix — the "phantom mystery box").
+      if (collageChromeBox && !collageSelected) collageChromeBox.style.display = 'none';
       collageChromeEl.classList.add('active');
     }
     function positionSelectionChrome() {
@@ -9660,13 +9761,114 @@
       if (mode === 'title') return s.replace(/\S+/g, (w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
       return s;
     }
+    // v3.1 (Terry) — FIXED TEXT AREA (Canva-style): greedy word-wrap ONE '\n'
+    // paragraph to maxW px using the ctx's CURRENT font. Splits on single spaces
+    // (split(' ') keeps empty tokens, so runs of spaces round-trip through the
+    // ' ' re-join); any single word wider than the box is hard-broken by CODE
+    // POINT (Array.from — surrogate pairs never split) so it can never force the
+    // box wider. Always returns ≥ 1 line ('' for an empty paragraph, so blank
+    // lines keep their vertical slot, same as the '\n' split in auto mode).
+    function wrapTextLineToWidth(ctx, text, maxW) {
+      const s = String(text == null ? '' : text);
+      if (!s) return [''];
+      const out = [];
+      let cur = '';
+      // Hard-break `word` onto the line stack; returns the (fitting) remainder.
+      const hardBreak = (word) => {
+        let piece = '';
+        const cps = Array.from(word);
+        for (let i = 0; i < cps.length; i++) {
+          if (piece && ctx.measureText(piece + cps[i]).width > maxW) { out.push(piece); piece = cps[i]; }
+          else piece += cps[i];
+        }
+        return piece;
+      };
+      const tokens = s.split(' ');
+      for (let i = 0; i < tokens.length; i++) {
+        const tk = tokens[i];
+        const cand = cur.length ? (cur + ' ' + tk) : tk;
+        if (ctx.measureText(cand).width <= maxW) { cur = cand; continue; }
+        if (!cur.length) { cur = hardBreak(cand); continue; }   // first token on the line — must take it (then hard-break)
+        out.push(cur);
+        cur = (ctx.measureText(tk).width > maxW) ? hardBreak(tk) : tk;
+      }
+      out.push(cur);
+      return out;
+    }
     function renderTextToCanvas(layer, shortPx) {
-      const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);
+      let fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);   // v3.1 (Terry) — let (not const): fixed-box autoFit below may step it down
       // v3.1 (Terry) — the CASE transform is applied to the RENDERED text only; the
       // underlying layer.text stays editable/unchanged (mirrors Canva's aA).
-      const lines = applyLetterCase(layer.text, layer.letterCase).split('\n');
+      let lines = applyLetterCase(layer.text, layer.letterCase).split('\n');   // v3.1 (Terry) — let: fixed mode replaces these with the wrapped lines
       const canvas = document.createElement('canvas');
       const ctx = canvas.getContext('2d');
+      // ── v3.1 (Terry) — FIXED TEXT AREA (Canva-style) ────────────────────────
+      // boxMode 'fixed' pins the text to a user-set AREA instead of extending
+      // right forever. boxWFrac / boxHFrac are fractions of the SAME SHORT SIDE
+      // sizeFrac uses (the one px basis this function receives — chosen so box
+      // px are always computable here with no extra plumbing, and the box scales
+      // with the canvas exactly like the font does). Width: each '\n' paragraph
+      // is greedy-word-wrapped to the box (very long words hard-break). Height
+      // (optional): when boxHFrac is set and the wrapped ink at sizeFrac would
+      // overflow it, the font AUTO-FITS — stepped down ×0.95 (floor 8px) until
+      // the block fits. The stored sizeFrac is NEVER touched, so deleting text
+      // grows the render back toward the set size (Canva "shrink on overflow").
+      // The fitted px is written back into fontPx, so fontStr/pad/lineH/effects
+      // below all track the fitted size with no further branching. _fixW/_fixH
+      // (px) then override ONLY the canvas sizing after the measure pass: the
+      // canvas becomes the BOX (+ the same symmetric effect pad), so the canvas
+      // centre == box centre == the xFrac/yFrac anchor, and EVERY consumer
+      // (renderTextLayer, both bake paths, the carousel slice previews) lands
+      // the box identically with NO call-site changes. Ink draws TOP-anchored
+      // in the box (y0 = pad − inkTopRel, unchanged below); horizontal alignment
+      // reuses the same pad / centre / right formulas, now spanning the box.
+      // 'auto' (the default — every emoji, every old snapshot) leaves _fixW null
+      // and every line below behaves byte-for-byte as before.
+      let _fixW = null, _fixH = null;
+      if (!layer.isEmoji && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) {
+        _fixW = Math.max(4, layer.boxWFrac * shortPx);
+        _fixH = (typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? Math.max(4, layer.boxHFrac * shortPx) : null;
+        const _lhMul = (typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25;
+        const _fontAt = (px) => (layer.italic ? 'italic ' : '') + (layer.bold ? 'bold ' : '') + px + 'px "' + (layer.font || 'Impact') + '"';
+        const _paras = lines;
+        const _wrapAt = (px) => {
+          ctx.font = _fontAt(px);
+          const out = [];
+          for (let i = 0; i < _paras.length; i++) {
+            const seg = wrapTextLineToWidth(ctx, _paras[i], _fixW);
+            for (let j = 0; j < seg.length; j++) out.push(seg[j]);
+          }
+          return out;
+        };
+        // Ink-block height of `ls` at `px` — the SAME metric model the sizing
+        // pass below uses (actual ascent/descent per line on an i*lineH grid),
+        // so "fits" here == fits in the canvas below, no drift.
+        const _inkHAt = (ls, px) => {
+          ctx.font = _fontAt(px);
+          const lh = px * _lhMul;
+          let top = Infinity, bot = -Infinity, got = false;
+          for (let i = 0; i < ls.length; i++) {
+            const m = ctx.measureText(ls[i] || '');
+            const bAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : (px * 1.0);
+            const bl = i * lh + bAsc;
+            const aA = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : bAsc;
+            const aD = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent
+                      : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : px * 0.25);
+            const t = bl - aA, b = bl + aD;
+            if (isFinite(t) && isFinite(b)) { got = true; if (t < top) top = t; if (b > bot) bot = b; }
+          }
+          return (got && bot > top) ? (bot - top) : (ls.length * lh);
+        };
+        let _wrapped = _wrapAt(fontPx);
+        if (_fixH != null) {
+          let _guard = 0;
+          while (fontPx > 8 && _inkHAt(_wrapped, fontPx) > _fixH && _guard++ < 200) {
+            fontPx = Math.max(8, fontPx * 0.95);   // shrink-only: never upsizes past sizeFrac; floor 8px
+            _wrapped = _wrapAt(fontPx);            // re-wrap — smaller glyphs re-flow the line breaks
+          }
+        }
+        lines = _wrapped;
+      }
       const color = layer.color || '#ffffff';
       const effect = layer.effect || 'none';
       // v2.1 round 193 (Terry) — optional EFFECT colour. '' (or whitespace) =
@@ -9803,8 +10005,14 @@
         y0 = pad;
       }
       const inkW = maxW;
-      canvas.width = Math.max(2, Math.ceil(inkW + pad * 2));
-      canvas.height = Math.max(2, Math.ceil(inkH + pad * 2));
+      // v3.1 (Terry) — FIXED TEXT AREA: the canvas is the BOX (+ the same
+      // symmetric pad), not the ink hug — the box is the layer's visual + bake
+      // footprint, so underfilled space stays part of the layer (Canva). With
+      // boxHFrac unset the height falls back to the wrapped ink height → the
+      // area auto-grows downward as lines wrap. Auto mode ( _fixW null ) sizes
+      // to the ink exactly as before.
+      canvas.width = Math.max(2, Math.ceil((_fixW != null ? _fixW : inkW) + pad * 2));
+      canvas.height = Math.max(2, Math.ceil((_fixH != null ? _fixH : inkH) + pad * 2));
       // Re-set the font (resizing the canvas resets the 2D context state).
       ctx.font = fontStr;
       ctx.textBaseline = 'top';
@@ -9957,6 +10165,11 @@
       canvas._fbAsc = fbAscTop;
       canvas._fbDesc = fbDescTop;
       canvas._aAscTop = aAscTop;
+      // v3.1 (Terry) — FIXED TEXT AREA: the px the text actually rendered at
+      // (== the base sizeFrac px unless the fixed-box autoFit stepped it down).
+      // styleTextEditable reads this so the contentEditable overlay types at the
+      // FITTED size and its caret/lines keep tracking the canvas.
+      canvas._fitFontPx = fontPx;
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -10563,12 +10776,26 @@
         // shifts the border box down by marginTop, so we subtract it to hit the centre).
         // All of (a)-(c) are no-ops at scale 1 → round-218 layout is byte-identical.
         const ed = layer.editEl;
-        const _mt = parseFloat(ed.style.marginTop) || 0;
-        ed.style.width = _Wb + 'px';
-        ed.style.left = ((_W - _Wb) / 2) + 'px';
-        ed.style.top = ((_H - _Hb) / 2) + 'px';
-        ed.style.transformOrigin = (_Wb / 2) + 'px ' + ((_Hb / 2) - _mt) + 'px';
-        ed.style.transform = 'scale(' + _sX + ',' + _sY + ')';
+        // v3.1 (Terry) — FIXED TEXT AREA: the editable IS the box — laid at the
+        // box origin (left g, top 0; vertical pinning stays margin-top from
+        // styleTextEditable) with the box's EXACT px width so the DOM wraps
+        // where the canvas wrapped (styleTextEditable sets the pre-wrap +
+        // break-word + fitted font px). No stretch transform in fixed mode —
+        // the side-bar conversion resets scaleX/scaleY to 1.
+        if (!layer.isEmoji && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && layer.boxWFrac > 0) {
+          ed.style.width = _inkW + 'px';
+          ed.style.left = _g + 'px';
+          ed.style.top = '0px';
+          ed.style.transformOrigin = 'center center';
+          ed.style.transform = 'none';
+        } else {
+          const _mt = parseFloat(ed.style.marginTop) || 0;
+          ed.style.width = _Wb + 'px';
+          ed.style.left = ((_W - _Wb) / 2) + 'px';
+          ed.style.top = ((_H - _Hb) / 2) + 'px';
+          ed.style.transformOrigin = (_Wb / 2) + 'px ' + ((_Hb / 2) - _mt) + 'px';
+          ed.style.transform = 'scale(' + _sX + ',' + _sY + ')';
+        }
       } else {
         if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
         else el.insertBefore(canvas, el.firstChild);
@@ -10600,6 +10827,7 @@
       // label, size, B/I/U/S + align pressed, aA case) in step with the model after
       // every render, incl. undo/redo, size-handle resize, and font/style changes.
       try { refreshTextToolbar(layer); } catch (_) {}
+      try { positionTextToolbarInView(); } catch (_) {}   // v3.1 (Terry SS3) — clamp the bar into view after every render
     }
     function renderAllTexts() {
       for (const layer of collageTexts) renderTextLayer(layer);
@@ -10671,6 +10899,31 @@
       ed.style.boxSizing = 'border-box';
       ed.style.width = '100%';
       ed.style.height = (Math.max(1, (cv && typeof cv._inkH === 'number') ? cv._inkH : fontPx) + 2 * g) + 'px';
+      // ── v3.1 (Terry) — FIXED TEXT AREA: make the editable wrap EXACTLY like the
+      // render. The canvas wrapped each paragraph to the box width with a greedy
+      // measureText wrap; the DOM reproduces that with white-space:pre-wrap (keeps
+      // explicit '\n's + spaces) + break-word (mirrors the hard-break of very long
+      // words) on a box-width editable pinned at the box origin (left g — the box
+      // left edge inside the wrapper; canvas ink starts there too). The font uses
+      // the FITTED px (_fitFontPx: autoFit may have stepped the render down), and
+      // the line-height/margin-top math above already used the fitted metrics
+      // stashed on the canvas, so caret rows keep tracking the canvas rows. Note
+      // _inkW/_inkH ARE the box dims in fixed mode, so the height line above
+      // already sized the editable to the box. Auto mode: explicitly reset to the
+      // class defaults (white-space:pre, nowrap extend-right) — byte-identical.
+      if (!layer.isEmoji && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && layer.boxWFrac > 0) {
+        const fitPx = (cv && typeof cv._fitFontPx === 'number' && isFinite(cv._fitFontPx)) ? cv._fitFontPx : fontPx;
+        ed.style.fontSize = fitPx + 'px';
+        ed.style.whiteSpace = 'pre-wrap';
+        ed.style.overflowWrap = 'break-word';
+        ed.style.wordBreak = 'break-word';
+        ed.style.width = ((cv && typeof cv._inkW === 'number') ? cv._inkW : Math.max(1, fontPx)) + 'px';
+        ed.style.left = g + 'px';
+      } else {
+        ed.style.whiteSpace = '';
+        ed.style.overflowWrap = '';
+        ed.style.wordBreak = '';
+      }
     }
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
@@ -10811,7 +11064,7 @@
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, boxMode: 'auto', boxWFrac: null, boxHFrac: null, /* v3.1 (Terry) — FIXED TEXT AREA: new text starts in today's extend-right 'auto' mode; grabbing a side bar flips it to 'fixed' (wrap width / fixed height, fractions of the short side) */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
@@ -11262,6 +11515,11 @@
         id: collageTextSeq++, isEmoji: !!layer.isEmoji, text: layer.text,
         xFrac: nx, yFrac: ny, sizeFrac: layer.sizeFrac,
         scaleX: (typeof layer.scaleX === 'number') ? layer.scaleX : 1, scaleY: (typeof layer.scaleY === 'number') ? layer.scaleY : 1,   // v2.1 round 222 (Terry) — the clone copies the non-uniform stretch
+        // v3.1 (Terry) — FIXED TEXT AREA: the clone copies the box mode + dims
+        // (a duplicated fixed area wraps/fits exactly like its source).
+        boxMode: (layer.boxMode === 'fixed') ? 'fixed' : 'auto',
+        boxWFrac: (typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) ? layer.boxWFrac : null,
+        boxHFrac: (typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? layer.boxHFrac : null,
         font: layer.font,
         color: layer.color, align: layer.align, rot: layer.rot, z: topZ,
         bold: !!layer.bold, italic: !!layer.italic, underline: !!layer.underline,
@@ -11360,8 +11618,11 @@
       const isSide = (h === 'l' || h === 'r' || h === 't' || h === 'b');
       beginCollageChange();
       selectText(layer);
-      // ── SIDE handle → NON-UNIFORM STRETCH (v2.1 round 222) ───────────────────
-      if (isSide) {
+      // ── SIDE handle → NON-UNIFORM STRETCH (v2.1 round 222) — EMOJI ONLY ──────
+      // v3.1 (Terry) — FIXED TEXT AREA: for a TEXT layer the side bars now set
+      // the BOX (wrap width / fixed height, Canva semantics — the next branch);
+      // the round-222 scaleX/scaleY stretch remains exactly as-was for EMOJI.
+      if (isSide && layer.isEmoji) {
         const rect = collageCanvasEl.getBoundingClientRect();
         const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
         // content-px per screen-px (collage canvas preserves aspect → one factor).
@@ -11428,17 +11689,107 @@
         window.addEventListener('pointerup', up);
         return;
       }
+      // ── SIDE handle on TEXT → FIXED TEXT AREA (v3.1 Terry, Canva-style) ──────
+      // Grabbing a side bar on a text layer switches it to boxMode 'fixed' (the
+      // drag IS the mode switch — no panel control) and drags the BOX, not a
+      // glyph stretch: LEFT/RIGHT set the wrap width (boxWFrac — text re-flows
+      // live, height auto-grows), TOP/BOTTOM set the fixed height (boxHFrac —
+      // the render's autoFit then shrinks the font whenever the text overflows
+      // the area). Both are fractions of collageShortPx(), the same basis as
+      // sizeFrac. The OPPOSITE edge stays anchored (same local-frame math as
+      // the round-222 stretch, which this replaces for text). Conversion seeds
+      // the box from the layer's CURRENT visual box and FOLDS any legacy
+      // round-222 stretch into it (scaleX→width, then scaleX/scaleY reset to 1):
+      // the box keeps its stretched footprint but the glyphs return to their
+      // true aspect and wrap instead. Undo (which restores the pre-gesture
+      // snapshot) is the one way back to 'auto'.
+      if (isSide) {
+        const rect = collageCanvasEl.getBoundingClientRect();
+        const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
+        const sPx = (rect.width > 0) ? (cw / rect.width) : 1;
+        const th = (layer.rot || 0) * Math.PI / 180;
+        const cos = Math.cos(th), sin = Math.sin(th);
+        const shortPx = Math.max(1, collageShortPx());
+        const fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);
+        const g = Math.round(fontPx * 0.16);
+        // CONVERT auto → fixed on grab (no-op if already fixed).
+        if (layer.boxMode !== 'fixed' || !(typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0)) {
+          const cnv0 = layer.canvasEl;
+          const sX0 = (typeof layer.scaleX === 'number' && layer.scaleX > 0) ? layer.scaleX : 1;
+          const bw0 = ((cnv0 && typeof cnv0._inkW === 'number') ? cnv0._inkW : Math.max(1, fontPx)) * sX0;
+          layer.boxMode = 'fixed';
+          layer.boxWFrac = Math.max(12, bw0) / shortPx;
+          layer.boxHFrac = null;          // height auto-grows until a t/b drag sets it
+          layer.scaleX = 1; layer.scaleY = 1;
+          renderTextLayer(layer);         // re-render NOW so the box metrics below are fixed-mode
+        }
+        const horiz = (h === 'l' || h === 'r');
+        // Start box (content px) off the freshly-rendered fixed-mode canvas —
+        // _inkW/_inkH ARE the box dims in fixed mode; +2g = the visible wrapper.
+        const cnv = layer.canvasEl;
+        const bBoxW = (cnv && typeof cnv._inkW === 'number') ? cnv._inkW : Math.max(1, fontPx);
+        const bBoxH = (cnv && typeof cnv._inkH === 'number') ? cnv._inkH : Math.max(1, fontPx);
+        const W0 = bBoxW + 2 * g, H0 = bBoxH + 2 * g;
+        const cx0 = (layer.xFrac || 0) * cw, cy0 = (layer.yFrac || 0) * ch;
+        const fixed = horiz ? ((h === 'r') ? -W0 / 2 : W0 / 2)
+                            : ((h === 'b') ? -H0 / 2 : H0 / 2);
+        const csx = rect.left + (layer.xFrac || 0) * rect.width;
+        const csy = rect.top + (layer.yFrac || 0) * rect.height;
+        const MINB = Math.max(12, fontPx * 0.35);   // the box can't collapse below ~a glyph
+        const move = (ev) => {
+          const rx = ev.clientX - csx, ry = ev.clientY - csy;
+          // pointer in the box's LOCAL frame (un-rotate), content px.
+          const lx = (rx * cos + ry * sin) * sPx;
+          const ly = (-rx * sin + ry * cos) * sPx;
+          if (horiz) {
+            const newFull = Math.max(MINB + 2 * g, Math.abs(lx - fixed));   // dragged-edge → box incl. the 2g gap
+            layer.boxWFrac = (newFull - 2 * g) / shortPx;
+            // Move the centre so the opposite edge stays put (anchored).
+            const relC = fixed - Math.sign(fixed) * (newFull / 2);
+            layer.xFrac = Math.max(0, Math.min(1, (cx0 + relC * cos) / cw));
+            layer.yFrac = Math.max(0, Math.min(1, (cy0 + relC * sin) / ch));
+          } else {
+            const newFull = Math.max(MINB + 2 * g, Math.abs(ly - fixed));
+            layer.boxHFrac = (newFull - 2 * g) / shortPx;   // fixed AREA from here on → autoFit engages in the render
+            const relC = fixed - Math.sign(fixed) * (newFull / 2);
+            layer.xFrac = Math.max(0, Math.min(1, (cx0 + (-relC * sin)) / cw));
+            layer.yFrac = Math.max(0, Math.min(1, (cy0 + relC * cos) / ch));
+          }
+          renderTextLayer(layer);
+        };
+        const up = () => {
+          window.removeEventListener('pointermove', move);
+          window.removeEventListener('pointerup', up);
+          commitCollageChange();
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', up);
+        return;
+      }
       // ── CORNER handle → PROPORTIONAL resize (round 221, unchanged) ────────────
       const rect = collageCanvasEl.getBoundingClientRect();
       const centerX = rect.left + (layer.xFrac || 0) * rect.width;
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
       const startDist = Math.hypot(e.clientX - centerX, e.clientY - centerY) || 1;
       const startSize = layer.sizeFrac || 0.08;
+      // v3.1 (Terry) — FIXED TEXT AREA: a corner scales the WHOLE box (Canva) —
+      // capture the start box so it scales by the SAME (clamped) factor as
+      // sizeFrac below; the wrap points then stay put relative to the text.
+      // Auto-mode layers (startBoxW null, incl. every emoji) are untouched.
+      const startBoxW = (!layer.isEmoji && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) ? layer.boxWFrac : null;
+      const startBoxH = (startBoxW != null && typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? layer.boxHFrac : null;
       const move = (ev) => {
         const dist = Math.hypot(ev.clientX - centerX, ev.clientY - centerY);
         let ns = startSize * (dist / startDist);
         ns = Math.max(0.02, Math.min(0.4, ns));
         layer.sizeFrac = ns;
+        // v3.1 (Terry) — FIXED TEXT AREA: box scales in lockstep with the font
+        // (post-clamp factor, so font + box can never drift apart at the caps).
+        if (startBoxW != null && startSize > 0) {
+          const bk = ns / startSize;
+          layer.boxWFrac = startBoxW * bk;
+          if (startBoxH != null) layer.boxHFrac = startBoxH * bk;
+        }
         renderTextLayer(layer);
         // Keep the Size slider/readout in step if this layer is the selection.
         if (selectedText === layer) {
@@ -11985,7 +12336,18 @@
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
         const hVsPage = hIsLeft ? (lRef <= pgL + 0.5) : (rRef >= pgR - 0.5);   // chosen H ref is the page edge — v3.1 (Terry): the tile's OWN page's edge (divider or outer), so corner-equal fires on interior carousel pages too
         const vVsPage = vIsTop ? (tRef <= 0.5) : (bRef >= cRect.height - 0.5);   // chosen V ref is the page edge
-        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && !xIsEqui && !yIsEqui) {
+        // v3.1 (Terry) — CORNER DOMINANCE: near a page's inside corner the equidistant/centre
+        // magnets almost always have SOME candidate within grab range (page centre, distribute
+        // midpoint), so `!xIsEqui && !yIsEqui` suppressed corner-equal nearly everywhere and
+        // "it still doesn't snap when trying to find the inside corners of the pages". When the
+        // drag is clearly in the CORNER zone — the average corner margin is smaller than the
+        // distance to BOTH page centrelines — corner-equal now WINS over a coincidental
+        // centre/distribute claim (it already claims both axes + clears the guides below).
+        // Centring gestures are unaffected: near a centreline the dominance test fails and the
+        // round-308/v3.0 priority (equidistant first) still applies.
+        const cornerDominates = vM > 0 && hM > 0 &&
+          ((vM + hM) / 2) < Math.min(Math.abs(dCx - (pgL + pgR) / 2), Math.abs(dCy - cRect.height / 2));
+        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && (cornerDominates || (!xIsEqui && !yIsEqui))) {
           // v2.1 round 310 (Terry) — with Shift, one axis is LOCKED, so that margin is fixed and
           // corner-equal becomes a ONE-axis snap: move only the free axis so its margin matches
           // the fixed one. (Round 309 wrongly skipped it entirely → the lavender showed but it
@@ -13872,14 +14234,14 @@
         if (!collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
           collageThumbBusy = true;
           try {
-            const layout = buildCollageLayout();
+            // v3.0 round 584 (Terry) — carousels bake to their FIRST PAGE (1/N of the wide strip), so
+            // cap the wide canvas higher (1200 vs 600) — otherwise a 6-page strip caps to 600 wide and
+            // page 1 is only ~100px → a soft card. 1200 keeps page 1 crisp without a costly full bake.
+            // v3.1 (Terry) — SS2: the cap now goes INTO buildCollageLayout (its maxPx param) so the
+            // text PNGs raster at the capped size too. Shrinking layout.canvas AFTER the build left
+            // full-size text stacked over the small strip — the "jumbled pink text" carousel cards.
+            const layout = buildCollageLayout(carouselMode ? 1200 : 600);
             if (layout && layout.canvas) {
-              const lw = layout.canvas.w || 0, lh = layout.canvas.h || 0, mx = Math.max(lw, lh);
-              // v3.0 round 584 (Terry) — carousels bake to their FIRST PAGE (1/N of the wide strip), so
-              // cap the wide canvas higher (1200 vs 600) — otherwise a 6-page strip caps to 600 wide and
-              // page 1 is only ~100px → a soft card. 1200 keeps page 1 crisp without a costly full bake.
-              const cap = carouselMode ? 1200 : 600;
-              if (mx > cap) { const sc = cap / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
               thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);   // v3.0 (Terry) — carousels thumbnail as their FIRST PAGE
             }
           } catch (_) { /* thumb is best-effort */ }
@@ -13999,11 +14361,11 @@
       if (!collageThumbBusy && window.pdr && window.pdr.collage && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
         collageThumbBusy = true;
         try {
-          const layout = buildCollageLayout();
+          // v3.1 (Terry) — SS2: cap inside buildCollageLayout (maxPx) so text PNGs raster at the
+          // capped size — the old post-build canvas shrink stacked full-size text over the small
+          // strip and template cards showed the all-pages jumble (see autosaveCollageProject).
+          const layout = buildCollageLayout(carouselMode ? 1200 : 600);
           if (layout && layout.canvas) {
-            const lw = layout.canvas.w || 0, lh = layout.canvas.h || 0, mx = Math.max(lw, lh);
-            const cap = carouselMode ? 1200 : 600;
-            if (mx > cap) { const sc = cap / mx; layout.canvas = Object.assign({}, layout.canvas, { w: Math.round(lw * sc), h: Math.round(lh * sc) }); }
             thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);
           }
         } catch (_) { /* thumb is best-effort */ }
@@ -14519,7 +14881,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -14743,7 +15105,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); });
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -14983,7 +15345,14 @@
       var glowEl = document.createElement('img'); glowEl.className = 'collage-cutout-glow'; glowEl.alt = ''; glowEl.decoding = 'async';
       glowEl.style.cssText = 'position:absolute;display:none;pointer-events:none;';
       el.appendChild(glowEl);
-      el.appendChild(clip);
+      // v3.1 (Terry) — SS4: the .collage-fx holder wraps the clip and carries the Glow & Shadow
+      // drop-shadow filter (applyTileEdgeFx). A filter on this PARENT of the clip reads the clip's
+      // final composited alpha (crop + corner/blend mask + blur/pixelate), so the effect hugs the
+      // visible object — while the handles / frame border on the box stay un-shadowed.
+      const fx = document.createElement('div');
+      fx.className = 'collage-fx';
+      fx.appendChild(clip);
+      el.appendChild(fx);
       const hRot = document.createElement('div'); hRot.className = 'ch ch-rotate'; hRot.setAttribute('data-pdr-tooltip', 'Rotate (hold Shift to snap to 15°)');
       // v2.1 round 227 (Terry) — single clean CENTRED circular-arrow glyph (was the
       // twin-arc "refresh-cw"); matches the text/emoji handle. 300° arc about (12,12)
@@ -15065,7 +15434,7 @@
       tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); duplicateCollageItem(it); });
       tbRep.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); requestFillFrame(it); });   // v2.1 round 359 (Terry) — swap the photo
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); setItemOn(it, false); });
-      it.el = el; it.imgEl = img; it.clipEl = clip; it.glowEl = glowEl;
+      it.el = el; it.imgEl = img; it.clipEl = clip; it.fxEl = fx; it.glowEl = glowEl;   // v3.1 (Terry) — fxEl = the edge-effect filter holder
       collageCanvasEl.appendChild(el);
     }
 
@@ -18156,7 +18525,7 @@
     // so the single-collage path (saveCollage → buildCollageLayout → saveLayout) is
     // byte-identical to before, and each carousel page bakes from its own restored
     // state. Returns the { canvas, items, texts } object (or null if no on-tiles).
-    function buildCollageLayout() {
+    function buildCollageLayout(maxPx) {
       // v2.1 round 319 (Terry) — empty FRAMES (placeholder, no photo) are never baked: they're
       // a layout aid, not content. They simply don't appear in the exported image.
       const on = collageItems.filter((it) => it.on && !it.placeholder && it.path && !isVideoPath(it.path));
@@ -18173,6 +18542,19 @@
         } else {
           const LONG = 2000;
           if (a >= 1) { W = LONG; H = Math.round(LONG / a); } else { H = LONG; W = Math.round(LONG * a); }
+        }
+        // v3.1 (Terry) — SS2: optional thumbnail cap (maxPx = long-edge limit), applied HERE — before
+        // the text PNGs render below — instead of shrinking layout.canvas at the call site. The old
+        // post-shrink left every text PNG rastered for the FULL export size (outputShortPx below) but
+        // composited 1:1 onto the capped-down canvas: on a 6-page carousel each caption landed ~5×
+        // oversized and clamp-stacked over the strip, so the page-1 slice showed all six pages' text
+        // as a crammed pink jumble (Terry SS2) — plain project cards with text were oversized too.
+        // Tiles are pure canvas FRACTIONS (scale-free), so capping W/H up front rescales everything
+        // coherently: the thumb becomes an exact miniature of the canvas, and a carousel's page-1
+        // slice (cut by renderThumb at W/N) keeps the true 1080×1350 page aspect.
+        if (typeof maxPx === 'number' && maxPx > 0) {
+          const mxEdge = Math.max(W, H);
+          if (mxEdge > maxPx) { const sc = maxPx / mxEdge; W = Math.max(1, Math.round(W * sc)); H = Math.max(1, Math.round(H * sc)); }
         }
         // Composite back-to-front: ascending z so the front-most tile
         // is drawn last.
