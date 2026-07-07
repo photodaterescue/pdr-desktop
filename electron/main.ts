@@ -3964,7 +3964,10 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
     // even though the userData/thumb-cache root is normally short — the
     // hash-derived filename is short, so the prefix only matters if the
     // user's userData path itself is unusually long.
-    const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}:r${userRotation}`).digest('hex');
+    // v3.0.1 (Terry 2026-07-07) — 'ck2' cache-version token: transparent PNGs used to cache as
+    // black JPEGs (alpha flattened onto black). The new checkerboard recipe below changes the
+    // output, so bump the key once to bust every old black-background entry and force a one-time regen.
+    const cacheKey = crypto.createHash('md5').update(`${filePath}:${size}:r${userRotation}:ck2`).digest('hex');
     const cachePath = path.join(thumbCacheDir, `${cacheKey}.jpg`);
     const cachePathLong = toLongPath(cachePath);
     // v3.0 round 544 (Terry) — extreme-aspect images (carousel wide composites, panoramas) get a
@@ -4112,10 +4115,11 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
         // thumb stays usable inside a square tile. metadata() on the same instance is one
         // header read and doesn't consume the pipeline.
         const inst = sharp(filePathLong, { failOnError: false });
-        let boxW = size, boxH = size, wantWide = false;
+        let boxW = size, boxH = size, wantWide = false, hasAlpha = false;
         try {
           const meta = await inst.metadata();
           let mw = meta.width || 0, mh = meta.height || 0;
+          hasAlpha = !!meta.hasAlpha;
           // EXIF orientations 5-8 rotate 90°: the pipeline's .rotate() swaps the axes, so the
           // box has to be chosen in post-rotation space.
           if (meta.orientation && meta.orientation >= 5) { const t = mw; mw = mh; mh = t; }
@@ -4124,11 +4128,26 @@ ipcMain.handle('browser:thumbnail', async (_event, filePath: string, size: numbe
             if (mw >= mh) boxW = size * 10; else boxH = size * 10;
           }
         } catch { /* header unreadable — plain recipe */ }
-        jpegBuffer = await inst
-          .rotate()
-          .resize(boxW, boxH, { fit: 'inside', withoutEnlargement: true })
-          .jpeg({ quality: 80 })
-          .toBuffer();
+        if (hasAlpha) {
+          // v3.0.1 (Terry 2026-07-07) — a transparent PNG flattens to BLACK under .jpeg(); composite it
+          // over the standard checkerboard first so transparency reads AS transparency, not a black bg.
+          const fg = await inst.rotate().resize(boxW, boxH, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+          const fm = await sharp(fg).metadata();
+          const cw = fm.width || size, chh = fm.height || size;
+          const checker = Buffer.from(
+            `<svg xmlns="http://www.w3.org/2000/svg" width="${cw}" height="${chh}"><defs>` +
+            `<pattern id="pdrck" width="16" height="16" patternUnits="userSpaceOnUse">` +
+            `<rect width="16" height="16" fill="#ffffff"/><rect width="8" height="8" fill="#d9d9d9"/>` +
+            `<rect x="8" y="8" width="8" height="8" fill="#d9d9d9"/></pattern></defs>` +
+            `<rect width="100%" height="100%" fill="url(#pdrck)"/></svg>`);
+          jpegBuffer = await sharp(checker).composite([{ input: fg }]).jpeg({ quality: 80 }).toBuffer();
+        } else {
+          jpegBuffer = await inst
+            .rotate()
+            .resize(boxW, boxH, { fit: 'inside', withoutEnlargement: true })
+            .jpeg({ quality: 80 })
+            .toBuffer();
+        }
         // Only flag the wide variant once the pipeline actually produced it — if sharp threw,
         // the nativeImage fallback below builds a PLAIN thumb that must not land on the w key.
         wideThumb = wantWide;
