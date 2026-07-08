@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -4836,7 +4836,7 @@
               </button>
             </div>
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
+              <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Size is relative — 8 means the text stands 8% as tall as the page, so it keeps its proportions on every canvas size and export">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
               <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="40" step="1" value="8">
             </div>
             <!-- v3.1 (Terry) — TEXT Transparency lives HERE (the floating-bar popover is
@@ -10976,7 +10976,7 @@
       // ---- SIZE: − [number] + (percent of the collage short side, == the panel) ----
       const sizeWrap = document.createElement('div'); sizeWrap.className = 'ch-tb-size';
       const sizeMinus = document.createElement('button'); sizeMinus.type = 'button'; sizeMinus.className = 'ch-tb-btn ch-tb-step'; sizeMinus.textContent = '−'; sizeMinus.setAttribute('data-pdr-tooltip', 'Smaller');
-      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Text size (% of the collage short side)');
+      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Size is relative — 8 means the text stands 8% as tall as the page, so it keeps its proportions on every canvas size and export');
       const sizePlus = document.createElement('button'); sizePlus.type = 'button'; sizePlus.className = 'ch-tb-btn ch-tb-step'; sizePlus.textContent = '+'; sizePlus.setAttribute('data-pdr-tooltip', 'Bigger');
       ctl.sizeNum = sizeNum;
       const curSizePct = () => Math.round((layer.sizeFrac || 0.08) * 100);
@@ -11231,7 +11231,7 @@
       // ---- SIZE: − [number] + (percent of the collage short side, == the panel) ----
       const sizeWrap = document.createElement('div'); sizeWrap.className = 'ch-tb-size';
       const sizeMinus = document.createElement('button'); sizeMinus.type = 'button'; sizeMinus.className = 'ch-tb-btn ch-tb-step'; sizeMinus.textContent = '−'; sizeMinus.setAttribute('data-pdr-tooltip', 'Smaller');
-      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Emoji size (% of the collage short side)');
+      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Size is relative — 8 means the emoji stands 8% as tall as the page, so it keeps its proportions on every canvas size and export');
       const sizePlus = document.createElement('button'); sizePlus.type = 'button'; sizePlus.className = 'ch-tb-btn ch-tb-step'; sizePlus.textContent = '+'; sizePlus.setAttribute('data-pdr-tooltip', 'Bigger');
       ctl.sizeNum = sizeNum;   // refreshTextToolbar already syncs ctl.sizeNum when present
       const curSizePct = () => Math.round((layer.sizeFrac || 0.12) * 100);
