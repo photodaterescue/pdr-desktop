@@ -10540,6 +10540,12 @@
         ctx.font = eFont;
         ctx.textBaseline = 'alphabetic';
         ctx.textAlign = 'center';
+        // v3.1 (Terry) — TRANSPARENCY finally applies to EMOJI: this branch returns
+        // before the text path's globalAlpha, so BOTH Fade (panel) and the strip's
+        // Transparency popover wrote layer.opacity with zero visual effect (pixel-
+        // proofed live: max alpha stayed 255 at Fade 30). One dial, one field, and
+        // now it actually draws.
+        ctx.globalAlpha = ((typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100) / 100;
         // Draw centred horizontally; baseline placed so the ink top lands at +ePad.
         ctx.fillText(ch, canvas.width / 2, ePad + aAsc);
         canvas._pad = ePad;
