@@ -9946,41 +9946,20 @@
           tileCropHintT_ = setTimeout(() => { tileCropHintT_ = null; try { collageChromeBox.classList.remove('crop-hint'); } catch (_) {} }, 1800);
         } catch (_) {}
       });
-      // ---- Flip H / Flip V / Rotate 90° (same handlers the context menu uses) ----
-      const fH = mkBtn('ch-tb-fliph', 'Flip horizontally (mirror left to right)', '<svg viewBox="0 0 24 24"><path d="M12 3v18M16 7l4 5-4 5M8 7l-4 5 4 5"/></svg>');
-      const fV = mkBtn('ch-tb-flipv', 'Flip vertically (top to bottom)', '<svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l5-4 5 4M7 16l5 4 5-4"/></svg>');
-      const r90 = mkBtn('ch-tb-rot90', 'Rotate 90°', '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.7-6.4"/><path d="M21 4v5h-5"/></svg>');
-      ctl.photoOnly.push(fH, fV);
-      fH.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) flipCollageItem(it, 'h'); });
-      fV.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) flipCollageItem(it, 'v'); });
-      r90.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) rotateCollageItem90(it); });
       mkSep();
-      // ---- Corners ▾ / Fade ▾ — popover sliders MIRRORING the panel sliders ----
-      const cornersBtn = mkBtn('ch-tb-text ch-tb-open ch-tb-cornersbtn', 'Curved corners');
-      cornersBtn.innerHTML = '<span class="ch-tb-lbl">Corners</span><span class="ch-tb-cv" aria-hidden="true">&#9662;</span>';
-      const cornersPop = mkTilePanelMirrorPop_('ch-tb-cornerspop', 'Curved corners', 'slider-corners', (v) => String(Number.isFinite(v) ? Math.round(v) : 0));
-      cornersBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        const it = live(); if (!it) return;
-        const cur = (it.enh && Array.isArray(it.enh.corners)) ? Math.round((it.enh.corners[0] || 0) * 100) : 0;
-        cornersPop.open(cornersBtn, Math.max(0, Math.min(100, cur)));
-      });
-      const fadeBtn = mkBtn('ch-tb-text ch-tb-open ch-tb-fadebtn', 'Fade (how see-through the photo is)');
-      fadeBtn.innerHTML = '<span class="ch-tb-lbl">Fade</span><span class="ch-tb-cv" aria-hidden="true">&#9662;</span>';
-      const fadePop = mkTilePanelMirrorPop_('ch-tb-fadepop', 'Fade', 'slider-opacity', (v) => (Number.isFinite(v) ? Math.round(v) : 100) + '%');
-      fadeBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        const it = live(); if (!it) return;
-        const cur = (it.enh && typeof it.enh.opacity === 'number') ? Math.round(it.enh.opacity * 100) : 100;
-        fadePop.open(fadeBtn, Math.max(0, Math.min(100, cur)));
-      });
-      mkSep();
-      // ---- Section-jump chips: expand the panel + focus that section ----
+      // ---- Section-jump chips: expand the panel + focus that section. v3.1 (Terry SS2) —
+      // the Corners/Fade slider popovers and the inline Flip/Rotate buttons are GONE:
+      // Effects covers corners+fade in the panel, and Flip & Rotate + BG Remover ride as
+      // chips like the rest — Terry: "I like the way it's a quick-select to have it appear
+      // in more detail on the side menu." (flipCollageItem/rotateCollageItem90 stay live
+      // for the context menu.) ----
       const chips = [
         ['Looks', 'Open Looks — one-tap styles', 'enhance-looks-collapse'],
         ['Effects', 'Open Effects — fade, blend, corners, blur', 'enhance-fx'],
         ['Glow', 'Open Glow & shadow', 'enhance-edge'],
         ['Tone', 'Open Tone & color', 'enhance-levels'],
+        ['Flip & Rotate', 'Open Flip & rotate', 'tile-transform-row'],
+        ['BG Remover', 'Open Background remover — cut the subject out', 'tile-bgremove-section'],
       ];
       chips.forEach((c) => {
         const b = mkBtn('ch-tb-chip', c[1]);
@@ -11385,8 +11364,15 @@
         layer.canvasEl = canvas;
       }
       const cw = collageCanvasEl.clientWidth, ch = collageCanvasEl.clientHeight;
-      el.style.left = (layer.xFrac * cw) + 'px';
-      el.style.top = (layer.yFrac * ch) + 'px';
+      // v3.1 (Terry SS1) — position in PERCENT, not px. Px froze the spot at the canvas
+      // width captured DURING this render; when the canvas re-fit right after a reopen
+      // (the panel expanding narrows the stage), every text sat offset proportionally to
+      // its x until the next re-render — "the text is misaligned... what the hell is going
+      // on?" on a reopened carousel whose SAVED fracs were verified perfect. Percentages
+      // re-resolve against the live canvas box on every layout, so a re-fit can never
+      // strand a text layer again (photo tiles already behave this way).
+      el.style.left = (layer.xFrac * 100) + '%';
+      el.style.top = (layer.yFrac * 100) + '%';
       // v2.1 round 216 (Terry) — plain translate(-50%,-50%) centres the wrapper's
       // box on xFrac/yFrac. Because the box = ink+uniform-gap is symmetric and the
       // canvas (with the ink centred) is centred in that box, the ink centre lands
