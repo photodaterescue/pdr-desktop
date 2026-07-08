@@ -9550,7 +9550,7 @@
       tbar.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
       tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLock(collageSelected); });
       tbLockLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLockLayer(collageSelected); });
-      tbLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (!collageSelected || collageSelected.isBg) return; const r = tbLayer.getBoundingClientRect(); orderCollageSelection(((e.clientY - r.top) < r.height / 2) ? 'forward' : 'backward'); });
+      tbLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (!collageSelected || collageSelected.isBg) return; const r = tbLayer.getBoundingClientRect(); orderCollageSelection(((e.clientY - r.top) < r.height / 2) ? 'forward' : 'backward'); try { const oi = layerOrderInfo('item', collageSelected); showLayerOrderPill(tbLayer, oi.pos, oi.total); } catch (_) {} });   // v3.1 (Terry) — "3 / 9" stack pill: every click shows where the tile now sits in its page's queue
       // v3.1 (Terry) — CAROUSEL: Duplicate opens the SAME "which pages?" popover text
       // layers get (Duplicate here / Same spot on all pages / Same spot on pages…) so a
       // photo/frame can land at the exact same spot on other pages. Single collage: the
@@ -11249,7 +11249,7 @@
         tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleTextLock(layer); });
         // v3.1 (Terry) — the layer pair mirrors the photo bar exactly (same click-half UX).
         tbLockLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); toggleTextLockLayer(layer, tbLockLayer); });
-        tbLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const r = tbLayer.getBoundingClientRect(); orderTextLayer(layer, ((e.clientY - r.top) < r.height / 2) ? 'forward' : 'backward'); });
+        tbLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const r = tbLayer.getBoundingClientRect(); orderTextLayer(layer, ((e.clientY - r.top) < r.height / 2) ? 'forward' : 'backward'); try { const oi = layerOrderInfo('text', layer); showLayerOrderPill(tbLayer, oi.pos, oi.total); } catch (_) {} });   // v3.1 (Terry) — "3 / 9" stack pill (text/emoji stack among their page-mates)
         // v3.1 (Terry SS2) — CAROUSEL: Duplicate opens a "which pages?" popover
         // (Duplicate here / Same spot on all pages / Same spot on pages…) so a copy
         // can land at the exact same spot on the other pages without manual
@@ -12069,6 +12069,41 @@
       if (selectedText) {
         try { applyContextualSections(selectedText.isEmoji ? 'emoji' : 'text'); } catch (_) {}
       }
+    }
+    // ── v3.1 (Terry) — STACK-POSITION pill: forward/back steps one z-slot through ALL
+    // the page's tiles (Canva-identical), so a click can reorder without any visible
+    // change when the swap partner doesn't overlap. The pill ("3 / 9") appears by the
+    // ▲▼ button on every click and fades — proof each click moved you in the queue. ──
+    let layerOrderPillEl = null, layerOrderPillT = null;
+    function showLayerOrderPill(anchorBtn, pos, total) {
+      try {
+        if (!anchorBtn || !total) return;
+        if (!layerOrderPillEl) {
+          layerOrderPillEl = document.createElement('div');
+          layerOrderPillEl.style.cssText = 'position:fixed;z-index:130002;background:#FEC242;color:#1a1a2e;font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,0.4);pointer-events:none;transition:opacity 0.25s ease;';
+          document.body.appendChild(layerOrderPillEl);
+        }
+        const r = anchorBtn.getBoundingClientRect();
+        layerOrderPillEl.textContent = pos + ' / ' + total + (pos === total ? '  (front)' : (pos === 1 ? '  (back)' : ''));
+        layerOrderPillEl.style.opacity = '1';
+        layerOrderPillEl.style.left = Math.round(r.left + r.width / 2) + 'px';
+        layerOrderPillEl.style.top = Math.round(r.top - 34) + 'px';
+        layerOrderPillEl.style.transform = 'translateX(-50%)';
+        if (layerOrderPillT) clearTimeout(layerOrderPillT);
+        layerOrderPillT = setTimeout(() => { layerOrderPillT = null; if (layerOrderPillEl) layerOrderPillEl.style.opacity = '0'; }, 1300);
+      } catch (_) {}
+    }
+    // Position of a layer within its kind's ONE TRUE stacking queue (photos step among
+    // photos, text/emoji among text/emoji — and in a carousel that queue spans ALL pages,
+    // which is exactly why a click can reorder with no visible change: the swap partner
+    // may sit on another page). Counting the global queue means EVERY click moves the
+    // number — the pill's whole job. kind: 'item' | 'text'.
+    function layerOrderInfo(kind, obj) {
+      const arr = (kind === 'item')
+        ? collageItems.filter((it) => it && it.on && !it.isBg)
+        : collageTexts.filter((t) => !!t);
+      const sorted = arr.slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+      return { pos: sorted.indexOf(obj) + 1, total: sorted.length };
     }
     // ── v3.1 (Terry) — LAYER controls for text/emoji, mirroring the photo tile pair
     // (every kind of tile can overlap, so all of them get the same ordering tools). ──
