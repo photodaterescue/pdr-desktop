@@ -3340,7 +3340,7 @@
     .ch-tb-pop .ch-tb-w-opt:disabled { color: #5b5578; cursor: default; }
     /* Popover that hangs off a toolbar button. position:fixed, placed in JS. */
     .ch-tb-pop {
-      position: fixed; z-index: 210; display: none;
+      position: fixed; z-index: 130001; display: none;   /* v3.1 (Terry SS1) — must beat #collage-chrome (z 120000): the duplicate/font/weight popovers were painting UNDER the selection chrome ("I can't read what the duplicate options are") */
       background: rgba(28,26,46,0.98); border: 1px solid rgba(255,255,255,0.16);
       border-radius: 9px; box-shadow: 0 6px 20px rgba(0,0,0,0.5);
       padding: 9px; min-width: 150px; color: #eee; font-size: 12px;
@@ -10994,6 +10994,22 @@
         });
       });
       ins(opBtn); push(opBtn);
+
+      // ---- COLOR: quick-select chip → expands the side panel at the Color Palette
+      // (v3.1 Terry — "opens the colours in the side menu", same style as the tile
+      // strip's Looks/Effects chips; the palette is text-selection UI, so this jump
+      // is text-flavoured rather than openTilePanelSection_). ----
+      const colorChip = document.createElement('button'); colorChip.type = 'button'; colorChip.className = 'ch-tb-btn ch-tb-chip'; colorChip.setAttribute('data-pdr-tooltip', 'Open the color palettes in the side menu');
+      colorChip.textContent = 'Color';
+      colorChip.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        try { document.body.classList.remove('collage-panel-collapsed'); } catch (_) {}
+        try { layoutCanvasSize(); } catch (_) {}
+        try { syncTextControls(); } catch (_) {}
+        try { const p = document.getElementById('collage-text-palette'); if (p) p.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+      });
+      ins(colorChip); push(colorChip);
 
       ins(document.createElement('div')).className = 'ch-tb-sep';
       // Prime the displayed state once.
@@ -26022,8 +26038,10 @@ function zoomTo(newZoom, centreX, centreY) {
         return el;
       }
 
+      let autoHideTimer = null;   // v3.1 (Terry) — mini-bar tooltips self-dismiss (see show)
       function hide() {
         if (showTimer) { clearTimeout(showTimer); showTimer = null; }
+        if (autoHideTimer) { clearTimeout(autoHideTimer); autoHideTimer = null; }
         if (activeEl) { activeEl.remove(); activeEl = null; }
         activeTrigger = null;
       }
@@ -26054,6 +26072,12 @@ function zoomTo(newZoom, centreX, centreY) {
           left = Math.max(margin, Math.min(window.innerWidth - tw - margin, left));
           el.style.left = left + 'px';
           el.style.top = top + 'px';
+          // v3.1 (Terry) — the floating MINI bars above tiles auto-dismiss their tooltip
+          // after 3s (once read, it shouldn't keep covering the canvas). The top-centre
+          // master bar — and everything else — keeps its tooltip while hovered.
+          if (trigger.closest && trigger.closest('.chx-toolbar, .ch-toolbar[data-text-tb]')) {
+            autoHideTimer = setTimeout(function () { autoHideTimer = null; hide(); }, 3000);
+          }
         }, 120);
       }
 
