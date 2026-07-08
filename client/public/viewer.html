@@ -4592,7 +4592,7 @@
                  base, and lowering the photo's Fade blends it back through. -->
             <!-- v2.1 round 248 (Terry) — the full-width "Remove background photo" button
                  was removed; removal is now a small × badge on the photo swatch. Hint stays. -->
-            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The color above stays as a base — lower the photo's <b>Fade</b> to blend it through.</div>
+            <div class="ec-frame-hint" style="display:block;margin-bottom:6px">Click the background to edit it. The color above stays as a base — lower the photo's <b>Transparency</b> to blend it through.</div>
           </div>
           <!-- v2.1 round 246 (Terry) — INDENT WRAPPER. The three style groups (Gradient /
                Texture / Colour Palette) now live inside this .ec-bg-grp-list container so
@@ -5013,7 +5013,7 @@
              selected (a photo OR the background). -->
         <div class="enhance-control">
           <div class="enhance-label-row">
-            <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Fade</label>
+            <label for="slider-opacity" data-pdr-tooltip="How see-through the photo is over the background — lower = more transparent">Transparency</label><!-- v3.1 (Terry) — ONE name for one concept: renamed from "Fade" to match the text/emoji bars (and Canva, whose Transparency also runs 0-100 with 100 = solid) -->
             <span class="enhance-val" id="val-opacity">100</span>
           </div>
           <input class="enhance-slider" id="slider-opacity" type="range" min="0" max="100" step="1" value="100">
@@ -10161,7 +10161,7 @@
       // for the context menu.) ----
       const chips = [
         ['Looks', 'Open Looks — one-tap styles', 'enhance-looks-collapse'],
-        ['Effects', 'Open Effects — fade, blend, corners, blur', 'enhance-fx'],
+        ['Effects', 'Open Effects — transparency, blend, corners, blur', 'enhance-fx'],
         ['Glow', 'Open Glow & shadow', 'enhance-edge'],
         ['Tone', 'Open Tone & color', 'enhance-levels'],
         ['Flip & Rotate', 'Open Flip & rotate', 'tile-transform-row'],
@@ -11334,7 +11334,7 @@
       strip.appendChild(document.createElement('div')).className = 'ch-tb-sep';
       [
         ['Looks', 'Open Looks — one-tap styles', 'enhance-looks-collapse'],
-        ['Effects', 'Open Effects — fade, blend, corners, blur', 'enhance-fx'],
+        ['Effects', 'Open Effects — transparency, blend, corners, blur', 'enhance-fx'],
         ['Glow', 'Open Glow & shadow', 'enhance-edge'],
         ['Tone', 'Open Tone & color', 'enhance-levels'],
         ['Flip & Rotate', 'Open Flip & rotate — mirror, flip, quarter turns, fine angle', 'tile-transform-row'],
