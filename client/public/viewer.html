@@ -12084,7 +12084,7 @@
           document.body.appendChild(layerOrderPillEl);
         }
         const r = anchorBtn.getBoundingClientRect();
-        layerOrderPillEl.textContent = pos + ' / ' + total + (pos === total ? '  (front)' : (pos === 1 ? '  (back)' : ''));
+        layerOrderPillEl.textContent = (total <= 1) ? 'Nothing overlaps this' : (pos + ' / ' + total + (pos === total ? '  (front)' : (pos === 1 ? '  (back)' : '')));   // v3.1 (Terry) — overlap-cluster count; alone = say so plainly
         layerOrderPillEl.style.opacity = '1';
         layerOrderPillEl.style.left = Math.round(r.left + r.width / 2) + 'px';
         layerOrderPillEl.style.top = Math.round(r.top - 34) + 'px';
@@ -12093,16 +12093,20 @@
         layerOrderPillT = setTimeout(() => { layerOrderPillT = null; if (layerOrderPillEl) layerOrderPillEl.style.opacity = '0'; }, 1300);
       } catch (_) {}
     }
-    // Position of a layer within its kind's ONE TRUE stacking queue (photos step among
-    // photos, text/emoji among text/emoji — and in a carousel that queue spans ALL pages,
-    // which is exactly why a click can reorder with no visible change: the swap partner
-    // may sit on another page). Counting the global queue means EVERY click moves the
-    // number — the pill's whole job. kind: 'item' | 'text'.
+    // v3.1 (Terry decision) — OVERLAP-ONLY ordering. Counting/stepping the global queue
+    // was "nonsensical" (texts on far pages, split photo/text stacks → 3/4 vs 1/1 chaos).
+    // The pill now counts ONLY the cluster of same-kind layers that actually overlap the
+    // selected one, and the ▲▼ step leapfrogs straight past non-overlappers (see
+    // orderTextLayer / orderCollageSelection). kind: 'item' | 'text'.
+    function rectsOverlap_(a, b) { return !!(a && b && a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1); }
     function layerOrderInfo(kind, obj) {
+      if (!obj || !obj.el) return { pos: 1, total: 1 };
+      const r0 = obj.el.getBoundingClientRect();
       const arr = (kind === 'item')
-        ? collageItems.filter((it) => it && it.on && !it.isBg)
-        : collageTexts.filter((t) => !!t);
-      const sorted = arr.slice().sort((a, b) => (a.z || 0) - (b.z || 0));
+        ? collageItems.filter((it) => it && it.on && !it.isBg && it.el)
+        : collageTexts.filter((t) => t && t.el);
+      const cluster = arr.filter((o) => o === obj || rectsOverlap_(r0, o.el.getBoundingClientRect()));
+      const sorted = cluster.sort((a, b) => (a.z || 0) - (b.z || 0));
       return { pos: sorted.indexOf(obj) + 1, total: sorted.length };
     }
     // ── v3.1 (Terry) — LAYER controls for text/emoji, mirroring the photo tile pair
@@ -12118,19 +12122,25 @@
         btn.setAttribute('data-pdr-tooltip', layer.lockLayer ? 'Unlock layer (let it come to the front when moved)' : 'Lock layer (keep its front/back order when you move it)');
       }
     }
-    // Move a text/emoji one step forward/back WITHIN the text stack (texts always sit
-    // above photo tiles — COLLAGE_TEXT_Z — so ordering is among themselves, one undo step).
+    // Move a text/emoji forward/back WITHIN the text stack (texts always sit above photo
+    // tiles — COLLAGE_TEXT_Z). v3.1 (Terry decision) — OVERLAP-ONLY: the step leapfrogs
+    // straight past layers that don't overlap this one, landing immediately beyond the
+    // next one that DOES — every click is visually meaningful. One undo step.
     function orderTextLayer(layer, dir) {
-      if (!layer) return;
+      if (!layer || !layer.el) return;
       const sorted = collageTexts.slice().sort((a, b) => (a.z || 0) - (b.z || 0));
       const i = sorted.indexOf(layer);
-      const j = (dir === 'forward') ? i + 1 : i - 1;
-      if (i === -1 || j < 0 || j >= sorted.length) return;   // already at that end
+      if (i === -1) return;
+      const r0 = layer.el.getBoundingClientRect();
+      const hits = (t) => t && t !== layer && t.el && rectsOverlap_(r0, t.el.getBoundingClientRect());
+      let k = -1;
+      if (dir === 'forward') { for (let m = i + 1; m < sorted.length; m++) if (hits(sorted[m])) { k = m; break; } }
+      else { for (let m = i - 1; m >= 0; m--) if (hits(sorted[m])) { k = m; break; } }
+      if (k === -1) return;   // no overlapping layer beyond in that direction (the pill says so)
       beginCollageChange();
-      sorted.forEach((t, idx) => { t.z = idx; });            // normalise to a clean sequence
-      const other = sorted[j];
-      layer.z = j; other.z = i;                              // swap the two stacking slots
-      collageTexts.forEach((t) => { if (t.el) t.el.style.zIndex = String(COLLAGE_TEXT_Z + (t.z || 0)); });
+      sorted.splice(i, 1);
+      sorted.splice(k, 0, layer);   // lands immediately beyond the overlapper (index math: forward hit shifts down 1 after removal → k = just past it; backward hit unshifted → k = just before it)
+      sorted.forEach((t, idx) => { t.z = idx; if (t.el) t.el.style.zIndex = String(COLLAGE_TEXT_Z + idx); });
       commitCollageChange();
     }
     function deleteTextLayer(layer) {
@@ -16442,6 +16452,31 @@
     }
     function orderCollageSelection(mode) {
       const items = selectedItemsForOp(); if (!items.length) return;
+      // v3.1 (Terry decision) — OVERLAP-ONLY stepping for a SINGLE tile: forward/back
+      // leapfrogs straight past every tile that doesn't overlap it, landing just beyond
+      // the next one that DOES ("it hardly makes sense to cycle through tiles that are
+      // nowhere near to interfering"). Front/Back jumps + multi-selections keep the
+      // absolute behaviour. Bg stays ≤0 (round-535 floor); collageZTop re-anchored.
+      if (items.length === 1 && (mode === 'forward' || mode === 'backward') && items[0].el) {
+        const it = items[0];
+        const pool = collageItems.filter((x) => x && x.on && !x.isBg).sort((a, b) => (a.z || 0) - (b.z || 0));
+        const i = pool.indexOf(it);
+        if (i !== -1) {
+          const r0 = it.el.getBoundingClientRect();
+          const hits = (o) => o !== it && o.el && rectsOverlap_(r0, o.el.getBoundingClientRect());
+          let k = -1;
+          if (mode === 'forward') { for (let m = i + 1; m < pool.length; m++) if (hits(pool[m])) { k = m; break; } }
+          else { for (let m = i - 1; m >= 0; m--) if (hits(pool[m])) { k = m; break; } }
+          if (k === -1) return;   // nothing overlapping beyond → no-op (the pill explains)
+          beginCollageChange();
+          pool.splice(i, 1);
+          pool.splice(k, 0, it);
+          pool.forEach((o, idx) => { o.z = idx + 1; if (o.el) o.el.style.zIndex = String(o.z); });
+          collageZTop = pool.length;
+          commitCollageChange();
+          return;
+        }
+      }
       beginCollageChange();
       if (mode === 'front') items.slice().sort((a, b) => a.z - b.z).forEach(bringItemToFront);
       else if (mode === 'back') items.slice().sort((a, b) => b.z - a.z).forEach(sendItemToBack);
