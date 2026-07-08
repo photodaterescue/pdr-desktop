@@ -4839,6 +4839,13 @@
               <div class="enhance-label-row"><label for="collage-text-size" data-pdr-tooltip="Text size as a percentage of the collage's shorter side">Size</label><span class="enhance-val" id="val-text-size">8%</span></div>
               <input class="enhance-slider" id="collage-text-size" type="range" min="2" max="40" step="1" value="8">
             </div>
+            <!-- v3.1 (Terry) — TEXT Transparency lives HERE (the floating-bar popover is
+                 gone; photos + emoji use Effects → Transparency; plain text gets its own
+                 row since the Effects section doesn't apply to it). Same 0-100 scale. -->
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-text-transparency" data-pdr-tooltip="How see-through the text is — lower = more transparent">Transparency</label><span class="enhance-val" id="val-text-transparency">100%</span></div>
+              <input class="enhance-slider" id="collage-text-transparency" type="range" min="0" max="100" step="1" value="100">
+            </div>
             <!-- v2.1 round 189 (Terry) — Alignment + Style now share ONE row,
                  split by a thin divider (each was its own row before). Same
                  ids / data-attrs / handlers — only the wrapping changed. -->
@@ -11162,46 +11169,8 @@
       });
       ins(spBtn); push(spBtn);
 
-      // ---- TRANSPARENCY: a slider popover (editable value). NEW field opacity ----
-      const opBtn = document.createElement('button'); opBtn.type = 'button'; opBtn.className = 'ch-tb-btn ch-tb-open ch-tb-opacity'; opBtn.setAttribute('data-pdr-tooltip', 'Transparency');
-      opBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>';
-      let opPop = null;
-      const buildOpPop = () => {
-        if (opPop) return opPop;
-        opPop = document.createElement('div'); opPop.className = 'ch-tb-pop ch-tb-opacitypop';
-        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span>Transparency</span>';
-        opPop.appendChild(lbl);
-        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
-        const sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0'; sl.max = '100'; sl.step = '1';
-        const val = document.createElement('span'); val.className = 'ch-tb-slider-val';
-        const fmt = (v) => (Number.isFinite(v) ? Math.round(v) + '%' : '100%');
-        sl.addEventListener('input', (ev) => {
-          ev.stopPropagation();
-          const v = Math.max(0, Math.min(100, parseInt(sl.value, 10)));
-          ensureSel();
-          beginCollageChange();
-          layer.opacity = v;
-          val.textContent = fmt(v);
-          renderTextLayer(layer);
-          commitCollageChange();
-        });
-        sl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-        wireTbValEdit(val, sl, fmt);
-        ctl.opSlider = sl; ctl.opVal = val; ctl.opFmt = fmt;
-        row.appendChild(sl); row.appendChild(val); opPop.appendChild(row);
-        document.body.appendChild(opPop);
-        return opPop;
-      };
-      opBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        ensureSel();
-        const pop = buildOpPop();
-        openTbPop_(pop, opBtn, () => {
-          const v = (typeof layer.opacity === 'number') ? layer.opacity : 100;
-          ctl.opSlider.value = String(v); ctl.opVal.textContent = ctl.opFmt(v);
-        });
-      });
-      ins(opBtn); push(opBtn);
+      // v3.1 (Terry) — the bar's TRANSPARENCY popover is GONE: text transparency lives
+      // in the side panel's TEXT section (its own slider row), photos/emoji in Effects.
 
       // ---- COLOR: quick-select chip → expands the side panel at the Color Palette
       // (v3.1 Terry — "opens the colours in the side menu", same style as the tile
@@ -11283,47 +11252,8 @@
       sizeNum.addEventListener('change', (e) => { e.stopPropagation(); applySizePct(parseInt(sizeNum.value, 10) || curSizePct()); });
       sizeWrap.appendChild(sizeMinus); sizeWrap.appendChild(sizeNum); sizeWrap.appendChild(sizePlus);
       strip.appendChild(sizeWrap); push(sizeWrap); push(sizeMinus); push(sizeNum); push(sizePlus);
-      strip.appendChild(document.createElement('div')).className = 'ch-tb-sep';
-      // ---- TRANSPARENCY: the same slider popover the text strip uses (opacity 0–100) ----
-      const opBtn = document.createElement('button'); opBtn.type = 'button'; opBtn.className = 'ch-tb-btn ch-tb-open ch-tb-opacity'; opBtn.setAttribute('data-pdr-tooltip', 'Transparency');
-      opBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>';
-      let opPop = null;
-      const buildOpPop = () => {
-        if (opPop) return opPop;
-        opPop = document.createElement('div'); opPop.className = 'ch-tb-pop ch-tb-opacitypop';
-        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span>Transparency</span>';
-        opPop.appendChild(lbl);
-        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
-        const sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0'; sl.max = '100'; sl.step = '1';
-        const val = document.createElement('span'); val.className = 'ch-tb-slider-val';
-        const fmt = (v) => (Number.isFinite(v) ? Math.round(v) + '%' : '100%');
-        sl.addEventListener('input', (ev) => {
-          ev.stopPropagation();
-          const v = Math.max(0, Math.min(100, parseInt(sl.value, 10)));
-          ensureSel();
-          beginCollageChange();
-          layer.opacity = v;
-          val.textContent = fmt(v);
-          renderTextLayer(layer);
-          commitCollageChange();
-        });
-        sl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
-        wireTbValEdit(val, sl, fmt);
-        ctl.opSlider = sl; ctl.opVal = val; ctl.opFmt = fmt;
-        row.appendChild(sl); row.appendChild(val); opPop.appendChild(row);
-        document.body.appendChild(opPop);
-        return opPop;
-      };
-      opBtn.addEventListener('click', (e) => {
-        e.stopPropagation(); e.preventDefault();
-        ensureSel();
-        const pop = buildOpPop();
-        openTbPop_(pop, opBtn, () => {
-          const v = (typeof layer.opacity === 'number') ? layer.opacity : 100;
-          ctl.opSlider.value = String(v); ctl.opVal.textContent = ctl.opFmt(v);
-        });
-      });
-      strip.appendChild(opBtn); push(opBtn);
+      // v3.1 (Terry) — the strip's TRANSPARENCY popover is GONE: emoji transparency
+      // lives in the side panel (Effects → Transparency), one home like photos.
       // ---- v3.1 (Terry) — EMOJI appearance parity: quick-select chips [Looks] [Effects]
       // [Glow] [Tone] [Flip & Rotate], mirroring the photo strip's section-jump chips
       // (same .ch-tb-chip look, same target section ids). The individual Rotate 90°
@@ -13156,6 +13086,14 @@
         const pct = Math.round((selectedText.sizeFrac || 0.08) * 100);
         sizeSlider.value = String(pct);
         if (sizeVal) sizeVal.textContent = pct + '%';
+      }
+      // v3.1 (Terry) — sync the TEXT Transparency row from the layer's opacity.
+      const tranSlider = document.getElementById('collage-text-transparency');
+      const tranVal = document.getElementById('val-text-transparency');
+      if (tranSlider) {
+        const op = (typeof selectedText.opacity === 'number' && isFinite(selectedText.opacity)) ? Math.round(Math.max(0, Math.min(100, selectedText.opacity))) : 100;
+        tranSlider.value = String(op);
+        if (tranVal) tranVal.textContent = op + '%';
       }
       // Alignment toggle: mark the active L/C/R button.
       document.querySelectorAll('#collage-text-align .ec-toggle-btn').forEach((b) => {
@@ -21680,6 +21618,17 @@
         const pct = parseInt(sizeSlider.value, 10) || 8;
         selectedText.sizeFrac = pct / 100;
         if (sizeVal) sizeVal.textContent = pct + '%';
+        renderTextLayer(selectedText);
+      });
+      // v3.1 (Terry) — TEXT Transparency slider (panel; replaces the bar popover).
+      // Undo rides the panel-wide pointerdown/up begin/commit wrapper, like Size.
+      const txTranSlider = document.getElementById('collage-text-transparency');
+      const txTranVal = document.getElementById('val-text-transparency');
+      if (txTranSlider) txTranSlider.addEventListener('input', () => {
+        if (!selectedText) return;
+        const pct = Math.max(0, Math.min(100, parseInt(txTranSlider.value, 10) || 0));
+        selectedText.opacity = pct;
+        if (txTranVal) txTranVal.textContent = pct + '%';
         renderTextLayer(selectedText);
       });
       const alignWrap = document.getElementById('collage-text-align');
