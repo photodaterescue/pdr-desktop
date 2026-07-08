@@ -19829,7 +19829,11 @@
         // e.code (Shift+] reports '}' via e.key), and the Shift variants are
         // tested first so Ctrl+] still hits "forward".
         else if (k === 'delete' || k === 'backspace') {
-          if (selectedItemsForOp().length) { e.preventDefault(); deleteCollageSelection(); }
+          // v3.1 (Terry) — Delete removes whatever is SELECTED: a text/emoji layer too, not
+          // just photo tiles (Ctrl+X already covered text; plain Delete had been forgotten).
+          // The editor guard above still exempts typing inside a text box.
+          if (selectedText) { e.preventDefault(); deleteTextLayer(selectedText); }
+          else if (selectedItemsForOp().length) { e.preventDefault(); deleteCollageSelection(); }
         }
         else if ((e.ctrlKey || e.metaKey) && k === 'c') { e.preventDefault(); if (selectedText) collageCopyTextLayer(selectedText); else copyCollageSelection(); }
         else if ((e.ctrlKey || e.metaKey) && k === 'x') { e.preventDefault(); if (selectedText) { collageCopyTextLayer(selectedText); deleteTextLayer(selectedText); } else if (selectedItemsForOp().length) { copyCollageSelection(); deleteCollageSelection(); } }
