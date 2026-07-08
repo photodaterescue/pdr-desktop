@@ -3943,6 +3943,16 @@
     /* v2.1 round 268 (Terry) — keep the per-photo sections dimmed when no tile is selected
        (they don't apply yet), but LESS dim than before (0.4 → 0.6) so they're still readable. */
     body.collage-mode.collage-no-tile .enhance-tile-controls { opacity: 0.6; pointer-events: none; }
+    /* v3.1 (Terry) — EMOJI appearance parity: with an EMOJI layer selected (no tile, so
+       .collage-no-tile is on), UN-grey the appearance cluster and hide the photo-only
+       sections (Flip & rotate / BG remover / Frame + the whole-collage Vignette/Grain
+       block inside Effects). Looks / Effects / Glow & shadow / Tone & color stay live —
+       they edit the emoji's own enh through the same panel pipeline as a photo tile. */
+    body.collage-mode.collage-no-tile.collage-emoji-target .enhance-tile-controls { opacity: 1; pointer-events: auto; }
+    body.collage-mode.collage-emoji-target #tile-transform-row,
+    body.collage-mode.collage-emoji-target #tile-bgremove-section,
+    body.collage-mode.collage-emoji-target #enhance-frame-collapse,
+    body.collage-mode.collage-emoji-target #collage-treatments-block { display: none !important; }
     /* Controls that only make sense inside a collage (e.g. per-photo
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
@@ -6406,13 +6416,19 @@
       funFontsKicked = true;
       // Re-render after the faces load so any text already using a decorative
       // font sharpens from its fallback to the real glyphs.
+      // v3.1 (Terry) — both post-load passes now go through renderAllTextsChunked():
+      // it no-ops with zero text layers, COALESCES (the Promise.all pass and the
+      // fonts.ready pass fire back-to-back at open — one queued sweep serves both),
+      // and re-renders a few layers per frame instead of all in one synchronous
+      // burst. Part of the open/reopen main-thread de-saturation (titlebar drag fix);
+      // the final rendered result is identical — every layer still re-renders once.
       try {
         Promise.all(FUN_FAMILIES.map((f) => document.fonts.load('40px "' + f + '"')))
-          .then(() => { try { renderAllTexts(); } catch (_) {} })
+          .then(() => { try { renderAllTextsChunked(); } catch (_) {} })
           .catch(() => {});
       } catch (_) {}
       // Belt-and-braces: re-render once the document's font set is fully ready.
-      try { document.fonts.ready.then(() => { try { renderAllTexts(); } catch (_) {} }); } catch (_) {}
+      try { document.fonts.ready.then(() => { try { renderAllTextsChunked(); } catch (_) {} }); } catch (_) {}
     }
     // v2.1 round 196 (Terry) — single source of truth for the custom Font
     // dropdown: the SAME groups / families / labels the round-192 <optgroup>s
@@ -8942,18 +8958,18 @@
     // formula, so the preview matches the saved file. corners = [tl,tr,br,bl]
     // fractions 0-1 (×half the short side); blend 0-100 widens the feather
     // band so the (rounded) edge melts away — no straight rectangle edge left.
-    function applyShapeMask(elm, corners, blend, w, h) {
-      if (!elm) return;
+    // v3.1 (Terry) — EXTRACTED from applyShapeMask below (verbatim SDF math) so the same
+    // rounded-corner + Blend-feather alpha shape can ALSO be multiplied straight into an
+    // EMOJI layer's glyph canvas (emoji appearance parity — see maskEmojiEnhCanvas_).
+    // Returns a small alpha-only canvas (long edge capped at 360px) or null when the
+    // corners/blend combination is a no-op / the box is degenerate.
+    function buildShapeMaskCanvas_(corners, blend, w, h) {
       const c = Array.isArray(corners) ? corners : [0, 0, 0, 0];
       const hasCorner = c.some(function (v) { return v > 0.001; });
       const b = Math.max(0, Math.min(100, blend || 0));
-      if (!hasCorner && b <= 0) {
-        elm.style.webkitMaskImage = ''; elm.style.maskImage = '';
-        elm.style.webkitMaskComposite = ''; elm.style.maskComposite = '';
-        return;
-      }
+      if (!hasCorner && b <= 0) return null;
       w = Math.round(w || 0); h = Math.round(h || 0);
-      if (w < 2 || h < 2) return;
+      if (w < 2 || h < 2) return null;
       // Cap the mask resolution for perf; mask-size:100% 100% stretches it to
       // the element, and the shape is normalised so it looks identical at any
       // size (and matches the full-res bake).
@@ -8977,6 +8993,20 @@
         }
       }
       ctx.putImageData(imgData, 0, 0);
+      return cnv;
+    }
+    function applyShapeMask(elm, corners, blend, w, h) {
+      if (!elm) return;
+      const c = Array.isArray(corners) ? corners : [0, 0, 0, 0];
+      const hasCorner = c.some(function (v) { return v > 0.001; });
+      const b = Math.max(0, Math.min(100, blend || 0));
+      if (!hasCorner && b <= 0) {
+        elm.style.webkitMaskImage = ''; elm.style.maskImage = '';
+        elm.style.webkitMaskComposite = ''; elm.style.maskComposite = '';
+        return;
+      }
+      const cnv = buildShapeMaskCanvas_(corners, blend, w, h);   // v3.1 (Terry) — shared builder (identical output)
+      if (!cnv) return;
       const url = 'url(' + cnv.toDataURL() + ')';
       elm.style.webkitMaskImage = url; elm.style.maskImage = url;
       elm.style.webkitMaskSize = '100% 100%'; elm.style.maskSize = '100% 100%';
@@ -8990,6 +9020,31 @@
       if (!enh) return 0.035;
       if (typeof enh.borderPct === 'number') return enh.borderPct;
       return enh.borderWeight === 'mat' ? 0.08 : 0.035;
+    }
+    // v3.1 (Terry) — EXTRACTED to top level from setupEnhancePanel's composeFilterString
+    // (body verbatim; `s` is now required) so the EMOJI appearance pipeline composes the
+    // IDENTICAL levels/tone string from a layer's enh. The panel's composeFilterString is
+    // a thin wrapper over this (defaulting to the live panel state) — one formula, no drift.
+    function composeEnhFilterString(s) {
+      const parts = [];
+      if (s.brightness !== 100) parts.push('brightness(' + (s.brightness / 100) + ')');
+      if (s.contrast !== 100) parts.push('contrast(' + (s.contrast / 100) + ')');
+      // v2.1 round 152 — Colour is a master desaturation that multiplies
+      // the Saturation slider: at colour=0 the result is black & white.
+      const colour = (s.colour == null ? 50 : s.colour);
+      const sat = (s.saturation / 100) * (colour / 50);
+      if (sat !== 1) parts.push('saturate(' + sat + ')');
+      // v2.0.15 (Terry 2026-06-06) — Temperature preview uses ONLY a small
+      // hue-rotate (see the original panel note): sepia desaturated the image.
+      if (s.temperature !== 0) {
+        const deg = -(s.temperature / 50) * 18;
+        parts.push('hue-rotate(' + deg + 'deg)');
+      }
+      // v2.1 round 132 — tone preview. CSS sepia() approximates the
+      // backend colour matrix closely enough for the live preview.
+      if (s.tone === 'sepia') parts.push('sepia(0.85)');
+      else if (s.tone === 'vintage') parts.push('sepia(0.4)');
+      return parts.length ? parts.join(' ') : 'none';
     }
     // v2.1 round 294 (Terry) — PER-PHOTO vignette + grain. Two overlay layers INSIDE the
     // tile's clip, so they're masked to the tile's corners/shape exactly like the photo,
@@ -9160,6 +9215,152 @@
       if (fxEl) fxEl.style.filter = fl.length ? fl.join(' ') : '';
       it.el.style.filter = '';         // nothing draws on the box any more (retire the r337/r338 inline paths)
       it.el.style.borderRadius = '';   // renderCollageItem owns the box's resting shadow; no shadow-rounding needed
+    }
+    // ─── v3.1 (Terry) — EMOJI appearance parity ("Why can't we have all the effects
+    // available for Emojis?") ───────────────────────────────────────────────────────────
+    // An EMOJI is a text layer whose glyph lives on a per-layer CANVAS. It now carries the
+    // SAME `enh` object a photo tile does (same field names + defaults) for the four
+    // appearance sections — Looks / Effects / Glow & shadow / Tone & color — applied as ONE
+    // CSS filter list on the glyph canvas. Filters read the canvas's REAL alpha, so
+    // glow/shadow/outline hug the emoji's visible shape (alpha-true), exactly like the tile
+    // .collage-fx path. The list mirrors the tile stack's order (levels → blur/pixelate →
+    // outline → glow/neon/lift/drop-shadow) with the SAME coefficients and the SAME cached
+    // SVG filters, so tile ↔ emoji can never drift. Curved corners + Blend are multiplied
+    // INTO the glyph canvas's pixels first (maskEmojiEnhCanvas_) so the edge effects wrap
+    // the masked shape; the one divergence from the tile order is mask-before-blur instead
+    // of blur-before-mask, visible only when Blur/Pixelate AND Corners/Blend combine on one
+    // emoji (levels commute with an alpha multiply, so they're unaffected).
+    // BAKE parity: bakeEmojiEnhCanvas_ redraws the glyph through ctx.filter with the SAME
+    // string (Chromium canvas2d supports the full list incl. drop-shadow and url() SVG
+    // references) onto a symmetrically padded canvas, so the glyph centre stays at the
+    // canvas centre == the xFrac/yFrac composite anchor — preview == saved == thumbnails.
+    function emojiEnhActive_(e) {
+      if (!e) return false;
+      if ((e.brightness != null && e.brightness !== 100) || (e.contrast != null && e.contrast !== 100) ||
+          (e.saturation != null && e.saturation !== 100) || (e.temperature != null && e.temperature !== 0) ||
+          (e.colour != null && e.colour !== 50) || (e.tone && e.tone !== 'none')) return true;
+      if ((e.blur || 0) > 0 || (e.pixelate || 0) > 0) return true;
+      if ((e.glow || 0) > 0 || (e.dropShadow || 0) > 0 || (e.lift || 0) > 0 || (e.neon || 0) > 0 || (e.outline || 0) > 0) return true;
+      if ((e.blend || 0) > 0) return true;
+      if (Array.isArray(e.corners) && e.corners.some(function (v) { return (v || 0) > 0.001; })) return true;
+      return false;
+    }
+    // The full filter list for an emoji's enh at size basis `s` (px = the glyph ink box's
+    // short side — the emoji analogue of the tile box's short side, so the look is
+    // size-independent). Normalises missing fields to the tile defaults first, then reuses
+    // composeEnhFilterString + the applyTileFx / applyTileEdgeFx formulas verbatim.
+    function emojiEnhFilterString_(e, s) {
+      e = e || {}; s = Math.max(1, s || 1);
+      var fl = [];
+      var base = composeEnhFilterString({
+        brightness: (e.brightness != null ? e.brightness : 100),
+        contrast: (e.contrast != null ? e.contrast : 100),
+        saturation: (e.saturation != null ? e.saturation : 100),
+        temperature: (e.temperature != null ? e.temperature : 0),
+        colour: (e.colour != null ? e.colour : 50),
+        tone: e.tone || 'none',
+      });
+      if (base && base !== 'none') fl.push(base);
+      var bl = Math.max(0, Math.min(100, e.blur || 0));
+      if (bl > 0) fl.push('blur(' + (bl / 100 * 0.0225 * s).toFixed(2) + 'px)');
+      var px = Math.max(0, Math.min(100, e.pixelate || 0));
+      if (px > 0) fl.push('url(#' + ensureCollagePixFilter(px / 100 * 0.044 * s) + ')');
+      var ol = Math.max(0, Math.min(100, e.outline || 0));
+      if (ol > 0) fl.push('url(#' + ensureCollageOutlineFilter(Math.max(1, ol / 100 * 0.05 * s), e.outlineColor || '#ffffff') + ')');
+      var glow = Math.max(0, Math.min(100, e.glow || 0));
+      if (glow > 0) { var gb = glow / 100 * 0.14 * s, gc = edgeRgba(e.glowColor, '#ffffff', 0.9); fl.push('drop-shadow(0 0 ' + (gb * 0.5).toFixed(1) + 'px ' + gc + ')', 'drop-shadow(0 0 ' + gb.toFixed(1) + 'px ' + gc + ')'); }
+      var neon = Math.max(0, Math.min(100, e.neon || 0));
+      if (neon > 0) { var nb = neon / 100 * 0.10 * s, nc = e.neonColor || '#ff2bd6'; fl.push('drop-shadow(0 0 ' + (nb * 0.5).toFixed(1) + 'px ' + nc + ')', 'drop-shadow(0 0 ' + nb.toFixed(1) + 'px ' + nc + ')', 'drop-shadow(0 0 ' + (nb * 2).toFixed(1) + 'px ' + nc + ')'); }
+      var lift = Math.max(0, Math.min(100, e.lift || 0));
+      if (lift > 0) fl.push('drop-shadow(0 ' + (lift / 100 * 0.06 * s).toFixed(1) + 'px ' + (lift / 100 * 0.16 * s).toFixed(1) + 'px ' + edgeRgba(e.liftColor, '#000000', 0.5) + ')');
+      var ds = Math.max(0, Math.min(100, e.dropShadow || 0));
+      if (ds > 0) { var d = (ds / 100 * 0.07 * s).toFixed(1); fl.push('drop-shadow(' + d + 'px ' + d + 'px ' + d + 'px ' + edgeRgba(e.dropShadowColor, '#000000', 0.55) + ')'); }
+      return fl.length ? fl.join(' ') : '';
+    }
+    // Multiply the Curved-corners + Blend alpha shape INTO the glyph canvas (in place),
+    // via the SAME SDF builder the tile clip mask uses (buildShapeMaskCanvas_) stretched
+    // over the canvas box. One routine drives preview AND bake, so they cannot differ.
+    // Always called on a FRESH canvas from renderTextToCanvas — it can never double-apply.
+    function maskEmojiEnhCanvas_(cnv, e) {
+      if (!cnv || !e) return;
+      var m = buildShapeMaskCanvas_(e.corners, e.blend, cnv.width, cnv.height);
+      if (!m) return;
+      var ctx = cnv.getContext('2d');
+      ctx.save();
+      ctx.globalCompositeOperation = 'destination-in';
+      ctx.imageSmoothingEnabled = true;
+      ctx.drawImage(m, 0, 0, m.width, m.height, 0, 0, cnv.width, cnv.height);
+      ctx.restore();
+    }
+    // How far the edge effects can reach past the glyph at basis `s` (bake padding):
+    // 2× every blur radius (a Gaussian tail is ~gone by 2r) plus the offsets, per-effect
+    // with the SAME formulas as emojiEnhFilterString_; +2px safety when anything is on.
+    function emojiEnhFxPadPx_(e, s) {
+      e = e || {}; s = Math.max(1, s || 1);
+      var pad = 0;
+      var bl = Math.max(0, Math.min(100, e.blur || 0)); if (bl > 0) pad = Math.max(pad, 2 * (bl / 100 * 0.0225 * s));
+      var ol = Math.max(0, Math.min(100, e.outline || 0)); if (ol > 0) pad = Math.max(pad, Math.max(1, ol / 100 * 0.05 * s) + 2);
+      var glow = Math.max(0, Math.min(100, e.glow || 0)); if (glow > 0) pad = Math.max(pad, 2 * (glow / 100 * 0.14 * s));
+      var neon = Math.max(0, Math.min(100, e.neon || 0)); if (neon > 0) pad = Math.max(pad, 2 * (neon / 100 * 0.10 * s * 2));
+      var lift = Math.max(0, Math.min(100, e.lift || 0)); if (lift > 0) pad = Math.max(pad, (lift / 100 * 0.06 * s) + 2 * (lift / 100 * 0.16 * s));
+      var ds = Math.max(0, Math.min(100, e.dropShadow || 0)); if (ds > 0) pad = Math.max(pad, 3 * (ds / 100 * 0.07 * s));
+      return pad > 0 ? (Math.ceil(pad) + 2) : 0;
+    }
+    // LIVE preview: bake the corner/blend mask into the freshly-rendered glyph canvas and
+    // set the whole enh list as the canvas's CSS filter. Called by renderTextLayer (and the
+    // carousel slice previews) on EVERY render. The filter sits on the UNSCALED canvas and
+    // the wrapper's scaleX/scaleY transform stretches the filtered result — the bake orders
+    // it identically (filter at base scale, then stretch), so preview == saved.
+    function applyEmojiEnhPreview_(layer, cnv) {
+      if (!layer || !layer.isEmoji || !cnv) return;
+      var e = layer.enh;
+      if (!e || !emojiEnhActive_(e)) { cnv.style.filter = ''; return; }
+      try { maskEmojiEnhCanvas_(cnv, e); } catch (_) {}
+      var basis = Math.min(
+        (typeof cnv._inkW === 'number' ? cnv._inkW : cnv.width),
+        (typeof cnv._inkH === 'number' ? cnv._inkH : cnv.height));
+      cnv.style.filter = emojiEnhFilterString_(e, basis) || '';
+    }
+    // BAKE: the same operations in the same order, but into PIXELS — for the texts[] PNG
+    // path (buildCollageLayout → the save bake, carousel slide export, project/template/
+    // autosave thumbnails). Returns the original canvas UNTOUCHED when the layer has no
+    // active enh (plain emoji, every old snapshot: byte-identical output).
+    function bakeEmojiEnhCanvas_(base, e) {
+      if (!base || !e || !emojiEnhActive_(e)) return base;
+      try {
+        maskEmojiEnhCanvas_(base, e);
+        var basis = Math.min(
+          (typeof base._inkW === 'number' ? base._inkW : base.width),
+          (typeof base._inkH === 'number' ? base._inkH : base.height));
+        var fstr = emojiEnhFilterString_(e, basis);
+        if (!fstr) return base;
+        var pad = emojiEnhFxPadPx_(e, basis);
+        var out = document.createElement('canvas');
+        out.width = Math.max(2, base.width + pad * 2);
+        out.height = Math.max(2, base.height + pad * 2);
+        var octx = out.getContext('2d');
+        octx.imageSmoothingEnabled = true;
+        octx.imageSmoothingQuality = 'high';
+        octx.filter = fstr;
+        octx.drawImage(base, pad, pad);
+        return out;
+      } catch (_) { return base; }
+    }
+    // Re-render one emoji layer so its glyph canvas + filter reflect layer.enh right now —
+    // the Enhance panel's live-update hook. Undo comes from the panel's existing
+    // pointerdown→begin / pointerup→commit wrapper, exactly like the tile sliders.
+    function applyEmojiEnh(layer) {
+      if (!layer || !layer.isEmoji) return;
+      try { renderTextLayer(layer); } catch (_) {}
+    }
+    // Expand the side panel + focus one appearance section for an EMOJI selection — the
+    // emoji-strip counterpart of openTilePanelSection_ (which requires a selected TILE).
+    function openEmojiPanelSection_(layer, secId) {
+      if (layer && selectedText !== layer) { try { selectText(layer); } catch (_) {} }
+      try { document.body.classList.remove('collage-panel-collapsed'); } catch (_) {}
+      try { layoutCanvasSize(); } catch (_) {}
+      try { focusSubcat(document.getElementById(secId)); } catch (_) {}
+      try { const d = document.getElementById(secId); if (d) d.scrollIntoView({ block: 'nearest' }); } catch (_) {}
     }
     // ─── Cut-out glow layer (v3.0, Terry 2026-07-05) ────────────────────────────────────────────────
     // A BG-removed tile's Glow/Neon must hug the SILHOUETTE (a crisp outline), which CSS can't do. We
@@ -11121,6 +11322,25 @@
       rotBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.7-6.4"/><path d="M21 4v5h-5"/></svg>';
       rotBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); ensureSel(); rotateTextLayer90(layer); });
       strip.appendChild(rotBtn); push(rotBtn);
+      // ---- v3.1 (Terry) — EMOJI appearance parity: quick-select chips [Looks] [Effects]
+      // [Glow] [Tone], mirroring the photo strip's section-jump chips (same .ch-tb-chip
+      // look, same target section ids). openTilePanelSection_ requires a selected TILE,
+      // so these route through openEmojiPanelSection_ (selects this layer, expands the
+      // panel, focuses + scrolls the section — whose controls now edit the emoji's enh). ----
+      strip.appendChild(document.createElement('div')).className = 'ch-tb-sep';
+      [
+        ['Looks', 'Open Looks — one-tap styles', 'enhance-looks-collapse'],
+        ['Effects', 'Open Effects — fade, blend, corners, blur', 'enhance-fx'],
+        ['Glow', 'Open Glow & shadow', 'enhance-edge'],
+        ['Tone', 'Open Tone & color', 'enhance-levels'],
+      ].forEach((c) => {
+        const chip = document.createElement('button');
+        chip.type = 'button'; chip.className = 'ch-tb-btn ch-tb-chip';
+        chip.setAttribute('data-pdr-tooltip', c[1]);
+        chip.textContent = c[0];
+        chip.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); openEmojiPanelSection_(layer, c[2]); });
+        strip.appendChild(chip); push(chip);
+      });
       // Prime the size readout once.
       try { refreshTextToolbar(layer); } catch (_) {}
     }
@@ -11296,6 +11516,12 @@
       // swap ONLY the tracked canvas (not innerHTML='') so the .ch handles
       // appended once above are preserved across re-renders.
       const canvas = renderTextToCanvas(layer, collageShortPx());
+      // v3.1 (Terry) — EMOJI appearance parity: bake the corner/blend mask into the fresh
+      // glyph canvas + set the enh filter list (Looks/Effects/Glow/Tone) as its CSS filter.
+      // Running here (inside every render) means the look survives every canvas swap —
+      // drags, resizes, undo/redo, fonts.ready re-renders — with zero extra call sites.
+      // No-op (filter cleared) for plain emoji and every non-emoji text layer.
+      try { applyEmojiEnhPreview_(layer, canvas); } catch (_) {}
       canvas.style.display = 'block';   // v2.1 round 187 (Terry) — drop inline baseline gap so the wrapper hugs the canvas and the corner handles land on the text edges
       // v2.1 round 216 (Terry) — Canva-style box = the CENTRED ink block + a small
       // UNIFORM gap on all four sides (rounds 214/215 hugged the ink asymmetrically
@@ -11431,6 +11657,34 @@
     }
     function renderAllTexts() {
       for (const layer of collageTexts) renderTextLayer(layer);
+    }
+    // v3.1 (Terry) — CHUNKED variant for the open/reopen path + the two font-load passes:
+    // renders each layer through the shared rAF scheduler (a few per frame) instead of one
+    // synchronous full sweep, and COALESCES — while a sweep is queued, further calls no-op
+    // (kickFunFonts' Promise.all pass and its fonts.ready pass fire back-to-back; one sweep
+    // serves both). Layers are re-read from the LIVE collageTexts at run time (membership-
+    // guarded), so a layer deleted or rebuilt mid-sweep is simply skipped — the final
+    // rendered result is identical to renderAllTexts(), only the scheduling differs.
+    let renderAllTextsChunkPending_ = false;
+    function renderAllTextsChunked() {
+      if (!collageTexts.length) return;               // nothing to render — skip entirely
+      if (renderAllTextsChunkPending_) return;        // a sweep is already walking — coalesce
+      renderAllTextsChunkPending_ = true;
+      // The sweep walks the LIVE collageTexts array via a not-yet-seen cursor, one layer
+      // per queued step (the pump batches several steps per frame within its budget).
+      // If the array is REPLACED mid-sweep (restoreCollageSnapshot rebuilds every layer
+      // object), the new layers are un-seen, so this same sweep picks them up — a
+      // coalesced call during an in-flight sweep can never strand fresh layers unrendered.
+      const seen = new Set();
+      const step = () => {
+        let next = null;
+        for (let i = 0; i < collageTexts.length; i++) { const L = collageTexts[i]; if (L && !seen.has(L)) { next = L; break; } }
+        if (!next) { renderAllTextsChunkPending_ = false; return; }   // every live layer rendered — sweep done
+        seen.add(next);
+        try { renderTextLayer(next); } catch (_) {}
+        collageStaggerEnqueue_(step);
+      };
+      collageStaggerEnqueue_(step);
     }
     // ─── v2.1 round 204 (Terry) — IN-CANVAS TEXT EDITING ──────────────────
     // Canva-style: double-click a text (or "Add text") swaps its rendered canvas
@@ -12208,6 +12462,10 @@
         effectStrength: (typeof layer.effectStrength === 'number') ? layer.effectStrength : 50,
         effectColor: layer.effectColor || '',
         locked: false, lockLayer: false,   // the clone starts unlocked (both kinds)
+        // v3.1 (Terry) — EMOJI appearance parity: the clone copies the emoji's enh (deep
+        // copy — the corners array must not be shared) so a duplicated emoji keeps its
+        // Looks/Effects/Glow/Tone styling. null/absent = no effects (plain emoji, text).
+        enh: (layer.isEmoji && layer.enh) ? JSON.parse(JSON.stringify(layer.enh)) : null,
         el: null, canvasEl: null,
       };
     }
@@ -12834,6 +13092,12 @@
     }
     // ========================================================================
     function syncTextControls() {
+      // v3.1 (Terry) — EMOJI appearance parity: keep the Enhance panel pointed at the
+      // selected EMOJI (or cleared). This is the one choke point every selection-change
+      // path already runs (selectText, deleteTextLayer, restoreCollageSnapshot, …), so the
+      // panel's Looks/Effects/Glow/Tone sections track emoji selections exactly like
+      // setTile tracks tiles. setEmoji is idempotent for the same layer (cheap re-sync).
+      try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setEmoji) window.pdrEnhanceBridge.setEmoji((selectedText && selectedText.isEmoji) ? selectedText : null); } catch (_) {}
       // v2.1 round 219 (Terry) — an EMOJI layer has no text styling (font / size
       // slider / align / style / effect / strength / colour all moot), so hide the
       // whole text-controls block for it: the on-canvas resize+rotate handles are
@@ -13925,7 +14189,10 @@
     // the live collageItems (few items → no chunking needed; uses the same maker as added photos).
     function rebuildCollageFilmstripFromScratch() {
       if (!collageMode) return;
-      if (carouselMode) { try { updateCarouselFilmstrip(); } catch (_) {} return; }
+      // v3.1 (Terry) — carousel: route through the coalesced deferred rebuild so an
+      // open-path caller (template apply etc.) can't stack a second synchronous N-slice
+      // build onto the open frame. One frame later, one build, same result.
+      if (carouselMode) { try { scheduleCarouselFilmstrip_(); } catch (_) {} return; }
       try {
         filmstripEl.querySelectorAll('[data-idx]').forEach((t) => t.remove());
         for (let i = 0; i < collageItems.length; i++) {
@@ -14138,6 +14405,11 @@
         for (const t of texts) {
           const cnv = renderTextToCanvas(t, shortPx);
           if (!cnv) continue;
+          // v3.1 (Terry) — EMOJI appearance parity: the slice thumbs are a live DOM
+          // preview, so apply the SAME mask + CSS filter the editor canvas carries
+          // (snapshot text objects carry isEmoji + enh). The holder's scale then
+          // stretches the filtered result, matching the editor + bake order exactly.
+          if (t.isEmoji && t.enh) { try { applyEmojiEnhPreview_(t, cnv); } catch (_) {} }
           const sx = (typeof t.scaleX === 'number' && t.scaleX > 0) ? t.scaleX : 1;
           const sy = (typeof t.scaleY === 'number' && t.scaleY > 0) ? t.scaleY : 1;
           const holder = document.createElement('div');
@@ -14156,6 +14428,13 @@
     }
     function updateCarouselFilmstrip() {
       if (!collageMode || !filmstripEl) return;
+      // v3.1 (Terry) — open/reopen de-saturation: during a bulk open (or while a deferred
+      // rebuild is already queued) route into the ONE coalesced deferred build. A reopen
+      // used to build this strip up to 3× synchronously in a single tick (layoutCanvasSize
+      // → renderAllCollage → here, restore's own refresh, then reopen's direct call) — N
+      // slice previews × every tile + text, each time. The deferred job itself resets the
+      // queued flag BEFORE calling back in, so it passes straight through and builds once.
+      if (collageBulkOpen_ || collageCarouselStripQueued_) { try { scheduleCarouselFilmstrip_(); } catch (_) {} return; }
       try { document.body.classList.add('carousel-filmstrip'); } catch (_) {}
       // Drop any previously-built carousel UI (thumbs + add slot); leave the pool tiles
       // and #collage-add-photos in place (hidden by CSS).
@@ -15121,14 +15400,18 @@
           }
         } catch (_) {}
         collageRestoring = true;
+        collageBulkOpen_ = true;   // v3.1 (Terry) — stagger the DOM materialization (titlebar-drag fix); models still build synchronously
         try {
           files = Array.isArray(p.files) ? p.files.slice() : [];
           collageUndo.length = 0; collageRedo.length = 0;   // fresh history for the reopened project
           buildCollageItems();                 // rebuild the per-file originals from the new files[]
           restoreCollageSnapshot(p.snapshot);  // geometry + clones + text + bg + canvas size
-        } finally { collageRestoring = false; }
+        } finally { collageRestoring = false; collageBulkOpen_ = false; }
         // v2.1 round 376 (Terry) — a reopened carousel: redraw the page guides + slice thumbnails + fit the wide canvas.
-        if (_reCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }
+        // v3.1 (Terry) — the slice thumbnails go through the coalesced deferred rebuild
+        // (restore already scheduled one; this coalesces into it) — they were the single
+        // heaviest synchronous block on a carousel reopen, and were built TWICE.
+        if (_reCar) { try { renderCarouselGuides(); scheduleCarouselFilmstrip_(); resetCollageZoom(); } catch (_) {} }
         // This window now IS this project — subsequent autosaves overwrite it in place.
         currentCollageProjectId = p.id || id;
         currentCollageProjectName = p.name || null;
@@ -15225,13 +15508,14 @@
         }
       } catch (_) {}
       collageRestoring = true;
+      collageBulkOpen_ = true;   // v3.1 (Terry) — template/record apply staggers its DOM build like a reopen (same storm, same fix)
       try {
         files = Array.isArray(p.files) ? p.files.slice() : [];
         collageUndo.length = 0; collageRedo.length = 0;
         buildCollageItems();
         restoreCollageSnapshot(p.snapshot);
-      } finally { collageRestoring = false; }
-      if (_arCar) { try { renderCarouselGuides(); updateCarouselFilmstrip(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit
+      } finally { collageRestoring = false; collageBulkOpen_ = false; }
+      if (_arCar) { try { renderCarouselGuides(); scheduleCarouselFilmstrip_(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit; v3.1 (Terry) — thumbs via the coalesced deferred rebuild
       currentCollageProjectId = null; currentCollageProjectName = null;
       try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; carouselExportedWideFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
@@ -15710,7 +15994,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', locked: !!t.locked, lockLayer: !!t.lockLayer })),   // v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', enh: (t.isEmoji && t.enh) ? t.enh : undefined, locked: !!t.locked, lockLayer: !!t.lockLayer })),   // v3.1 (Terry) — carry an EMOJI's enh (Looks/Effects/Glow/Tone parity; undefined = key omitted by JSON.stringify, so plain emoji/text snapshots are byte-identical to before); v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -15925,8 +16209,20 @@
             bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
           };
           collageItems.push(clone);
-          buildCollageItemEl(clone);
-          applySnapItem(clone, si);
+          // v3.1 (Terry) — open/reopen de-saturation: under a bulk open the MODEL is
+          // completed synchronously here (applySnapItem's <img> touches no-op on a null
+          // el), while the ~40-node el build + first render join the rAF queue — a few
+          // tiles materialize per frame instead of every tile in one stall. The queued
+          // job re-runs renderCollageItem + applyTileEnh with this fully-restored model,
+          // so the end state is identical. Undo/redo (no bulk flag) keeps the original
+          // synchronous build order byte-for-byte.
+          if (collageBulkOpen_) {
+            applySnapItem(clone, si);
+            collageStaggerTileEl_(clone);
+          } else {
+            buildCollageItemEl(clone);
+            applySnapItem(clone, si);
+          }
         }
       });
       // v2.1 round 185 (Text #1) — rebuild text layers from the snapshot: tear
@@ -15934,7 +16230,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; });   // v3.1 (Terry) — stage-level toolbars + top-bar strips torn down with the els (they live OUTSIDE the canvas now)
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', locked: !!st.locked, lockLayer: !!st.lockLayer, el: null, canvasEl: null }));   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, el: null, canvasEl: null }));   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -15952,10 +16248,17 @@
       markCollageColorActive();
       layoutCanvasSize();
       collageItems.forEach((it) => { if (it.imgEl && window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(it); });
-      updateCollageFilmstrip();
+      // v3.1 (Terry) — open/reopen de-saturation: on a bulk CAROUSEL open the strip (the
+      // heaviest single block — N slice previews × every tile + text) defers to one
+      // coalesced rebuild off the open frame. Undo/redo + the plain pool strip stay sync.
+      if (collageBulkOpen_ && carouselMode) scheduleCarouselFilmstrip_();
+      else updateCollageFilmstrip();
       // v2.1 round 185 (Text #1) — recreate the text els from the restored
       // layers + refresh the Text controls for the restored selection.
-      renderAllTexts();
+      // v3.1 (Terry) — bulk open: chunked (a few text canvases raster per frame; same end
+      // state). Undo/redo keeps the synchronous full pass.
+      if (collageBulkOpen_) renderAllTextsChunked();
+      else renderAllTexts();
       syncTextControls();
       // Re-point the panel at the still-valid selection (a real tile that's
       // been turned off deselects; the background tile survives).
@@ -16009,6 +16312,112 @@
       const r = document.getElementById('tb-collage-redo');
       if (u) u.disabled = collageUndo.length === 0;
       if (r) r.disabled = collageRedo.length === 0;
+    }
+
+    // ─── v3.1 (Terry) — OPEN/REOPEN MAIN-THREAD DE-SATURATION (titlebar-drag fix) ──────
+    // Opening/reopening a project used to materialize EVERYTHING in one synchronous storm
+    // — every tile's ~40-node el build, every text/emoji canvas raster, a 256px alpha-scan
+    // per transparent PNG as the decodes landed, the carousel strip's N×(all tiles + all
+    // texts) slice previews, plus two full renderAllTexts font passes — pegging the
+    // renderer main thread for long enough that the frameless window's titlebar drag
+    // region couldn't respond (Terry grabbed it 5 times). SCHEDULING-ONLY fix:
+    //   • The LOGICAL state (collageItems/collageTexts models, fracs, enh, z) is still
+    //     built 100% synchronously up front — undo/autosave snapshots and the model-based
+    //     save bake (buildCollageLayout) always see the complete state.
+    //   • Only the DOM MATERIALIZATION staggers: tile els + text els build a few per
+    //     frame through this rAF queue; alpha-trim scans run 1/frame behind them; the
+    //     carousel filmstrip rebuilds once, deferred + coalesced. First paint (background
+    //     + canvas box + page outlines) stays synchronous and instant.
+    //   • Every queued job SELF-GUARDS by membership (collageItems/collageTexts.indexOf)
+    //     + an el-already-built check, so an undo / project switch / teardown mid-stagger
+    //     simply voids the stale jobs — no orphan els, no double builds. z-index is inline
+    //     per tile/text, so arrival order can never change stacking.
+    //   • collageStaggerFlush_() drains everything synchronously for paths that need the
+    //     DOM complete right now (the off-screen WYSIWYG capture).
+    // The staggered path runs ONLY under collageBulkOpen_ (project open/reopen/template
+    // apply). Undo/redo and the off-screen export window keep the fully synchronous
+    // restore, byte-identical to before.
+    var collageBulkOpen_ = false;        // true only inside the open/reopen build+restore block
+    var collageStaggerQ_ = [];           // high priority: tile/text el builds + renders
+    var collageStaggerIdleQ_ = [];       // low priority: alpha-trim scans, carousel strip rebuild
+    var collageStaggerRaf_ = 0;
+    var collageStaggerTimer_ = null;
+    function collageStaggerActive_() { return collageStaggerQ_.length > 0 || collageStaggerIdleQ_.length > 0; }
+    function collageStaggerSchedule_() {
+      if (collageStaggerRaf_) return;
+      collageStaggerRaf_ = requestAnimationFrame(collageStaggerPump_);
+      // rAF starves in a hidden/occluded window — a timer backstop keeps the queue draining.
+      if (collageStaggerTimer_) clearTimeout(collageStaggerTimer_);
+      collageStaggerTimer_ = setTimeout(function () {
+        collageStaggerTimer_ = null;
+        if (collageStaggerRaf_) { try { cancelAnimationFrame(collageStaggerRaf_); } catch (_) {} collageStaggerRaf_ = 0; }
+        collageStaggerPump_();
+      }, 300);
+    }
+    function collageStaggerEnqueue_(job) { collageStaggerQ_.push(job); collageStaggerSchedule_(); }
+    function collageStaggerEnqueueIdle_(job) { collageStaggerIdleQ_.push(job); collageStaggerSchedule_(); }
+    function collageStaggerPump_() {
+      collageStaggerRaf_ = 0;
+      if (collageStaggerTimer_) { clearTimeout(collageStaggerTimer_); collageStaggerTimer_ = null; }
+      var t0 = performance.now();
+      // High queue: run jobs until ~6ms of this frame is spent (keeps drag/paint headroom).
+      while (collageStaggerQ_.length && (performance.now() - t0) < 6) {
+        var job = collageStaggerQ_.shift();
+        try { job(); } catch (_) {}
+      }
+      // Low queue: at most ONE scan/rebuild per frame, only once the high queue is idle.
+      if (!collageStaggerQ_.length && collageStaggerIdleQ_.length) {
+        var idle = collageStaggerIdleQ_.shift();
+        try { idle(); } catch (_) {}
+      }
+      if (collageStaggerActive_()) collageStaggerSchedule_();
+    }
+    // Synchronously drain BOTH queues — for any path that needs the DOM fully materialized
+    // right now (the WYSIWYG capture). Jobs self-guard, so draining is always safe.
+    function collageStaggerFlush_() {
+      if (collageStaggerRaf_) { try { cancelAnimationFrame(collageStaggerRaf_); } catch (_) {} collageStaggerRaf_ = 0; }
+      if (collageStaggerTimer_) { clearTimeout(collageStaggerTimer_); collageStaggerTimer_ = null; }
+      var guard = 0;
+      while ((collageStaggerQ_.length || collageStaggerIdleQ_.length) && guard++ < 100000) {
+        var job = collageStaggerQ_.length ? collageStaggerQ_.shift() : collageStaggerIdleQ_.shift();
+        try { job(); } catch (_) {}
+      }
+    }
+    // Queue one tile's DOM materialization: build the el, render it at the (already
+    // restored) geometry, apply its enh to the <img> — the same three steps the sync path
+    // performs, just spread across frames. Skipped if the model has since left
+    // collageItems (undo / project switch) or its el was already built by another path
+    // (fill-frame rebuild, emptyCollageFrame, …).
+    function collageStaggerTileEl_(it) {
+      collageStaggerEnqueue_(function () {
+        if (!it || it.el || collageItems.indexOf(it) === -1) return;
+        buildCollageItemEl(it);
+        renderCollageItem(it);
+        try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh && it.imgEl) window.pdrEnhanceBridge.applyTileEnh(it); } catch (_) {}
+      });
+    }
+    // Queue one tile's alpha-trim scan (a 256px canvas + a full-pixel readback per
+    // transparent PNG). ALWAYS routed through here from img.onload — never inline — so a
+    // burst of decodes landing together can't stack N scans into one frame. Still exactly
+    // once per tile: alphaTrimTile's own _alphaTrimmed guard + the membership guard here.
+    function collageStaggerAlphaTrim_(it) {
+      collageStaggerEnqueueIdle_(function () {
+        if (!it || it._alphaTrimmed || collageItems.indexOf(it) === -1) return;
+        try { alphaTrimTile(it); } catch (_) {}
+      });
+    }
+    // Coalesced carousel filmstrip rebuild. The strip is N slice previews, EACH a full
+    // mini-DOM of every tile + text — the single heaviest block on a carousel reopen, and
+    // the open path used to build it twice (restore + reopen). All open-path callers now
+    // funnel here: one deferred build, after the canvas has settled.
+    var collageCarouselStripQueued_ = false;
+    function scheduleCarouselFilmstrip_() {
+      if (collageCarouselStripQueued_) return;
+      collageCarouselStripQueued_ = true;
+      collageStaggerEnqueueIdle_(function () {
+        collageCarouselStripQueued_ = false;
+        try { if (carouselMode) updateCarouselFilmstrip(); } catch (_) {}
+      });
     }
 
     // v2.1 round 203 (Terry) — build the DOM (clip + img), all selection handles
@@ -16139,7 +16548,13 @@
         // NEVER over a user's own crop (guarded inside). Must come AFTER it.aspect is set above (the crop
         // reshapes effectiveAspect off the natural aspect). Opaque JPEGs + already-tight PNGs return a full
         // box and are left untouched.
-        try { alphaTrimTile(it); } catch (_) {}
+        // v3.1 (Terry) — open/reopen de-saturation: the scan is QUEUED (one per frame,
+        // behind the el builds) instead of running inline here — async decodes land in
+        // bursts, and N inline 256px getImageData scans in one frame were a main-thread
+        // stall on every project open. Still exactly once per tile (the _alphaTrimmed
+        // guard + queue membership guard); alphaTrimTile re-renders the tile itself when
+        // it actually trims, so the final result is identical.
+        collageStaggerAlphaTrim_(it);
         renderCollageItem(it);
       };
       // v2.1 round 173 — show the background-removed cut-out if this tile has one
@@ -16972,13 +17387,21 @@
         // buildCollageItemEl(it) so a duplicated tile is built identically (it
         // gets the same 4-corner resize handles, rotate handle + quick-action
         // toolbar). It sets it.el/imgEl/clipEl and appends to the canvas.
-        buildCollageItemEl(it);
+        // v3.1 (Terry) — open/reopen de-saturation: under a bulk open the model joins
+        // collageItems NOW (complete state up front) and the el build joins the rAF
+        // queue. On the reopen path restoreCollageSnapshot runs synchronously right
+        // after this loop, so the queued job renders with the RESTORED geometry/enh.
         collageItems.push(it);
+        if (collageBulkOpen_) collageStaggerTileEl_(it);
+        else buildCollageItemEl(it);
       });
       // The innerHTML clear above removed any background-photo layer —
       // re-create it so it survives a rebuild.
       renderCollageBgLayer();
-      renderAllTexts();   // v2.1 round 185 (Text #1) — recreate text els on top
+      // v2.1 round 185 (Text #1) — recreate text els on top. v3.1 (Terry) — bulk open:
+      // chunked over rAF frames (same end state); everywhere else the sync pass stays.
+      if (collageBulkOpen_) renderAllTextsChunked();
+      else renderAllTexts();
       // v2.1 round 260 (Terry) — carousel wide: the innerHTML clear at the top also
       // removed the slice-divider overlay; re-create it (no-op outside carousel mode).
       // v3.1 (Terry) — also re-create it during the off-screen carousel EXPORT render (which
@@ -19386,6 +19809,11 @@
       let _glowDbg = null;
       try { _glowDbg = await bakeCutoutGlowsForExport(); } catch (e) { _glowDbg = { err: String((e && e.message) || e) }; }
       try { await document.fonts.ready; } catch (_) {}
+      // v3.1 (Terry) — drain any staggered/chunked render jobs (e.g. the fonts.ready
+      // chunked text sweep) BEFORE the capture frames: the captured DOM must be 100%
+      // materialized with the final glyphs. No-op when the queues are empty (this
+      // window's restore runs fully synchronously — collageBulkOpen_ is never set here).
+      try { collageStaggerFlush_(); } catch (_) {}
       await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
       const cr = collageCanvasEl.getBoundingClientRect();
       const _imgs = document.querySelectorAll('#collage-canvas img');
@@ -19434,7 +19862,14 @@
       // on any canvas relayout.
       applyCanvasBgVisual();
       renderAllCollage();
-      renderAllTexts();   // v2.1 round 185 (Text #1) — reposition/resize text on canvas resize
+      // v2.1 round 185 (Text #1) — reposition/resize text on canvas resize.
+      // v3.1 (Terry) — bulk open only: chunked. restoreCollageSnapshot calls this while
+      // half the text els are still queued; the sync pass here would have materialized
+      // every text canvas in one burst anyway, defeating the staggered open. Outside the
+      // bulk-open window (zoom, panel toggles, window resize, the export render) the
+      // synchronous pass is unchanged — text must track the canvas within the frame.
+      if (collageBulkOpen_) renderAllTextsChunked();
+      else renderAllTexts();
       // v2.1 round 253 (Terry) — re-assert the user zoom/pan transform AFTER the fit
       // re-sizes the canvas box, so effective scale = fit × userZoom stays composed
       // (a window resize keeps the user's current zoom; reshape resets it separately).
@@ -19577,7 +20012,14 @@
         // point, so preview == saved. scaleX/scaleY default 1 → 1:1 draw == today's
         // output byte-for-byte for unstretched layers.
         const stretchTextPng = (t) => {
-          const base = renderTextToCanvas(t, outputShortPx);
+          let base = renderTextToCanvas(t, outputShortPx);
+          // v3.1 (Terry) — EMOJI appearance parity: bake the emoji's enh (mask + the same
+          // filter list the live canvas shows) INTO the PNG before the stretch scale, so
+          // the ONE compositor path (save bake, carousel slide export, project/template/
+          // autosave thumbnails — all via buildCollageLayout) ships the effected glyph.
+          // The pad is symmetric → the centre anchor is unchanged; no-enh layers return
+          // the same canvas untouched (byte-identical output for old projects).
+          if (t.isEmoji && t.enh) { try { base = bakeEmojiEnhCanvas_(base, t.enh); } catch (_) {} }
           const sx = (typeof t.scaleX === 'number' && t.scaleX > 0) ? t.scaleX : 1;
           const sy = (typeof t.scaleY === 'number' && t.scaleY > 0) ? t.scaleY : 1;
           if (sx === 1 && sy === 1) return base.toDataURL('image/png');
@@ -22422,7 +22864,12 @@
         if (fsWrap) fsWrap.style.display = 'block';
         if (filmstripEl) filmstripEl.style.display = 'flex';
       } catch (_) {}
-      buildCollageItems();
+      // v3.1 (Terry) — fresh photos→collage open is a bulk build too (N tiles at once):
+      // stagger the el materialization so the window is draggable from the first frame.
+      // Models land in collageItems synchronously; gridArrange below mutates models and
+      // renderCollageItem null-guards, so the queued builds render at the final spots.
+      collageBulkOpen_ = true;
+      try { buildCollageItems(); } finally { collageBulkOpen_ = false; }
       // v2.1 round 289 (Terry) — open NEW collages at the user's chosen default canvas
       // size (set via the ★ on the Canvas Size "Current size" chip). Set state here, before
       // the panel builds + the first layout/grid, so the menu + tiles reflect it at once.
@@ -23108,42 +23555,24 @@ function zoomTo(newZoom, centreX, centreY) {
       let collageActive = false;
       let collageTile = null;
       let collageSaveFn = null;
+      // v3.1 (Terry) — EMOJI appearance parity: when an EMOJI layer is selected the panel
+      // edits THIS layer instead of a tile (collageTile stays null — no tile is selected).
+      // The four appearance sections read/write collageEmoji.enh through the same `state`
+      // → applyEnhanceFilter pipeline as tiles; Fade routes to the layer's existing
+      // opacity field (one source of truth with the strip's Transparency popover).
+      let collageEmoji = null;
 
       // v2.1 round 134 — accepts an optional state so the Looks strip
       // can compose each preset's filter for its thumbnail; defaults
       // to the live state for the main preview.
+      // v3.1 (Terry) — body EXTRACTED verbatim to the top-level composeEnhFilterString
+      // (near frameFrac) so the EMOJI appearance pipeline composes the identical
+      // levels/tone string. This wrapper keeps every panel call site + the default-to-
+      // live-state behavior byte-identical. (The original notes — the round-152 Colour
+      // master desaturation, the v2.0.15 hue-rotate-only Temperature preview, the
+      // round-132 tone approximation — moved with the body.)
       function composeFilterString(s) {
-        s = s || state;
-        const parts = [];
-        if (s.brightness !== 100) parts.push('brightness(' + (s.brightness / 100) + ')');
-        if (s.contrast !== 100) parts.push('contrast(' + (s.contrast / 100) + ')');
-        // v2.1 round 152 — Colour is a master desaturation that multiplies
-        // the Saturation slider: at colour=0 the result is black & white.
-        const colour = (s.colour == null ? 50 : s.colour);
-        const sat = (s.saturation / 100) * (colour / 50);
-        if (sat !== 1) parts.push('saturate(' + sat + ')');
-        // v2.0.15 (Terry 2026-06-06) — Temperature was using sepia +
-        // hue-rotate, which desaturated the preview heavily (sepia is
-        // a tint-toward-brown operation, basically B&W with brown
-        // overlay). Backend uses .recomb() (per-channel matrix) which
-        // is non-destructive of saturation. Preview now uses ONLY a
-        // small hue-rotate to roughly match the warm/cool direction
-        // without desaturating. Imperfect — CSS has no native colour
-        // balance filter — but matches the saved output visually
-        // much more closely than the old combo.
-        if (s.temperature !== 0) {
-          // v2.1 round 133 — preview strengthened to match the
-          // doubled backend Temperature effect (was ±10°). Warm →
-          // orange shift; cool → blue shift.
-          const deg = -(s.temperature / 50) * 18;
-          parts.push('hue-rotate(' + deg + 'deg)');
-        }
-        // v2.1 round 132 — tone preview. CSS sepia() approximates the
-        // backend colour matrix closely enough for the live preview;
-        // the saved file uses the exact .recomb() matrix.
-        if (s.tone === 'sepia') parts.push('sepia(0.85)');
-        else if (s.tone === 'vintage') parts.push('sepia(0.4)');
-        return parts.length ? parts.join(' ') : 'none';
+        return composeEnhFilterString(s || state);
       }
 
       // v2.1 round 164 (Terry) — Blend now rides the top-level applyShapeMask
@@ -23214,6 +23643,35 @@ function zoomTo(newZoom, centreX, centreY) {
         // tile's own enhance object so it survives tile-switching, save,
         // and remove/re-add.
         if (collageActive) {
+          // v3.1 (Terry) — EMOJI appearance parity: the panel's target is an EMOJI layer.
+          // Write the four sections' fields into the layer's OWN enh (same names as a
+          // tile's; frame/flip/vignette stay photo-only) and re-render its glyph canvas
+          // through applyEmojiEnh — the same live-update cadence as a tile slider drag,
+          // wrapped in the same panel-wide begin/commit undo. Fade routes to the layer's
+          // single opacity field (shared with the strip's Transparency popover) so the two
+          // controls can never stack or disagree.
+          if (collageEmoji) {
+            const em = collageEmoji;
+            if (typeof collageTexts !== 'undefined' && collageTexts.indexOf(em) === -1) { collageEmoji = null; return; }   // layer deleted/rebuilt under us
+            // APPEARANCE LOCK parity: a locked emoji won't accept edits — snap the
+            // sliders back to its frozen look and write nothing.
+            if (em.locked) { try { loadStateFromEmoji_(em); } catch (_) {} return; }
+            em.enh = {
+              brightness: state.brightness, contrast: state.contrast, saturation: state.saturation,
+              temperature: state.temperature, colour: state.colour, tone: state.tone,
+              blend: state.blend, corners: (Array.isArray(state.corners) ? state.corners.slice() : [0, 0, 0, 0]),
+              blur: state.blur, pixelate: state.pixelate,
+              glow: state.glow, dropShadow: state.dropShadow, lift: state.lift, neon: state.neon, outline: state.outline,
+              glowColor: state.glowColor, dropShadowColor: state.dropShadowColor, liftColor: state.liftColor, neonColor: state.neonColor, outlineColor: state.outlineColor,
+            };
+            em.opacity = Math.round(Math.max(0, Math.min(1, state.opacity != null ? state.opacity : 1)) * 100);
+            applyEmojiEnh(em);
+            // Keep the Looks strip previewing THIS emoji's glyph (mirrors the tile guard).
+            try {
+              if (looksStrip && panel.classList.contains('open') && currentImageSrc() && currentImageSrc() !== looksStripSrc) buildLooksStrip();
+            } catch (_) {}
+            return;
+          }
           // v2.1 round 203 (Terry) — APPEARANCE LOCK: a locked photo tile won't
           // accept Enhance edits. Re-apply the tile's OWN frozen enh to its <img>
           // (so a slider the user nudged reverts on screen) and DON'T write the
@@ -23326,6 +23784,22 @@ function zoomTo(newZoom, centreX, centreY) {
       }
 
       function resetState() {
+        // v3.1 (Terry) — EMOJI appearance parity: "Reset emoji" clears the appearance
+        // (enh → none, Fade → solid) and squares the rotation — mirroring what Reset
+        // photo does for a tile (look + rotation reset; position/size are layout, left
+        // alone). A locked emoji ignores it, like a locked tile. One undo step via the
+        // panel's pointerdown/up wrapper.
+        if (collageActive && collageEmoji) {
+          const em = collageEmoji;
+          if (em.locked) { try { loadStateFromEmoji_(em); } catch (_) {} return; }
+          em.enh = null;
+          em.opacity = 100;
+          em.rot = 0;
+          try { loadStateFromEmoji_(em); } catch (_) {}
+          clearActivePreset();
+          try { applyEmojiEnh(em); } catch (_) {}
+          return;
+        }
         // v2.1 round 203 (Terry) — a locked photo tile ignores "Reset photo"
         // (it resets geometry + look, both of which the lock freezes). Re-load
         // the panel from the frozen tile so the sliders snap back.
@@ -23393,6 +23867,21 @@ function zoomTo(newZoom, centreX, centreY) {
           // v2.1 round 149 — the background is a <div> (background-image,
           // not <img>.src), so read its source URL explicitly.
           if (collageTile && collageTile.isBg) return collageTile.bgSrc || '';
+          // v3.1 (Terry) — EMOJI target: the Looks thumbs preview the emoji's own glyph.
+          // Like a tile (whose thumbs use the RAW photo src, not its current enh), we use
+          // a CLEAN un-effected glyph render, cached per glyph text so slider drags never
+          // re-rasterize or rebuild the strip. _looksSrc is transient (never serialized).
+          if (!collageTile && collageEmoji) {
+            const em = collageEmoji;
+            const key = String(em.text || '');
+            if (!em._looksSrc || em._looksSrcKey !== key) {
+              try {
+                em._looksSrc = renderTextToCanvas({ isEmoji: true, text: em.text, sizeFrac: 0.2, opacity: 100 }, 400).toDataURL();
+                em._looksSrcKey = key;
+              } catch (_) { em._looksSrc = ''; }
+            }
+            return em._looksSrc || '';
+          }
           return (collageTile && collageTile.imgEl && collageTile.imgEl.src) ? collageTile.imgEl.src : '';
         }
         const c = document.getElementById('container');
@@ -25527,6 +26016,19 @@ function zoomTo(newZoom, centreX, centreY) {
         markActiveWeight();
         try { clearActivePreset(); } catch (_) {}
       }
+      // v3.1 (Terry) — EMOJI appearance parity: load the panel sliders from an EMOJI
+      // layer. Reuses loadStateFromTile's field mapping wholesale (a layer's enh has the
+      // same names + defaults), then repoints Fade at the layer's ONE opacity field
+      // (0–100 → state 0–1) so the panel and the strip's Transparency popover always
+      // read/write the same number. enh may be null/absent (plain emoji, old snapshots)
+      // → every slider lands on the tile defaults.
+      function loadStateFromEmoji_(layer) {
+        loadStateFromTile({ enh: (layer && layer.enh) || {} });
+        const op = (layer && typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100;
+        state.opacity = op / 100;
+        if (sOpacity) sOpacity.value = String(Math.round(op));
+        if (vOpacity) vOpacity.textContent = String(Math.round(op));
+      }
       const collageSaveBtn = document.getElementById('collage-save');
       if (collageSaveBtn) collageSaveBtn.addEventListener('click', function () {
         // v3.0 (Terry) — first time: the naming wizard (pick an Album, then Save). Once it's been saved,
@@ -25558,6 +26060,8 @@ function zoomTo(newZoom, centreX, centreY) {
         enterCollage: function (saveFn) {
           collageActive = true;
           collageTile = null;
+          collageEmoji = null;   // v3.1 (Terry) — fresh session: no emoji target
+          try { document.body.classList.remove('collage-emoji-target'); } catch (_) {}
           collageSaveFn = typeof saveFn === 'function' ? saveFn : null;
           document.body.classList.add('collage-mode');
           // v2.1 round 266 (Terry) — Phase 4: the floating-chrome overlay owns the
@@ -25573,6 +26077,8 @@ function zoomTo(newZoom, centreX, centreY) {
         },
         exitCollage: function () {
           collageActive = false; collageTile = null; collageSaveFn = null;
+          collageEmoji = null;   // v3.1 (Terry) — drop the emoji target with the mode
+          try { document.body.classList.remove('collage-emoji-target'); } catch (_) {}
           document.body.classList.remove('collage-mode');
           document.body.classList.remove('collage-overlay-chrome');   // v2.1 round 266 (Terry) — Phase 4
           try { hideSelectionChrome(); } catch (_) {}                  // v2.1 round 266 (Terry) — Phase 4: drop the floating overlay on exit
@@ -25583,6 +26089,12 @@ function zoomTo(newZoom, centreX, centreY) {
         // Point the panel at a tile, the background, or null (the "pick a
         // photo" hint). Loads that element's own enhance settings.
         setTile: function (tile) {
+          // v3.1 (Terry) — EMOJI appearance parity: ANY setTile call (tile, background,
+          // or null/deselect) clears the emoji target — a tile and an emoji are never
+          // co-targeted. When an emoji selection follows (selectText), syncTextControls
+          // re-asserts it via setEmoji right after, in the same synchronous task.
+          collageEmoji = null;
+          try { document.body.classList.remove('collage-emoji-target'); } catch (_) {}
           collageTile = tile || null;
           if (collageTile) {
             document.body.classList.remove('collage-no-tile');
@@ -25599,6 +26111,33 @@ function zoomTo(newZoom, centreX, centreY) {
             document.body.classList.remove('collage-bg-selected');
             document.body.classList.remove('collage-bg-photo');   // v2.1 round 336 (Terry)
             if (resetBtn) resetBtn.textContent = 'Reset photo';
+          }
+        },
+        // v3.1 (Terry) — EMOJI appearance parity: point the panel at an EMOJI layer (or
+        // clear with null). The setTile counterpart: loads the layer's enh into the
+        // sliders, rebuilds the Looks strip on its glyph, and flips the body class that
+        // un-greys Looks/Effects/Glow/Tone + hides the photo-only sections. Idempotent
+        // for the same layer (cheap slider re-sync — the strip's Size/Transparency edits
+        // land here per tick via syncTextControls). It NEVER calls applyEnhanceFilter:
+        // selecting must not write a default enh onto the layer (that would dirty
+        // snapshots/autosave for a no-op).
+        setEmoji: function (layer) {
+          const em = (layer && layer.isEmoji) ? layer : null;
+          if (em && em === collageEmoji) { try { loadStateFromEmoji_(em); } catch (_) {} return; }
+          collageEmoji = em;
+          if (em) {
+            collageTile = null;
+            document.body.classList.add('collage-emoji-target');
+            document.body.classList.add('collage-no-tile');      // no TILE is selected — keep every tile-gated path honest
+            document.body.classList.remove('collage-bg-selected');
+            document.body.classList.remove('collage-bg-photo');
+            if (resetBtn) resetBtn.textContent = 'Reset emoji';
+            try { loadStateFromEmoji_(em); } catch (_) {}
+            try { buildLooksStrip(); } catch (_) {}
+          } else {
+            document.body.classList.remove('collage-emoji-target');
+            // Label only in collage mode — the single-image Viewer's button says "Reset all".
+            if (resetBtn && collageActive && !collageTile) resetBtn.textContent = 'Reset photo';
           }
         },
         isCollage: function () { return collageActive; },
