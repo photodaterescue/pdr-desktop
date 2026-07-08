@@ -3311,6 +3311,19 @@
       box-shadow: 0 10px 26px rgba(0,0,0,0.6), 0 3px 12px rgba(139,92,246,0.3);
     }
     .ch-tb-btn.ch-tb-more svg { fill: currentColor; }
+    /* v3.1 (Terry) — the PHOTO-TILE top-centre strip (one shared element in the same
+       #collage-text-topbar container, so it inherits the AI-gradient pill + the
+       pointer-events opt-in). Section-jump chips are small labelled buttons that
+       expand + focus a side-panel section. */
+    .ch-tb-btn.ch-tb-chip { width: auto; min-width: 0; padding: 0 8px; font-size: 11px; font-weight: 600; color: #cfc8ff; letter-spacing: 0.01em; }
+    .ch-tb-btn.ch-tb-chip:hover { color: #fff; }
+    /* v3.1 (Terry) — Crop button: crop is a DRAG affordance (the 4 gold edge bars on the
+       selection box), so the strip's Crop button PULSES those bars to point at them. */
+    #collage-chrome-box.crop-hint .chx-crop { animation: chxCropHint 0.55s ease-in-out 3; }
+    @keyframes chxCropHint {
+      0%, 100% { transform: scale(1); box-shadow: none; }
+      50% { transform: scale(1.55); box-shadow: 0 0 0 5px rgba(254,194,66,0.35); }
+    }
     /* v3.1 (Terry SS1) — WEIGHT chevron (a thin dropdown arrow next to B) + the
        Thin…Black weight menu rows. Each row previews its own weight in the layer's
        family; weights the family can't render are greyed out (Canva SS1). */
@@ -6235,19 +6248,19 @@
       // overlay bar (same .ch-toolbar class) is untouched.
       try {
         collageChromeEl.querySelectorAll('.ch-toolbar[data-text-tb], .ch-tb-topstrip').forEach((n) => {
+          if (n.dataset && n.dataset.tileStrip) return;   // v3.1 (Terry) — the PHOTO-TILE strip is a singleton owned by the tile chrome, not a text layer — never sweep it
           const owned = collageTexts.some((t) => t && (t.tbarEl === n || t.topStripEl === n));
           if (!owned) { try { n.remove(); } catch (_) {} }
         });
       } catch (_) {}
       const sel = (typeof selectedText !== 'undefined') ? selectedText : null;
       const st = collageStageEl ? collageStageEl.getBoundingClientRect() : null;
-      let anyStrip = false;
       for (let i = 0; i < collageTexts.length; i++) {
         const L = collageTexts[i];
         if (!L) continue;
         const on = !!(L === sel && L.el && L.el.classList.contains('selected') && st);
         // v3.1 (Terry SS2) — the layer's TOP-CENTRE strip shows only while selected.
-        if (L.topStripEl) { L.topStripEl.style.display = on ? 'inline-flex' : 'none'; if (on) anyStrip = true; }
+        if (L.topStripEl) { L.topStripEl.style.display = on ? 'inline-flex' : 'none'; }
         if (!L.tbarEl) continue;
         if (!on) { L.tbarEl.style.display = 'none'; continue; }
         const r = L.el.getBoundingClientRect();
@@ -6259,13 +6272,32 @@
         L.tbarEl.style.left = (r.left + r.width / 2 - st.left) + 'px';
         L.tbarEl.style.top = top + 'px';
       }
-      if (collageTextTopbarEl) collageTextTopbarEl.style.display = anyStrip ? 'flex' : 'none';
+      updateCollageTopbarVis_();   // v3.1 (Terry) — the container now also hosts the PHOTO-TILE strip; show it when EITHER kind of strip is on
+    }
+    // v3.1 (Terry) — ONE place decides whether the top-centre bar CONTAINER shows:
+    // any visible text/emoji strip OR the shared photo-tile strip. Called by both
+    // positionTextToolbarInView (text side) and setTileTopStripVisible_ (tile side)
+    // so the two never fight over the container's display.
+    function updateCollageTopbarVis_() {
+      if (!collageTextTopbarEl) return;
+      let any = !!(collageTileStripEl && collageTileStripEl.style.display === 'inline-flex');
+      if (!any) {
+        for (let i = 0; i < collageTexts.length; i++) {
+          const t = collageTexts[i];
+          if (t && t.topStripEl && t.topStripEl.style.display === 'inline-flex') { any = true; break; }
+        }
+      }
+      collageTextTopbarEl.style.display = any ? 'flex' : 'none';
     }
     // v3.1 (Terry SS2) — the shared TOP-CENTRE text bar container (Canva layout). Lives
     // in #collage-chrome (stage level, un-clipped); per-layer control strips inside it
     // are toggled by positionTextToolbarInView. pointerdown is swallowed so clicking a
     // control never reaches a stage/canvas deselect path.
     let collageTextTopbarEl = null;
+    // v3.1 (Terry) — the PHOTO-TILE master strip: ONE shared element (tiles are many —
+    // per-tile strips would leak), refreshed per selection by setTileTopStripVisible_.
+    // Declared up here so updateCollageTopbarVis_ can read it before the builder runs.
+    let collageTileStripEl = null, collageTileStripCtl_ = null, collageTileStripFor_ = null, collageTileStripSig_ = '';
     function ensureTextTopbar() {
       if (collageTextTopbarEl && collageTextTopbarEl.parentNode) return collageTextTopbarEl;
       collageTextTopbarEl = document.createElement('div');
@@ -9440,7 +9472,7 @@
       // when the tile / its layer is locked (orderCollageSelection reorders z directly).
       const tbLayer = document.createElement('button'); tbLayer.type = 'button'; tbLayer.className = 'ch-tb-btn chx-tb-layer'; tbLayer.setAttribute('data-pdr-tooltip', 'Move layer — click top to bring forward, bottom to send back');
       tbLayer.innerHTML = '<svg viewBox="0 0 24 24"><polygon points="12 3 18 10 6 10"/><polygon points="12 21 6 14 18 14"/></svg>';
-      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn chx-tb-dup'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');
+      const tbDup = document.createElement('button'); tbDup.type = 'button'; tbDup.className = 'ch-tb-btn chx-tb-dup ch-tb-open'; tbDup.setAttribute('data-pdr-tooltip', 'Duplicate');   // v3.1 (Terry) — ch-tb-open: in carousel mode this button anchors the shared "duplicate to pages" popover (active ring + closeTbPop sweep)
       tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
       const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn chx-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Remove from collage');
       tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
@@ -9515,7 +9547,20 @@
       tbLock.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLock(collageSelected); });
       tbLockLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) toggleItemLockLayer(collageSelected); });
       tbLayer.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (!collageSelected || collageSelected.isBg) return; const r = tbLayer.getBoundingClientRect(); orderCollageSelection(((e.clientY - r.top) < r.height / 2) ? 'forward' : 'backward'); });
-      tbDup.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) duplicateCollageItem(collageSelected); });
+      // v3.1 (Terry) — CAROUSEL: Duplicate opens the SAME "which pages?" popover text
+      // layers get (Duplicate here / Same spot on all pages / Same spot on pages…) so a
+      // photo/frame can land at the exact same spot on other pages. Single collage: the
+      // old immediate clone.
+      tbDup.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const it = collageSelected;
+        if (!it || it.isBg) return;
+        if (carouselMode && carouselPageCount > 1) {
+          openDupToPagesPop(tbDup, collageItemPage_(it),
+            () => duplicateCollageItem(it),
+            (pages) => duplicateCollageItemToPages(it, pages));
+        } else duplicateCollageItem(it);
+      });
       tbRem.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (collageSelected && !collageSelected.isBg) setItemOn(collageSelected, false); });
       collageChromeBox = box;
       collageChromeParts = { ring, tbar, tbLock, tbLockLayer, badge, tbDup };   // v3.0 round 537 — tbDup exposed so the tooltip can say "Duplicate background photo"
@@ -9530,6 +9575,9 @@
       // "phantom" square whose buttons all no-op (collageSelected is null → every handler
       // early-returns). positionSelectionChrome restores the box when a tile is selected.
       if (collageChromeBox) collageChromeBox.style.display = 'none';
+      // v3.1 (Terry) — the top-centre master bar is selection chrome too: no tile → no bar
+      // (covers deselect, background selection, and the measurement-badge re-activation path).
+      try { setTileTopStripVisible_(null); } catch (_) {}
     }
     // ─── v2.1 round 289 (Terry) — MULTI-SELECT floating chrome ───────────────
     // A marquee / Ctrl+click selection of 2+ tiles. Mirrors positionSelectionChrome's
@@ -9794,16 +9842,199 @@
       if (collageChromeBox && !collageSelected) collageChromeBox.style.display = 'none';
       collageChromeEl.classList.add('active');
     }
+    // ─── v3.1 (Terry) — PHOTO-TILE TOP-CENTRE MASTER BAR ───────────────────────
+    // The tile counterpart of the text layers' top-centre strips: ONE shared
+    // `.ch-toolbar.ch-tb-topstrip` element living in the SAME #collage-text-topbar
+    // container (so it inherits the AI-gradient pill CSS + the pointer-events:auto
+    // opt-in — #collage-chrome itself is a pointer-events:none passthrough). Built
+    // once, REFRESHED per selection (label/visible buttons flip between a photo and
+    // an empty frame); shown/hidden by positionSelectionChrome + hideSelectionChrome
+    // so it tracks tile selection, zoom, drags, and multi-select exactly like the
+    // handle box. Every action routes through the EXISTING handlers / undo paths.
+    // Open the side panel EXPANDED and focus one section (the round-223/229
+    // focusSubcat accordion) — the same recipe the context menu's "Enhance…" uses.
+    function openTilePanelSection_(secId) {
+      const it = collageSelected;
+      if (!it || it.isBg) return;
+      try { document.body.classList.remove('collage-panel-collapsed'); } catch (_) {}
+      try { layoutCanvasSize(); } catch (_) {}
+      try { focusSubcat(document.getElementById(secId)); } catch (_) {}
+      try { const d = document.getElementById(secId); if (d) d.scrollIntoView({ block: 'nearest' }); } catch (_) {}
+    }
+    // A slider popover that MIRRORS a side-panel slider: moving it sets the panel
+    // slider's value and dispatches 'input', so the panel's own handler runs (state →
+    // tile.enh → render → multi-select fan-out → locked-guard — the proven pipeline).
+    // Undo: the panel's pointerdown/up wrapper only fires for real panel clicks, so
+    // this wraps ONE begin/commit around the drag gesture; a typed value (wireTbValEdit)
+    // arrives as a lone 'input' with no gesture → it wraps itself. Same shell as the
+    // text toolbar's Spacing/Transparency popovers.
+    function mkTilePanelMirrorPop_(cls, title, panelSliderId, fmt) {
+      let pop = null, sl = null, val = null, dragging = false;
+      const build = () => {
+        if (pop) return pop;
+        pop = document.createElement('div'); pop.className = 'ch-tb-pop ' + cls;
+        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span></span>';
+        lbl.firstChild.textContent = title;
+        pop.appendChild(lbl);
+        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
+        sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0'; sl.max = '100'; sl.step = '1';
+        val = document.createElement('span'); val.className = 'ch-tb-slider-val';
+        sl.addEventListener('pointerdown', (ev) => {
+          ev.stopPropagation();
+          dragging = true;
+          beginCollageChange();
+          const up = () => { window.removeEventListener('pointerup', up); dragging = false; commitCollageChange(); };
+          window.addEventListener('pointerup', up);
+        });
+        sl.addEventListener('input', (ev) => {
+          ev.stopPropagation();
+          const it = collageSelected;
+          if (!it || it.isBg) return;
+          const lone = !dragging;   // typed / keyboard step → its own single undo step
+          if (lone) beginCollageChange();
+          const ps = document.getElementById(panelSliderId);
+          if (ps) { ps.value = String(sl.value); ps.dispatchEvent(new Event('input', { bubbles: true })); }
+          val.textContent = fmt(parseFloat(sl.value));
+          if (lone) commitCollageChange();
+        });
+        wireTbValEdit(val, sl, fmt);
+        row.appendChild(sl); row.appendChild(val); pop.appendChild(row);
+        document.body.appendChild(pop);
+        return pop;
+      };
+      return {
+        open(anchorBtn, curVal) {
+          build();
+          openTbPop_(pop, anchorBtn, () => { sl.value = String(Math.round(curVal)); val.textContent = fmt(curVal); });
+        },
+      };
+    }
+    let tileCropHintT_ = null;
+    function ensureTileTopStrip() {
+      if (collageTileStripEl && collageTileStripEl.parentNode) return collageTileStripEl;
+      const strip = document.createElement('div');
+      strip.className = 'ch-toolbar ch-tb-topstrip ch-tb-tilestrip';
+      strip.dataset.tileStrip = '1';   // exempts it from the text-bar self-heal sweep
+      strip.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+      const ctl = { photoOnly: [] };
+      const mkBtn = (cls, tip, svg) => {
+        const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-btn ' + cls;
+        b.setAttribute('data-pdr-tooltip', tip); if (svg) b.innerHTML = svg;
+        strip.appendChild(b); return b;
+      };
+      const mkSep = () => { const d = document.createElement('div'); d.className = 'ch-tb-sep'; strip.appendChild(d); return d; };
+      const live = () => { const it = collageSelected; return (it && !it.isBg && it.on) ? it : null; };
+      // ---- Replace / Add photo (both = requestFillFrame; label flips per placeholder) ----
+      const fillBtn = mkBtn('ch-tb-text ch-tb-fill', 'Swap in a different photo (keeps this spot and size)');
+      fillBtn.innerHTML = '<svg viewBox="0 0 24 24"></svg><span class="ch-tb-lbl">Replace photo…</span>';
+      ctl.fillBtn = fillBtn; ctl.fillSvg = fillBtn.querySelector('svg'); ctl.fillLbl = fillBtn.querySelector('.ch-tb-lbl');
+      // Same glyph paths the context menu uses (I.replace / I.add).
+      ctl.fillIconReplace = '<path d="M3 7v10a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V7"/><path d="m16 11-4-4-4 4"/><path d="M12 7v9"/>';
+      ctl.fillIconAdd = '<rect x="3" y="3" width="18" height="18" rx="2"/><path d="M12 8v8M8 12h8"/>';
+      fillBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) requestFillFrame(it); });
+      // ---- Crop: crop is the drag affordance (the 4 gold edge bars) — pulse them ----
+      const cropBtn = mkBtn('ch-tb-crop', 'Crop — drag the gold bars on the photo’s edges to trim', '<svg viewBox="0 0 24 24"><path d="M6.13 1 6 16a2 2 0 0 0 2 2h15"/><path d="M1 6.13 16 6a2 2 0 0 1 2 2v15"/></svg>');
+      ctl.photoOnly.push(cropBtn);
+      cropBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const it = live(); if (!it || it.locked || !collageChromeBox) return;
+        try {
+          collageChromeBox.classList.remove('crop-hint');
+          void collageChromeBox.offsetWidth;   // restart the animation on repeat clicks
+          collageChromeBox.classList.add('crop-hint');
+          if (tileCropHintT_) clearTimeout(tileCropHintT_);
+          tileCropHintT_ = setTimeout(() => { tileCropHintT_ = null; try { collageChromeBox.classList.remove('crop-hint'); } catch (_) {} }, 1800);
+        } catch (_) {}
+      });
+      // ---- Flip H / Flip V / Rotate 90° (same handlers the context menu uses) ----
+      const fH = mkBtn('ch-tb-fliph', 'Flip horizontally (mirror left to right)', '<svg viewBox="0 0 24 24"><path d="M12 3v18M16 7l4 5-4 5M8 7l-4 5 4 5"/></svg>');
+      const fV = mkBtn('ch-tb-flipv', 'Flip vertically (top to bottom)', '<svg viewBox="0 0 24 24"><path d="M3 12h18M7 8l5-4 5 4M7 16l5 4 5-4"/></svg>');
+      const r90 = mkBtn('ch-tb-rot90', 'Rotate 90°', '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.7-6.4"/><path d="M21 4v5h-5"/></svg>');
+      ctl.photoOnly.push(fH, fV);
+      fH.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) flipCollageItem(it, 'h'); });
+      fV.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) flipCollageItem(it, 'v'); });
+      r90.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (it) rotateCollageItem90(it); });
+      mkSep();
+      // ---- Corners ▾ / Fade ▾ — popover sliders MIRRORING the panel sliders ----
+      const cornersBtn = mkBtn('ch-tb-text ch-tb-open ch-tb-cornersbtn', 'Curved corners');
+      cornersBtn.innerHTML = '<span class="ch-tb-lbl">Corners</span><span class="ch-tb-cv" aria-hidden="true">&#9662;</span>';
+      const cornersPop = mkTilePanelMirrorPop_('ch-tb-cornerspop', 'Curved corners', 'slider-corners', (v) => String(Number.isFinite(v) ? Math.round(v) : 0));
+      cornersBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const it = live(); if (!it) return;
+        const cur = (it.enh && Array.isArray(it.enh.corners)) ? Math.round((it.enh.corners[0] || 0) * 100) : 0;
+        cornersPop.open(cornersBtn, Math.max(0, Math.min(100, cur)));
+      });
+      const fadeBtn = mkBtn('ch-tb-text ch-tb-open ch-tb-fadebtn', 'Fade (how see-through the photo is)');
+      fadeBtn.innerHTML = '<span class="ch-tb-lbl">Fade</span><span class="ch-tb-cv" aria-hidden="true">&#9662;</span>';
+      const fadePop = mkTilePanelMirrorPop_('ch-tb-fadepop', 'Fade', 'slider-opacity', (v) => (Number.isFinite(v) ? Math.round(v) : 100) + '%');
+      fadeBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        const it = live(); if (!it) return;
+        const cur = (it.enh && typeof it.enh.opacity === 'number') ? Math.round(it.enh.opacity * 100) : 100;
+        fadePop.open(fadeBtn, Math.max(0, Math.min(100, cur)));
+      });
+      mkSep();
+      // ---- Section-jump chips: expand the panel + focus that section ----
+      const chips = [
+        ['Looks', 'Open Looks — one-tap styles', 'enhance-looks-collapse'],
+        ['Effects', 'Open Effects — fade, blend, corners, blur', 'enhance-fx'],
+        ['Glow', 'Open Glow & shadow', 'enhance-edge'],
+        ['Tone', 'Open Tone & color', 'enhance-levels'],
+      ];
+      chips.forEach((c) => {
+        const b = mkBtn('ch-tb-chip', c[1]);
+        b.textContent = c[0];
+        b.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); openTilePanelSection_(c[2]); });
+        ctl.photoOnly.push(b);
+      });
+      ensureTextTopbar().appendChild(strip);
+      collageTileStripEl = strip;
+      collageTileStripCtl_ = ctl;
+      return strip;
+    }
+    // Refresh the strip's per-selection state: an EMPTY FRAME shows "Add photo…" and
+    // hides the photo-only controls (crop/flip/section chips act on a photo).
+    function refreshTileTopStrip_(it) {
+      const ctl = collageTileStripCtl_;
+      if (!ctl) return;
+      const ph = !!it.placeholder;
+      if (ctl.fillLbl) ctl.fillLbl.textContent = ph ? 'Add photo…' : 'Replace photo…';
+      if (ctl.fillSvg) ctl.fillSvg.innerHTML = ph ? ctl.fillIconAdd : ctl.fillIconReplace;
+      if (ctl.fillBtn) ctl.fillBtn.setAttribute('data-pdr-tooltip', ph ? 'Add a photo to this frame' : 'Swap in a different photo (keeps this spot and size)');
+      ctl.photoOnly.forEach((b) => { b.style.display = ph ? 'none' : ''; });
+    }
+    // Show/hide + (cheaply) refresh the tile strip. Called from positionSelectionChrome
+    // (which already runs on selection changes, drags, zoom, undo/redo) and from
+    // hideSelectionChrome. Refresh only when the selected ITEM or its frame-ness
+    // changed — positionSelectionChrome runs per-frame during drags, so no DOM churn.
+    function setTileTopStripVisible_(it) {
+      const on = !!(it && !it.isBg && it.on && it.el);
+      if (on) {
+        const strip = ensureTileTopStrip();
+        const sig = it.placeholder ? 'ph' : 'p';
+        if (it !== collageTileStripFor_ || sig !== collageTileStripSig_) {
+          refreshTileTopStrip_(it);
+          collageTileStripFor_ = it; collageTileStripSig_ = sig;
+        }
+        strip.style.display = 'inline-flex';
+      } else if (collageTileStripEl) {
+        collageTileStripEl.style.display = 'none';
+        collageTileStripFor_ = null; collageTileStripSig_ = '';
+      }
+      updateCollageTopbarVis_();
+    }
     function positionSelectionChrome() {
       if (!collageChromeEl || !collageCanvasEl || !collageStageEl) return;
       // v2.1 round 289 (Terry) — a 2+ selection draws floating per-item rings + a group
       // box instead of the single-item handle box.
-      if (positionMultiSelectChrome()) return;
+      if (positionMultiSelectChrome()) { setTileTopStripVisible_(null); return; }   // v3.1 (Terry) — the master bar acts on ONE tile; hide it for a 2+ selection
       hideMultiSelectChrome();
       const it = collageSelected;
       // Overlay is for REAL tiles only: the background uses the canvas ring; nothing /
       // an off tile hides it. (Text layers keep their own in-canvas chrome.)
       if (!it || it.isBg || !it.on || !it.el) { hideSelectionChrome(); return; }
+      setTileTopStripVisible_(it);   // v3.1 (Terry) — the top-centre master bar tracks the single-tile selection
       const box = ensureChromeBox();
       if (!box) return;
       const canvasRect = collageCanvasEl.getBoundingClientRect();   // POST-transform: includes zoom/pan + Behaviour A centring
@@ -10808,6 +11039,92 @@
         }
       }
     }
+    // v3.1 (Terry) — EMOJI top-centre strip (emoji had NO strip; only the mini
+    // Lock/Dup/Delete bar). A gated variant of buildTextToolbarControls with just the
+    // controls that make sense for a glyph layer: [Size − n +] (same sizeFrac stepper
+    // pattern as text), [Transparency ▾] (same opacity slider popover), [Rotate 90°]
+    // (quarter-turn — snapTextRot90's snap semantics, advancing when already square).
+    // Same undo paths (begin/commitCollageChange) + the same show/hide flow: the strip
+    // is layer.topStripEl, so positionTextToolbarInView / the teardown paths already
+    // manage it with zero extra wiring.
+    function buildEmojiStripControls(layer, strip, handles) {
+      const ctl = layer._tbCtl || {};
+      layer._tbCtl = ctl;
+      const push = (node) => { if (handles) handles.push(node); return node; };
+      const ensureSel = () => { if (selectedText !== layer) { try { selectText(layer); } catch (_) {} } };
+      // ---- SIZE: − [number] + (percent of the collage short side, == the panel) ----
+      const sizeWrap = document.createElement('div'); sizeWrap.className = 'ch-tb-size';
+      const sizeMinus = document.createElement('button'); sizeMinus.type = 'button'; sizeMinus.className = 'ch-tb-btn ch-tb-step'; sizeMinus.textContent = '−'; sizeMinus.setAttribute('data-pdr-tooltip', 'Smaller');
+      const sizeNum = document.createElement('input'); sizeNum.type = 'number'; sizeNum.className = 'ch-tb-num'; sizeNum.min = '2'; sizeNum.max = '40'; sizeNum.step = '1'; sizeNum.setAttribute('data-pdr-tooltip', 'Emoji size (% of the collage short side)');
+      const sizePlus = document.createElement('button'); sizePlus.type = 'button'; sizePlus.className = 'ch-tb-btn ch-tb-step'; sizePlus.textContent = '+'; sizePlus.setAttribute('data-pdr-tooltip', 'Bigger');
+      ctl.sizeNum = sizeNum;   // refreshTextToolbar already syncs ctl.sizeNum when present
+      const curSizePct = () => Math.round((layer.sizeFrac || 0.12) * 100);
+      const applySizePct = (pct) => {
+        const p = Math.max(2, Math.min(40, Math.round(pct)));
+        ensureSel();
+        beginCollageChange();
+        layer.sizeFrac = p / 100;
+        renderTextLayer(layer);
+        commitCollageChange();
+        sizeNum.value = String(p);
+        try { syncTextControls(); } catch (_) {}
+      };
+      sizeMinus.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); applySizePct(curSizePct() - 1); });
+      sizePlus.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); applySizePct(curSizePct() + 1); });
+      sizeNum.addEventListener('click', (e) => e.stopPropagation());
+      sizeNum.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Enter') { e.preventDefault(); applySizePct(parseInt(sizeNum.value, 10) || curSizePct()); sizeNum.blur(); } });
+      sizeNum.addEventListener('change', (e) => { e.stopPropagation(); applySizePct(parseInt(sizeNum.value, 10) || curSizePct()); });
+      sizeWrap.appendChild(sizeMinus); sizeWrap.appendChild(sizeNum); sizeWrap.appendChild(sizePlus);
+      strip.appendChild(sizeWrap); push(sizeWrap); push(sizeMinus); push(sizeNum); push(sizePlus);
+      strip.appendChild(document.createElement('div')).className = 'ch-tb-sep';
+      // ---- TRANSPARENCY: the same slider popover the text strip uses (opacity 0–100) ----
+      const opBtn = document.createElement('button'); opBtn.type = 'button'; opBtn.className = 'ch-tb-btn ch-tb-open ch-tb-opacity'; opBtn.setAttribute('data-pdr-tooltip', 'Transparency');
+      opBtn.innerHTML = '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 3a9 9 0 0 0 0 18z" fill="currentColor" stroke="none"/></svg>';
+      let opPop = null;
+      const buildOpPop = () => {
+        if (opPop) return opPop;
+        opPop = document.createElement('div'); opPop.className = 'ch-tb-pop ch-tb-opacitypop';
+        const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.innerHTML = '<span>Transparency</span>';
+        opPop.appendChild(lbl);
+        const row = document.createElement('div'); row.className = 'ch-tb-slider-row';
+        const sl = document.createElement('input'); sl.type = 'range'; sl.className = 'enhance-slider'; sl.min = '0'; sl.max = '100'; sl.step = '1';
+        const val = document.createElement('span'); val.className = 'ch-tb-slider-val';
+        const fmt = (v) => (Number.isFinite(v) ? Math.round(v) + '%' : '100%');
+        sl.addEventListener('input', (ev) => {
+          ev.stopPropagation();
+          const v = Math.max(0, Math.min(100, parseInt(sl.value, 10)));
+          ensureSel();
+          beginCollageChange();
+          layer.opacity = v;
+          val.textContent = fmt(v);
+          renderTextLayer(layer);
+          commitCollageChange();
+        });
+        sl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+        wireTbValEdit(val, sl, fmt);
+        ctl.opSlider = sl; ctl.opVal = val; ctl.opFmt = fmt;
+        row.appendChild(sl); row.appendChild(val); opPop.appendChild(row);
+        document.body.appendChild(opPop);
+        return opPop;
+      };
+      opBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        const pop = buildOpPop();
+        openTbPop_(pop, opBtn, () => {
+          const v = (typeof layer.opacity === 'number') ? layer.opacity : 100;
+          ctl.opSlider.value = String(v); ctl.opVal.textContent = ctl.opFmt(v);
+        });
+      });
+      strip.appendChild(opBtn); push(opBtn);
+      // ---- ROTATE 90°: quarter turns via the snap-rotate machinery ----
+      const rotBtn = document.createElement('button'); rotBtn.type = 'button'; rotBtn.className = 'ch-tb-btn ch-tb-rot90'; rotBtn.setAttribute('data-pdr-tooltip', 'Rotate 90°');
+      rotBtn.innerHTML = '<svg viewBox="0 0 24 24"><path d="M21 12a9 9 0 1 1-2.7-6.4"/><path d="M21 4v5h-5"/></svg>';
+      rotBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); ensureSel(); rotateTextLayer90(layer); });
+      strip.appendChild(rotBtn); push(rotBtn);
+      // Prime the size readout once.
+      try { refreshTextToolbar(layer); } catch (_) {}
+    }
     // Create/update a layer's live DOM wrapper: an absolutely-positioned div
     // in collageCanvasEl, CENTERED at xFrac/yFrac (translate -50%), rotated,
     // sitting ABOVE the tiles. Its child canvas is replaced on every render so
@@ -10882,6 +11199,18 @@
             try { syncTextControls(); } catch (_) {}
           });
           tbar.appendChild(tbMore); handles.push(tbMore);
+        } else {
+          // v3.1 (Terry) — EMOJI layers get a small top-centre strip of their own
+          // (Size / Transparency / Rotate 90°) — same build path + container as the
+          // text strips, so positionTextToolbarInView + the teardown paths manage it.
+          try {
+            const strip = document.createElement('div');
+            strip.className = 'ch ch-toolbar ch-tb-topstrip';
+            strip.addEventListener('pointerdown', (e) => { e.stopPropagation(); });
+            buildEmojiStripControls(layer, strip, handles);
+            ensureTextTopbar().appendChild(strip);
+            layer.topStripEl = strip;
+          } catch (_) {}
         }
         // Drag the wrapper to move the text — but IGNORE pointerdowns that land
         // on a handle (mirror the tile guard) so resize/rotate don't also drag.
@@ -11848,27 +12177,31 @@
     // (source page disabled, others default ON) + Add, with a Back affordance. ONE
     // shared element rebuilt per open (only one .ch-tb-pop is ever open — openTbPop_
     // closes the rest), so layers don't each leak a popover node.
-    let textDupPopEl = null;
-    function openTextDupPop(layer, anchorBtn) {
-      if (!layer || !anchorBtn) return;
-      if (!textDupPopEl) {
-        textDupPopEl = document.createElement('div');
-        textDupPopEl.className = 'ch-tb-pop ch-tb-duppop';
-        textDupPopEl.addEventListener('pointerdown', (e) => e.stopPropagation());   // clicks inside must never reach stage/document deselect handlers
-        document.body.appendChild(textDupPopEl);
+    // v3.1 (Terry) — GENERALIZED: the UI shell is now openDupToPagesPop(anchorBtn,
+    // srcPage, onHere, onToPages), shared by TEXT/EMOJI layers (the mini bar's tbDup)
+    // AND photo/frame tiles (the stage overlay's chx tbDup) — one popover element,
+    // one CSS set, two thin callers that supply the actual duplicate actions.
+    let dupToPagesPopEl = null;
+    function openDupToPagesPop(anchorBtn, srcPage, onHere, onToPages) {
+      if (!anchorBtn) return;
+      if (!dupToPagesPopEl) {
+        dupToPagesPopEl = document.createElement('div');
+        dupToPagesPopEl.className = 'ch-tb-pop ch-tb-duppop';
+        dupToPagesPopEl.addEventListener('pointerdown', (e) => e.stopPropagation());   // clicks inside must never reach stage/document deselect handlers
+        document.body.appendChild(dupToPagesPopEl);
       }
-      const pop = textDupPopEl;
+      const pop = dupToPagesPopEl;
       const N = Math.max(1, carouselPageCount);
-      const srcPage = Math.max(0, Math.min(N - 1, Math.floor((layer.xFrac || 0) * N)));
-      const allOthers = () => { const a = []; for (let i = 0; i < N; i++) { if (i !== srcPage) a.push(i); } return a; };
+      const sp = Math.max(0, Math.min(N - 1, Math.floor(srcPage) || 0));
+      const allOthers = () => { const a = []; for (let i = 0; i < N; i++) { if (i !== sp) a.push(i); } return a; };
       const mkOpt = (label) => { const b = document.createElement('button'); b.type = 'button'; b.className = 'ch-tb-dup-opt'; b.textContent = label; return b; };
       const buildMain = () => {
         pop.innerHTML = '';
         const lbl = document.createElement('div'); lbl.className = 'ch-tb-pop-lbl'; lbl.textContent = 'Duplicate'; pop.appendChild(lbl);
         const here = mkOpt('Duplicate here');
-        here.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); closeTbPop(); duplicateTextLayer(layer); });
+        here.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); closeTbPop(); try { onHere(); } catch (_) {} });
         const all = mkOpt('Same spot on all pages');
-        all.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); closeTbPop(); duplicateTextToPages(layer, allOthers()); });
+        all.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); closeTbPop(); try { onToPages(allOthers()); } catch (_) {} });
         const pick = mkOpt('Same spot on pages…');
         pick.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); buildPages(); positionTbPop(pop, anchorBtn); });
         pop.appendChild(here); pop.appendChild(all); pop.appendChild(pick);
@@ -11885,7 +12218,7 @@
         const row = document.createElement('div'); row.className = 'ch-tb-dup-pages';
         for (let i = 0; i < N; i++) {
           const chip = document.createElement('button'); chip.type = 'button'; chip.className = 'ch-tb-dup-chip'; chip.textContent = String(i + 1);
-          if (i === srcPage) { chip.disabled = true; }   // the original's page — nothing to add there
+          if (i === sp) { chip.disabled = true; }   // the original's page — nothing to add there
           else {
             chip.classList.add('active');
             chip.addEventListener('click', (e) => {
@@ -11901,11 +12234,21 @@
           e.stopPropagation(); e.preventDefault();
           const picked = Array.from(on).sort((a, b) => a - b);
           closeTbPop();
-          duplicateTextToPages(layer, picked);
+          try { onToPages(picked); } catch (_) {}
         });
         pop.appendChild(row); pop.appendChild(addBtn);
       };
       openTbPop_(pop, anchorBtn, buildMain);
+    }
+    // Thin TEXT/EMOJI caller (emoji layers flow through here too — the dedup guard in
+    // duplicateTextToPages compares layer.text, which is the emoji character).
+    function openTextDupPop(layer, anchorBtn) {
+      if (!layer || !anchorBtn) return;
+      const N = Math.max(1, carouselPageCount);
+      const srcPage = Math.max(0, Math.min(N - 1, Math.floor((layer.xFrac || 0) * N)));   // centre-anchored layer → the page its centre sits on
+      openDupToPagesPop(anchorBtn, srcPage,
+        () => duplicateTextLayer(layer),
+        (pages) => duplicateTextToPages(layer, pages));
     }
     // Drag a text layer: mirrors the tile drag math (delta in fractions of the
     // canvas, clamp 0..1) but the layer is CENTER-anchored, so xFrac/yFrac are
@@ -12219,6 +12562,21 @@
       let r = Math.round((layer.rot || 0) / 90) * 90;
       r = ((r % 360) + 360) % 360;
       layer.rot = r;
+      renderTextLayer(layer);
+      commitCollageChange();
+    }
+    // v3.1 (Terry) — the emoji strip's Rotate button: snapTextRot90's snap alone is a
+    // NO-OP on a layer already sitting square (the same lesson the tile context menu's
+    // rotate90 learned), so: off-angle → snap to the nearest 90° (exactly snapTextRot90);
+    // already square → advance a quarter turn. One undo step either way.
+    function rotateTextLayer90(layer) {
+      if (!layer) return;
+      if (layer.locked) { selectText(layer); return; }
+      const cur = ((Math.round(layer.rot || 0) % 360) + 360) % 360;
+      if (cur % 90 !== 0) { snapTextRot90(layer); return; }
+      beginCollageChange();
+      selectText(layer);
+      layer.rot = (cur + 90) % 360;
       renderTextLayer(layer);
       commitCollageChange();
     }
@@ -15844,6 +16202,31 @@
       commitCollageChange();
     }
 
+    // v3.1 (Terry) — Flip / Rotate-90 EXTRACTED to top level from the context-menu
+    // closure, so the new photo-tile top-centre strip and the context menu run ONE
+    // proven recipe (same guards, same single undo step, same panel re-sync).
+    function syncEnhPanelTile_(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
+    function flipCollageItem(it, ax) {
+      if (!it || it.locked) return;
+      beginCollageChange();
+      it.enh = it.enh || defaultBgEnh();
+      if (ax === 'h') it.enh.flipH = !it.enh.flipH; else it.enh.flipV = !it.enh.flipV;
+      renderCollageItem(it);
+      commitCollageChange();
+      syncEnhPanelTile_(it);
+    }
+    // ADD 90° (snapItemRot90 only SNAPS to the nearest 90° — a no-op on a tile already at 0°).
+    function rotateCollageItem90(it) {
+      if (!it || it.isBg) return;
+      const targets = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0) ? collageSelection.slice() : [it];
+      if (targets.every(function (x) { return !x || x.locked; })) return;
+      beginCollageChange();
+      targets.forEach(function (x) { if (x && !x.isBg && !x.locked && x.on) { x.rot = ((((x.rot || 0) + 90) % 360) + 360) % 360; renderCollageItem(x); } });
+      try { updateAngleSlider(); } catch (_) {}
+      commitCollageChange();
+      syncEnhPanelTile_(it);
+    }
+
     // v2.1 round 203 (Terry) — Duplicate toolbar button. Clone the tile model
     // (same path/idx; deep-copy enh + crop; carry zoom/pan/rot/aspect/wFrac/
     // bgRemovedPath; clone is unlocked), offset by ~+0.03 (clamped on-canvas),
@@ -15852,15 +16235,23 @@
     // so duplicate / paste / multi-duplicate share ONE proven recipe. Builds +
     // DOM-mounts + repaints a copy of `it`, offset by `off` fraction (default
     // 0.03), and RETURNS it. Does NOT touch undo/selection (callers wrap those).
-    function makeCollageClone(it, off) {
+    function makeCollageClone(it, off, pos) {
       if (!it || it.isBg) return null;
       const ih = itemHeightFrac(it);
       const OFF = (typeof off === 'number') ? off : 0.03;
-      const nx = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, (it.xFrac || 0) + OFF));
-      const ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
+      let nx = Math.max(-it.wFrac / 2, Math.min(1 - it.wFrac / 2, (it.xFrac || 0) + OFF));
+      let ny = Math.max(-ih / 2, Math.min(1 - ih / 2, (it.yFrac || 0) + OFF));
+      // v3.1 (Terry) — POSITION OVERRIDE for the carousel "same spot on other pages"
+      // batch: the caller supplies the exact target fractions, UNCLAMPED, so a copy
+      // lands at the source's precise intra-page spot (the clamp above is for the
+      // nudge-offset duplicate and would drift an edge-hanging tile).
+      if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') { nx = pos.x; ny = pos.y; }
       const clone = {
         idx: it.idx, path: it.path, on: true, placeholder: !!it.placeholder,   // v2.1 round 319 (Terry) — duplicating a frame keeps it a frame
         bgPhoto: !!it.bgPhoto,   // v3.0 round 537 (Terry) — duplicating a background photo makes another background photo (same privileges: effects, purple chrome, chip indicator)
+        framed: !!it.framed,   // v3.1 (Terry) — the clone keeps the decorative-frame flag (was silently dropped)
+        coverFill: !!it.coverFill,   // v3.1 (Terry) — a filled frame / backdrop tile clones as coverFill too — without this the copy re-rendered by PHOTO aspect and the frame's box shape was lost
+        boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined,   // v3.1 (Terry) — the coverFill box shape rides along (same field the snapshot carries)
         xFrac: nx, yFrac: ny, wFrac: it.wFrac, aspect: it.aspect, rot: it.rot,
         z: ++collageZTop, el: null, imgEl: null, clipEl: null,
         locked: false,
@@ -15881,6 +16272,42 @@
       beginCollageChange();
       const clone = makeCollageClone(it, 0.03);
       if (clone) selectCollageItem(clone);
+      updateCollageFilmstrip();
+      commitCollageChange();
+    }
+    // v3.1 (Terry) — CAROUSEL "duplicate to pages" for PHOTO/FRAME tiles: a copy of the
+    // tile on each requested page at the SAME intra-page spot. Tiles are LEFT-edge
+    // anchored, so the source page is the one holding the tile's CENTRE
+    // (xFrac + wFrac/2), and newXFrac = xFrac + (targetPage − srcPage)/N (yFrac
+    // unchanged) lands the copy exactly where the original sits on its own page.
+    // Mirrors duplicateTextToPages: ONE undo step for the whole batch, a target page is
+    // SKIPPED when a copy is already parked at (about) that spot — same it.path +
+    // |Δx|,|Δy| < 0.002 — and the LAST created copy ends up selected. Works for
+    // framed/placeholder/coverFill tiles too (they're all items; makeCollageClone is
+    // the single-source field list, taken with a position override).
+    function collageItemPage_(it) {
+      const N = Math.max(1, carouselPageCount);
+      return Math.max(0, Math.min(N - 1, Math.floor(((it.xFrac || 0) + (it.wFrac || 0) / 2) * N)));
+    }
+    function duplicateCollageItemToPages(it, pages) {
+      if (!it || it.isBg || !pages || !pages.length) return;
+      const N = Math.max(1, carouselPageCount);
+      const srcPage = collageItemPage_(it);
+      const ny = it.yFrac || 0;
+      const jobs = [];   // target xFracs that pass the already-there guard
+      pages.forEach((p) => {
+        if (p === srcPage || p < 0 || p >= N) return;
+        const nx = (it.xFrac || 0) + (p - srcPage) / N;
+        const already = collageItems.some((t) => t && t !== it && t.on && !t.removed && !t.isBg
+          && t.path === it.path
+          && Math.abs((t.xFrac || 0) - nx) < 0.002 && Math.abs((t.yFrac || 0) - ny) < 0.002);
+        if (!already) jobs.push(nx);
+      });
+      if (!jobs.length) return;   // everything already there — don't open an empty undo step
+      beginCollageChange();
+      let last = null;
+      jobs.forEach((nx) => { const c = makeCollageClone(it, 0, { x: nx, y: ny }); if (c) last = c; });
+      if (last) selectCollageItem(last);
       updateCollageFilmstrip();
       commitCollageChange();
     }
@@ -20250,18 +20677,10 @@
         function onEsc(e) { if (e.key === 'Escape') hideAll(); }
         function armDismiss() { document.addEventListener('pointerdown', onOutside, true); document.addEventListener('keydown', onEsc, true); window.addEventListener('blur', hideAll); }
         function sync(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
-        function flip(it, ax) { if (!it || it.locked) return; beginCollageChange(); it.enh = it.enh || defaultBgEnh(); if (ax === 'h') it.enh.flipH = !it.enh.flipH; else it.enh.flipV = !it.enh.flipV; renderCollageItem(it); commitCollageChange(); sync(it); }
+        function flip(it, ax) { flipCollageItem(it, ax); }   // v3.1 (Terry) — body extracted to top level (shared with the tile top strip)
         function centre(it, ax) { if (!it || it.locked) return; beginCollageChange(); if (ax === 'h') it.xFrac = Math.max(0, (1 - it.wFrac) / 2); else { var ih = itemHeightFrac(it); it.yFrac = Math.max(0, (1 - ih) / 2); } renderCollageItem(it); commitCollageChange(); }
         // ADD 90° (snapItemRot90 only SNAPS to the nearest 90° — a no-op on a tile already at 0°).
-        function rotate90(it) {
-          if (!it || it.isBg) return;
-          var targets = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0) ? collageSelection.slice() : [it];
-          if (targets.every(function (x) { return !x || x.locked; })) return;
-          beginCollageChange();
-          targets.forEach(function (x) { if (x && !x.isBg && !x.locked && x.on) { x.rot = ((((x.rot || 0) + 90) % 360) + 360) % 360; renderCollageItem(x); } });
-          try { updateAngleSlider(); } catch (_) {}
-          commitCollageChange(); sync(it);
-        }
+        function rotate90(it) { rotateCollageItem90(it); }   // v3.1 (Terry) — body extracted to top level (shared with the tile top strip)
         function copyStyle(it) { try { copiedStyle = JSON.parse(JSON.stringify(it.enh || defaultBgEnh())); } catch (_) {} }
         function pasteStyle(it) { if (!it || !copiedStyle || it.locked) return; beginCollageChange(); it.enh = JSON.parse(JSON.stringify(copiedStyle)); renderCollageItem(it); commitCollageChange(); sync(it); }
         function resetEdits(it) { if (!it || it.locked) return; beginCollageChange(); it.enh = defaultBgEnh(); it.zoom = 1; it.panX = 0; it.panY = 0; it.rot = 0; renderCollageItem(it); commitCollageChange(); sync(it); }
