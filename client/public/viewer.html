@@ -3015,9 +3015,23 @@
     .collage-scrollbar-v .collage-scrollbar-thumb { left: 0; right: 0; min-height: 28px; }
     /* v3.1 (Terry) — FORMAT PAINTER: while the roller is loaded, every text box shows the copy cursor (click
        to paint this format onto it), and the roller button glows gold so it's clear you're in paint mode. */
-    body.collage-format-paint .collage-text, body.collage-format-paint .collage-text * { cursor: copy !important; }
+    body.collage-format-paint .collage-text, body.collage-format-paint .collage-text *,
+    body.collage-format-paint .collage-item, body.collage-format-paint .collage-item * { cursor: copy !important; }
     body.collage-format-paint .ch-tb-fmtpaint { background: #FEC242; color: #14121f; }
     body.collage-format-paint .ch-tb-fmtpaint svg { stroke: #14121f; }
+    /* v3.1 (Terry) — FORMAT PAINTER per-apply CHECKBOX popup: pick which parts (Style/Effect, or Tone/
+       Effects/Glow) to carry onto the clicked layer, then Apply. Floats at the click, above the canvas. */
+    .collage-fmt-popup { position: fixed; z-index: 200003; background: #1e1b33; border: 1px solid rgba(254,194,66,0.55); border-radius: 10px; padding: 10px 12px; box-shadow: 0 12px 34px rgba(0,0,0,0.55); min-width: 172px; font-size: 12.5px; color: #e8e3ff; }
+    .collage-fmt-popup .cfp-title { font-weight: 600; margin-bottom: 8px; color: #ffd778; }
+    .collage-fmt-popup .cfp-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; border-radius: 5px; }
+    .collage-fmt-popup .cfp-row:hover { background: rgba(255,255,255,0.05); }
+    .collage-fmt-popup .cfp-row input { accent-color: #FEC242; width: 15px; height: 15px; cursor: pointer; }
+    .collage-fmt-popup .cfp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+    .collage-fmt-popup .cfp-actions button { padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
+    .collage-fmt-popup .cfp-cancel { background: transparent; border-color: rgba(255,255,255,0.18); color: #c9c3e8; }
+    .collage-fmt-popup .cfp-cancel:hover { background: rgba(255,255,255,0.06); }
+    .collage-fmt-popup .cfp-apply { background: #FEC242; color: #14121f; }
+    .collage-fmt-popup .cfp-apply:hover { background: #ffd257; }
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     /* v2.1 round 203 (Terry) — collage wears gold: the corner resize dots,
@@ -10371,6 +10385,11 @@
         b.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); openTilePanelSection_(c[2]); });
         ctl.photoOnly.push(b);
       });
+      // ---- FORMAT PAINTER (v3.1 Terry): copy THIS photo's look, then click other photos/emojis and tick what to carry ----
+      mkSep();
+      const pFmtBtn = mkBtn('ch-tb-fmtpaint', 'Copy this photo’s look — then click other photos/emojis and tick what to paint on (Esc to stop)', '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="5" rx="1"/><path d="M16 6.5h3a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-8a1 1 0 0 0-1 1v2"/><rect x="9" y="15" width="4.6" height="5" rx="1"/></svg>');
+      pFmtBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); const it = live(); if (!it) return; if (collageFormatBrush) stopFormatPaint_(); else startFormatPaint_(it, 'enh'); });
+      ctl.photoOnly.push(pFmtBtn);
       ensureTextTopbar().appendChild(strip);
       collageTileStripEl = strip;
       collageTileStripCtl_ = ctl;
@@ -11154,55 +11173,125 @@
     // toolbar (non-emoji only). Stores refs on `layer._tbCtl` so refreshTextToolbar
     // can update their displayed state. `beforeNode` = the first action button
     // (tbLock) to insert ahead of.
-    // ===== v3.1 (Terry) — FORMAT PAINTER for text boxes. Click the paint-roller on a text box's toolbar to
-    // COPY its format, then click other text boxes to paint that same format onto them. Sticky: paint as many
-    // as you like; Esc, clicking away, or clicking the roller again stops. Copies the LOOK — font, weight,
-    // size, B/I/U/S, colour, alignment, case, line spacing, transparency, effect — NEVER the words, the
-    // position, or the box shape. Text layers only (emoji layers have no font/format to paint). =====
-    const TEXT_FORMAT_KEYS = ['font', 'fontWeight', 'bold', 'italic', 'underline', 'strike', 'color', 'align', 'letterCase', 'lineHeight', 'opacity', 'sizeFrac', 'effect', 'effectStrength', 'effectColor'];
-    let collageFormatBrush = null, collageFmtPaintWired_ = false;
-    function captureTextFormat_(layer) {
-      const f = {}; TEXT_FORMAT_KEYS.forEach((k) => { f[k] = layer[k]; }); f._srcId = layer.id; return f;
+    // ===== v3.1 (Terry) — UNIVERSAL FORMAT PAINTER. A paint-roller on any layer's toolbar (text box, photo,
+    // emoji) COPIES its look; clicking another layer of the same family then opens a small CHECKBOX popup to
+    // pick exactly which parts to carry, and applies them. Sticky: paint many; Esc / click-away / click the
+    // roller again stops. TWO families: TEXT (Style, Effect) and ENH = photos + emojis (Tone & colour,
+    // Effects, Glow & shadow). NEVER copies the words, the position, or the box shape. =====
+    const FMT_GROUPS = {
+      text: [
+        { key: 'style',  label: 'Text style',    fields: ['font', 'fontWeight', 'bold', 'italic', 'underline', 'strike', 'color', 'align', 'letterCase', 'lineHeight', 'opacity', 'sizeFrac'] },
+        { key: 'effect', label: 'Effect',        fields: ['effect', 'effectStrength', 'effectColor'] },
+      ],
+      enh: [
+        { key: 'tone',    label: 'Tone & colour', fields: ['brightness', 'contrast', 'saturation', 'temperature', 'colour', 'tone'] },
+        { key: 'effects', label: 'Effects',       fields: ['opacity', 'blend', 'corners', 'blur', 'vignette', 'vignetteShape', 'grain', 'pixelate', 'borderColor', 'borderWeight', 'borderPct'] },
+        { key: 'glow',    label: 'Glow & shadow', fields: ['glow', 'dropShadow', 'lift', 'neon', 'outline', 'glowColor', 'dropShadowColor', 'liftColor', 'neonColor', 'outlineColor'] },
+      ],
+    };
+    // Remembered checkbox picks per family, so the per-apply popup PRE-TICKS last time's choice (fast repeat).
+    const collageFmtLastPick = { text: { style: true, effect: true }, enh: { tone: true, effects: true, glow: true } };
+    let collageFormatBrush = null, collageFmtPaintWired_ = false, collageFmtPopupEl = null;
+    const _fmtClone = (v) => Array.isArray(v) ? v.slice() : v;
+    // Which family a layer belongs to: 'text' (a text box) or 'enh' (a photo tile OR an emoji — both styled via .enh).
+    function fmtFamilyOf_(ref) {
+      if (!ref) return null;
+      if (ref.isEmoji) return 'enh';
+      if (typeof ref.text === 'string' && !ref.imgEl) return 'text';   // text layer (has .text, no photo <img>)
+      if (ref.imgEl || (ref.path && !ref.isBg)) return 'enh';          // photo tile
+      return null;
     }
-    function applyFormatPaintTo_(layer) {
-      if (!collageFormatBrush || !layer || layer.isEmoji || layer.locked) return false;
+    function captureFormat_(ref, family) {
+      const src = (family === 'text') ? ref : (ref.enh || {});
+      const groups = {};
+      FMT_GROUPS[family].forEach((g) => { const o = {}; g.fields.forEach((f) => { o[f] = _fmtClone(src[f]); }); groups[g.key] = o; });
+      return { family: family, groups: groups, srcRef: ref };
+    }
+    // Copy the TICKED groups from the brush onto a target, then re-render it the right way for its type.
+    function applyFormatGroups_(ref, family, tickedKeys) {
+      if (!collageFormatBrush || !ref || ref.locked) return false;
       beginCollageChange();
-      TEXT_FORMAT_KEYS.forEach((k) => { if (collageFormatBrush[k] !== undefined) layer[k] = collageFormatBrush[k]; });
-      renderTextLayer(layer);
+      const groups = collageFormatBrush.groups;
+      FMT_GROUPS[family].forEach((g) => {
+        if (tickedKeys.indexOf(g.key) < 0) return;
+        const vals = groups[g.key] || {};
+        if (family === 'text') { g.fields.forEach((f) => { if (vals[f] !== undefined) ref[f] = _fmtClone(vals[f]); }); }
+        else { if (!ref.enh) ref.enh = {}; g.fields.forEach((f) => { if (vals[f] !== undefined) ref.enh[f] = _fmtClone(vals[f]); }); }
+      });
+      if (family === 'text' || ref.isEmoji) { try { renderTextLayer(ref); } catch (_) {} }
+      else { try { renderCollageItem(ref); } catch (_) {} try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(ref); } catch (_) {} }
       commitCollageChange();
+      try { syncTextControls(); } catch (_) {}
       return true;
+    }
+    // Resolve the layer/tile under a pointer event → { ref, family } or null.
+    function fmtTargetFromEvent_(e) {
+      const tEl = e.target.closest && e.target.closest('.collage-text');
+      if (tEl) { const L = collageTexts.find((t) => t.el === tEl); if (L) return { ref: L, family: L.isEmoji ? 'enh' : 'text' }; }
+      const iEl = e.target.closest && e.target.closest('.collage-item');
+      if (iEl) { const it = collageItems.find((x) => x.el === iEl); if (it && !it.isBg && !it.placeholder && (it.imgEl || it.path)) return { ref: it, family: 'enh' }; }
+      return null;
+    }
+    function closeFmtPopup_() { if (collageFmtPopupEl) { try { collageFmtPopupEl.remove(); } catch (_) {} collageFmtPopupEl = null; } }
+    // The per-apply CHECKBOX popup (Terry's design): tick which groups to carry onto THIS target, then Apply.
+    function openFmtApplyPopup_(target, x, y) {
+      closeFmtPopup_();
+      const family = collageFormatBrush.family;
+      const noun = (target.family === 'text') ? 'text box' : (target.ref && target.ref.isEmoji ? 'emoji' : 'photo');
+      const pop = document.createElement('div'); pop.className = 'collage-fmt-popup';
+      let html = '<div class="cfp-title">Paint onto this ' + noun + ':</div>';
+      FMT_GROUPS[family].forEach((g) => {
+        const on = collageFmtLastPick[family][g.key] !== false;
+        html += '<label class="cfp-row"><input type="checkbox" data-g="' + g.key + '"' + (on ? ' checked' : '') + '><span>' + g.label + '</span></label>';
+      });
+      html += '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Apply</button></div>';
+      pop.innerHTML = html;
+      pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+      pop.style.left = ((x || 0) + 8) + 'px'; pop.style.top = ((y || 0) + 8) + 'px';
+      document.body.appendChild(pop);
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      pop.style.left = Math.max(8, Math.min((x || 0) + 8, window.innerWidth - pw - 8)) + 'px';
+      pop.style.top = Math.max(8, Math.min((y || 0) + 8, window.innerHeight - ph - 8)) + 'px';
+      const doApply = () => {
+        const ticked = [];
+        pop.querySelectorAll('input[type=checkbox]').forEach((cb) => { collageFmtLastPick[family][cb.dataset.g] = cb.checked; if (cb.checked) ticked.push(cb.dataset.g); });
+        closeFmtPopup_();
+        if (ticked.length) applyFormatGroups_(target.ref, family, ticked);
+      };
+      pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); doApply(); });
+      pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
+      collageFmtPopupEl = pop;
     }
     function wireFormatPaintOnce_() {
       if (collageFmtPaintWired_) return; collageFmtPaintWired_ = true;
-      window.addEventListener('keydown', (e) => { if (collageFormatBrush && (e.key === 'Escape' || e.code === 'Escape')) { e.preventDefault(); stopFormatPaint_(); } });
-      // Capture phase, so a paint click beats the text box's own select/drag/edit handlers. A press on a text
-      // box PAINTS it (sticky); a press on the source box or a toolbar/popover is ignored (keep painting);
-      // a press on anything else (a photo, empty canvas, the side panel) ends painting.
+      window.addEventListener('keydown', (e) => {
+        if (!collageFormatBrush) return;
+        if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_(); }
+      });
+      // Capture phase, so a paint click beats the layer's own select/drag/edit handlers.
       document.addEventListener('pointerdown', (e) => {
         if (!collageFormatBrush) return;
-        if (e.target.closest && e.target.closest('.ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;
-        const tEl = e.target.closest && e.target.closest('.collage-text');
-        if (tEl) {
-          const layer = collageTexts.find((t) => t.el === tEl);
-          if (layer && !layer.isEmoji) {
-            e.preventDefault(); e.stopPropagation();
-            if (layer.id !== collageFormatBrush._srcId) applyFormatPaintTo_(layer);
-            return;   // sticky — keep the roller loaded for the next box
-          }
-        }
-        stopFormatPaint_();   // clicked away from any text box → done painting
+        if (e.target.closest && e.target.closest('.collage-fmt-popup, .ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;   // popup / toolbar / roller → let it work
+        const target = fmtTargetFromEvent_(e);
+        if (target && target.ref === collageFormatBrush.srcRef) { e.preventDefault(); e.stopPropagation(); return; }   // the source → ignore
+        if (target && target.family === collageFormatBrush.family) { e.preventDefault(); e.stopPropagation(); openFmtApplyPopup_(target, e.clientX, e.clientY); return; }   // compatible → checkbox popup
+        if (target) { e.preventDefault(); e.stopPropagation(); try { if (typeof cctxToast === 'function') cctxToast('That paint carries ' + (collageFormatBrush.family === 'text' ? 'text' : 'photo / emoji') + ' formatting — pick the same kind'); } catch (_) {} return; }   // wrong family → stay loaded
+        if (collageFmtPopupEl) { e.preventDefault(); e.stopPropagation(); closeFmtPopup_(); return; }   // clicked empty with the popup open → just dismiss it
+        stopFormatPaint_();   // clicked empty, no popup → done painting (let the click deselect normally)
       }, true);
     }
-    function startFormatPaint_(layer) {
-      const src = layer || selectedText;
-      if (!src || src.isEmoji) return;
+    function startFormatPaint_(ref, family) {
+      family = family || fmtFamilyOf_(ref);
+      if (!ref || !family) return;
       wireFormatPaintOnce_();
-      collageFormatBrush = captureTextFormat_(src);
+      closeFmtPopup_();
+      collageFormatBrush = captureFormat_(ref, family);
       try { document.body.classList.add('collage-format-paint'); } catch (_) {}
-      try { if (typeof cctxToast === 'function') cctxToast('Format copied — click another text box to paint it on (Esc to stop)'); } catch (_) {}
+      try { if (typeof cctxToast === 'function') cctxToast('Look copied — click another ' + (family === 'text' ? 'text box' : 'photo or emoji') + ' to paint it (Esc to stop)'); } catch (_) {}
     }
     function stopFormatPaint_() {
       collageFormatBrush = null;
+      closeFmtPopup_();
       try { document.body.classList.remove('collage-format-paint'); } catch (_) {}
     }
     function buildTextToolbarControls(layer, tbar, handles, beforeNode) {
@@ -11479,15 +11568,15 @@
 
       ins(document.createElement('div')).className = 'ch-tb-sep';
 
-      // ---- FORMAT PAINTER: copy THIS box's format, then click other text boxes to paint it on ----
+      // ---- FORMAT PAINTER: copy THIS box's look, then click other text boxes and pick what to carry ----
       const fmtBtn = document.createElement('button'); fmtBtn.type = 'button'; fmtBtn.className = 'ch-tb-btn ch-tb-fmtpaint';
-      fmtBtn.setAttribute('data-pdr-tooltip', 'Copy format — then click other text boxes to paint this style onto them (Esc to stop)');
+      fmtBtn.setAttribute('data-pdr-tooltip', 'Copy format — then click other text boxes and tick what to paint on (Esc to stop)');
       fmtBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="5" rx="1"/><path d="M16 6.5h3a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-8a1 1 0 0 0-1 1v2"/><rect x="9" y="15" width="4.6" height="5" rx="1"/></svg>';
       fmtBtn.addEventListener('click', (e) => {
         e.stopPropagation(); e.preventDefault();
         ensureSel();
         if (collageFormatBrush) stopFormatPaint_();   // click the loaded roller again → stop
-        else startFormatPaint_(layer);
+        else startFormatPaint_(layer, 'text');
       });
       ins(fmtBtn); push(fmtBtn);
 
@@ -11578,6 +11667,13 @@
         chip.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); openEmojiPanelSection_(layer, c[2]); });
         strip.appendChild(chip); push(chip);
       });
+      // ---- FORMAT PAINTER (v3.1 Terry): copy THIS emoji's look, then click other emojis/photos and tick what to carry ----
+      strip.appendChild(document.createElement('div')).className = 'ch-tb-sep';
+      const eFmtBtn = document.createElement('button'); eFmtBtn.type = 'button'; eFmtBtn.className = 'ch-tb-btn ch-tb-fmtpaint';
+      eFmtBtn.setAttribute('data-pdr-tooltip', 'Copy this emoji’s look — then click other emojis/photos and tick what to paint on (Esc to stop)');
+      eFmtBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="5" rx="1"/><path d="M16 6.5h3a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-8a1 1 0 0 0-1 1v2"/><rect x="9" y="15" width="4.6" height="5" rx="1"/></svg>';
+      eFmtBtn.addEventListener('click', (e) => { e.stopPropagation(); e.preventDefault(); if (selectedText !== layer) { try { selectText(layer); } catch (_) {} } if (collageFormatBrush) stopFormatPaint_(); else startFormatPaint_(layer, 'enh'); });
+      strip.appendChild(eFmtBtn); push(eFmtBtn);
       // Prime the size readout once.
       try { refreshTextToolbar(layer); } catch (_) {}
     }
