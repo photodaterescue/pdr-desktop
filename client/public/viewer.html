@@ -2997,6 +2997,22 @@
     body.collage-mode #enhance-pin { display: none !important; }   /* beats the inline display:flex on the button */
     /* v2.1 round 261 (Terry) — grab-to-pan: grabbing cursor while dragging the empty canvas/margin to pan the zoomed view. */
     body.collage-panning #collage-stage, body.collage-panning #collage-stage * { cursor: grabbing !important; }
+    /* v3.1 (Terry) — HAND-TOOL PAN cursor: SPACE held shows grab (open hand) across the whole stage so you
+       can pan from ANYWHERE incl. over a tile; while dragging shows grabbing. !important beats per-tile
+       cursors (move / crop handles). This is the grab-anywhere pan Terry wanted without clashing with CTRL. */
+    body.collage-space-pan #collage-stage, body.collage-space-pan #collage-stage * { cursor: grab !important; }
+    body.collage-space-pan-active #collage-stage, body.collage-space-pan-active #collage-stage * { cursor: grabbing !important; }
+    /* v3.1 (Terry) — COLLAGE SCROLLBARS. When zoomed in past the fit (the canvas overflows the stage, so
+       there's no dark margin left to grab), thin bars appear bottom + right to navigate. Custom, not native,
+       because the view pans via a CSS transform (translate+scale), not real scroll. Gold to match the accent. */
+    .collage-scrollbar { position: absolute; z-index: 65; display: none; background: rgba(255,255,255,0.05); border-radius: 999px; }
+    .collage-scrollbar-h { left: 10px; right: 18px; bottom: 8px; height: 9px; }
+    .collage-scrollbar-v { top: 10px; bottom: 18px; right: 8px; width: 9px; }
+    .collage-scrollbar-thumb { position: absolute; background: rgba(254,194,66,0.5); border-radius: 999px; cursor: grab; transition: background 0.12s ease; }
+    .collage-scrollbar-thumb:hover { background: rgba(254,194,66,0.82); }
+    .collage-scrollbar.dragging .collage-scrollbar-thumb { background: #FEC242; cursor: grabbing; }
+    .collage-scrollbar-h .collage-scrollbar-thumb { top: 0; bottom: 0; min-width: 28px; }
+    .collage-scrollbar-v .collage-scrollbar-thumb { left: 0; right: 0; min-height: 28px; }
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     /* v2.1 round 203 (Terry) — collage wears gold: the corner resize dots,
@@ -6339,8 +6355,15 @@
           try { positionTextToolbarInView(); } catch (_) {}
         }, 180);
       } catch (_) {}
+      // v3.1 (Terry) — refresh the scrollbars whenever the view transform changes (zoom / pan-release /
+      // layout / resize all route through here). Via the top-level bridge (see collageUpdateScrollbars_).
+      try { if (collageUpdateScrollbars_) collageUpdateScrollbars_(); } catch (_) {}
     }
     let collageZoomIdleT = null;   // v3.1 (Terry) — zoom-gesture settle timer (see applyCollageZoom)
+    // v3.1 (Terry) — bridge to the scrollbar refresh: updateCollageScrollbars is defined later inside the
+    // stage-setup scope (with the pan handlers), which this top-level applyCollageZoom can't name directly.
+    // The setup assigns it here so zoom / pan-release / layout can refresh the bars. Null until collage opens.
+    var collageUpdateScrollbars_ = null;
     // v3.1 (Terry SS3) — keep the selected TEXT layer's floating toolbar fully VISIBLE.
     // #collage-canvas is overflow:hidden, so a bar hanging past the canvas edge (or the
     // stage edge) was cut off mid-button. Clamp: shift it horizontally back inside the
@@ -14248,6 +14271,9 @@
       const MIN = 0.08; // never crop below 8% of the photo
       const vSfix = S / aspect; // px per photo-height-fraction (for the top/bottom snap math)
       const move = (ev) => {
+        // v3.1 (Terry) — a hand crop is now permanent: mark the tile so the auto-trim NEVER re-crops it
+        // (and never fires a queued trim mid-drag). Idempotent; only set once the pointer actually moves.
+        it.cropManual = true; it._alphaTrimmed = true;
         // v2.1 round 253 (Terry) — screen delta → content-px delta (÷ effective scale).
         const dx = (ev.clientX - startX) * s2cCrop, dy = (ev.clientY - startY) * s2cCrop;
         const localX = dx * cosR + dy * sinR;
@@ -16387,7 +16413,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, bgPhoto: !!it.bgPhoto, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path` (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo; v3.0 round 536 (Terry) — carry `bgPhoto` (the permanent Background-pick mark) so the chip indicator survives undo/reopen
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, bgPhoto: !!it.bgPhoto, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined, autoTrimV: (typeof it.autoTrimV === 'number') ? it.autoTrimV : 0, cropManual: !!it.cropManual })),   // v2.1 round 203 (Terry) — carry `locked` + `path`; v3.1 (Terry) — carry autoTrimV (auto-trim algorithm version, so an old tip-clipping trim re-runs on reopen) + cropManual (a hand crop is never auto-re-trimmed) (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo; v3.0 round 536 (Terry) — carry `bgPhoto` (the permanent Background-pick mark) so the chip indicator survives undo/reopen
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -16551,6 +16577,11 @@
         // reloads when undo/redo actually flips the cut-out on or off.
         it.bgRemovedPath = si.bgRemovedPath || null;
         it.bgRemoveStrength = (typeof si.bgRemoveStrength === 'number') ? si.bgRemoveStrength : 50;
+        // v3.1 (Terry) — auto-trim markers round-trip: autoTrimV lets a tile trimmed by an OLD version
+        // re-trim on reopen (fixing the v1 tip-clip); cropManual protects a hand crop from ever being
+        // auto-re-trimmed. Old snapshots lack both → 0 / false (a legacy auto-trim, so it re-trims once).
+        it.autoTrimV = (typeof si.autoTrimV === 'number') ? si.autoTrimV : 0;
+        it.cropManual = !!si.cropManual;
         // v2.1 round 319 (Terry) — an empty frame has no photo: keep its <img> blank + hidden
         // (the placeholder overlay built by buildCollageItemEl stays); else (re)load the photo.
         if (it.imgEl) {
@@ -16835,6 +16866,11 @@
     // user crop or a reopened/cloned tile): runs once per tile (it._alphaTrimmed); only when the tile is
     // untrimmed (it.crop absent or the default {0,0,1,1}); never on a background / cover-fill / framed /
     // placeholder tile. A tainted/unreadable canvas or an opaque photo (full-box alpha) just returns.
+    // v3.1 (Terry 2026-07-09) — the auto-trim algorithm VERSION. Bumping it re-runs the trim on reopen for
+    // any tile trimmed by an older version, so an existing project self-heals. v2 fixes the v1 bug where the
+    // trim cut a circular logo's soft anti-aliased tips into a wide FLAT chord (near a circle's tangent a 1px
+    // clip becomes a ~2·√(2R·d)-wide flat line): v2 counts faint edge pixels + pads the crop into the margin.
+    var AUTO_TRIM_V = 2;
     function alphaTrimTile(it) {
       if (!it || it._alphaTrimmed) return;
       // Only normal photo tiles: skip backgrounds, cover-fill frames, and empty/placeholder frames — those
@@ -16842,14 +16878,15 @@
       if (it.isBg || it.coverFill || it.bgPhoto || it.framed || it.placeholder || it.isFrame) return;
       const img = it.imgEl;
       if (!img || !img.naturalWidth || !img.naturalHeight) return;
-      // Only when UNTRIMMED: crop absent or still the default full box. A user crop (or a restored /
-      // duplicated tile whose crop was carried over) differs from the default → leave it completely alone.
-      // This is also why _alphaTrimmed need not be serialized: a reopened, already-trimmed tile has a
-      // non-default crop and is skipped here anyway.
+      // NEVER override a crop the user set by hand (cropManual) — a manual crop deliberately cuts content.
+      // Otherwise run when the crop is the default full box (a fresh tile) OR when it was auto-trimmed by an
+      // OLDER version (autoTrimV < current) — re-trim to undo the v1 tip-clipping. A current-version auto-trim
+      // is left alone. (_alphaTrimmed is runtime-only, so a reopened tile is always re-checked here.)
+      if (it.cropManual) return;
       const c = it.crop;
       const EPS = 0.0005;
       const isDefaultCrop = !c || (Math.abs((c.l || 0) - 0) < EPS && Math.abs((c.t || 0) - 0) < EPS && Math.abs((c.r == null ? 1 : c.r) - 1) < EPS && Math.abs((c.b == null ? 1 : c.b) - 1) < EPS);
-      if (!isDefaultCrop) return;
+      if (!isDefaultCrop && (it.autoTrimV || 0) >= AUTO_TRIM_V) return;
       it._alphaTrimmed = true;   // mark first: a tainted/opaque image should still count as "checked" (no re-scan)
       try {
         const nW = img.naturalWidth, nH = img.naturalHeight;
@@ -16864,7 +16901,10 @@
         ctx.drawImage(img, 0, 0, w, h);
         const data = ctx.getImageData(0, 0, w, h).data;   // throws on a tainted canvas → caught below
         let minX = w, minY = h, maxX = -1, maxY = -1;
-        const A_THRESH = 12;   // alpha above this counts as "opaque content"
+        // v3.1 (Terry) — LOW threshold: a faint anti-aliased edge pixel is still content. The old value (12)
+        // dropped a circle's outermost, softest tip pixels, so the crop stopped a hair INSIDE the curve —
+        // enough to flatten the tangent into a visible chord. Count anything that isn't essentially transparent.
+        const A_THRESH = 4;   // alpha above this counts as content
         for (let y = 0; y < h; y++) {
           let row = y * w * 4;
           for (let x = 0; x < w; x++) {
@@ -16878,15 +16918,25 @@
         }
         // Nothing opaque found (fully transparent image) → nothing to trim.
         if (maxX < 0 || maxY < 0) return;
-        // Content fractions of the (downscaled) image; identical to the full-res fractions.
-        const cl = minX / w, ct = minY / h, cr = (maxX + 1) / w, cb = (maxY + 1) / h;
-        // If the opaque box already fills the image (every margin < 1.5% of that dimension) it's an opaque
-        // photo or an already-tight PNG — leave it untouched (no visible gap to close).
+        // If the opaque box already fills the image (every RAW margin < 1.5% of that dimension) it's an opaque
+        // photo or an already-tight PNG — leave it untouched (no visible gap to close). Tested on the raw
+        // bounds, BEFORE the safety pad below.
         const MARGIN = 0.015;
-        if (cl < MARGIN && ct < MARGIN && (1 - cr) < MARGIN && (1 - cb) < MARGIN) return;
-        // Real margin found — crop the tile to the content. effectiveAspect() reshapes the box to the
+        if ((minX / w) < MARGIN && (minY / h) < MARGIN && (1 - (maxX + 1) / w) < MARGIN && (1 - (maxY + 1) / h) < MARGIN) return;
+        // v3.1 (Terry) — SAFETY PAD: expand the detected bounds outward by 2 scan-px before cropping, so the
+        // crop edge always lands in the TRANSPARENT margin just OUTSIDE the art — never on the art itself.
+        // This is what makes it "tight but never a slice off": the pad is transparent, so it costs nothing
+        // visible (~1% breathing sliver on a 1024px logo) yet the whole curve/edge stays inside the box.
+        // Clamped to the image, so a PNG whose content already touches an edge simply stays at that edge.
+        const PAD = 2;
+        minX = Math.max(0, minX - PAD); minY = Math.max(0, minY - PAD);
+        maxX = Math.min(w - 1, maxX + PAD); maxY = Math.min(h - 1, maxY + PAD);
+        // Content fractions of the (downscaled, padded) image; identical to the full-res fractions.
+        const cl = minX / w, ct = minY / h, cr = (maxX + 1) / w, cb = (maxY + 1) / h;
+        // Real margin found — crop the tile to the (padded) content. effectiveAspect() reshapes the box to the
         // content's aspect via the crop; it.aspect (the natural box aspect) is intentionally left as-is.
         it.crop = { l: cl, t: ct, r: cr, b: cb };
+        it.autoTrimV = AUTO_TRIM_V;   // stamp the version: won't repeat this run, and a future bump can re-trim
         renderCollageItem(it);
         // Persist the trim to the project (debounced), matching every other tile edit. Skipped during a
         // restore (a reopened tile is guarded out above anyway); guarded so an early load can't throw.
@@ -17158,6 +17208,7 @@
         z: ++collageZTop, el: null, imgEl: null, clipEl: null,
         locked: false,
         crop: { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b },
+        autoTrimV: (typeof it.autoTrimV === 'number') ? it.autoTrimV : 0, cropManual: !!it.cropManual,   // v3.1 (Terry) — a clone inherits the trim version + hand-crop mark (same image + crop → never auto-re-trim the copy)
         zoom: it.zoom, panX: it.panX, panY: it.panY,
         bgRemovedPath: it.bgRemovedPath || null,
         bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50,
@@ -21471,10 +21522,11 @@
       // selectCollageItem(it) is done by the caller before the pan starts.
       let collagePanDrag = null;
       function startViewPan(e, opts) {
-        if (e.button !== 0) return;
+        if (!(opts && opts.anyButton) && e.button !== 0) return;   // v3.1 (Terry) — middle-mouse hand-pan passes anyButton
         const onCanvas = !!(opts && opts.onCanvas);
         const noSelect = !!(opts && opts.noSelect);
         collagePanDrag = { sx: e.clientX, sy: e.clientY, px: collagePanX, py: collagePanY, onCanvas, noSelect, moved: false, id: e.pointerId };
+        try { collagePanDrag.sbM = computeCollageSbMetrics_(); } catch (_) { collagePanDrag.sbM = null; }   // v3.1 (Terry) — cache scrollbar metrics so the thumbs track the pan with no per-frame rect reads
         try { collageStageEl.setPointerCapture(e.pointerId); } catch (_) {}
       }
       // v2.1 round 286 Tier 2 (Terry) — rubber-band MARQUEE select. At fit-zoom in
@@ -21558,6 +21610,9 @@
         // / offsetHeight = forced synchronous layout), which was the pan lag. The tracking chrome
         // is hidden by the body.collage-panning CSS; endCollagePan does the one precise reposition.
         try { collageCanvasEl.style.transform = 'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')'; } catch (_) {}
+        // v3.1 (Terry) — track the scrollbar thumbs with the pan (cached metrics → pure arithmetic, keeps
+        // the pan instant). Full rect-based refresh happens once on release via applyCollageZoom.
+        try { if (collagePanDrag && collagePanDrag.sbM) placeCollageThumbs_(collagePanDrag.sbM); } catch (_) {}
       });
       const endCollagePan = (e) => {
         if (collageMarquee) { endMarquee(e); return; }
@@ -21566,6 +21621,7 @@
         try { collageStageEl.releasePointerCapture(collagePanDrag.id); } catch (_) {}
         collagePanDrag = null;
         try { document.body.classList.remove('collage-panning'); } catch (_) {}
+        try { document.body.classList.remove('collage-space-pan-active'); } catch (_) {}   // v3.1 (Terry) — end hand-pan grabbing cursor
         // v3.1 (Terry) — the one precise reposition after an INSTANT pan: re-glue the selection
         // chrome / text bars to their tiles at the final pan (positionSelectionChrome +
         // positionTextToolbarInView) and re-show them (the collage-panning CSS hid them). Runs
@@ -21578,6 +21634,139 @@
       };
       collageStageEl.addEventListener('pointerup', endCollagePan);
       collageStageEl.addEventListener('pointercancel', endCollagePan);
+      // ===== v3.1 (Terry) — HAND-TOOL PAN: hold SPACE (or use the middle mouse button) and drag ANYWHERE —
+      // over a tile, over text, over the canvas — to pan the view. Terry wanted a grab-anywhere pan but
+      // CTRL was taken (CTRL+click = multi-select), so SPACE-to-pan (the universal design-tool convention)
+      // is the shortcut. Also the answer to "zoomed in so far there's no dark margin left to grab". =====
+      let collageSpaceHeld = false;
+      function setCollageHandCursor_(on) { try { document.body.classList.toggle('collage-space-pan', !!on); } catch (_) {} }
+      function collageTypingTarget_() {
+        var a = document.activeElement; if (!a) return false;
+        var tn = a.tagName; return tn === 'INPUT' || tn === 'TEXTAREA' || a.isContentEditable;
+      }
+      window.addEventListener('keydown', (e) => {
+        if (!collageMode) return;
+        if (e.code !== 'Space' && e.key !== ' ') return;
+        if (collageTypingTarget_()) return;                 // let SPACE type a space in a field / editable text
+        if (e.repeat) { e.preventDefault(); return; }        // auto-repeat while held: already in hand mode
+        collageSpaceHeld = true; setCollageHandCursor_(true);
+        e.preventDefault();                                  // stop SPACE scrolling / triggering a focused button
+      });
+      window.addEventListener('keyup', (e) => {
+        if (e.code !== 'Space' && e.key !== ' ') return;
+        collageSpaceHeld = false; setCollageHandCursor_(false);
+      });
+      window.addEventListener('blur', () => { collageSpaceHeld = false; setCollageHandCursor_(false); });   // don't leave it stuck on Alt-Tab
+      // Kill the Windows middle-click autoscroll ring so a middle-drag pans cleanly.
+      collageStageEl.addEventListener('mousedown', (e) => { if (e.button === 1) e.preventDefault(); }, true);
+      // CAPTURE phase — intercept the press BEFORE any tile/text/marquee handler sees it, so a hand-pan wins
+      // over select / drag / crop / marquee. Left button needs SPACE held; the middle button always pans.
+      collageStageEl.addEventListener('pointerdown', (e) => {
+        var wantPan = (collageSpaceHeld && e.button === 0) || e.button === 1;
+        if (!wantPan) return;
+        e.preventDefault(); e.stopPropagation();
+        try { document.body.classList.add('collage-space-pan-active'); } catch (_) {}
+        startViewPan(e, { noSelect: true, anyButton: true });
+      }, true);
+
+      // ===== v3.1 (Terry) — COLLAGE SCROLLBARS. When the view is zoomed in enough that the canvas overflows
+      // the stage (there's no dark margin left to grab), thin bars appear on the right + bottom to navigate.
+      // Custom, not native, because the view pans by a CSS transform (translate+scale), not real scroll.
+      // The thumb geometry is derived from the LIVE stage vs canvas rects; a drag maps 1:1 back to the pan. =====
+      let collageSbH = null, collageSbV = null, collageSbHThumb = null, collageSbVThumb = null, collageSbDrag = null;
+      const COLLAGE_SB_MIN = 28;   // shortest a thumb can get (px) — must match the CSS min-width/height
+      function ensureCollageScrollbars_() {
+        if (collageSbH) return;
+        collageSbH = document.createElement('div'); collageSbH.className = 'collage-scrollbar collage-scrollbar-h';
+        collageSbHThumb = document.createElement('div'); collageSbHThumb.className = 'collage-scrollbar-thumb';
+        collageSbH.appendChild(collageSbHThumb); collageStageEl.appendChild(collageSbH);
+        collageSbV = document.createElement('div'); collageSbV.className = 'collage-scrollbar collage-scrollbar-v';
+        collageSbVThumb = document.createElement('div'); collageSbVThumb.className = 'collage-scrollbar-thumb';
+        collageSbV.appendChild(collageSbVThumb); collageStageEl.appendChild(collageSbV);
+        collageSbHThumb.addEventListener('pointerdown', (e) => startCollageSbDrag_(e, 'h'));
+        collageSbVThumb.addEventListener('pointerdown', (e) => startCollageSbDrag_(e, 'v'));
+      }
+      // Read the live rects ONCE and cache everything a pan/scroll gesture needs (track lengths, thumb
+      // lengths, how much content is hidden, the pan value at capture) so per-frame updates are pure
+      // arithmetic — no rect reads mid-pan (that was the lag the instant-pan fix removed).
+      function computeCollageSbMetrics_() {
+        ensureCollageScrollbars_();
+        const s = collageStageEl.getBoundingClientRect();
+        const c = collageCanvasEl.getBoundingClientRect();
+        const hOver = c.width > s.width + 2, vOver = c.height > s.height + 2;
+        collageSbH.style.display = hOver ? 'block' : 'none';   // must be shown to measure its track length
+        collageSbV.style.display = vOver ? 'block' : 'none';
+        const trackH = collageSbH.clientWidth, trackV = collageSbV.clientHeight;
+        return {
+          hOver, vOver,
+          trackH, lenH: Math.max(COLLAGE_SB_MIN, trackH * (s.width / c.width)),
+          maxHiddenH: c.width - s.width, viewStartH0: s.left - c.left, panX0: collagePanX, ratioH: c.width / s.width,
+          trackV, lenV: Math.max(COLLAGE_SB_MIN, trackV * (s.height / c.height)),
+          maxHiddenV: c.height - s.height, viewStartV0: s.top - c.top, panY0: collagePanY, ratioV: c.height / s.height,
+        };
+      }
+      // Position the thumbs from cached metrics + the CURRENT pan (no rect reads).
+      function placeCollageThumbs_(m) {
+        if (m.hOver) {
+          const vs = m.viewStartH0 - (collagePanX - m.panX0);
+          const frac = m.maxHiddenH > 0 ? Math.min(1, Math.max(0, vs / m.maxHiddenH)) : 0;
+          collageSbHThumb.style.left = (frac * (m.trackH - m.lenH)) + 'px';
+          collageSbHThumb.style.width = m.lenH + 'px';
+          collageSbH.style.display = 'block';
+        } else collageSbH.style.display = 'none';
+        if (m.vOver) {
+          const vs = m.viewStartV0 - (collagePanY - m.panY0);
+          const frac = m.maxHiddenV > 0 ? Math.min(1, Math.max(0, vs / m.maxHiddenV)) : 0;
+          collageSbVThumb.style.top = (frac * (m.trackV - m.lenV)) + 'px';
+          collageSbVThumb.style.height = m.lenV + 'px';
+          collageSbV.style.display = 'block';
+        } else collageSbV.style.display = 'none';
+      }
+      // Full refresh from live rects (zoom / settle / resize). No-op mid-drag (the drag places its own thumb).
+      function updateCollageScrollbars() {
+        if (!collageMode || !collageStageEl || !collageCanvasEl) { if (collageSbH) { collageSbH.style.display = 'none'; collageSbV.style.display = 'none'; } return; }
+        if (collageSbDrag) return;
+        placeCollageThumbs_(computeCollageSbMetrics_());
+      }
+      collageUpdateScrollbars_ = updateCollageScrollbars;   // v3.1 (Terry) — expose to top-level applyCollageZoom
+      function startCollageSbDrag_(e, axis) {
+        e.preventDefault(); e.stopPropagation();
+        const m = computeCollageSbMetrics_();
+        collageSbDrag = { axis, id: e.pointerId, m, start: (axis === 'h' ? e.clientX : e.clientY) };
+        (axis === 'h' ? collageSbH : collageSbV).classList.add('dragging');
+        try { (axis === 'h' ? collageSbHThumb : collageSbVThumb).setPointerCapture(e.pointerId); } catch (_) {}
+        document.body.classList.add('collage-panning');   // hide the tracking chrome while scrolling too
+        window.addEventListener('pointermove', moveCollageSbDrag_);
+        window.addEventListener('pointerup', endCollageSbDrag_);
+        window.addEventListener('pointercancel', endCollageSbDrag_);
+      }
+      function moveCollageSbDrag_(e) {
+        if (!collageSbDrag || e.pointerId !== collageSbDrag.id) return;
+        const d = collageSbDrag, m = d.m;
+        const deltaThumb = (d.axis === 'h' ? e.clientX : e.clientY) - d.start;
+        if (d.axis === 'h') {
+          const vs = Math.min(m.maxHiddenH, Math.max(0, m.viewStartH0 + deltaThumb * m.ratioH));   // thumb px → content px, clamped to the content
+          collagePanX = m.panX0 - (vs - m.viewStartH0);
+        } else {
+          const vs = Math.min(m.maxHiddenV, Math.max(0, m.viewStartV0 + deltaThumb * m.ratioV));
+          collagePanY = m.panY0 - (vs - m.viewStartV0);
+        }
+        try { collageCanvasEl.style.transform = 'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')'; } catch (_) {}
+        placeCollageThumbs_(m);
+      }
+      function endCollageSbDrag_(e) {
+        if (!collageSbDrag) return;
+        const axis = collageSbDrag.axis, id = collageSbDrag.id;
+        window.removeEventListener('pointermove', moveCollageSbDrag_);
+        window.removeEventListener('pointerup', endCollageSbDrag_);
+        window.removeEventListener('pointercancel', endCollageSbDrag_);
+        try { (axis === 'h' ? collageSbHThumb : collageSbVThumb).releasePointerCapture(id); } catch (_) {}
+        (axis === 'h' ? collageSbH : collageSbV).classList.remove('dragging');
+        collageSbDrag = null;
+        document.body.classList.remove('collage-panning');
+        try { applyCollageZoom(); } catch (_) {}   // one precise chrome reposition + live scrollbar refresh
+      }
+      window.addEventListener('resize', () => { try { updateCollageScrollbars(); } catch (_) {} });
       // ===== v3.0 round 381 (Terry) — COLLAGE RIGHT-CLICK CONTEXT MENU + PHOTO INFO (task #23) =====
       // Per-item menu: Canva-style core (replace / duplicate / delete / arrange / centre / flip / rotate /
       // lock) PLUS PDR-only wins — Copy/Paste STYLE across the whole enhance set, Reset edits, and a Photo
