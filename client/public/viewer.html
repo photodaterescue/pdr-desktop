@@ -3932,6 +3932,18 @@
     }
     .emoji-btn:hover { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.55); }
     .emoji-empty { font-size: 12px; color: rgba(255,255,255,0.45); padding: 12px 2px; text-align: center; }
+    /* v3.1 (Terry) — SYMBOL picker grid: monochrome text glyphs (they take the layer's
+       colour), 8 across since arrows/shapes are narrower than emoji. A symbol-text font
+       stack so the previews match the canvas fallback. */
+    .symbol-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 3px; }
+    .symbol-btn {
+      aspect-ratio: 1 / 1; display: flex; align-items: center; justify-content: center;
+      background: rgba(255,255,255,0.04); border: 1px solid transparent; border-radius: 7px;
+      font-size: 18px; line-height: 1; cursor: pointer; padding: 0; color: #eae4ff;
+      font-family: 'Segoe UI Symbol', 'Arial Unicode MS', system-ui, sans-serif;
+      transition: background 100ms, border-color 100ms;
+    }
+    .symbol-btn:hover { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.55); color: #fff; }
     /* The per-tile hint that shows when nothing is selected. */
     /* v2.1 round 143 (Terry) — dim ONLY the per-tile controls wrapper
        when no tile is selected. The Collage section (shape/background/
@@ -4807,6 +4819,17 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
             Add text
           </button>
+          <!-- v3.1 (Terry) — SPECIAL CHARACTERS dropdown, nested right under Add text.
+               Arrows (every shape), geometric shapes, stars, marks, maths, currency,
+               punctuation. Each inserts as a NORMAL text layer, so it takes the text
+               colour + font + size + effects + transparency (a gold outlined arrow, a
+               pink star — all free). Mirrors the Emojis picker; grid built by
+               buildSymbolPicker(). -->
+          <details class="enhance-collapse" id="collage-symbol-collapse" style="margin-top:8px">
+            <summary>Symbols &amp; arrows</summary>
+            <input type="text" class="emoji-search" id="collage-symbol-search" placeholder="Search — arrow, star, heart, money…" autocomplete="off" spellcheck="false" aria-label="Search special characters">
+            <div class="emoji-grid-wrap" id="collage-symbol-grid"></div>
+          </details>
           <!-- Per-layer controls — revealed by syncTextControls() when a text
                layer is selected (click a text on the canvas to select it). -->
           <div id="collage-text-controls" style="display:none;margin-top:10px">
@@ -12247,6 +12270,78 @@
       renderTextLayer(layer);
       selectText(layer);
       commitCollageChange();   // the ADD is its own undo step
+    }
+    // ─── v3.1 (Terry) — SPECIAL CHARACTERS (arrows, shapes, stars, maths…) ────────
+    // "Unusual characters people might have a random use for." Each is inserted as a
+    // NORMAL text layer (isEmoji stays false) so it rides the full text pipeline —
+    // colour, font, size, weight, effects, transparency, flip. Grouped for browsing;
+    // search matches a group's name/keywords. Curated toward text-presentation glyphs
+    // (arrows block, dingbats, geometric shapes, maths, currency) that render monochrome
+    // and take the fill colour; addSymbolLayer appends U+FE0E to force text (not emoji)
+    // presentation on the few that default to colour (hearts etc.).
+    const SYMBOL_GROUPS = [
+      { cat: 'Arrows', kw: 'arrow point direction up down left right back next return', chars: '→←↑↓↔↕↖↗↘↙⇒⇐⇑⇓⇔⟶⟵⟷➔➜➙➛➝➞➟➠➢➣➤➥➦➨⤴⤵↩↪↺↻▶◀▲▼»«' },
+      { cat: 'Shapes', kw: 'shape circle square triangle diamond dot block rectangle', chars: '●○◐◑◒◓■□▪▫◆◇◊▬▭△▽◁▷⬤⬛⬜⬟⬢⬣▰▱' },
+      { cat: 'Stars & sparkles', kw: 'star sparkle asterisk flower snow burst twinkle', chars: '★☆✦✧✩✪✫✬✭✮✯✰❂❇❈❉❊❋✳✴✵✶✷✸✹✺❄❆❀✿❁' },
+      { cat: 'Hearts', kw: 'heart love like', chars: '♥♡❥❣' },
+      { cat: 'Marks & symbols', kw: 'check tick cross x mark bullet flag warning question', chars: '✓✔✗✘✕✖☑☒⊕⊖⊗⊘⦿✚✜✛✠⚑⚐‼⁇⁈⁉' },
+      { cat: 'Maths', kw: 'math plus minus times divide equals not infinity percent fraction degree sum', chars: '±×÷≠≈≡≤≥∞√π∑∏∫∆∂µΩ°′″½¼¾⅓⅔∅∈∩∪‰' },
+      { cat: 'Currency', kw: 'money currency dollar euro pound yen rupee bitcoin cent', chars: '$€£¥₹₩₽¢₿₺₴₦₱฿₫₡₪₸¤' },
+      { cat: 'Punctuation', kw: 'quote bullet dash section paragraph dagger number degree', chars: '“”‘’‹›•‣◦·…—–¡¿§¶†‡※℅№' },
+      { cat: 'Music & misc', kw: 'music note peace yin yang command option recycle gear shift', chars: '♪♫♬♭♯☯☮☘⚜❦❧⌘⌥⇧⏻♻⚙' },
+    ];
+    function addSymbolLayer(ch) {
+      if (!ch) return;
+      if (editingText) exitTextEdit();   // commit any open text edit first (same as Add text / emoji)
+      beginCollageChange();
+      // FE0E = text-presentation selector: guarantees a monochrome glyph that takes the
+      // fill colour (so a heart/etc. can't sneak in as a fixed-colour emoji). Harmless on
+      // glyphs with no emoji variant. Mirrors addTextLayer's field set (a real text layer).
+      const layer = { id: collageTextSeq++, text: ch + '︎', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.12, scaleX: 1, scaleY: 1, boxMode: 'auto', boxWFrac: null, boxHFrac: null, font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };
+      collageTexts.push(layer);
+      renderTextLayer(layer);
+      selectText(layer);
+      commitCollageChange();   // the ADD is its own undo step (no in-canvas edit — a symbol is placed, not typed)
+    }
+    let symbolPickerBuilt = false;
+    function renderSymbolPicker(q) {
+      const wrap = document.getElementById('collage-symbol-grid');
+      if (!wrap) return;
+      const needle = String(q || '').trim().toLowerCase();
+      let html = '', any = false;
+      for (const g of SYMBOL_GROUPS) {
+        if (needle && (g.cat + ' ' + g.kw).toLowerCase().indexOf(needle) === -1) continue;
+        any = true;
+        html += '<div class="emoji-cat-head">' + g.cat + '</div><div class="symbol-grid">';
+        for (const ch of Array.from(g.chars)) {
+          html += '<button type="button" class="symbol-btn" data-char="' + ch + '" data-pdr-tooltip="Insert ' + ch + '" data-pdr-tooltip-side="top">' + ch + '︎</button>';
+        }
+        html += '</div>';
+      }
+      wrap.innerHTML = any ? html : '<div class="emoji-empty">No symbols match — try “arrow”, “star”, “money”.</div>';
+    }
+    function buildSymbolPicker() {
+      const wrap = document.getElementById('collage-symbol-grid');
+      if (!wrap) return;
+      renderSymbolPicker('');
+      const search = document.getElementById('collage-symbol-search');
+      if (search && !search.dataset.wired) {
+        search.dataset.wired = '1';
+        search.addEventListener('input', () => renderSymbolPicker(search.value || ''));
+        search.addEventListener('keydown', (e) => {
+          if (e.key === 'Escape') { e.preventDefault(); search.value = ''; renderSymbolPicker(''); search.blur(); }
+          e.stopPropagation();   // keep typing out of the collage key handler (mirror emoji search)
+        });
+      }
+      if (!wrap.dataset.wired) {
+        wrap.dataset.wired = '1';
+        wrap.addEventListener('click', (e) => {
+          const b = e.target.closest ? e.target.closest('.symbol-btn') : null;
+          if (!b || !b.dataset.char) return;
+          addSymbolLayer(b.dataset.char);
+        });
+      }
+      symbolPickerBuilt = true;
     }
     // Selecting a text deselects any tile/background (and vice-versa) — a
     // text and a tile are never co-selected. Reveals + binds the Text panel
@@ -21665,6 +21760,7 @@
       // v2.1 round 219 (Terry) — build the EMOJIS picker (grid + search) once the
       // collage panel wires up. Sibling feature to Text; reuses the same layer engine.
       try { buildEmojiPicker(); } catch (_) {}
+      try { buildSymbolPicker(); } catch (_) {}   // v3.1 (Terry) — special-characters dropdown under Add text
       // v2.1 round 196 (Terry) — custom Font dropdown. The trigger toggles a
       // popover that STAYS OPEN while the user clicks through fonts (each pick
       // applies live via applyTextFont, the menu re-marks its active row but does
