@@ -14808,7 +14808,21 @@
       const d = gcd(best.num, best.den) || 1;
       return (best.num / d) + ':' + (best.den / d);
     }
-    function readCanvasDefault() { try { return localStorage.getItem(CANVAS_SIZE_DEFAULT_KEY) || ''; } catch (_) { return ''; } }
+    // v3.1 (Terry) — carousels keep their OWN default (page count) in a separate key:
+    // "it's the number of pages I want set as the default, not carousel over collages."
+    // The size default below stays purely about canvas sizes; a legacy 'carousel:N'
+    // value that briefly lived in it is ignored here (and migrated by the pages reader).
+    const CAROUSEL_PAGES_DEFAULT_KEY = 'pdr-carousel-pages-default';
+    function readCanvasDefault() { try { const v = localStorage.getItem(CANVAS_SIZE_DEFAULT_KEY) || ''; return /^carousel:/.test(v) ? '' : v; } catch (_) { return ''; } }
+    function readCarouselPagesDefault() {
+      try {
+        const v = parseInt(localStorage.getItem(CAROUSEL_PAGES_DEFAULT_KEY) || '', 10);
+        if (Number.isFinite(v) && v >= 1) return Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, v));
+        const legacy = /^carousel:(\d+)$/.exec(localStorage.getItem(CANVAS_SIZE_DEFAULT_KEY) || '');   // one-time migration from the short-lived combined format
+        if (legacy) { const n = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, parseInt(legacy[1], 10))); localStorage.setItem(CAROUSEL_PAGES_DEFAULT_KEY, String(n)); localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); return n; }
+      } catch (_) {}
+      return 0;   // 0 = no default saved
+    }
     function buildCanvasSizeIndicator(host) {
       const wrap = document.createElement('div'); wrap.className = 'ec-size-current';
       wrap.setAttribute('data-pdr-tooltip', 'The collage’s current canvas size');
@@ -14844,28 +14858,32 @@
       }
       box.style.setProperty('--ar', String(aspect || 1));
       name.textContent = label;
-      // v3.1 (Terry) — carousels CAN be the default now, INCLUDING their page count
-      // ("when trying to set the default no. pages for a carousel, the star never
-      // highlights"). Stored as 'carousel:N' in the same key; new collages open as an
-      // N-page carousel, and the IG Carousel quick-start uses N too.
+      // v3.1 (Terry) — on a CAROUSEL the star means "default PAGE COUNT for carousels"
+      // (new carousels start at N pages) — NOT "carousel as the default canvas". On a
+      // normal collage it keeps its original meaning: the default size for new collages.
       const curPreset = presetId ? COLLAGE_PRESETS.find((x) => x.id === presetId) : null;
-      let starKey = presetId;
       let canDefault = !!presetId && !(curPreset && curPreset.carousel);
-      if (carouselMode) { starKey = 'carousel:' + Math.max(1, carouselPageCount); canDefault = true; }
       const def = readCanvasDefault();
-      star.classList.toggle('on', canDefault && def === starKey);
+      let on = canDefault && def === presetId;
+      let tip = !canDefault ? 'Pick a preset size to set it as your default'
+        : (on ? 'This is your default for new collages — click to clear' : 'Set as the default size for new collages');
+      if (carouselMode) {
+        canDefault = true;
+        const n = Math.max(1, carouselPageCount);
+        on = readCarouselPagesDefault() === n;
+        tip = on ? (n + ' pages is your default carousel length — click to clear')
+                 : ('Set ' + n + ' pages as your default carousel length');
+      }
+      star.classList.toggle('on', on);
       star.classList.toggle('disabled', !canDefault);
-      star.setAttribute('data-pdr-tooltip',
-        !canDefault ? 'Pick a preset size to set it as your default'
-        : (def === starKey ? 'This is your default for new collages — click to clear'
-        : (carouselMode ? ('Set carousel · ' + Math.max(1, carouselPageCount) + ' pages as your default for new collages') : 'Set as the default size for new collages')));
+      star.setAttribute('data-pdr-tooltip', tip);
     }
     function toggleCanvasSizeDefault() {
-      // v3.1 (Terry) — a CAROUSEL (with its page count) can be the default too.
+      // v3.1 (Terry) — on a carousel the star toggles the default PAGE COUNT (own key;
+      // the canvas-size default for normal collages is untouched by this).
       if (carouselMode) {
-        const key = 'carousel:' + Math.max(1, carouselPageCount);
-        const def0 = readCanvasDefault();
-        try { if (def0 === key) localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); else localStorage.setItem(CANVAS_SIZE_DEFAULT_KEY, key); } catch (_) {}
+        const n = Math.max(1, carouselPageCount);
+        try { if (readCarouselPagesDefault() === n) localStorage.removeItem(CAROUSEL_PAGES_DEFAULT_KEY); else localStorage.setItem(CAROUSEL_PAGES_DEFAULT_KEY, String(n)); } catch (_) {}
         updateCanvasSizeIndicator();
         try { syncCanvasSizeSelection(); } catch (_) {}
         return;
@@ -14877,11 +14895,8 @@
       try { if (def === p.id) localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); else localStorage.setItem(CANVAS_SIZE_DEFAULT_KEY, p.id); } catch (_) {}
       syncCanvasSizeSelection();   // refresh the chip ★ + the list 'Default' tag
     }
-    // v3.1 (Terry) — the saved carousel default's page count ('carousel:N'), else the stock default.
-    function carouselDefaultPages() {
-      try { const m = /^carousel:(\d+)$/.exec(readCanvasDefault()); if (m) return Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, parseInt(m[1], 10))); } catch (_) {}
-      return CAROUSEL_DEFAULT;
-    }
+    // v3.1 (Terry) — the saved default carousel page count, else the stock default.
+    function carouselDefaultPages() { return readCarouselPagesDefault() || CAROUSEL_DEFAULT; }
     function buildCanvasSizeMenu() {
       const host = document.getElementById('ec-canvas-size-list');
       if (!host) return;
@@ -22921,15 +22936,8 @@
       try {
         const defId = readCanvasDefault();
         if (defId && !carouselMode) {
-          // v3.1 (Terry) — a 'carousel:N' default opens the new collage AS an N-page
-          // carousel (deferred past the first layout pass — the canvas can measure 0×0
-          // before first paint; enterCarouselMode reshapes + rebuilds the page strip).
-          const cm = /^carousel:(\d+)$/.exec(defId);
-          if (cm) { setTimeout(() => { try { if (!carouselMode) enterCarouselMode(parseInt(cm[1], 10)); } catch (_) {} }, 140); }
-          else {
-            const p = COLLAGE_PRESETS.find((x) => x.id === defId && !x.carousel);
-            if (p) { collageAspectKey = presetAspect(p); collageSizeId = p.id; collageExportPx = { w: p.px.w, h: p.px.h }; }
-          }
+          const p = COLLAGE_PRESETS.find((x) => x.id === defId && !x.carousel);
+          if (p) { collageAspectKey = presetAspect(p); collageSizeId = p.id; collageExportPx = { w: p.px.w, h: p.px.h }; }
         }
       } catch (_) {}
       // v2.1 round 157 (Terry) — section open/closed state is now persisted
