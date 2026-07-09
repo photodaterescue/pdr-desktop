@@ -84,7 +84,6 @@ function sidecarCollagesDir(): string | null {
   try { fs.mkdirSync(dir, { recursive: true }); } catch { return null; }
   return dir;
 }
-function mtimeOf(p: string): number { try { return fs.statSync(toLongPath(p)).mtimeMs; } catch { return 0; } }
 // Copy PRESERVING mtime (atomic temp+rename), so a written-through copy has the SAME mtime as its source
 // and the newer-wins merge below never ping-pongs identical files back and forth.
 function copyPreservingMtime(src: string, dst: string): void {
@@ -96,16 +95,39 @@ function copyPreservingMtime(src: string, dst: string): void {
 }
 // Bidirectional newer-wins merge: AppData→drive catches up anything saved while the drive was offline;
 // drive→AppData restores everything after a reinstall (AppData empty → every sidecar file is "newer").
-function syncCollagesWithSidecar(): void {
-  const sc = sidecarCollagesDir();
-  if (!sc) return;
-  const local = projectsDir();
-  const isProj = (f: string) => f.endsWith(PROJECT_EXT) || f.endsWith('.png');
-  let localFiles: string[] = [], scFiles: string[] = [];
-  try { localFiles = fs.readdirSync(local).filter(isProj); } catch { /* none */ }
-  try { scFiles = fs.readdirSync(sc).filter(isProj); } catch { /* none */ }
-  for (const f of localFiles) { const lp = path.join(local, f), sp = path.join(sc, f); if (mtimeOf(lp) > mtimeOf(sp)) { try { copyPreservingMtime(lp, sp); } catch { /* best-effort */ } } }
-  for (const f of scFiles) { const sp = path.join(sc, f), lp = path.join(local, f); if (mtimeOf(sp) > mtimeOf(lp)) { try { copyPreservingMtime(sp, lp); } catch { /* best-effort */ } } }
+// v3.1 (Terry) — ASYNC + OFF the list path. The old sync version stat'd every project file on the
+// LIBRARY DRIVE synchronously inside collage:listProjects (104 projects ≈ 800+ blocking stats on a
+// USB/HDD), freezing the MAIN process — the whole app, window dragging included — every time the
+// Collages welcome screen opened ("always having to wait for this to populate before I'm able to
+// grab the titlebar"). Stats are now fs.promises; copies stay sync but only fire for genuinely
+// newer files (normally zero); an in-flight guard stops overlap and callers throttle.
+let sidecarSyncInFlight = false;
+let sidecarSyncLastMs = 0;
+async function syncCollagesWithSidecarAsync(): Promise<void> {
+  if (sidecarSyncInFlight) return;
+  sidecarSyncInFlight = true;
+  try {
+    const sc = sidecarCollagesDir();
+    if (!sc) return;
+    const local = projectsDir();
+    const isProj = (f: string) => f.endsWith(PROJECT_EXT) || f.endsWith('.png');
+    const statMs = async (p: string): Promise<number> => { try { return (await fs.promises.stat(toLongPath(p))).mtimeMs; } catch { return 0; } };
+    const [localFiles, scFiles] = await Promise.all([
+      fs.promises.readdir(local).then((l) => l.filter(isProj)).catch(() => [] as string[]),
+      fs.promises.readdir(sc).then((l) => l.filter(isProj)).catch(() => [] as string[]),
+    ]);
+    for (const f of localFiles) {
+      const lp = path.join(local, f), sp = path.join(sc, f);
+      const [a, b] = await Promise.all([statMs(lp), statMs(sp)]);
+      if (a > b) { try { copyPreservingMtime(lp, sp); } catch { /* best-effort */ } }
+    }
+    for (const f of scFiles) {
+      const sp = path.join(sc, f), lp = path.join(local, f);
+      const [a, b] = await Promise.all([statMs(sp), statMs(lp)]);
+      if (a > b) { try { copyPreservingMtime(sp, lp); } catch { /* best-effort */ } }
+    }
+    sidecarSyncLastMs = Date.now();
+  } finally { sidecarSyncInFlight = false; }
 }
 // -------------------------------------------------------------------------------------------------
 
@@ -191,9 +213,19 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
   try {
     const dir = projectsDir();
     try { migrateOldProjects(); } catch { /* migration is best-effort; the list still works */ }   // v3.0 (Terry) — old random-code files → timestamp convention
-    try { syncCollagesWithSidecar(); } catch { /* merge is best-effort; AppData still lists */ }      // v3.0 r388 (Terry) — restore-after-reinstall + offline-save catch-up
+    // v3.1 (Terry) — the sidecar merge is OFF the list path (the sync version froze the main
+    // process — see syncCollagesWithSidecarAsync). List straight from AppData (the working copy)
+    // and run the merge in the BACKGROUND, throttled to once a minute. ONE exception awaits it:
+    // empty AppData with a sidecar present = the reinstall-restore case, where waiting IS the
+    // feature (a fresh install must see every project on its very first open).
     let recs: string[] = [];
-    try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return []; }
+    try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { recs = []; }
+    if (!recs.length && sidecarCollagesDir()) {
+      try { await syncCollagesWithSidecarAsync(); } catch { /* best-effort */ }
+      try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return []; }
+    } else if (Date.now() - sidecarSyncLastMs > 60_000) {
+      void syncCollagesWithSidecarAsync().catch(() => { /* background best-effort */ });
+    }
     const out: CollageProjectSummary[] = [];
     for (const f of recs) {
       try {
