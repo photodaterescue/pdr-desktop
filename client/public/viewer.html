@@ -14844,27 +14844,43 @@
       }
       box.style.setProperty('--ar', String(aspect || 1));
       name.textContent = label;
-      // v3.0.1 (Terry 2026-07-07) — a carousel size can't be a "default for new collages"
-      // (toggleCanvasSizeDefault excludes carousel presets). Keep canDefault in step with it so the
-      // star doesn't look settable-but-inert on a carousel — it now clearly greys out + the tooltip
-      // says why, instead of doing nothing on click.
+      // v3.1 (Terry) — carousels CAN be the default now, INCLUDING their page count
+      // ("when trying to set the default no. pages for a carousel, the star never
+      // highlights"). Stored as 'carousel:N' in the same key; new collages open as an
+      // N-page carousel, and the IG Carousel quick-start uses N too.
       const curPreset = presetId ? COLLAGE_PRESETS.find((x) => x.id === presetId) : null;
-      const canDefault = !!presetId && !carouselMode && !(curPreset && curPreset.carousel);
+      let starKey = presetId;
+      let canDefault = !!presetId && !(curPreset && curPreset.carousel);
+      if (carouselMode) { starKey = 'carousel:' + Math.max(1, carouselPageCount); canDefault = true; }
       const def = readCanvasDefault();
-      star.classList.toggle('on', canDefault && def === presetId);
+      star.classList.toggle('on', canDefault && def === starKey);
       star.classList.toggle('disabled', !canDefault);
       star.setAttribute('data-pdr-tooltip',
         !canDefault ? 'Pick a preset size to set it as your default'
-        : (def === presetId ? 'This is your default for new collages — click to clear'
-        : 'Set as the default size for new collages'));
+        : (def === starKey ? 'This is your default for new collages — click to clear'
+        : (carouselMode ? ('Set carousel · ' + Math.max(1, carouselPageCount) + ' pages as your default for new collages') : 'Set as the default size for new collages')));
     }
     function toggleCanvasSizeDefault() {
-      if (carouselMode || !collageSizeId) return;
+      // v3.1 (Terry) — a CAROUSEL (with its page count) can be the default too.
+      if (carouselMode) {
+        const key = 'carousel:' + Math.max(1, carouselPageCount);
+        const def0 = readCanvasDefault();
+        try { if (def0 === key) localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); else localStorage.setItem(CANVAS_SIZE_DEFAULT_KEY, key); } catch (_) {}
+        updateCanvasSizeIndicator();
+        try { syncCanvasSizeSelection(); } catch (_) {}
+        return;
+      }
+      if (!collageSizeId) return;
       const p = COLLAGE_PRESETS.find((x) => x.id === collageSizeId && !x.carousel);
       if (!p) return;
       const def = readCanvasDefault();
       try { if (def === p.id) localStorage.removeItem(CANVAS_SIZE_DEFAULT_KEY); else localStorage.setItem(CANVAS_SIZE_DEFAULT_KEY, p.id); } catch (_) {}
       syncCanvasSizeSelection();   // refresh the chip ★ + the list 'Default' tag
+    }
+    // v3.1 (Terry) — the saved carousel default's page count ('carousel:N'), else the stock default.
+    function carouselDefaultPages() {
+      try { const m = /^carousel:(\d+)$/.exec(readCanvasDefault()); if (m) return Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, parseInt(m[1], 10))); } catch (_) {}
+      return CAROUSEL_DEFAULT;
     }
     function buildCanvasSizeMenu() {
       const host = document.getElementById('ec-canvas-size-list');
@@ -15879,7 +15895,7 @@
       const cwsCar = document.getElementById('cws-carousel');
       // v2.1 round 360 (Terry) — ALWAYS start a FRESH 2-page carousel (the old enterCarouselFromMenu
       // early-returned when already in carousel mode, so it reused the stale 6-page one).
-      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', async () => { if (!(await collageTrialGate('carousel'))) return; hideCollageWelcome(); try { if (carouselMode) exitCarouselMode(); enterCarouselMode(CAROUSEL_DEFAULT); } catch (_) {} }); }   // v3.0 round 548 (Terry) — trial cap
+      if (cwsCar && !cwsCar.dataset.wired) { cwsCar.dataset.wired = '1'; cwsCar.addEventListener('click', async () => { if (!(await collageTrialGate('carousel'))) return; hideCollageWelcome(); try { if (carouselMode) exitCarouselMode(); enterCarouselMode(carouselDefaultPages()); } catch (_) {} }); }   // v3.0 round 548 (Terry) — trial cap. v3.1 (Terry) — starts at the SAVED default page count when one is starred
       buildCwsTemplates();
       buildCwsRecent();
       w.classList.add('active');
@@ -19728,7 +19744,7 @@
       if (!(await collageTrialGate('carousel'))) return;   // v3.0 round 548 (Terry) — trial cap (converting via the Canvas Size carousel preset)
       // v2.1 round 257 (Terry) — enterCarouselMode now starts ALL pages blank (it clears
       // the live collage via the carousel restore path), so no separate pre-clear here.
-      enterCarouselMode(CAROUSEL_DEFAULT);
+      enterCarouselMode(carouselDefaultPages());   // v3.1 (Terry) — honors the starred 'carousel:N' default page count
       try { localStorage.setItem(CANVAS_SIZE_LAST_KEY, p && p.id ? p.id : CAROUSEL_SIZE_ID); } catch (_) {}
     }
     // Paint the gold highlight on whichever preset row matches collageSizeId, and
@@ -22905,8 +22921,15 @@
       try {
         const defId = readCanvasDefault();
         if (defId && !carouselMode) {
-          const p = COLLAGE_PRESETS.find((x) => x.id === defId && !x.carousel);
-          if (p) { collageAspectKey = presetAspect(p); collageSizeId = p.id; collageExportPx = { w: p.px.w, h: p.px.h }; }
+          // v3.1 (Terry) — a 'carousel:N' default opens the new collage AS an N-page
+          // carousel (deferred past the first layout pass — the canvas can measure 0×0
+          // before first paint; enterCarouselMode reshapes + rebuilds the page strip).
+          const cm = /^carousel:(\d+)$/.exec(defId);
+          if (cm) { setTimeout(() => { try { if (!carouselMode) enterCarouselMode(parseInt(cm[1], 10)); } catch (_) {} }, 140); }
+          else {
+            const p = COLLAGE_PRESETS.find((x) => x.id === defId && !x.carousel);
+            if (p) { collageAspectKey = presetAspect(p); collageSizeId = p.id; collageExportPx = { w: p.px.w, h: p.px.h }; }
+          }
         }
       } catch (_) {}
       // v2.1 round 157 (Terry) — section open/closed state is now persisted
