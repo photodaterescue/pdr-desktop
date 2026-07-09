@@ -48,7 +48,8 @@
       "**/node_modules/uiohook-napi/**",
       "**/node_modules/better-sqlite3/**",
       "**/node_modules/bindings/**",
-      "**/node_modules/file-uri-to-path/**"
+      "**/node_modules/file-uri-to-path/**",
+      "dist/public/mediapipe-selfie/**"
     ],
     "extraResources": [
       {
@@ -141,6 +142,7 @@
     "@hookform/resolvers": "^3.10.0",
     "@huggingface/transformers": "^4.0.1",
     "@jridgewell/trace-mapping": "^0.3.25",
+    "@mediapipe/selfie_segmentation": "^0.1.1675465747",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",

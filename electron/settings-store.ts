@@ -167,6 +167,10 @@ export interface PDRSettings {
   /** Camera deviceId ('' = system default camera). Populated from
    *  the device dropdown in Settings → Capture. */
   captureCamDevice: string;
+  /** v3.1 (Terry) — camera VIRTUAL BACKGROUND for the bubble (no greenscreen; on-device person
+   *  segmentation). type: 'none' | 'blur' | 'gradient' (value = preset id) | 'image' (value = file
+   *  path). Picked from the recording bar's Background dropdown; applied live + on bubble start. */
+  captureCamBg: { type: string; value?: string };
   /** Global hotkey that shows/hides the camera bubble — registered
    *  ONLY while a recording is running, so it never squats on the
    *  combo outside recordings. Same remap UI as the screenshot
@@ -369,6 +373,7 @@ export const optimisedDefaults: PDRSettings = {
   captureCamEnabled: false,
   captureCamShape: 'circle',
   captureCamDevice: '',
+  captureCamBg: { type: 'none' },
   captureCamHotkey: 'Ctrl+Shift+C',
   // v3.0 round 410 — microphone/voiceover off until asked for, system-default mic.
   captureMicEnabled: false,
@@ -468,6 +473,7 @@ export function getSettings(): PDRSettings {
     captureCamEnabled: store.get('captureCamEnabled', optimisedDefaults.captureCamEnabled),
     captureCamShape: store.get('captureCamShape', optimisedDefaults.captureCamShape),
     captureCamDevice: store.get('captureCamDevice', optimisedDefaults.captureCamDevice),
+    captureCamBg: store.get('captureCamBg', optimisedDefaults.captureCamBg),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
     captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),

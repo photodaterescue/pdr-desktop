@@ -484,18 +484,23 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // main to size the window to fit, so controls never clip however
     // many buttons are shown.
     recordResize: (width: number) => ipcRenderer.send('capture:record-resize', width),
-    onCamInit: (callback: (info: { deviceId: string; shape: 'circle' | 'rectangle' }) => void) => {
+    onCamInit: (callback: (info: { deviceId: string; shape: 'circle' | 'rectangle'; bg?: { type: string; value?: string } }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:cam-init', handler);
       return () => ipcRenderer.removeListener('capture:cam-init', handler);
     },
-    onCamDo: (callback: (cmd: { action: 'show' | 'hide' }) => void) => {
+    onCamDo: (callback: (cmd: { action: 'show' | 'hide' | 'set-bg'; bg?: { type: string; value?: string } }) => void) => {
       const handler = (_event: any, cmd: any) => callback(cmd);
       ipcRenderer.on('capture:cam-do', handler);
       return () => ipcRenderer.removeListener('capture:cam-do', handler);
     },
     camFadedOut: () => ipcRenderer.send('capture:cam-fadedout'),
     camError: (info: { message: string }) => ipcRenderer.send('capture:cam-error', info),
+    // v3.1 (Terry) — camera VIRTUAL BACKGROUND: the bar's picker persists + relays a choice (main
+    // forwards it to the bubble as cam-do {action:'set-bg'}); the picker's "My picture…" opens a
+    // native image dialog in main and resolves to the chosen path (or null on cancel).
+    camSetBg: (bg: { type: string; value?: string }) => ipcRenderer.send('capture:cam-set-bg', bg),
+    camBgPickImage: () => ipcRenderer.invoke('capture:cam-bg-pick') as Promise<string | null>,
     // ── Recording widget channels (capture-record-widget.html) ──
     // v2.1 round 139 — these (and the region-overlay channels below)
     // were briefly trapped inside the `collage` namespace when round

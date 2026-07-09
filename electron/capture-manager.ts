@@ -27,7 +27,7 @@
  * media stream at all — desktopCapturer hands the main process a
  * full-resolution NativeImage directly.
  */
-import { app, BrowserWindow, desktopCapturer, globalShortcut, ipcMain, nativeImage, screen } from 'electron';
+import { app, BrowserWindow, desktopCapturer, dialog, globalShortcut, ipcMain, nativeImage, screen } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -3152,6 +3152,8 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         ripple: (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })(),
         // v3.0 round 485 (Terry) — auto-zoom-toward-clicks preference for the bar.
         autoZoom: (() => { try { return getSettings().captureAutoZoomEnabled === true; } catch { return false; } })(),
+        // v3.1 (Terry) — remembered camera VIRTUAL BACKGROUND (none/blur/gradient/image) for the bar's picker.
+        camBg: (() => { try { return getSettings().captureCamBg || { type: 'none' }; } catch { return { type: 'none' }; } })(),
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
@@ -3608,6 +3610,34 @@ ipcMain.on('capture:record-quality', (event, info: { quality?: 'high' | 'standar
   log.info(`[capture] recording quality → ${q} (save-time; persisted for future recordings)`);
 });
 
+// ─── v3.1 (Terry) — camera VIRTUAL BACKGROUND ───────────────────────────────
+// The bar's Background picker → persist the choice + relay it live to the cam
+// bubble (which does the person-segmentation compositing itself, offline).
+// bg = { type: 'none' | 'blur' | 'gradient' | 'image', value?: string }
+//   gradient → value = preset id (the bubble draws it); image → value = file path.
+ipcMain.on('capture:cam-set-bg', (event, bg: { type?: string; value?: string }) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
+  const clean = { type: String((bg && bg.type) || 'none'), value: typeof (bg && bg.value) === 'string' ? bg.value : undefined };
+  try { setSetting('captureCamBg', clean); } catch { /* non-fatal */ }
+  if (camWindow && !camWindow.isDestroyed()) {
+    try { camWindow.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ }
+  }
+  log.info(`[capture] cam background → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
+});
+// "My picture…" — a native image picker, parented to the bar. Returns the path or null.
+ipcMain.handle('capture:cam-bg-pick', async (event) => {
+  if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return null;
+  try {
+    const res = await dialog.showOpenDialog(recordWidget, {
+      title: 'Choose a background picture',
+      properties: ['openFile'],
+      filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }],
+    });
+    if (res.canceled || !res.filePaths || !res.filePaths[0]) return null;
+    return res.filePaths[0];
+  } catch { return null; }
+});
+
 // Round 127 — Blur. The widget auto-pauses, then asks for the area
 // selector. We freeze the recorded display exactly as it stands (no
 // window hiding — the footage must match) and reuse the region
@@ -3797,7 +3827,9 @@ function createCamBubble(display: Electron.Display): void {
   });
   win.webContents.once('did-finish-load', () => {
     if (win.isDestroyed()) return;
-    win.webContents.send('capture:cam-init', { deviceId, shape });
+    // v3.1 (Terry) — pass the remembered virtual background so the bubble starts with it applied.
+    const bg = (() => { try { return getSettings().captureCamBg || { type: 'none' }; } catch { return { type: 'none' }; } })();
+    win.webContents.send('capture:cam-init', { deviceId, shape, bg });
     win.showInactive();
     camVisible = true;
     notifyWidgetCamState();

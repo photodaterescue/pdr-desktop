@@ -9,8 +9,7 @@
   A small frameless TRANSPARENT always-on-top window showing the
   webcam, placed on the recorded display. Deliberately NOT
   content-protected — unlike the recording bar, this window exists to
-  BE captured: it's on the screen, so it's in the footage. That's the
-  whole trick — no canvas compositing, no per-frame work.
+  BE captured: it's on the screen, so it's in the footage.
 
   Shape comes from Settings → Capture: circle (the tutorial classic)
   or rectangle. Show/hide commands fade the content in/out (300ms);
@@ -20,6 +19,21 @@
   Draggable anywhere (the whole bubble is a drag region). Camera
   failure shows a quiet message and reports to main, which closes the
   bubble and surfaces a toast.
+
+  v3.1 (Terry) — VIRTUAL BACKGROUNDS (no greenscreen). An on-device
+  person-segmentation model (MediaPipe Selfie Segmentation, Apache-2.0,
+  bundled under ./mediapipe-selfie — fully offline) separates the person
+  from the room per frame; a <canvas> composites the person over the
+  chosen background: BLUR (the real room, blurred), a PDR GRADIENT
+  (generated locally — ours, no third-party assets), or MY PICTURE (any
+  image file, e.g. a design saved from Collages with a logo + words).
+  'None' shows the raw <video> and does ZERO per-frame work. The bar's
+  Background dropdown drives it via cam-do {action:'set-bg'}; the choice
+  persists in Settings. If the engine can't start (old CPU, missing
+  files) the bubble silently falls back to the plain camera — recording
+  never breaks. Backgrounds are drawn PRE-mirrored so the CSS selfie
+  mirror leaves logo/words in a picture background READABLE, while blur
+  follows the person (same scene, same mirror).
 
   Self-contained vanilla HTML/JS — OS chrome, not app UI.
 -->
@@ -48,7 +62,9 @@
   #shell.circle { border-radius: 50%; }
   #shell.rectangle { border-radius: 14px; }
   #shell.visible { opacity: 1; }
-  video {
+  video, #camc {
+    position: absolute;
+    inset: 0;
     width: 100%;
     height: 100%;
     object-fit: cover;
@@ -57,6 +73,9 @@
     display: block;
     pointer-events: none;
   }
+  #camc { display: none; }           /* shown only while a virtual background is active */
+  body.vbg video { visibility: hidden; }   /* keep the video playing (it feeds the canvas) but unseen */
+  body.vbg #camc { display: block; }
   #err {
     position: absolute;
     inset: 0;
@@ -73,6 +92,7 @@
 <body>
   <div id="shell">
     <video id="cam" autoplay muted playsinline></video>
+    <canvas id="camc"></canvas>
     <div id="err">Camera unavailable</div>
   </div>
 <script>
@@ -80,6 +100,8 @@
   var pdr = window.pdr;
   var shell = document.getElementById('shell');
   var video = document.getElementById('cam');
+  var canvas = document.getElementById('camc');
+  var ctx = canvas.getContext('2d');
   var errEl = document.getElementById('err');
   var stream = null;
 
@@ -91,6 +113,155 @@
     setTimeout(function () {
       try { if (pdr && pdr.capture && pdr.capture.camFadedOut) pdr.capture.camFadedOut(); } catch (e) {}
     }, 320);
+  }
+
+  // ── v3.1 (Terry) — virtual background engine ────────────────────────────
+  var currentBg = { type: 'none' };   // {type:'none'|'blur'|'gradient'|'image', value?}
+  var seg = null;                     // SelfieSegmentation instance (lazy)
+  var segLoading = null;              // Promise while the engine spins up
+  var segFailed = false;              // engine unavailable → stay on plain video
+  var rafId = 0;
+  var sending = false;                // one in-flight frame at a time
+  var lastFrameT = 0;
+  var FRAME_MS = 1000 / 24;           // ~24fps — smooth for a bubble, light on CPU
+  var bgLayer = null;                 // canvas or Image for gradient/image; null for blur
+  var bgLayerKey = '';                // memo: which bg the layer was built for
+
+  // PDR-designed gradient presets — generated locally (brand colours, no third-party assets).
+  var GRADIENTS = {
+    lavender: ['#A99CFF', '#4A3FB8'],
+    gold:     ['#FEC242', '#6E4E12'],
+    studio:   ['#2A2933', '#0E0E14'],
+    navy:     ['#3949AB', '#111C45'],
+    fuchsia:  ['#D946EF', '#47105A'],
+    forest:   ['#10B981', '#053B26'],
+  };
+  function makeGradientLayer(id) {
+    var g = GRADIENTS[id] || GRADIENTS.studio;
+    var cv = document.createElement('canvas');
+    cv.width = 640; cv.height = 480;
+    var c = cv.getContext('2d');
+    var grad = c.createLinearGradient(0, 0, cv.width, cv.height);
+    grad.addColorStop(0, g[0]); grad.addColorStop(1, g[1]);
+    c.fillStyle = grad;
+    c.fillRect(0, 0, cv.width, cv.height);
+    // A soft vignette so the person "sits" in the scene rather than floating on flat colour.
+    var v = c.createRadialGradient(cv.width / 2, cv.height * 0.42, cv.height * 0.28, cv.width / 2, cv.height / 2, cv.height * 0.95);
+    v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.38)');
+    c.fillStyle = v;
+    c.fillRect(0, 0, cv.width, cv.height);
+    return cv;
+  }
+  function buildBgLayer(bg, onReady) {
+    var key = bg.type + ':' + (bg.value || '');
+    if (key === bgLayerKey && bgLayer) { onReady(); return; }
+    if (bg.type === 'gradient') { bgLayer = makeGradientLayer(bg.value || 'studio'); bgLayerKey = key; onReady(); return; }
+    if (bg.type === 'image' && bg.value) {
+      var img = new Image();
+      img.onload = function () { bgLayer = img; bgLayerKey = key; onReady(); };
+      img.onerror = function () { bgLayer = null; bgLayerKey = ''; onReady(); };   // draw() falls back to blur
+      img.src = 'file:///' + String(bg.value).replace(/\\/g, '/').split('/').map(encodeURIComponent).join('/').replace(/^([A-Za-z])%3A/, '$1:');
+      return;
+    }
+    bgLayer = null; bgLayerKey = key; onReady();   // blur needs no layer
+  }
+  // Cover-fit a source onto the canvas (object-fit: cover in canvas space).
+  function drawCover(c, src, w, h) {
+    var sw = src.width || src.videoWidth || w, sh = src.height || src.videoHeight || h;
+    var s = Math.max(w / sw, h / sh);
+    var dw = sw * s, dh = sh * s;
+    c.drawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
+  }
+  function onSegResults(results) {
+    var w = canvas.width, h = canvas.height;
+    if (!w || !h) return;
+    ctx.clearRect(0, 0, w, h);
+    // 1. The person mask (slightly feathered so edges don't razor).
+    ctx.save();
+    ctx.filter = 'blur(2px)';
+    ctx.drawImage(results.segmentationMask, 0, 0, w, h);
+    ctx.restore();
+    // 2. Keep only the person's pixels from the live frame.
+    ctx.globalCompositeOperation = 'source-in';
+    ctx.drawImage(results.image, 0, 0, w, h);
+    // 3. The background BEHIND the person.
+    ctx.globalCompositeOperation = 'destination-over';
+    if (currentBg.type === 'blur' || !bgLayer) {
+      // The real room, blurred — same scene as the person, so it shares the selfie mirror as-is.
+      ctx.save();
+      ctx.filter = 'blur(14px)';
+      // Overscan hides the blurred edge vignette.
+      ctx.drawImage(results.image, -16, -16, w + 32, h + 32);
+      ctx.restore();
+    } else {
+      // Gradient / picture: PRE-mirror so the CSS selfie mirror cancels out — a logo or words in
+      // the background stay READABLE on screen and in the footage.
+      ctx.save();
+      ctx.translate(w, 0); ctx.scale(-1, 1);
+      drawCover(ctx, bgLayer, w, h);
+      ctx.restore();
+    }
+    ctx.globalCompositeOperation = 'source-over';
+    sending = false;
+  }
+  function ensureEngine() {
+    if (seg) return Promise.resolve();
+    if (segFailed) return Promise.reject(new Error('engine unavailable'));
+    if (segLoading) return segLoading;
+    segLoading = new Promise(function (resolve, reject) {
+      var s = document.createElement('script');
+      s.src = 'mediapipe-selfie/selfie_segmentation.js';
+      s.onload = function () {
+        try {
+          seg = new window.SelfieSegmentation({
+            locateFile: function (f) { return new URL('mediapipe-selfie/' + f, window.location.href).toString(); },
+          });
+          seg.setOptions({ modelSelection: 1, selfieMode: false });   // landscape model — built for webcams
+          seg.onResults(onSegResults);
+          resolve();
+        } catch (e) { reject(e); }
+      };
+      s.onerror = function () { reject(new Error('selfie_segmentation.js failed to load')); };
+      document.head.appendChild(s);
+    }).catch(function (e) { segFailed = true; segLoading = null; seg = null; throw e; });
+    return segLoading;
+  }
+  function frameLoop(t) {
+    rafId = requestAnimationFrame(frameLoop);
+    if (currentBg.type === 'none' || segFailed || !seg) return;
+    if (sending || !video.videoWidth) return;
+    if (t - lastFrameT < FRAME_MS) return;
+    lastFrameT = t;
+    if (canvas.width !== video.videoWidth || canvas.height !== video.videoHeight) {
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+    }
+    sending = true;
+    try {
+      seg.send({ image: video }).catch(function () { sending = false; failBackToPlain(); });
+    } catch (e) { sending = false; failBackToPlain(); }
+  }
+  function failBackToPlain() {
+    // Engine died mid-flight (old CPU, corrupt wasm…) — plain camera, recording never breaks.
+    segFailed = true;
+    document.body.classList.remove('vbg');
+    if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+    try { console.warn('[cam] virtual background unavailable — showing the plain camera'); } catch (e) {}
+  }
+  function applyBg(bg) {
+    currentBg = (bg && bg.type) ? bg : { type: 'none' };
+    if (currentBg.type === 'none') {
+      document.body.classList.remove('vbg');
+      if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }
+      return;
+    }
+    ensureEngine().then(function () {
+      buildBgLayer(currentBg, function () {
+        document.body.classList.add('vbg');
+        sending = false;
+        if (!rafId) rafId = requestAnimationFrame(frameLoop);
+      });
+    }).catch(function () { failBackToPlain(); });
   }
 
   async function start(init) {
@@ -113,6 +284,8 @@
       }
       video.srcObject = stream;
       fadeIn();
+      // v3.1 (Terry) — start with the remembered virtual background, if any.
+      if (init && init.bg && init.bg.type && init.bg.type !== 'none') applyBg(init.bg);
     } catch (err) {
       errEl.style.display = 'flex';
       fadeIn();
@@ -129,12 +302,15 @@
         if (!cmd) return;
         if (cmd.action === 'show') fadeIn();
         else if (cmd.action === 'hide') fadeOut();
+        else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
       });
     }
   }
 
   window.addEventListener('beforeunload', function () {
     try { if (stream) stream.getTracks().forEach(function (t) { t.stop(); }); } catch (e) {}
+    if (rafId) cancelAnimationFrame(rafId);
+    try { if (seg && seg.close) seg.close(); } catch (e) {}
   });
 })();
 </script>
