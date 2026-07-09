@@ -4824,17 +4824,17 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg>
             Add text
           </button>
-          <!-- v3.1 (Terry) — SPECIAL CHARACTERS dropdown, nested right under Add text.
-               Arrows (every shape), geometric shapes, stars, marks, maths, currency,
-               punctuation. Each inserts as a NORMAL text layer, so it takes the text
-               colour + font + size + effects + transparency (a gold outlined arrow, a
-               pink star — all free). Mirrors the Emojis picker; grid built by
-               buildSymbolPicker(). -->
-          <details class="enhance-collapse" id="collage-symbol-collapse" style="margin-top:8px">
-            <summary>Symbols &amp; arrows</summary>
+          <!-- v3.1 (Terry) — SPECIAL CHARACTERS now open from a compact DROPDOWN BUTTON in
+               the Style row (the Ω button, added below), not a big collapsible section. This
+               is the popover it opens: a fixed-position panel (never clipped by the side
+               panel's overflow) holding the search + grid. Same ids as before, so
+               buildSymbolPicker() / renderSymbolPicker() drive it unchanged. Each glyph still
+               inserts as a NORMAL text layer that takes the text colour / font / size /
+               effects (a gold outlined arrow, a pink star). -->
+          <div id="collage-symbol-pop" style="display:none;position:fixed;z-index:210;width:284px;background:rgba(28,26,46,0.98);border:1px solid rgba(255,255,255,0.16);border-radius:10px;box-shadow:0 8px 24px rgba(0,0,0,0.5);padding:9px;">
             <input type="text" class="emoji-search" id="collage-symbol-search" placeholder="Search — arrow, star, heart, money…" autocomplete="off" spellcheck="false" aria-label="Search special characters">
-            <div class="emoji-grid-wrap" id="collage-symbol-grid"></div>
-          </details>
+            <div class="emoji-grid-wrap" id="collage-symbol-grid" style="max-height:224px"></div>
+          </div>
           <!-- Per-layer controls — revealed by syncTextControls() when a text
                layer is selected (click a text on the canvas to select it). -->
           <div id="collage-text-controls" style="display:none;margin-top:10px">
@@ -4903,6 +4903,10 @@
                     <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
                     <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
                     <button class="ec-toggle-btn" data-style="strike" type="button" data-pdr-tooltip="Strikethrough" aria-label="Strikethrough" style="text-decoration:line-through">S</button><!-- v3.1 (Terry) — panel parity with the bar -->
+                    <!-- v3.1 (Terry SS4) — Symbols & arrows as a compact dropdown button (Ω = the
+                         universal "insert symbol" mark), placed here in the Style row as Terry
+                         indicated. Opens #collage-symbol-pop; each glyph inserts as a text layer. -->
+                    <button class="ec-toggle-btn" id="collage-symbol-btn" type="button" data-pdr-tooltip="Symbols &amp; arrows — → ★ ✓ € and more" aria-label="Symbols and arrows" style="width:auto;padding:0 7px">&#937;<span aria-hidden="true" style="font-size:9px;opacity:0.75;margin-left:3px">&#9662;</span></button>
                   </div>
                 </div>
               </div>
@@ -12343,10 +12347,48 @@
         wrap.addEventListener('click', (e) => {
           const b = e.target.closest ? e.target.closest('.symbol-btn') : null;
           if (!b || !b.dataset.char) return;
-          addSymbolLayer(b.dataset.char);
+          addSymbolLayer(b.dataset.char);   // stays open so several can be added; outside-click closes
         });
       }
       symbolPickerBuilt = true;
+    }
+    // v3.1 (Terry SS4) — the Symbols & arrows DROPDOWN (Ω button in the Style row). Opens a
+    // fixed popover under the button (never clipped by the panel's overflow), toggles, and
+    // closes on outside-click / Escape / resize. Builds the grid lazily on first open.
+    let symbolPopOpen = false, symbolPopOutside_ = null;
+    function positionSymbolPop_() {
+      const btn = document.getElementById('collage-symbol-btn');
+      const pop = document.getElementById('collage-symbol-pop');
+      if (!btn || !pop) return;
+      const r = btn.getBoundingClientRect();
+      pop.style.visibility = 'hidden'; pop.style.display = 'block';
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      let left = r.right - pw;   // right-align to the button (the panel sits at the right edge)
+      left = Math.max(6, Math.min(window.innerWidth - pw - 6, left));
+      let top = r.bottom + 6;
+      if (top + ph > window.innerHeight - 6 && r.top - 6 - ph > 6) top = r.top - 6 - ph;   // flip above if it would overflow the bottom
+      pop.style.left = left + 'px'; pop.style.top = top + 'px';
+      pop.style.visibility = '';
+    }
+    function closeSymbolPop() {
+      const pop = document.getElementById('collage-symbol-pop');
+      if (pop) pop.style.display = 'none';
+      symbolPopOpen = false;
+      const btn = document.getElementById('collage-symbol-btn'); if (btn) btn.classList.remove('active');
+      if (symbolPopOutside_) { document.removeEventListener('pointerdown', symbolPopOutside_, true); window.removeEventListener('resize', positionSymbolPop_, true); symbolPopOutside_ = null; }
+    }
+    function toggleSymbolPop() {
+      const pop = document.getElementById('collage-symbol-pop');
+      if (!pop) return;
+      if (symbolPopOpen) { closeSymbolPop(); return; }
+      try { buildSymbolPicker(); } catch (_) {}   // lazy build (idempotent — dataset.wired guards)
+      pop.style.display = 'block';
+      positionSymbolPop_();
+      symbolPopOpen = true;
+      const btn = document.getElementById('collage-symbol-btn'); if (btn) btn.classList.add('active');
+      symbolPopOutside_ = (e) => { if (pop.contains(e.target) || (e.target.closest && e.target.closest('#collage-symbol-btn'))) return; closeSymbolPop(); };
+      document.addEventListener('pointerdown', symbolPopOutside_, true);
+      window.addEventListener('resize', positionSymbolPop_, true);
     }
     // Selecting a text deselects any tile/background (and vice-versa) — a
     // text and a tile are never co-selected. Reveals + binds the Text panel
@@ -21869,7 +21911,9 @@
       // v2.1 round 219 (Terry) — build the EMOJIS picker (grid + search) once the
       // collage panel wires up. Sibling feature to Text; reuses the same layer engine.
       try { buildEmojiPicker(); } catch (_) {}
-      try { buildSymbolPicker(); } catch (_) {}   // v3.1 (Terry) — special-characters dropdown under Add text
+      // v3.1 (Terry SS4) — wire the Symbols & arrows dropdown button (Ω in the Style row);
+      // the grid builds lazily the first time it opens.
+      try { const sb = document.getElementById('collage-symbol-btn'); if (sb && !sb.dataset.wired) { sb.dataset.wired = '1'; sb.addEventListener('click', (e) => { e.preventDefault(); e.stopPropagation(); toggleSymbolPop(); }); } } catch (_) {}
       // v2.1 round 196 (Terry) — custom Font dropdown. The trigger toggles a
       // popover that STAYS OPEN while the user clicks through fonts (each pick
       // applies live via applyTextFont, the menu re-marks its active row but does
