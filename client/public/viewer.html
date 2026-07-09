@@ -11036,7 +11036,9 @@
         { key: 'bold', label: 'B', tip: 'Bold', css: 'font-weight:700' },
         { key: 'italic', label: 'I', tip: 'Italic', css: 'font-style:italic;font-family:Georgia,serif' },
         { key: 'underline', label: 'U', tip: 'Underline', css: 'text-decoration:underline' },
-        { key: 'strike', label: 'S', tip: 'Strikethrough', css: 'text-decoration:line-through' },
+        // v3.1 (Terry) — Strikethrough lives in the SIDE PANEL only: near-zero-frequency
+        // for collage text, so it doesn't earn a slot on the bar ("taking up valuable
+        // space"). The strike field/render/persistence are all unchanged.
       ];
       ctl.styleBtns = {};
       styleDefs.forEach((d) => {
