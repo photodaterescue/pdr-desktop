@@ -4216,6 +4216,10 @@
     }
     .collage-template-btn:hover { background: rgba(254,194,66,0.10); border-color: rgba(254,194,66,0.5); color: #ffd778; }
     .collage-template-btn svg { width: 14px; height: 14px; }
+    /* v3.1 (Terry) — "Update template" is the primary template action when a source template is linked:
+       a subtle gold tint so it reads above the quiet "Save as template" (a NEW copy) that sits below it. */
+    .collage-update-template-btn { background: rgba(254,194,66,0.12); border-color: rgba(254,194,66,0.42); color: #ffd778; }
+    .collage-update-template-btn:hover { background: rgba(254,194,66,0.2); border-color: rgba(254,194,66,0.62); }
     /* v3.0 (Terry) — Save flow: split "Save / Update" button with a chevron for more options. */
     .collage-save-row { display: flex; gap: 6px; align-items: stretch; }
     .collage-save-row .collage-save-btn { flex: 1; width: auto; }
@@ -5455,8 +5459,14 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
           </button>
         </div>
+        <!-- v3.1 (Terry) — UPDATE the template you opened (overwrite it with the current design). Hidden
+             unless this design is linked to a source template (openTemplateById / reopened project). -->
+        <button class="collage-template-btn collage-update-template-btn" id="collage-update-template" type="button" data-pdr-tooltip="Update the template you started from — overwrite it with the current design" data-pdr-tooltip-side="top" style="display:none">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path><polyline points="8.5 14 11 16.5 15.5 12"></polyline></svg>
+          Update template
+        </button>
         <!-- v2.1 round 323 (Terry) — save the current design as a reusable template. -->
-        <button class="collage-template-btn" id="collage-save-template" type="button" data-pdr-tooltip="Save this design as a reusable template (find it on the welcome screen)" data-pdr-tooltip-side="top">
+        <button class="collage-template-btn" id="collage-save-template" type="button" data-pdr-tooltip="Save this design as a NEW reusable template (find it on the welcome screen)" data-pdr-tooltip-side="top">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"></rect><path d="M3 9h18M9 21V9"></path></svg>
           Save as template
         </button>
@@ -15406,6 +15416,11 @@
     // album. This block is the SAVE side; reopen + the projects gallery come next.
     let currentCollageProjectId = null;     // record id, set once the first autosave creates it (then reused → overwrite)
     let currentCollageProjectName = null;   // friendly name; defaulted at first save, renamed later (Phase 3)
+    // v3.1 (Terry) — the SOURCE TEMPLATE this design was opened from (a user template, kind:'template').
+    // Set when a template is opened (openTemplateById), cleared for a blank / built-in / project open, and
+    // persisted into the project so it survives reopen. Drives the "Update template" button — overwriting
+    // THIS template with the current design (distinct from currentCollageProjectId, which is the working doc).
+    let currentCollageTemplateId = null, currentCollageTemplateName = null;
     var collageExportedFileId = null;   // v2.1 round 371 (Terry) — fileId of this collage's EXPORTED photo; the link that keeps the caption SHARED (edits here update the photo; reopen syncs from it)
     var carouselExportedAlbumId = null;   // v3.0 round 542 (Terry) — the album id of this CAROUSEL's previous save; set once saved, so the next save UPDATES (replaces) it instead of stacking a new copy
     var carouselExportedWideFileId = null;   // v3.0 round 546 (Terry) — the wide (joined) design's library file id: the carousel counterpart of collageExportedFileId, powering the editor/Home "View" goto
@@ -15476,7 +15491,7 @@
         buildCollageItems();
         restoreCollageSnapshot(JSON.stringify(s));
       } finally { collageRestoring = false; }
-      currentCollageProjectId = null; currentCollageProjectName = null;
+      currentCollageProjectId = null; currentCollageProjectName = null; currentCollageTemplateId = null; currentCollageTemplateName = null;
       try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; carouselExportedWideFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
@@ -15716,6 +15731,10 @@
         // captures it fully; flag it + its page count so reopen re-enters carousel mode (guides + slice thumbs).
         carousel: !!carouselMode,
         carouselPages: carouselMode ? carouselPageCount : undefined,
+        // v3.1 (Terry) — remember the template this design came from, so reopening the project still offers
+        // "Update template" (overwrite that template). Absent for designs not started from a template.
+        sourceTemplateId: currentCollageTemplateId || undefined,
+        sourceTemplateName: currentCollageTemplateName || undefined,
       };
     }
     let collageThumbBusy = false;
@@ -15809,6 +15828,9 @@
         // This window now IS this project — subsequent autosaves overwrite it in place.
         currentCollageProjectId = p.id || id;
         currentCollageProjectName = p.name || null;
+        // v3.1 (Terry) — restore the source-template link so "Update template" still targets it (old projects lack it → none)
+        currentCollageTemplateId = p.sourceTemplateId || null;
+        currentCollageTemplateName = p.sourceTemplateName || null;
         // v2.1 round 370 (Terry) — restore the caption note so a reopened collage keeps it (+ reflect it
         // in the caption textarea).
         collageCaptionText = (typeof p.caption === 'string') ? p.caption : '';
@@ -15954,26 +15976,55 @@
         carousel: !!carouselMode,
         carouselPages: carouselMode ? carouselPageCount : undefined,
       };
-      // v3.0.1 (Terry 2026-07-07) — bake a REAL preview thumbnail, same path as autosaveCollageProject.
-      // Without this, saveProject wrote no <id>_CP.png sidecar and the Templates row fell back to the
-      // broken-image glyph. Guarded on collageThumbBusy + renderThumb; carousels bake their FIRST page.
+      const thumb = await bakeCollageSaveThumb_();   // v3.1 (Terry) — shared preview-bake (see updateSourceTemplate)
+      try {
+        const res = (window.pdr && window.pdr.collage && window.pdr.collage.saveProject) ? await window.pdr.collage.saveProject(proj, thumb || undefined) : null;
+        if (res && res.success) { try { showPdrAlert({ title: 'Template saved', body: '"' + proj.name + '" is now in your Templates — find it on the welcome screen.' }); } catch (_) {} }
+      } catch (_) { /* best-effort */ }
+    }
+    // v3.1 (Terry) — bake a REAL preview thumbnail (the <id>_CP.png sidecar), same path as autosaveCollageProject.
+    // Guarded on collageThumbBusy + renderThumb; carousels bake their FIRST page. Best-effort → undefined on fail.
+    // SS2 fix: the cap lives inside buildCollageLayout (maxPx) so text PNGs raster at the capped size (the old
+    // post-build shrink stacked full-size text over the small strip → the all-pages jumble on template cards).
+    async function bakeCollageSaveThumb_() {
       let thumb;
       if (!collageThumbBusy && window.pdr && window.pdr.collage && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
         collageThumbBusy = true;
         try {
-          // v3.1 (Terry) — SS2: cap inside buildCollageLayout (maxPx) so text PNGs raster at the
-          // capped size — the old post-build canvas shrink stacked full-size text over the small
-          // strip and template cards showed the all-pages jumble (see autosaveCollageProject).
           const layout = buildCollageLayout(carouselMode ? 1200 : 600);
-          if (layout && layout.canvas) {
-            thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);
-          }
+          if (layout && layout.canvas) thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);
         } catch (_) { /* thumb is best-effort */ }
         collageThumbBusy = false;
       }
+      return thumb;
+    }
+    // v3.1 (Terry) — UPDATE the template this design was opened from (currentCollageTemplateId): overwrite that
+    // template record with the current design (SAME id → replaces it, never a duplicate). Distinct from "Save as
+    // template" (always a new record) and from Save (the working project / library export). Collages already made
+    // from the template are their own projects and are untouched. Only reachable when a source template is linked.
+    async function updateSourceTemplate() {
+      if (!collageMode || !currentCollageTemplateId) return;
+      if (!collageProjectHasContent()) { try { showPdrAlert({ title: 'Nothing to save yet', body: 'Add a photo or a frame first, then update the template.' }); } catch (_) {} return; }
+      let ok = false;
+      try { ok = await showPdrConfirm({ title: 'Update template?', body: 'Replace the saved template “' + (currentCollageTemplateName || 'template') + '” with the current design? Collages you’ve already made from it won’t change.', confirmLabel: 'Update template', cancelLabel: 'Cancel' }); } catch (_) { ok = false; }
+      if (!ok) return;
+      const proj = {
+        id: currentCollageTemplateId,   // SAME id → overwrite the existing template record (not a new one)
+        name: currentCollageTemplateName || defaultTemplateName(),
+        savedAt: new Date().toISOString(),
+        files: files.slice(),
+        names: files.map(collageBasename),
+        snapshot: snapshotCollage(),
+        aspectKey: collageAspectKey,
+        kind: 'template',
+        carousel: !!carouselMode,
+        carouselPages: carouselMode ? carouselPageCount : undefined,
+      };
+      const thumb = await bakeCollageSaveThumb_();
       try {
         const res = (window.pdr && window.pdr.collage && window.pdr.collage.saveProject) ? await window.pdr.collage.saveProject(proj, thumb || undefined) : null;
-        if (res && res.success) { try { showPdrAlert({ title: 'Template saved', body: '"' + proj.name + '" is now in your Templates — find it on the welcome screen.' }); } catch (_) {} }
+        if (res && res.success) { try { showPdrAlert({ title: 'Template updated', body: '“' + proj.name + '” now matches the current design.' }); } catch (_) {} }
+        else { try { showPdrAlert({ title: 'Couldn’t update the template', body: 'Something went wrong saving the template. Try again.' }); } catch (_) {} }
       } catch (_) { /* best-effort */ }
     }
     // Apply a record (a saved template OR a built-in spec) AS A NEW collage — id nulled so the
@@ -16004,7 +16055,7 @@
         restoreCollageSnapshot(p.snapshot);
       } finally { collageRestoring = false; collageBulkOpen_ = false; }
       if (_arCar) { try { renderCarouselGuides(); scheduleCarouselFilmstrip_(); resetCollageZoom(); } catch (_) {} }   // v2.1 round 376 — carousel record: redraw guides + slice thumbs + fit; v3.1 (Terry) — thumbs via the coalesced deferred rebuild
-      currentCollageProjectId = null; currentCollageProjectName = null;
+      currentCollageProjectId = null; currentCollageProjectName = null; currentCollageTemplateId = null; currentCollageTemplateName = null;
       try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; carouselExportedWideFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
@@ -16013,8 +16064,13 @@
     }
     async function openTemplateById(id) {
       if (!collageMode || !id || !(window.pdr && window.pdr.collage && window.pdr.collage.loadProject)) return false;
-      try { const r = await window.pdr.collage.loadProject(id); if (!r || !r.success || !r.project) return false; return applyCollageRecordAsNew(r.project); }
-      catch (_) { return false; }
+      try {
+        const r = await window.pdr.collage.loadProject(id);
+        if (!r || !r.success || !r.project) return false;
+        const ok = applyCollageRecordAsNew(r.project);   // opens AS A NEW design (nulls the template link)…
+        if (ok) { currentCollageTemplateId = id; currentCollageTemplateName = r.project.name || null; try { updateCollageSaveButton(); } catch (_) {} }   // …then RE-link so "Update template" can overwrite THIS template
+        return ok;
+      } catch (_) { return false; }
     }
 
     // v2.1 round 324 (Terry) — curated built-in STARTER templates: empty-frame layouts (NO photos),
@@ -16079,7 +16135,7 @@
         }
         collageZTop = z;
       } finally { collageRestoring = false; }
-      currentCollageProjectId = null; currentCollageProjectName = null;
+      currentCollageProjectId = null; currentCollageProjectName = null; currentCollageTemplateId = null; currentCollageTemplateName = null;
       try { collageCaptionText = ''; collageExportedFileId = null; carouselExportedAlbumId = null; carouselExportedWideFileId = null; var _cci0 = document.getElementById('collageCaptionInput'); if (_cci0) _cci0.value = ''; var _ccb0 = document.getElementById('btn-collage-caption'); if (_ccb0) _ccb0.classList.remove('pinned'); } catch (_) {} try { updateCollageSaveButton(); } catch (_) {}   // v2.1 round 364 — a fresh collage starts with no caption
       try { updateUndoButtons(); } catch (_) {}
       try { rebuildCollageFilmstripFromScratch(); } catch (_) {}   // round 349 — drop the previous collage's strip thumbs
@@ -20731,6 +20787,13 @@
         // v3.0 round 544 (Terry) — the chevron is BACK (retired in r496 with v-numbers): once a save
         // exists, it offers "Save as new collage/carousel" — a separate copy, no version numbers.
         if (more) more.style.display = (carouselMode ? carSaved : saved) ? 'flex' : 'none';
+        // v3.1 (Terry) — "Update template" shows ONLY when this design is linked to a source template (opened
+        // from one / a reopened project that remembers it); its tooltip names the template it will overwrite.
+        var upTpl = document.getElementById('collage-update-template');
+        if (upTpl) {
+          upTpl.style.display = currentCollageTemplateId ? 'flex' : 'none';
+          if (currentCollageTemplateId) upTpl.setAttribute('data-pdr-tooltip', 'Update the template “' + (currentCollageTemplateName || 'template') + '” — overwrite it with the current design');
+        }
         try { updateCollageGoto(); } catch (_) {}
       } catch (_) {}
     }
@@ -26776,9 +26839,12 @@ function zoomTo(newZoom, centreX, centreY) {
       // v3.0 (Terry) — the chevron next to Save/Update: Save as new version / Save to another album.
       const collageSaveMoreBtn = document.getElementById('collage-save-more');
       if (collageSaveMoreBtn) collageSaveMoreBtn.addEventListener('click', function (e) { e.stopPropagation(); try { showCollageSaveMenu(); } catch (_) {} });
-      // v2.1 round 323 (Terry) — "Save as template" → store the current design as a reusable template.
+      // v2.1 round 323 (Terry) — "Save as template" → store the current design as a NEW reusable template.
       const collageTemplateBtn = document.getElementById('collage-save-template');
       if (collageTemplateBtn) collageTemplateBtn.addEventListener('click', function () { try { saveAsTemplate(); } catch (_) {} });
+      // v3.1 (Terry) — "Update template" → overwrite the template this design was opened from.
+      const collageUpdateTemplateBtn = document.getElementById('collage-update-template');
+      if (collageUpdateTemplateBtn) collageUpdateTemplateBtn.addEventListener('click', function () { try { updateSourceTemplate(); } catch (_) {} });
 
       window.pdrEnhanceBridge = {
         enterCollage: function (saveFn) {
