@@ -4216,10 +4216,10 @@
     }
     .collage-template-btn:hover { background: rgba(254,194,66,0.10); border-color: rgba(254,194,66,0.5); color: #ffd778; }
     .collage-template-btn svg { width: 14px; height: 14px; }
-    /* v3.1 (Terry) — "Update template" is the primary template action when a source template is linked:
-       a subtle gold tint so it reads above the quiet "Save as template" (a NEW copy) that sits below it. */
-    .collage-update-template-btn { background: rgba(254,194,66,0.12); border-color: rgba(254,194,66,0.42); color: #ffd778; }
-    .collage-update-template-btn:hover { background: rgba(254,194,66,0.2); border-color: rgba(254,194,66,0.62); }
+    /* v3.1 (Terry SS1) — "Update template" is the CTA when a source template is linked: the SAME navy body
+       as "Save as template" but with a GOLD OUTLINE so it reads as the highlighted action, not a fill. */
+    .collage-update-template-btn { background: transparent; border: 1.5px solid #FEC242; color: #ffd778; }
+    .collage-update-template-btn:hover { background: rgba(254,194,66,0.12); border-color: #ffd257; color: #ffe4a3; }
     /* v3.0 (Terry) — Save flow: split "Save / Update" button with a chevron for more options. */
     .collage-save-row { display: flex; gap: 6px; align-items: stretch; }
     .collage-save-row .collage-save-btn { flex: 1; width: auto; }
@@ -20053,6 +20053,7 @@
       // auto-populating "Personal · Sinta Portraits"). Both callers start a blank carousel, never a reopen.
       currentCollageProjectId = null;
       currentCollageProjectName = null;
+      currentCollageTemplateId = null; currentCollageTemplateName = null;   // v3.1 (Terry SS1) — a FRESH carousel is not from a template → "Update template" must NOT show (it lingered from a template opened just before)
       carouselExportedAlbumId = null;   // v3.0 round 542 — a fresh carousel has no previous save to update
       carouselExportedWideFileId = null;   // v3.0 round 546 — and no wide design yet either
       try { updateCollageTitle(); } catch (_) {}
@@ -23681,7 +23682,7 @@
         collageTrialGate('collage').then((ok) => {
           if (ok) return;
           try { if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; } } catch (_) {}
-          try { currentCollageProjectId = null; } catch (_) {}
+          try { currentCollageProjectId = null; currentCollageTemplateId = null; currentCollageTemplateName = null; } catch (_) {}
           try { showCollageWelcome(); } catch (_) {}
         });
       }
