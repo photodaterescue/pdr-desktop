@@ -5558,6 +5558,12 @@
         const inCollage = (typeof collageMode !== 'undefined') && collageMode;
         if (bar) bar.classList.toggle('visible', n > 0 && !inCollage);
       } catch (_) {}
+      // v3.1 (Terry) — keep the drag-to-share size badge in step with the
+      // selection: a multi-file share sums the staged files, and clearing
+      // the selection falls back to the single current file. Guarded —
+      // __refreshDragBtnSize is assigned later in the script but always
+      // exists by the time a user changes the selection.
+      try { if (window.__refreshDragBtnSize) window.__refreshDragBtnSize(); } catch (_) {}
     }
     function toggleFilmstripSelect(fp) {
       if (!fp) return;
@@ -5768,30 +5774,65 @@
         }
       });
       // The "large file" amber tint is informational — update it
-      // each time the current file changes by reading the size via
-      // browser fetch HEAD on the file:// URL (cheap, cached). Also
-      // refresh the tooltip with the human-readable size + MB-aware
-      // hint when the threshold is crossed.
+      // each time the current file (or the share selection) changes.
+      // v3.1 (Terry) — read the REAL on-disk size via the file:getSize
+      // IPC (fs.stat in main) instead of a browser HEAD on the file://
+      // URL. Chromium's file-protocol HEAD often omits Content-Length —
+      // for a freshly-recorded/screen-captured webm it came back 0, so
+      // the tooltip showed "· 0 KB". stat is always accurate, and when
+      // several files are staged for drag we sum them so the badge
+      // matches exactly what gets dropped. A missing/failed stat HIDES
+      // the size (falls back to the plain tooltip) rather than "0 KB".
       const DRAG_TOOLTIP_BASE = 'Drag to share — drop onto another app, an email, or a folder';
-      window.__refreshDragBtnSize = (filePath) => {
-        if (!filePath) { dragFileBtn.classList.remove('large'); dragFileBtn.setAttribute('data-pdr-tooltip', DRAG_TOOLTIP_BASE); return; }
+      const fmtDragSize = (bytes) => {
+        const mb = bytes / (1024 * 1024);
+        return mb >= 1 ? mb.toFixed(1) + ' MB' : (bytes / 1024).toFixed(1) + ' KB';
+      };
+      // Resolve the exact set of files a drag would carry — the whole
+      // filmstrip share-selection when one is active, else the single
+      // passed/current file. Mirrors the dragstart handler's logic so
+      // the size badge and the actual drop always agree.
+      const dragSizeSet = (filePath) => {
         try {
-          const url = 'file:///' + encodeURI(filePath.replace(/\\/g, '/'));
-          fetch(url, { method: 'HEAD' }).then((r) => {
-            const lenHdr = r.headers.get('content-length');
-            const bytes = lenHdr ? parseInt(lenHdr, 10) : 0;
+          if (filmstripSelection && filmstripSelection.size > 0) return Array.from(filmstripSelection);
+        } catch (_) {}
+        const cur = filePath || ((typeof files !== 'undefined' && typeof currentIndex !== 'undefined' && files[currentIndex]) ? files[currentIndex] : '');
+        return cur ? [cur] : [];
+      };
+      // Token guards against a stale async result overwriting a newer
+      // one when the user flips files/selection faster than stat returns.
+      let dragSizeToken = 0;
+      window.__refreshDragBtnSize = (filePath) => {
+        const paths = dragSizeSet(filePath);
+        if (!paths.length) { dragFileBtn.classList.remove('large'); dragFileBtn.setAttribute('data-pdr-tooltip', DRAG_TOOLTIP_BASE); return; }
+        const myToken = ++dragSizeToken;
+        const clearSize = () => {
+          if (myToken !== dragSizeToken) return;
+          dragFileBtn.classList.remove('large');
+          dragFileBtn.setAttribute('data-pdr-tooltip', DRAG_TOOLTIP_BASE);
+        };
+        try {
+          if (!(window.pdr && window.pdr.getFileSize)) { clearSize(); return; }
+          Promise.all(paths.map((p) =>
+            window.pdr.getFileSize(p)
+              .then((r) => (r && r.success && typeof r.sizeBytes === 'number') ? r.sizeBytes : null)
+              .catch(() => null)
+          )).then((sizes) => {
+            if (myToken !== dragSizeToken) return; // superseded by a newer refresh
+            // If EVERY stat failed we can't show a trustworthy number —
+            // hide the size rather than print a misleading 0 KB.
+            const known = sizes.filter((s) => typeof s === 'number' && s >= 0);
+            if (!known.length) { clearSize(); return; }
+            const bytes = known.reduce((a, b) => a + b, 0);
             const mb = bytes / (1024 * 1024);
-            const sizeLabel = mb >= 1 ? mb.toFixed(1) + ' MB' : Math.round(bytes / 1024) + ' KB';
+            const sizeLabel = fmtDragSize(bytes);
             const large = mb >= 50;
             dragFileBtn.classList.toggle('large', large);
             dragFileBtn.setAttribute('data-pdr-tooltip', large
               ? DRAG_TOOLTIP_BASE + ' · ' + sizeLabel + ' (large — some apps reject files over ~25 MB)'
               : DRAG_TOOLTIP_BASE + ' · ' + sizeLabel);
-          }).catch(() => {
-            dragFileBtn.classList.remove('large');
-            dragFileBtn.setAttribute('data-pdr-tooltip', DRAG_TOOLTIP_BASE);
-          });
-        } catch (_) {}
+          }).catch(clearSize);
+        } catch (_) { clearSize(); }
       };
     }
 
@@ -6949,6 +6990,26 @@
         const sec = Math.floor(s % 60);
         return m + ':' + String(sec).padStart(2, '0');
       }
+
+      // v3.1 (Terry) — screen-recorded .webm files (MediaRecorder output)
+      // ship with NO duration in the container header, so <video>.duration
+      // reads Infinity/NaN after loadedmetadata and the timeline total was
+      // stuck on "0:00" while the current-time counter kept climbing. We
+      // recover the real length with the standard seek-to-end trick: jump
+      // currentTime past the end, and on the resulting `seeked` the browser
+      // has scanned the whole stream and .duration is now finite. Stash it
+      // and use it anywhere the total/scrubber math would otherwise read a
+      // non-finite .duration. MP4s (which have a real header duration) never
+      // enter this path, so their playback/scrubbing is untouched.
+      let fixedDuration = 0;          // recovered finite length, 0 = not needed/yet
+      let durationFixInFlight = false; // guards the one-shot seek-to-end pass
+      function effectiveDuration() {
+        // Prefer the element's own duration when it's a real number;
+        // fall back to the recovered value for headerless webm.
+        const d = video.duration;
+        if (isFinite(d) && d > 0) return d;
+        return fixedDuration > 0 ? fixedDuration : 0;
+      }
       function refreshPlayIcon() {
         if (video.ended)        playBtn.innerHTML = wrapSvg(ICON_REPLAY);
         else if (video.paused)  playBtn.innerHTML = wrapSvg(ICON_PLAY);
@@ -6964,19 +7025,50 @@
       }
       function refreshTime() {
         timeCur.textContent = fmt(video.currentTime);
-        if (!isNaN(video.duration)) {
-          const pct = (video.currentTime / Math.max(video.duration, 0.0001)) * 100;
+        // v3.1 (Terry) — drive the fill/handle off effectiveDuration() so a
+        // headerless webm (non-finite .duration) still gets a moving scrubber
+        // once the real length is recovered, instead of dividing by Infinity.
+        const dur = effectiveDuration();
+        if (dur > 0) {
+          const pct = (video.currentTime / dur) * 100;
           seekPlayed.style.width = pct + '%';
           seekHandle.style.left = pct + '%';
         }
       }
 
+      // v3.1 (Terry) — one-shot seek-to-end recovery for headerless webm.
+      // Only runs when .duration is non-finite (Infinity/NaN); finite-duration
+      // files skip it entirely. Guarded so it fires once per load and restores
+      // currentTime to 0 afterwards so playback/scrubbing isn't disrupted.
+      function recoverDurationIfNeeded() {
+        if (durationFixInFlight || fixedDuration > 0) return;
+        if (isFinite(video.duration) && video.duration > 0) return; // real header — nothing to do
+        durationFixInFlight = true;
+        const onSeeked = () => {
+          video.removeEventListener('seeked', onSeeked);
+          if (isFinite(video.duration) && video.duration > 0) {
+            fixedDuration = video.duration;
+          }
+          durationFixInFlight = false;
+          // Snap back to the start and repaint the timeline with the real length.
+          try { video.currentTime = 0; } catch (_) {}
+          timeTot.textContent = fmt(effectiveDuration());
+          refreshTime();
+        };
+        video.addEventListener('seeked', onSeeked);
+        // Jumping past the end forces Chromium to scan the whole stream; it
+        // clamps currentTime to the true end and fires `seeked` with a now-
+        // finite .duration.
+        try { video.currentTime = 1e101; } catch (_) { video.removeEventListener('seeked', onSeeked); durationFixInFlight = false; }
+      }
+
       // Initial state — refresh once duration is known.
       video.addEventListener('loadedmetadata', () => {
-        timeTot.textContent = fmt(video.duration);
+        timeTot.textContent = fmt(effectiveDuration());
         refreshTime();
         refreshPlayIcon();
         refreshVolume();
+        recoverDurationIfNeeded();
       });
       video.addEventListener('timeupdate', refreshTime);
       video.addEventListener('play',  () => { refreshPlayIcon(); scheduleHide(); });
@@ -7001,7 +7093,7 @@
       function seekBarTo(clientX) {
         const r = seekBar.getBoundingClientRect();
         const pct = Math.max(0, Math.min(1, (clientX - r.left) / r.width));
-        const dur = video.duration || 0;
+        const dur = effectiveDuration(); // v3.1 (Terry) — finite for headerless webm too
         try { video.currentTime = pct * dur; } catch (_) {}
         // v3.0 round 416 (Terry) — move the ball + fill + time readout to the
         // CURSOR position immediately, so they track smoothly during the drag
@@ -7548,7 +7640,7 @@
           return;
         }
         if (waveformInFlight) return;
-        if (!video.duration || video.duration < 0.5) return;
+        if (effectiveDuration() < 0.5) return; // v3.1 (Terry) — headerless webm safe
         waveformInFlight = true;
         try {
           const url = video.currentSrc;
@@ -7606,7 +7698,7 @@
         const w = Math.floor(rect.width);
         const h = rect.height;
         const halfH = h / 2;
-        const dur = video.duration || 1;
+        const dur = effectiveDuration() || 1; // v3.1 (Terry) — finite for headerless webm
         const playhead = Math.max(0, Math.min(1, video.currentTime / dur));
         const playheadX = playhead * w;
 
@@ -7662,7 +7754,7 @@
       function fmtSec(s) { return fmt(s); }
 
       function refreshTrimUI() {
-        const dur = video.duration || 0;
+        const dur = effectiveDuration(); // v3.1 (Terry) — headerless webm safe
         if (!trimMode || dur <= 0) {
           trimRegion.style.display = 'none';
           trimInHandle.style.display = 'none';
@@ -7689,11 +7781,13 @@
       }
 
       function enterTrim() {
-        if (!video.duration || video.duration < 0.5) return;
+        // v3.1 (Terry) — gate + default the out-point on the effective
+        // duration so trim works on a recovered-length headerless webm.
+        if (effectiveDuration() < 0.5) return;
         trimMode = true;
         // Default: full clip (in=0, out=duration). User drags inward.
         trimIn = 0;
-        trimOut = video.duration;
+        trimOut = effectiveDuration();
         // Reset the toolbar to its initial layout in case the user
         // previously saved a clip and left the success state up.
         savedState = false;
@@ -7777,12 +7871,13 @@
           const onMove = (mv) => {
             const r = seekBar.getBoundingClientRect();
             const pct = Math.max(0, Math.min(1, (mv.clientX - r.left) / r.width));
-            const t = pct * (video.duration || 0);
+            const durNow = effectiveDuration(); // v3.1 (Terry) — headerless webm safe
+            const t = pct * durNow;
             if (which === 'in') {
               trimIn = Math.min(t, Math.max(0, trimOut - 0.5));
               try { video.currentTime = trimIn; } catch (_) {}
             } else {
-              trimOut = Math.max(t, Math.min(video.duration || 0, trimIn + 0.5));
+              trimOut = Math.max(t, Math.min(durNow, trimIn + 0.5));
               try { video.currentTime = trimOut; } catch (_) {}
             }
             refreshTrimUI();
@@ -8297,7 +8392,12 @@
           video.autoplay = true;
           video.preload = 'metadata';
           video.onloadedmetadata = () => {
-            dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px \u2022 ' + Math.round(video.duration) + 's';
+            // v3.1 (Terry) \u2014 a headerless webm reports Infinity duration here,
+            // which used to print "Infinitys" in the info readout; only append
+            // the seconds when it's a real number. buildCustomVideoControls
+            // recovers the true length for the timeline separately.
+            const durTxt = (isFinite(video.duration) && video.duration > 0) ? (' \u2022 ' + Math.round(video.duration) + 's') : '';
+            dimensionsEl.textContent = video.videoWidth + ' \u00d7 ' + video.videoHeight + ' px' + durTxt;
             video.playbackRate = playbackRate;
             console.log('[video] loaded metadata for', label);
             try { video.play(); } catch (_) {}
@@ -10484,8 +10584,21 @@
       out.push(cur);
       return out;
     }
-    function renderTextToCanvas(layer, shortPx) {
-      let fontPx = Math.max(8, (layer.sizeFrac || 0.08) * shortPx);   // v3.1 (Terry) — let (not const): fixed-box autoFit below may step it down
+    function renderTextToCanvas(layer, shortPx, opts) {
+      // v3.1 (Terry SS1) — CRISP TEXT on hidpi / scaled displays. The glyph canvas used to
+      // render at CSS-pixel resolution, so on a scaled or high-DPI monitor the browser
+      // upscaled that raster and the text went soft (photos stayed sharp because they're real
+      // images — text was the only thing rasterised at CSS res, unlike Canva's vector text).
+      // FIX: render the WHOLE canvas at Q× resolution (everything below — fontPx, ink, pad,
+      // canvas dims — scales up together, so the draw code is untouched) and DISPLAY it at the
+      // logical size. The stashed logical metrics are divided back by Q so renderTextLayer's
+      // wrapper/handle math + the contentEditable overlay are unchanged. Q boosts the ON-SCREEN
+      // editor render only; the export/thumbnail bake + filmstrip thumbs pass qualityMul:1 so
+      // their output is byte-identical (they already render at their target resolution).
+      const _q = (opts && typeof opts.qualityMul === 'number') ? Math.max(1, opts.qualityMul)
+               : Math.max(1, Math.min(3, (window.devicePixelRatio || 1) * 2));
+      shortPx = (shortPx || 0) * _q;
+      let fontPx = Math.max(8 * _q, (layer.sizeFrac || 0.08) * shortPx);   // v3.1 (Terry) — let (not const): fixed-box autoFit below may step it down. 8px floor kept in LOGICAL px (×_q here)
       // v3.1 (Terry) — the CASE transform is applied to the RENDERED text only; the
       // underlying layer.text stays editable/unchanged (mirrors Canva's aA).
       let lines = applyLetterCase(layer.text, layer.letterCase).split('\n');   // v3.1 (Terry) — let: fixed mode replaces these with the wrapped lines
@@ -10618,13 +10731,16 @@
         ctx.globalAlpha = ((typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100) / 100;
         // Draw centred horizontally; baseline placed so the ink top lands at +ePad.
         ctx.fillText(ch, canvas.width / 2, ePad + aAsc);
-        canvas._pad = ePad;
-        canvas._inkW = Math.max(1, canvas.width - 2 * ePad);
-        canvas._inkH = Math.max(1, canvas.height - 2 * ePad);
-        canvas._lineH = fontPx * 1.25;
-        canvas._fbAsc = aAsc;
-        canvas._fbDesc = aDesc;
-        canvas._aAscTop = aAsc;
+        // v3.1 (Terry SS1) — Q× backing → logical display; stashes divided back to logical.
+        if (_q !== 1) { canvas.style.width = (canvas.width / _q) + 'px'; canvas.style.height = (canvas.height / _q) + 'px'; }
+        canvas._logicalW = canvas.width / _q; canvas._logicalH = canvas.height / _q; canvas._q = _q;
+        canvas._pad = ePad / _q;
+        canvas._inkW = Math.max(1, (canvas.width - 2 * ePad) / _q);
+        canvas._inkH = Math.max(1, (canvas.height - 2 * ePad) / _q);
+        canvas._lineH = (fontPx * 1.25) / _q;
+        canvas._fbAsc = aAsc / _q;
+        canvas._fbDesc = aDesc / _q;
+        canvas._aAscTop = aAsc / _q;
         return canvas;
       }
       // Widest line decides the canvas width.
@@ -10848,18 +10964,23 @@
       // The bake path (renderTextToCanvas(...).toDataURL(...)) is unchanged in
       // mechanism — the only difference vs. round 215 is the baked text now centres
       // on xFrac/yFrac instead of sitting slightly high (the intended fix).
-      canvas._pad = pad;
-      canvas._inkW = Math.max(1, canvas.width - 2 * pad);
-      canvas._inkH = Math.max(1, canvas.height - 2 * pad);
+      // v3.1 (Terry SS1) — Q× backing → logical display; stashes divided back to logical so
+      // renderTextLayer's wrapper math (which recomputes _fontPx from the LOGICAL short side)
+      // stays consistent, and styleTextEditable's overlay aligns.
+      if (_q !== 1) { canvas.style.width = (canvas.width / _q) + 'px'; canvas.style.height = (canvas.height / _q) + 'px'; }
+      canvas._logicalW = canvas.width / _q; canvas._logicalH = canvas.height / _q; canvas._q = _q;
+      canvas._pad = pad / _q;
+      canvas._inkW = Math.max(1, (canvas.width - 2 * pad) / _q);
+      canvas._inkH = Math.max(1, (canvas.height - 2 * pad) / _q);
       // v2.1 round 217 (Terry) — stash the metrics styleTextEditable needs to align
       // the contentEditable's FIRST-LINE GLYPHS with the canvas ink (which the canvas
       // pinned to box-y g). _lineH = the canvas line spacing (also the px line-height
       // the editable must use); _fbAsc/_fbDesc = font ascent/descent; _aAscTop = the
       // actual ascent of the topmost-ink line. See styleTextEditable for the formula.
-      canvas._lineH = lineH;
-      canvas._fbAsc = fbAscTop;
-      canvas._fbDesc = fbDescTop;
-      canvas._aAscTop = aAscTop;
+      canvas._lineH = lineH / _q;
+      canvas._fbAsc = fbAscTop / _q;
+      canvas._fbDesc = fbDescTop / _q;
+      canvas._aAscTop = aAscTop / _q;
       // v3.1 (Terry) — FIXED TEXT AREA: the px the text actually rendered at
       // (== the base sizeFrac px unless the fixed-box autoFit stepped it down).
       // styleTextEditable reads this so the contentEditable overlay types at the
@@ -11564,8 +11685,8 @@
       // grows the ink symmetrically about that centre (== the xFrac/yFrac bake anchor).
       // (W−canvas.width)/2 reduces to g−pad when unstretched, so this is the round-216
       // float offset in that case.
-      canvas.style.left = ((_W - canvas.width) / 2) + 'px';
-      canvas.style.top = ((_H - canvas.height) / 2) + 'px';
+      canvas.style.left = ((_W - (canvas._logicalW || canvas.width)) / 2) + 'px';   // v3.1 (Terry SS1) — LOGICAL width (the canvas backing is Q× for crispness; display/positioning stays logical)
+      canvas.style.top = ((_H - (canvas._logicalH || canvas.height)) / 2) + 'px';
       canvas.style.transformOrigin = 'center center';
       canvas.style.transform = 'scale(' + (_sX * (layer.flipH ? -1 : 1)) + ',' + (_sY * (layer.flipV ? -1 : 1)) + ')';   // v3.1 (Terry) — EMOJI Mirror/Flip compose as negative scale about the centre (text layers never set the flags)
       // v2.1 round 204 (Terry) — while this layer is being edited in-canvas, the
@@ -14530,7 +14651,7 @@
         const shortPx = wideH;   // wide canvas short side is its height
         const texts = (Array.isArray(snap.texts) ? snap.texts : []).slice().sort((a, b) => (a.z || 0) - (b.z || 0));
         for (const t of texts) {
-          const cnv = renderTextToCanvas(t, shortPx);
+          const cnv = renderTextToCanvas(t, shortPx, { qualityMul: 1 });   // v3.1 (Terry SS1) — filmstrip slice thumb: keep 1× (tiny preview; its holder scales the raw canvas)
           if (!cnv) continue;
           // v3.1 (Terry) — EMOJI appearance parity: the slice thumbs are a live DOM
           // preview, so apply the SAME mask + CSS filter the editor canvas carries
@@ -20274,7 +20395,7 @@
         // point, so preview == saved. scaleX/scaleY default 1 → 1:1 draw == today's
         // output byte-for-byte for unstretched layers.
         const stretchTextPng = (t) => {
-          let base = renderTextToCanvas(t, outputShortPx);
+          let base = renderTextToCanvas(t, outputShortPx, { qualityMul: 1 });   // v3.1 (Terry SS1) — export/thumbnail bake: 1× (already renders at export resolution; output stays byte-identical)
           // v3.1 (Terry) — EMOJI appearance parity: bake the emoji's enh (mask + the same
           // filter list the live canvas shows) INTO the PNG before the stretch scale, so
           // the ONE compositor path (save bake, carousel slide export, project/template/
@@ -24185,7 +24306,7 @@ function zoomTo(newZoom, centreX, centreY) {
             const key = String(em.text || '');
             if (!em._looksSrc || em._looksSrcKey !== key) {
               try {
-                em._looksSrc = renderTextToCanvas({ isEmoji: true, text: em.text, sizeFrac: 0.2, opacity: 100 }, 400).toDataURL();
+                em._looksSrc = renderTextToCanvas({ isEmoji: true, text: em.text, sizeFrac: 0.2, opacity: 100 }, 400, { qualityMul: 1 }).toDataURL();
                 em._looksSrcKey = key;
               } catch (_) { em._looksSrc = ''; }
             }
