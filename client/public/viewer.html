@@ -1555,7 +1555,7 @@
        Click un-maximises (restores) the window; sits top-centre so it
        never overlaps the native min/max/close buttons. Wired at the
        bottom of this file. -->
-  <button class="pdrv-winfs-pill" id="winfs-pill" type="button" title="Exit full window (Esc)" aria-label="Exit full window">
+  <button class="pdrv-winfs-pill" id="winfs-pill" type="button" data-pdr-tooltip="Exit full window (Esc)" aria-label="Exit full window">
     <!-- v2.1 round 214 (Terry) — bold X (cross), Netflix-style fullscreen-exit. -->
     <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 6l12 12M18 6L6 18"/></svg>
   </button>
@@ -15677,7 +15677,7 @@
     }
     function cwsMakeCard(p) {
       const card = document.createElement('div');
-      card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Untitled collage';
+      card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', p.name || 'Untitled collage');   // v3.1 (Terry) — PDR-styled tooltip (was native title)
       card.dataset.projectId = String(p.id);   // v3.0 round 545 (Terry) — selection targeting
       if (p.id === cwsSelectedProjectId) card.classList.add('cws-selected');
       const thumb = document.createElement('div');
@@ -15697,7 +15697,7 @@
       const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
       meta.appendChild(name); meta.appendChild(date);
       const del = document.createElement('button');
-      del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.title = 'Delete this collage';
+      del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.setAttribute('data-pdr-tooltip', 'Delete this collage');
       del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
       del.addEventListener('click', async (e) => {
         e.stopPropagation();
@@ -15707,7 +15707,7 @@
         buildCwsRecent();
       });
       const ren = document.createElement('button');
-      ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.title = 'Rename this collage';
+      ren.type = 'button'; ren.className = 'cws-card-rename'; ren.setAttribute('aria-label', 'Rename collage'); ren.setAttribute('data-pdr-tooltip', 'Rename this collage');
       ren.innerHTML = '<svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>';
       ren.addEventListener('click', (e) => { e.stopPropagation(); openCollageNameWizard({ id: p.id, name: p.name }); });
       // v3.0 round 545 (Terry) — the corner tick: selects this project (gold outline) so the
@@ -15844,7 +15844,7 @@
       // the user's own saved templates.
       BUILTIN_TEMPLATES.forEach((spec) => {
         const card = document.createElement('div');
-        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = spec.name;
+        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', spec.name);
         const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb'; thumb.innerHTML = builtinThumbSvg(spec.cols, spec.rows);
         const meta = document.createElement('div'); meta.className = 'cws-card-meta';
         const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = spec.name;
@@ -15860,7 +15860,7 @@
       if (empty) empty.style.display = 'none';   // built-ins are always present, so the row is never empty
       for (const p of list) {
         const card = document.createElement('div');
-        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.title = p.name || 'Template';
+        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', p.name || 'Template');
         const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb';
         if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
         else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0.1 (Terry) — lazy-fetch the baked PNG like Recent cards do; this row omitted it, so templates never showed their thumbnail
@@ -15869,7 +15869,7 @@
         const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Your template';
         meta.appendChild(name); meta.appendChild(tag);
         const del = document.createElement('button');
-        del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete template'); del.title = 'Delete this template';
+        del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete template'); del.setAttribute('data-pdr-tooltip', 'Delete this template');
         del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
         del.addEventListener('click', async (e) => {
           e.stopPropagation();
@@ -17852,7 +17852,7 @@
         var kind = pair[0], el = f[kind];
         var chip = document.createElement('button'); chip.type = 'button';
         chip.className = 'bgfx-chip' + (el.on ? ' on' : '') + (collageBgFxSel === kind ? ' sel' : '');
-        chip.innerHTML = '<span class="bgfx-chip-dot"></span><span class="bgfx-chip-label">' + pair[1] + '</span>' + (el.on ? '<span class="bgfx-chip-x" title="Turn off">×</span>' : '');
+        chip.innerHTML = '<span class="bgfx-chip-dot"></span><span class="bgfx-chip-label">' + pair[1] + '</span>' + (el.on ? '<span class="bgfx-chip-x" data-pdr-tooltip="Turn off">×</span>' : '');
         chip.addEventListener('click', function (ev) {
           var other = (kind === 'glow') ? 'blur' : 'glow';
           if (ev.target && ev.target.classList && ev.target.classList.contains('bgfx-chip-x')) {
