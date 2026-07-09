@@ -1802,6 +1802,14 @@
     #collage-text-palette .frame-favrow:empty { display: none; }
     /* Faint hint shown only when Favourites is empty. */
     .frame-fav-hint { font-size: 11px; color: #8f88b5; line-height: 1.3; margin-top: 2px; }
+    /* v3.1 (Terry SS1) — the CURRENT COLOUR readout: a swatch + its name, pinned at the top of the palette. */
+    #collage-text-palette .frame-current { display: flex; align-items: center; gap: 8px; padding: 1px 2px 7px; margin-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    #collage-text-palette .frame-current-sw { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.28); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
+    #collage-text-palette .frame-current-sw.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 8px 8px !important; }
+    #collage-text-palette .frame-current-name { font-size: 12px; font-weight: 600; color: #e8e3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    /* v3.1 (Terry SS3) — the fixed "PDR AI Purple" anchor swatch: a subtle inset ring marks it as pinned/non-changeable. */
+    #collage-text-palette .frame-swatch.frame-anchor { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
+    #collage-text-palette .frame-swatch.frame-anchor.active { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5), 0 0 0 2px #FEC242; }
     /* The "＋ add to favourites" badge — hidden until the swatch is hovered. */
     .frame-swatch { position: relative; }
     .frame-fav-add {
@@ -3485,7 +3493,9 @@
     }
     .carousel-thumb:hover { opacity: 1; border-color: rgba(169,156,255,0.45); }
     .carousel-thumb .carousel-preview { width: 100%; height: 100%; border-radius: 3px; }
-    .carousel-thumb-active { opacity: 1; border-color: #FEC242; box-shadow: 0 0 0 1px #FEC242, 0 0 10px rgba(254,194,66,0.35); }
+    /* v3.1 (Terry SS2) — the active page no longer gets a gold outline on the filmstrip ("shouldn't have
+       this outline there"). It reads as active by full opacity alone; hover still gives the subtle lavender. */
+    .carousel-thumb-active { opacity: 1; }
     /* 1..N page-number badge, bottom-left corner. */
     .carousel-thumb-num {
       position: absolute; left: 2px; bottom: 2px;
@@ -22792,6 +22802,15 @@
     // (see applyCollectionOrder / renderTextColorPalette). Data for all 12 is
     // unchanged; this is purely the array's starting sequence.
     const COLOR_COLLECTIONS = [
+      // v3.1 (Terry) — the PDR brand palette: every colour PDR uses across the apps, named by its section so
+      // you can grab "the Trees green" or "the Collages navy" by name. Kept in THIS order (excluded from the
+      // light→dark sort below). Some sections share a brand colour (Memories = Gold, PM = AI Fuchsia) — both
+      // names are kept as shortcuts. Hexes sourced from the app's theme (index.css / SIDEBAR_ACCENT).
+      { name: 'PDR', colors: [
+        ['#A99CFF', 'PDR AI Purple'], ['#D946EF', 'PDR AI Fuchsia'], ['#FEC242', 'PDR Gold'], ['#8C7BFF', 'PDR Lavender'],
+        ['#FEC242', 'PDR Memories'], ['#283593', 'PDR Collages'], ['#10B981', 'PDR Trees'], ['#3B82F6', 'PDR S&D'],
+        ['#D946EF', 'PDR PM'], ['#FDA4AF', 'PDR Recycle Bin'], ['#6B5AFF', 'PDR License'],
+      ] },
       { name: 'Neon', colors: [
         ['#F6FF33', 'Electric Yellow'], ['#D8FF3A', 'Neon Lime'], ['#73FF4D', 'Toxic Green'], ['#4FFFD5', 'Neon Mint'],
         ['#42F5E6', 'Aqua Glow'], ['#36D97F', 'Cyber Green'], ['#F06AFF', 'Neon Pink'], ['#38D9E6', 'Neon Cyan'],
@@ -22821,10 +22840,7 @@
         ['#FF9F45', 'Tangerine'], ['#FFBF36', 'Amber'], ['#E7A58E', 'Rose Gold'], ['#F97AA3', 'Flamingo'],
         ['#C27BA0', 'Mauve'], ['#B497D6', 'Lavender'], ['#8661C1', 'Twilight Purple'], ['#6D8CC3', 'Dusky Blue'],
         ['#4F5D95', 'Indigo Sky'], ['#D74B4B', 'Sunset Red'], ['#FF6BB5', 'Tropical Pink'], ['#1E2D59', 'Midnight Navy'],
-        // v2.1 round 213 (Terry) — PDR brand colours added to Sunset (now 18). The
-        // count label is gone, so the extra two just wrap to a short 3rd row; the
-        // light→dark sort places them by luminance like every other swatch.
-        ['#A99CFF', 'PDR Lavender'], ['#FEC242', 'PDR Gold'],
+        // v3.1 (Terry) — the two PDR brand colours that used to live here now have their own dedicated "PDR" palette (first collection).
       ] },
       { name: 'Nature', colors: [
         ['#7A8C5D', 'Moss'], ['#628C4F', 'Fern'], ['#355E3B', 'Forest'], ['#1F4D3A', 'Pine'],
@@ -22885,9 +22901,20 @@
         return 0.2126 * r + 0.7152 * g + 0.0722 * b;
       };
       COLOR_COLLECTIONS.forEach((coll) => {
-        if (coll && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));
+        if (coll && coll.name !== 'PDR' && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));   // v3.1 (Terry) — PDR palette keeps its section order, not light→dark
       });
     })();
+    // v3.1 (Terry SS1) — hex → friendly NAME, so the "current colour" chip can show "PDR AI Purple" not just a
+    // hex. Built from the quick colours + every collection; a colour's FIRST name wins (quick names beat the
+    // long collection names for basics, and the PDR palette — first collection — wins its brand names).
+    const COLOR_NAME_MAP = (function () {
+      const m = {};
+      const put = (hex, name) => { const k = String(hex || '').toUpperCase(); if (k && !m[k]) m[k] = name; };
+      try { TEXT_COLOR_DEFAULTS.forEach(([h, n]) => put(h, n)); } catch (_) {}
+      try { COLOR_COLLECTIONS.forEach((c) => c.colors.forEach(([h, n]) => put(h, n))); } catch (_) {}
+      return m;
+    })();
+    function colorDisplayName(hex) { if (!hex) return ''; return COLOR_NAME_MAP[String(hex).toUpperCase()] || String(hex).toUpperCase(); }
     // v2.1 round 213 (Terry) — user-reorderable COLLECTIONS. The ▲/▼ controls in
     // each collection header move that category up/down the list; the chosen order
     // persists to localStorage and is applied at render time. This reorders the
@@ -22927,6 +22954,10 @@
       const used = new Set();
       saved.forEach((n) => { if (byName.has(n) && !used.has(n)) { used.add(n); ordered.push(byName.get(n)); } });
       COLOR_COLLECTIONS.forEach((c) => { if (!used.has(c.name)) { used.add(c.name); ordered.push(c); } });
+      // v3.1 (Terry) — the PDR brand palette ALWAYS leads, whatever the saved order (it's the special one; a
+      // pre-existing saved order from before PDR existed would otherwise bury it at the end).
+      const pi = ordered.findIndex((c) => c.name === 'PDR');
+      if (pi > 0) { ordered.unshift(ordered.splice(pi, 1)[0]); }
       return ordered;
     }
     // Move a collection one slot up (dir=-1) or down (dir=+1) in the current
@@ -22961,21 +22992,38 @@
     // capped at 7, most-recent first.
     const TEXT_FAV_KEY = 'pdr-text-fav-colors';
     const TEXT_FAV_CAP = 7;
-    function textGetFavs() { try { const v = JSON.parse(localStorage.getItem(TEXT_FAV_KEY) || '[]'); return Array.isArray(v) ? v.slice(0, TEXT_FAV_CAP) : []; } catch (_) { return []; } }
-    function textWriteFavs(cols) { try { localStorage.setItem(TEXT_FAV_KEY, JSON.stringify(cols.slice(0, TEXT_FAV_CAP))); } catch (_) {} }
-    // Add a colour to Favourites (most-recent first, dedup, drop oldest past 7).
-    // Does NOT apply it — callers decide whether to also pick it.
+    // v3.1 (Terry SS3) — the custom-colour slots are now LRU. Stored as {c,u} (u = last-used ms). A manually
+    // added / ＋-favourited colour fills one of the 7 slots; using a slot refreshes its u; when a NEW colour
+    // arrives with all 7 full, the LEAST-recently-USED one is replaced (not merely the oldest added). Old
+    // string-array data migrates in as {c,u:0} so it's evicted first, as intended.
+    function _favNow() { try { return Date.now(); } catch (_) { return 0; } }
+    function textFavData() {
+      try {
+        const v = JSON.parse(localStorage.getItem(TEXT_FAV_KEY) || '[]'); if (!Array.isArray(v)) return [];
+        return v.map((x) => (typeof x === 'string') ? { c: x, u: 0 } : { c: x && x.c, u: (x && x.u) || 0 }).filter((x) => x.c);
+      } catch (_) { return []; }
+    }
+    function textWriteFavData(arr) { try { localStorage.setItem(TEXT_FAV_KEY, JSON.stringify(arr.slice(0, TEXT_FAV_CAP))); } catch (_) {} }
+    function textGetFavs() { return textFavData().map((x) => x.c).slice(0, TEXT_FAV_CAP); }   // hex list (insertion order) for rendering
+    // Add a colour to the custom slots (most-recent first). If full, evict the LEAST-recently-USED. No apply.
     function textAddFav(c) {
       if (!c) return;
-      let cols = textGetFavs().filter((x) => x.toLowerCase() !== c.toLowerCase());
-      cols.unshift(c); cols = cols.slice(0, TEXT_FAV_CAP);
-      textWriteFavs(cols);
+      let arr = textFavData().filter((x) => x.c.toLowerCase() !== c.toLowerCase());
+      arr.unshift({ c: c, u: _favNow() });
+      while (arr.length > TEXT_FAV_CAP) { let mi = 0; for (let i = 1; i < arr.length; i++) if (arr[i].u < arr[mi].u) mi = i; arr.splice(mi, 1); }
+      textWriteFavData(arr);
       renderTextColorPaletteForTarget();   // reflect immediately
+    }
+    // Mark a slot as just-used (LRU touch), so a colour you keep re-using survives eviction. Silent — no re-render.
+    function textBumpFav(c) {
+      if (!c) return;
+      const arr = textFavData();
+      const e = arr.find((x) => x.c.toLowerCase() === c.toLowerCase());
+      if (e) { e.u = _favNow(); textWriteFavData(arr); }
     }
     function textRemoveFav(c) {
       if (!c) return;
-      const cols = textGetFavs().filter((x) => x.toLowerCase() !== c.toLowerCase());
-      textWriteFavs(cols);
+      textWriteFavData(textFavData().filter((x) => x.c.toLowerCase() !== c.toLowerCase()));
       renderTextColorPaletteForTarget();
     }
     // Track the single mounted palette so a fav change re-renders it.
@@ -23023,6 +23071,16 @@
       hostEl.querySelectorAll('.frame-coll-collapse[open]').forEach((d) => { if (d.dataset.coll) openColls.add(d.dataset.coll); });
       hostEl.innerHTML = '';
       hostEl.classList.add('frame-palette');
+      // v3.1 (Terry SS1) — CURRENT COLOUR readout at the very top: a swatch + its name, ALWAYS visible so you
+      // can see what's applied even when that colour's swatch is tucked inside a collapsed collection.
+      const curWrap = document.createElement('div');
+      curWrap.className = 'frame-current';
+      const curSw = document.createElement('span'); curSw.className = 'frame-current-sw';
+      const curName = document.createElement('span'); curName.className = 'frame-current-name';
+      curWrap.appendChild(curSw); curWrap.appendChild(curName);
+      hostEl.appendChild(curWrap);
+      hostEl._curChip = { sw: curSw, name: curName };
+      (function () { try { const c = (getCurrent && getCurrent()) || ''; if (c) { curSw.style.background = c; curSw.classList.remove('is-none'); curName.textContent = colorDisplayName(c); } else { curSw.classList.add('is-none'); curName.textContent = 'None'; } } catch (_) {} })();
       // v2.1 round 200 (Terry) — ROW 1 is now ONE combined 8-col strip:
       //   [special?] [custom +] [bg locked specials: Photo, Transparent] [quick 5]
       // The old separate Core row is gone — the 5 quick colours live here with the
@@ -23084,10 +23142,15 @@
       // live here (moved to Row 1), so Favourites is clean until the user adds via
       // the ＋ badges. v2.1 round 205 (Terry) — the empty-state hint is built just
       // below (after this row, before the collections), not as a static element.
-      const favs = textGetFavs();
+      // v3.1 (Terry SS3) — Row 2 = a FIXED "PDR AI Purple" anchor (non-changeable) + up to 7 LRU custom slots.
+      const favs = textGetFavs().filter((c) => c.toLowerCase() !== '#a99cff');   // #A99CFF is the anchor, never doubled
       const favRow = document.createElement('div');
       favRow.className = 'frame-row frame-favrow';
-      favs.forEach((c) => favRow.appendChild(makeTextSwatch(c, c + ' (right-click to remove)', onPick, { removable: true })));
+      const anchorSw = makeTextSwatch('#A99CFF', 'PDR AI Purple (always here)', onPick, {});
+      anchorSw.classList.add('frame-anchor');
+      favRow.appendChild(anchorSw);
+      // Using a custom slot refreshes its "last used" (LRU touch) so re-used colours survive eviction.
+      favs.slice(0, TEXT_FAV_CAP).forEach((c) => favRow.appendChild(makeTextSwatch(c, colorDisplayName(c) + ' — right-click to remove', (hex) => { try { textBumpFav(hex); } catch (_) {} onPick(hex); }, { removable: true })));
       hostEl.appendChild(favRow);
       // v2.1 round 205 (Terry) — the empty-favourites hint is now BUILT HERE,
       // immediately after the (empty) Favourites row and BEFORE the collection
@@ -23676,6 +23739,13 @@
         if (s.classList.contains('frame-locked-special')) return;
         s.classList.toggle('active', (s.getAttribute('data-color') || '').toLowerCase() === cur);
       });
+      // v3.1 (Terry SS1) — keep the "current colour" readout (swatch + name) in step with the active colour.
+      try {
+        if (hostEl._curChip) {
+          if (cur) { hostEl._curChip.sw.style.background = cur; hostEl._curChip.sw.classList.remove('is-none'); hostEl._curChip.name.textContent = colorDisplayName(cur); }
+          else { hostEl._curChip.sw.classList.add('is-none'); hostEl._curChip.name.textContent = 'None'; }
+        }
+      } catch (_) {}
     }
     // Re-ring the single mounted palette (cheap; no rebuild) — call after a colour
     // change so the active swatch tracks the new colour.
