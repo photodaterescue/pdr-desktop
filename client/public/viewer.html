@@ -4846,6 +4846,11 @@
               <div class="enhance-label-row"><label for="collage-text-transparency" data-pdr-tooltip="How see-through the text is — lower = more transparent">Transparency</label><span class="enhance-val" id="val-text-transparency">100%</span></div>
               <input class="enhance-slider" id="collage-text-transparency" type="range" min="0" max="100" step="1" value="100">
             </div>
+            <!-- v3.1 (Terry) — Line spacing in the panel too (parity with the bar's popover). -->
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="collage-text-linespacing" data-pdr-tooltip="Space between lines — 1.25 is normal">Line spacing</label><span class="enhance-val" id="val-text-linespacing">1.25×</span></div>
+              <input class="enhance-slider" id="collage-text-linespacing" type="range" min="50" max="300" step="5" value="125">
+            </div>
             <!-- v2.1 round 189 (Terry) — Alignment + Style now share ONE row,
                  split by a thin divider (each was its own row before). Same
                  ids / data-attrs / handlers — only the wrapping changed. -->
@@ -4864,10 +4869,12 @@
                   <div class="enhance-label-row"><label data-pdr-tooltip="Bold, italic, and underline">Style</label></div>
                   <div style="display:flex;gap:6px" id="collage-text-style">
                     <button class="ec-toggle-btn" data-style="bold" type="button" data-pdr-tooltip="Bold" aria-label="Bold" style="font-weight:700">B</button>
+                    <!-- v3.1 (Terry) — the weight menu hangs off B like a split button (the standalone
+                         "W ▾" read as Width): click B = toggle bold, click the chevron = Thin…Black. -->
+                    <button class="ec-toggle-btn" id="collage-text-weight-btn" type="button" data-pdr-tooltip="Font weight (Thin to Black)" aria-label="Font weight" style="width:16px;min-width:16px;padding:0;margin-left:-4px;font-size:9px;opacity:0.85">&#9662;</button>
                     <button class="ec-toggle-btn" data-style="italic" type="button" data-pdr-tooltip="Italic" aria-label="Italic" style="font-style:italic;font-family:Georgia,serif">I</button>
                     <button class="ec-toggle-btn" data-style="underline" type="button" data-pdr-tooltip="Underline" aria-label="Underline" style="text-decoration:underline">U</button>
-                    <!-- v3.1 (Terry SS1) — Weight menu in the SIDE PANEL too (Thin…Black; same popover as the toolbar chevron) -->
-                    <button class="ec-toggle-btn" id="collage-text-weight-btn" type="button" data-pdr-tooltip="Font weight (Thin to Black)" aria-label="Font weight" style="width:auto;padding:0 8px;letter-spacing:0.02em">W<span aria-hidden="true" style="font-size:9px;opacity:0.75;margin-left:3px">&#9662;</span></button>
+                    <button class="ec-toggle-btn" data-style="strike" type="button" data-pdr-tooltip="Strikethrough" aria-label="Strikethrough" style="text-decoration:line-through">S</button><!-- v3.1 (Terry) — panel parity with the bar -->
                   </div>
                 </div>
               </div>
@@ -13094,6 +13101,14 @@
         const op = (typeof selectedText.opacity === 'number' && isFinite(selectedText.opacity)) ? Math.round(Math.max(0, Math.min(100, selectedText.opacity))) : 100;
         tranSlider.value = String(op);
         if (tranVal) tranVal.textContent = op + '%';
+      }
+      // v3.1 (Terry) — sync the panel Line spacing row from the layer.
+      const lsSlider = document.getElementById('collage-text-linespacing');
+      const lsVal = document.getElementById('val-text-linespacing');
+      if (lsSlider) {
+        const lh = (typeof selectedText.lineHeight === 'number' && isFinite(selectedText.lineHeight)) ? Math.max(0.5, Math.min(3, selectedText.lineHeight)) : 1.25;
+        lsSlider.value = String(Math.round(lh * 100));
+        if (lsVal) lsVal.textContent = lh.toFixed(2) + '×';
       }
       // Alignment toggle: mark the active L/C/R button.
       document.querySelectorAll('#collage-text-align .ec-toggle-btn').forEach((b) => {
@@ -21631,6 +21646,16 @@
         if (txTranVal) txTranVal.textContent = pct + '%';
         renderTextLayer(selectedText);
       });
+      // v3.1 (Terry) — panel Line spacing (parity with the bar's popover; same 0.5–3 range).
+      const txLsSlider = document.getElementById('collage-text-linespacing');
+      const txLsVal = document.getElementById('val-text-linespacing');
+      if (txLsSlider) txLsSlider.addEventListener('input', () => {
+        if (!selectedText) return;
+        const v = Math.max(50, Math.min(300, parseInt(txLsSlider.value, 10) || 125)) / 100;
+        selectedText.lineHeight = v;
+        if (txLsVal) txLsVal.textContent = v.toFixed(2) + '×';
+        renderTextLayer(selectedText);
+      });
       const alignWrap = document.getElementById('collage-text-align');
       if (alignWrap) alignWrap.addEventListener('click', (e) => {
         const b = e.target.closest ? e.target.closest('.ec-toggle-btn') : null;
@@ -21648,7 +21673,7 @@
         const b = e.target.closest ? e.target.closest('.ec-toggle-btn') : null;
         if (!b || !selectedText) return;
         const key = b.dataset.style;
-        if (key !== 'bold' && key !== 'italic' && key !== 'underline') return;
+        if (key !== 'bold' && key !== 'italic' && key !== 'underline' && key !== 'strike') return;   // v3.1 (Terry) — S in the panel too
         beginCollageChange();
         // v3.1 (Terry SS1) — B == weight 400 ↔ 700 so it composes with the Weight menu.
         if (key === 'bold') { toggleTextBoldWeight(selectedText); b.classList.toggle('active', textWeightOf(selectedText) >= 600); }
