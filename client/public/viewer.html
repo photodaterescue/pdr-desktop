@@ -10952,7 +10952,7 @@
         if (effect === 'outline') {
           ctx.save();
           ctx.lineJoin = 'round';
-          ctx.lineWidth = Math.max(1, fontPx * 0.12 * k);   // v2.1 round 191 (Terry) — outline thickness scales with strength
+          ctx.lineWidth = Math.max(1, fontPx * 0.24 * k);   // v2.1 round 191 (Terry) — outline thickness scales with strength; v3.1 (Terry) — range ×2 (0.12→0.24): full slider now reaches twice the old max, mid-slider ≈ the old max
           // v2.1 round 193 (Terry) — outline colour: the chosen effect colour if
           // set, else AUTO = the original contrast outline (black for light text,
           // white for dark text). '' keeps today's look exactly.
@@ -11267,40 +11267,29 @@
       return null;
     }
     function closeFmtPopup_() { if (collageFmtPopupEl) { try { collageFmtPopupEl.remove(); } catch (_) {} collageFmtPopupEl = null; } }
-    // The per-apply CHECKBOX popup (Terry's design): tick which groups to carry onto THIS target, then Apply.
-    function openFmtApplyPopup_(target, x, y) {
+    // The per-apply CHECKBOX popup (Terry's design): tick which groups to carry, then Apply. `targets` is one
+    // ref or MANY — many comes from the paint-marquee (drag an area over the boxes you want painted); the
+    // title says how many so you can see exactly what's about to change. No "apply to all" radios (v3.1
+    // Terry: the AREA is the selection — "select an area with other text boxes in it… then the modal").
+    function openFmtApplyPopup_(targets, x, y) {
       closeFmtPopup_();
       const family = collageFormatBrush.family;
-      const noun = (target.family === 'text') ? 'text box' : (target.ref && target.ref.isEmoji ? 'emoji' : 'photo');
-      // v3.1 (Terry SS2) — "APPLY TO ALL" scope: paint the whole set in one go instead of box-by-box. Text →
-      // all text boxes; emoji → all emojis; photo → the LIVE MULTI-SELECTION when the clicked photo is part
-      // of one, else all photos. (Text layers have no multi-select in the app — all-boxes is the batch here.)
-      let allRefs = null, allLabel = '';
-      try {
-        if (family === 'text') {
-          const txts = collageTexts.filter((t) => t && !t.isEmoji);
-          if (txts.length > 1) { allRefs = txts; allLabel = 'All ' + txts.length + ' text boxes'; }
-        } else if (target.ref && target.ref.isEmoji) {
-          const ems = collageTexts.filter((t) => t && t.isEmoji);
-          if (ems.length > 1) { allRefs = ems; allLabel = 'All ' + ems.length + ' emojis'; }
-        } else if (Array.isArray(collageSelection) && collageSelection.length > 1 && collageSelection.indexOf(target.ref) >= 0) {
-          allRefs = collageSelection.slice(); allLabel = 'All ' + collageSelection.length + ' selected photos';
-        } else {
-          const tiles = collageItems.filter((it) => it && it.on && !it.isBg && !it.placeholder && (it.imgEl || it.path));
-          if (tiles.length > 1) { allRefs = tiles; allLabel = 'All ' + tiles.length + ' photos'; }
-        }
-      } catch (_) { allRefs = null; }
+      const list = Array.isArray(targets) ? targets : [targets];
+      const nounFor = (r) => (family === 'text') ? 'text box' : (r && r.isEmoji ? 'emoji' : 'photo');
+      let title;
+      if (list.length === 1) title = 'Paint onto this ' + nounFor(list[0]) + ':';
+      else {
+        const nouns = list.map(nounFor);
+        const one = nouns[0], same = nouns.every((n) => n === one);
+        const plural = { 'text box': 'text boxes', 'emoji': 'emojis', 'photo': 'photos' };
+        title = 'Paint onto ' + list.length + ' ' + (same ? plural[one] : 'layers') + ':';
+      }
       const pop = document.createElement('div'); pop.className = 'collage-fmt-popup';
-      let html = '<div class="cfp-title">Format paint:</div>';
+      let html = '<div class="cfp-title">' + title + '</div>';
       FMT_GROUPS[family].forEach((g) => {
         const on = collageFmtLastPick[family][g.key] !== false;
         html += '<label class="cfp-row"><input type="checkbox" data-g="' + g.key + '"' + (on ? ' checked' : '') + '><span>' + g.label + '</span></label>';
       });
-      if (allRefs) {
-        html += '<div class="cfp-scope-title">Apply to:</div>'
-          + '<label class="cfp-row"><input type="radio" name="cfp-scope" value="one" checked><span>Just this ' + noun + '</span></label>'
-          + '<label class="cfp-row"><input type="radio" name="cfp-scope" value="all"><span>' + allLabel + '</span></label>';
-      }
       html += '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Apply</button></div>';
       pop.innerHTML = html;
       pop.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -11312,9 +11301,8 @@
       const doApply = () => {
         const ticked = [];
         pop.querySelectorAll('input[type=checkbox]').forEach((cb) => { collageFmtLastPick[family][cb.dataset.g] = cb.checked; if (cb.checked) ticked.push(cb.dataset.g); });
-        const scopeAll = !!pop.querySelector('input[name="cfp-scope"][value="all"]:checked');   // v3.1 (Terry SS2)
         closeFmtPopup_();
-        if (ticked.length) applyFormatGroups_((scopeAll && allRefs) ? allRefs : target.ref, family, ticked);
+        if (ticked.length) applyFormatGroups_(list, family, ticked);
       };
       pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); doApply(); });
       pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
@@ -11332,11 +11320,86 @@
         if (e.target.closest && e.target.closest('.collage-fmt-popup, .ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;   // popup / toolbar / roller → let it work
         const target = fmtTargetFromEvent_(e);
         if (target && target.ref === collageFormatBrush.srcRef) { e.preventDefault(); e.stopPropagation(); return; }   // the source → ignore
-        if (target && target.family === collageFormatBrush.family) { e.preventDefault(); e.stopPropagation(); openFmtApplyPopup_(target, e.clientX, e.clientY); return; }   // compatible → checkbox popup
+        if (target && target.family === collageFormatBrush.family) { e.preventDefault(); e.stopPropagation(); openFmtApplyPopup_([target.ref], e.clientX, e.clientY); return; }   // compatible → checkbox popup
         if (target) { e.preventDefault(); e.stopPropagation(); try { if (typeof cctxToast === 'function') cctxToast('That paint carries ' + (collageFormatBrush.family === 'text' ? 'text' : 'photo / emoji') + ' formatting — pick the same kind'); } catch (_) {} return; }   // wrong family → stay loaded
-        if (collageFmtPopupEl) { e.preventDefault(); e.stopPropagation(); closeFmtPopup_(); return; }   // clicked empty with the popup open → just dismiss it
-        stopFormatPaint_();   // clicked empty, no popup → done painting (let the click deselect normally)
+        // v3.1 (Terry) — PAINT MARQUEE: with the roller loaded, DRAGGING on the stage sweeps an AREA — every
+        // matching layer inside it gets the checkbox popup in one go ("select an area with other text boxes in
+        // it… then receive the little modal"). A plain CLICK (no drag) keeps the old behaviour: dismiss the
+        // popup if one is open, else put the roller down.
+        const stage = e.target.closest && e.target.closest('#collage-stage');
+        if (stage) {
+          e.preventDefault(); e.stopPropagation();
+          startFmtMarquee_(e);
+          return;
+        }
+        if (collageFmtPopupEl) { e.preventDefault(); e.stopPropagation(); closeFmtPopup_(); return; }   // clicked the panel etc. with the popup open → just dismiss it
+        stopFormatPaint_();   // clicked outside the stage, no popup → done painting
       }, true);
+    }
+    // v3.1 (Terry) — the paint-marquee drag: a gold rubber band (fixed-position, client coords, so it works at
+    // any zoom/pan); on release every brush-family layer whose box intersects the band goes to the popup.
+    let collageFmtBandEl_ = null;
+    function startFmtMarquee_(e) {
+      const sx = e.clientX, sy = e.clientY, pid = e.pointerId;
+      let moved = false;
+      const band = () => {
+        if (!collageFmtBandEl_) {
+          collageFmtBandEl_ = document.createElement('div');
+          collageFmtBandEl_.style.cssText = 'position:fixed;border:1.5px dashed #FEC242;background:rgba(254,194,66,0.10);pointer-events:none;z-index:200002;border-radius:3px;';
+          document.body.appendChild(collageFmtBandEl_);
+        }
+        return collageFmtBandEl_;
+      };
+      const clearBand = () => { if (collageFmtBandEl_) { try { collageFmtBandEl_.remove(); } catch (_) {} collageFmtBandEl_ = null; } };
+      const onMove = (ev) => {
+        if (ev.pointerId !== pid) return;
+        if (!collageFormatBrush) { cleanup(); return; }   // Esc mid-drag put the roller down
+        ev.preventDefault(); ev.stopPropagation();
+        if (!moved && Math.hypot(ev.clientX - sx, ev.clientY - sy) < 4) return;   // click-vs-drag threshold
+        moved = true;
+        const b = band();
+        b.style.left = Math.min(ev.clientX, sx) + 'px';
+        b.style.top = Math.min(ev.clientY, sy) + 'px';
+        b.style.width = Math.abs(ev.clientX - sx) + 'px';
+        b.style.height = Math.abs(ev.clientY - sy) + 'px';
+      };
+      const cleanup = () => {
+        clearBand();
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup', onUp, true);
+        window.removeEventListener('pointercancel', onUp, true);
+      };
+      const onUp = (ev) => {
+        if (ev && ev.pointerId !== pid) return;
+        const rect = moved ? { l: Math.min(ev.clientX, sx), t: Math.min(ev.clientY, sy), r: Math.max(ev.clientX, sx), b: Math.max(ev.clientY, sy) } : null;
+        cleanup();
+        if (!collageFormatBrush) return;
+        if (!moved) {   // plain click on the stage — the pre-marquee behaviour
+          if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_();
+          return;
+        }
+        try { ev.preventDefault(); ev.stopPropagation(); } catch (_) {}
+        // Hit-test the band against the brush family's layers (client rects; source + locked excluded later).
+        const family = collageFormatBrush.family;
+        const hits = [];
+        const test = (ref, el) => {
+          if (!el || ref === collageFormatBrush.srcRef) return;
+          const r = el.getBoundingClientRect();
+          if (!(r.right < rect.l || r.left > rect.r || r.bottom < rect.t || r.top > rect.b)) hits.push(ref);
+        };
+        try {
+          if (family === 'text') collageTexts.forEach((t) => { if (t && !t.isEmoji) test(t, t.el); });
+          else {
+            collageItems.forEach((it) => { if (it && it.on && !it.isBg && !it.placeholder && (it.imgEl || it.path)) test(it, it.el); });
+            collageTexts.forEach((t) => { if (t && t.isEmoji) test(t, t.el); });
+          }
+        } catch (_) {}
+        if (hits.length) openFmtApplyPopup_(hits, ev.clientX, ev.clientY);
+        else { try { if (typeof cctxToast === 'function') cctxToast('No ' + (family === 'text' ? 'text boxes' : 'photos or emojis') + ' in that area — drag over the ones to paint'); } catch (_) {} }
+      };
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup', onUp, true);
+      window.addEventListener('pointercancel', onUp, true);
     }
     function startFormatPaint_(ref, family) {
       family = family || fmtFamilyOf_(ref);
