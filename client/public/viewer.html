@@ -1807,9 +1807,17 @@
     #collage-text-palette .frame-current-sw { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.28); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
     #collage-text-palette .frame-current-sw.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 8px 8px !important; }
     #collage-text-palette .frame-current-name { font-size: 12px; font-weight: 600; color: #e8e3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    /* v3.1 (Terry SS3) — the fixed "PDR AI Purple" anchor swatch: a subtle inset ring marks it as pinned/non-changeable. */
+    /* v3.1 (Terry SS3) — the fixed "PDR Lavender" anchor swatch: a subtle inset ring marks it as pinned/non-changeable. */
     #collage-text-palette .frame-swatch.frame-anchor { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
     #collage-text-palette .frame-swatch.frame-anchor.active { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5), 0 0 0 2px #FEC242; }
+    /* v3.1 (Terry SS1) — EMPTY numbered slots: dashed, faint slot number, click = pick a colour into THAT slot. */
+    #collage-text-palette .frame-swatch.frame-slot-empty {
+      position: relative; background: transparent !important;
+      border: 1.5px dashed rgba(255,255,255,0.28);
+      color: #8f88b5; font-size: 10.5px; font-weight: 700; line-height: 1;
+      display: flex; align-items: center; justify-content: center;
+    }
+    #collage-text-palette .frame-swatch.frame-slot-empty:hover { border-color: rgba(254,194,66,0.75); color: #ffd778; }
     /* The "＋ add to favourites" badge — hidden until the swatch is hovered. */
     .frame-swatch { position: relative; }
     .frame-fav-add {
@@ -3034,6 +3042,8 @@
     .collage-fmt-popup .cfp-row { display: flex; align-items: center; gap: 8px; padding: 4px 2px; cursor: pointer; border-radius: 5px; }
     .collage-fmt-popup .cfp-row:hover { background: rgba(255,255,255,0.05); }
     .collage-fmt-popup .cfp-row input { accent-color: #FEC242; width: 15px; height: 15px; cursor: pointer; }
+    /* v3.1 (Terry SS2) — the "Apply to:" scope block (just this one / all N). */
+    .collage-fmt-popup .cfp-scope-title { font-weight: 600; color: #ffd778; margin: 9px 0 3px; padding-top: 7px; border-top: 1px solid rgba(255,255,255,0.08); }
     .collage-fmt-popup .cfp-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
     .collage-fmt-popup .cfp-actions button { padding: 5px 12px; border-radius: 7px; font-size: 12px; font-weight: 600; cursor: pointer; border: 1px solid transparent; }
     .collage-fmt-popup .cfp-cancel { background: transparent; border-color: rgba(255,255,255,0.18); color: #c9c3e8; }
@@ -11223,10 +11233,8 @@
       FMT_GROUPS[family].forEach((g) => { const o = {}; g.fields.forEach((f) => { o[f] = _fmtClone(src[f]); }); groups[g.key] = o; });
       return { family: family, groups: groups, srcRef: ref };
     }
-    // Copy the TICKED groups from the brush onto a target, then re-render it the right way for its type.
-    function applyFormatGroups_(ref, family, tickedKeys) {
-      if (!collageFormatBrush || !ref || ref.locked) return false;
-      beginCollageChange();
+    // Copy the TICKED groups from the brush onto ONE target + re-render it (no undo wrapping — callers batch).
+    function applyFormatCore_(ref, family, tickedKeys) {
       const groups = collageFormatBrush.groups;
       FMT_GROUPS[family].forEach((g) => {
         if (tickedKeys.indexOf(g.key) < 0) return;
@@ -11236,6 +11244,16 @@
       });
       if (family === 'text' || ref.isEmoji) { try { renderTextLayer(ref); } catch (_) {} }
       else { try { renderCollageItem(ref); } catch (_) {} try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(ref); } catch (_) {} }
+    }
+    // Apply to one ref OR a whole set (v3.1 Terry SS2 — "format paint to a whole selection, not just
+    // individually"). Locked layers + the brush's own source are skipped; the batch is ONE undo step.
+    function applyFormatGroups_(refs, family, tickedKeys) {
+      if (!collageFormatBrush) return false;
+      const src = collageFormatBrush.srcRef;
+      const list = (Array.isArray(refs) ? refs : [refs]).filter((r) => r && !r.locked && r !== src);
+      if (!list.length) return false;
+      beginCollageChange();
+      list.forEach((r) => { try { applyFormatCore_(r, family, tickedKeys); } catch (_) {} });
       commitCollageChange();
       try { syncTextControls(); } catch (_) {}
       return true;
@@ -11254,12 +11272,35 @@
       closeFmtPopup_();
       const family = collageFormatBrush.family;
       const noun = (target.family === 'text') ? 'text box' : (target.ref && target.ref.isEmoji ? 'emoji' : 'photo');
+      // v3.1 (Terry SS2) — "APPLY TO ALL" scope: paint the whole set in one go instead of box-by-box. Text →
+      // all text boxes; emoji → all emojis; photo → the LIVE MULTI-SELECTION when the clicked photo is part
+      // of one, else all photos. (Text layers have no multi-select in the app — all-boxes is the batch here.)
+      let allRefs = null, allLabel = '';
+      try {
+        if (family === 'text') {
+          const txts = collageTexts.filter((t) => t && !t.isEmoji);
+          if (txts.length > 1) { allRefs = txts; allLabel = 'All ' + txts.length + ' text boxes'; }
+        } else if (target.ref && target.ref.isEmoji) {
+          const ems = collageTexts.filter((t) => t && t.isEmoji);
+          if (ems.length > 1) { allRefs = ems; allLabel = 'All ' + ems.length + ' emojis'; }
+        } else if (Array.isArray(collageSelection) && collageSelection.length > 1 && collageSelection.indexOf(target.ref) >= 0) {
+          allRefs = collageSelection.slice(); allLabel = 'All ' + collageSelection.length + ' selected photos';
+        } else {
+          const tiles = collageItems.filter((it) => it && it.on && !it.isBg && !it.placeholder && (it.imgEl || it.path));
+          if (tiles.length > 1) { allRefs = tiles; allLabel = 'All ' + tiles.length + ' photos'; }
+        }
+      } catch (_) { allRefs = null; }
       const pop = document.createElement('div'); pop.className = 'collage-fmt-popup';
-      let html = '<div class="cfp-title">Paint onto this ' + noun + ':</div>';
+      let html = '<div class="cfp-title">Format paint:</div>';
       FMT_GROUPS[family].forEach((g) => {
         const on = collageFmtLastPick[family][g.key] !== false;
         html += '<label class="cfp-row"><input type="checkbox" data-g="' + g.key + '"' + (on ? ' checked' : '') + '><span>' + g.label + '</span></label>';
       });
+      if (allRefs) {
+        html += '<div class="cfp-scope-title">Apply to:</div>'
+          + '<label class="cfp-row"><input type="radio" name="cfp-scope" value="one" checked><span>Just this ' + noun + '</span></label>'
+          + '<label class="cfp-row"><input type="radio" name="cfp-scope" value="all"><span>' + allLabel + '</span></label>';
+      }
       html += '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Apply</button></div>';
       pop.innerHTML = html;
       pop.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -11271,8 +11312,9 @@
       const doApply = () => {
         const ticked = [];
         pop.querySelectorAll('input[type=checkbox]').forEach((cb) => { collageFmtLastPick[family][cb.dataset.g] = cb.checked; if (cb.checked) ticked.push(cb.dataset.g); });
+        const scopeAll = !!pop.querySelector('input[name="cfp-scope"][value="all"]:checked');   // v3.1 (Terry SS2)
         closeFmtPopup_();
-        if (ticked.length) applyFormatGroups_(target.ref, family, ticked);
+        if (ticked.length) applyFormatGroups_((scopeAll && allRefs) ? allRefs : target.ref, family, ticked);
       };
       pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); doApply(); });
       pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
@@ -11747,9 +11789,20 @@
         tbDup.innerHTML = '<svg viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
         const tbRem = document.createElement('button'); tbRem.type = 'button'; tbRem.className = 'ch-tb-btn ch-tb-rem'; tbRem.setAttribute('data-pdr-tooltip', 'Delete');
         tbRem.innerHTML = '<svg viewBox="0 0 24 24"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>';
-        tbar.appendChild(tbLock); tbar.appendChild(tbLockLayer); tbar.appendChild(tbLayer); tbar.appendChild(tbDup); tbar.appendChild(tbRem);   // v3.1 (Terry) — photo-parity order: lock, lock-layer, layer ▲▼, duplicate, delete
+        // v3.1 (Terry SS2) — FORMAT PAINTER on the floating bar too ("at least 2 times I've been expecting to
+        // find it there"). Sits after Duplicate (its copy-format sibling). Text layers copy the TEXT format;
+        // emoji copy their enh look — same roller behaviour as the top-strip buttons.
+        const tbFmt = document.createElement('button'); tbFmt.type = 'button'; tbFmt.className = 'ch-tb-btn ch-tb-fmtpaint'; tbFmt.setAttribute('data-pdr-tooltip', 'Copy format — then click other layers and tick what to paint on (Esc to stop)');
+        tbFmt.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="5" rx="1"/><path d="M16 6.5h3a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-8a1 1 0 0 0-1 1v2"/><rect x="9" y="15" width="4.6" height="5" rx="1"/></svg>';
+        tbFmt.addEventListener('click', (e) => {
+          e.stopPropagation(); e.preventDefault();
+          if (selectedText !== layer) { try { selectText(layer); } catch (_) {} }
+          if (collageFormatBrush) stopFormatPaint_();
+          else startFormatPaint_(layer, layer.isEmoji ? 'enh' : 'text');
+        });
+        tbar.appendChild(tbLock); tbar.appendChild(tbLockLayer); tbar.appendChild(tbLayer); tbar.appendChild(tbDup); tbar.appendChild(tbFmt); tbar.appendChild(tbRem);   // v3.1 (Terry) — photo-parity order: lock, lock-layer, layer ▲▼, duplicate, format-paint, delete
         // Every handle + the toolbar (and its buttons) are excluded from the drag.
-        const handles = [tRot, tResTL, tResTR, tResBL, tResBR, tResL, tResR, tResT, tResB, tbar, tbLock, tbLockLayer, tbLayer, tbDup, tbRem];
+        const handles = [tRot, tResTL, tResTR, tResBL, tResBR, tResL, tResR, tResT, tResB, tbar, tbLock, tbLockLayer, tbLayer, tbDup, tbFmt, tbRem];
         // v3.1 (Terry SS2 — Canva layout) — the BULK text controls (Font, Size, Weight,
         // B/I/U/S, Align, aA, Effect, Spacing, Transparency) live in a fixed TOP-CENTRE
         // bar (one shared container in #collage-chrome; this layer gets its own strip,
@@ -22996,42 +23049,69 @@
     // capped at 7, most-recent first.
     const TEXT_FAV_KEY = 'pdr-text-fav-colors';
     const TEXT_FAV_CAP = 7;
-    // v3.1 (Terry SS3) — the custom-colour slots are now LRU. Stored as {c,u} (u = last-used ms). A manually
-    // added / ＋-favourited colour fills one of the 7 slots; using a slot refreshes its u; when a NEW colour
-    // arrives with all 7 full, the LEAST-recently-USED one is replaced (not merely the oldest added). Old
-    // string-array data migrates in as {c,u:0} so it's evicted first, as intended.
+    // v3.1 (Terry SS3+SS1) — the custom colours live in 7 IDENTIFIABLE, POSITIONAL slots (Slot 1..7), stored
+    // as an array of 7 entries: {c,u} (u = last-used ms) or null (empty). Slots keep their POSITION — filling
+    // or clearing one never shuffles the others, so "Slot 3" stays Slot 3. Adding via the ＋/picker fills the
+    // first EMPTY slot; if all 7 are full, the LEAST-recently-USED one is replaced. Clicking an EMPTY slot in
+    // the row picks a colour straight into THAT slot. Old list-format data migrates into slots in order.
     function _favNow() { try { return Date.now(); } catch (_) { return 0; } }
-    function textFavData() {
+    function textFavSlots() {
+      const out = new Array(TEXT_FAV_CAP).fill(null);
       try {
-        const v = JSON.parse(localStorage.getItem(TEXT_FAV_KEY) || '[]'); if (!Array.isArray(v)) return [];
-        return v.map((x) => (typeof x === 'string') ? { c: x, u: 0 } : { c: x && x.c, u: (x && x.u) || 0 }).filter((x) => x.c);
-      } catch (_) { return []; }
+        const v = JSON.parse(localStorage.getItem(TEXT_FAV_KEY) || '[]'); if (!Array.isArray(v)) return out;
+        for (let i = 0, s = 0; i < v.length && s < TEXT_FAV_CAP; i++) {
+          const x = v[i];
+          if (x === null) { s++; continue; }                                        // slot-format: null = empty slot, keep position
+          const e = (typeof x === 'string') ? { c: x, u: 0 } : { c: x && x.c, u: (x && x.u) || 0 };   // legacy list-format entries pack in order
+          if (e.c) out[s++] = e;
+        }
+      } catch (_) {}
+      return out;
     }
-    function textWriteFavData(arr) { try { localStorage.setItem(TEXT_FAV_KEY, JSON.stringify(arr.slice(0, TEXT_FAV_CAP))); } catch (_) {} }
-    function textGetFavs() { return textFavData().map((x) => x.c).slice(0, TEXT_FAV_CAP); }   // hex list (insertion order) for rendering
-    // Add a colour to the custom slots (most-recent first). If full, evict the LEAST-recently-USED. No apply.
+    function textWriteSlots(slots) { try { localStorage.setItem(TEXT_FAV_KEY, JSON.stringify(slots.slice(0, TEXT_FAV_CAP))); } catch (_) {} }
+    function textGetFavs() { return textFavSlots().filter(Boolean).map((x) => x.c); }   // non-empty hexes (for dedup checks)
+    // Add via the ＋/picker: existing colour → LRU-touch it; else first EMPTY slot; else replace the LRU slot.
     function textAddFav(c) {
       if (!c) return;
-      let arr = textFavData().filter((x) => x.c.toLowerCase() !== c.toLowerCase());
-      arr.unshift({ c: c, u: _favNow() });
-      while (arr.length > TEXT_FAV_CAP) { let mi = 0; for (let i = 1; i < arr.length; i++) if (arr[i].u < arr[mi].u) mi = i; arr.splice(mi, 1); }
-      textWriteFavData(arr);
+      if (c.toLowerCase() === '#a99cff') return;   // PDR Lavender IS the fixed anchor — never spends a slot
+      const slots = textFavSlots();
+      const iDup = slots.findIndex((x) => x && x.c.toLowerCase() === c.toLowerCase());
+      if (iDup >= 0) { slots[iDup].u = _favNow(); textWriteSlots(slots); renderTextColorPaletteForTarget(); return; }
+      let i = slots.findIndex((x) => !x);
+      if (i < 0) { i = 0; for (let k = 1; k < slots.length; k++) if (slots[k].u < slots[i].u) i = k; }   // all full → evict least-recently-USED
+      slots[i] = { c: c, u: _favNow() };
+      textWriteSlots(slots);
       renderTextColorPaletteForTarget();   // reflect immediately
+    }
+    // Put a picked colour into a SPECIFIC slot (the click-an-empty-slot flow).
+    function textSetSlot(i, c) {
+      if (!c || i < 0 || i >= TEXT_FAV_CAP) return;
+      if (c.toLowerCase() === '#a99cff') return;   // the anchor never occupies a numbered slot
+      const slots = textFavSlots();
+      const iDup = slots.findIndex((x, k) => x && k !== i && x.c.toLowerCase() === c.toLowerCase());
+      if (iDup >= 0) slots[iDup] = null;   // the colour moves to the chosen slot, not duplicated
+      slots[i] = { c: c, u: _favNow() };
+      textWriteSlots(slots);
+      renderTextColorPaletteForTarget();
     }
     // Mark a slot as just-used (LRU touch), so a colour you keep re-using survives eviction. Silent — no re-render.
     function textBumpFav(c) {
       if (!c) return;
-      const arr = textFavData();
-      const e = arr.find((x) => x.c.toLowerCase() === c.toLowerCase());
-      if (e) { e.u = _favNow(); textWriteFavData(arr); }
+      const slots = textFavSlots();
+      const e = slots.find((x) => x && x.c.toLowerCase() === c.toLowerCase());
+      if (e) { e.u = _favNow(); textWriteSlots(slots); }
     }
     function textRemoveFav(c) {
       if (!c) return;
-      textWriteFavData(textFavData().filter((x) => x.c.toLowerCase() !== c.toLowerCase()));
-      renderTextColorPaletteForTarget();
+      const slots = textFavSlots();
+      const i = slots.findIndex((x) => x && x.c.toLowerCase() === c.toLowerCase());
+      if (i >= 0) { slots[i] = null; textWriteSlots(slots); renderTextColorPaletteForTarget(); }   // clears the slot, KEEPS its position
     }
     // Track the single mounted palette so a fav change re-renders it.
     const textColorPalettes = [];   // { host, getCurrent, onPick }
+    // v3.1 (Terry) — session-level memory of which colour COLLECTIONS are expanded. Survives every palette
+    // rebuild (incl. the Text ↔ Effect target switch); maintained by each chevron's toggle listener.
+    const collageOpenColls_ = new Set();
     // v2.1 round 194 (Terry) — a single palette swatch. `addable` swatches (the
     // Core row + every collection swatch) get a tiny "＋" badge that appears on
     // hover; clicking the badge adds the colour to Favourites WITHOUT applying,
@@ -23071,7 +23151,11 @@
       opts = opts || {};
       // v2.1 round 194 (Terry) — remember which collection chevrons were open so a
       // rebuild (e.g. after adding a favourite) doesn't snap them shut.
-      const openColls = new Set();
+      // v3.1 (Terry) — belt-and-braces: ALSO remembered in a session-level Set (updated on every chevron
+      // toggle, see below), so switching the colour target (Text ↔ Effect) — or ANY rebuild path, even one
+      // that starts from a cleared host — keeps the PDR (or any) collection open ("it gets collapsed from
+      // the PDR palette when I'm just wanting to add a colour from the same palette to the effect").
+      const openColls = collageOpenColls_;
       hostEl.querySelectorAll('.frame-coll-collapse[open]').forEach((d) => { if (d.dataset.coll) openColls.add(d.dataset.coll); });
       hostEl.innerHTML = '';
       hostEl.classList.add('frame-palette');
@@ -23146,15 +23230,36 @@
       // live here (moved to Row 1), so Favourites is clean until the user adds via
       // the ＋ badges. v2.1 round 205 (Terry) — the empty-state hint is built just
       // below (after this row, before the collections), not as a static element.
-      // v3.1 (Terry SS3) — Row 2 = a FIXED "PDR Lavender" anchor (the primary brand accent, non-changeable) + up to 7 LRU custom slots.
-      const favs = textGetFavs().filter((c) => c.toLowerCase() !== '#a99cff');   // #A99CFF is the anchor, never doubled
+      // v3.1 (Terry SS3+SS1) — Row 2 = a FIXED "PDR Lavender" anchor (non-changeable) + 7 ALWAYS-VISIBLE,
+      // NUMBERED slots ("the slots have to be identifiable"). A filled slot applies its colour (and LRU-touches
+      // it; right-click clears it, keeping the position). An EMPTY slot shows its number and opens the colour
+      // picker on click — the picked colour saves into THAT slot, so nothing lands "somewhere random".
+      const slots = textFavSlots();
       const favRow = document.createElement('div');
       favRow.className = 'frame-row frame-favrow';
       const anchorSw = makeTextSwatch('#A99CFF', 'PDR Lavender (always here)', onPick, {});
       anchorSw.classList.add('frame-anchor');
       favRow.appendChild(anchorSw);
-      // Using a custom slot refreshes its "last used" (LRU touch) so re-used colours survive eviction.
-      favs.slice(0, TEXT_FAV_CAP).forEach((c) => favRow.appendChild(makeTextSwatch(c, colorDisplayName(c) + ' — right-click to remove', (hex) => { try { textBumpFav(hex); } catch (_) {} onPick(hex); }, { removable: true })));
+      slots.forEach((slot, i) => {
+        if (slot && slot.c) {
+          const sw = makeTextSwatch(slot.c, 'Slot ' + (i + 1) + ' — ' + colorDisplayName(slot.c) + ' (right-click to clear)', (hex) => { try { textBumpFav(hex); } catch (_) {} onPick(hex); }, { removable: true });
+          favRow.appendChild(sw);
+        } else {
+          const empty = document.createElement('button');
+          empty.type = 'button'; empty.className = 'frame-swatch frame-slot-empty';
+          empty.textContent = String(i + 1);
+          empty.setAttribute('data-pdr-tooltip', 'Slot ' + (i + 1) + ' is empty — click to pick a color to save here');
+          const inp = document.createElement('input');
+          inp.type = 'color'; inp.value = '#ffffff';
+          inp.style.cssText = 'position:absolute;width:1px;height:1px;opacity:0;pointer-events:none';
+          inp.setAttribute('aria-hidden', 'true');
+          empty.appendChild(inp);
+          empty.addEventListener('click', (e) => { e.stopPropagation(); try { inp.click(); } catch (_) {} });
+          inp.addEventListener('input', () => { try { onPick(inp.value); } catch (_) {} });          // live preview while picking
+          inp.addEventListener('change', () => { try { textSetSlot(i, inp.value); } catch (_) {} }); // commit → saved into THIS slot
+          favRow.appendChild(empty);
+        }
+      });
       hostEl.appendChild(favRow);
       // v2.1 round 205 (Terry) — the empty-favourites hint is now BUILT HERE,
       // immediately after the (empty) Favourites row and BEFORE the collection
@@ -23163,12 +23268,10 @@
       // render (the host is innerHTML-cleared above + this fn re-runs on every
       // fav add/remove via renderTextColorPaletteForTarget), shown only when the
       // user has no favourites. Wording points DOWN at the collections beneath.
-      if (!favs.length) {
-        // No id needed — its show/hide is decided at build time by favs.length
-        // (the old static #collage-text-fav-hint element was removed in round 205).
+      if (!slots.some(Boolean)) {   // v3.1 (Terry SS1) — hint only while EVERY numbered slot is empty
         const hint = document.createElement('div');
         hint.className = 'frame-fav-hint';
-        hint.textContent = 'Tap ＋ on any color below to save a favorite ↓';
+        hint.textContent = 'Click an empty slot to save a color there, or tap ＋ on any color below ↓';
         hostEl.appendChild(hint);
       }
       // v2.1 round 223 (Terry) — the 12 colour CATEGORIES now live behind ONE
@@ -23257,6 +23360,9 @@
         // requestAnimationFrame — rAF is paused when the window is unfocused, which
         // silently killed the round-162 auto-scroll).
         det.addEventListener('toggle', () => {
+          // v3.1 (Terry) — keep the session-level open-collection memory in step (open adds, close removes),
+          // so a rebuild from ANY path (incl. Text ↔ Effect target switch) restores exactly what was open.
+          try { if (det.open) collageOpenColls_.add(coll.name); else collageOpenColls_.delete(coll.name); } catch (_) {}
           if (!det.open) return;
           try { (det.querySelector('.frame-coll-grid') || det).scrollIntoView({ block: 'nearest', behavior: 'smooth' }); } catch (_) {}
         });
@@ -23453,6 +23559,11 @@
       _subcatBusy = true;
       try {
         document.querySelectorAll('.enhance-collapse').forEach((det) => {
+          // v3.1 (Terry) — the colour-palette COLLECTION chevrons (Neon/PDR/…) also carry .enhance-collapse
+          // (added for the shared chevron styling), so this sweep was snapping them shut on every colour-
+          // target switch (Text ↔ Effect) — "it gets collapsed from the PDR palette". They manage their own
+          // open state (openColls); leave them alone. (The scoping comment above always intended this.)
+          if (det.classList.contains('frame-coll-collapse')) return;
           const isTarget = (det === detailsEl);
           const sum = det.querySelector(':scope > summary');
           if (sum) sum.classList.toggle('color-subcat-active', isTarget);
