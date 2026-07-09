@@ -3013,6 +3013,11 @@
     .collage-scrollbar.dragging .collage-scrollbar-thumb { background: #FEC242; cursor: grabbing; }
     .collage-scrollbar-h .collage-scrollbar-thumb { top: 0; bottom: 0; min-width: 28px; }
     .collage-scrollbar-v .collage-scrollbar-thumb { left: 0; right: 0; min-height: 28px; }
+    /* v3.1 (Terry) — FORMAT PAINTER: while the roller is loaded, every text box shows the copy cursor (click
+       to paint this format onto it), and the roller button glows gold so it's clear you're in paint mode. */
+    body.collage-format-paint .collage-text, body.collage-format-paint .collage-text * { cursor: copy !important; }
+    body.collage-format-paint .ch-tb-fmtpaint { background: #FEC242; color: #14121f; }
+    body.collage-format-paint .ch-tb-fmtpaint svg { stroke: #14121f; }
     body.collage-mode .collage-item.selected { outline-color: #FEC242; }
     body.collage-mode .collage-text.selected { outline-color: #FEC242; }   /* v2.1 round 185 (Text #1) */
     /* v2.1 round 203 (Terry) — collage wears gold: the corner resize dots,
@@ -11139,6 +11144,57 @@
     // toolbar (non-emoji only). Stores refs on `layer._tbCtl` so refreshTextToolbar
     // can update their displayed state. `beforeNode` = the first action button
     // (tbLock) to insert ahead of.
+    // ===== v3.1 (Terry) — FORMAT PAINTER for text boxes. Click the paint-roller on a text box's toolbar to
+    // COPY its format, then click other text boxes to paint that same format onto them. Sticky: paint as many
+    // as you like; Esc, clicking away, or clicking the roller again stops. Copies the LOOK — font, weight,
+    // size, B/I/U/S, colour, alignment, case, line spacing, transparency, effect — NEVER the words, the
+    // position, or the box shape. Text layers only (emoji layers have no font/format to paint). =====
+    const TEXT_FORMAT_KEYS = ['font', 'fontWeight', 'bold', 'italic', 'underline', 'strike', 'color', 'align', 'letterCase', 'lineHeight', 'opacity', 'sizeFrac', 'effect', 'effectStrength', 'effectColor'];
+    let collageFormatBrush = null, collageFmtPaintWired_ = false;
+    function captureTextFormat_(layer) {
+      const f = {}; TEXT_FORMAT_KEYS.forEach((k) => { f[k] = layer[k]; }); f._srcId = layer.id; return f;
+    }
+    function applyFormatPaintTo_(layer) {
+      if (!collageFormatBrush || !layer || layer.isEmoji || layer.locked) return false;
+      beginCollageChange();
+      TEXT_FORMAT_KEYS.forEach((k) => { if (collageFormatBrush[k] !== undefined) layer[k] = collageFormatBrush[k]; });
+      renderTextLayer(layer);
+      commitCollageChange();
+      return true;
+    }
+    function wireFormatPaintOnce_() {
+      if (collageFmtPaintWired_) return; collageFmtPaintWired_ = true;
+      window.addEventListener('keydown', (e) => { if (collageFormatBrush && (e.key === 'Escape' || e.code === 'Escape')) { e.preventDefault(); stopFormatPaint_(); } });
+      // Capture phase, so a paint click beats the text box's own select/drag/edit handlers. A press on a text
+      // box PAINTS it (sticky); a press on the source box or a toolbar/popover is ignored (keep painting);
+      // a press on anything else (a photo, empty canvas, the side panel) ends painting.
+      document.addEventListener('pointerdown', (e) => {
+        if (!collageFormatBrush) return;
+        if (e.target.closest && e.target.closest('.ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;
+        const tEl = e.target.closest && e.target.closest('.collage-text');
+        if (tEl) {
+          const layer = collageTexts.find((t) => t.el === tEl);
+          if (layer && !layer.isEmoji) {
+            e.preventDefault(); e.stopPropagation();
+            if (layer.id !== collageFormatBrush._srcId) applyFormatPaintTo_(layer);
+            return;   // sticky — keep the roller loaded for the next box
+          }
+        }
+        stopFormatPaint_();   // clicked away from any text box → done painting
+      }, true);
+    }
+    function startFormatPaint_(layer) {
+      const src = layer || selectedText;
+      if (!src || src.isEmoji) return;
+      wireFormatPaintOnce_();
+      collageFormatBrush = captureTextFormat_(src);
+      try { document.body.classList.add('collage-format-paint'); } catch (_) {}
+      try { if (typeof cctxToast === 'function') cctxToast('Format copied — click another text box to paint it on (Esc to stop)'); } catch (_) {}
+    }
+    function stopFormatPaint_() {
+      collageFormatBrush = null;
+      try { document.body.classList.remove('collage-format-paint'); } catch (_) {}
+    }
     function buildTextToolbarControls(layer, tbar, handles, beforeNode) {
       const ctl = {};
       layer._tbCtl = ctl;
@@ -11412,6 +11468,19 @@
       ins(colorChip); push(colorChip);
 
       ins(document.createElement('div')).className = 'ch-tb-sep';
+
+      // ---- FORMAT PAINTER: copy THIS box's format, then click other text boxes to paint it on ----
+      const fmtBtn = document.createElement('button'); fmtBtn.type = 'button'; fmtBtn.className = 'ch-tb-btn ch-tb-fmtpaint';
+      fmtBtn.setAttribute('data-pdr-tooltip', 'Copy format — then click other text boxes to paint this style onto them (Esc to stop)');
+      fmtBtn.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="13" height="5" rx="1"/><path d="M16 6.5h3a1 1 0 0 1 1 1V11a1 1 0 0 1-1 1h-8a1 1 0 0 0-1 1v2"/><rect x="9" y="15" width="4.6" height="5" rx="1"/></svg>';
+      fmtBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        if (collageFormatBrush) stopFormatPaint_();   // click the loaded roller again → stop
+        else startFormatPaint_(layer);
+      });
+      ins(fmtBtn); push(fmtBtn);
+
       // Prime the displayed state once.
       refreshTextToolbar(layer);
     }
