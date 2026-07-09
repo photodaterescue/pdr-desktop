@@ -54,7 +54,7 @@ function AppShell() {
     const api = (window as any).pdr?.photoPick;
     if (!api?.onStart) return;
     const off = api.onStart((info: { purpose?: string; label?: string; multi?: boolean }) => {
-      if (info?.purpose !== 'collage-bg') return;
+      if (info?.purpose !== 'collage-bg' && info?.purpose !== 'cam-bg') return;   // v3.1 (Terry) — the recording bar's camera-backdrop pick uses the same flow
       if (window.location.hash.replace(/^#/, '').split('?')[0] !== '/workspace') {
         navigate('/workspace?view=memories');
       }

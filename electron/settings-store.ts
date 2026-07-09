@@ -150,7 +150,7 @@ export interface PDRSettings {
    *  'compact' = 4 Mbps / crf 26 (smallest files, softer fine
    *  detail, fastest save). Applies to recordings started AFTER the
    *  change. */
-  captureRecordQuality: 'high' | 'standard' | 'compact';
+  captureRecordQuality: 'high' | 'standard' | 'compact' | 'tiny';   // v3.1 (Terry) — + tiny (smallest files)
   /** v2.1 round 128 (Terry 2026-06-12) — camera bubble for screen
    *  recordings (tutorial picture-in-picture). The bubble is a real
    *  always-on-top window on the recorded display, deliberately NOT
@@ -171,6 +171,11 @@ export interface PDRSettings {
    *  segmentation). type: 'none' | 'blur' | 'gradient' (value = preset id) | 'image' (value = file
    *  path). Picked from the recording bar's Background dropdown; applied live + on bubble start. */
   captureCamBg: { type: string; value?: string };
+  /** v3.1 (Terry) — SECOND camera deviceId ('' = auto: the first camera that isn't cam 1's). */
+  captureCam2Device: string;
+  /** v3.1 (Terry) — bubble size presets (S/M/L), cycled from each bubble's hover ⤢ button. */
+  captureCamSize: 's' | 'm' | 'l';
+  captureCam2Size: 's' | 'm' | 'l';
   /** Global hotkey that shows/hides the camera bubble — registered
    *  ONLY while a recording is running, so it never squats on the
    *  combo outside recordings. Same remap UI as the screenshot
@@ -374,6 +379,9 @@ export const optimisedDefaults: PDRSettings = {
   captureCamShape: 'circle',
   captureCamDevice: '',
   captureCamBg: { type: 'none' },
+  captureCam2Device: '',
+  captureCamSize: 'm',
+  captureCam2Size: 'm',
   captureCamHotkey: 'Ctrl+Shift+C',
   // v3.0 round 410 — microphone/voiceover off until asked for, system-default mic.
   captureMicEnabled: false,
@@ -474,6 +482,9 @@ export function getSettings(): PDRSettings {
     captureCamShape: store.get('captureCamShape', optimisedDefaults.captureCamShape),
     captureCamDevice: store.get('captureCamDevice', optimisedDefaults.captureCamDevice),
     captureCamBg: store.get('captureCamBg', optimisedDefaults.captureCamBg),
+    captureCam2Device: store.get('captureCam2Device', optimisedDefaults.captureCam2Device),
+    captureCamSize: store.get('captureCamSize', optimisedDefaults.captureCamSize),
+    captureCam2Size: store.get('captureCam2Size', optimisedDefaults.captureCam2Size),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
     captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),

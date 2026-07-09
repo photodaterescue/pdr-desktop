@@ -57,11 +57,42 @@
     border: 2px solid rgba(255, 255, 255, 0.22);
     box-shadow: 0 4px 18px rgba(0, 0, 0, 0.45);
     opacity: 0;
-    transition: opacity 0.3s ease;
+    /* v3.1 (Terry) — creator-style TRANSITION: the bubble pops in/out (fade + a subtle scale),
+       not just a flat fade. The footage records the pop, same as the old fade. */
+    transform: scale(0.86);
+    transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }
   #shell.circle { border-radius: 50%; }
   #shell.rectangle { border-radius: 14px; }
-  #shell.visible { opacity: 1; }
+  #shell.visible { opacity: 1; transform: scale(1); }
+  /* v3.1 (Terry) — HOVER CONTROLS: size (S→M→L) + zoom (1×→1.3×→1.6×) pills, visible only while the
+     mouse is over the bubble (so they never appear in hands-off footage). no-drag so they click. */
+  #ctrls {
+    position: absolute;
+    left: 50%;
+    bottom: 9%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.15s ease;
+    -webkit-app-region: no-drag;
+    z-index: 5;
+  }
+  #shell:hover #ctrls { opacity: 1; }
+  .cbtn {
+    width: 26px; height: 26px;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    background: rgba(10, 10, 16, 0.72);
+    color: #fff;
+    font: 600 11px/1 system-ui, 'Segoe UI', sans-serif;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    padding: 0;
+  }
+  .cbtn:hover { background: rgba(254, 194, 66, 0.9); color: #14121f; border-color: rgba(254, 194, 66, 1); }
+  .cbtn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
   video, #camc {
     position: absolute;
     inset: 0;
@@ -93,6 +124,13 @@
   <div id="shell">
     <video id="cam" autoplay muted playsinline></video>
     <canvas id="camc"></canvas>
+    <!-- v3.1 (Terry) — hover controls: bubble size (S→M→L) + fixed zoom punch-in (1×→1.3×→1.6×). -->
+    <div id="ctrls">
+      <button id="sizeBtn" class="cbtn" type="button" title="Bubble size — small, medium, large">
+        <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
+      </button>
+      <button id="zoomBtn" class="cbtn" type="button" title="Zoom in on yourself — 1× / 1.3× / 1.6×">1×</button>
+    </div>
     <div id="err">Camera unavailable</div>
   </div>
 <script>
@@ -104,6 +142,31 @@
   var ctx = canvas.getContext('2d');
   var errEl = document.getElementById('err');
   var stream = null;
+  var camWhich = 1;   // v3.1 (Terry) — 1 = main cam, 2 = second cam (from cam-init)
+
+  // v3.1 (Terry) — FIXED ZOOM punch-in (creator standard): cycles 1× → 1.3× → 1.6×. Pure CSS scale on
+  // top of the selfie mirror, applied to both the raw video and the composited canvas.
+  var ZOOMS = [1, 1.3, 1.6];
+  var zoomIdx = 0;
+  var zoomBtn = document.getElementById('zoomBtn');
+  function applyCamZoom() {
+    var z = ZOOMS[zoomIdx];
+    var t = 'scaleX(-1) scale(' + z + ')';
+    video.style.transform = t;
+    canvas.style.transform = t;
+    zoomBtn.textContent = (z === 1 ? '1×' : String(z).replace('0.', '.') + '×');
+  }
+  zoomBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    zoomIdx = (zoomIdx + 1) % ZOOMS.length;
+    applyCamZoom();
+  });
+  // v3.1 (Terry) — bubble SIZE cycle (S→M→L): main resizes this window around its centre; the fluid
+  // inset layout reflows on its own, so nothing else to do here.
+  document.getElementById('sizeBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    try { if (pdr && pdr.capture && pdr.capture.camSizeCycle) pdr.capture.camSizeCycle({ which: camWhich }); } catch (err) {}
+  });
 
   function fadeIn() {
     shell.classList.add('visible');
@@ -266,10 +329,24 @@
 
   async function start(init) {
     shell.classList.add(init && init.shape === 'rectangle' ? 'rectangle' : 'circle');
+    camWhich = (init && init.which === 2) ? 2 : 1;
     try {
       var constraints = { audio: false, video: true };
       if (init && init.deviceId) {
         constraints.video = { deviceId: { exact: init.deviceId } };
+      } else if (camWhich === 2) {
+        // v3.1 (Terry) — SECOND camera with no device configured: auto-pick "the other one" —
+        // the first camera that isn't cam 1's device; if cam 1 uses the system default (id
+        // unknown), fall back to the SECOND camera in the list. Plugging in a 2nd webcam just works.
+        try {
+          var devs = await navigator.mediaDevices.enumerateDevices();
+          var cams = devs.filter(function (d) { return d.kind === 'videoinput' && d.deviceId; });
+          var avoid = (init && init.avoidDeviceId) || '';
+          var pick = null;
+          if (avoid) pick = cams.find(function (d) { return d.deviceId !== avoid; }) || null;
+          if (!pick && cams.length > 1) pick = cams[1];
+          if (pick) constraints.video = { deviceId: { exact: pick.deviceId } };
+        } catch (enumErr) { /* default camera it is */ }
       }
       try {
         stream = await navigator.mediaDevices.getUserMedia(constraints);

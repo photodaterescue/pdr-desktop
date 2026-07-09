@@ -2815,7 +2815,8 @@ let recordTempPath: string | null = null;
 let recordStream: fs.WriteStream | null = null;
 let recordStartedAt: Date | null = null;
 let recordDisplay: Electron.Display | null = null;
-let recordQuality: 'high' | 'standard' | 'compact' = 'standard';
+type RecordQualityKey = 'high' | 'standard' | 'compact' | 'tiny';   // v3.1 (Terry) — + tiny
+let recordQuality: RecordQualityKey = 'standard';
 let recordMeta: { width: number | null; height: number | null; hasAudio: boolean } = { width: null, height: null, hasAudio: false };
 // Round 129 — region recording: the chosen area in VIDEO pixels
 // (null = whole screen). The capture itself is always full-screen;
@@ -2850,11 +2851,20 @@ function computeRegionCrop(areaRect: SelectionRect, display: Electron.Display, g
 }
 
 // Quality presets (round 126): live capture bitrate + save-time crf.
+// v3.1 (Terry — "recordings are really quite large even in compact") — added TINY: explicitly trades
+// sharpness for a much smaller file. Its levers are CRF 30 + a save-time DOWNSCALE to ≤1280px wide
+// (see transcodeWebmToMp4) — the downscale is the big win (~60-70% smaller) and makes the encode
+// FASTER, not slower. The x264 preset stays ultrafast for every preset: veryfast was measured on
+// this machine at ~2 min for a 6-second 1080p clip (see the note in transcodeWebmToMp4) — a slower
+// preset would make long saves feel broken.
 const RECORD_QUALITY = {
   high: { bitsPerSecond: 12_000_000, crf: '19' },
   standard: { bitsPerSecond: 8_000_000, crf: '21' },
   compact: { bitsPerSecond: 4_000_000, crf: '26' },
+  tiny: { bitsPerSecond: 2_000_000, crf: '30' },
 } as const;
+// v3.1 (Terry) — Tiny's output width cap (longest dimension the saved video keeps).
+const TINY_MAX_W = 1280;
 
 // Round 127 — blur segments for the active recording. Rects are in
 // VIDEO pixels; start/end are recording-clock milliseconds stamped by
@@ -2944,9 +2954,23 @@ function driveAutoZoom(p: { x: number; y: number }): void {
 // recording captures it — no compositing. camVisible tracks the
 // faded state; the window survives hidden so toggling back is
 // instant (the camera stream stays warm).
-let camWindow: BrowserWindow | null = null;
-let camVisible = false;
+// v3.1 (Terry) — TWO camera bubbles ("the option to add a 2nd camera… both at the same time, or one
+// or the other"). State is per-which (1 = main cam, 2 = second cam); the bar's Cam / Cam 2 buttons
+// toggle each independently. The cam hotkey keeps driving cam 1.
+const camWindows: Record<number, BrowserWindow | null> = { 1: null, 2: null };
+const camVisibles: Record<number, boolean> = { 1: false, 2: false };
 let camHotkeyAccelerator: string | null = null;
+// Bubble size presets per shape (v3.1 Terry — "increase/decrease the bubble"): cycled S→M→L from the
+// bubble's hover size button; persisted per camera (captureCamSize / captureCam2Size).
+const CAM_SIZES = {
+  circle: { s: { w: 176, h: 176 }, m: { w: 232, h: 232 }, l: { w: 292, h: 292 } },
+  rectangle: { s: { w: 232, h: 150 }, m: { w: 302, h: 192 }, l: { w: 376, h: 238 } },
+} as const;
+type CamSizeKey = 's' | 'm' | 'l';
+function camSizeSettingKey(which: number): 'captureCamSize' | 'captureCam2Size' { return which === 2 ? 'captureCam2Size' : 'captureCamSize'; }
+function getCamSize(which: number): CamSizeKey {
+  try { const v = getSettings()[camSizeSettingKey(which)] as CamSizeKey; return (v === 's' || v === 'l') ? v : 'm'; } catch { return 'm'; }
+}
 
 function blurSidecarPath(webmPath: string): string {
   return webmPath.replace(/\.webm$/i, '.blur.json');
@@ -3094,7 +3118,7 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
       try { return getSettings().captureRecordAudio !== false; } catch { return true; }
     })();
     recordQuality = (() => {
-      try { return (getSettings().captureRecordQuality as 'high' | 'standard' | 'compact') || 'standard'; } catch { return 'standard'; }
+      try { return (getSettings().captureRecordQuality as RecordQualityKey) || 'standard'; } catch { return 'standard'; }
     })();
 
     const widget = new BrowserWindow({
@@ -3310,7 +3334,7 @@ function buildVideoFilter(segments: BlurSegment[], regionCrop: SelectionRect | n
   return { filter: parts.join(';'), outLabel: cur };
 }
 
-async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = [], regionCrop: SelectionRect | null = null, zoomSegments: ZoomSegment[] = [], frameW = 0, frameH = 0): Promise<string | null> {
+async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegments: BlurSegment[] = [], regionCrop: SelectionRect | null = null, zoomSegments: ZoomSegment[] = [], frameW = 0, frameH = 0, downscaleMaxW = 0): Promise<string | null> {
   const ffmpeg = ffmpegPath();
   if (!ffmpeg) {
     log.warn('[capture] ffmpeg unavailable — keeping WebM recording as-is');
@@ -3328,11 +3352,20 @@ async function transcodeWebmToMp4(webmPath: string, crf: string = '21', blurSegm
   // negligible. crf comes from the quality preset (round 126).
   const segments = blurSegments.filter((s) => s.width >= 2 && s.height >= 2);
   const built = buildVideoFilter(segments, regionCrop, zoomSegments, frameW, frameH);
-  const videoArgs = built
-    ? ['-filter_complex', built.filter, '-map', `[${built.outLabel}]`, '-map', '0:a?']
-    : [];
+  // v3.1 (Terry) — TINY preset: downscale the OUTPUT to ≤downscaleMaxW wide (aspect kept, even height).
+  // 'min(...,iw)' never upscales a small region recording. Fewer pixels = a much smaller file AND a
+  // faster encode — the right trade lever on this machine (a slower x264 preset is not; see above).
+  const scaleExpr = downscaleMaxW > 0 ? `scale='min(${downscaleMaxW},iw)':-2` : '';
+  let videoArgs: string[] = [];
   if (built) {
-    log.info(`[capture] save-time filters: ${regionCrop ? `region crop ${regionCrop.width}×${regionCrop.height}` : 'no crop'}${segments.length > 0 ? ` + ${segments.length} blur segment(s)` : ''}`);
+    videoArgs = scaleExpr
+      ? ['-filter_complex', `${built.filter};[${built.outLabel}]${scaleExpr}[vtiny]`, '-map', '[vtiny]', '-map', '0:a?']
+      : ['-filter_complex', built.filter, '-map', `[${built.outLabel}]`, '-map', '0:a?'];
+  } else if (scaleExpr) {
+    videoArgs = ['-vf', scaleExpr];
+  }
+  if (built || scaleExpr) {
+    log.info(`[capture] save-time filters: ${regionCrop ? `region crop ${regionCrop.width}×${regionCrop.height}` : 'no crop'}${segments.length > 0 ? ` + ${segments.length} blur segment(s)` : ''}${scaleExpr ? ` + tiny downscale ≤${downscaleMaxW}w` : ''}`);
   }
   const args = [
     '-hide_banner', '-loglevel', 'error',
@@ -3470,7 +3503,7 @@ async function finalizeRecording(): Promise<void> {
     }
     const fw = regionCrop?.width ?? meta.width ?? 0;
     const fh = regionCrop?.height ?? meta.height ?? 0;
-    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments, regionCrop, zoomSegments, fw, fh);
+    const mp4Path = await transcodeWebmToMp4(webmPath, RECORD_QUALITY[recordQuality].crf, blurSegments, regionCrop, zoomSegments, fw, fh, recordQuality === 'tiny' ? TINY_MAX_W : 0);
     if (mp4Path) {
       try { fs.unlinkSync(toLongPath(webmPath)); } catch { /* non-fatal */ }
       try { fs.unlinkSync(toLongPath(blurSidecarPath(webmPath))); } catch { /* non-fatal */ }
@@ -3597,10 +3630,10 @@ ipcMain.on('capture:record-snap', (event) => {
 // SAVE step of the in-flight recording (the capture bitrate was fixed
 // at start) and persists as the setting for future ones; the
 // settings:changed broadcast keeps the Settings → Capture radio live.
-ipcMain.on('capture:record-quality', (event, info: { quality?: 'high' | 'standard' | 'compact' }) => {
+ipcMain.on('capture:record-quality', (event, info: { quality?: RecordQualityKey }) => {
   if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
   const q = info?.quality;
-  if (q !== 'high' && q !== 'standard' && q !== 'compact') return;
+  if (q !== 'high' && q !== 'standard' && q !== 'compact' && q !== 'tiny') return;   // v3.1 (Terry) — + tiny
   recordQuality = q;
   try { setSetting('captureRecordQuality', q); } catch { /* non-fatal */ }
   for (const win of BrowserWindow.getAllWindows()) {
@@ -3619,8 +3652,11 @@ ipcMain.on('capture:cam-set-bg', (event, bg: { type?: string; value?: string }) 
   if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
   const clean = { type: String((bg && bg.type) || 'none'), value: typeof (bg && bg.value) === 'string' ? bg.value : undefined };
   try { setSetting('captureCamBg', clean); } catch { /* non-fatal */ }
-  if (camWindow && !camWindow.isDestroyed()) {
-    try { camWindow.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ }
+  for (const which of [1, 2]) {   // v3.1 (Terry) — the backdrop applies to BOTH bubbles
+    const win = camWindows[which];
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ }
+    }
   }
   log.info(`[capture] cam background → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
 });
@@ -3753,26 +3789,33 @@ function closeRegionMarker(): void {
 
 function notifyWidgetCamState(): void {
   if (recordWidget && !recordWidget.isDestroyed()) {
-    try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisible }); } catch { /* non-fatal */ }
+    try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisibles[1], visible2: camVisibles[2] }); } catch { /* non-fatal */ }
   }
 }
 
-function createCamBubble(display: Electron.Display): void {
-  if (camWindow && !camWindow.isDestroyed()) return;
+function createCamBubble(display: Electron.Display, which: number = 1): void {
+  const existing = camWindows[which];
+  if (existing && !existing.isDestroyed()) return;
   const shape = (() => {
     try { return (getSettings().captureCamShape as 'circle' | 'rectangle') || 'circle'; } catch { return 'circle'; }
   })();
+  // v3.1 (Terry) — cam 2 has its own device setting; '' = auto (the page picks the next camera
+  // that isn't cam 1's, so plugging in a second webcam just works with zero setup).
   const deviceId = (() => {
-    try { return getSettings().captureCamDevice || ''; } catch { return ''; }
+    try { return (which === 2 ? getSettings().captureCam2Device : getSettings().captureCamDevice) || ''; } catch { return ''; }
   })();
-  // Content size + 12px for the inset margin the page reserves.
-  const width = shape === 'circle' ? 232 : 302;
-  const height = shape === 'circle' ? 232 : 192;
+  const avoidDeviceId = (() => {
+    try { return which === 2 ? (getSettings().captureCamDevice || '') : ''; } catch { return ''; }
+  })();
+  // v3.1 (Terry) — per-camera persisted size preset (S/M/L, cycled from the bubble's hover button).
+  const dims = CAM_SIZES[shape][getCamSize(which)];
+  const width = dims.w;
+  const height = dims.h;
   const win = new BrowserWindow({
     width,
     height,
-    // Bottom-LEFT corner — the recording bar owns bottom-right.
-    x: display.bounds.x + 24,
+    // Bottom-LEFT corner — the recording bar owns bottom-right. Cam 2 sits just right of cam 1.
+    x: display.bounds.x + 24 + (which === 2 ? width + 14 : 0),
     y: display.bounds.y + display.bounds.height - height - 56,
     frame: false,
     show: false,
@@ -3791,7 +3834,7 @@ function createCamBubble(display: Electron.Display): void {
       nodeIntegration: false,
     },
   });
-  camWindow = win;
+  camWindows[which] = win;
   try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
   // NO setContentProtection here — the bubble must appear in the
   // footage; that's its entire purpose.
@@ -3819,19 +3862,20 @@ function createCamBubble(display: Electron.Display): void {
   win.on('will-move', suspendClicksForCamDrag);
   win.on('move', suspendClicksForCamDrag);
   win.on('closed', () => {
-    if (camWindow === win) {
-      camWindow = null;
-      camVisible = false;
+    if (camWindows[which] === win) {
+      camWindows[which] = null;
+      camVisibles[which] = false;
       notifyWidgetCamState();
     }
   });
   win.webContents.once('did-finish-load', () => {
     if (win.isDestroyed()) return;
-    // v3.1 (Terry) — pass the remembered virtual background so the bubble starts with it applied.
+    // v3.1 (Terry) — pass the remembered virtual background so the bubble starts with it applied;
+    // which + avoidDeviceId let the cam-2 page auto-pick "the other camera" when no device is set.
     const bg = (() => { try { return getSettings().captureCamBg || { type: 'none' }; } catch { return { type: 'none' }; } })();
-    win.webContents.send('capture:cam-init', { deviceId, shape, bg });
+    win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId });
     win.showInactive();
-    camVisible = true;
+    camVisibles[which] = true;
     notifyWidgetCamState();
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
@@ -4057,34 +4101,38 @@ function closeBlurOverlay(): void {
 
 /** Show/hide the bubble with the page-side fade. Creates it on first
  *  toggle if the recording started without one. */
-function toggleCamBubble(): void {
+function toggleCamBubble(which: number = 1): void {
   // Armed counts too (round 129) — the user frames their camera
   // BEFORE pressing Record.
   if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
-  if (!camWindow || camWindow.isDestroyed()) {
-    createCamBubble(recordDisplay);
+  const win = camWindows[which];
+  if (!win || win.isDestroyed()) {
+    createCamBubble(recordDisplay, which);
     return;
   }
-  if (camVisible) {
-    try { camWindow.webContents.send('capture:cam-do', { action: 'hide' }); } catch { /* non-fatal */ }
-    camVisible = false;
+  if (camVisibles[which]) {
+    try { win.webContents.send('capture:cam-do', { action: 'hide' }); } catch { /* non-fatal */ }
+    camVisibles[which] = false;
     notifyWidgetCamState();
     // The window itself hides when the page reports the fade done
     // (capture:cam-fadedout) so the footage records the fade.
   } else {
-    try { camWindow.showInactive(); } catch { /* non-fatal */ }
-    try { camWindow.webContents.send('capture:cam-do', { action: 'show' }); } catch { /* non-fatal */ }
-    camVisible = true;
+    try { win.showInactive(); } catch { /* non-fatal */ }
+    try { win.webContents.send('capture:cam-do', { action: 'show' }); } catch { /* non-fatal */ }
+    camVisibles[which] = true;
     notifyWidgetCamState();
   }
 }
 
 function closeCamBubble(): void {
-  if (camWindow && !camWindow.isDestroyed()) {
-    try { camWindow.close(); } catch { /* non-fatal */ }
+  for (const which of [1, 2]) {   // v3.1 (Terry) — tear down BOTH bubbles
+    const win = camWindows[which];
+    if (win && !win.isDestroyed()) {
+      try { win.close(); } catch { /* non-fatal */ }
+    }
+    camWindows[which] = null;
+    camVisibles[which] = false;
   }
-  camWindow = null;
-  camVisible = false;
 }
 
 function registerCamHotkey(): void {
@@ -4188,12 +4236,14 @@ ipcMain.on('capture:record-set-screen', (event, displayId: string) => {
       height: b.height,
     });
   } catch { /* non-fatal */ }
-  // Re-home the camera bubble if it's up.
-  if (camWindow && !camWindow.isDestroyed()) {
-    const wasVisible = camVisible;
-    closeCamBubble();
-    createCamBubble(display);
-    if (!wasVisible) { /* it will show on init; toggle off shortly after if needed */ }
+  // Re-home the camera bubble(s) if up. v3.1 (Terry) — remember WHICH bubbles existed, close both,
+  // recreate the same set on the new display.
+  {
+    const hadCam = [1, 2].filter((w) => { const win = camWindows[w]; return win && !win.isDestroyed(); });
+    if (hadCam.length) {
+      closeCamBubble();
+      for (const w of hadCam) createCamBubble(display, w);
+    }
   }
   void (async () => {
     const source = await getDisplaySource(display);
@@ -4230,10 +4280,32 @@ ipcMain.on('capture:record-resize', (event, width: number) => {
   } catch { /* non-fatal */ }
 });
 
-ipcMain.on('capture:record-cam-toggle', (event) => {
+ipcMain.on('capture:record-cam-toggle', (event, info?: { which?: number }) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
-    toggleCamBubble();
+    toggleCamBubble(info && info.which === 2 ? 2 : 1);   // v3.1 (Terry) — Cam / Cam 2 toggle their own bubbles
   }
+});
+// v3.1 (Terry) — cycle a bubble's size S→M→L→S (the bubble's hover ⤢ button). Resizes the window
+// around its centre (the page's fluid inset layout reflows itself) and persists per camera.
+ipcMain.on('capture:cam-size', (event, info?: { which?: number }) => {
+  const which = info && info.which === 2 ? 2 : 1;
+  const win = camWindows[which];
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+  const shape = (() => { try { return (getSettings().captureCamShape as 'circle' | 'rectangle') || 'circle'; } catch { return 'circle'; } })();
+  const order: CamSizeKey[] = ['s', 'm', 'l'];
+  const next = order[(order.indexOf(getCamSize(which)) + 1) % order.length];
+  try { setSetting(camSizeSettingKey(which), next); } catch { /* non-fatal */ }
+  const dims = CAM_SIZES[shape][next];
+  try {
+    const b = win.getBounds();
+    win.setBounds({
+      x: Math.round(b.x + (b.width - dims.w) / 2),
+      y: Math.round(b.y + (b.height - dims.h) / 2),
+      width: dims.w,
+      height: dims.h,
+    });
+  } catch { /* non-fatal */ }
+  log.info(`[capture] cam ${which} size → ${next}`);
 });
 // v3.0 round 410 (Terry) — microphone/voiceover on/off + device, reported from
 // the recording bar so they persist for future recordings (same persist+sync
@@ -4276,11 +4348,16 @@ ipcMain.on('capture:record-ripple-toggle', (event, info: { enabled?: boolean }) 
   log.info(`[capture] click-ripple → ${on ? 'on' : 'off'}`);
 });
 ipcMain.on('capture:cam-fadedout', (event) => {
-  if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents && !camVisible) {
-    try { camWindow.hide(); } catch { /* non-fatal */ }
+  // v3.1 (Terry) — two bubbles: hide exactly the SENDER's window once its fade is done.
+  for (const which of [1, 2]) {
+    const win = camWindows[which];
+    if (win && !win.isDestroyed() && event.sender === win.webContents && !camVisibles[which]) {
+      try { win.hide(); } catch { /* non-fatal */ }
+    }
   }
 });
 ipcMain.on('capture:cam-error', (event, info: { message?: string }) => {
+  const camWindow = [1, 2].map((w) => camWindows[w]).find((w) => w && !w.isDestroyed() && event.sender === w.webContents) || null;   // v3.1 (Terry) — resolve which bubble errored
   if (camWindow && !camWindow.isDestroyed() && event.sender === camWindow.webContents) {
     log.warn(`[capture] camera bubble failed: ${info?.message ?? 'unknown'}`);
     broadcast('capture:recordError', { message: 'The camera couldn\'t start — check Windows camera privacy settings. The recording itself is unaffected.' });

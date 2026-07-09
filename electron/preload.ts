@@ -1,10 +1,10 @@
-/* eslint-disable @typescript-eslint/no-var-requires */
+﻿/* eslint-disable @typescript-eslint/no-var-requires */
 
 // IMPORTANT:
 // Preload MUST be CommonJS when run by Electron
 const { contextBridge, ipcRenderer } = require('electron');
 
-// v3.0 (Terry) — main process asks the main window to open its licence modal (e.g. "Upgrade" from a
+// v3.0 (Terry) â€” main process asks the main window to open its licence modal (e.g. "Upgrade" from a
 // Free-trial cap hit in the Collage window). Convert that IPC into the pdr:openLicenseModal window
 // event the workspace already listens for. Harmless in the Collage/Viewer window (no listener there).
 ipcRenderer.on('pdr:open-license-modal', () => {
@@ -12,7 +12,7 @@ ipcRenderer.on('pdr:open-license-modal', () => {
 });
 
 contextBridge.exposeInMainWorld('pdr', {
-  // v2.0.11 (Terry 2026-05-24) — renderer-side workspace-ready signal.
+  // v2.0.11 (Terry 2026-05-24) â€” renderer-side workspace-ready signal.
   // Sent from main.tsx after React commits its first frame so the
   // main process can reveal the workspace BrowserWindow WITHOUT
   // flashing the bare lavender body background first. Fire-and-forget
@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('pdr', {
   cleanupTempDirForSource: (sourcePath: string) =>
     ipcRenderer.invoke('analysis:cleanupTempDirForSource', sourcePath),
 
-  // v2.0.11 — orphan-source detection on rehydrate. Returns
+  // v2.0.11 â€” orphan-source detection on rehydrate. Returns
   // { success, results: Array<{ path, hasExtraction, needsExtraction }> }
   // The renderer drops sources where hasExtraction=false AND
   // needsExtraction=true (zip/rar with the extraction folder gone).
@@ -44,8 +44,8 @@ contextBridge.exposeInMainWorld('pdr', {
 
   // Launch-time orphan sweep. Called by the renderer on FIRST mount.
   // Two modes:
-  //   - looseFilesOnly:false (default) — sources are empty, full sweep
-  //   - looseFilesOnly:true — sources are present, only delete loose
+  //   - looseFilesOnly:false (default) â€” sources are empty, full sweep
+  //   - looseFilesOnly:true â€” sources are present, only delete loose
   //     FILES at the root (sub-folders may be active extractions)
   // Returns { success, dirsRemoved, bytesRemoved }.
   sweepOrphanedTempDirsIfEmpty: (opts?: { looseFilesOnly?: boolean }) =>
@@ -63,7 +63,7 @@ removeAnalysisProgressListener: () => {
   ipcRenderer.removeAllListeners('analysis:progress');
 },
 
-// Diagnostic stream — release-testing telemetry from the analysis
+// Diagnostic stream â€” release-testing telemetry from the analysis
 // pipeline (phase markers, periodic memory snapshots, per-large-file
 // timings, skip-and-continue warnings, final summary). Renderer
 // just console.logs these so they land in F12 alongside any other
@@ -95,7 +95,7 @@ onCopyMirrorProgress: (callback: (progress: { filesMirrored: number; totalToMirr
 cancelCopyFiles: () => ipcRenderer.invoke('files:copy:cancel'),
 setFixInProgress: (inProgress: boolean) => ipcRenderer.invoke('fix:setInProgress', inProgress),
 // Cold-start query for windows that open mid-fix (e.g. PM
-// launched while a fix is running) — lets them gate their
+// launched while a fix is running) â€” lets them gate their
 // mutating actions immediately rather than waiting for the
 // next state-change broadcast.
 getFixInProgress: () => ipcRenderer.invoke('fix:getInProgress'),
@@ -157,7 +157,7 @@ onWindowMove: (callback: () => void) => {
   
   openFolder: (defaultPath?: string) => ipcRenderer.invoke('dialog:openFolder', defaultPath),
 openZip: () => ipcRenderer.invoke('dialog:openZip'),
-  // v2.0.13 — multi-select picker for Takeout zips. Returns the array
+  // v2.0.13 â€” multi-select picker for Takeout zips. Returns the array
   // of selected paths wrapped in { success, data }. Empty data array
   // on cancel; non-success only on IPC error.
   openTakeoutZips: () => ipcRenderer.invoke('dialog:openTakeoutZips') as Promise<{ success: boolean; error?: string; data?: string[] }>,
@@ -183,13 +183,13 @@ playCompletionSound: () => ipcRenderer.invoke('play-completion-sound'),
 
 flashTaskbar: () => ipcRenderer.invoke('window:flashFrame'),
 
-// v2.1 round 171 (Terry) — let a custom-title-bar window (viewer/collage)
+// v2.1 round 171 (Terry) â€” let a custom-title-bar window (viewer/collage)
 // pull focus to itself the instant the cursor reaches its title bar, so an
 // unfocused window drags on the FIRST title-bar grab instead of needing a
 // focus-click first. See the main-process 'window:focus-self' handler.
 focusSelf: () => ipcRenderer.send('window:focus-self'),
 
-// v2.1 round 207 (Terry) — window-state bridge for the viewer/collage
+// v2.1 round 207 (Terry) â€” window-state bridge for the viewer/collage
 // top-center "Restore window" pill. getState seeds the renderer's cached
 // isMaximized (primary) + isFullScreen flags on load; exitFullOrRestore
 // is the pill's (and Esc's) click target (leaves Electron fullscreen,
@@ -213,7 +213,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     set: (key: string, value: any) => ipcRenderer.invoke('settings:set', key, value),
     setAll: (settings: any) => ipcRenderer.invoke('settings:setAll', settings),
     resetToDefaults: () => ipcRenderer.invoke('settings:resetToDefaults'),
-    /** v2.1 (Terry 2026-06-08) — subscribe to settings changes from
+    /** v2.1 (Terry 2026-06-08) â€” subscribe to settings changes from
      *  any window. Used by the global Hide-captions toggle so
      *  Memories, Albums, PDRV, S&D etc. all re-render when the
      *  user flips it in Settings. Returns an unsubscribe fn. */
@@ -245,29 +245,29 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // online flag, isSafeForLibrary. One IPC = one PowerShell exec so the
     // renderer doesn't fan out N calls per drive for N fields.
     getDriveDetails: (libraryRoot: string) => ipcRenderer.invoke('library:getDriveDetails', libraryRoot),
-    // The "drives in your library" list — every drive the search DB has
+    // The "drives in your library" list â€” every drive the search DB has
     // indexed photos from, with per-drive counts, sizes, online status,
     // volume labels. Premium LDM shows the WHOLE library shape, not just
     // the one sidecar-host drive.
     listIndexedDrives: () => ipcRenderer.invoke('library:listIndexedDrives'),
-    // v2.0.15 — list every distinct destinationPath in saved Fix
+    // v2.0.15 â€” list every distinct destinationPath in saved Fix
     // reports (most-recent-first). Renderer uses this on app start
     // to reconcile pdr-saved-destinations, restoring any entries
     // evicted by the historical MAX_SAVED_DESTINATIONS=3 cap.
     listReportDestinations: () => ipcRenderer.invoke('library:listReportDestinations'),
-    // v2.0.15 — discover libraries PDR has ever written to but that
+    // v2.0.15 â€” discover libraries PDR has ever written to but that
     // aren't in the LDM right now. Reads from the indexed_runs SQL
     // table (the cumulative log of every Fix run's destination),
     // returns paths that still exist on disk. The renderer filters
     // out the current Library Drive, already-in-LDM paths, and
     // entries in the ignore list before rendering.
     discoverLegacyLibraries: () => ipcRenderer.invoke('library:discoverLegacyLibraries'),
-    // v2.0.15 — drive-scan discovery (Strategies 1 + 2). Walks
+    // v2.0.15 â€” drive-scan discovery (Strategies 1 + 2). Walks
     // connected drives looking for PDR_Catalogue.csv files (high
-    // confidence — catalogue travels with the library) and folders
-    // matching PDR's year-based output structure (medium confidence —
+    // confidence â€” catalogue travels with the library) and folders
+    // matching PDR's year-based output structure (medium confidence â€”
     // looks like a PDR library, might be one). Heavier than
-    // discoverLegacyLibraries — this hits the filesystem rather than
+    // discoverLegacyLibraries â€” this hits the filesystem rather than
     // a SQL table, so the renderer fires it on-demand from a button
     // rather than auto-running on every LDM open.
     scanForLegacyLibraries: (opts?: { driveLetters?: string[] }) =>
@@ -278,7 +278,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // of the per-drive-letter rollup, which over-attributes when
     // multiple library folders share a drive.
     countFilesAtPath: (rootPath: string) => ipcRenderer.invoke('library:countFilesAtPath', rootPath),
-    // v2.0.9 — counts media files (photos + videos) on disk under
+    // v2.0.9 â€” counts media files (photos + videos) on disk under
     // `rootPath`. Paired with countFilesAtPath so callers can compare
     // "what's on disk" vs "what's in the search DB" and surface the
     // delta as a "this library isn't fully searchable yet" prompt.
@@ -289,12 +289,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // Open a path in the OS file manager (Explorer on Windows, Finder on
     // macOS). Used by per-drive "Open in File Explorer" entries in LDM.
     openInExplorer: (targetPath: string) => ipcRenderer.invoke('library:openInExplorer', targetPath),
-    // Export the search DB to a user-chosen path — premium portability
+    // Export the search DB to a user-chosen path â€” premium portability
     // safeguard. Lets the user keep an offsite copy of their library DB
     // (face tags, names, dates, trees) so they don't have to use an
     // external Library Drive purely for portability.
     exportDb: () => ipcRenderer.invoke('library:exportDb'),
-    // Quick fs.existsSync check on the persisted destinationPath —
+    // Quick fs.existsSync check on the persisted destinationPath â€”
     // used by the renderer on Workspace mount to surface the
     // "Library Drive isn't connected" modal proactively, before any
     // IPC that touches the drive fails cryptically.
@@ -303,7 +303,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('library:attachAsNew', opts),
     attachFromSidecar: (opts: { libraryRoot: string; licenseKey: string; deviceName: string }) =>
       ipcRenderer.invoke('library:attachFromSidecar', opts),
-    // v2.0.12 — recovery-gap detector. Returns the gap detail when the
+    // v2.0.12 â€” recovery-gap detector. Returns the gap detail when the
     // sidecar DB on the attached Library Drive materially exceeds the
     // local DB (cascade-delete signature). Returns null when there's
     // nothing to recover. Used by the workspace's CleanupCascadeRecovery
@@ -319,7 +319,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // the background sidecar-mirror loop picks it up within ~30 seconds.
     bumpDirty: () => ipcRenderer.invoke('library:bumpDirty'),
 
-    // v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions
+    // v2.0.15 (Terry 2026-06-06) â€” Phase 3a. Single-file additions
     // outside the Fix-run path (currently: the Viewer's "Save Enhanced"
     // flow). Renderer views (S&D / Memories / Albums) listen for this
     // so the new file appears live, without a manual rescan.
@@ -330,7 +330,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  // v2.1 (Terry 2026-06-11) — Screen capture (screenshot → library).
+  // v2.1 (Terry 2026-06-11) â€” Screen capture (screenshot â†’ library).
   // screenshot() may return needsDisplayPick + a display list on
   // multi-monitor setups; the caller shows the picker and re-invokes
   // with displayId. Success/pending toasts are driven by the
@@ -347,7 +347,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
         error?: string;
       }>,
-    // v2.1 step 2 — region capture. The invoke resolves AFTER the
+    // v2.1 step 2 â€” region capture. The invoke resolves AFTER the
     // user finishes (or cancels) the drag-to-select overlay; a
     // cancelled selection resolves { success: false, cancelled: true }
     // and callers stay silent about it.
@@ -363,7 +363,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         displays?: Array<{ id: string; label: string; width: number; height: number; isPrimary: boolean; thumbnailDataUrl: string }>;
         error?: string;
       }>,
-    // v3.0 round 559 (Terry) — save a captured image (webcam still) into the library, for Trees "Set face from webcam".
+    // v3.0 round 559 (Terry) â€” save a captured image (webcam still) into the library, for Trees "Set face from webcam".
     saveImage: (dataUrl: string) => ipcRenderer.invoke('capture:saveImage', { dataUrl }) as Promise<{ success: boolean; filePath?: string; fileId?: number | null; cancelled?: boolean; error?: string }>,
     listDisplays: () => ipcRenderer.invoke('capture:listDisplays'),
     setHotkey: (accelerator: string) =>
@@ -383,13 +383,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:pendingFlushed', handler);
       return () => ipcRenderer.removeListener('capture:pendingFlushed', handler);
     },
-    // v2.1 round 124 — names any known capture tools currently
-    // running (Lightshot, Snagit, ShareX, …) so Settings → Capture
+    // v2.1 round 124 â€” names any known capture tools currently
+    // running (Lightshot, Snagit, ShareX, â€¦) so Settings â†’ Capture
     // can explain WHY a hotkey press might never reach PDR (their
     // keyboard hooks consume the combo before WM_HOTKEY fires).
     checkConflicts: () =>
       ipcRenderer.invoke('capture:checkConflicts') as Promise<{ success: boolean; tools?: string[]; error?: string }>,
-    // ── Screen recording (v2.1 round 125, step 3) ──
+    // â”€â”€ Screen recording (v2.1 round 125, step 3) â”€â”€
     startRecording: (opts?: { displayId?: string }) =>
       ipcRenderer.invoke('capture:startRecording', opts ?? {}) as Promise<{
         success: boolean;
@@ -410,48 +410,48 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:recordError', handler);
       return () => ipcRenderer.removeListener('capture:recordError', handler);
     },
-    // ── Recording-widget page channels (capture-record-widget.html only) ──
+    // â”€â”€ Recording-widget page channels (capture-record-widget.html only) â”€â”€
     // The widget hosts the actual recorder engine; these carry the
     // init handshake, main-driven stop/cancel commands, the WebM
     // chunk stream, and the lifecycle reports back to main.
-    onRecordInit: (callback: (info: { sourceId: string; audio: boolean; maxWidth: number; maxHeight: number; videoBitsPerSecond?: number; quality?: 'high' | 'standard' | 'compact'; armed?: boolean; region?: { x: number; y: number; width: number; height: number } | null }) => void) => {
+    onRecordInit: (callback: (info: { sourceId: string; audio: boolean; maxWidth: number; maxHeight: number; videoBitsPerSecond?: number; quality?: 'high' | 'standard' | 'compact' | 'tiny'; armed?: boolean; region?: { x: number; y: number; width: number; height: number } | null }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:record-init', handler);
       return () => ipcRenderer.removeListener('capture:record-init', handler);
     },
-    // Round 129 — recorded-region marker page (capture-region-marker.html).
+    // Round 129 â€” recorded-region marker page (capture-region-marker.html).
     onRegionMarkerInit: (callback: (info: { rect: { x: number; y: number; width: number; height: number } }) => void) => {
       const handler = (_event: any, info: any) => callback(info);
       ipcRenderer.on('capture:region-marker-init', handler);
       return () => ipcRenderer.removeListener('capture:region-marker-init', handler);
     },
-    // Round 126 — mid-recording screenshot of the recorded display.
+    // Round 126 â€” mid-recording screenshot of the recorded display.
     recordSnap: () => ipcRenderer.send('capture:record-snap'),
-    // Round 127 — quality changed from the recording bar (applies to
+    // Round 127 â€” quality changed from the recording bar (applies to
     // the save step now + persists for future recordings).
-    recordQuality: (info: { quality: 'high' | 'standard' | 'compact' }) =>
+    recordQuality: (info: { quality: 'high' | 'standard' | 'compact' | 'tiny' }) =>
       ipcRenderer.send('capture:record-quality', info),
-    // Round 127 — Blur flow. The widget asks main to open the area
+    // Round 127 â€” Blur flow. The widget asks main to open the area
     // selector on the recorded display; the chosen area comes back on
     // record-do {action:'blur-opened'}; the widget then reports the
     // open/close segment stamps (recording-clock ms) here.
     recordBlurRequest: () => ipcRenderer.send('capture:record-blur-request'),
     recordBlur: (info: { type: 'open' | 'close'; rect?: { x: number; y: number; width: number; height: number }; startMs?: number; endMs?: number }) =>
       ipcRenderer.send('capture:record-blur', info),
-    // Round 128 — camera bubble. Widget toggles it; the bubble page
+    // Round 128 â€” camera bubble. Widget toggles it; the bubble page
     // (capture-cam.html) receives init/show/hide and reports fades
     // and camera failures.
-    recordCamToggle: () => ipcRenderer.send('capture:record-cam-toggle'),
-    // v3.0 round 410 — microphone/voiceover. The widget reports the on/off
+    recordCamToggle: (which?: number) => ipcRenderer.send('capture:record-cam-toggle', { which: which || 1 }),   // v3.1 (Terry) â€” which: 1 = main cam, 2 = second cam
+    // v3.0 round 410 â€” microphone/voiceover. The widget reports the on/off
     // toggle + chosen device so they persist for future recordings.
     recordMicToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-mic-toggle', info),
     recordSetMic: (deviceId: string) => ipcRenderer.send('capture:record-set-mic', deviceId),
-    // v3.0 round 411 — click-ripple. The widget toggles it; the ripple overlay
+    // v3.0 round 411 â€” click-ripple. The widget toggles it; the ripple overlay
     // page (capture-ripple.html) receives each forwarded click position.
     recordRippleToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-ripple-toggle', info),
-    // v3.0 round 412 — zoom moments (manual Zoom button). Mirrors recordBlur open/close.
+    // v3.0 round 412 â€” zoom moments (manual Zoom button). Mirrors recordBlur open/close.
     recordZoom: (info: { type: 'open' | 'close'; startMs?: number; endMs?: number; focalX?: number; focalY?: number; level?: number }) => ipcRenderer.send('capture:record-zoom', info),
-    // v3.0 round 485 — auto-zoom toward clicks on/off. Main reuses the click hook to open
+    // v3.0 round 485 â€” auto-zoom toward clicks on/off. Main reuses the click hook to open
     // automatic zoom moments toward each click; applied at save by the same zoompan stage.
     setAutoZoom: (on: boolean) => ipcRenderer.send('capture:set-auto-zoom', on),
     onRippleClick: (callback: (p: { x: number; y: number }) => void) => {
@@ -459,7 +459,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:ripple-click', handler);
       return () => ipcRenderer.removeListener('capture:ripple-click', handler);
     },
-    // v3.0 round 413 (Terry) — PDR-style tooltips on the bar. The widget asks
+    // v3.0 round 413 (Terry) â€” PDR-style tooltips on the bar. The widget asks
     // main to show a tooltip (text + the hovered control's centre, in widget
     // coords) above the bar; null text hides it. capture-tip.html receives the
     // text via onTip.
@@ -469,18 +469,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:tip-text', handler);
       return () => ipcRenderer.removeListener('capture:tip-text', handler);
     },
-    // v3.0 round 414 (Terry) — live blur-confirmation overlay receives the active
+    // v3.0 round 414 (Terry) â€” live blur-confirmation overlay receives the active
     // blur regions (display CSS px) so the user can SEE what's being blurred.
     onBlurAreas: (callback: (d: { areas: { x: number; y: number; w: number; h: number }[] }) => void) => {
       const handler = (_event: any, d: any) => callback(d);
       ipcRenderer.on('capture:blur-areas', handler);
       return () => ipcRenderer.removeListener('capture:blur-areas', handler);
     },
-    // Round 130 — re-pick the recorded area from the armed bar.
+    // Round 130 â€” re-pick the recorded area from the armed bar.
     recordAreaRequest: () => ipcRenderer.send('capture:record-area-request'),
-    // Round 131 — change the recorded screen from the bar's dropdown.
+    // Round 131 â€” change the recorded screen from the bar's dropdown.
     recordSetScreen: (displayId: string) => ipcRenderer.send('capture:record-set-screen', displayId),
-    // Round 130 — the widget measures its own content width and asks
+    // Round 130 â€” the widget measures its own content width and asks
     // main to size the window to fit, so controls never clip however
     // many buttons are shown.
     recordResize: (width: number) => ipcRenderer.send('capture:record-resize', width),
@@ -496,17 +496,29 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
     camFadedOut: () => ipcRenderer.send('capture:cam-fadedout'),
     camError: (info: { message: string }) => ipcRenderer.send('capture:cam-error', info),
-    // v3.1 (Terry) — camera VIRTUAL BACKGROUND: the bar's picker persists + relays a choice (main
-    // forwards it to the bubble as cam-do {action:'set-bg'}); the picker's "My picture…" opens a
+    // v3.1 (Terry) â€” camera VIRTUAL BACKGROUND: the bar's picker persists + relays a choice (main
+    // forwards it to the bubble as cam-do {action:'set-bg'}); the picker's "My pictureâ€¦" opens a
     // native image dialog in main and resolves to the chosen path (or null on cancel).
     camSetBg: (bg: { type: string; value?: string }) => ipcRenderer.send('capture:cam-set-bg', bg),
     camBgPickImage: () => ipcRenderer.invoke('capture:cam-bg-pick') as Promise<string | null>,
-    // ── Recording widget channels (capture-record-widget.html) ──
-    // v2.1 round 139 — these (and the region-overlay channels below)
+    // v3.1 (Terry) â€” "My picture" now picks from MEMORIES (the library), not a native dialog:
+    // the same photoPick engine the collage background uses, with its own 'cam-bg' purpose. The
+    // widget is the requester, so main routes the picked path straight back here.
+    camBgPickFromLibrary: () => ipcRenderer.invoke('photoPick:start', { purpose: 'cam-bg', label: 'your camera background' }) as Promise<{ success: boolean; error?: string }>,
+    onCamBgPicked: (callback: (filePath: string) => void) => {
+      const handler = (_event: any, p: any) => { if (p && p.purpose === 'cam-bg' && p.filePath) callback(p.filePath); };
+      ipcRenderer.on('photoPick:picked', handler);
+      return () => ipcRenderer.removeListener('photoPick:picked', handler);
+    },
+    // v3.1 (Terry) â€” SECOND CAMERA + bubble size: Cam/Cam 2 toggle their own bubbles (which: 1|2);
+    // camSizeCycle steps the given bubble Sâ†’Mâ†’L (main resizes the window + persists).
+    camSizeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-size', info),
+    // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
+    // v2.1 round 139 â€” these (and the region-overlay channels below)
     // were briefly trapped inside the `collage` namespace when round
     // 138 inserted it mid-object; the widget calls them as
     // pdr.capture.record* / pdr.capture.overlay* and they silently
-    // resolved to undefined (guarded calls → no chunks sent → empty
+    // resolved to undefined (guarded calls â†’ no chunks sent â†’ empty
     // recordings; region overlay select/cancel dead). Restored to
     // capture where they belong.
     onRecordDo: (callback: (cmd: { action: 'stop' | 'cancel' }) => void) => {
@@ -521,7 +533,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.send('capture:record-stopped', info),
     recordCancelled: () => ipcRenderer.send('capture:record-cancelled'),
     recordError: (info: { message: string }) => ipcRenderer.send('capture:record-error', info),
-    // ── Region-overlay page channels (capture-overlay.html only) ──
+    // â”€â”€ Region-overlay page channels (capture-overlay.html only) â”€â”€
     // The overlay window loads this same preload; these three are its
     // entire API surface: receive the frozen frame (+ snap-to-window
     // rects), report the chosen rect (display CSS pixels), or report
@@ -536,17 +548,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     overlayCancel: () => ipcRenderer.send('capture:overlay-cancel'),
   },
 
-  // v2.1 round 139 (Terry 2026-06-12) — Collage. The freeform editor
+  // v2.1 round 139 (Terry 2026-06-12) â€” Collage. The freeform editor
   // lives in PDRV now (opened via search:openViewer with the collage
-  // flag); this is just the save-back channel — main composites the
+  // flag); this is just the save-back channel â€” main composites the
   // full-resolution originals with sharp and lands a _CO file.
   collage: {
-    // v3.0 (Terry) — "View in Albums" jump: bring the main window forward + navigate it to Memories → Albums
+    // v3.0 (Terry) â€” "View in Albums" jump: bring the main window forward + navigate it to Memories â†’ Albums
     // (opening `albumId` if given). onNavigateAlbums lets the main window's workspace react to the request.
     viewInAlbums: (albumId?: number | null) => ipcRenderer.invoke('collage:viewInAlbums', albumId ?? null) as Promise<{ success: boolean; error?: string }>,
-    // v3.0 (Terry) — "Upgrade" from a Free-trial cap hit in this window: focus the main window + open its licence modal.
+    // v3.0 (Terry) â€” "Upgrade" from a Free-trial cap hit in this window: focus the main window + open its licence modal.
     openUpgrade: () => ipcRenderer.invoke('collage:openUpgrade') as Promise<{ success: boolean; error?: string }>,
-    // v3.0 (Terry) — resolve where a saved collage's exported photo lives (album to jump to + on-disk path to
+    // v3.0 (Terry) â€” resolve where a saved collage's exported photo lives (album to jump to + on-disk path to
     // open in the Viewer), or exists:false if it was deleted. Feeds the Home-tile + titlebar "take me there" links.
     getExportInfo: (fileId: number | null) => ipcRenderer.invoke('collage:getExportInfo', fileId ?? null) as Promise<{ exists: boolean; filePath?: string; fileName?: string; albumId?: number | null; error?: string }>,
     onNavigateAlbums: (callback: (albumId: number | null) => void) => {
@@ -561,11 +573,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:saveLayout', layout, opts) as Promise<{
         success: boolean; filePath?: string; filename?: string; fileId?: number | null; albumId?: number | null; pending?: boolean; error?: string;
       }>,
-    // v2.1 round 260 (Terry) — carousel wide: SLICED EXPORT. The carousel is now ONE
+    // v2.1 round 260 (Terry) â€” carousel wide: SLICED EXPORT. The carousel is now ONE
     // WIDE collage layout (canvas.w = pageCount*1080, h = 1350). Main bakes it once and
-    // crops N slices of exactly 1080×1350, writing slide_01.jpg … slide_NN.jpg into one
+    // crops N slices of exactly 1080Ã—1350, writing slide_01.jpg â€¦ slide_NN.jpg into one
     // dedicated subfolder and returning the file list + folder (the renderer reveals the
-    // folder rather than opening N files). Signature changed from (layouts[]) → (layout,
+    // folder rather than opening N files). Signature changed from (layouts[]) â†’ (layout,
     // pageCount); the return shape is unchanged.
     saveCarousel: (layout: unknown, pageCount: number, opts?: { name?: string; caption?: string; album?: string; snapshot?: string; w?: number; h?: number; replaceAlbumId?: number }) =>
       ipcRenderer.invoke('collage:saveCarousel', layout, pageCount, opts) as Promise<{
@@ -573,24 +585,24 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         files?: Array<{ filePath: string; filename: string; fileId: number | null }>;
         folderPath?: string; count?: number; albumId?: number | null; wideFile?: { filePath: string; filename: string; fileId?: number | null } | null; pending?: boolean; error?: string;
       }>,
-    // v2.1 round 142 (Terry) — the collage editor asks the MAIN window to
+    // v2.1 round 142 (Terry) â€” the collage editor asks the MAIN window to
     // open the shared photo picker for a background, and listens for the
     // chosen photo coming back.
-    // v2.1 round 209 (Terry) — optional `multi` flag: when true the picker stays
-    // open while CTRL/⌘ is held so several photos can be added in one session
+    // v2.1 round 209 (Terry) â€” optional `multi` flag: when true the picker stays
+    // open while CTRL/âŒ˜ is held so several photos can be added in one session
     // (the "+ Add photos" flow). The delivery purpose stays 'collage-bg' so the
     // existing onBackgroundPicked routing (below) is unchanged; only the start
     // info carries the multi hint, which workspace.tsx reads to enable stay-open.
     pickBackground: (label?: string, multi?: boolean) =>
       ipcRenderer.invoke('photoPick:start', { purpose: 'collage-bg', label: label || '', multi: !!multi }) as Promise<{ success: boolean; error?: string }>,
     onBackgroundPicked: (callback: (filePath: string, remove?: boolean) => void) => {
-      // v2.1 round 297 (Terry) — `remove` = the photo was un-ticked in the picker, so the
+      // v2.1 round 297 (Terry) â€” `remove` = the photo was un-ticked in the picker, so the
       // collage drops its tile (toggle-off) instead of adding one.
       const handler = (_event: any, p: any) => { if (p && p.purpose === 'collage-bg' && p.filePath) callback(p.filePath, !!p.remove); };
       ipcRenderer.on('photoPick:picked', handler);
       return () => ipcRenderer.removeListener('photoPick:picked', handler);
     },
-    // v2.1 round 299 (Terry) — when Collages is reopened while already open, main focuses the
+    // v2.1 round 299 (Terry) â€” when Collages is reopened while already open, main focuses the
     // existing window (no reload, so work is kept) and forwards any newly-selected photos here
     // to ADD to the current collage rather than replacing it.
     onExternalAdd: (callback: (files: string[]) => void) => {
@@ -598,58 +610,58 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('collage:externalAdd', handler);
       return () => ipcRenderer.removeListener('collage:externalAdd', handler);
     },
-    // v2.1 round 162 (Terry) — one-shot back-fill of existing collages into
+    // v2.1 round 162 (Terry) â€” one-shot back-fill of existing collages into
     // the "PDR Collages" album.
     backfillAlbum: () =>
       ipcRenderer.invoke('collage:backfillAlbum') as Promise<{ success: boolean; albumId?: number | null; total?: number; added?: number; error?: string }>,
-    // v2.1 round 303/304 (Terry) — collage "Take screenshot" = REGION capture, the
+    // v2.1 round 303/304 (Terry) â€” collage "Take screenshot" = REGION capture, the
     // same flow as the title-bar "Capture region": freeze the screen, drag a box,
     // and the cropped result is added to the collage as a tile.
     captureRegion: () =>
       ipcRenderer.invoke('collage:captureRegion') as Promise<{ success: boolean; filePath?: string; cancelled?: boolean; error?: string }>,
-    // v2.1 round 315 (Terry) — editable "Work on Later" projects: save/list/load/delete the
+    // v2.1 round 315 (Terry) â€” editable "Work on Later" projects: save/list/load/delete the
     // editable collage (snapshot + source paths). saveProject overwrites when `id` is supplied
     // (that's autosave); the first save returns a new id to reuse.
     saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }, thumbnailDataUrl?: string) =>
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
-    // v3.1 (Terry) — one-time SAFE re-bake of a stale carousel card thumbnail. Writes ONLY the sidecar
-    // PNG (never the record JSON), so savedAt + the Recent ordering are preserved — see collage-projects.ts.
+    // v3.1 (Terry) â€” one-time SAFE re-bake of a stale carousel card thumbnail. Writes ONLY the sidecar
+    // PNG (never the record JSON), so savedAt + the Recent ordering are preserved â€” see collage-projects.ts.
     rebakeThumbnail: (id: string, thumbnailDataUrl: string) =>
       ipcRenderer.invoke('collage:rebakeThumbnail', id, thumbnailDataUrl) as Promise<{ success: boolean; error?: string }>,
     listProjects: () =>
       ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null; carouselWideFileId?: number | null; carousel?: boolean; carouselPages?: number | null }>>,
-    // v3.0 (Terry 2026-07-05) — lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
+    // v3.0 (Terry 2026-07-05) â€” lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
     getProjectThumbnail: (id: string) =>
       ipcRenderer.invoke('collage:getProjectThumbnail', id) as Promise<string | null>,
-    // v3.0 (Terry 2026-07-05) — bake a cut-out tile's crisp glow (silhouette outline) for the editor to lay behind the live photo.
+    // v3.0 (Terry 2026-07-05) â€” bake a cut-out tile's crisp glow (silhouette outline) for the editor to lay behind the live photo.
     bakeCutoutGlow: (args: { path: string; enh: unknown; w: number; h: number; op?: number }) =>
       ipcRenderer.invoke('collage:bakeCutoutGlow', args) as Promise<{ ok: boolean; dataUrl?: string; w?: number; h?: number; pad?: number; error?: string }>,
     loadProject: (id: string) =>
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>
       ipcRenderer.invoke('collage:deleteProject', id) as Promise<{ success: boolean; error?: string }>,
-    // v2.1 round 333 (Terry) — bake a small thumbnail of a collage layout (no library save) for the
+    // v2.1 round 333 (Terry) â€” bake a small thumbnail of a collage layout (no library save) for the
     // Welcome Screen recent/template cards.
     renderThumb: (layout: unknown, pageCount?: number) =>
       ipcRenderer.invoke('collage:renderThumb', layout, pageCount) as Promise<string | null>,
-    // v2.1 round 346 (Terry) — WYSIWYG export TEST: capture the real collage DOM at full res (off-screen
+    // v2.1 round 346 (Terry) â€” WYSIWYG export TEST: capture the real collage DOM at full res (off-screen
     // window + capturePage) from a snapshotCollage() string; writes a temp PNG, returns its path.
     captureExportTest: (snapshot: string, w: number, h: number, transparent?: boolean) =>
       ipcRenderer.invoke('collage:captureExportTest', snapshot, w, h, transparent) as Promise<{ ok: boolean; path?: string; bytes?: number; error?: string }>,
   },
 
-  // v2.1 round 306 (Terry) — the floating "Capture region" prep bar (its own tiny
+  // v2.1 round 306 (Terry) â€” the floating "Capture region" prep bar (its own tiny
   // window, loaded with this preload). Its two buttons resolve the prepare phase.
   captureBar: {
     capture: () => ipcRenderer.send('collage:prepCapture'),
     cancel: () => ipcRenderer.send('collage:prepCancel'),
   },
 
-  // v2.1 round 142 (Terry) — shared photo-picker mode (main React window
+  // v2.1 round 142 (Terry) â€” shared photo-picker mode (main React window
   // side). The main window enters pick mode when 'photoPick:start' fires,
   // delivers the chosen photo, or cancels.
   photoPick: {
-    // v2.1 round 209 (Terry) — info now also carries an optional `multi` flag
+    // v2.1 round 209 (Terry) â€” info now also carries an optional `multi` flag
     // (the add-photos flow sets it) so the main window can offer CTRL-held
     // stay-open multi-add. The handler forwards the whole info object unchanged.
     onStart: (callback: (info: { purpose: string; label: string; multi?: boolean }) => void) => {
@@ -657,7 +669,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('photoPick:start', handler);
       return () => ipcRenderer.removeListener('photoPick:start', handler);
     },
-    // v2.1 round 210 (Terry) — optional keepOpen: a CTRL-held multi-add delivery.
+    // v2.1 round 210 (Terry) â€” optional keepOpen: a CTRL-held multi-add delivery.
     // When true, main delivers the photo but does NOT refocus the requester (so
     // the user stays in the picker to keep CTRL-clicking). Default false = finish.
     deliver: (purpose: string, filePath: string, keepOpen?: boolean, remove?: boolean) => ipcRenderer.send('photoPick:deliver', { purpose, filePath, keepOpen: !!keepOpen, remove: !!remove }),
@@ -665,7 +677,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
 
-  // Free Trial file counter — read / increment the Cloudflare
+  // Free Trial file counter â€” read / increment the Cloudflare
   // KV-backed tally. Renderer reads it for the workspace banner and
   // pre-fix gate; main.ts auto-increments after each successful Fix
   // (wired into files:copy in the next phase).
@@ -680,7 +692,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       >,
   },
 
-  // v3.0 (Terry) — the full trial usage snapshot (all caps) for the Trial Limits button + modal.
+  // v3.0 (Terry) â€” the full trial usage snapshot (all caps) for the Trial Limits button + modal.
   trial: {
     getUsage: (licenseKey?: string) => ipcRenderer.invoke('trial:getUsage', licenseKey) as Promise<{
       isTrial: boolean; plan: string | null; anyReached: boolean;
@@ -743,7 +755,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     dayFiles: (args: { year: number; month?: number | null; day?: number | null; runIds?: number[] }) => ipcRenderer.invoke('memories:dayFiles', args),
     setMonthlyThumbnail: (args: { year: number; month: number; fileId: number }) => ipcRenderer.invoke('memories:setMonthlyThumbnail', args),
     clearMonthlyThumbnail: (args: { year: number; month: number }) => ipcRenderer.invoke('memories:clearMonthlyThumbnail', args),
-    /** v2.1 round 67 (Terry 2026-06-09) — "Pending" rail entry data
+    /** v2.1 round 67 (Terry 2026-06-09) â€” "Pending" rail entry data
      *  layer. pendingCounts is always global (no runIds) so the rail
      *  badge shows the true cross-library backlog; pendingFiles
      *  honours the active library filter so the Pending PAGE matches
@@ -758,7 +770,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       data?: Array<any>;
       error?: string;
     }>,
-    /** v2.1 round 71 (Terry 2026-06-09) — commit a user-set date for
+    /** v2.1 round 71 (Terry 2026-06-09) â€” commit a user-set date for
      *  one or more Needs-dates files. confidence stays 'marked'; the
      *  file just gains user_set_at + date_source='User-set' and
      *  disappears from the Pending view's WHERE clause. */
@@ -768,9 +780,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         data?: { rowsAffected: number };
         error?: string;
       }>,
-    /** v2.1 round 90 (Terry 2026-06-10) — restore pre-save date /
+    /** v2.1 round 90 (Terry 2026-06-10) â€” restore pre-save date /
      *  source / confidence for a batch of files. Powers the
-     *  Needs Dates undo affordance — caller supplies snapshots
+     *  Needs Dates undo affordance â€” caller supplies snapshots
      *  captured immediately before the setPendingDate call. */
     restorePendingDates: (args: {
       entries: Array<{
@@ -785,7 +797,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         data?: { rowsAffected: number };
         error?: string;
       }>,
-    /** v2.1 round 79 phase A (Terry 2026-06-09) — lazy-hash JUST the
+    /** v2.1 round 79 phase A (Terry 2026-06-09) â€” lazy-hash JUST the
      *  Pending files that don't yet have a hash on record. Cheap
      *  (a few seconds for typical Pending lists). Fired on demand
      *  when the user clicks the "Duplicates only" filter. */
@@ -795,7 +807,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         data?: { hashed: number; failed: number; totalCandidates: number };
         error?: string;
       }>,
-    /** v2.1 round 79 phase A — get duplicate clusters within Needs
+    /** v2.1 round 79 phase A â€” get duplicate clusters within Needs
      *  dates, with a flag per cluster for whether a Confirmed /
      *  Recovered twin exists elsewhere in the library. */
     getPendingDuplicates: () =>
@@ -850,7 +862,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
   albums: {
-    // v2.0.8 step 3 — Memories Albums tab CRUD.
+    // v2.0.8 step 3 â€” Memories Albums tab CRUD.
     list: () => ipcRenderer.invoke('albums:list'),
     create: (title: string) => ipcRenderer.invoke('albums:create', title),
     rename: (albumId: number, newTitle: string) => ipcRenderer.invoke('albums:rename', albumId, newTitle),
@@ -858,13 +870,13 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     listPhotos: (albumId: number) => ipcRenderer.invoke('albums:listPhotos', albumId),
     addPhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:addPhotos', albumId, fileIds),
     removePhotos: (albumId: number, fileIds: number[]) => ipcRenderer.invoke('albums:removePhotos', albumId, fileIds),
-    // v2.0.13 — set / clear the album's user-chosen cover photo. Pass
+    // v2.0.13 â€” set / clear the album's user-chosen cover photo. Pass
     // fileId=null to revert to the auto-picked first-by-date default.
     setCoverPhoto: (albumId: number, fileId: number | null) => ipcRenderer.invoke('albums:setCoverPhoto', { albumId, fileId }),
-    // v3.0.1 — album membership counts for a set of files (Add-to-album "already in" indicators).
+    // v3.0.1 â€” album membership counts for a set of files (Add-to-album "already in" indicators).
     membershipCounts: (fileIds: number[]) => ipcRenderer.invoke('albums:membershipCounts', fileIds),
 
-    // v2.0.8 — Album group (folder) CRUD. Drives the AlbumsView's
+    // v2.0.8 â€” Album group (folder) CRUD. Drives the AlbumsView's
     // hierarchical multi-membership tree.
     groups: {
       list: () => ipcRenderer.invoke('albumGroups:list'),
@@ -882,9 +894,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   },
 
   takeout: {
-    // v2.0.8 step 2b — backfill albums + captions + corrected
+    // v2.0.8 step 2b â€” backfill albums + captions + corrected
     // original_filenames from a Google Takeout ZIP without re-extracting.
-    // For users who Fixed their Takeout on v2.0.4–v2.0.7 (before albums
+    // For users who Fixed their Takeout on v2.0.4â€“v2.0.7 (before albums
     // existed) and still have the original ZIP on disk.
     backfillFromZip: (zipPath: string) =>
       ipcRenderer.invoke('takeout:backfillFromZip', zipPath) as Promise<{
@@ -901,14 +913,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         } | null;
       }>,
 
-    // v2.0.13 — cross-part Google Takeout sidecar cache.
+    // v2.0.13 â€” cross-part Google Takeout sidecar cache.
     //   preScanSidecars: walk a list of Takeout zip files and pull
     //     every JSON sidecar out of each zip's central directory into
-    //     the takeout_sidecars table. Photo bytes are NEVER read —
+    //     the takeout_sidecars table. Photo bytes are NEVER read â€”
     //     runtime is bound by JSON count (~10 MB across 8 parts),
     //     not Takeout size (~400 GB across 8 parts).
     //   getSidecarSummary: powers the LDM "Takeout metadata" row.
-    //   detectGroupId: helper for the source-menu banner — given a
+    //   detectGroupId: helper for the source-menu banner â€” given a
     //     path, returns the export's group id or null.
     //   onPreScanProgress: subscribes to per-zip progress events
     //     emitted during a long pre-scan. Returns an unsubscribe fn.
@@ -925,15 +937,15 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  // v2.0.13 — Enrichment pass: applies the cached Takeout sidecar
+  // v2.0.13 â€” Enrichment pass: applies the cached Takeout sidecar
   // metadata to live _RC / _MK rows in indexed_files. Strictly
-  // additive — never overrides user-set person_id, never deletes
+  // additive â€” never overrides user-set person_id, never deletes
   // album_files rows, never touches Trees data.
   //   dryRun: cheap pre-flight that returns counts so the modal
   //     can show "X files have improving metadata, run upgrade?"
   //     before the user commits.
   //   run: kicks off the pass. Resolves with the run summary on
-  //     completion (or on cancel — summary.cancelled flag set).
+  //     completion (or on cancel â€” summary.cancelled flag set).
   //   cancel: flips a module-level cancellation flag the engine
   //     checks between files.
   //   onProgress: subscribes to per-batch progress events.
@@ -951,7 +963,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  // v2.0.13 per-photo captions — read/write the indexed_files.caption
+  // v2.0.13 per-photo captions â€” read/write the indexed_files.caption
   // column for a single photo. writeExif=true also writes the value
   // to EXIF ImageDescription + XMP dc:description so it travels with
   // the file when exported.
@@ -959,7 +971,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     get: (fileId: number) => ipcRenderer.invoke('captions:get', fileId),
     getName: (fileId: number) => ipcRenderer.invoke('captions:getName', fileId),
     getByPath: (filePath: string) => ipcRenderer.invoke('captions:getByPath', filePath),
-    // v3.0 (Terry) — indexed_files metadata by path (collage right-click "Photo info").
+    // v3.0 (Terry) â€” indexed_files metadata by path (collage right-click "Photo info").
     getInfoByPath: (filePath: string) => ipcRenderer.invoke('files:getInfoByPath', filePath),
     setByPath: (filePath: string, caption: string, writeExif?: boolean) => ipcRenderer.invoke('captions:setByPath', { filePath, caption, writeExif }),
     set: (fileId: number, caption: string, writeExif?: boolean) =>
@@ -1019,29 +1031,29 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  /** Viewer rotation — read/write the user-applied rotation for a
+  /** Viewer rotation â€” read/write the user-applied rotation for a
    *  given file_path. Used by the PDR Viewer to make rotation
    *  sticky across sessions; never touches the original file. */
   viewer: {
     getRotation: (filePath: string) => ipcRenderer.invoke('viewer:getRotation', filePath),
     setRotation: (filePath: string, rotation: number) => ipcRenderer.invoke('viewer:setRotation', filePath, rotation),
-    /** v2.0.14 — viewer asks main for the pending file list on mount.
+    /** v2.0.14 â€” viewer asks main for the pending file list on mount.
      *  Replaces the old URL-query-blob approach that stalled the viewer
      *  open for ~60s on year-drilldown click (6,000+ file paths
-     *  JSON-stringified into the URL). Returns one-shot — consumed on
+     *  JSON-stringified into the URL). Returns one-shot â€” consumed on
      *  read so a stale list can't leak across opens. */
     getPendingFileList: () => ipcRenderer.invoke('viewer:getPendingFileList') as Promise<{ files: string[]; startIndex: number }>,
-    /** v2.1 (Terry 2026-06-08) — batched date lookup for the
+    /** v2.1 (Terry 2026-06-08) â€” batched date lookup for the
      *  filmstrip date-pill overlay. Pass the whole file list once
      *  on viewer mount; map indexed_files.derived_date back to
      *  each path. */
     getFileDates: (filePaths: string[]) => ipcRenderer.invoke('viewer:getFileDates', filePaths) as Promise<{ dates: Record<string, string | null> }>,
-    // v2.0.15 (Terry 2026-06-06) — bake Enhance panel adjustments into
+    // v2.0.15 (Terry 2026-06-06) â€” bake Enhance panel adjustments into
     // a real JPG. mode='new' creates <original>_E.jpg sibling;
     // mode='replace' overwrites the original. XMP metadata records the
     // enhancement in both paths. See main.ts viewer:saveEnhanced for
     // the full handler.
-    // v2.1 (Terry 2026-06-07) — clip trim via ffmpeg -c copy. Writes
+    // v2.1 (Terry 2026-06-07) â€” clip trim via ffmpeg -c copy. Writes
     // a `_T` sibling, indexes it, broadcasts library:filesAdded.
     trimVideo: (req: { filePath: string; startSec: number; endSec: number }) =>
       ipcRenderer.invoke('viewer:trimVideo', req) as Promise<{
@@ -1053,14 +1065,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       filePath: string;
       mode: 'new' | 'replace';
       filterState: { brightness: number; contrast: number; saturation: number; temperature: number; bw?: boolean; colour?: number; tone?: 'none' | 'sepia' | 'vintage'; borderColor?: string; borderWeight?: 'thin' | 'mat' };
-      // v2.0.15 Phase 5+ — AI Enhance flows pass the temp AI-output
+      // v2.0.15 Phase 5+ â€” AI Enhance flows pass the temp AI-output
       // file here so save bakes sliders on top of the AI output.
       sourceOverride?: string;
       enhancementType?: 'manual' | 'codeformer' | 'realesrgan' | 'manual+ai' | 'ai';
       enhancementMethod?: string;
     }) => ipcRenderer.invoke('viewer:saveEnhanced', req) as Promise<{ success: boolean; newFilePath?: string; error?: string }>,
 
-    // v2.0.15 Phase 5+6 (Terry 2026-06-06) — AI Enhance IPC. The
+    // v2.0.15 Phase 5+6 (Terry 2026-06-06) â€” AI Enhance IPC. The
     // viewer fires these, listens for viewer:enhanceProgress to update
     // a progress modal, then routes the returned outputPath through
     // saveEnhanced() above to land the final file in the library.
@@ -1081,7 +1093,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'codeformer' | 'realesrgan';
       }>,
-    // v2.1 round 173 (Terry 2026-06-14) — Background remover. Returns a temp
+    // v2.1 round 173 (Terry 2026-06-14) â€” Background remover. Returns a temp
     // transparent PNG (subject cut out) the collage uses as a tile's image.
     removeBackground: (req: { filePath: string; strength?: number }) =>
       ipcRenderer.invoke('viewer:removeBackground', req) as Promise<{
@@ -1090,7 +1102,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         error?: string;
         requiresInstall?: 'bgremover';
       }>,
-    // v2.1 round 184 (Terry) — optional bg backdrop the cut-out is composited
+    // v2.1 round 184 (Terry) â€” optional bg backdrop the cut-out is composited
     // onto before saving (transparent PNG / flattened colour / a photo).
     saveCutout: (req: {
       tempPath: string;
@@ -1104,11 +1116,11 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         fileId?: number | null;
         error?: string;
       }>,
-    /** v2.1 (Terry 2026-06-07) — cancel any in-flight enhance run by
+    /** v2.1 (Terry 2026-06-07) â€” cancel any in-flight enhance run by
      *  terminating the underlying worker. */
     cancelEnhance: () =>
       ipcRenderer.invoke('viewer:cancelEnhance') as Promise<{ success: boolean; error?: string }>,
-    /** v2.1 (Terry 2026-06-07) — manual-box face enhance. User
+    /** v2.1 (Terry 2026-06-07) â€” manual-box face enhance. User
      *  drags a rectangle around a face that the auto-detector
      *  missed (e.g. in shadow), optionally with slider filter
      *  baked in so CodeFormer sees the brightened pixels. */
@@ -1124,7 +1136,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       error?: string;
       requiresInstall?: 'codeformer' | 'realesrgan';
     }>,
-    /** v2.1 round 10 (Terry 2026-06-07) — read face boxes for one
+    /** v2.1 round 10 (Terry 2026-06-07) â€” read face boxes for one
      *  photo. Used by the Boxes toggle in the Enhance panel to
      *  overlay every detected face on the image. */
     getFaceBoxes: (filePath: string) =>
@@ -1141,28 +1153,28 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
           is_manual: number;
         }>;
       }>,
-    /** v2.1 round 11 (Terry 2026-06-07) — delete a face_detection
+    /** v2.1 round 11 (Terry 2026-06-07) â€” delete a face_detection
      *  row. Allowed only on unnamed faces. */
     deleteFaceBox: (faceId: number) =>
       ipcRenderer.invoke('viewer:deleteFaceBox', faceId) as Promise<{ success: boolean; error?: string }>,
-    /** v2.1 round 11 — name a face in-place from PDRV. Creates a
+    /** v2.1 round 11 â€” name a face in-place from PDRV. Creates a
      *  new person if the name doesn't exist; otherwise joins. */
     nameFace: (payload: { faceId: number; clusterId: number | null; name: string }) =>
       ipcRenderer.invoke('viewer:nameFace', payload) as Promise<{ success: boolean; personId?: number; error?: string }>,
-    /** v2.1 round 29 (Terry 2026-06-08) — "is the Whisper model
+    /** v2.1 round 29 (Terry 2026-06-08) â€” "is the Whisper model
      *  already downloaded?" so the transcribe modal can show the
      *  ~3 GB download warning ONLY the first time, not every
      *  click forever. Returns { ready, modelDir }. */
     isTranscribeModelReady: () =>
       ipcRenderer.invoke('transcribe:isModelReady') as Promise<{ ready: boolean; modelDir: string }>,
-    /** v2.1 round 29 — pre-flight time estimate for the confirm
+    /** v2.1 round 29 â€” pre-flight time estimate for the confirm
      *  modal. Returns total duration in seconds + ETA seconds at
-     *  the medium model's ~6× realtime + per-video overhead.
+     *  the medium model's ~6Ã— realtime + per-video overhead.
      *  Skips already-transcribed videos so the estimate matches
      *  what the worker will actually do. */
     estimateTranscribeBatch: (filePaths: string[]) =>
       ipcRenderer.invoke('transcribe:estimateBatch', filePaths) as Promise<{ totalDurationSec: number; etaSec: number; fileCount: number; alreadyDoneCount: number }>,
-    /** v2.1 (Terry 2026-06-07) — video transcription. Whisper-medium
+    /** v2.1 (Terry 2026-06-07) â€” video transcription. Whisper-medium
      *  local. Idempotent: if a transcript already exists for the
      *  file, returns it; otherwise runs the worker + persists. */
     transcribeVideo: (req: { filePath: string; language?: string }) =>
@@ -1177,7 +1189,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         model?: string;
         error?: string;
       }>,
-    /** v2.1 round 57 (Terry 2026-06-09) — bulk list of file ids
+    /** v2.1 round 57 (Terry 2026-06-09) â€” bulk list of file ids
      *  with transcripts. Renderer uses this once on mount to
      *  build a Set<number> for the on-tile "T" badge overlay.
      *  Refreshes when `pdr:transcribeCompleted` fires from the
@@ -1188,7 +1200,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
         ids: number[];
         error?: string;
       }>,
-    /** v2.1 — read-only fetch of an existing transcript (no
+    /** v2.1 â€” read-only fetch of an existing transcript (no
      *  inference). Returns transcript: null if none. */
     getTranscript: (filePath: string) =>
       ipcRenderer.invoke('viewer:getTranscript', filePath) as Promise<{
@@ -1212,7 +1224,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('viewer:transcribeProgress', listener);
       return () => ipcRenderer.removeListener('viewer:transcribeProgress', listener);
     },
-    /** v2.1 round 8 (Terry 2026-06-07) — Mark-a-face-only flow.
+    /** v2.1 round 8 (Terry 2026-06-07) â€” Mark-a-face-only flow.
      *  Inserts a face_detections row at the user-drawn box so PM
      *  picks it up as Unknown person; no AI model invoked.
      *  Returns the new face_id / cluster_id so the renderer can
@@ -1232,7 +1244,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('viewer:enhanceProgress', listener);
       return () => ipcRenderer.removeListener('viewer:enhanceProgress', listener);
     },
-    /** v2.0.14 — broadcast fired by viewer:setRotation. Renderers that
+    /** v2.0.14 â€” broadcast fired by viewer:setRotation. Renderers that
      *  hold cached thumbnails (Memories grid, Albums tiles, viewer
      *  filmstrip) subscribe to drop the stale entry and refetch with
      *  the new rotation. Returns an unsubscribe callback. */
@@ -1246,14 +1258,14 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   /** Native OS drag from PDR tiles to external apps (WhatsApp, Discord,
    *  email clients, Photoshop, etc.). The renderer intercepts the HTML5
    *  dragstart event with preventDefault, then asks main to hand the
-   *  file path(s) over to the OS via webContents.startDrag — same drag
+   *  file path(s) over to the OS via webContents.startDrag â€” same drag
    *  payload the OS sees from File Explorer, so receivers get the
    *  original file from disk, not the cached thumb. */
   drag: {
     start: (files: string[], iconDataUrl?: string) => ipcRenderer.invoke('drag:start', { files, iconDataUrl }),
   },
 
-  // v2.1 round 279 (Terry) — Sharing Phase 2: "Send to Phone" over local Wi-Fi.
+  // v2.1 round 279 (Terry) â€” Sharing Phase 2: "Send to Phone" over local Wi-Fi.
   // start() takes the renderer's resolved selection (absolute file paths); main
   // spins up a short-lived LAN server and returns the URL to QR-encode. status()
   // polls the live download count; stop() tears the server down.
@@ -1263,7 +1275,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     status: () => ipcRenderer.invoke('phoneShare:status') as Promise<{ success: boolean; data?: { active: boolean; url?: string; ip?: string; port?: number; fileCount?: number; downloads?: number; expiresAt?: number }; error?: string }>,
   },
 
-  // v2.1 round 280 (Terry) — Sharing Phase 3: Print + Print to PDF. photos()
+  // v2.1 round 280 (Terry) â€” Sharing Phase 3: Print + Print to PDF. photos()
   // opens the native OS print dialog (any printer + Microsoft Print to PDF);
   // savePdf() prompts for a path and writes a PDF. opts = layout/fit/paper/orientation.
   print: {
@@ -1271,18 +1283,18 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('print:photos', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; error?: string }>,
     savePdf: (paths: string[], opts: { layout: string; fit: string; paper: string; orientation: string; color?: string }) =>
       ipcRenderer.invoke('print:savePdf', paths, opts) as Promise<{ success: boolean; cancelled?: boolean; path?: string; error?: string }>,
-    // v2.1 round 283 (Terry) — open the PDR Print modal from another window (the
+    // v2.1 round 283 (Terry) â€” open the PDR Print modal from another window (the
     // Viewer). main focuses the main window + tells its renderer to open the modal,
     // so Viewer print and library print share ONE path: PDR modal -> native dialog.
     requestModal: (paths: string[]) => ipcRenderer.invoke('print:requestModal', paths) as Promise<{ success: boolean; error?: string }>,
     onOpenModal: (cb: (paths: string[]) => void) => { const h = (_e: any, paths: string[]) => cb(paths); ipcRenderer.on('print:openModal', h); return () => ipcRenderer.removeListener('print:openModal', h); },
   },
 
-  // v2.1 round 284 (Terry) — Sharing Phase 4: copy a photo to the clipboard as
+  // v2.1 round 284 (Terry) â€” Sharing Phase 4: copy a photo to the clipboard as
   // an image (paste into chats/docs). Local-only.
   clipboard: {
     copyImage: (path: string) => ipcRenderer.invoke('clipboard:copyImage', path) as Promise<{ success: boolean; error?: string }>,
-    // v2.1 round 285 (Terry) — copy one or many files (CF_HDROP) so Ctrl+C / Ctrl+V
+    // v2.1 round 285 (Terry) â€” copy one or many files (CF_HDROP) so Ctrl+C / Ctrl+V
     // pastes them all in Explorer / email / chat.
     copyFiles: (paths: string[]) => ipcRenderer.invoke('clipboard:copyFiles', paths) as Promise<{ success: boolean; count?: number; error?: string }>,
   },
@@ -1300,7 +1312,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     batchVerify: (personIds: number[]) => ipcRenderer.invoke('ai:batchVerify', personIds),
     unnameFace: (faceId: number) => ipcRenderer.invoke('ai:unnameFace', faceId),
     refineFromVerified: (similarityThreshold?: number, personFilter?: number) => ipcRenderer.invoke('ai:refineFromVerified', similarityThreshold, personFilter),
-    // v2.0.15 (Terry 2026-06-06) — progress event subscription for
+    // v2.0.15 (Terry 2026-06-06) â€” progress event subscription for
     // PM's Improve Facial Recognition modal. Returns an unsubscribe
     // function. Payload shape matches RefineProgress in search-database.ts.
     onRefineProgress: (cb: (p: unknown) => void) => {
@@ -1354,7 +1366,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     onProgress: (callback: (progress: any) => void) => {
       // Per-handler registration so multiple renderer components can
       // subscribe simultaneously (e.g. TitleBar + SearchPanel). The
-      // returned function removes ONLY this handler — the shared
+      // returned function removes ONLY this handler â€” the shared
       // channel keeps firing for the others.
       const handler = (_: any, data: any) => callback(data);
       ipcRenderer.on('ai:progress', handler);
@@ -1379,10 +1391,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
 
   people: {
     open: () => ipcRenderer.invoke('people:open'),
-    /** v2.1 round 9 — set/consume a pending focus payload so PM
+    /** v2.1 round 9 â€” set/consume a pending focus payload so PM
      *  can jump to + highlight a specific face on open. Renderer
-     *  flow: setPendingFocus({fileId, clusterId, faceId}) → open().
-     *  PM flow on mount: consumePendingFocus() → if non-null,
+     *  flow: setPendingFocus({fileId, clusterId, faceId}) â†’ open().
+     *  PM flow on mount: consumePendingFocus() â†’ if non-null,
      *  scroll to + flash that cluster. */
     setPendingFocus: (payload: { fileId: number; clusterId: number; faceId: number }) =>
       ipcRenderer.invoke('people:setPendingFocus', payload),
@@ -1404,7 +1416,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   ping: () => ipcRenderer.invoke('app:ping'),
   quickAccessPaths: () => ipcRenderer.invoke('app:quickAccessPaths'),
 
-  // Logging bridge — renderer code can push any structured event into
+  // Logging bridge â€” renderer code can push any structured event into
   // the main-process log file (which is the only persistent log in
   // production, DevTools being disabled). `getLogFilePath` lets a
   // future "Report a problem" button attach the file to a support
@@ -1414,12 +1426,12 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   getLogFilePath: (reveal?: boolean) => ipcRenderer.invoke('app:logFilePath', { reveal }),
   reportProblem: (payload: { description?: string; userEmail?: string }) =>
     ipcRenderer.invoke('app:reportProblem', payload),
-  // System memory probe — used by the Dashboard's low-RAM advisory
+  // System memory probe â€” used by the Dashboard's low-RAM advisory
   // to gate a one-shot guidance card for budget-laptop users.
   system: {
     memoryInfo: () => ipcRenderer.invoke('system:memoryInfo'),
-    // Lite Tier 3 (Terry 2026-06-03) — top RAM consumers list, used
-    // by the format-card's "See which apps are using your RAM →" link
+    // Lite Tier 3 (Terry 2026-06-03) â€” top RAM consumers list, used
+    // by the format-card's "See which apps are using your RAM â†’" link
     // when the Tier 2 RAM-pressure bullets are visible. Read-only.
     topMemoryConsumers: (limit: number = 5) => ipcRenderer.invoke('system:topMemoryConsumers', limit),
   },
@@ -1429,7 +1441,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   // user accidentally closed the folder window we opened on Send.
   revealInFolder: (filePath: string) => ipcRenderer.invoke('shell:showItemInFolder', filePath),
 
-  // PDR Recycle Bin (v2.0.15) — soft-delete with restore + permanent
+  // PDR Recycle Bin (v2.0.15) â€” soft-delete with restore + permanent
   // delete via OS Recycle Bin.
   recycle: {
     move: (fileIds: number[]) => ipcRenderer.invoke('recycle:move', fileIds),
@@ -1444,7 +1456,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     },
   },
 
-  // v2.0.15 Phase 4 (Terry 2026-06-06) — AI Photo Enhancement model
+  // v2.0.15 Phase 4 (Terry 2026-06-06) â€” AI Photo Enhancement model
   // installer surface. Settings cards call list() on mount, install /
   // uninstall / cancel from button clicks, and subscribe to
   // onStateChanged for live progress updates.

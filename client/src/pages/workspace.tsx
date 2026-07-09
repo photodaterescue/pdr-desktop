@@ -966,10 +966,16 @@ useEffect(() => {
 
   // v2.1 round 142 (Terry) — listen for the collage editor (PDRV) asking
   // us to pick a background photo. Enter pick mode + land on Memories.
+  // v3.1 (Terry) — the RECORDING BAR reuses this same picker for the camera-bubble backdrop
+  // (purpose 'cam-bg', "that's where the library is"). The active purpose is tracked in a ref so
+  // every deliver() echoes the purpose that STARTED the session — main routes the pick back to
+  // whichever window asked (collage or the recording bar).
+  const collagePickPurposeRef = useRef<string>('collage-bg');
   useEffect(() => {
     if (!isElectron()) return;
     const off = (window as any).pdr?.photoPick?.onStart?.((info: { purpose: string; label: string; multi?: boolean }) => {
-      if (info?.purpose === 'collage-bg') {
+      if (info?.purpose === 'collage-bg' || info?.purpose === 'cam-bg') {
+        collagePickPurposeRef.current = info.purpose;
         setCollageBgPickLabel(info.label || 'your collage');
         // v2.1 round 209 (Terry) — the add-photos flow sets multi:true so this
         // session enables CTRL-held stay-open multi-add; the bg pick leaves it false.
@@ -1088,6 +1094,9 @@ useEffect(() => {
       if (!path) return;
       e.preventDefault();
       e.stopPropagation();
+      // v3.1 (Terry) — a CAMERA BACKDROP must be a picture: clicking a video during a 'cam-bg'
+      // pick does nothing (the picker stays open so the user just picks a photo instead).
+      if (collagePickPurposeRef.current === 'cam-bg' && /\.(mp4|mov|webm|avi|mkv|m4v|3gp|wmv|mts|m2ts|mpg|mpeg)$/i.test(path)) return;
       // v2.1 round 211 (Terry) — accumulate visibly, finish explicitly. In a
       // multi session EVERY click adds the photo and KEEPS the picker open
       // (keepOpen=true, so the main process does NOT refocus the collage and
@@ -1103,18 +1112,18 @@ useEffect(() => {
         // add it. The picker stays open either way (keepOpen=true).
         if (collagePickPathsRef.current.has(path)) {
           collagePickPathsRef.current.delete(path);
-          try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, true, true); } catch { /* noop */ }
+          try { (window as any).pdr?.photoPick?.deliver?.(collagePickPurposeRef.current, path, true, true); } catch { /* noop */ }
           unmarkPickedTile(el);
           setCollageBgPickCount((n) => Math.max(0, n - 1));
           return;
         }
         collagePickPathsRef.current.add(path);
-        try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, true); } catch { /* noop */ }
+        try { (window as any).pdr?.photoPick?.deliver?.(collagePickPurposeRef.current, path, true); } catch { /* noop */ }
         markPickedTile(el);                 // persistent gold ring + corner check
         setCollageBgPickCount((n) => n + 1);
         return;                             // picker stays open
       }
-      try { (window as any).pdr?.photoPick?.deliver?.('collage-bg', path, false); } catch { /* noop */ }
+      try { (window as any).pdr?.photoPick?.deliver?.(collagePickPurposeRef.current, path, false); } catch { /* noop */ }
       setCollageBgPick(false);
       setCollageBgPickMulti(false);
     };

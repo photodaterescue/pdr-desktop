@@ -288,6 +288,9 @@
       <option value="g:forest">Forest</option>
       <option value="pick">My picture…</option>
     </select>
+    <!-- v3.1 (Terry) — SECOND camera bubble. Only appears when Windows reports 2+ cameras. Runs
+         alongside Cam or on its own — each button toggles its own bubble. -->
+    <button id="cam2" type="button" title="Show or hide a second camera bubble (your other camera) in the recording" style="display:none">Cam 2</button>
     <button id="mic" type="button" title="Record your microphone (voiceover) — turn it on before recording; while recording this mutes/unmutes your voice">Mic</button>
     <select id="micSel" title="Which microphone to record"></select>
     <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
@@ -295,7 +298,8 @@
     <button id="unblur" type="button" title="Remove the last blur area you added">Unblur</button>
     <button id="zoom" type="button" title="Zoom in on the action — click to zoom toward the center, click again to zoom back out. Applied to the saved video.">Zoom</button>
     <button id="autozoom" type="button" title="Auto-zoom toward where you click — eases in on each click, eases back out when you pause. Applied to the saved video.">Auto-zoom</button>
-    <select id="quality" title="Recording quality — affects this recording's save quality and future recordings">
+    <select id="quality" title="Recording quality — affects this recording's save quality and future recordings. Tiny makes the smallest files (saves at up to 1280px wide).">
+      <option value="tiny">Tiny</option>
       <option value="compact">Compact</option>
       <option value="standard" selected>Standard</option>
       <option value="high">High</option>
@@ -318,6 +322,7 @@
   var screenSel = document.getElementById('screen');
   var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
+  var cam2Btn = document.getElementById('cam2');     // v3.1 (Terry) — second camera bubble (shown when 2+ cameras exist)
   var cambgSel = document.getElementById('cambg');   // v3.1 (Terry) — camera virtual-background picker
   var micBtn = document.getElementById('mic');
   var micSel = document.getElementById('micSel');
@@ -333,7 +338,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, cambgSel, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, cambgSel, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -346,11 +351,11 @@
   var capturedBytes = 0;
   var muted = false;
   var quality = 'standard';
-  var QUALITY_LABEL = { compact: 'Compact', standard: 'Standard', high: 'High' };
+  var QUALITY_LABEL = { tiny: 'Tiny', compact: 'Compact', standard: 'Standard', high: 'High' };   // v3.1 (Terry) — + Tiny (smallest files)
   // Capture bitrate per preset — applied at the moment Record is
   // pressed, so a quality change made while armed affects the live
   // capture too (mid-recording changes still only affect the save).
-  var QUALITY_BITRATE = { compact: 4000000, standard: 8000000, high: 12000000 };
+  var QUALITY_BITRATE = { tiny: 2000000, compact: 4000000, standard: 8000000, high: 12000000 };   // v3.1 (Terry) — Tiny records at 2 Mbps; the save step downscales to ≤1280w too
   var blurCount = 0;            // number of blur regions currently open (multiple allowed)
   var blurSelecting = false;    // the selection overlay is up
   // Round 129 — armed stage: init is stored, the engine stays cold,
@@ -671,8 +676,23 @@
   // so the hotkey path lights the button too.
   camBtn.addEventListener('click', function () {
     if (finished) return;
-    try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(); } catch (e) {}
+    try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(1); } catch (e) {}
   });
+  // v3.1 (Terry) — second camera: its own toggle, its own bubble; run both, or one or the other.
+  cam2Btn.addEventListener('click', function () {
+    if (finished) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(2); } catch (e) {}
+  });
+  // Show the Cam 2 button only when Windows reports 2+ cameras (labels don't matter, count does).
+  (function detectSecondCamera() {
+    try {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+      navigator.mediaDevices.enumerateDevices().then(function (devs) {
+        var cams = devs.filter(function (d) { return d.kind === 'videoinput'; });
+        if (cams.length >= 2) { cam2Btn.style.display = ''; requestResize(); }
+      }).catch(function () {});
+    } catch (e) {}
+  })();
 
   // ── v3.1 (Terry): camera VIRTUAL BACKGROUND picker. Values: none | blur | g:<gradient id> |
   // pick ("My picture…" → native image dialog → a dynamic 'image' option holding the path).
@@ -691,21 +711,26 @@
     opt.dataset.path = path;
     cambgSel.value = 'image';
   }
+  // v3.1 (Terry) — "My picture…" picks from MEMORIES (the library — "that's where the library is"),
+  // not a native Windows dialog: main focuses the PDR window in pick mode; the chosen photo routes
+  // straight back here on photoPick:picked (purpose 'cam-bg'). Videos are ignored (a backdrop is a
+  // picture); picking one leaves the current backdrop unchanged.
+  function cambgIsVideoPath(p) { return /\.(mp4|mov|webm|avi|mkv|m4v|3gp|wmv|mts|m2ts|mpg|mpeg)$/i.test(String(p || '')); }
+  if (pdr && pdr.capture && pdr.capture.onCamBgPicked) {
+    pdr.capture.onCamBgPicked(function (path) {
+      if (!path || cambgIsVideoPath(path)) return;
+      cambgSetImageOption(path);
+      cambgPrev = 'image';
+      cambgSend({ type: 'image', value: path });
+    });
+  }
   cambgSel.addEventListener('change', function () {
     if (finished) return;
     var v = cambgSel.value;
     if (v === 'pick') {
-      // Async dialog; revert the visible selection until a picture actually comes back.
+      // Async library pick; revert the visible selection until a picture actually comes back.
       cambgSel.value = cambgPrev;
-      var p = (pdr && pdr.capture && pdr.capture.camBgPickImage) ? pdr.capture.camBgPickImage() : null;
-      if (p && p.then) {
-        p.then(function (path) {
-          if (!path) return;   // cancelled — keep the previous background
-          cambgSetImageOption(path);
-          cambgPrev = 'image';
-          cambgSend({ type: 'image', value: path });
-        }).catch(function () {});
-      }
+      try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {}
       return;
     }
     cambgPrev = v;
@@ -1009,8 +1034,11 @@
         else if (cmd.action === 'cam-state') {
           camBtn.classList.toggle('active', !!cmd.visible);
           camBtn.title = cmd.visible ? 'Camera is in the recording — click to hide it' : 'Show or hide your camera bubble in the recording';
-          // v3.1 (Terry) — the Background picker only makes sense while the bubble is on screen.
-          cambgSel.classList.toggle('show', !!cmd.visible);
+          // v3.1 (Terry) — second camera lights its own button.
+          cam2Btn.classList.toggle('active', !!cmd.visible2);
+          cam2Btn.title = cmd.visible2 ? 'Second camera is in the recording — click to hide it' : 'Show or hide a second camera bubble (your other camera) in the recording';
+          // v3.1 (Terry) — the Background picker shows while EITHER bubble is on (the backdrop applies to both).
+          cambgSel.classList.toggle('show', !!cmd.visible || !!cmd.visible2);
           requestResize();
         }
         else if (cmd.action === 'blur-opened') {
