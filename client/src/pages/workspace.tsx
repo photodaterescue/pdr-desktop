@@ -12668,6 +12668,38 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
+                  {/* v3.0.1 (Terry 2026-07-09) — point release: a big, focused polish
+                      pass on Collages & Carousels (Canva-class text, emoji effects,
+                      carousel behaviour, performance). Sits above v3.0.0; carries the
+                      "Current version" tag once appVersion is 3.0.1. */}
+                  <AccordionItem
+                    value="ver-3.0.1"
+                    id="changelog-ver-3.0.1"
+                    className="border border-border rounded-lg px-4"
+                  >
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v3.0.1</span>
+                        {appVersion === '3.0.1' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">The Collage &amp; Carousel studio grows up.</strong> A focused polish release that turns Collages into a genuine design tool &mdash; a Canva-class text studio, emojis with real effects, carousels that behave, and a Collages window that opens and moves instantly. Still entirely on your own hardware, with nothing uploaded.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">A proper text studio</strong> &mdash; every text box gets a floating toolbar over it (and a matching side panel): font, the full weight range from Thin to Black, size, bold / italic / underline, alignment, UPPER / lower / Title case, effects, line spacing, transparency and colour. Choose a fixed text area and the type wraps and auto-shrinks to fit, or let it flow freely as you type.</li>
+                        <li><strong className="text-foreground font-medium">Symbols &amp; arrows</strong> &mdash; a new picker under Add text drops in arrows of every shape, plus stars, shapes, ticks, maths and currency symbols &mdash; as ordinary text, so they take your colour, font, size and effects. A gold outlined arrow or a pink neon star in two clicks.</li>
+                        <li><strong className="text-foreground font-medium">Emojis with real effects</strong> &mdash; emojis are now first-class layers. Apply Looks, Effects, Glow &amp; Shadow, Tone &amp; Colour and Flip &amp; Rotate exactly as you would to a photo, with glow and outline that hug the emoji&apos;s actual shape.</li>
+                        <li><strong className="text-foreground font-medium">A control bar for every layer</strong> &mdash; photos, frames, emojis and text each get their own top-centre toolbar plus quick chips that jump straight to the matching side-panel section, so what you can do is visible at a glance.</li>
+                        <li><strong className="text-foreground font-medium">Carousels that behave</strong> &mdash; duplicate a caption or photo to the exact same spot on every page in one step; equal-margin guides and snapping now work on every page, not just the ends; set your default page count; and add stylable page outlines.</li>
+                        <li><strong className="text-foreground font-medium">Faster and smoother</strong> &mdash; the Collages window opens and can be moved the instant it appears (no more waiting for every thumbnail to load first), and zooming a carousel is smooth.</li>
+                        <li><strong className="text-foreground font-medium">Polish throughout</strong> &mdash; transparent images preview on a checkerboard instead of black, glow and shadow follow a cut-out&apos;s real edges rather than its box, one consistent name (&ldquo;Transparency&rdquo;) for see-through everywhere, tidier tooltips, and dozens of smaller fixes.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
                   {/* v3.0.0 (Terry 2026-06-28) — the big v3.0.0 release. v2.1 never
                       shipped; it was REPLACED by v3.0.0, so this single entry covers
                       both the headline features AND the work that had been slated for
@@ -12683,7 +12715,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
                         <span>v3.0.0</span>
-                        {appVersion?.startsWith('3.0') && (
+                        {appVersion === '3.0.0' && (
                           <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
                         )}
                       </div>
