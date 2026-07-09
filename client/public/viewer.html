@@ -22864,9 +22864,16 @@
       // License) and the toast/banner/button colours (Success green, Backup amber, Delete red). Memories = Gold
       // and PM = AI Pink share a hex, so they're covered by those (not duplicated). Sorted light→dark below.
       { name: 'PDR', colors: [
+        // Brand core (Terry's colour sheet) + section accents.
         ['#FEC242', 'PDR Gold'], ['#A99CFF', 'PDR Lavender'], ['#8B5CF6', 'PDR AI Purple'], ['#D946EF', 'PDR AI Pink'],
         ['#283593', 'PDR Collages'], ['#10B981', 'PDR Trees'], ['#3B82F6', 'PDR S&D'], ['#FDA4AF', 'PDR Recycle Bin'],
-        ['#6B5AFF', 'PDR License'], ['#D1FAE5', 'PDR Success'], ['#D97706', 'PDR Backup'], ['#EF4444', 'PDR Delete'],
+        ['#6B5AFF', 'PDR License'],
+        // Status / notification surfaces (v3.1 Terry — from the full splash/toast/banner audit): each status
+        // gets its light wash + its strong accent. Hover shades + near-white card washes are deliberately
+        // left out (they'd render as look-alike swatches).
+        ['#D1FAE5', 'PDR Success'], ['#FFFBEB', 'PDR Reminder'], ['#FDE68A', 'PDR Caution Soft'], ['#F59E0B', 'PDR Caution'],
+        ['#D97706', 'PDR Backup'], ['#DBEAFE', 'PDR Info Soft'], ['#4F46E5', 'PDR Recovered'], ['#FECACA', 'PDR Delete Soft'],
+        ['#EF4444', 'PDR Delete'], ['#EFECFF', 'PDR Lavender Soft'], ['#7C3AED', 'PDR Splash'],
       ] },
       { name: 'Neon', colors: [
         ['#F6FF33', 'Electric Yellow'], ['#D8FF3A', 'Neon Lime'], ['#73FF4D', 'Toxic Green'], ['#4FFFD5', 'Neon Mint'],
