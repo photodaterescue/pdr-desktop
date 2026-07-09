@@ -2858,8 +2858,22 @@
          turned off there; on a transparent PNG it drew a dark rectangle around the invisible edges.
          Photos now sit flat by default — a lift / drop-shadow is opt-in via the Glow & Shadow panel
          (applied inline in the edge-fx pass, which overrides this rule when an effect is set). */
-      will-change: transform, left, top, width, height;
+      /* v3.1 (Terry) — NO permanent will-change. "will-change: transform" promoted EVERY tile
+         to its own fixed-resolution GPU layer, so when the canvas was zoomed the tiles were
+         textures scaled UP = soft/blurry (and stayed soft even after the zoom settled — the
+         "logos look soft" report). Without it, tiles re-rasterise crisp at any zoom. The
+         left/top/width/height hints never accelerated anything (those props aren't
+         compositable), so removing it costs nothing on drag/resize. */
     }
+    /* v3.1 (Terry) — while PANNING the view, hide the tile-tracking chrome so the pan needs
+       ZERO per-frame layout work (positionSelectionChrome / positionTextToolbarInView do
+       getBoundingClientRect reads every frame = the pan lag). The pan is then a pure GPU
+       canvas-translate; endCollagePan repositions + reshows precisely. The fixed top-centre
+       master bar is NOT hidden (it doesn't track a tile). */
+    body.collage-panning #collage-chrome-box,
+    body.collage-panning #collage-chrome .ch-toolbar[data-text-tb],
+    body.collage-panning #collage-chrome .cm-line,
+    body.collage-panning #collage-chrome .cm-badge { display: none !important; }
     /* v2.1 round 145 (Terry) — crop. The image lives in a clip wrapper
        (overflow:hidden) so it can be enlarged + offset to show only the
        cropped region while the frame border (on the .collage-item box)
@@ -21538,7 +21552,12 @@
           collagePanX = Math.max(-_mx, Math.min(_mx, collagePanX));
           collagePanY = Math.max(-_my, Math.min(_my, collagePanY));
         }
-        applyCollageZoom();
+        // v3.1 (Terry) — INSTANT PAN: write ONLY the canvas transform (a pure GPU translate,
+        // same format applyCollageZoom uses). NOT applyCollageZoom() — that re-ran
+        // positionSelectionChrome + positionTextToolbarInView every frame (getBoundingClientRect
+        // / offsetHeight = forced synchronous layout), which was the pan lag. The tracking chrome
+        // is hidden by the body.collage-panning CSS; endCollagePan does the one precise reposition.
+        try { collageCanvasEl.style.transform = 'translate(' + collagePanX + 'px, ' + collagePanY + 'px) scale(' + collageUserZoom + ')'; } catch (_) {}
       });
       const endCollagePan = (e) => {
         if (collageMarquee) { endMarquee(e); return; }
@@ -21547,6 +21566,11 @@
         try { collageStageEl.releasePointerCapture(collagePanDrag.id); } catch (_) {}
         collagePanDrag = null;
         try { document.body.classList.remove('collage-panning'); } catch (_) {}
+        // v3.1 (Terry) — the one precise reposition after an INSTANT pan: re-glue the selection
+        // chrome / text bars to their tiles at the final pan (positionSelectionChrome +
+        // positionTextToolbarInView) and re-show them (the collage-panning CSS hid them). Runs
+        // once on release, not per frame.
+        if (wasDrag) { try { applyCollageZoom(); } catch (_) {} }
         if (wasDrag) return;   // we panned — don't select/deselect on release
         if (noSelect) return;  // locked-tile pan: caller already selected it on press, a click changes nothing
         if (onCanvas) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
