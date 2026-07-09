@@ -10356,19 +10356,43 @@
         const fam = layer.font || 'Impact';
         const avail = collageFontWeights(fam);
         const cur = textWeightOf(layer);
+        // v3.1 (Terry) — HOVER previews, CLICK commits + CLOSES. Terry liked trying each
+        // weight live but the menu "doesn't seem to know when to go": rolling over a row
+        // now previews it on the canvas (uncommitted — leaving the menu restores the real
+        // weight), and clicking is the decision point: apply, one undo step, menu gone.
+        let previewBase = null;   // { fw, b } captured on first hover; null = nothing to restore
+        const restorePreview = () => {
+          if (!previewBase) return;
+          // Restore onto the layer this menu was OPENED for — never whatever happens to
+          // be selected by the time the pointer leaves (selection can change mid-hover).
+          layer.fontWeight = previewBase.fw; layer.bold = previewBase.b;
+          try { renderTextLayer(layer); } catch (_) {}
+          previewBase = null;
+        };
+        pop.onmouseleave = restorePreview;
         COLLAGE_WEIGHT_STEPS.forEach((step) => {
           const w = step[0], name = step[1];
           const b = document.createElement('button');
           b.type = 'button'; b.className = 'ch-tb-w-opt';
           b.textContent = name;
+          // v3.1 (Terry) — mark the default so there's always an anchor point in the list.
+          if (w === 400) { const d = document.createElement('span'); d.textContent = '· default'; d.style.cssText = 'opacity:0.5;font-size:11px;font-weight:400;margin-left:7px;'; b.appendChild(d); }
           b.style.fontFamily = "'" + fam + "'";
           b.style.fontWeight = String(w);
           const ok = avail.indexOf(w) !== -1;
           if (!ok) b.disabled = true;
           if (w === cur) b.classList.add('active');
+          if (ok) b.addEventListener('mouseenter', () => {
+            const L = layer; if (!L || selectedText !== layer) return;   // menu's own layer only
+            if (!previewBase) previewBase = { fw: L.fontWeight, b: L.bold };
+            L.fontWeight = w;   // preview only — bold flag + undo untouched until click
+            try { renderTextLayer(L); } catch (_) {}
+            try { document.fonts.load(w + ' 16px "' + fam + '"').then(() => { try { if (selectedText === L && previewBase && L.fontWeight === w) renderTextLayer(L); } catch (_) {} }); } catch (_) {}
+          });
           if (ok) b.addEventListener('click', (e) => {
             e.stopPropagation();
-            const L = selectedText; if (!L) return;
+            const L = layer; if (!L || selectedText !== layer) return;   // menu's own layer only
+            restorePreview();   // back to the true pre-state so the undo snapshot is honest
             beginCollageChange();
             L.fontWeight = w; L.bold = w >= 600;
             renderTextLayer(L);
@@ -10376,9 +10400,9 @@
             // Poppins ships per-weight FILES — if this weight's file wasn't loaded yet the
             // canvas drew a fallback; re-render once it lands (variable families no-op).
             try { document.fonts.load(w + ' 16px "' + fam + '"').then(() => { try { if (selectedText === L) renderTextLayer(L); } catch (_) {} }); } catch (_) {}
-            pop.querySelectorAll('.ch-tb-w-opt').forEach((x) => x.classList.toggle('active', x === b));
             try { refreshTextToolbar(L); } catch (_) {}
             try { syncTextControls(); } catch (_) {}
+            closeTbPop();   // the decision point — picked, done, gone
           });
           pop.appendChild(b);
         });
