@@ -61,6 +61,7 @@ import {
   moveToRecycleBin,
   onRecycleBinChanged,
   onLibraryFilesAdded,
+  formatBytes,
   type MemoriesYearBucket,
   type MemoriesOnThisDayItem,
   type IndexedFile,
@@ -85,6 +86,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { DensityToggle, type Density } from '@/components/ui/density-toggle';
 import AddToAlbumPopover from './AddToAlbumPopover';
+import FileInfoDialog from './FileInfoDialog';
 import { getPrefetchedMemories, getPrefetchedThumb, invalidatePrefetchedMemories } from '../lib/memories-prefetch';
 import { editPhotoCaption } from '@/lib/caption-actions';
 import { CaptionBadge } from '@/components/CaptionBadge';
@@ -98,7 +100,11 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 // Mirrors the S&D ribbon's Add Info dropdown so users get a familiar
 // surface for choosing what shows on each thumbnail. Values are
 // persisted in localStorage so they survive a session.
-type DrilldownMetaField = 'filename' | 'date';
+// v3.0.1 (Terry) — 'size' added so the Display dropdown can toggle a
+// file-size line on each tile, matching S&D's tile-meta 'size' option
+// (SearchPanel renders formatBytes(size_bytes)). Persisted in the same
+// localStorage array as filename/date.
+type DrilldownMetaField = 'filename' | 'date' | 'size';
 const DRILLDOWN_TILE_PX_MIN = 100;
 const DRILLDOWN_TILE_PX_MAX = 360;
 function drilldownSliderToPx(slider: number): number {
@@ -1465,6 +1471,11 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const [showMetaDropdown, setShowMetaDropdown] = useState(false);
   const showFilename = metaFields.includes('filename');
   const showDate = metaFields.includes('date');
+  // v3.0.1 (Terry) — file-size overlay toggle.
+  const showSize = metaFields.includes('size');
+  // v3.0.1 (Terry) — File info dialog: which file's facts are shown.
+  // null = closed. Opened from the per-tile right-click "File info" item.
+  const [fileInfoTarget, setFileInfoTarget] = useState<IndexedFile | null>(null);
   // v2.1 round 58 (Terry 2026-06-09) — set of file_ids with a
   // transcript on disk. Drives the lavender "T" TranscriptBadge
   // rendered next to CaptionBadge on each video tile below. The
@@ -2681,6 +2692,9 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
             {([
               { key: 'filename' as DrilldownMetaField, label: 'Filename' },
               { key: 'date' as DrilldownMetaField, label: 'Date' },
+              // v3.0.1 (Terry) — "Show file size" toggle; overlays each
+              // tile with its size (e.g. 4.2 MB). Mirrors S&D's tile-meta.
+              { key: 'size' as DrilldownMetaField, label: 'File size' },
             ]).map(opt => {
               const checked = metaFields.includes(opt.key);
               return (
@@ -3447,10 +3461,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       {/* Footer strip — only rendered when at least one
                           meta field is enabled, so the default view is a
                           clean photo wall with zero overlay. */}
-                      {(showFilename || showDate) && (
+                      {(showFilename || showDate || showSize) && (
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6 space-y-0.5">
                           {showFilename && <div className="text-[11px] text-white/90 truncate">{f.filename}</div>}
                           {showDate && <div className="text-[10px] text-white/75 truncate">{formatHumanDate(f.derived_date)}</div>}
+                          {/* v3.0.1 (Terry) — file-size line; omitted when
+                              size is unknown (0) so we never show "0 B". */}
+                          {showSize && f.size_bytes > 0 && <div className="text-[10px] text-white/75 truncate">{formatBytes(f.size_bytes)}</div>}
                         </div>
                       )}
                     </button>
@@ -3482,6 +3499,19 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                   >
                     <HardDrive className="w-3.5 h-3.5 mr-2" />
                     Show in File Explorer
+                  </ContextMenuItem>
+                  {/* v3.0.1 (Terry) — File info. Opens a small dialog with
+                      size / dimensions (or video duration) / type / full
+                      path (copyable) / date. All fields ride on the tile
+                      record already, so this fires no extra IPC. Always
+                      acts on THIS tile (single-file facts), even inside a
+                      multi-select. */}
+                  <ContextMenuItem
+                    onSelect={() => setFileInfoTarget(f)}
+                    data-testid={`memories-tile-info-${f.id}`}
+                  >
+                    <Info className="w-3.5 h-3.5 mr-2" />
+                    File info
                   </ContextMenuItem>
                   {/* v2.1 round 139 (Terry) — Create collage in the
                       per-tile right-click menu too (was only in the
@@ -3825,6 +3855,13 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
         )}
       </div>
       </div>
+      {/* v3.0.1 (Terry) — File info dialog for Memories — Dates. Reads
+          the tile record already in hand (no extra IPC). */}
+      <FileInfoDialog
+        file={fileInfoTarget}
+        open={fileInfoTarget !== null}
+        onOpenChange={(o) => { if (!o) setFileInfoTarget(null); }}
+      />
     </div>
   );
 }

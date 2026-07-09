@@ -57,6 +57,7 @@ import {
 } from '@/components/ui/dropdown-menu';
 import { usePopoverGraceClose } from '@/hooks/usePopoverGraceClose';
 import AddToAlbumPopover from './AddToAlbumPopover';
+import FileInfoDialog from './FileInfoDialog';
 import MoveCopyToAlbumDialog from './MoveCopyToAlbumDialog';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
@@ -91,6 +92,7 @@ import {
   // multi-select toolbar + per-photo menu (parity with Dates).
   moveToRecycleBin,
   removePhotosFromAlbum,
+  formatBytes,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
@@ -555,7 +557,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // Both persisted to localStorage with `pdr-albums-*` keys so the
   // settings stay scoped to Albums and don't collide with the
   // identically-named MemoriesView preferences.
-  type AlbumTileMetaField = 'filename' | 'date' | 'type';
+  // v3.0.1 (Terry) — 'size' added so Display can overlay file size on
+  // each album tile (matches S&D + Memories — Dates).
+  type AlbumTileMetaField = 'filename' | 'date' | 'type' | 'size';
   const ALBUMS_SELECTION_MODE_KEY = 'pdr-albums-selection-mode';
   const ALBUMS_TILE_META_KEY = 'pdr-albums-tile-meta';
   const [selectionMode, setSelectionMode] = useState<boolean>(() => {
@@ -572,7 +576,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date' || f === 'type');
+      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date' || f === 'type' || f === 'size');
     } catch { return []; }
   });
   useEffect(() => {
@@ -580,6 +584,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   }, [metaFields]);
   const showFilename = metaFields.includes('filename');
   const showType = metaFields.includes('type');   // v3.0 (Terry) — show the collage's type below the tile (collage albums only)
+  const showSize = metaFields.includes('size');   // v3.0.1 (Terry) — show file size below the tile
+  // v3.0.1 (Terry) — File info dialog target (null = closed).
+  const [fileInfoTarget, setFileInfoTarget] = useState<IndexedFile | null>(null);
 
   // Ctrl+wheel zoom — same interaction the S&D grid and Memories
   // By Date use. Previously attached to `gridScrollRef` (the per-
@@ -2874,6 +2881,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         <p className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider mb-2">Show below each tile</p>
         {([
           { key: 'filename' as AlbumTileMetaField, label: 'Filename' },
+          // v3.0.1 (Terry) — "Show file size" toggle; overlays each tile
+          // with its size. Mirrors S&D + Memories — Dates.
+          { key: 'size' as AlbumTileMetaField, label: 'File size' },
           // v3.0 (Terry) — "Date" removed: redundant — collage filenames are date-prefixed and the day
           // sub-headers already show the date. "Type" (the collage's category·type) only on PDR Collages
           // albums; off by default.
@@ -4344,6 +4354,18 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         <HardDrive className="w-3.5 h-3.5 mr-2" />
                         Show in File Explorer
                       </ContextMenuItem>
+                      {/* v3.0.1 (Terry) — File info dialog: size /
+                          dimensions (or video duration) / type / full path
+                          (copyable) / date. Reads the album-photo record
+                          already loaded (listAlbumPhotos → SELECT i.*), so
+                          no extra IPC. Acts on THIS photo only. */}
+                      <ContextMenuItem
+                        onSelect={() => setFileInfoTarget(p)}
+                        data-testid={`album-photo-info-${p.id}`}
+                      >
+                        <Info className="w-3.5 h-3.5 mr-2" />
+                        File info
+                      </ContextMenuItem>
                       {/* v2.1 round 138 (Terry) — Create Collage from a
                           multi-selection of album photos → composer →
                           PDRV. Photos only. v2.1 round 154 (Terry) —
@@ -4597,7 +4619,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
-                    {(showFilename || (showType && p.collage_name)) && (
+                    {(showFilename || showSize || (showType && p.collage_name)) && (
                       <div className="px-1 pt-1 pb-0.5 min-w-0">
                         {showType && p.collage_name && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.collage_name}>
@@ -4607,6 +4629,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                         {showFilename && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.filename}>
                             {p.filename}
+                          </p>
+                        )}
+                        {/* v3.0.1 (Terry) — file-size line; omitted when
+                            size is unknown (0). Muted to sit under the
+                            filename as secondary info. */}
+                        {showSize && p.size_bytes > 0 && (
+                          <p className="text-[10px] text-muted-foreground truncate">
+                            {formatBytes(p.size_bytes)}
                           </p>
                         )}
                       </div>
@@ -4881,6 +4911,14 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       onClose={() => { setShowStructureModal(false); setExportPhotos([]); }}
       files={exportPhotos}
       totalResultCount={exportPhotos.length}
+    />
+    {/* v3.0.1 (Terry) — File info dialog for Albums. Mounted at the
+        AlbumsView root (like ParallelStructureModal) so it overlays the
+        whole split pane. Reads the album-photo record already in hand. */}
+    <FileInfoDialog
+      file={fileInfoTarget}
+      open={fileInfoTarget !== null}
+      onOpenChange={(o) => { if (!o) setFileInfoTarget(null); }}
     />
     </>
   );

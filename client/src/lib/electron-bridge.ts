@@ -610,6 +610,20 @@ export function formatBytes(bytes: number): string {
   return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
+// v3.0.1 (Terry) — compact video-duration label for the File-info
+// surface (e.g. 0:07, 1:42, 1:03:20). Mirrors the mm:ss / h:mm:ss
+// convention every mainstream player uses. Returns '' for null /
+// non-finite input so callers can conditionally omit the row.
+export function formatDuration(seconds: number | null | undefined): string {
+  if (seconds == null || !isFinite(seconds) || seconds < 0) return '';
+  const total = Math.round(seconds);
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const s = total % 60;
+  const two = (n: number) => String(n).padStart(2, '0');
+  return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
+}
+
 // Settings types and functions
 export interface PDRSettings {
   skipDuplicates: boolean;
@@ -1180,6 +1194,19 @@ export interface IndexedFile {
   // v3.0 (Terry) — a collage/carousel export's category·type name (e.g. "Personal · Sinta Portraits").
   // NULL for ordinary photos. Drives the Albums "Type" tile label + the collage type filter.
   collage_name?: string | null;
+  // v3.0.1 (Terry) — File-info surface fields. All three are real
+  // indexed_files columns returned by the Memories / Albums grid
+  // queries (SELECT * / SELECT i.*), so the renderer receives them on
+  // every tile record with no extra IPC. Declared optional here so
+  // the File-info popover + "Show file size" tile overlay can read
+  // them type-safely.
+  //   duration_seconds — cached video length in seconds (lazily probed
+  //     during a transcribe estimate); NULL for photos or un-probed videos.
+  //   clip_of_file_id  — parent file id when this row is a Viewer-Trim clip.
+  //   enhancement_type — set when the row came from "Save Enhanced".
+  duration_seconds?: number | null;
+  clip_of_file_id?: number | null;
+  enhancement_type?: string | null;
 }
 
 export interface SearchResult {
