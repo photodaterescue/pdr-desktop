@@ -3496,6 +3496,12 @@
     /* v3.1 (Terry SS2) — the active page no longer gets a gold outline on the filmstrip ("shouldn't have
        this outline there"). It reads as active by full opacity alone; hover still gives the subtle lavender. */
     .carousel-thumb-active { opacity: 1; }
+    /* v3.1 (Terry SS1) — the filmstrip now shows a clean "PAGE N" label, not a tiny unreadable page render. */
+    .carousel-thumb-label { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; pointer-events: none; }
+    .carousel-thumb-label .ctl-page { font-size: 8px; letter-spacing: 1.5px; font-weight: 700; color: #8f88b5; }
+    .carousel-thumb-label .ctl-n { font-size: 24px; font-weight: 800; line-height: 1; color: #e8e3ff; }
+    .carousel-thumb-active .carousel-thumb-label .ctl-n { color: #fff; }
+    .carousel-thumb:hover .carousel-thumb-label .ctl-n { color: #fff; }
     /* 1..N page-number badge, bottom-left corner. */
     .carousel-thumb-num {
       position: absolute; left: 2px; bottom: 2px;
@@ -14912,11 +14918,9 @@
       // Drop any previously-built carousel UI (thumbs + add slot); leave the pool tiles
       // and #collage-add-photos in place (hidden by CSS).
       filmstripEl.querySelectorAll('.carousel-thumb, .carousel-add').forEach((el) => el.remove());
-      const THUMB_W = 58, THUMB_H = 72;   // ~1080/1350 (4:5) portrait per slice
       const N = Math.max(1, carouselPageCount);
-      // One LIVE snapshot drives every slice thumb (they're all slices of the same wide
-      // canvas), so we snapshot once per rebuild.
-      const snap = snapshotCollage();
+      // v3.1 (Terry SS1) — the strip shows CLEAN "PAGE N" labels, not tiny unreadable renders of the pages
+      // ("what's important is to show that they are page 1, page 2"). No per-rebuild snapshot needed now.
       for (let i = 0; i < N; i++) {
         const btn = document.createElement('button');
         btn.type = 'button';
@@ -14924,12 +14928,11 @@
         btn.className = 'carousel-thumb' + (i === currentCarouselSlice() ? ' carousel-thumb-active' : '');
         btn.setAttribute('data-pdr-tooltip', 'Slide ' + (i + 1));
         btn.setAttribute('data-pdr-tooltip-side', 'top');
-        const prev = renderCarouselSlicePreview(snap, THUMB_W, THUMB_H, i, N);
-        btn.appendChild(prev);
-        const num = document.createElement('span');
-        num.className = 'carousel-thumb-num';
-        num.textContent = String(i + 1);
-        btn.appendChild(num);
+        // v3.1 (Terry SS1) — a clean "PAGE N" label, NOT a tiny unreadable render of the page.
+        const lbl = document.createElement('span');
+        lbl.className = 'carousel-thumb-label';
+        lbl.innerHTML = '<span class="ctl-page">PAGE</span><span class="ctl-n">' + (i + 1) + '</span>';
+        btn.appendChild(lbl);
         if (carouselPageCount > CAROUSEL_MIN) {
           const x = document.createElement('span');
           x.className = 'carousel-thumb-x';
@@ -22802,14 +22805,15 @@
     // (see applyCollectionOrder / renderTextColorPalette). Data for all 12 is
     // unchanged; this is purely the array's starting sequence.
     const COLOR_COLLECTIONS = [
-      // v3.1 (Terry) — the PDR brand palette: every colour PDR uses across the apps, named by its section so
-      // you can grab "the Trees green" or "the Collages navy" by name. Kept in THIS order (excluded from the
-      // light→dark sort below). Some sections share a brand colour (Memories = Gold, PM = AI Fuchsia) — both
-      // names are kept as shortcuts. Hexes sourced from the app's theme (index.css / SIDEBAR_ACCENT).
+      // v3.1 (Terry) — the PDR brand palette: the app's brand + section colours, named. Hexes are the CANONICAL
+      // brand spec (Terry's colour sheet): Gold #FEC242, Lavender #A99CFF (primary accent), AI Purple #8B5CF6
+      // (violet), AI Pink #D946EF (fuchsia). Plus the section accents (Collages navy, Trees, S&D, Recycle Bin,
+      // License) and the toast/banner/button colours (Success green, Backup amber, Delete red). Memories = Gold
+      // and PM = AI Pink share a hex, so they're covered by those (not duplicated). Sorted light→dark below.
       { name: 'PDR', colors: [
-        ['#A99CFF', 'PDR AI Purple'], ['#D946EF', 'PDR AI Fuchsia'], ['#FEC242', 'PDR Gold'], ['#8C7BFF', 'PDR Lavender'],
-        ['#FEC242', 'PDR Memories'], ['#283593', 'PDR Collages'], ['#10B981', 'PDR Trees'], ['#3B82F6', 'PDR S&D'],
-        ['#D946EF', 'PDR PM'], ['#FDA4AF', 'PDR Recycle Bin'], ['#6B5AFF', 'PDR License'],
+        ['#FEC242', 'PDR Gold'], ['#A99CFF', 'PDR Lavender'], ['#8B5CF6', 'PDR AI Purple'], ['#D946EF', 'PDR AI Pink'],
+        ['#283593', 'PDR Collages'], ['#10B981', 'PDR Trees'], ['#3B82F6', 'PDR S&D'], ['#FDA4AF', 'PDR Recycle Bin'],
+        ['#6B5AFF', 'PDR License'], ['#D1FAE5', 'PDR Success'], ['#D97706', 'PDR Backup'], ['#EF4444', 'PDR Delete'],
       ] },
       { name: 'Neon', colors: [
         ['#F6FF33', 'Electric Yellow'], ['#D8FF3A', 'Neon Lime'], ['#73FF4D', 'Toxic Green'], ['#4FFFD5', 'Neon Mint'],
@@ -22901,7 +22905,7 @@
         return 0.2126 * r + 0.7152 * g + 0.0722 * b;
       };
       COLOR_COLLECTIONS.forEach((coll) => {
-        if (coll && coll.name !== 'PDR' && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));   // v3.1 (Terry) — PDR palette keeps its section order, not light→dark
+        if (coll && Array.isArray(coll.colors)) coll.colors.sort((a, b) => lum(b[0]) - lum(a[0]));   // v3.1 (Terry) — PDR palette sorts light→dark too ("colours in colour order, not randomly slotted")
       });
     })();
     // v3.1 (Terry SS1) — hex → friendly NAME, so the "current colour" chip can show "PDR AI Purple" not just a
@@ -23142,11 +23146,11 @@
       // live here (moved to Row 1), so Favourites is clean until the user adds via
       // the ＋ badges. v2.1 round 205 (Terry) — the empty-state hint is built just
       // below (after this row, before the collections), not as a static element.
-      // v3.1 (Terry SS3) — Row 2 = a FIXED "PDR AI Purple" anchor (non-changeable) + up to 7 LRU custom slots.
+      // v3.1 (Terry SS3) — Row 2 = a FIXED "PDR Lavender" anchor (the primary brand accent, non-changeable) + up to 7 LRU custom slots.
       const favs = textGetFavs().filter((c) => c.toLowerCase() !== '#a99cff');   // #A99CFF is the anchor, never doubled
       const favRow = document.createElement('div');
       favRow.className = 'frame-row frame-favrow';
-      const anchorSw = makeTextSwatch('#A99CFF', 'PDR AI Purple (always here)', onPick, {});
+      const anchorSw = makeTextSwatch('#A99CFF', 'PDR Lavender (always here)', onPick, {});
       anchorSw.classList.add('frame-anchor');
       favRow.appendChild(anchorSw);
       // Using a custom slot refreshes its "last used" (LRU touch) so re-used colours survive eviction.
