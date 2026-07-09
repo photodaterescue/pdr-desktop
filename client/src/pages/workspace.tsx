@@ -4836,8 +4836,8 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
             the inline date-editing panel inside Memories — Needs
             Dates; the separate window serves no purpose any more. */}
         {/* v2.0.15 (Terry 2026-05-28) — Recycle Bin as a top-level
-            system view, following Google Photos / Apple Photos
-            convention. Lives in the TOOLS cluster because it manages
+            system view, a familiar convention for photo apps.
+            Lives in the TOOLS cluster because it manages
             content (alongside People Manager) rather than being a
             viewing preference like Dates / Albums. */}
         {iconBtn(
@@ -11313,7 +11313,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </div>
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-orange-100 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border border-orange-300/50 shrink-0 mt-0.5">_CW</span>
-                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Carousel</span> — an Instagram-style multi-page carousel made in PDR. The <span className="font-mono text-xs">_CW</span> file is the full wide design; its pages are saved beside it as <span className="font-mono text-xs">slide_01</span>, <span className="font-mono text-xs">slide_02</span>… to post left-to-right.</span>
+                      <span className="text-muted-foreground"><span className="text-foreground font-medium">Carousel</span> — a multi-page carousel made in PDR for posting to social. The <span className="font-mono text-xs">_CW</span> file is the full wide design; its pages are saved beside it as <span className="font-mono text-xs">slide_01</span>, <span className="font-mono text-xs">slide_02</span>… to post left-to-right.</span>
                     </div>
                     <div className="flex items-start gap-2 text-sm">
                       <span className="font-mono text-xs px-2 py-0.5 rounded bg-sky-100 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border border-sky-300/50 shrink-0 mt-0.5">_SS</span>
@@ -12196,7 +12196,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <ul className="list-disc ml-5 space-y-1">
                             <li><span className="font-medium text-foreground">Blank canvas</span> &mdash; pick a size (square, story, poster and more)</li>
                             <li><span className="font-medium text-foreground">Template</span> &mdash; a ready grid (two-up, four, six, nine&hellip;) you fill with your photos</li>
-                            <li><span className="font-medium text-foreground">Carousel</span> &mdash; a multi-page Instagram layout that exports as numbered slides</li>
+                            <li><span className="font-medium text-foreground">Carousel</span> &mdash; a multi-page carousel that exports as numbered slides for social</li>
                             <li>Or select photos anywhere in PDR and send them straight into a new collage</li>
                           </ul>
                         </div>
@@ -12204,7 +12204,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                           <p className="font-medium text-foreground mb-2">Building the layout</p>
                           <ul className="list-disc ml-5 space-y-1">
                             <li><span className="font-medium text-foreground">Add photos</span> from your library, or drag one from the filmstrip onto an empty <span className="font-medium text-foreground">frame</span></li>
-                            <li>Drag tiles to arrange &mdash; alignment guides and spacing badges snap things into place (the way Canva does)</li>
+                            <li>Drag tiles to arrange &mdash; alignment guides and spacing badges snap things into place</li>
                             <li>Select several at once (marquee-drag or Ctrl+click) to move or align them together</li>
                             <li><span className="font-medium text-foreground">Right-click any tile</span> for copy / paste, align to page, bring-to-front / send-to-back, replace, rotate, and a Photo Info panel</li>
                           </ul>
@@ -12215,7 +12215,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                             <li><span className="font-medium text-foreground">Per-photo enhance</span> &mdash; brightness, contrast, color / tone, vignette, grain, curved corners, blur</li>
                             <li><span className="font-medium text-foreground">Effects</span> &mdash; glow, drop-shadow / 3-D lift, and blend</li>
                             <li><span className="font-medium text-foreground">Background</span> &mdash; a solid color, a gradient, a texture, or one of your own photos</li>
-                            <li><span className="font-medium text-foreground">Text &amp; emojis</span> &mdash; captions in real fonts with Instagram-style effects, plus emoji stickers</li>
+                            <li><span className="font-medium text-foreground">Text &amp; emojis</span> &mdash; captions in real fonts with bold, eye-catching effects, plus emoji stickers</li>
                             <li>A <span className="font-medium text-foreground">caption</span> on a collage carries through to the saved photo everywhere in PDR</li>
                           </ul>
                         </div>
@@ -12236,7 +12236,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <div>
                           <p className="font-medium text-foreground mb-2">Drag and drop</p>
                           <ul className="list-disc ml-5 space-y-1">
-                            <li>Drag one or several photos straight out of PDR into WhatsApp, an email, Photoshop, or any folder &mdash; the receiver gets the real files</li>
+                            <li>Drag one or several photos straight out of PDR into a chat app, an email, an image editor, or any folder &mdash; the receiver gets the real files</li>
                             <li>A <span className="font-medium text-foreground">&ldquo;Share (N)&rdquo;</span> badge shows how many you&apos;re carrying as you drag</li>
                           </ul>
                         </div>
@@ -12669,7 +12669,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
                   {/* v3.0.1 (Terry 2026-07-09) — point release: a big, focused polish
-                      pass on Collages & Carousels (Canva-class text, emoji effects,
+                      pass on Collages & Carousels (a professional-grade text studio, emoji effects,
                       carousel behaviour, performance). Sits above v3.0.0; carries the
                       "Current version" tag once appVersion is 3.0.1. */}
                   <AccordionItem
@@ -12687,7 +12687,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
-                        <strong className="text-foreground">The Collage &amp; Carousel studio grows up.</strong> A focused polish release that turns Collages into a genuine design tool &mdash; a Canva-class text studio, emojis with real effects, carousels that behave, and a Collages window that opens and moves instantly. Still entirely on your own hardware, with nothing uploaded.
+                        <strong className="text-foreground">The Collage &amp; Carousel studio grows up.</strong> A focused polish release that turns Collages into a genuine design tool &mdash; a professional-grade text studio, emojis with real effects, carousels that behave, and a Collages window that opens and moves instantly. Still entirely on your own hardware, with nothing uploaded.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
                         <li><strong className="text-foreground font-medium">A proper text studio</strong> &mdash; every text box gets a floating toolbar over it (and a matching side panel): font, the full weight range from Thin to Black, size, bold / italic / underline, alignment, UPPER / lower / Title case, effects, line spacing, transparency and colour. Choose a fixed text area and the type wraps and auto-shrinks to fit, or let it flow freely as you type.</li>
@@ -12725,7 +12725,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <strong className="text-foreground">The big v3.0 release: Collages &amp; Carousels, Screen Capture, Family Trees, and one-tap Sharing.</strong> PDR is now a full home for your photos &mdash; not just date repair, but creating, organizing, restoring and sharing them, all on your own hardware with nothing uploaded. This release also folds in the work that had been lined up as v2.1 (which never shipped on its own): video transcription, manual photo enhancement, Needs Dates, a Recycle Bin, a working Photo Format converter, a smoother end-of-Fix experience, and a deep refresh of Search &amp; Discovery and Memories &mdash; all detailed below.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground v3keep">
-                        <li><strong className="text-foreground font-medium">Collages &amp; Carousels</strong> &mdash; a full collage studio in its own window. Start from around ten ready-made layouts, drop in your photos, then style them with frames, curved corners, captions, text and fonts, and effects (glow, shadow, blend, vignette, grain). Marquee and Ctrl-click multi-select with Canva-style equidistant snapping and measurement guides; Magic Resize keeps your layout intact when you change the canvas size. Every collage saves as a re-openable <code>.pdrcollage</code> project you can come back to, and multi-page Carousels let you build a sequence.</li>
+                        <li><strong className="text-foreground font-medium">Collages &amp; Carousels</strong> &mdash; a full collage studio in its own window. Start from around ten ready-made layouts, drop in your photos, then style them with frames, curved corners, captions, text and fonts, and effects (glow, shadow, blend, vignette, grain). Marquee and Ctrl-click multi-select with equidistant snapping and measurement guides; Magic Resize keeps your layout intact when you change the canvas size. Every collage saves as a re-openable <code>.pdrcollage</code> project you can come back to, and multi-page Carousels let you build a sequence.</li>
                         <li><strong className="text-foreground font-medium">Screen Capture</strong> &mdash; record your screen (or grab a screenshot) straight into your library. Blur sensitive areas live (as many as you need, with a confirmation overlay), mark zoom moments, drop in a webcam bubble, and add a microphone voiceover. Recordings save as MP4. The PDR Viewer&apos;s video timeline also gains scrub-to-preview so you can find the right frame at a glance.</li>
                         <li><strong className="text-foreground font-medium">Family Trees</strong> &mdash; turn the people you&apos;ve named in People Manager into a visual family tree. Focus any person to recentre the tree, expand or collapse the bloodline and extended-family branches one at a time, and explore generation after generation without the canvas getting tangled.</li>
                         <li><strong className="text-foreground font-medium">Sharing, the last mile</strong> &mdash; get photos out the moment you need them: drag several files out at once (with a &ldquo;Drag (N)&rdquo; count badge), Send to Phone over Wi-Fi by scanning a QR code, Print or Print to PDF, or Copy an image straight to the clipboard.</li>
@@ -12833,7 +12833,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                         <li><strong className="text-foreground font-medium">HEVC video playback for Motion Photos</strong> &mdash; the short .mp4 clips alongside iPhone Live Photos and Samsung / OnePlus / Pixel Motion Photos used to show blank thumbnails and play sound-only over a black frame. They now thumbnail correctly and play with picture + sound. PDR transcodes on first play and caches the result.</li>
                         <li><strong className="text-foreground font-medium">Left-column jump sidebar on Memories &mdash; By Date</strong> &mdash; matches the timeline view&apos;s pattern at every depth. Timeline shows years; year drilldown shows months (Jan, Feb, Mar&hellip;); month drilldown shows days (1, 2, 5, 12&hellip;). One click jumps straight to that month or day; the current location highlights.</li>
                         <li><strong className="text-foreground font-medium">Floating D / M nav cluster</strong> &mdash; small bottom-right pill with arrow buttons for day-step and (on year drilldowns) month-step navigation, useful for jumping a month at a time without scrolling through 30 days.</li>
-                        <li><strong className="text-foreground font-medium">Drilldown sorts newest-first</strong> &mdash; December at the top of a year drilldown, latest photo of the day first. Consistent with the year timeline above it and with Apple Photos, Google Photos, Lightroom.</li>
+                        <li><strong className="text-foreground font-medium">Drilldown sorts newest-first</strong> &mdash; December at the top of a year drilldown, latest photo of the day first. Consistent with the year timeline above it, and with what every premium photo app does.</li>
                         <li><strong className="text-foreground font-medium">&ldquo;Captioned only&rdquo; filter in By Date + Search &amp; Discovery</strong> &mdash; the gold chip from Albums is now mirrored to the By Date drilldown header and to S&amp;D.</li>
                         <li><strong className="text-foreground font-medium">Rotation updates everywhere immediately</strong> &mdash; rotating a photo in the viewer now updates that photo&apos;s thumbnail in the Memories grid, Albums tiles, S&amp;D results, and the viewer filmstrip without you having to navigate away first.</li>
                         <li><strong className="text-foreground font-medium">Video thumbnail extraction fix</strong> &mdash; the blank-thumbnail bug that affected every video regardless of path length is gone (it was a Windows long-path prefix that ffmpeg&apos;s mov/mp4 reader couldn&apos;t open).</li>
@@ -13202,7 +13202,7 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     <AccordionContent className="pt-2 pb-4">
                       <ChangelogDetail>
                         <li>Fixed Google Takeout archives larger than 2 GB not extracting correctly</li>
-                        <li>Added RAR archive support for Apple Photos exports and other RAR sources</li>
+                        <li>Added RAR archive support for photo-app exports and other RAR sources</li>
                         <li>Added "About PDR" panel with version history and update checking</li>
                         <li>Version number now shown in Settings</li>
                         <li>Improved performance guidance tooltips for network and cloud drives</li>
@@ -14438,7 +14438,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
         className="relative bg-background rounded-2xl shadow-2xl max-w-4xl w-full p-6"
       >
         {/* v2.0.15 (Terry 2026-06-04, hotfix) — Settings header moved
-            from centered-with-circular-icon to a Claude-style top-left
+            from centered-with-circular-icon to a top-left
             title inside the sidebar (see below). X close button
             absolute-positioned top-right of the whole modal so it
             doesn't compete with the sidebar real estate. Saves ~50px
@@ -14455,8 +14455,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
             SIDEBAR + CONTENT LAYOUT
             v2.0.15 (Terry 2026-06-04) — Settings redesign replaces the
             previous horizontal-tab bar with a vertical sidebar on the
-            left (matching the navigation pattern Terry highlighted in
-            Claude's own settings as easier to scan). The sidebar has:
+            left (a scannable navigation pattern Terry highlighted). The sidebar has:
               • A top-left "Settings" title (replaces the previous
                 centered-with-circular-icon header — saves vertical
                 space and anchors the title with the navigation
@@ -14527,8 +14526,8 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                 scrolls independently when content is taller than the
                 fixed sidebar. pt-12 (Terry 2026-06-04 hotfix #2) aligns
                 the first content row with the sidebar search input
-                vertically — matches Claude's pattern where the body
-                content starts at the search-row level, not at the
+                vertically — the body content starts at the
+                search-row level, not at the
                 title-bar level. */}
           <div className="flex-1 min-w-0 space-y-5 overflow-y-auto pr-2 pt-12">
 
@@ -16387,7 +16386,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
                     <div className="px-5 pt-5 pb-3">
                       <h3 className="text-base font-semibold text-foreground mb-1">Save snapshot</h3>
                       <p className="text-xs text-muted-foreground leading-relaxed">
-                        Give this snapshot a name so you can recognize it later (optional). Examples: <em className="text-foreground/80">Before Lightroom import</em>, <em className="text-foreground/80">Pre-holiday backup</em>.
+                        Give this snapshot a name so you can recognize it later (optional). Examples: <em className="text-foreground/80">Before a big import</em>, <em className="text-foreground/80">Pre-holiday backup</em>.
                       </p>
                     </div>
                     <div className="px-5 pb-3">

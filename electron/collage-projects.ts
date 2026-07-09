@@ -208,6 +208,34 @@ ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, th
   }
 });
 
+// v3.1 (Terry) — one-time SAFE re-bake of a stale carousel card thumbnail. Carousel thumbnails are
+// baked ONCE at save time; the page-1-slice fix (SS2) only applies to NEW saves, so existing saved
+// carousels + templates still show the pre-fix "jumbled" thumbnail. The renderer re-bakes each one to
+// the clean page-1 image and hands the PNG dataURL here. ABSOLUTE SAFETY RULE: this writes ONLY the
+// thumbnail sidecar PNG (thumbPath) + its library-drive copy — it NEVER reads, modifies, or writes the
+// record JSON, so savedAt and the Recent ordering are preserved, and it deletes nothing.
+ipcMain.handle('collage:rebakeThumbnail', async (_e, id: string, thumbnailDataUrl: string) => {
+  try {
+    if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
+    if (typeof thumbnailDataUrl !== 'string' || !thumbnailDataUrl.startsWith('data:image')) return { success: false, error: 'No thumbnail.' };
+    const b64 = thumbnailDataUrl.split(',')[1] || '';
+    if (!b64) return { success: false, error: 'Empty thumbnail.' };
+    const dir = projectsDir();
+    // Write ONLY the thumbnail PNG (mirrors saveProject's base64→writeFileSync).
+    fs.writeFileSync(toLongPath(thumbPath(dir, id)), Buffer.from(b64, 'base64'));
+    // v3.0 r388 pattern — write-through the thumbnail to the library drive (best-effort). The record
+    // JSON is deliberately untouched here, so the newer-wins merge keeps the existing record as-is.
+    try {
+      const sc = sidecarCollagesDir();
+      if (sc) { try { copyPreservingMtime(thumbPath(dir, id), thumbPath(sc, id)); } catch { /* thumb best-effort */ } }
+    } catch { /* drive offline — the next list-time sync catches up */ }
+    return { success: true };
+  } catch (err) {
+    log.warn(`[collage-projects] rebakeThumbnail failed: ${(err as Error).message}`);
+    return { success: false, error: (err as Error).message };
+  }
+});
+
 // List newest-first, each with its thumbnail (for the gallery).
 ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]> => {
   try {

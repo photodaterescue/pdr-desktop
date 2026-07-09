@@ -2515,6 +2515,9 @@
     /* v3.0 (Terry) — Your Collage Projects: Album/Date filters + collapsible month groups. */
     .cws-recent-titlerow { align-items: center; }
     .cws-recent-tools { display: flex; align-items: center; gap: 8px; }
+    /* v3.1 (Terry) — one-time carousel-thumbnail re-bake status line. Muted + a soft pulse so it reads as background work, not an error. */
+    .cws-rebake-progress { margin-left: auto; margin-right: 12px; font-size: 12px; font-weight: 600; color: #a78bfa; opacity: .85; animation: cwsRebakePulse 1.4s ease-in-out infinite; }
+    @keyframes cwsRebakePulse { 0%, 100% { opacity: .55; } 50% { opacity: .9; } }
     .cws-filter { background: #2a2740; color: #d8d4ee; border: 1px solid rgba(255,255,255,0.14); border-radius: 7px; font-size: 12px; font-weight: 600; padding: 5px 8px; cursor: pointer; outline: none; }
     .cws-filter:hover { border-color: rgba(255,194,66,0.5); }
     .cws-projects-list { display: flex; flex-direction: column; gap: 14px; }
@@ -4441,6 +4444,8 @@
           <div class="cws-recent">
             <div class="cws-recent-titlerow">
               <div class="cws-recent-title">Your Collage Projects</div>
+              <!-- v3.1 (Terry) — one-time carousel-thumbnail re-bake progress line (hidden until a migration runs). -->
+              <div id="cws-rebake-progress" class="cws-rebake-progress" style="display:none" aria-live="polite"></div>
               <div class="cws-recent-tools">
                 <select id="cws-filter-album" class="cws-filter" aria-label="Filter by album"><option value="">All albums</option></select>
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
@@ -15135,6 +15140,10 @@
     var collageCaptionText = '';   // v2.1 round 364 (Terry) — the user's caption NOTE for this collage (separate from the name); written to the exported file's caption. v2.1 round 368: VAR (hoisted) not let — the caption setup block runs earlier in the script + referenced this; a `let` here put it in the TDZ so the setup threw + the input-sync handler never attached.
     let collageAutosaveTimer = null;
     let collageRestoring = false;           // true while a snapshot restore is applying (belt-and-braces autosave guard)
+    // v3.1 (Terry) — set for the duration of the one-time carousel-thumbnail re-bake migration
+    // (rebakeCarouselThumbnails). While it's true, autosave is a NO-OP so reopening each record to
+    // re-bake its thumbnail can never trigger a stray save that would bump savedAt / the Recent order.
+    let collageMigratingThumbs = false;
 
     function collageBasename(p) {
       try { const m = String(p || '').match(/[^\\/]+$/); return m ? m[0] : String(p || ''); }
@@ -15442,6 +15451,7 @@
       // v2.1 round 376 (Terry) — carousels now AUTOSAVE to Recent too: the wide-canvas model (round 260)
       // means one snapshotCollage() captures the whole carousel, so the old "only the active page" reason is
       // obsolete. serializeCollageProject flags carousel + page count; reopen re-enters carousel mode.
+      if (collageMigratingThumbs) return;   // v3.1 (Terry) — never autosave during the thumbnail re-bake migration (would bump savedAt / Recent order)
       if (!collageMode || collageRestoring) return;
       if (!collageProjectHasContent()) return;
       if (!(window.pdr && window.pdr.collage && window.pdr.collage.saveProject)) return;
@@ -15474,6 +15484,7 @@
     // Debounced: a drag/resize fires many commits; coalesce into one write ~1.2s after the last
     // change (the Canva "saved a moment ago" feel, without hammering the disk every frame).
     function scheduleCollageAutosave() {
+      if (collageMigratingThumbs) return;   // v3.1 (Terry) — no autosave scheduling during the thumbnail re-bake migration
       if (!collageMode) return;
       if (collageAutosaveTimer) clearTimeout(collageAutosaveTimer);
       collageAutosaveTimer = setTimeout(() => { collageAutosaveTimer = null; autosaveCollageProject(); }, 1200);
@@ -15543,6 +15554,100 @@
         updateCollageTitle();   // v2.1 round 347 (Terry) — show the reopened project's name
         return true;
       } catch (_) { return false; }
+    }
+
+    // ===== v3.1 (Terry) — one-time carousel-thumbnail re-bake migration =====
+    // Carousel card thumbnails are baked ONCE at save time; the page-1-slice fix (SS2) only applies to
+    // NEW saves, so every carousel project + template saved before the fix still shows the pre-fix
+    // "jumbled" (all-pages, crammed pink text) thumbnail. This walks each saved CAROUSEL record, reopens
+    // it into the live collage, re-bakes the clean page-1 image exactly as autosave now does, and writes
+    // ONLY the thumbnail PNG back (window.pdr.collage.rebakeThumbnail — never the record JSON, so savedAt
+    // and the Recent ordering are untouched). Non-carousel thumbnails were never affected, so they're
+    // skipped. Runs ONCE (localStorage-guarded) while the welcome overlay is up, then resets the live
+    // collage to blank and refreshes the cards so their <img>s reload the new thumbnails.
+    function cwsStillOnWelcome_() {
+      try {
+        const w = document.getElementById('collage-welcome');
+        return !!(w && w.classList.contains('active'));
+      } catch (_) { return false; }
+    }
+    async function rebakeCarouselThumbnails() {
+      // Guard: ONLY when we're in collage mode with the welcome screen up (no live edit to lose).
+      if (!collageMode) return;
+      if (!cwsStillOnWelcome_()) return;
+      if (collageMigratingThumbs) return;   // never re-enter
+      if (!(window.pdr && window.pdr.collage && window.pdr.collage.listProjects && window.pdr.collage.rebakeThumbnail)) return;
+      let list = [];
+      try { list = await window.pdr.collage.listProjects(); } catch (_) { list = []; }
+      // Carousels only (projects AND templates) — non-carousel thumbnails were never affected.
+      const targets = (Array.isArray(list) ? list : []).filter((r) => r && r.carousel === true);
+      const progEl = document.getElementById('cws-rebake-progress');
+      if (!targets.length) { try { if (progEl) progEl.style.display = 'none'; } catch (_) {} return; }
+      collageMigratingThumbs = true;
+      // Kill any pending autosave so nothing fires mid-migration.
+      try { if (collageAutosaveTimer) { clearTimeout(collageAutosaveTimer); collageAutosaveTimer = null; } } catch (_) {}
+      try {
+        if (progEl) { progEl.style.display = ''; progEl.textContent = 'Updating carousel previews… 0 of ' + targets.length; }
+      } catch (_) {}
+      let done = 0;
+      for (const t of targets) {
+        // Abort cleanly if the user left the welcome screen (opened a card / New) mid-run.
+        if (!cwsStillOnWelcome_()) break;
+        try {
+          const ok = await reopenCollageProject(t.id);
+          if (ok) {
+            // Flush the staggered DOM materialization + settle, so the bake captures the FULLY-built
+            // collage (reopenCollageProject sets collageBulkOpen_ → the tiles/text build across frames).
+            try { collageStaggerFlush_(); } catch (_) {}
+            await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+            await new Promise((res) => setTimeout(res, 120));
+            // The exact page-1 bake autosave now uses (see autosaveCollageProject / buildCollageLayout).
+            const layout = buildCollageLayout(1200);
+            if (layout && layout.canvas) {
+              const thumb = await window.pdr.collage.renderThumb(layout, carouselPageCount);
+              if (thumb) await window.pdr.collage.rebakeThumbnail(t.id, thumb);
+            }
+          }
+        } catch (_) { /* one bad record must never abort the rest */ }
+        done++;
+        try { if (progEl && cwsStillOnWelcome_()) progEl.textContent = 'Updating carousel previews… ' + done + ' of ' + targets.length; } catch (_) {}
+      }
+      // Reset the live collage to a BLANK idle state so no migrated project is left "live" (clears
+      // collageItems + collageTexts, exits carousel mode, nulls the project id, re-renders the canvas —
+      // the same fresh-collage init the Blank tile uses). The welcome overlay stays up throughout.
+      try { newBlankCollage(); } catch (_) {}
+      collageMigratingThumbs = false;
+      try { if (progEl) progEl.style.display = 'none'; } catch (_) {}
+      // Refresh the welcome cards so their thumbnails reload. getProjectThumbnail reads the PNG fresh
+      // from disk each call (no cache), so rebuilding the Recent + Templates lists re-requests every
+      // <img> and picks up the newly-baked page-1 previews.
+      try { if (cwsStillOnWelcome_()) { buildCwsRecent(); buildCwsTemplates(); } } catch (_) {}
+    }
+    // AUTO-RUN ONCE: guarded by a localStorage key so it can never loop (the flag is set AFTER the run,
+    // even a partial one). Fires shortly after the welcome screen first becomes visible, and only when
+    // there's at least one carousel to fix — otherwise it silently sets the flag and shows no UI.
+    var COLLAGE_REBAKE_KEY = 'pdr-carousel-thumb-rebake-v1';
+    var collageRebakeScheduled_ = false;
+    function maybeScheduleCarouselThumbRebake() {
+      try {
+        if (collageRebakeScheduled_) return;
+        if (localStorage.getItem(COLLAGE_REBAKE_KEY) === '1') return;
+        collageRebakeScheduled_ = true;
+        setTimeout(async () => {
+          try {
+            if (localStorage.getItem(COLLAGE_REBAKE_KEY) === '1') return;   // another path may have run it
+            if (!collageMode || !cwsStillOnWelcome_()) { collageRebakeScheduled_ = false; return; }   // welcome gone → try again next open
+            if (!(window.pdr && window.pdr.collage && window.pdr.collage.listProjects)) { collageRebakeScheduled_ = false; return; }
+            let list = [];
+            try { list = await window.pdr.collage.listProjects(); } catch (_) { list = []; }
+            const targets = (Array.isArray(list) ? list : []).filter((r) => r && r.carousel === true);
+            if (!targets.length) { try { localStorage.setItem(COLLAGE_REBAKE_KEY, '1'); } catch (_) {} return; }   // nothing to fix — mark done, no UI
+            try { await rebakeCarouselThumbnails(); } catch (_) {}
+            // Set the once-flag AFTER the run (even if partial / aborted) so it never loops.
+            try { localStorage.setItem(COLLAGE_REBAKE_KEY, '1'); } catch (_) {}
+          } catch (_) { collageRebakeScheduled_ = false; }
+        }, 900);
+      } catch (_) {}
     }
 
     // ===== v2.1 round 323 (Terry) — TEMPLATES =====
@@ -16010,6 +16115,10 @@
       buildCwsRecent();
       w.classList.add('active');
       w.setAttribute('aria-hidden', 'false');
+      // v3.1 (Terry) — one-time re-bake of stale carousel card thumbnails (page-1-slice fix), the first
+      // time the welcome screen becomes visible. localStorage-guarded so it runs at most once; no-op when
+      // there are zero carousels. Kept off the initial paint so the cards show immediately.
+      try { maybeScheduleCarouselThumbRebake(); } catch (_) {}
     }
     function hideCollageWelcome() {
       const w = document.getElementById('collage-welcome');

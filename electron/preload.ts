@@ -607,6 +607,10 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // (that's autosave); the first save returns a new id to reuse.
     saveProject: (project: { id?: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }, thumbnailDataUrl?: string) =>
       ipcRenderer.invoke('collage:saveProject', project, thumbnailDataUrl) as Promise<{ success: boolean; id?: string; error?: string }>,
+    // v3.1 (Terry) — one-time SAFE re-bake of a stale carousel card thumbnail. Writes ONLY the sidecar
+    // PNG (never the record JSON), so savedAt + the Recent ordering are preserved — see collage-projects.ts.
+    rebakeThumbnail: (id: string, thumbnailDataUrl: string) =>
+      ipcRenderer.invoke('collage:rebakeThumbnail', id, thumbnailDataUrl) as Promise<{ success: boolean; error?: string }>,
     listProjects: () =>
       ipcRenderer.invoke('collage:listProjects') as Promise<Array<{ id: string; name: string; savedAt: string; thumbnailDataUrl: string | null; kind: 'project' | 'template'; exportedFileId?: number | null; carouselAlbumId?: number | null; carouselWideFileId?: number | null; carousel?: boolean; carouselPages?: number | null }>>,
     // v3.0 (Terry 2026-07-05) — lazy per-card thumbnail (listProjects no longer bulk-loads them; that froze the window).
