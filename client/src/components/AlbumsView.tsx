@@ -93,6 +93,9 @@ import {
   moveToRecycleBin,
   removePhotosFromAlbum,
   formatBytes,
+  formatDuration,
+  formatMbPerMin,
+  ensureVideoDurations,
   type AlbumSummary,
   type AlbumGroupRecord,
   type AlbumGroupMembershipRecord,
@@ -559,7 +562,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   // identically-named MemoriesView preferences.
   // v3.0.1 (Terry) — 'size' added so Display can overlay file size on
   // each album tile (matches S&D + Memories — Dates).
-  type AlbumTileMetaField = 'filename' | 'date' | 'type' | 'size';
+  type AlbumTileMetaField = 'filename' | 'date' | 'type' | 'size' | 'duration' | 'mbmin';   // v3.1 (Terry) — + video length & MB/min
   const ALBUMS_SELECTION_MODE_KEY = 'pdr-albums-selection-mode';
   const ALBUMS_TILE_META_KEY = 'pdr-albums-tile-meta';
   const [selectionMode, setSelectionMode] = useState<boolean>(() => {
@@ -576,7 +579,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
       if (!raw) return [];
       const parsed = JSON.parse(raw);
       if (!Array.isArray(parsed)) return [];
-      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date' || f === 'type' || f === 'size');
+      return parsed.filter((f): f is AlbumTileMetaField => f === 'filename' || f === 'date' || f === 'type' || f === 'size' || f === 'duration' || f === 'mbmin');
     } catch { return []; }
   });
   useEffect(() => {
@@ -585,6 +588,25 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const showFilename = metaFields.includes('filename');
   const showType = metaFields.includes('type');   // v3.0 (Terry) — show the collage's type below the tile (collage albums only)
   const showSize = metaFields.includes('size');   // v3.0.1 (Terry) — show file size below the tile
+  // v3.1 (Terry) — video length + MB/min overlays (video tiles only); durations lazily probed + cached.
+  const showDuration = metaFields.includes('duration');
+  const showMbMin = metaFields.includes('mbmin');
+  const [videoDurations, setVideoDurations] = useState<Record<string, number | null>>({});
+  const missingDurPathsKey = useMemo(() => {
+    if (!showDuration && !showMbMin) return '';
+    return albumPhotos
+      .filter((p) => p.file_type === 'video' && !(typeof p.duration_seconds === 'number' && p.duration_seconds > 0))
+      .map((p) => p.file_path)
+      .join('\n');
+  }, [showDuration, showMbMin, albumPhotos]);
+  useEffect(() => {
+    if (!missingDurPathsKey) return;
+    let alive = true;
+    ensureVideoDurations(missingDurPathsKey.split('\n')).then((m) => {
+      if (alive && m) setVideoDurations((prev) => ({ ...prev, ...m }));
+    }).catch(() => { /* leave labels omitted */ });
+    return () => { alive = false; };
+  }, [missingDurPathsKey]);
   // v3.0.1 (Terry) — File info dialog target (null = closed).
   const [fileInfoTarget, setFileInfoTarget] = useState<IndexedFile | null>(null);
 
@@ -2884,6 +2906,9 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           // v3.0.1 (Terry) — "Show file size" toggle; overlays each tile
           // with its size. Mirrors S&D + Memories — Dates.
           { key: 'size' as AlbumTileMetaField, label: 'File size' },
+          // v3.1 (Terry) — video-only: length + storage cost per minute.
+          { key: 'duration' as AlbumTileMetaField, label: 'Video length' },
+          { key: 'mbmin' as AlbumTileMetaField, label: 'MB / min (video)' },
           // v3.0 (Terry) — "Date" removed: redundant — collage filenames are date-prefixed and the day
           // sub-headers already show the date. "Type" (the collage's category·type) only on PDR Collages
           // albums; off by default.
@@ -4619,7 +4644,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                     </ContextMenuContent>
                   </ContextMenu>
                     </div>
-                    {(showFilename || showSize || (showType && p.collage_name)) && (
+                    {(showFilename || showSize || showDuration || showMbMin || (showType && p.collage_name)) && (
                       <div className="px-1 pt-1 pb-0.5 min-w-0">
                         {showType && p.collage_name && (
                           <p className="text-[11px] font-medium text-foreground truncate" title={p.collage_name}>
@@ -4639,6 +4664,19 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
                             {formatBytes(p.size_bytes)}
                           </p>
                         )}
+                        {/* v3.1 (Terry) — video length + MB/min (video tiles only). */}
+                        {p.file_type === 'video' && (showDuration || showMbMin) && (() => {
+                          const d = (typeof p.duration_seconds === 'number' && p.duration_seconds > 0) ? p.duration_seconds : videoDurations[p.file_path];
+                          const dt = showDuration ? formatDuration(d) : '';
+                          const mm = showMbMin ? formatMbPerMin(p.size_bytes, d) : '';
+                          if (!dt && !mm) return null;
+                          return (
+                            <>
+                              {dt && <p className="text-[10px] text-muted-foreground truncate">{dt}</p>}
+                              {mm && <p className="text-[10px] text-muted-foreground truncate">{mm}</p>}
+                            </>
+                          );
+                        })()}
                       </div>
                     )}
                     </div>

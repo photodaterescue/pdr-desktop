@@ -977,6 +977,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     getByPath: (filePath: string) => ipcRenderer.invoke('captions:getByPath', filePath),
     // v3.0 (Terry) â€” indexed_files metadata by path (collage right-click "Photo info").
     getInfoByPath: (filePath: string) => ipcRenderer.invoke('files:getInfoByPath', filePath),
+    // v3.1 (Terry) â€” batch video durations (cached, probes missing) for File Info + Memories tile options.
+    ensureDurations: (filePaths: string[]) => ipcRenderer.invoke('files:ensureDurations', filePaths) as Promise<Record<string, number | null>>,
     setByPath: (filePath: string, caption: string, writeExif?: boolean) => ipcRenderer.invoke('captions:setByPath', { filePath, caption, writeExif }),
     set: (fileId: number, caption: string, writeExif?: boolean) =>
       ipcRenderer.invoke('captions:set', { fileId, caption, writeExif }),

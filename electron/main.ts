@@ -7648,6 +7648,53 @@ function probeVideoDuration(videoPath: string): Promise<number | null> {
 // Before this fix indexed_files.duration_seconds was always NULL
 // (the column existed in the schema but nothing populated it),
 // so the modal showed every batch as "Total playing time: < 1s".
+// v3.1 (Terry) — reusable batch duration lookup for the File Info card + the Memories/Albums
+// "Video length" & "MB / min" tile options. Returns cached durations immediately and probes any
+// still-missing ones (bounded concurrency), caching each back to indexed_files.duration_seconds so
+// the next lookup is instant. Reuses probeVideoDuration (fast ~30-80ms; no full decode).
+ipcMain.handle('files:ensureDurations', async (_event, filePaths: string[]) => {
+  const out: Record<string, number | null> = {};
+  if (!Array.isArray(filePaths) || filePaths.length === 0) return out;
+  try {
+    const { getDb } = await import('./search-database.js');
+    const database = getDb();
+    const paths = Array.from(new Set(filePaths.filter((p) => typeof p === 'string' && p)));
+    type Row = { file_id: number; file_path: string; duration_seconds: number | null };
+    const rowsAll: Row[] = [];
+    const BATCH = 500;
+    for (let i = 0; i < paths.length; i += BATCH) {
+      const slice = paths.slice(i, i + BATCH);
+      const ph = slice.map(() => '?').join(',');
+      const rows = database.prepare(
+        `SELECT id AS file_id, file_path, duration_seconds FROM indexed_files WHERE file_path IN (${ph})`,
+      ).all(...slice) as Row[];
+      rowsAll.push(...rows);
+    }
+    for (const r of rowsAll) {
+      if (typeof r.duration_seconds === 'number' && r.duration_seconds > 0) out[r.file_path] = r.duration_seconds;
+    }
+    const needsProbe = rowsAll.filter((r) => !(typeof r.duration_seconds === 'number' && r.duration_seconds > 0));
+    if (needsProbe.length > 0) {
+      const updateStmt = database.prepare('UPDATE indexed_files SET duration_seconds = ? WHERE id = ?');
+      const queue = [...needsProbe];
+      const CONCURRENCY = 4;
+      const workers: Promise<void>[] = [];
+      for (let w = 0; w < CONCURRENCY; w++) {
+        workers.push((async () => {
+          while (queue.length > 0) {
+            const r = queue.shift();
+            if (!r) break;
+            const d = await probeVideoDuration(r.file_path);
+            if (d != null && d > 0) { out[r.file_path] = d; try { updateStmt.run(d, r.file_id); } catch { /* non-fatal */ } }
+            else { out[r.file_path] = null; }
+          }
+        })());
+      }
+      await Promise.all(workers);
+    }
+  } catch (err) { log.warn(`[files:ensureDurations] ${(err as Error).message}`); }
+  return out;
+});
 ipcMain.handle('transcribe:estimateBatch', async (_event, filePaths: string[]) => {
   if (!Array.isArray(filePaths) || filePaths.length === 0) {
     return { totalDurationSec: 0, etaSec: 0, fileCount: 0, alreadyDoneCount: 0 };

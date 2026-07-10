@@ -18,13 +18,13 @@
  * for the copy hint. Typography follows the muted-label / foreground-value
  * definition-list pattern used across PDR modals — no freehand sizes.
  */
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Copy, Check, FolderOpen, Film, Image as ImageIcon } from 'lucide-react';
 import { toast } from 'sonner';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Button } from '@/components/ui/custom-button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
-import { formatBytes, formatDuration, type IndexedFile } from '@/lib/electron-bridge';
+import { formatBytes, formatDuration, formatMbPerMin, ensureVideoDurations, type IndexedFile } from '@/lib/electron-bridge';
 
 function formatFullDate(iso: string | null): string {
   if (!iso) return 'No date';
@@ -57,6 +57,22 @@ export default function FileInfoDialog({
   onOpenChange: (o: boolean) => void;
 }) {
   const [copied, setCopied] = useState(false);
+  // v3.1 (Terry) — a video's duration is a lazily-probed column, so it's often null. When this card
+  // opens on a video without a cached duration, probe it once (main caches it back). Used for both the
+  // Duration row and the new "Storage rate" (MB/min) row.
+  const [probedDur, setProbedDur] = useState<number | null>(null);
+  useEffect(() => {
+    setProbedDur(null);
+    if (!open || !file || file.file_type !== 'video') return;
+    if (typeof file.duration_seconds === 'number' && file.duration_seconds > 0) return;   // already cached
+    let alive = true;
+    ensureVideoDurations([file.file_path]).then((m) => {
+      if (!alive) return;
+      const d = m[file.file_path];
+      if (typeof d === 'number' && d > 0) setProbedDur(d);
+    }).catch(() => { /* leave the row omitted */ });
+    return () => { alive = false; };
+  }, [open, file]);
 
   if (!file) return null;
 
@@ -66,7 +82,10 @@ export default function FileInfoDialog({
     ? `${ext}${isVideo ? ' video' : ' image'}`
     : (isVideo ? 'Video' : 'Image');
   const hasDims = file.width != null && file.height != null;
-  const durationText = formatDuration(file.duration_seconds);
+  const effDuration = (typeof file.duration_seconds === 'number' && file.duration_seconds > 0)
+    ? file.duration_seconds : probedDur;
+  const durationText = formatDuration(effDuration);
+  const mbPerMin = formatMbPerMin(file.size_bytes, effDuration);   // v3.1 (Terry) — storage cost per minute
 
   const copyPath = async () => {
     try {
@@ -104,6 +123,7 @@ export default function FileInfoDialog({
           {isVideo ? (
             <>
               {durationText && <InfoRow label="Duration">{durationText}</InfoRow>}
+              {mbPerMin && <InfoRow label="Storage rate">{mbPerMin}</InfoRow>}
               {hasDims && (
                 <InfoRow label="Resolution">
                   {file.width}&thinsp;×&thinsp;{file.height}

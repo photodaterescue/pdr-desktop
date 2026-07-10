@@ -624,6 +624,28 @@ export function formatDuration(seconds: number | null | undefined): string {
   return h > 0 ? `${h}:${two(m)}:${two(s)}` : `${m}:${two(s)}`;
 }
 
+// v3.1 (Terry) — how much storage a video costs PER MINUTE, so the user can gauge which clips are
+// heavy. bytes / minutes → "N MB/min" (or "N GB/min" for very heavy footage). Returns '' when we
+// can't compute it (no size or no/zero duration), so callers omit the row/label.
+export function formatMbPerMin(sizeBytes: number | null | undefined, durationSeconds: number | null | undefined): string {
+  if (!sizeBytes || sizeBytes <= 0 || durationSeconds == null || !isFinite(durationSeconds) || durationSeconds <= 0) return '';
+  const perMin = sizeBytes / (durationSeconds / 60);   // bytes per minute
+  const mb = perMin / (1024 * 1024);
+  if (mb >= 1024) return `${(mb / 1024).toFixed(2)} GB/min`;
+  return `${mb >= 100 ? Math.round(mb) : mb.toFixed(1)} MB/min`;
+}
+
+// v3.1 (Terry) — batch video durations for the File Info card + Memories/Albums tile options.
+// Returns { path: seconds|null }; cached durations come back instantly, missing ones are probed +
+// cached by main. Safe to call with a mix of photos + videos (non-videos just resolve to null).
+export async function ensureVideoDurations(filePaths: string[]): Promise<Record<string, number | null>> {
+  try {
+    const api = (window as any)?.pdr?.captions?.ensureDurations;
+    if (typeof api === 'function' && filePaths.length) return (await api(filePaths)) || {};
+  } catch { /* offline / not-electron */ }
+  return {};
+}
+
 // Settings types and functions
 export interface PDRSettings {
   skipDuplicates: boolean;

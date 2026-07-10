@@ -62,6 +62,9 @@ import {
   onRecycleBinChanged,
   onLibraryFilesAdded,
   formatBytes,
+  formatDuration,
+  formatMbPerMin,
+  ensureVideoDurations,
   type MemoriesYearBucket,
   type MemoriesOnThisDayItem,
   type IndexedFile,
@@ -104,7 +107,9 @@ const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'Ju
 // file-size line on each tile, matching S&D's tile-meta 'size' option
 // (SearchPanel renders formatBytes(size_bytes)). Persisted in the same
 // localStorage array as filename/date.
-type DrilldownMetaField = 'filename' | 'date' | 'size';
+// v3.1 (Terry) — 'duration' (video length m:ss) + 'mbmin' (MB per minute — how much storage the
+// clip costs) join filename/date/size as per-tile overlays, shown on VIDEO tiles only.
+type DrilldownMetaField = 'filename' | 'date' | 'size' | 'duration' | 'mbmin';
 const DRILLDOWN_TILE_PX_MIN = 100;
 const DRILLDOWN_TILE_PX_MAX = 360;
 function drilldownSliderToPx(slider: number): number {
@@ -1473,6 +1478,28 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
   const showDate = metaFields.includes('date');
   // v3.0.1 (Terry) — file-size overlay toggle.
   const showSize = metaFields.includes('size');
+  // v3.1 (Terry) — VIDEO length + MB-per-minute overlays (video tiles only).
+  const showDuration = metaFields.includes('duration');
+  const showMbMin = metaFields.includes('mbmin');
+  // Durations are a lazily-probed column; fill any missing ones for the videos in view (main caches
+  // them back). Keyed on the exact set of still-missing video paths so it only fetches when that set
+  // changes — cached durations already come off the file record, so this is usually a no-op.
+  const [videoDurations, setVideoDurations] = useState<Record<string, number | null>>({});
+  const missingDurPathsKey = useMemo(() => {
+    if (!showDuration && !showMbMin) return '';
+    return (files ?? [])
+      .filter((f) => f.file_type === 'video' && !(typeof f.duration_seconds === 'number' && f.duration_seconds > 0))
+      .map((f) => f.file_path)
+      .join('\n');
+  }, [showDuration, showMbMin, files]);
+  useEffect(() => {
+    if (!missingDurPathsKey) return;
+    let alive = true;
+    ensureVideoDurations(missingDurPathsKey.split('\n')).then((m) => {
+      if (alive && m) setVideoDurations((prev) => ({ ...prev, ...m }));
+    }).catch(() => { /* leave labels omitted */ });
+    return () => { alive = false; };
+  }, [missingDurPathsKey]);
   // v3.0.1 (Terry) — File info dialog: which file's facts are shown.
   // null = closed. Opened from the per-tile right-click "File info" item.
   const [fileInfoTarget, setFileInfoTarget] = useState<IndexedFile | null>(null);
@@ -2695,6 +2722,9 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
               // v3.0.1 (Terry) — "Show file size" toggle; overlays each
               // tile with its size (e.g. 4.2 MB). Mirrors S&D's tile-meta.
               { key: 'size' as DrilldownMetaField, label: 'File size' },
+              // v3.1 (Terry) — video-only: length + storage cost per minute.
+              { key: 'duration' as DrilldownMetaField, label: 'Video length' },
+              { key: 'mbmin' as DrilldownMetaField, label: 'MB / min (video)' },
             ]).map(opt => {
               const checked = metaFields.includes(opt.key);
               return (
@@ -3461,13 +3491,27 @@ function MemoriesDayDrilldown({ year, month, day, runIds, density, onDensityChan
                       {/* Footer strip — only rendered when at least one
                           meta field is enabled, so the default view is a
                           clean photo wall with zero overlay. */}
-                      {(showFilename || showDate || showSize) && (
+                      {(showFilename || showDate || showSize || showDuration || showMbMin) && (
                         <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/75 via-black/20 to-transparent px-2 pb-1.5 pt-6 space-y-0.5">
                           {showFilename && <div className="text-[11px] text-white/90 truncate">{f.filename}</div>}
                           {showDate && <div className="text-[10px] text-white/75 truncate">{formatHumanDate(f.derived_date)}</div>}
                           {/* v3.0.1 (Terry) — file-size line; omitted when
                               size is unknown (0) so we never show "0 B". */}
                           {showSize && f.size_bytes > 0 && <div className="text-[10px] text-white/75 truncate">{formatBytes(f.size_bytes)}</div>}
+                          {/* v3.1 (Terry) — video length + MB/min (video tiles only; omitted until we
+                              have a duration, so photos and un-probed videos show nothing extra). */}
+                          {f.file_type === 'video' && (showDuration || showMbMin) && (() => {
+                            const d = (typeof f.duration_seconds === 'number' && f.duration_seconds > 0) ? f.duration_seconds : videoDurations[f.file_path];
+                            const dt = showDuration ? formatDuration(d) : '';
+                            const mm = showMbMin ? formatMbPerMin(f.size_bytes, d) : '';
+                            if (!dt && !mm) return null;
+                            return (
+                              <>
+                                {dt && <div className="text-[10px] text-white/75 truncate">{dt}</div>}
+                                {mm && <div className="text-[10px] text-white/75 truncate">{mm}</div>}
+                              </>
+                            );
+                          })()}
                         </div>
                       )}
                     </button>
