@@ -49,7 +49,8 @@
       "**/node_modules/better-sqlite3/**",
       "**/node_modules/bindings/**",
       "**/node_modules/file-uri-to-path/**",
-      "dist/public/mediapipe-selfie/**"
+      "dist/public/mediapipe-selfie/**",
+      "dist/public/cam-backdrops/**"
     ],
     "extraResources": [
       {

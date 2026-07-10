@@ -1,0 +1,31 @@
+PDR camera scene backdrops — source & licence
+===============================================
+
+All 16 scene backdrops below are from Pexels (https://www.pexels.com).
+
+Pexels Licence (https://www.pexels.com/license/): free to use, including
+commercially, with NO attribution required. We curated these to EMPTY scenes
+with no identifiable people and no visible brand logos, so there are no
+model/property/trademark-release concerns for bundling them in PDR.
+
+This file is kept purely as an internal provenance record (attribution is not
+legally required). Each backdrop is downscaled to 1920x1080 and re-encoded.
+
+file (scene-<name>.jpg)   Pexels photo
+------------------------   ---------------------------------------------
+office                     https://www.pexels.com/photo/5483233/
+coworking                  https://www.pexels.com/photo/5506057/
+study                      https://www.pexels.com/photo/2883049/
+studio                     https://www.pexels.com/photo/7060814/
+lounge-bright              https://www.pexels.com/photo/5570222/
+lounge-neutral             https://www.pexels.com/photo/7005297/
+lounge-pastel              https://www.pexels.com/photo/12277219/
+lounge-plant               https://www.pexels.com/photo/29696169/
+fireplace                  https://www.pexels.com/photo/15558114/
+loft                       https://www.pexels.com/photo/7854200/
+minimal-white              https://www.pexels.com/photo/12285892/
+minimal-bright             https://www.pexels.com/photo/28991200/
+neutral-wall               https://www.pexels.com/photo/29298710/
+reading-nook               https://www.pexels.com/photo/34269408/
+library                    https://www.pexels.com/photo/4353719/
+plants                     https://www.pexels.com/photo/31561367/
