@@ -9,9 +9,13 @@
   The camera bubble is tiny, so the in-bubble swatch grid made the scene
   thumbnails unreadable. This is a separate, roomy, always-on-top window
   (content-protected, so it never lands in the recording) that opens from the
-  bubble's Backdrop button and shows every backdrop at a proper size —
-  None / Blur, 16 realistic scenes (big 16:9 thumbnails), the PDR colours &
-  textures, and "My picture".
+  bubble's Backdrop button and shows every backdrop at a proper size.
+
+  v3.1 (Terry, round 2) — the four groups are now FILTER TABS along the top
+  (Simple · Scenes · PDR Colours · Textures); the body shows only the selected
+  group's backdrops beneath. Opens on the tab holding the current backdrop
+  (or Scenes when nothing's set, so the big thumbnails greet you). Done button
+  is now true PDR gold (#FEC242, near-black text).
 
   Clicking a backdrop applies it LIVE to that camera's bubble and stays open
   so you can try several; Done / Esc closes it. Choices route through main
@@ -24,37 +28,43 @@
     font: 400 13px/1.4 system-ui, 'Segoe UI', sans-serif; user-select: none; -webkit-user-select: none; overflow: hidden; }
   #wrap { display: flex; flex-direction: column; height: 100%; }
   #bar { -webkit-app-region: drag; display: flex; align-items: center; gap: 8px; padding: 11px 14px 10px;
-    border-bottom: 1px solid rgba(255,255,255,0.08); flex-shrink: 0; }
+    flex-shrink: 0; }
   #bar h1 { font-size: 14px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
   #bar .sub { font-size: 11.5px; color: rgba(255,255,255,0.5); }
   #bar .spacer { flex: 1; }
-  #done { -webkit-app-region: no-drag; height: 28px; padding: 0 13px; border-radius: 8px; border: none;
-    background: #d4af37; color: #1f1a08; font: 600 12px/1 system-ui; cursor: pointer; }
-  #done:hover { background: #e3c04a; }
-  #body { flex: 1; overflow-y: auto; padding: 6px 14px 16px; }
+  /* True PDR gold (#FEC242 from the logo petal) — near-black text on top, never white. */
+  #done { -webkit-app-region: no-drag; height: 28px; padding: 0 14px; border-radius: 8px; border: none;
+    background: #FEC242; color: #1F1A08; font: 600 12px/1 system-ui; cursor: pointer; }
+  #done:hover { background: #FFD166; }
+  #done:active { background: #F0B02E; }
+  /* Filter tabs. Active = PDR-gold text + gold underline; the body shows only that group. */
+  #tabs { display: flex; gap: 2px; padding: 0 12px; border-bottom: 1px solid rgba(255,255,255,0.09);
+    flex-shrink: 0; -webkit-app-region: no-drag; }
+  .tab { -webkit-app-region: no-drag; appearance: none; background: none; border: none;
+    color: rgba(255,255,255,0.5); font: 600 12px/1 system-ui, 'Segoe UI', sans-serif;
+    padding: 11px 13px 10px; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px;
+    white-space: nowrap; letter-spacing: 0.01em; }
+  .tab:hover { color: rgba(255,255,255,0.85); }
+  .tab.on { color: #FEC242; border-bottom-color: #FEC242; }
+  #body { flex: 1; overflow-y: auto; padding: 14px; }
   #body::-webkit-scrollbar { width: 9px; }
   #body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.18); border-radius: 4px; }
-  .sec { margin-top: 14px; }
-  .sec > h2 { font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.12em; color: rgba(255,255,255,0.45);
-    font-weight: 700; margin: 0 0 8px; }
-  .grid { display: grid; gap: 9px; }
-  .g-scene { grid-template-columns: repeat(4, 1fr); }
-  .g-small { grid-template-columns: repeat(6, 1fr); }
+  .grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
   /* Scene card: 16:9 thumbnail + label under it. */
   .card { -webkit-app-region: no-drag; cursor: pointer; border-radius: 9px; overflow: hidden;
     border: 2px solid transparent; background: #201f2b; padding: 0; text-align: left; color: #fff; }
   .card .thumb { width: 100%; aspect-ratio: 16/9; background-size: cover; background-position: center; display: block; }
-  .card .cap { display: block; font-size: 11px; padding: 5px 7px 6px; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card .cap { display: block; font-size: 11.5px; padding: 6px 8px 7px; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .card:hover { border-color: rgba(254,194,66,0.7); }
   .card.sel { border-color: #FEC242; }
-  /* Small square swatch (None/Blur/colour/texture/picture). */
-  .sw { -webkit-app-region: no-drag; cursor: pointer; aspect-ratio: 1/1; border-radius: 9px; overflow: hidden;
+  /* Swatch tile (None/Blur/colour/texture/picture) — sized to match the scene cards. */
+  .sw { -webkit-app-region: no-drag; cursor: pointer; aspect-ratio: 16/10; border-radius: 9px; overflow: hidden;
     border: 2px solid transparent; background: #201f2b; position: relative; color: #fff; padding: 0;
     display: flex; align-items: center; justify-content: center; }
   .sw:hover { border-color: rgba(254,194,66,0.7); }
   .sw.sel { border-color: #FEC242; }
-  .sw .lbl { position: absolute; bottom: 3px; left: 0; right: 0; text-align: center; font-size: 9.5px; color: rgba(255,255,255,0.9); text-shadow: 0 1px 2px rgba(0,0,0,0.7); }
-  .sw svg { width: 22px; height: 22px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; }
+  .sw .lbl { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font-size: 10.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
+  .sw svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; margin-bottom: 8px; }
 </style>
 </head>
 <body>
@@ -65,6 +75,7 @@
       <span class="spacer"></span>
       <button id="done" type="button">Done</button>
     </div>
+    <div id="tabs"></div>
     <div id="body"></div>
   </div>
 <script>
@@ -72,8 +83,17 @@
   var pdr = window.pdr;
   var which = 1;
   var current = { type: 'none' };
+  var activeTab = 'scenes';
+  var tabsEl = document.getElementById('tabs');
   var body = document.getElementById('body');
 
+  // Filter tabs, left → right (Terry's order).
+  var TABS = [
+    { id: 'simple', label: 'Simple' },
+    { id: 'scenes', label: 'Scenes' },
+    { id: 'colours', label: 'PDR Colours' },
+    { id: 'textures', label: 'Textures' },
+  ];
   // Catalog (mirrors the bubble's renderers). Scenes are the Pexels backdrops (thumb-<id>.jpg).
   var SCENES = [
     { id: 'office', label: 'Office' }, { id: 'coworking', label: 'Co-working' }, { id: 'study', label: 'Study' }, { id: 'studio', label: 'Studio flat' },
@@ -99,6 +119,15 @@
     if (bg.type === 'image') return 'image';
     return 'none';
   }
+  // Which tab holds a given backdrop. 'none' → Scenes so the big thumbnails greet you on open.
+  function tabForBg(bg) {
+    if (!bg || !bg.type || bg.type === 'none') return 'scenes';
+    if (bg.type === 'blur' || bg.type === 'image') return 'simple';
+    if (bg.type === 'scene') return 'scenes';
+    if (bg.type === 'gradient') return 'colours';
+    if (bg.type === 'texture') return 'textures';
+    return 'scenes';
+  }
   function choose(bg) {
     current = bg;
     try { if (pdr && pdr.capture && pdr.capture.camPickerChoose) pdr.capture.camPickerChoose({ which: which, bg: bg }); } catch (e) {}
@@ -111,33 +140,44 @@
     });
   }
 
-  function render() {
+  function renderTabs() {
     var h = '';
-    // Simple
-    h += '<div class="sec"><h2>Simple</h2><div class="grid g-small">';
-    h += '<button class="sw" data-key="none" data-act="none"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg><span class="lbl">None</span></button>';
-    h += '<button class="sw" data-key="blur" data-act="blur"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg><span class="lbl">Blur</span></button>';
-    h += '<button class="sw" data-key="image" data-act="pick"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg><span class="lbl">My picture</span></button>';
-    h += '</div></div>';
-    // Scenes
-    h += '<div class="sec"><h2>Scenes</h2><div class="grid g-scene">';
-    SCENES.forEach(function (s) {
-      h += '<button class="card" data-key="s:' + s.id + '" data-act="scene" data-val="' + s.id + '"><span class="thumb" style="background-image:url(cam-backdrops/thumb-' + s.id + '.jpg)"></span><span class="cap">' + s.label + '</span></button>';
+    TABS.forEach(function (t) {
+      h += '<button class="tab' + (t.id === activeTab ? ' on' : '') + '" data-tab="' + t.id + '">' + t.label + '</button>';
     });
-    h += '</div></div>';
-    // Colours
-    h += '<div class="sec"><h2>PDR colours</h2><div class="grid g-small">';
-    Object.keys(GRADIENTS).forEach(function (k) {
-      var g = GRADIENTS[k];
-      h += '<button class="sw" data-key="g:' + k + '" data-act="gradient" data-val="' + k + '" style="background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ')"><span class="lbl">' + (GRAD_LABELS[k] || k) + '</span></button>';
+    tabsEl.innerHTML = h;
+    Array.prototype.forEach.call(tabsEl.querySelectorAll('[data-tab]'), function (el) {
+      el.addEventListener('click', function () {
+        var id = el.getAttribute('data-tab');
+        if (id === activeTab) return;
+        activeTab = id;
+        renderTabs();
+        renderBody();
+      });
     });
-    h += '</div></div>';
-    // Textures
-    h += '<div class="sec"><h2>Textures</h2><div class="grid g-small">';
-    TEXTURES.forEach(function (tx) {
-      h += '<button class="sw" data-key="t:' + tx.id + '" data-act="texture" data-val="' + tx.id + '" style="background:' + tx.sw + '"><span class="lbl">' + tx.label + '</span></button>';
-    });
-    h += '</div></div>';
+  }
+
+  function renderBody() {
+    var h = '<div class="grid">';
+    if (activeTab === 'simple') {
+      h += '<button class="sw" data-key="none" data-act="none"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg><span class="lbl">None</span></button>';
+      h += '<button class="sw" data-key="blur" data-act="blur"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg><span class="lbl">Blur</span></button>';
+      h += '<button class="sw" data-key="image" data-act="pick"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg><span class="lbl">My picture</span></button>';
+    } else if (activeTab === 'scenes') {
+      SCENES.forEach(function (s) {
+        h += '<button class="card" data-key="s:' + s.id + '" data-act="scene" data-val="' + s.id + '"><span class="thumb" style="background-image:url(cam-backdrops/thumb-' + s.id + '.jpg)"></span><span class="cap">' + s.label + '</span></button>';
+      });
+    } else if (activeTab === 'colours') {
+      Object.keys(GRADIENTS).forEach(function (k) {
+        var g = GRADIENTS[k];
+        h += '<button class="sw" data-key="g:' + k + '" data-act="gradient" data-val="' + k + '" style="background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ')"><span class="lbl">' + (GRAD_LABELS[k] || k) + '</span></button>';
+      });
+    } else if (activeTab === 'textures') {
+      TEXTURES.forEach(function (tx) {
+        h += '<button class="sw" data-key="t:' + tx.id + '" data-act="texture" data-val="' + tx.id + '" style="background:' + tx.sw + '"><span class="lbl">' + tx.label + '</span></button>';
+      });
+    }
+    h += '</div>';
     body.innerHTML = h;
     Array.prototype.forEach.call(body.querySelectorAll('[data-act]'), function (el) {
       el.addEventListener('click', function () {
@@ -157,15 +197,21 @@
   document.getElementById('done').addEventListener('click', close);
   document.addEventListener('keydown', function (e) { if (e.key === 'Escape') close(); });
 
+  function boot() {
+    activeTab = tabForBg(current);
+    document.getElementById('camlabel').textContent = 'Camera ' + which;
+    renderTabs();
+    renderBody();
+  }
+
   if (pdr && pdr.capture && pdr.capture.onPickerInit) {
     pdr.capture.onPickerInit(function (info) {
       which = (info && info.which === 2) ? 2 : 1;
       current = (info && info.current) || { type: 'none' };
-      document.getElementById('camlabel').textContent = 'Camera ' + which;
-      render();
+      boot();
     });
   }
-  render();
+  boot();
 })();
 </script>
 </body>
