@@ -3574,7 +3574,6 @@ ipcMain.on('capture:record-started', (event, info: { width?: number; height?: nu
       if (recordRegionCrop) persistBlurSidecar();
       recordingState = 'recording';
       broadcastRecordingState();
-      broadcastCamPhase(true);   // v3.1 (Terry SS1) — recording began → bubbles hide their controls (out of the footage)
       // v3.0 round 413 (Terry) — NOW start the click-ripple overlay + global
       // hook (deferred from arm, so the armed/setup phase stays lag-free).
       const rippleOn = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
@@ -3695,6 +3694,16 @@ ipcMain.on('capture:cam-shape', (event, info?: { which?: number }) => {
   } catch { /* non-fatal */ }
   try { win.webContents.send('capture:cam-do', { action: 'shape', shape: next }); } catch { /* non-fatal */ }
   log.info(`[capture] cam ${which} shape → ${next}`);
+});
+// v3.1 (Terry) — the BACKDROP now comes from a button ON the bubble. The bubble applies it locally and
+// sends this so main PERSISTS it for the right camera (resolved from the sender window).
+ipcMain.on('capture:cam-bubble-set-bg', (event, bg: { type?: string; value?: string }) => {
+  let which = 0;
+  for (const w of [1, 2]) { const win = camWindows[w]; if (win && !win.isDestroyed() && event.sender === win.webContents) { which = w; break; } }
+  if (!which) return;
+  const clean = { type: String((bg && bg.type) || 'none'), value: (bg && typeof bg.value === 'string') ? bg.value : undefined };
+  try { setSetting(camBgSettingKey(which), clean); } catch { /* non-fatal */ }
+  log.info(`[capture] cam ${which} backdrop (from bubble) → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
 });
 // "My picture…" — a native image picker, parented to the bar. Returns the path or null.
 ipcMain.handle('capture:cam-bg-pick', async (event) => {
@@ -3828,16 +3837,6 @@ function notifyWidgetCamState(): void {
     try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisibles[1], visible2: camVisibles[2] }); } catch { /* non-fatal */ }
   }
 }
-// v3.1 (Terry SS1) — tell both bubbles whether we're recording, so they show their shape/size/zoom
-// controls while ARMED (setup) and hide them once recording starts (never in the footage).
-function broadcastCamPhase(recording: boolean): void {
-  for (const which of [1, 2]) {
-    const win = camWindows[which];
-    if (win && !win.isDestroyed()) {
-      try { win.webContents.send('capture:cam-do', { action: 'phase', recording }); } catch { /* non-fatal */ }
-    }
-  }
-}
 
 function createCamBubble(display: Electron.Display, which: number = 1): void {
   const existing = camWindows[which];
@@ -3920,7 +3919,6 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
     win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId });
     win.showInactive();
     camVisibles[which] = true;
-    if (recordingState === 'recording') { try { win.webContents.send('capture:cam-do', { action: 'phase', recording: true }); } catch { /* non-fatal */ } }
     notifyWidgetCamState();
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
@@ -4063,8 +4061,11 @@ function showRecorderTip(text: string, localX: number, localY: number): void {
   const wb = recordWidget.getBounds();
   const disp = recordDisplay ? recordDisplay.bounds : screen.getPrimaryDisplay().bounds;
   // localX = the control's centre, localY = its top, both in widget-window coords.
+  // v3.1 (Terry) — TIP_GAP lifts the whole tooltip a few px CLEAR of the button so its caret/edge
+  // never overlaps the control ("a little bit of the screen between the floating buttons and the tooltip").
+  const TIP_GAP = 9;
   let x = Math.round(wb.x + localX - TIP_W / 2);
-  let y = Math.round(wb.y + localY - TIP_H);
+  let y = Math.round(wb.y + localY - TIP_H - TIP_GAP);
   x = Math.max(disp.x, Math.min(x, disp.x + disp.width - TIP_W));
   y = Math.max(disp.y, y);
   try { tooltipWindow.setBounds({ x, y, width: TIP_W, height: TIP_H }); } catch { /* non-fatal */ }

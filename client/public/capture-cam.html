@@ -66,9 +66,10 @@
   #shell.square { border-radius: 22px; }
   #shell.rectangle { border-radius: 14px; }
   #shell.visible { opacity: 1; transform: scale(1); }
-  /* v3.1 (Terry SS1) — shape / size / zoom controls sit on the bubble and are VISIBLE while you set
-     up (armed), then fade to hover-only once RECORDING starts, so they're never in the footage.
-     Previously hover-only ALWAYS, so Terry never found them ("still no way to change shape/size/zoom"). */
+  /* v3.1 (Terry) — shape / size / zoom / backdrop controls. Shown whenever the mouse is over the
+     camera window (JS-tracked — CSS :hover flickered on the transparent bubble, so they "disappeared
+     randomly"), hidden when the mouse leaves. Same in armed + recording, so they only appear in the
+     footage while you're actively adjusting. */
   #ctrls {
     position: absolute;
     left: 50%;
@@ -76,13 +77,13 @@
     transform: translateX(-50%);
     display: flex;
     gap: 6px;
-    opacity: 1;
+    opacity: 0;
+    pointer-events: none;
     transition: opacity 0.15s ease;
     -webkit-app-region: no-drag;
-    z-index: 5;
+    z-index: 6;
   }
-  body.rec #ctrls { opacity: 0; }
-  body.rec #shell:hover #ctrls { opacity: 1; }
+  body.ctrls-on #ctrls { opacity: 1; pointer-events: auto; }
   .cbtn {
     width: 26px; height: 26px;
     border-radius: 13px;
@@ -95,7 +96,41 @@
     padding: 0;
   }
   .cbtn:hover { background: rgba(254, 194, 66, 0.9); color: #14121f; border-color: rgba(254, 194, 66, 1); }
+  .cbtn.on { background: rgba(254, 194, 66, 0.9); color: #14121f; border-color: rgba(254, 194, 66, 1); }
   .cbtn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
+  /* v3.1 (Terry) — backdrop swatch grid, popped from the Backdrop pill. Sits INSIDE the bubble window
+     (so it can't be clipped), centred just above the control row. */
+  #bdpop {
+    position: absolute;
+    left: 50%;
+    bottom: 26%;
+    transform: translateX(-50%);
+    display: none;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 5px;
+    padding: 7px;
+    background: rgba(10, 10, 16, 0.9);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    border-radius: 10px;
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    -webkit-app-region: no-drag;
+    z-index: 7;
+  }
+  #bdpop.open { display: grid; }
+  .bdsw {
+    width: 26px; height: 26px;
+    border-radius: 7px;
+    border: 1.5px solid rgba(255, 255, 255, 0.3);
+    cursor: pointer;
+    padding: 0;
+    display: flex; align-items: center; justify-content: center;
+    color: #fff;
+    background: #2a2933;
+    overflow: hidden;
+  }
+  .bdsw:hover { border-color: #FEC242; }
+  .bdsw.sel { border-color: #FEC242; box-shadow: 0 0 0 1.5px #FEC242; }
+  .bdsw svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
   video, #camc {
     position: absolute;
     inset: 0;
@@ -136,7 +171,13 @@
         <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
       <button id="zoomBtn" class="cbtn" type="button" title="Zoom in on yourself — 1× / 1.3× / 1.6×">1×</button>
+      <!-- v3.1 (Terry) — BACKDROP is now set right here on the camera (per camera; no bar clutter). -->
+      <button id="bdBtn" class="cbtn" type="button" title="Backdrop — blur, a PDR colour, your own picture, or none">
+        <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
+      </button>
     </div>
+    <!-- v3.1 (Terry) — the backdrop swatch grid, popped from the Backdrop pill; sits inside the bubble. -->
+    <div id="bdpop"></div>
     <div id="err">Camera unavailable</div>
   </div>
 <script>
@@ -182,6 +223,61 @@
   function setShellShape(shape) {
     shell.classList.remove('circle', 'square', 'rectangle');
     shell.classList.add(shape === 'square' ? 'square' : shape === 'rectangle' ? 'rectangle' : 'circle');
+  }
+
+  // v3.1 (Terry) — reliable "controls visible while the mouse is over the camera" via JS (CSS :hover
+  // flickered on the transparent bubble so they "disappeared randomly"). mousemove keeps them alive;
+  // leaving the window hides them after a short grace so brushing an edge doesn't flicker.
+  var ctrlsHideT = null;
+  function ctrlsShow() { if (ctrlsHideT) { clearTimeout(ctrlsHideT); ctrlsHideT = null; } document.body.classList.add('ctrls-on'); }
+  function ctrlsHideSoon() { if (ctrlsHideT) clearTimeout(ctrlsHideT); ctrlsHideT = setTimeout(function () { document.body.classList.remove('ctrls-on'); closeBackdropPop(); }, 260); }
+  document.addEventListener('mousemove', ctrlsShow);
+  document.documentElement.addEventListener('mouseenter', ctrlsShow);
+  document.documentElement.addEventListener('mouseleave', ctrlsHideSoon);
+
+  // v3.1 (Terry) — BACKDROP picker ON the camera itself (per camera, no bar clutter). The Backdrop
+  // pill pops a swatch grid — None, Blur, the six PDR colours, My picture (library pick). Each choice
+  // applies to THIS camera locally and persists via main (which knows which camera this window is).
+  var bdBtn = document.getElementById('bdBtn');
+  var bdpop = document.getElementById('bdpop');
+  var bdOpen = false;
+  var GRAD_LABELS = { lavender: 'Lavender', gold: 'Gold', studio: 'Dark Studio', navy: 'Navy', fuchsia: 'Fuchsia', forest: 'Forest' };
+  function bdBubbleSet(bg) { try { if (pdr && pdr.capture && pdr.capture.camBubbleSetBg) pdr.capture.camBubbleSetBg(bg); } catch (e) {} }
+  function bdKey(bg) { if (!bg || !bg.type || bg.type === 'none') return 'none'; if (bg.type === 'blur') return 'blur'; if (bg.type === 'gradient') return 'g:' + (bg.value || ''); if (bg.type === 'image') return 'image'; return 'none'; }
+  function buildBackdropPop() {
+    var html = '';
+    html += '<button class="bdsw" data-bd="none" title="No backdrop"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg></button>';
+    html += '<button class="bdsw" data-bd="blur" title="Blur your room"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg></button>';
+    Object.keys(GRADIENTS).forEach(function (k) {
+      var g = GRADIENTS[k];
+      html += '<button class="bdsw" data-bd="g:' + k + '" title="' + (GRAD_LABELS[k] || k) + '" style="background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ');border-color:rgba(255,255,255,0.4)"></button>';
+    });
+    html += '<button class="bdsw" data-bd="pick" title="My picture (from your library)"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg></button>';
+    bdpop.innerHTML = html;
+    var cur = bdKey(currentBg);
+    Array.prototype.forEach.call(bdpop.querySelectorAll('.bdsw'), function (sw) {
+      if (sw.getAttribute('data-bd') === cur) sw.classList.add('sel');
+      sw.addEventListener('click', function (e) {
+        e.stopPropagation();
+        var v = sw.getAttribute('data-bd');
+        if (v === 'pick') { closeBackdropPop(); try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (err) {} return; }
+        var bg = (v === 'blur') ? { type: 'blur' } : (v.indexOf('g:') === 0) ? { type: 'gradient', value: v.slice(2) } : { type: 'none' };
+        segFailed = false; applyBg(bg); bdBubbleSet(bg);
+        closeBackdropPop();
+      });
+    });
+  }
+  function openBackdropPop() { buildBackdropPop(); bdpop.classList.add('open'); bdBtn.classList.add('on'); bdOpen = true; }
+  function closeBackdropPop() { if (!bdpop) return; bdpop.classList.remove('open'); bdBtn.classList.remove('on'); bdOpen = false; }
+  bdBtn.addEventListener('click', function (e) { e.stopPropagation(); if (bdOpen) closeBackdropPop(); else openBackdropPop(); });
+  document.addEventListener('click', function (e) { if (bdOpen && !bdpop.contains(e.target) && e.target !== bdBtn) closeBackdropPop(); });
+  // The library "My picture" pick routes back to THIS window (it was the requester); apply + persist.
+  if (pdr && pdr.capture && pdr.capture.onCamBgPicked) {
+    pdr.capture.onCamBgPicked(function (path) {
+      if (!path || /\.(mp4|mov|webm|avi|mkv|m4v|3gp|wmv|mts|m2ts|mpg|mpeg)$/i.test(path)) return;   // a backdrop is a picture
+      var bg = { type: 'image', value: path };
+      segFailed = false; applyBg(bg); bdBubbleSet(bg);
+    });
   }
 
   function fadeIn() {
@@ -397,7 +493,6 @@
         else if (cmd.action === 'hide') fadeOut();
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
         else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
-        else if (cmd.action === 'phase') { document.body.classList.toggle('rec', !!cmd.recording); }   // v3.1 — hide controls once recording
       });
     }
   }

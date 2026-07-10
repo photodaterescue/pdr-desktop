@@ -514,6 +514,9 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // camSizeCycle steps the given bubble Sâ†’Mâ†’L (main resizes the window + persists).
     camSizeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-size', info),
     camShapeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-shape', info),   // v3.1 (Terry SS1) — circle/square/rectangle per camera
+    // v3.1 (Terry) — the BACKDROP is now set from a button ON the cam bubble; the bubble tells main to
+    // persist it (main knows which camera this window is from the sender), and applies it locally itself.
+    camBubbleSetBg: (bg: { type: string; value?: string }) => ipcRenderer.send('capture:cam-bubble-set-bg', bg),
     // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
     // v2.1 round 139 â€” these (and the region-overlay channels below)
     // were briefly trapped inside the `collage` namespace when round

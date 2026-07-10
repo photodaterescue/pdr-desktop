@@ -192,7 +192,7 @@
   /* Round 128 — quality is a real dropdown (Terry: cycling isn't
      discoverable). Styled to sit in the button family; the open list
      itself is OS-rendered. */
-  #quality, #cambg {
+  #quality {
     -webkit-app-region: no-drag;
     width: 92px;
     height: 32px;
@@ -205,25 +205,9 @@
     cursor: pointer;
     flex-shrink: 0;
   }
-  #quality:hover, #cambg:hover { background: rgba(255, 255, 255, 0.14); }
-  #quality:disabled, #cambg:disabled { opacity: 0.45; }
-  #quality option, #cambg option { background: #16161a; color: #fff; }
-  /* v3.1 (Terry) — the camera Background picker rides next to Cam; hidden until the bubble exists. */
-  #cambg { display: none; width: 104px; }
-  #cambg.show { display: block; }
-  /* v3.1 (Terry SS1) — per-camera target toggle; only shown when BOTH cameras are on. */
-  #cambgWho {
-    display: none;
-    -webkit-app-region: no-drag;
-    height: 32px; padding: 0 8px;
-    border: 1px solid rgba(255, 255, 255, 0.18);
-    background: rgba(255, 255, 255, 0.06);
-    color: #fff; border-radius: 8px;
-    font: 600 11.5px/1 system-ui, 'Segoe UI', sans-serif;
-    cursor: pointer; flex-shrink: 0;
-  }
-  #cambgWho:hover { background: rgba(255, 255, 255, 0.14); }
-  #cambgWho.show { display: inline-block; }
+  #quality:hover { background: rgba(255, 255, 255, 0.14); }
+  #quality:disabled { opacity: 0.45; }
+  #quality option { background: #16161a; color: #fff; }
   /* Round 131 — Screen dropdown (armed only): pick which display to
      record, after the menu is up, never silently assumed. Same look
      as the quality dropdown. */
@@ -316,23 +300,8 @@
     <select id="screen" title="Which screen to record"></select>
     <button id="area" type="button" title="Choose an area to record — arrange your windows first, then drag a box (or click a window)">Area</button>
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
-    <!-- v3.1 (Terry) — camera VIRTUAL BACKGROUND (no greenscreen needed): blur your room, a PDR
-         backdrop, or your own picture (e.g. a design saved from Collages with your logo). Shown
-         only while the camera bubble is on; runs entirely on this PC.
-         v3.1 (Terry SS1) — the [Cam 1|Cam 2] toggle appears when both cameras are on, so the
-         backdrop below applies to WHICHEVER camera you choose (cam 2 no longer inherits cam 1's). -->
-    <button id="cambgWho" type="button" title="This backdrop is for this camera — click to switch which camera it applies to">Cam 1</button>
-    <select id="cambg" title="Camera background — blur your room, a PDR backdrop, or your own picture (all on-device, no greenscreen needed)">
-      <option value="none" selected>No backdrop</option>
-      <option value="blur">Blur room</option>
-      <option value="g:lavender">Lavender</option>
-      <option value="g:gold">Gold</option>
-      <option value="g:studio">Dark Studio</option>
-      <option value="g:navy">Navy</option>
-      <option value="g:fuchsia">Fuchsia</option>
-      <option value="g:forest">Forest</option>
-      <option value="pick">My picture…</option>
-    </select>
+    <!-- v3.1 (Terry) — the camera BACKDROP now lives ON the camera bubble itself (the Backdrop pill),
+         per camera — so it's off the bar (less clutter) and there's no "which camera?" confusion. -->
     <!-- v3.1 (Terry) — SECOND camera bubble. Only appears when Windows reports 2+ cameras. Runs
          alongside Cam or on its own — each button toggles its own bubble. -->
     <button id="cam2" type="button" title="Show or hide a second camera bubble (your other camera) in the recording" style="display:none">Cam 2</button>
@@ -375,8 +344,6 @@
   var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
   var cam2Btn = document.getElementById('cam2');     // v3.1 (Terry) — second camera bubble (shown when 2+ cameras exist)
-  var cambgSel = document.getElementById('cambg');   // v3.1 (Terry) — camera virtual-background picker
-  var cambgWho = document.getElementById('cambgWho');// v3.1 (Terry SS1) — which camera the backdrop targets
   var micBtn = document.getElementById('mic');
   var micSel = document.getElementById('micSel');
   var clicksBtn = document.getElementById('clicks');
@@ -391,7 +358,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, cambgWho, cambgSel, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -747,83 +714,8 @@
     } catch (e) {}
   })();
 
-  // ── v3.1 (Terry): camera VIRTUAL BACKGROUND picker. Values: none | blur | g:<gradient id> |
-  // pick ("My picture…" → native image dialog → a dynamic 'image' option holding the path).
-  // Main persists the choice + relays it live to the bubble, which composites on-device.
-  // v3.1 (Terry SS1) — PER-CAMERA backdrop. The dropdown targets ONE camera (cambgWhich); the
-  // [Cam 1|Cam 2] toggle switches which. Each camera's choice is remembered in cambgState so cam 2
-  // no longer inherits cam 1's backdrop. camSetBg carries `which` so main stores + applies per camera.
-  var cambgWhich = 1;
-  var cambgState = { 1: { val: 'none', imgPath: '' }, 2: { val: 'none', imgPath: '' } };
-  var cambgPickWhich = 1;   // which camera the in-flight "My picture" pick is for
-  function cambgSendTo(which, bg) { try { if (pdr && pdr.capture && pdr.capture.camSetBg) pdr.capture.camSetBg(bg, which); } catch (e) {} }
-  function bgToVal(cb) {
-    if (!cb || !cb.type || cb.type === 'none') return { val: 'none', imgPath: '' };
-    if (cb.type === 'blur') return { val: 'blur', imgPath: '' };
-    if (cb.type === 'gradient' && cb.value) return { val: 'g:' + cb.value, imgPath: '' };
-    if (cb.type === 'image' && cb.value) return { val: 'image', imgPath: cb.value };
-    return { val: 'none', imgPath: '' };
-  }
-  function valToBg(v, imgPath) {
-    if (v === 'blur') return { type: 'blur' };
-    if (v.indexOf('g:') === 0) return { type: 'gradient', value: v.slice(2) };
-    if (v === 'image') return { type: 'image', value: imgPath || '' };
-    return { type: 'none' };
-  }
-  function cambgSetImageOption(path) {
-    var opt = cambgSel.querySelector('option[value="image"]');
-    if (!opt) {
-      opt = document.createElement('option');
-      opt.value = 'image';
-      cambgSel.insertBefore(opt, cambgSel.querySelector('option[value="pick"]'));
-    }
-    var base = String(path).split(/[\\/]/).pop() || 'My picture';
-    opt.textContent = base.length > 14 ? base.slice(0, 13) + '…' : base;
-    opt.dataset.path = path;
-    cambgSel.value = 'image';
-  }
-  // Point the dropdown at a given camera's stored choice + label the toggle.
-  function cambgReflect(which) {
-    cambgWhich = which;
-    var st = cambgState[which];
-    if (st.val === 'image' && st.imgPath) cambgSetImageOption(st.imgPath);
-    else cambgSel.value = st.val;
-    cambgWho.textContent = 'Cam ' + which;
-    cambgWho.title = 'This backdrop is for Camera ' + which + ' — click to switch to the other camera';
-  }
-  cambgWho.addEventListener('click', function () {
-    if (finished) return;
-    cambgReflect(cambgWhich === 1 ? 2 : 1);
-  });
-  // v3.1 (Terry) — "My picture…" picks from MEMORIES (the library — "that's where the library is"),
-  // not a native Windows dialog: main focuses the PDR window in pick mode; the chosen photo routes
-  // straight back here on photoPick:picked (purpose 'cam-bg'). Videos are ignored (a backdrop is a
-  // picture); picking one leaves the current backdrop unchanged.
-  function cambgIsVideoPath(p) { return /\.(mp4|mov|webm|avi|mkv|m4v|3gp|wmv|mts|m2ts|mpg|mpeg)$/i.test(String(p || '')); }
-  if (pdr && pdr.capture && pdr.capture.onCamBgPicked) {
-    pdr.capture.onCamBgPicked(function (path) {
-      if (!path || cambgIsVideoPath(path)) return;
-      var w = cambgPickWhich || cambgWhich;
-      cambgState[w] = { val: 'image', imgPath: path };
-      if (w === cambgWhich) cambgSetImageOption(path);   // reflect only if it's the camera on screen in the dropdown
-      cambgSendTo(w, { type: 'image', value: path });
-    });
-  }
-  cambgSel.addEventListener('change', function () {
-    if (finished) return;
-    var v = cambgSel.value;
-    if (v === 'pick') {
-      // Async library pick — remember which camera it's for, revert the visible selection meanwhile.
-      cambgPickWhich = cambgWhich;
-      cambgReflect(cambgWhich);
-      try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {}
-      return;
-    }
-    var st = cambgState[cambgWhich];
-    st.val = v;
-    if (v !== 'image') st.imgPath = '';
-    cambgSendTo(cambgWhich, valToBg(v, st.imgPath));
-  });
+  // v3.1 (Terry) — the camera BACKDROP picker moved OFF the bar and ONTO the camera bubble itself
+  // (the Backdrop pill, per camera — see capture-cam.html). Nothing backdrop-related lives on the bar now.
 
   // ── v3.0 round 410: Microphone / voiceover ──
   // ARMED: the Mic button toggles whether your voice is recorded (the device
@@ -1072,12 +964,6 @@
         }
         // v3.0 round 410 — restore the saved mic preference + device, light the
         // Mic button if on, and populate the device dropdown.
-        // v3.1 (Terry SS1) — restore EACH camera's remembered backdrop, then reflect cam 1.
-        try {
-          cambgState[1] = bgToVal(storedInit.camBg || { type: 'none' });
-          cambgState[2] = bgToVal(storedInit.cam2Bg || { type: 'none' });
-          cambgReflect(1);
-        } catch (e) {}
         micOn = storedInit.mic === true;
         micDeviceId = storedInit.micDevice || '';
         micBtn.classList.toggle('on', micOn);
@@ -1147,16 +1033,9 @@
         else if (cmd.action === 'cam-state') {
           camBtn.classList.toggle('active', !!cmd.visible);
           camBtn.title = cmd.visible ? 'Camera is in the recording — click to hide it' : 'Show or hide your camera bubble in the recording';
-          // v3.1 (Terry) — second camera lights its own button.
+          // v3.1 (Terry) — second camera lights its own button. (Backdrop now lives on each bubble.)
           cam2Btn.classList.toggle('active', !!cmd.visible2);
           cam2Btn.title = cmd.visible2 ? 'Second camera is in the recording — click to hide it' : 'Show or hide a second camera bubble (your other camera) in the recording';
-          // v3.1 (Terry SS1) — the Background picker shows while EITHER bubble is on; the [Cam 1|Cam 2]
-          // toggle only when BOTH are on. Point the dropdown at the sensible camera.
-          var anyOn = !!cmd.visible || !!cmd.visible2;
-          var bothOn = !!cmd.visible && !!cmd.visible2;
-          cambgSel.classList.toggle('show', anyOn);
-          cambgWho.classList.toggle('show', bothOn);
-          if (!bothOn) cambgReflect(cmd.visible2 && !cmd.visible ? 2 : 1);
           requestResize();
         }
         else if (cmd.action === 'blur-opened') {
