@@ -517,6 +517,17 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.1 (Terry) — the BACKDROP is now set from a button ON the cam bubble; the bubble tells main to
     // persist it (main knows which camera this window is from the sender), and applies it locally itself.
     camBubbleSetBg: (bg: { type: string; value?: string }) => ipcRenderer.send('capture:cam-bubble-set-bg', bg),
+    // v3.1 (Terry) — the backdrop picker is its OWN roomy window (the bubble is too small for the scene
+    // thumbnails). The bubble opens it; the picker sends choices back; main applies + persists per camera.
+    camOpenPicker: (info: { which: number }) => ipcRenderer.send('capture:cam-open-picker', info),
+    onPickerInit: (callback: (info: { which: number; current: { type: string; value?: string } }) => void) => {
+      const handler = (_event: any, info: any) => callback(info);
+      ipcRenderer.on('capture:cam-picker-init', handler);
+      return () => ipcRenderer.removeListener('capture:cam-picker-init', handler);
+    },
+    camPickerChoose: (info: { which: number; bg: { type: string; value?: string } }) => ipcRenderer.send('capture:cam-picker-choose', info),
+    camPickerPick: (info: { which: number }) => ipcRenderer.send('capture:cam-picker-pick', info),
+    camPickerClose: () => ipcRenderer.send('capture:cam-picker-close'),
     // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
     // v2.1 round 139 â€” these (and the region-overlay channels below)
     // were briefly trapped inside the `collage` namespace when round

@@ -4212,7 +4212,75 @@ function closeCamBubble(): void {
     camVisibles[which] = false;
   }
   stopCamHoverPoll();   // v3.1 (Terry) — no bubbles left → stop the cursor poll
+  closeBackdropPicker();
 }
+
+// v3.1 (Terry) — the BACKDROP PICKER is its own roomy window (the bubble is too small for the scene
+// thumbnails). Opened from the bubble's Backdrop button; content-protected so it never appears in the
+// footage; centred on the recorded display. Choices route back through main to persist + apply per camera.
+let backdropPickerWindow: BrowserWindow | null = null;
+function closeBackdropPicker(): void {
+  if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
+    try { backdropPickerWindow.close(); } catch { /* non-fatal */ }
+  }
+  backdropPickerWindow = null;
+}
+function createBackdropPicker(which: number): void {
+  if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
+    try {
+      backdropPickerWindow.webContents.send('capture:cam-picker-init', { which, current: getCamBg(which) });
+      backdropPickerWindow.show(); backdropPickerWindow.focus();
+    } catch { /* non-fatal */ }
+    return;
+  }
+  const display = recordDisplay || screen.getPrimaryDisplay();
+  const W = 620, H = 560;
+  const x = Math.round(display.bounds.x + (display.bounds.width - W) / 2);
+  const y = Math.round(display.bounds.y + (display.bounds.height - H) / 2);
+  const win = new BrowserWindow({
+    width: W, height: H, x, y, frame: false, show: false, resizable: false,
+    minimizable: false, maximizable: false, fullscreenable: false, skipTaskbar: true, alwaysOnTop: true,
+    backgroundColor: '#14131c',
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false },
+  });
+  backdropPickerWindow = win;
+  try { win.setAlwaysOnTop(true, 'screen-saver'); } catch { /* non-fatal */ }
+  try { win.setContentProtection(true); } catch { /* non-fatal */ }   // never in the footage
+  win.setMenu(null);
+  win.on('closed', () => { if (backdropPickerWindow === win) backdropPickerWindow = null; });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('capture:cam-picker-init', { which, current: getCamBg(which) });
+    win.show(); win.focus();
+  });
+  void win.loadFile(path.join(__dirname, '../dist/public/capture-backdrop-picker.html'));
+}
+ipcMain.on('capture:cam-open-picker', (event, info?: { which?: number }) => {
+  const which = info && info.which === 2 ? 2 : 1;
+  const win = camWindows[which];
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return;   // opener must be that camera's bubble
+  createBackdropPicker(which);
+});
+ipcMain.on('capture:cam-picker-choose', (event, info?: { which?: number; bg?: { type?: string; value?: string } }) => {
+  if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
+  const which = info && info.which === 2 ? 2 : 1;
+  const bg = info && info.bg;
+  const clean = { type: String((bg && bg.type) || 'none'), value: (bg && typeof bg.value === 'string') ? bg.value : undefined };
+  try { setSetting(camBgSettingKey(which), clean); } catch { /* non-fatal */ }
+  const win = camWindows[which];
+  if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ } }
+  log.info(`[capture] cam ${which} backdrop (picker) → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
+});
+ipcMain.on('capture:cam-picker-pick', (event, info?: { which?: number }) => {
+  if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
+  const which = info && info.which === 2 ? 2 : 1;
+  closeBackdropPicker();   // the library pick brings the main PDR window forward; get the picker out of the way
+  const win = camWindows[which];
+  if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'pick-image' }); } catch { /* non-fatal */ } }
+});
+ipcMain.on('capture:cam-picker-close', (event) => {
+  if (backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents) closeBackdropPicker();
+});
 
 function registerCamHotkey(): void {
   const accelerator = (() => {

@@ -98,45 +98,6 @@
   .cbtn:hover { background: rgba(254, 194, 66, 0.9); color: #14121f; border-color: rgba(254, 194, 66, 1); }
   .cbtn.on { background: rgba(254, 194, 66, 0.9); color: #14121f; border-color: rgba(254, 194, 66, 1); }
   .cbtn svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
-  /* v3.1 (Terry) — backdrop swatch grid, popped from the Backdrop pill. Sits INSIDE the bubble window
-     (so it can't be clipped), centred just above the control row. */
-  #bdpop {
-    position: absolute;
-    left: 50%;
-    bottom: 24%;
-    transform: translateX(-50%);
-    display: none;
-    grid-template-columns: repeat(5, 1fr);
-    gap: 5px;
-    padding: 7px;
-    /* v3.1 (Terry) — many backdrops now (colours + textures + realistic scenes), so the grid scrolls
-       inside the bubble instead of overflowing it. */
-    max-height: 132px;
-    overflow-y: auto;
-    background: rgba(10, 10, 16, 0.92);
-    border: 1px solid rgba(255, 255, 255, 0.28);
-    border-radius: 10px;
-    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
-    -webkit-app-region: no-drag;
-    z-index: 7;
-  }
-  #bdpop.open { display: grid; }
-  #bdpop::-webkit-scrollbar { width: 6px; }
-  #bdpop::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.28); border-radius: 3px; }
-  .bdsw {
-    width: 26px; height: 26px;
-    border-radius: 7px;
-    border: 1.5px solid rgba(255, 255, 255, 0.3);
-    cursor: pointer;
-    padding: 0;
-    display: flex; align-items: center; justify-content: center;
-    color: #fff;
-    background: #2a2933;
-    overflow: hidden;
-  }
-  .bdsw:hover { border-color: #FEC242; }
-  .bdsw.sel { border-color: #FEC242; box-shadow: 0 0 0 1.5px #FEC242; }
-  .bdsw svg { width: 14px; height: 14px; stroke: currentColor; fill: none; stroke-width: 2; stroke-linecap: round; }
   /* v3.1 (Terry) — PDR-style tooltip for the camera controls (was native `title`). Lives inside the
      bubble; short labels so it fits the small window. Matches the app's dark tooltip look. */
   #camtip {
@@ -199,8 +160,6 @@
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
       </button>
     </div>
-    <!-- v3.1 (Terry) — the backdrop swatch grid, popped from the Backdrop pill; sits inside the bubble. -->
-    <div id="bdpop"></div>
     <!-- v3.1 (Terry) — PDR-style tooltip for the camera controls (replaces native `title`). -->
     <div id="camtip"></div>
     <div id="err">Camera unavailable</div>
@@ -257,7 +216,7 @@
   // the window bounds and tells us. The short grace on hide stops flicker at the very edge.
   var ctrlsHideT = null;
   function ctrlsShow() { if (ctrlsHideT) { clearTimeout(ctrlsHideT); ctrlsHideT = null; } document.body.classList.add('ctrls-on'); }
-  function ctrlsHideSoon() { if (ctrlsHideT) clearTimeout(ctrlsHideT); ctrlsHideT = setTimeout(function () { document.body.classList.remove('ctrls-on'); closeBackdropPop(); hideCamtip(); }, 260); }
+  function ctrlsHideSoon() { if (ctrlsHideT) clearTimeout(ctrlsHideT); ctrlsHideT = setTimeout(function () { document.body.classList.remove('ctrls-on'); hideCamtip(); }, 260); }
 
   // v3.1 (Terry) — PDR-style tooltip for the camera pills (replaces the native `title`). Short labels;
   // positioned above the hovered control and clamped inside the bubble.
@@ -278,64 +237,16 @@
   function wireTip(el) { if (!el) return; el.addEventListener('mouseenter', function () { showCamtip(el); }); el.addEventListener('mouseleave', hideCamtip); }
   ['shapeBtn', 'sizeBtn', 'zoomBtn', 'bdBtn'].forEach(function (id) { wireTip(document.getElementById(id)); });
 
-  // v3.1 (Terry) — BACKDROP picker ON the camera itself (per camera, no bar clutter). The Backdrop
-  // pill pops a swatch grid — None, Blur, the six PDR colours, My picture (library pick). Each choice
-  // applies to THIS camera locally and persists via main (which knows which camera this window is).
+  // v3.1 (Terry) — the Backdrop button opens the roomy PICKER WINDOW (the camera bubble is too small
+  // for the scene thumbnails). Choices come back from main as cam-do {action:'set-bg'}; "My picture"
+  // comes back as cam-do {action:'pick-image'} → the library pick below, whose result we apply here.
+  // The backdrop CATALOG (scenes/colours/textures) lives in capture-backdrop-picker.html now.
   var bdBtn = document.getElementById('bdBtn');
-  var bdpop = document.getElementById('bdpop');
-  var bdOpen = false;
-  var GRAD_LABELS = { lavender: 'Lavender', gold: 'Gold', studio: 'Dark Studio', navy: 'Navy', fuchsia: 'Fuchsia', forest: 'Forest' };
-  // v3.1 (Terry) — the PDR-original textured backdrops, as swatches (id + label + a CSS preview).
-  var TEXTURES_LIST = [
-    { id: 'bokehWarm', label: 'Warm bokeh', sw: 'radial-gradient(circle at 32% 30%, #ffce78, #2a1e08)' },
-    { id: 'bokehCool', label: 'Cool bokeh', sw: 'radial-gradient(circle at 32% 30%, #aab6ff, #141b33)' },
-    { id: 'spotlight', label: 'Spotlight', sw: 'radial-gradient(circle at 50% 26%, #ffffff, #0c0c12)' },
-    { id: 'mesh', label: 'Mesh', sw: 'linear-gradient(135deg, #A99CFF, #D946EF 55%, #FEC242)' },
-  ];
-  // v3.1 (Terry) — bundled PDR SCENE backdrops (realistic rooms, offices, nature). All from Pexels
-  // (free for commercial use, no attribution), curated to empty scenes with no people or brand logos.
-  var SCENES_LIST = [
-    { id: 'office', label: 'Office' }, { id: 'coworking', label: 'Co-working' }, { id: 'study', label: 'Study' }, { id: 'studio', label: 'Studio flat' },
-    { id: 'lounge-bright', label: 'Bright lounge' }, { id: 'lounge-neutral', label: 'Cosy lounge' }, { id: 'lounge-pastel', label: 'Pastel lounge' }, { id: 'lounge-plant', label: 'Plant lounge' }, { id: 'fireplace', label: 'Fireplace' },
-    { id: 'loft', label: 'Loft' }, { id: 'minimal-white', label: 'Minimal white' }, { id: 'minimal-bright', label: 'Bright minimal' }, { id: 'neutral-wall', label: 'Neutral wall' },
-    { id: 'reading-nook', label: 'Reading nook' }, { id: 'library', label: 'Library' }, { id: 'plants', label: 'Plants' },
-  ];
   function bdBubbleSet(bg) { try { if (pdr && pdr.capture && pdr.capture.camBubbleSetBg) pdr.capture.camBubbleSetBg(bg); } catch (e) {} }
-  function bdKey(bg) { if (!bg || !bg.type || bg.type === 'none') return 'none'; if (bg.type === 'blur') return 'blur'; if (bg.type === 'gradient') return 'g:' + (bg.value || ''); if (bg.type === 'texture') return 't:' + (bg.value || ''); if (bg.type === 'scene') return 's:' + (bg.value || ''); if (bg.type === 'image') return 'image'; return 'none'; }
-  function buildBackdropPop() {
-    var html = '';
-    html += '<button class="bdsw" data-bd="none" data-tip="No backdrop"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg></button>';
-    html += '<button class="bdsw" data-bd="blur" data-tip="Blur"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg></button>';
-    SCENES_LIST.forEach(function (sc) {   // v3.1 (Terry) — realistic scene backdrops (Pexels, commercial-free), thumbnail preview
-      html += '<button class="bdsw" data-bd="s:' + sc.id + '" data-tip="' + sc.label + '" style="background-image:url(cam-backdrops/thumb-' + sc.id + '.jpg);background-size:cover;background-position:center;border-color:rgba(255,255,255,0.4)"></button>';
-    });
-    Object.keys(GRADIENTS).forEach(function (k) {
-      var g = GRADIENTS[k];
-      html += '<button class="bdsw" data-bd="g:' + k + '" data-tip="' + (GRAD_LABELS[k] || k) + '" style="background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ');border-color:rgba(255,255,255,0.4)"></button>';
-    });
-    TEXTURES_LIST.forEach(function (tx) {   // v3.1 (Terry) — PDR-original textured backdrops
-      html += '<button class="bdsw" data-bd="t:' + tx.id + '" data-tip="' + tx.label + '" style="background:' + tx.sw + ';border-color:rgba(255,255,255,0.4)"></button>';
-    });
-    html += '<button class="bdsw" data-bd="pick" data-tip="My picture"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg></button>';
-    bdpop.innerHTML = html;
-    var cur = bdKey(currentBg);
-    Array.prototype.forEach.call(bdpop.querySelectorAll('.bdsw'), function (sw) {
-      if (sw.getAttribute('data-bd') === cur) sw.classList.add('sel');
-      wireTip(sw);   // v3.1 (Terry) — PDR-style tooltip on each swatch
-      sw.addEventListener('click', function (e) {
-        e.stopPropagation();
-        var v = sw.getAttribute('data-bd');
-        if (v === 'pick') { closeBackdropPop(); try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (err) {} return; }
-        var bg = (v === 'blur') ? { type: 'blur' } : (v.indexOf('g:') === 0) ? { type: 'gradient', value: v.slice(2) } : (v.indexOf('t:') === 0) ? { type: 'texture', value: v.slice(2) } : (v.indexOf('s:') === 0) ? { type: 'scene', value: v.slice(2) } : { type: 'none' };
-        segFailed = false; applyBg(bg); bdBubbleSet(bg);
-        closeBackdropPop();
-      });
-    });
-  }
-  function openBackdropPop() { buildBackdropPop(); bdpop.classList.add('open'); bdBtn.classList.add('on'); bdOpen = true; }
-  function closeBackdropPop() { if (!bdpop) return; bdpop.classList.remove('open'); bdBtn.classList.remove('on'); bdOpen = false; }
-  bdBtn.addEventListener('click', function (e) { e.stopPropagation(); if (bdOpen) closeBackdropPop(); else openBackdropPop(); });
-  document.addEventListener('click', function (e) { if (bdOpen && !bdpop.contains(e.target) && e.target !== bdBtn) closeBackdropPop(); });
+  bdBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    try { if (pdr && pdr.capture && pdr.capture.camOpenPicker) pdr.capture.camOpenPicker({ which: camWhich }); } catch (err) {}
+  });
   // The library "My picture" pick routes back to THIS window (it was the requester); apply + persist.
   if (pdr && pdr.capture && pdr.capture.onCamBgPicked) {
     pdr.capture.onCamBgPicked(function (path) {
@@ -614,6 +525,7 @@
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
         else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
         else if (cmd.action === 'hover') { if (cmd.over) ctrlsShow(); else ctrlsHideSoon(); }   // v3.1 (Terry) — main-driven hover (works over the drag region)
+        else if (cmd.action === 'pick-image') { try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {} }   // v3.1 (Terry) — picker's "My picture" → library pick
       });
     }
   }
