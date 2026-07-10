@@ -8820,7 +8820,12 @@
       // (declared once near filmstripEl) so renderCarouselSlicePreview can share it; the
       // local redeclaration here was removed to avoid shadowing/duplication.
 
-      const FILMSTRIP_CHUNK_SIZE = 200;
+      // v3.1 (Terry — "Viewer won't move while loading, like Collages was") — chunk 200 → 32. Systematic
+      // measurement showed the strip build is FAST in isolation (400 files ≈ 223ms total), but chunk size
+      // sets the WORST-CASE task length when the CPU is busy (builds/indexing/thumb extraction): a 200-tile
+      // chunk that takes ~230ms idle stretches to 1-2s under contention = a dead titlebar right after open.
+      // 32-tile chunks keep every task tiny, so the window stays draggable even on a loaded machine.
+      const FILMSTRIP_CHUNK_SIZE = 32;
       let buildCursor = 0;
       // v2.0.15 (Terry 2026-06-01) — track whether we've scrolled to
       // the active thumbnail yet. updateFilmstripActive() running
