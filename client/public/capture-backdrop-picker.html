@@ -22,6 +22,12 @@
   expanded to the full 16-swatch brand palette, named verbatim ("PDR Gold" … keeps the
   brand prefix).
 
+  v3.1 (Terry, round 4) — Simple now offers BOTH Blur (whole-background) and Portrait Blur
+  (DSLR-ish depth of field), plus a live strength/size SLIDER under the grid for blur/pixelate
+  (previews live, persists on release). PDR Colours = the FULL 20-swatch palette, light→dark
+  (the picker scrolls; the window doesn't grow). Picking from Memories / This PC no longer
+  closes the window — only Done does.
+
   Clicking a backdrop applies it LIVE to that camera's bubble and stays open
   so you can try several; Done / Esc closes it. Choices route through main
   (capture:cam-picker-choose), which persists them + tells the bubble.
@@ -70,6 +76,13 @@
   .sw.sel { border-color: #FEC242; }
   .sw .lbl { position: absolute; bottom: 5px; left: 0; right: 0; text-align: center; font-size: 10.5px; color: rgba(255,255,255,0.92); text-shadow: 0 1px 3px rgba(0,0,0,0.75); }
   .sw svg { width: 26px; height: 26px; stroke: #fff; fill: none; stroke-width: 2; stroke-linecap: round; margin-bottom: 8px; }
+  /* Amount slider (blur / portrait blur / pixelate) — sits under the Simple grid. */
+  .amtRow { margin-top: 16px; padding: 0 2px; }
+  .amtHead { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; font-size: 11.5px; color: rgba(255,255,255,0.72); }
+  .amtHead #amtVal { color: #FEC242; font-variant-numeric: tabular-nums; font-weight: 600; }
+  #amtSlider { -webkit-appearance: none; appearance: none; width: 100%; height: 5px; border-radius: 3px; background: rgba(255,255,255,0.18); outline: none; -webkit-app-region: no-drag; cursor: pointer; }
+  #amtSlider::-webkit-slider-thumb { -webkit-appearance: none; appearance: none; width: 17px; height: 17px; border-radius: 50%; background: #FEC242; border: 2px solid #1a1824; cursor: pointer; box-shadow: 0 1px 4px rgba(0,0,0,0.5); }
+  #amtSlider::-webkit-slider-thumb:hover { background: #FFD166; }
 </style>
 </head>
 <body>
@@ -110,23 +123,30 @@
   // "PDR" collection. Names keep the "PDR " prefix on purpose: it's the brand association. Rendered
   // as a gentle gradient (the palette hex → a shade blended toward the brand near-black) for depth.
   var COLOURS = [
-    { key: 'gold', name: 'PDR Gold', hex: '#FEC242' },
-    { key: 'lavender', name: 'PDR Lavender', hex: '#A99CFF' },
-    { key: 'aipurple', name: 'PDR AI Purple', hex: '#8B5CF6' },
-    { key: 'aipink', name: 'PDR AI Pink', hex: '#D946EF' },
-    { key: 'collages', name: 'PDR Collages', hex: '#283593' },
-    { key: 'trees', name: 'PDR Trees', hex: '#10B981' },
-    { key: 'snd', name: 'PDR S&D', hex: '#3B82F6' },
-    { key: 'recyclebin', name: 'PDR Recycle Bin', hex: '#FDA4AF' },
-    { key: 'license', name: 'PDR License', hex: '#6B5AFF' },
+    { key: 'reminder', name: 'PDR Reminder', hex: '#FFFBEB' },
     { key: 'success', name: 'PDR Success', hex: '#D1FAE5' },
+    { key: 'lavendersoft', name: 'PDR Lavender Soft', hex: '#EFECFF' },
+    { key: 'infosoft', name: 'PDR Info Soft', hex: '#DBEAFE' },
+    { key: 'cautionsoft', name: 'PDR Caution Soft', hex: '#FDE68A' },
+    { key: 'deletesoft', name: 'PDR Delete Soft', hex: '#FECACA' },
+    { key: 'gold', name: 'PDR Gold', hex: '#FEC242' },
+    { key: 'recyclebin', name: 'PDR Recycle Bin', hex: '#FDA4AF' },
+    { key: 'lavender', name: 'PDR Lavender', hex: '#A99CFF' },
     { key: 'caution', name: 'PDR Caution', hex: '#F59E0B' },
+    { key: 'trees', name: 'PDR Trees', hex: '#10B981' },
     { key: 'backup', name: 'PDR Backup', hex: '#D97706' },
-    { key: 'recovered', name: 'PDR Recovered', hex: '#4F46E5' },
+    { key: 'snd', name: 'PDR S&D', hex: '#3B82F6' },
+    { key: 'aipink', name: 'PDR AI Pink', hex: '#D946EF' },
+    { key: 'aipurple', name: 'PDR AI Purple', hex: '#8B5CF6' },
+    { key: 'license', name: 'PDR License', hex: '#6B5AFF' },
     { key: 'delete', name: 'PDR Delete', hex: '#EF4444' },
     { key: 'splash', name: 'PDR Splash', hex: '#7C3AED' },
-    { key: 'lavendersoft', name: 'PDR Lavender Soft', hex: '#EFECFF' },
+    { key: 'recovered', name: 'PDR Recovered', hex: '#4F46E5' },
+    { key: 'collages', name: 'PDR Collages', hex: '#283593' },
   ];
+  // Blur / Portrait Blur / Pixelate carry a 0–100 "amount" (the slider). Defaults match the cam engine.
+  var AMOUNT_DEFAULTS = { blur: 35, portraitblur: 55, pixelate: 50 };
+  var AMOUNT_LABELS = { blur: 'Blur strength', portraitblur: 'Portrait blur strength', pixelate: 'Pixelate size' };
   // Darker companion stop for the gradient — each colour blended 50% toward the brand near-black (#14131c).
   function shade(hex) {
     var m = /^#?([0-9a-fA-F]{6})$/.exec(hex); if (!m) return hex;
@@ -145,6 +165,7 @@
   function keyOf(bg) {
     if (!bg || !bg.type || bg.type === 'none') return 'none';
     if (bg.type === 'blur') return 'blur';
+    if (bg.type === 'portraitblur') return 'portraitblur';
     if (bg.type === 'pixelate') return 'pixelate';
     if (bg.type === 'gradient') return 'g:' + (bg.value || '');
     if (bg.type === 'texture') return 't:' + (bg.value || '');
@@ -155,7 +176,7 @@
   // Which tab holds a given backdrop. 'none' → Scenes so the big thumbnails greet you on open.
   function tabForBg(bg) {
     if (!bg || !bg.type || bg.type === 'none') return 'scenes';
-    if (bg.type === 'blur' || bg.type === 'pixelate' || bg.type === 'image') return 'simple';
+    if (bg.type === 'blur' || bg.type === 'portraitblur' || bg.type === 'pixelate' || bg.type === 'image') return 'simple';
     if (bg.type === 'scene') return 'scenes';
     if (bg.type === 'gradient') return 'colours';
     if (bg.type === 'texture') return 'textures';
@@ -165,6 +186,30 @@
     current = bg;
     try { if (pdr && pdr.capture && pdr.capture.camPickerChoose) pdr.capture.camPickerChoose({ which: which, bg: bg }); } catch (e) {}
     markSel();
+    syncSlider();
+  }
+  // Click a blur/pixelate MODE — keep its amount if it's already the current pick, else start at the default.
+  function chooseMode(type) {
+    var a = (current && current.type === type && typeof current.amount === 'number') ? current.amount : AMOUNT_DEFAULTS[type];
+    choose({ type: type, amount: a });
+  }
+  // Live preview while dragging the slider — applies to the camera WITHOUT persisting (persist on release).
+  function preview(bg) {
+    try { if (pdr && pdr.capture && pdr.capture.camPickerPreview) pdr.capture.camPickerPreview({ which: which, bg: bg }); } catch (e) {}
+  }
+  // Show/refresh the amount slider when a blur/pixelate mode is the current pick; hide it otherwise.
+  function syncSlider() {
+    var row = document.getElementById('amtRow'); if (!row) return;
+    var t = current && current.type;
+    if (t === 'blur' || t === 'portraitblur' || t === 'pixelate') {
+      var a = (typeof current.amount === 'number') ? current.amount : AMOUNT_DEFAULTS[t];
+      document.getElementById('amtLabel').textContent = AMOUNT_LABELS[t] || 'Amount';
+      document.getElementById('amtSlider').value = a;
+      document.getElementById('amtVal').textContent = Math.round(a) + '%';
+      row.style.display = '';
+    } else {
+      row.style.display = 'none';
+    }
   }
   function markSel() {
     var cur = keyOf(current);
@@ -194,7 +239,8 @@
     var h = '<div class="grid">';
     if (activeTab === 'simple') {
       h += '<button class="sw" data-key="none" data-act="none"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg><span class="lbl">None</span></button>';
-      h += '<button class="sw" data-key="blur" data-act="blur"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg><span class="lbl">Portrait Blur</span></button>';
+      h += '<button class="sw" data-key="blur" data-act="blur"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="7" opacity="0.5"/></svg><span class="lbl">Blur</span></button>';
+      h += '<button class="sw" data-key="portraitblur" data-act="portraitblur"><svg viewBox="0 0 24 24"><circle cx="12" cy="8" r="4"/><path d="M5 20c0-3.6 3.1-6 7-6s7 2.4 7 6"/></svg><span class="lbl">Portrait Blur</span></button>';
       h += '<button class="sw" data-key="pixelate" data-act="pixelate"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="6" height="6"/><rect x="14" y="4" width="6" height="6"/><rect x="4" y="14" width="6" height="6"/><rect x="14" y="14" width="6" height="6"/></svg><span class="lbl">Pixelate</span></button>';
       h += '<button class="sw" data-act="pick" data-src="memories"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg><span class="lbl">Memories</span></button>';
       h += '<button class="sw" data-act="pick" data-src="thispc"><svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="1"/><line x1="8" y1="20" x2="16" y2="20"/><line x1="12" y1="16" x2="12" y2="20"/></svg><span class="lbl">This PC</span></button>';
@@ -212,20 +258,43 @@
       });
     }
     h += '</div>';
+    // v3.1 (Terry) — the blur/pixelate slider lives under the Simple grid; shown only when one is picked.
+    if (activeTab === 'simple') {
+      h += '<div id="amtRow" class="amtRow" style="display:none">'
+        + '<div class="amtHead"><span id="amtLabel"></span><span id="amtVal"></span></div>'
+        + '<input id="amtSlider" type="range" min="0" max="100" value="35" /></div>';
+    }
     body.innerHTML = h;
     Array.prototype.forEach.call(body.querySelectorAll('[data-act]'), function (el) {
       el.addEventListener('click', function () {
         var act = el.getAttribute('data-act'), val = el.getAttribute('data-val');
         if (act === 'none') choose({ type: 'none' });
-        else if (act === 'blur') choose({ type: 'blur' });
-        else if (act === 'pixelate') choose({ type: 'pixelate' });
+        else if (act === 'blur') chooseMode('blur');
+        else if (act === 'portraitblur') chooseMode('portraitblur');
+        else if (act === 'pixelate') chooseMode('pixelate');
         else if (act === 'scene') choose({ type: 'scene', value: val });
         else if (act === 'gradient') choose({ type: 'gradient', value: val });
         else if (act === 'texture') choose({ type: 'texture', value: val });
         else if (act === 'pick') { try { if (pdr && pdr.capture && pdr.capture.camPickerPick) pdr.capture.camPickerPick({ which: which, source: el.getAttribute('data-src') || 'memories' }); } catch (e) {} }
       });
     });
+    var sl = document.getElementById('amtSlider');
+    if (sl) {
+      sl.addEventListener('input', function () {   // live preview, no persist
+        var t = current && current.type;
+        if (t !== 'blur' && t !== 'portraitblur' && t !== 'pixelate') return;
+        var a = parseInt(sl.value, 10); if (isNaN(a)) a = 0;
+        current = { type: t, amount: a };
+        var vEl = document.getElementById('amtVal'); if (vEl) vEl.textContent = a + '%';
+        preview(current);
+      });
+      sl.addEventListener('change', function () {   // release → persist the final amount
+        var t = current && current.type;
+        if (t === 'blur' || t === 'portraitblur' || t === 'pixelate') choose(current);
+      });
+    }
     markSel();
+    syncSlider();
   }
 
   function close() { try { if (pdr && pdr.capture && pdr.capture.camPickerClose) pdr.capture.camPickerClose(); } catch (e) {} }

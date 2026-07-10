@@ -2985,8 +2985,17 @@ function getCamShape(which: number): CamShapeKey {
 // v3.1 (Terry SS1) — PER-CAMERA backdrop. Cam 1 keeps captureCamBg; Cam 2 has captureCam2Bg (so the
 // second camera no longer inherits the first's backdrop).
 function camBgSettingKey(which: number): 'captureCamBg' | 'captureCam2Bg' { return which === 2 ? 'captureCam2Bg' : 'captureCamBg'; }
-function getCamBg(which: number): { type: string; value?: string } {
-  try { return (getSettings()[camBgSettingKey(which)] as { type: string; value?: string }) || { type: 'none' }; } catch { return { type: 'none' }; }
+function getCamBg(which: number): { type: string; value?: string; amount?: number } {
+  try { return (getSettings()[camBgSettingKey(which)] as { type: string; value?: string; amount?: number }) || { type: 'none' }; } catch { return { type: 'none' }; }
+}
+// v3.1 (Terry) — normalise a backdrop payload: type + optional value (scene/colour/image) + optional amount
+// (the blur/pixelate slider, 0–100). Extra/garbage keys are dropped before persisting.
+function cleanCamBg(bg?: { type?: string; value?: string; amount?: number }): { type: string; value?: string; amount?: number } {
+  return {
+    type: String((bg && bg.type) || 'none'),
+    value: (bg && typeof bg.value === 'string') ? bg.value : undefined,
+    amount: (bg && typeof bg.amount === 'number' && isFinite(bg.amount)) ? bg.amount : undefined,
+  };
 }
 
 function blurSidecarPath(webmPath: string): string {
@@ -4219,11 +4228,23 @@ function closeCamBubble(): void {
 // thumbnails). Opened from the bubble's Backdrop button; content-protected so it never appears in the
 // footage; centred on the recorded display. Choices route back through main to persist + apply per camera.
 let backdropPickerWindow: BrowserWindow | null = null;
+// v3.1 (Terry) — the picker stays ALIVE through a "Memories" library pick (only Done closes it): it's
+// HIDDEN while the main window is in pick mode, then reshown when the pick ends (picked OR cancelled),
+// which main.ts signals via reshowBackdropPickerAfterPick().
+let backdropPickerHiddenForPick = false;
 function closeBackdropPicker(): void {
+  backdropPickerHiddenForPick = false;
   if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
     try { backdropPickerWindow.close(); } catch { /* non-fatal */ }
   }
   backdropPickerWindow = null;
+}
+export function reshowBackdropPickerAfterPick(): void {
+  if (!backdropPickerHiddenForPick) return;   // self-guards: no-op unless a cam-bg Memories pick hid it
+  backdropPickerHiddenForPick = false;
+  if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
+    try { backdropPickerWindow.show(); backdropPickerWindow.focus(); } catch { /* non-fatal */ }
+  }
 }
 function createBackdropPicker(which: number): void {
   if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
@@ -4261,15 +4282,23 @@ ipcMain.on('capture:cam-open-picker', (event, info?: { which?: number }) => {
   if (!win || win.isDestroyed() || event.sender !== win.webContents) return;   // opener must be that camera's bubble
   createBackdropPicker(which);
 });
-ipcMain.on('capture:cam-picker-choose', (event, info?: { which?: number; bg?: { type?: string; value?: string } }) => {
+ipcMain.on('capture:cam-picker-choose', (event, info?: { which?: number; bg?: { type?: string; value?: string; amount?: number } }) => {
   if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
   const which = info && info.which === 2 ? 2 : 1;
-  const bg = info && info.bg;
-  const clean = { type: String((bg && bg.type) || 'none'), value: (bg && typeof bg.value === 'string') ? bg.value : undefined };
+  const clean = cleanCamBg(info && info.bg);
   try { setSetting(camBgSettingKey(which), clean); } catch { /* non-fatal */ }
   const win = camWindows[which];
   if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ } }
-  log.info(`[capture] cam ${which} backdrop (picker) → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
+  log.info(`[capture] cam ${which} backdrop (picker) → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}${typeof clean.amount === 'number' ? ' @' + clean.amount : ''}`);
+});
+// v3.1 (Terry) — LIVE PREVIEW while dragging the blur/pixelate slider: apply to the cam but do NOT persist
+// (rapid settings writes would hammer the disk on the main thread). The slider's release persists via choose.
+ipcMain.on('capture:cam-picker-preview', (event, info?: { which?: number; bg?: { type?: string; value?: string; amount?: number } }) => {
+  if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
+  const which = info && info.which === 2 ? 2 : 1;
+  const clean = cleanCamBg(info && info.bg);
+  const win = camWindows[which];
+  if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ } }
 });
 ipcMain.on('capture:cam-picker-pick', async (event, info?: { which?: number; source?: string }) => {
   if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
@@ -4277,8 +4306,10 @@ ipcMain.on('capture:cam-picker-pick', async (event, info?: { which?: number; sou
   const source = info && info.source === 'thispc' ? 'thispc' : 'memories';
   if (source === 'thispc') {
     // "This PC" — an OS file picker, main-driven (the bubble can't call the recorder-gated cam-bg-pick).
-    // Close the always-on-top (screen-saver level) picker FIRST, else the OS dialog can open behind it.
-    closeBackdropPicker();
+    // Keep the picker ALIVE (Terry: only Done closes it). Drop its screen-saver-level topmost while the
+    // dialog is up so it isn't trapped behind the picker, parent the dialog to it, then restore.
+    const picker = backdropPickerWindow;
+    try { if (picker && !picker.isDestroyed()) picker.setAlwaysOnTop(false); } catch { /* non-fatal */ }
     const opts: Electron.OpenDialogOptions = {
       title: 'Choose a background picture',
       properties: ['openFile'],
@@ -4286,10 +4317,11 @@ ipcMain.on('capture:cam-picker-pick', async (event, info?: { which?: number; sou
     };
     let filePath: string | null = null;
     try {
-      const res = await dialog.showOpenDialog(opts);
+      const res = picker && !picker.isDestroyed() ? await dialog.showOpenDialog(picker, opts) : await dialog.showOpenDialog(opts);
       if (!res.canceled && res.filePaths && res.filePaths[0]) filePath = res.filePaths[0];
     } catch { /* non-fatal */ }
-    if (!filePath) return;   // cancelled → nothing changes
+    try { if (picker && !picker.isDestroyed()) { picker.setAlwaysOnTop(true, 'screen-saver'); picker.show(); picker.focus(); } } catch { /* non-fatal */ }
+    if (!filePath) return;   // cancelled → the picker stays open
     const bg = { type: 'image', value: filePath };
     try { setSetting(camBgSettingKey(which), bg); } catch { /* non-fatal */ }
     const win = camWindows[which];
@@ -4297,8 +4329,11 @@ ipcMain.on('capture:cam-picker-pick', async (event, info?: { which?: number; sou
     log.info(`[capture] cam ${which} backdrop (This PC) → image (${filePath})`);
     return;
   }
-  // "Memories" — pick from the PDR library (brings the main window forward); the bubble drives that flow.
-  closeBackdropPicker();
+  // "Memories" — pick from the PDR library (brings the MAIN window forward for pick mode). HIDE the picker
+  // (don't close it — only Done does that); reshowBackdropPickerAfterPick() brings it back when the pick ends.
+  if (backdropPickerWindow && !backdropPickerWindow.isDestroyed()) {
+    try { backdropPickerWindow.hide(); backdropPickerHiddenForPick = true; } catch { /* non-fatal */ }
+  }
   const win = camWindows[which];
   if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'pick-image' }); } catch { /* non-fatal */ } }
 });

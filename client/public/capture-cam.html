@@ -281,10 +281,11 @@
   // PDR COLOURS — the brand palette (name + hex verbatim from the collage Colour Palette's "PDR"
   // collection). Generated locally, no third-party assets. Keys must match capture-backdrop-picker.html.
   var GRADIENTS = {
-    gold: '#FEC242', lavender: '#A99CFF', aipurple: '#8B5CF6', aipink: '#D946EF',
-    collages: '#283593', trees: '#10B981', snd: '#3B82F6', recyclebin: '#FDA4AF', license: '#6B5AFF',
-    success: '#D1FAE5', caution: '#F59E0B', backup: '#D97706', recovered: '#4F46E5', delete: '#EF4444',
-    splash: '#7C3AED', lavendersoft: '#EFECFF',
+    reminder: '#FFFBEB', success: '#D1FAE5', lavendersoft: '#EFECFF', infosoft: '#DBEAFE',
+    cautionsoft: '#FDE68A', deletesoft: '#FECACA', gold: '#FEC242', recyclebin: '#FDA4AF',
+    lavender: '#A99CFF', caution: '#F59E0B', trees: '#10B981', backup: '#D97706',
+    snd: '#3B82F6', aipink: '#D946EF', aipurple: '#8B5CF6', license: '#6B5AFF',
+    delete: '#EF4444', splash: '#7C3AED', recovered: '#4F46E5', collages: '#283593',
   };
   // Darker companion stop for the gradient — the colour blended 50% toward the brand near-black (#14131c).
   function shade(hex) {
@@ -384,14 +385,43 @@
     var dw = sw * s, dh = sh * s;
     c.drawImage(src, (w - dw) / 2, (h - dh) / 2, dw, dh);
   }
-  // v3.1 (Terry) — PIXELATE the real room (privacy, like Teams' pixelate): downscale the frame to a
-  // coarse grid then blow it back up with smoothing off → mosaic. Same live scene as the person, so
-  // (like blur) it rides the selfie mirror as-is. No pre-mirror needed.
+  // v3.1 (Terry) — BLUR / PORTRAIT BLUR / PIXELATE all read a 0–100 "amount" from the picker's slider.
+  function lerp(a, b, t) { return a + (b - a) * t; }
+  function amt(v, d) { return (typeof v === 'number' && isFinite(v)) ? Math.max(0, Math.min(100, v)) : d; }
+  function blurRadius(a) { return Math.round(lerp(4, 40, amt(a, 35) / 100)); }        // standard background blur
+  function portraitRadius(a) { return Math.round(lerp(12, 55, amt(a, 55) / 100)); }   // stronger, DSLR-ish
+  function pixelBlocks(a) { return Math.round(lerp(96, 14, amt(a, 50) / 100)); }       // more amount → fewer, bigger blocks
+
+  // Standard blur — the real room softened, person kept sharp. Rides the selfie mirror as-is.
+  function drawBlur(img, w, h, radius) {
+    ctx.save();
+    ctx.filter = 'blur(' + radius + 'px)';
+    ctx.drawImage(img, -16, -16, w + 32, h + 32);   // overscan hides the blurred edge vignette
+    ctx.restore();
+  }
+  // Portrait blur — a creamier, DSLR-like depth of field: a heavy blur PLUS a bloom pass (brightened,
+  // harder-blurred, screen-added) so highlights glow into soft bokeh. Built opaque offscreen, then dropped
+  // in behind the person in one draw.
+  var pbCanvas = null;
+  function buildPortraitFrame(img, w, h, radius) {
+    if (!pbCanvas) pbCanvas = document.createElement('canvas');
+    if (pbCanvas.width !== w || pbCanvas.height !== h) { pbCanvas.width = w; pbCanvas.height = h; }
+    var bc = pbCanvas.getContext('2d');
+    bc.clearRect(0, 0, w, h);
+    bc.save(); bc.filter = 'blur(' + radius + 'px)'; bc.drawImage(img, -16, -16, w + 32, h + 32); bc.restore();
+    bc.save();
+    bc.globalCompositeOperation = 'lighter'; bc.globalAlpha = 0.5;
+    bc.filter = 'blur(' + Math.round(radius * 1.7) + 'px) brightness(1.5) contrast(1.6) saturate(1.15)';
+    bc.drawImage(img, -16, -16, w + 32, h + 32);
+    bc.restore();
+    return pbCanvas;
+  }
+  // Pixelate the real room (privacy, like Teams): downscale to a coarse grid, blow it back up with
+  // smoothing off → mosaic. Rides the selfie mirror as-is.
   var pxCanvas = null;
-  var PX_BLOCKS = 42;   // horizontal mosaic blocks — coarse enough to anonymise the background
-  function drawPixelated(img, w, h) {
+  function drawPixelated(img, w, h, amount) {
     if (!pxCanvas) pxCanvas = document.createElement('canvas');
-    var pw = PX_BLOCKS, ph = Math.max(1, Math.round(PX_BLOCKS * h / w));
+    var pw = pixelBlocks(amount), ph = Math.max(1, Math.round(pw * h / w));
     if (pxCanvas.width !== pw || pxCanvas.height !== ph) { pxCanvas.width = pw; pxCanvas.height = ph; }
     var pc = pxCanvas.getContext('2d');
     pc.imageSmoothingEnabled = true;   // average each block's colour on the way down
@@ -417,16 +447,12 @@
     // 3. The background BEHIND the person.
     ctx.globalCompositeOperation = 'destination-over';
     if (currentBg.type === 'pixelate') {
-      // The real room, pixelated (privacy).
-      drawPixelated(results.image, w, h);
+      drawPixelated(results.image, w, h, currentBg.amount);
+    } else if (currentBg.type === 'portraitblur') {
+      ctx.drawImage(buildPortraitFrame(results.image, w, h, portraitRadius(currentBg.amount)), 0, 0, w, h);
     } else if (currentBg.type === 'blur' || !bgLayer) {
-      // The real room, blurred — same scene as the person, so it shares the selfie mirror as-is.
-      // (Also the fallback when a chosen scene/picture layer failed to load.)
-      ctx.save();
-      ctx.filter = 'blur(14px)';
-      // Overscan hides the blurred edge vignette.
-      ctx.drawImage(results.image, -16, -16, w + 32, h + 32);
-      ctx.restore();
+      // The real room, blurred (also the fallback when a chosen scene/picture layer failed to load).
+      drawBlur(results.image, w, h, currentBg.type === 'blur' ? blurRadius(currentBg.amount) : 14);
     } else {
       // Gradient / picture: PRE-mirror so the CSS selfie mirror cancels out — a logo or words in
       // the background stay READABLE on screen and in the footage.
@@ -483,7 +509,14 @@
     try { console.warn('[cam] virtual background unavailable — showing the plain camera'); } catch (e) {}
   }
   function applyBg(bg) {
-    currentBg = (bg && bg.type) ? bg : { type: 'none' };
+    var next = (bg && bg.type) ? bg : { type: 'none' };
+    // v3.1 (Terry) — live slider tweak: same blur/pixelate mode already running, only the amount moved.
+    // Just swap the value in — the frame loop redraws with it. Avoids re-spinning the engine each step.
+    if (rafId && next.type === currentBg.type && (next.type === 'blur' || next.type === 'portraitblur' || next.type === 'pixelate')) {
+      currentBg = next;
+      return;
+    }
+    currentBg = next;
     if (currentBg.type === 'none') {
       document.body.classList.remove('vbg');
       if (rafId) { cancelAnimationFrame(rafId); rafId = 0; }

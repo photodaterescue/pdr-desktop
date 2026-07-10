@@ -346,6 +346,7 @@ import {
   cancelRecording,
   recoverOrphanRecordings,
   flushRecordingOnQuit,
+  reshowBackdropPickerAfterPick,
 } from './capture-manager.js';
 // v2.1 round 315 (Terry) — editable "Work on Later" collage projects (side-effect import:
 // registers the collage:saveProject / listProjects / loadProject / deleteProject IPC handlers).
@@ -12130,6 +12131,8 @@ ipcMain.on('photoPick:deliver', (_event, payload: { purpose: string; filePath: s
       log.warn(`[photoPick] deliver failed: ${(err as Error).message}`);
     }
   }
+  // v3.1 (Terry) — a cam-backdrop "Memories" pick just finished → bring its (hidden) picker back.
+  if (payload?.purpose === 'cam-bg') reshowBackdropPickerAfterPick();
 });
 // Picker cancelled in the main window — clear the requester and bring it
 // back to the front.
@@ -12154,6 +12157,9 @@ ipcMain.on('photoPick:cancel', () => {
       log.warn(`[photoPick] cancel refocus failed: ${(err as Error).message}`);
     }
   }
+  // v3.1 (Terry) — pick cancelled → if a cam-backdrop "Memories" pick hid its picker, bring it back
+  // (self-guards; no-op for any other cancelled pick).
+  reshowBackdropPickerAfterPick();
 });
 
 // ═══ People Manager Window ═══════════════════════════════════════════════════

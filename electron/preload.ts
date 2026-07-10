@@ -525,7 +525,8 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.on('capture:cam-picker-init', handler);
       return () => ipcRenderer.removeListener('capture:cam-picker-init', handler);
     },
-    camPickerChoose: (info: { which: number; bg: { type: string; value?: string } }) => ipcRenderer.send('capture:cam-picker-choose', info),
+    camPickerChoose: (info: { which: number; bg: { type: string; value?: string; amount?: number } }) => ipcRenderer.send('capture:cam-picker-choose', info),
+    camPickerPreview: (info: { which: number; bg: { type: string; value?: string; amount?: number } }) => ipcRenderer.send('capture:cam-picker-preview', info),
     camPickerPick: (info: { which: number; source?: string }) => ipcRenderer.send('capture:cam-picker-pick', info),
     camPickerClose: () => ipcRenderer.send('capture:cam-picker-close'),
     // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
