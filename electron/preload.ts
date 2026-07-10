@@ -526,7 +526,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       return () => ipcRenderer.removeListener('capture:cam-picker-init', handler);
     },
     camPickerChoose: (info: { which: number; bg: { type: string; value?: string } }) => ipcRenderer.send('capture:cam-picker-choose', info),
-    camPickerPick: (info: { which: number }) => ipcRenderer.send('capture:cam-picker-pick', info),
+    camPickerPick: (info: { which: number; source?: string }) => ipcRenderer.send('capture:cam-picker-pick', info),
     camPickerClose: () => ipcRenderer.send('capture:cam-picker-close'),
     // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
     // v2.1 round 139 â€” these (and the region-overlay channels below)

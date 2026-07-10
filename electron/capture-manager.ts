@@ -4271,10 +4271,34 @@ ipcMain.on('capture:cam-picker-choose', (event, info?: { which?: number; bg?: { 
   if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ } }
   log.info(`[capture] cam ${which} backdrop (picker) → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
 });
-ipcMain.on('capture:cam-picker-pick', (event, info?: { which?: number }) => {
+ipcMain.on('capture:cam-picker-pick', async (event, info?: { which?: number; source?: string }) => {
   if (!(backdropPickerWindow && !backdropPickerWindow.isDestroyed() && event.sender === backdropPickerWindow.webContents)) return;
   const which = info && info.which === 2 ? 2 : 1;
-  closeBackdropPicker();   // the library pick brings the main PDR window forward; get the picker out of the way
+  const source = info && info.source === 'thispc' ? 'thispc' : 'memories';
+  if (source === 'thispc') {
+    // "This PC" — an OS file picker, main-driven (the bubble can't call the recorder-gated cam-bg-pick).
+    // Close the always-on-top (screen-saver level) picker FIRST, else the OS dialog can open behind it.
+    closeBackdropPicker();
+    const opts: Electron.OpenDialogOptions = {
+      title: 'Choose a background picture',
+      properties: ['openFile'],
+      filters: [{ name: 'Pictures', extensions: ['jpg', 'jpeg', 'png', 'webp', 'bmp'] }],
+    };
+    let filePath: string | null = null;
+    try {
+      const res = await dialog.showOpenDialog(opts);
+      if (!res.canceled && res.filePaths && res.filePaths[0]) filePath = res.filePaths[0];
+    } catch { /* non-fatal */ }
+    if (!filePath) return;   // cancelled → nothing changes
+    const bg = { type: 'image', value: filePath };
+    try { setSetting(camBgSettingKey(which), bg); } catch { /* non-fatal */ }
+    const win = camWindows[which];
+    if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg }); } catch { /* non-fatal */ } }
+    log.info(`[capture] cam ${which} backdrop (This PC) → image (${filePath})`);
+    return;
+  }
+  // "Memories" — pick from the PDR library (brings the main window forward); the bubble drives that flow.
+  closeBackdropPicker();
   const win = camWindows[which];
   if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'pick-image' }); } catch { /* non-fatal */ } }
 });
