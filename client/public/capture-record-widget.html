@@ -137,7 +137,7 @@
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
-  #cam.active {
+  #cam.active, #cam2.active {   /* v3.1 (Terry SS1) — Cam 2's "on" glow was scoped to #cam only, so it never lit */
     color: #f5d98a;
     border-color: rgba(212, 175, 55, 0.65);
   }
@@ -211,6 +211,19 @@
   /* v3.1 (Terry) — the camera Background picker rides next to Cam; hidden until the bubble exists. */
   #cambg { display: none; width: 104px; }
   #cambg.show { display: block; }
+  /* v3.1 (Terry SS1) — per-camera target toggle; only shown when BOTH cameras are on. */
+  #cambgWho {
+    display: none;
+    -webkit-app-region: no-drag;
+    height: 32px; padding: 0 8px;
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    background: rgba(255, 255, 255, 0.06);
+    color: #fff; border-radius: 8px;
+    font: 600 11.5px/1 system-ui, 'Segoe UI', sans-serif;
+    cursor: pointer; flex-shrink: 0;
+  }
+  #cambgWho:hover { background: rgba(255, 255, 255, 0.14); }
+  #cambgWho.show { display: inline-block; }
   /* Round 131 — Screen dropdown (armed only): pick which display to
      record, after the menu is up, never silently assumed. Same look
      as the quality dropdown. */
@@ -305,7 +318,10 @@
     <button id="cam" type="button" title="Show or hide your camera bubble in the recording">Cam</button>
     <!-- v3.1 (Terry) — camera VIRTUAL BACKGROUND (no greenscreen needed): blur your room, a PDR
          backdrop, or your own picture (e.g. a design saved from Collages with your logo). Shown
-         only while the camera bubble is on; runs entirely on this PC. -->
+         only while the camera bubble is on; runs entirely on this PC.
+         v3.1 (Terry SS1) — the [Cam 1|Cam 2] toggle appears when both cameras are on, so the
+         backdrop below applies to WHICHEVER camera you choose (cam 2 no longer inherits cam 1's). -->
+    <button id="cambgWho" type="button" title="This backdrop is for this camera — click to switch which camera it applies to">Cam 1</button>
     <select id="cambg" title="Camera background — blur your room, a PDR backdrop, or your own picture (all on-device, no greenscreen needed)">
       <option value="none" selected>No backdrop</option>
       <option value="blur">Blur room</option>
@@ -360,6 +376,7 @@
   var camBtn = document.getElementById('cam');
   var cam2Btn = document.getElementById('cam2');     // v3.1 (Terry) — second camera bubble (shown when 2+ cameras exist)
   var cambgSel = document.getElementById('cambg');   // v3.1 (Terry) — camera virtual-background picker
+  var cambgWho = document.getElementById('cambgWho');// v3.1 (Terry SS1) — which camera the backdrop targets
   var micBtn = document.getElementById('mic');
   var micSel = document.getElementById('micSel');
   var clicksBtn = document.getElementById('clicks');
@@ -374,7 +391,7 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, cambgSel, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, cambgWho, cambgSel, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
 
   var recorder = null;
   var stream = null;
@@ -733,8 +750,26 @@
   // ── v3.1 (Terry): camera VIRTUAL BACKGROUND picker. Values: none | blur | g:<gradient id> |
   // pick ("My picture…" → native image dialog → a dynamic 'image' option holding the path).
   // Main persists the choice + relays it live to the bubble, which composites on-device.
-  var cambgPrev = 'none';
-  function cambgSend(bg) { try { if (pdr && pdr.capture && pdr.capture.camSetBg) pdr.capture.camSetBg(bg); } catch (e) {} }
+  // v3.1 (Terry SS1) — PER-CAMERA backdrop. The dropdown targets ONE camera (cambgWhich); the
+  // [Cam 1|Cam 2] toggle switches which. Each camera's choice is remembered in cambgState so cam 2
+  // no longer inherits cam 1's backdrop. camSetBg carries `which` so main stores + applies per camera.
+  var cambgWhich = 1;
+  var cambgState = { 1: { val: 'none', imgPath: '' }, 2: { val: 'none', imgPath: '' } };
+  var cambgPickWhich = 1;   // which camera the in-flight "My picture" pick is for
+  function cambgSendTo(which, bg) { try { if (pdr && pdr.capture && pdr.capture.camSetBg) pdr.capture.camSetBg(bg, which); } catch (e) {} }
+  function bgToVal(cb) {
+    if (!cb || !cb.type || cb.type === 'none') return { val: 'none', imgPath: '' };
+    if (cb.type === 'blur') return { val: 'blur', imgPath: '' };
+    if (cb.type === 'gradient' && cb.value) return { val: 'g:' + cb.value, imgPath: '' };
+    if (cb.type === 'image' && cb.value) return { val: 'image', imgPath: cb.value };
+    return { val: 'none', imgPath: '' };
+  }
+  function valToBg(v, imgPath) {
+    if (v === 'blur') return { type: 'blur' };
+    if (v.indexOf('g:') === 0) return { type: 'gradient', value: v.slice(2) };
+    if (v === 'image') return { type: 'image', value: imgPath || '' };
+    return { type: 'none' };
+  }
   function cambgSetImageOption(path) {
     var opt = cambgSel.querySelector('option[value="image"]');
     if (!opt) {
@@ -747,6 +782,19 @@
     opt.dataset.path = path;
     cambgSel.value = 'image';
   }
+  // Point the dropdown at a given camera's stored choice + label the toggle.
+  function cambgReflect(which) {
+    cambgWhich = which;
+    var st = cambgState[which];
+    if (st.val === 'image' && st.imgPath) cambgSetImageOption(st.imgPath);
+    else cambgSel.value = st.val;
+    cambgWho.textContent = 'Cam ' + which;
+    cambgWho.title = 'This backdrop is for Camera ' + which + ' — click to switch to the other camera';
+  }
+  cambgWho.addEventListener('click', function () {
+    if (finished) return;
+    cambgReflect(cambgWhich === 1 ? 2 : 1);
+  });
   // v3.1 (Terry) — "My picture…" picks from MEMORIES (the library — "that's where the library is"),
   // not a native Windows dialog: main focuses the PDR window in pick mode; the chosen photo routes
   // straight back here on photoPick:picked (purpose 'cam-bg'). Videos are ignored (a backdrop is a
@@ -755,25 +803,26 @@
   if (pdr && pdr.capture && pdr.capture.onCamBgPicked) {
     pdr.capture.onCamBgPicked(function (path) {
       if (!path || cambgIsVideoPath(path)) return;
-      cambgSetImageOption(path);
-      cambgPrev = 'image';
-      cambgSend({ type: 'image', value: path });
+      var w = cambgPickWhich || cambgWhich;
+      cambgState[w] = { val: 'image', imgPath: path };
+      if (w === cambgWhich) cambgSetImageOption(path);   // reflect only if it's the camera on screen in the dropdown
+      cambgSendTo(w, { type: 'image', value: path });
     });
   }
   cambgSel.addEventListener('change', function () {
     if (finished) return;
     var v = cambgSel.value;
     if (v === 'pick') {
-      // Async library pick; revert the visible selection until a picture actually comes back.
-      cambgSel.value = cambgPrev;
+      // Async library pick — remember which camera it's for, revert the visible selection meanwhile.
+      cambgPickWhich = cambgWhich;
+      cambgReflect(cambgWhich);
       try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {}
       return;
     }
-    cambgPrev = v;
-    if (v === 'none') cambgSend({ type: 'none' });
-    else if (v === 'blur') cambgSend({ type: 'blur' });
-    else if (v.indexOf('g:') === 0) cambgSend({ type: 'gradient', value: v.slice(2) });
-    else if (v === 'image') { var opt = cambgSel.querySelector('option[value="image"]'); cambgSend({ type: 'image', value: (opt && opt.dataset.path) || '' }); }
+    var st = cambgState[cambgWhich];
+    st.val = v;
+    if (v !== 'image') st.imgPath = '';
+    cambgSendTo(cambgWhich, valToBg(v, st.imgPath));
   });
 
   // ── v3.0 round 410: Microphone / voiceover ──
@@ -1023,13 +1072,11 @@
         }
         // v3.0 round 410 — restore the saved mic preference + device, light the
         // Mic button if on, and populate the device dropdown.
-        // v3.1 (Terry) — restore the remembered camera background into the picker.
+        // v3.1 (Terry SS1) — restore EACH camera's remembered backdrop, then reflect cam 1.
         try {
-          var cb = storedInit.camBg || { type: 'none' };
-          if (cb.type === 'blur') { cambgSel.value = 'blur'; cambgPrev = 'blur'; }
-          else if (cb.type === 'gradient' && cb.value) { cambgSel.value = 'g:' + cb.value; cambgPrev = cambgSel.value; }
-          else if (cb.type === 'image' && cb.value) { cambgSetImageOption(cb.value); cambgPrev = 'image'; }
-          else { cambgSel.value = 'none'; cambgPrev = 'none'; }
+          cambgState[1] = bgToVal(storedInit.camBg || { type: 'none' });
+          cambgState[2] = bgToVal(storedInit.cam2Bg || { type: 'none' });
+          cambgReflect(1);
         } catch (e) {}
         micOn = storedInit.mic === true;
         micDeviceId = storedInit.micDevice || '';
@@ -1103,8 +1150,13 @@
           // v3.1 (Terry) — second camera lights its own button.
           cam2Btn.classList.toggle('active', !!cmd.visible2);
           cam2Btn.title = cmd.visible2 ? 'Second camera is in the recording — click to hide it' : 'Show or hide a second camera bubble (your other camera) in the recording';
-          // v3.1 (Terry) — the Background picker shows while EITHER bubble is on (the backdrop applies to both).
-          cambgSel.classList.toggle('show', !!cmd.visible || !!cmd.visible2);
+          // v3.1 (Terry SS1) — the Background picker shows while EITHER bubble is on; the [Cam 1|Cam 2]
+          // toggle only when BOTH are on. Point the dropdown at the sensible camera.
+          var anyOn = !!cmd.visible || !!cmd.visible2;
+          var bothOn = !!cmd.visible && !!cmd.visible2;
+          cambgSel.classList.toggle('show', anyOn);
+          cambgWho.classList.toggle('show', bothOn);
+          if (!bothOn) cambgReflect(cmd.visible2 && !cmd.visible ? 2 : 1);
           requestResize();
         }
         else if (cmd.action === 'blur-opened') {

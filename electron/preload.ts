@@ -499,7 +499,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.1 (Terry) â€” camera VIRTUAL BACKGROUND: the bar's picker persists + relays a choice (main
     // forwards it to the bubble as cam-do {action:'set-bg'}); the picker's "My pictureâ€¦" opens a
     // native image dialog in main and resolves to the chosen path (or null on cancel).
-    camSetBg: (bg: { type: string; value?: string }) => ipcRenderer.send('capture:cam-set-bg', bg),
+    camSetBg: (bg: { type: string; value?: string }, which?: number) => ipcRenderer.send('capture:cam-set-bg', { bg, which: which || 1 }),
     camBgPickImage: () => ipcRenderer.invoke('capture:cam-bg-pick') as Promise<string | null>,
     // v3.1 (Terry) â€” "My picture" now picks from MEMORIES (the library), not a native dialog:
     // the same photoPick engine the collage background uses, with its own 'cam-bg' purpose. The
@@ -513,6 +513,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.1 (Terry) â€” SECOND CAMERA + bubble size: Cam/Cam 2 toggle their own bubbles (which: 1|2);
     // camSizeCycle steps the given bubble Sâ†’Mâ†’L (main resizes the window + persists).
     camSizeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-size', info),
+    camShapeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-shape', info),   // v3.1 (Terry SS1) — circle/square/rectangle per camera
     // â”€â”€ Recording widget channels (capture-record-widget.html) â”€â”€
     // v2.1 round 139 â€” these (and the region-overlay channels below)
     // were briefly trapped inside the `collage` namespace when round

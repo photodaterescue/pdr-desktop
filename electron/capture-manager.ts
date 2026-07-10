@@ -2962,14 +2962,31 @@ const camVisibles: Record<number, boolean> = { 1: false, 2: false };
 let camHotkeyAccelerator: string | null = null;
 // Bubble size presets per shape (v3.1 Terry — "increase/decrease the bubble"): cycled S→M→L from the
 // bubble's hover size button; persisted per camera (captureCamSize / captureCam2Size).
+// v3.1 (Terry SS1) — three shapes now (circle, rounded square, rectangle). Circle + square share 1:1
+// dims (only the border-radius differs, set in capture-cam.html); rectangle is 4:3.
 const CAM_SIZES = {
   circle: { s: { w: 176, h: 176 }, m: { w: 232, h: 232 }, l: { w: 292, h: 292 } },
+  square: { s: { w: 176, h: 176 }, m: { w: 232, h: 232 }, l: { w: 292, h: 292 } },
   rectangle: { s: { w: 232, h: 150 }, m: { w: 302, h: 192 }, l: { w: 376, h: 238 } },
 } as const;
 type CamSizeKey = 's' | 'm' | 'l';
+type CamShapeKey = 'circle' | 'square' | 'rectangle';
+const CAM_SHAPE_ORDER: CamShapeKey[] = ['circle', 'square', 'rectangle'];
 function camSizeSettingKey(which: number): 'captureCamSize' | 'captureCam2Size' { return which === 2 ? 'captureCam2Size' : 'captureCamSize'; }
 function getCamSize(which: number): CamSizeKey {
   try { const v = getSettings()[camSizeSettingKey(which)] as CamSizeKey; return (v === 's' || v === 'l') ? v : 'm'; } catch { return 'm'; }
+}
+// v3.1 (Terry SS1) — PER-CAMERA shape. Cam 1 keeps the legacy captureCamShape (circle|rectangle from
+// Settings, now also 'square'); Cam 2 has its own captureCam2Shape (defaults to circle).
+function camShapeSettingKey(which: number): 'captureCamShape' | 'captureCam2Shape' { return which === 2 ? 'captureCam2Shape' : 'captureCamShape'; }
+function getCamShape(which: number): CamShapeKey {
+  try { const v = getSettings()[camShapeSettingKey(which)] as CamShapeKey; return (v === 'square' || v === 'rectangle') ? v : 'circle'; } catch { return 'circle'; }
+}
+// v3.1 (Terry SS1) — PER-CAMERA backdrop. Cam 1 keeps captureCamBg; Cam 2 has captureCam2Bg (so the
+// second camera no longer inherits the first's backdrop).
+function camBgSettingKey(which: number): 'captureCamBg' | 'captureCam2Bg' { return which === 2 ? 'captureCam2Bg' : 'captureCamBg'; }
+function getCamBg(which: number): { type: string; value?: string } {
+  try { return (getSettings()[camBgSettingKey(which)] as { type: string; value?: string }) || { type: 'none' }; } catch { return { type: 'none' }; }
 }
 
 function blurSidecarPath(webmPath: string): string {
@@ -3176,8 +3193,10 @@ export async function startRecording(opts: { displayId?: string; trigger: 'butto
         ripple: (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })(),
         // v3.0 round 485 (Terry) — auto-zoom-toward-clicks preference for the bar.
         autoZoom: (() => { try { return getSettings().captureAutoZoomEnabled === true; } catch { return false; } })(),
-        // v3.1 (Terry) — remembered camera VIRTUAL BACKGROUND (none/blur/gradient/image) for the bar's picker.
+        // v3.1 (Terry) — remembered camera VIRTUAL BACKGROUND (none/blur/gradient/image) for the bar's picker;
+        // v3.1 (Terry SS1) — cam 2 carries its OWN backdrop now (per-camera picker on the bar).
         camBg: (() => { try { return getSettings().captureCamBg || { type: 'none' }; } catch { return { type: 'none' }; } })(),
+        cam2Bg: (() => { try { return getSettings().captureCam2Bg || { type: 'none' }; } catch { return { type: 'none' }; } })(),
         maxWidth: Math.round(display.bounds.width * display.scaleFactor),
         maxHeight: Math.round(display.bounds.height * display.scaleFactor),
         videoBitsPerSecond: RECORD_QUALITY[recordQuality].bitsPerSecond,
@@ -3555,6 +3574,7 @@ ipcMain.on('capture:record-started', (event, info: { width?: number; height?: nu
       if (recordRegionCrop) persistBlurSidecar();
       recordingState = 'recording';
       broadcastRecordingState();
+      broadcastCamPhase(true);   // v3.1 (Terry SS1) — recording began → bubbles hide their controls (out of the footage)
       // v3.0 round 413 (Terry) — NOW start the click-ripple overlay + global
       // hook (deferred from arm, so the armed/setup phase stays lag-free).
       const rippleOn = (() => { try { return getSettings().captureRippleEnabled === true; } catch { return false; } })();
@@ -3648,17 +3668,33 @@ ipcMain.on('capture:record-quality', (event, info: { quality?: RecordQualityKey 
 // bubble (which does the person-segmentation compositing itself, offline).
 // bg = { type: 'none' | 'blur' | 'gradient' | 'image', value?: string }
 //   gradient → value = preset id (the bubble draws it); image → value = file path.
-ipcMain.on('capture:cam-set-bg', (event, bg: { type?: string; value?: string }) => {
+ipcMain.on('capture:cam-set-bg', (event, info: { bg?: { type?: string; value?: string }; which?: number }) => {
   if (!(recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents)) return;
-  const clean = { type: String((bg && bg.type) || 'none'), value: typeof (bg && bg.value) === 'string' ? bg.value : undefined };
-  try { setSetting('captureCamBg', clean); } catch { /* non-fatal */ }
-  for (const which of [1, 2]) {   // v3.1 (Terry) — the backdrop applies to BOTH bubbles
-    const win = camWindows[which];
-    if (win && !win.isDestroyed()) {
-      try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ }
-    }
+  const bg = (info && info.bg) || undefined;
+  const which = info && info.which === 2 ? 2 : 1;   // v3.1 (Terry SS1) — PER-CAMERA now
+  const clean = { type: String((bg && bg.type) || 'none'), value: (bg && typeof bg.value === 'string') ? bg.value : undefined };
+  try { setSetting(camBgSettingKey(which), clean); } catch { /* non-fatal */ }
+  const win = camWindows[which];   // apply to THIS camera only — cam 2 no longer inherits cam 1's backdrop
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send('capture:cam-do', { action: 'set-bg', bg: clean }); } catch { /* non-fatal */ }
   }
-  log.info(`[capture] cam background → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
+  log.info(`[capture] cam ${which} background → ${clean.type}${clean.value ? ' (' + clean.value + ')' : ''}`);
+});
+// v3.1 (Terry SS1) — cycle a bubble's SHAPE circle → square → rectangle. Reshapes the window around
+// its centre (border-radius handled in the page), persists per camera, echoes the shape to the bubble.
+ipcMain.on('capture:cam-shape', (event, info?: { which?: number }) => {
+  const which = info && info.which === 2 ? 2 : 1;
+  const win = camWindows[which];
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+  const next = CAM_SHAPE_ORDER[(CAM_SHAPE_ORDER.indexOf(getCamShape(which)) + 1) % CAM_SHAPE_ORDER.length];
+  try { setSetting(camShapeSettingKey(which), next); } catch { /* non-fatal */ }
+  const dims = CAM_SIZES[next][getCamSize(which)];
+  try {
+    const b = win.getBounds();
+    win.setBounds({ x: Math.round(b.x + (b.width - dims.w) / 2), y: Math.round(b.y + (b.height - dims.h) / 2), width: dims.w, height: dims.h });
+  } catch { /* non-fatal */ }
+  try { win.webContents.send('capture:cam-do', { action: 'shape', shape: next }); } catch { /* non-fatal */ }
+  log.info(`[capture] cam ${which} shape → ${next}`);
 });
 // "My picture…" — a native image picker, parented to the bar. Returns the path or null.
 ipcMain.handle('capture:cam-bg-pick', async (event) => {
@@ -3792,13 +3828,21 @@ function notifyWidgetCamState(): void {
     try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisibles[1], visible2: camVisibles[2] }); } catch { /* non-fatal */ }
   }
 }
+// v3.1 (Terry SS1) — tell both bubbles whether we're recording, so they show their shape/size/zoom
+// controls while ARMED (setup) and hide them once recording starts (never in the footage).
+function broadcastCamPhase(recording: boolean): void {
+  for (const which of [1, 2]) {
+    const win = camWindows[which];
+    if (win && !win.isDestroyed()) {
+      try { win.webContents.send('capture:cam-do', { action: 'phase', recording }); } catch { /* non-fatal */ }
+    }
+  }
+}
 
 function createCamBubble(display: Electron.Display, which: number = 1): void {
   const existing = camWindows[which];
   if (existing && !existing.isDestroyed()) return;
-  const shape = (() => {
-    try { return (getSettings().captureCamShape as 'circle' | 'rectangle') || 'circle'; } catch { return 'circle'; }
-  })();
+  const shape = getCamShape(which);   // v3.1 (Terry SS1) — per-camera shape (cam 2 no longer forced to cam 1's)
   // v3.1 (Terry) — cam 2 has its own device setting; '' = auto (the page picks the next camera
   // that isn't cam 1's, so plugging in a second webcam just works with zero setup).
   const deviceId = (() => {
@@ -3870,12 +3914,13 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
   });
   win.webContents.once('did-finish-load', () => {
     if (win.isDestroyed()) return;
-    // v3.1 (Terry) — pass the remembered virtual background so the bubble starts with it applied;
-    // which + avoidDeviceId let the cam-2 page auto-pick "the other camera" when no device is set.
-    const bg = (() => { try { return getSettings().captureCamBg || { type: 'none' }; } catch { return { type: 'none' }; } })();
+    // v3.1 (Terry SS1) — pass THIS camera's own backdrop (per-camera now) + shape + which; and tell
+    // the bubble whether we're already recording, so it hides its controls (armed = controls shown).
+    const bg = getCamBg(which);
     win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId });
     win.showInactive();
     camVisibles[which] = true;
+    if (recordingState === 'recording') { try { win.webContents.send('capture:cam-do', { action: 'phase', recording: true }); } catch { /* non-fatal */ } }
     notifyWidgetCamState();
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
@@ -4291,7 +4336,7 @@ ipcMain.on('capture:cam-size', (event, info?: { which?: number }) => {
   const which = info && info.which === 2 ? 2 : 1;
   const win = camWindows[which];
   if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
-  const shape = (() => { try { return (getSettings().captureCamShape as 'circle' | 'rectangle') || 'circle'; } catch { return 'circle'; } })();
+  const shape = getCamShape(which);   // v3.1 (Terry SS1) — per-camera shape
   const order: CamSizeKey[] = ['s', 'm', 'l'];
   const next = order[(order.indexOf(getCamSize(which)) + 1) % order.length];
   try { setSetting(camSizeSettingKey(which), next); } catch { /* non-fatal */ }

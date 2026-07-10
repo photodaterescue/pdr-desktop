@@ -63,23 +63,26 @@
     transition: opacity 0.3s ease, transform 0.3s cubic-bezier(0.2, 0.9, 0.3, 1.15);
   }
   #shell.circle { border-radius: 50%; }
+  #shell.square { border-radius: 22px; }
   #shell.rectangle { border-radius: 14px; }
   #shell.visible { opacity: 1; transform: scale(1); }
-  /* v3.1 (Terry) — HOVER CONTROLS: size (S→M→L) + zoom (1×→1.3×→1.6×) pills, visible only while the
-     mouse is over the bubble (so they never appear in hands-off footage). no-drag so they click. */
+  /* v3.1 (Terry SS1) — shape / size / zoom controls sit on the bubble and are VISIBLE while you set
+     up (armed), then fade to hover-only once RECORDING starts, so they're never in the footage.
+     Previously hover-only ALWAYS, so Terry never found them ("still no way to change shape/size/zoom"). */
   #ctrls {
     position: absolute;
     left: 50%;
-    bottom: 9%;
+    bottom: 8%;
     transform: translateX(-50%);
     display: flex;
     gap: 6px;
-    opacity: 0;
+    opacity: 1;
     transition: opacity 0.15s ease;
     -webkit-app-region: no-drag;
     z-index: 5;
   }
-  #shell:hover #ctrls { opacity: 1; }
+  body.rec #ctrls { opacity: 0; }
+  body.rec #shell:hover #ctrls { opacity: 1; }
   .cbtn {
     width: 26px; height: 26px;
     border-radius: 13px;
@@ -126,6 +129,9 @@
     <canvas id="camc"></canvas>
     <!-- v3.1 (Terry) — hover controls: bubble size (S→M→L) + fixed zoom punch-in (1×→1.3×→1.6×). -->
     <div id="ctrls">
+      <button id="shapeBtn" class="cbtn" type="button" title="Shape — circle, square, rectangle">
+        <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>
+      </button>
       <button id="sizeBtn" class="cbtn" type="button" title="Bubble size — small, medium, large">
         <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
@@ -167,6 +173,16 @@
     e.stopPropagation();
     try { if (pdr && pdr.capture && pdr.capture.camSizeCycle) pdr.capture.camSizeCycle({ which: camWhich }); } catch (err) {}
   });
+  // v3.1 (Terry SS1) — SHAPE cycle (circle → square → rectangle): main resizes + re-shapes this
+  // window and persists per-camera; it echoes the new shape back so the border-radius updates.
+  document.getElementById('shapeBtn').addEventListener('click', function (e) {
+    e.stopPropagation();
+    try { if (pdr && pdr.capture && pdr.capture.camShapeCycle) pdr.capture.camShapeCycle({ which: camWhich }); } catch (err) {}
+  });
+  function setShellShape(shape) {
+    shell.classList.remove('circle', 'square', 'rectangle');
+    shell.classList.add(shape === 'square' ? 'square' : shape === 'rectangle' ? 'rectangle' : 'circle');
+  }
 
   function fadeIn() {
     shell.classList.add('visible');
@@ -328,7 +344,7 @@
   }
 
   async function start(init) {
-    shell.classList.add(init && init.shape === 'rectangle' ? 'rectangle' : 'circle');
+    setShellShape((init && init.shape) || 'circle');   // v3.1 (Terry SS1) — circle / square / rectangle
     camWhich = (init && init.which === 2) ? 2 : 1;
     try {
       var constraints = { audio: false, video: true };
@@ -380,6 +396,8 @@
         if (cmd.action === 'show') fadeIn();
         else if (cmd.action === 'hide') fadeOut();
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
+        else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
+        else if (cmd.action === 'phase') { document.body.classList.toggle('rec', !!cmd.recording); }   // v3.1 — hide controls once recording
       });
     }
   }

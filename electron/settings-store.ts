@@ -163,7 +163,7 @@ export interface PDRSettings {
   /** Bubble shape: 'circle' (the tutorial classic — Terry's pick) or
    *  'rectangle' (the usual camera frame). Read when the bubble is
    *  created (recording start / first toggle-on). */
-  captureCamShape: 'circle' | 'rectangle';
+  captureCamShape: 'circle' | 'square' | 'rectangle';   // v3.1 (Terry SS1) — + 'square'
   /** Camera deviceId ('' = system default camera). Populated from
    *  the device dropdown in Settings → Capture. */
   captureCamDevice: string;
@@ -173,9 +173,15 @@ export interface PDRSettings {
   captureCamBg: { type: string; value?: string };
   /** v3.1 (Terry) — SECOND camera deviceId ('' = auto: the first camera that isn't cam 1's). */
   captureCam2Device: string;
-  /** v3.1 (Terry) — bubble size presets (S/M/L), cycled from each bubble's hover ⤢ button. */
+  /** v3.1 (Terry) — bubble size presets (S/M/L), cycled from each bubble's size button. */
   captureCamSize: 's' | 'm' | 'l';
   captureCam2Size: 's' | 'm' | 'l';
+  /** v3.1 (Terry SS1) — SECOND camera's own backdrop (cam 2 no longer inherits cam 1's). Same shape
+   *  as captureCamBg. */
+  captureCam2Bg: { type: string; value?: string };
+  /** v3.1 (Terry SS1) — per-camera SHAPE cycled from the bubble. Cam 1 reuses captureCamShape; cam 2
+   *  gets its own (defaults to circle). */
+  captureCam2Shape: 'circle' | 'square' | 'rectangle';
   /** Global hotkey that shows/hides the camera bubble — registered
    *  ONLY while a recording is running, so it never squats on the
    *  combo outside recordings. Same remap UI as the screenshot
@@ -382,6 +388,8 @@ export const optimisedDefaults: PDRSettings = {
   captureCam2Device: '',
   captureCamSize: 'm',
   captureCam2Size: 'm',
+  captureCam2Bg: { type: 'none' },
+  captureCam2Shape: 'circle',
   captureCamHotkey: 'Ctrl+Shift+C',
   // v3.0 round 410 — microphone/voiceover off until asked for, system-default mic.
   captureMicEnabled: false,
@@ -485,6 +493,8 @@ export function getSettings(): PDRSettings {
     captureCam2Device: store.get('captureCam2Device', optimisedDefaults.captureCam2Device),
     captureCamSize: store.get('captureCamSize', optimisedDefaults.captureCamSize),
     captureCam2Size: store.get('captureCam2Size', optimisedDefaults.captureCam2Size),
+    captureCam2Bg: store.get('captureCam2Bg', optimisedDefaults.captureCam2Bg),
+    captureCam2Shape: store.get('captureCam2Shape', optimisedDefaults.captureCam2Shape),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),
     captureMicEnabled: store.get('captureMicEnabled', optimisedDefaults.captureMicEnabled),
     captureMicDevice: store.get('captureMicDevice', optimisedDefaults.captureMicDevice),
