@@ -358,7 +358,10 @@
   var recordBtn = document.getElementById('record');
   var stopBtn = document.getElementById('stop');
   var cancelBtn = document.getElementById('cancel');
-  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn];
+  var cfmSaveBtn = document.getElementById('cfmSave');       // v3.1 (Terry) — stop-save double-check buttons; wired for PDR tooltips too
+  var cfmDiscardBtn = document.getElementById('cfmDiscard');
+  var cfmKeepBtn = document.getElementById('cfmKeep');
+  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn, cfmSaveBtn, cfmDiscardBtn, cfmKeepBtn];
 
   var recorder = null;
   var stream = null;
