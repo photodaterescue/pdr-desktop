@@ -2969,6 +2969,17 @@
       -webkit-user-select: text; user-select: text;
       -webkit-user-drag: none;
     }
+    /* v3.1 (Terry SS1) — INLINE RUNS: the editable may now contain spans/<font>/<b> from
+       per-word styling (ours + whatever execCommand produces). The CANVAS is the visible
+       text, so EVERY descendant's glyphs must stay invisible — colour/decoration forced
+       transparent (the metric styles — font-weight/style — still apply, so the caret and
+       wrapping feel bold/italic). caret-color survives independently of text colour. */
+    .collage-text .collage-text-edit * {
+      color: transparent !important;
+      -webkit-text-fill-color: transparent !important;
+      text-decoration-color: transparent !important;
+      background: transparent !important;
+    }
     /* ─── v2.1 round 158 (Terry) — COLLAGE IDENTITY = GOLD ───────────────
        The Viewer wears lavender; the Collage tool wears gold (same dark navy
        base, just the accent + a gold dot by the "Collage (N)" title), so the
@@ -10729,7 +10740,7 @@
       // 'auto' (the default — every emoji, every old snapshot) leaves _fixW null
       // and every line below behaves byte-for-byte as before.
       let _fixW = null, _fixH = null;
-      if (!layer.isEmoji && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) {
+      if (!layer.isEmoji && !(layer.runs && layer.runs.length) && layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) {   // v3.1 (Terry SS1) — a runs layer wraps in its OWN branch below (this pre-pass would pre-shrink fontPx with plain-text measures)
         _fixW = Math.max(4, layer.boxWFrac * shortPx);
         _fixH = (typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? Math.max(4, layer.boxHFrac * shortPx) : null;
         const _lhMul = (typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25;
@@ -10843,6 +10854,272 @@
         canvas._fbAsc = aAsc / _q;
         canvas._fbDesc = aDesc / _q;
         canvas._aAscTop = aAsc / _q;
+        return canvas;
+      }
+      // ═══ v3.1 (Terry SS1) — INLINE RUNS render path ("multi-coloured and formatted within
+      // the same text box"). Active ONLY when layer.runs exists — a box that never mixed
+      // styles takes the untouched single-style path below, byte-for-byte. Same contract as
+      // that path: q-scaled render, symmetric pad, ink centred on the xFrac/yFrac anchor,
+      // identical metric stashes — so renderTextLayer, the bake, exports and thumbnails all
+      // consume it with zero call-site changes. Per-run overrides: colour, bold, italic,
+      // underline, strike; font family/size/effect/alignment/spacing stay per-box.
+      if (layer.runs && layer.runs.length) {
+        const baseWt = textWeightOf(layer);
+        const baseSt = { c: color, b: baseWt >= 600, i: !!layer.italic, u: !!layer.underline, s: !!layer.strike, w: baseWt };
+        const effSt = (r) => ({
+          c: (r.c != null ? String(r.c) : baseSt.c),
+          b: (r.b != null ? !!r.b : baseSt.b),
+          i: (r.i != null ? !!r.i : baseSt.i),
+          u: (r.u != null ? !!r.u : baseSt.u),
+          s: (r.s != null ? !!r.s : baseSt.s),
+          w: (r.b != null ? (r.b ? Math.max(700, baseWt) : 400) : baseWt),
+        });
+        // Per-char flatten, with the case transform applied positionally (skipped in the
+        // rare locale where transforming changes the string length — indexes must align).
+        const full = runsJoin_(layer.runs);
+        const cased = applyLetterCase(full, layer.letterCase);
+        const useCase = (typeof cased === 'string' && cased.length === full.length);
+        const flat = [];
+        let ai = 0;
+        layer.runs.forEach((r) => {
+          const st = effSt(r);
+          const t = String(r.t);
+          for (let ci = 0; ci < t.length; ci++, ai++) flat.push({ ch: (useCase ? cased[ai] : t[ci]), st: st, ai: ai });
+        });
+        const paras = [[]];
+        flat.forEach((c) => { if (c.ch === '\n') paras.push([]); else paras[paras.length - 1].push(c); });
+        const fontFor = (st, px) => (st.i ? 'italic ' : '') + st.w + ' ' + px + 'px "' + (layer.font || 'Impact') + '"';
+        // Group consecutive same-run chars (same st object reference) → measurable segments.
+        const groupsOf = (chars) => {
+          const gs = [];
+          let i0 = 0;
+          while (i0 < chars.length) {
+            let i1 = i0; const st = chars[i0].st;
+            while (i1 < chars.length && chars[i1].st === st) i1++;
+            let s = ''; for (let ck = i0; ck < i1; ck++) s += chars[ck].ch;
+            gs.push({ st: st, text: s });
+            i0 = i1;
+          }
+          return gs;
+        };
+        const segW = (chars, px) => {
+          let w = 0;
+          groupsOf(chars).forEach((g) => { ctx.font = fontFor(g.st, px); w += ctx.measureText(g.text).width; });
+          return w;
+        };
+        // Fixed-box wrap — the SAME greedy model as wrapTextLineToWidth, run-aware (the
+        // joining space keeps its own run's style; a break consumes the separator).
+        let rFixW = null, rFixH = null;
+        if (layer.boxMode === 'fixed' && typeof layer.boxWFrac === 'number' && isFinite(layer.boxWFrac) && layer.boxWFrac > 0) {
+          rFixW = Math.max(4, layer.boxWFrac * shortPx);
+          rFixH = (typeof layer.boxHFrac === 'number' && isFinite(layer.boxHFrac) && layer.boxHFrac > 0) ? Math.max(4, layer.boxHFrac * shortPx) : null;
+        }
+        const lineHMulR = (typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25;
+        const wrapParas = (px) => {
+          if (rFixW == null) return paras;
+          const out = [];
+          paras.forEach((para) => {
+            const width = (chars) => segW(chars, px);
+            const pushed = [];
+            const hardBreak = (word) => {
+              let piece = [];
+              for (let wk = 0; wk < word.length; wk++) {
+                const c = word[wk];
+                if (piece.length && width(piece.concat(c)) > rFixW) { pushed.push(piece); piece = [c]; }
+                else piece.push(c);
+              }
+              return piece;
+            };
+            const tokens = [];
+            let tok = [];
+            para.forEach((c) => { if (c.ch === ' ') { tokens.push(tok); tokens.push([c]); tok = []; } else tok.push(c); });
+            tokens.push(tok);
+            let cur = [];
+            for (let ti = 0; ti < tokens.length; ti += 2) {
+              const tk = tokens[ti];
+              const sep = (ti > 0) ? tokens[ti - 1] : null;
+              const cand = cur.length ? cur.concat(sep || [], tk) : tk;
+              if (width(cand) <= rFixW) { cur = cand; continue; }
+              if (!cur.length) { cur = hardBreak(cand); continue; }
+              pushed.push(cur);
+              cur = (width(tk) > rFixW) ? hardBreak(tk) : tk;
+            }
+            pushed.push(cur);
+            pushed.forEach((l) => out.push(l));
+          });
+          return out;
+        };
+        // Ink-height at px — the SAME metric model the sizing pass below uses, so the
+        // autofit's "fits" == fits in the canvas (mirrors the legacy autofit exactly).
+        const inkHAtR = (ls, px) => {
+          const lh = px * lineHMulR;
+          let top = Infinity, bot = -Infinity, got = false;
+          ls.forEach((line, li) => {
+            const gs = line.length ? groupsOf(line) : [{ st: baseSt, text: '' }];
+            gs.forEach((g) => {
+              ctx.font = fontFor(g.st, px);
+              const m = ctx.measureText(g.text || '');
+              const bAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : px;
+              const bl = li * lh + bAsc;
+              const aA = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : bAsc;
+              const aD = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : px * 0.25);
+              const t2 = bl - aA, b2 = bl + aD;
+              if (isFinite(t2) && isFinite(b2)) { got = true; if (t2 < top) top = t2; if (b2 > bot) bot = b2; }
+            });
+          });
+          return (got && bot > top) ? (bot - top) : (ls.length * px * lineHMulR);
+        };
+        let rLines = wrapParas(fontPx);
+        if (rFixH != null) {
+          let guard = 0;
+          while (fontPx > 8 && inkHAtR(rLines, fontPx) > rFixH && guard++ < 200) {
+            fontPx = Math.max(8, fontPx * 0.95);   // shrink-only, floor 8 (q-px) — mirrors the legacy autofit
+            rLines = wrapParas(fontPx);
+          }
+        }
+        const lineH = fontPx * lineHMulR;
+        const pad = Math.ceil(fontPx * 0.95);
+        // Metrics pass (the legacy centred-ink-block model, walked per group).
+        let inkTopRel = Infinity, inkBottomRel = -Infinity, gotInk = false;
+        let fbAscTop = fontPx, fbDescTop = fontPx * 0.25, aAscTop = fontPx * 0.7, gotMetrics = false;
+        let maxW = 0;
+        rLines.forEach((line, li) => {
+          const lw = segW(line, fontPx);
+          if (lw > maxW) maxW = lw;
+          const gs = line.length ? groupsOf(line) : [{ st: baseSt, text: '' }];
+          gs.forEach((g) => {
+            ctx.font = fontFor(g.st, fontPx);
+            const m = ctx.measureText(g.text || '');
+            const baseAsc = (typeof m.fontBoundingBoxAscent === 'number') ? m.fontBoundingBoxAscent : fontPx;
+            const baseline = li * lineH + baseAsc;
+            const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : baseAsc;
+            const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent : ((typeof m.fontBoundingBoxDescent === 'number') ? m.fontBoundingBoxDescent : fontPx * 0.25);
+            if (!gotMetrics && typeof m.fontBoundingBoxAscent === 'number' && typeof m.fontBoundingBoxDescent === 'number') { fbAscTop = m.fontBoundingBoxAscent; fbDescTop = m.fontBoundingBoxDescent; gotMetrics = true; }
+            const top = baseline - aAsc, bot = baseline + aDesc;
+            if (isFinite(top) && isFinite(bot)) {
+              gotInk = true;
+              if (top < inkTopRel) { inkTopRel = top; aAscTop = aAsc; }
+              if (bot > inkBottomRel) inkBottomRel = bot;
+            }
+          });
+        });
+        let inkH, y0;
+        if (gotInk && isFinite(inkTopRel) && isFinite(inkBottomRel) && inkBottomRel > inkTopRel) {
+          inkH = inkBottomRel - inkTopRel;
+          y0 = pad - inkTopRel;
+        } else {
+          inkH = rLines.length * lineH;
+          y0 = pad;
+        }
+        const inkW = maxW;
+        canvas.width = Math.max(2, Math.ceil((rFixW != null ? rFixW : inkW) + pad * 2));
+        canvas.height = Math.max(2, Math.ceil((rFixH != null ? rFixH : inkH) + pad * 2));
+        ctx.textBaseline = 'top';
+        ctx.textAlign = 'left';   // groups advance left→right; alignment is applied via each line's start x
+        const alignR = layer.align || 'center';
+        const opacR = (typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100;
+        ctx.globalAlpha = opacR / 100;
+        const wordBoxes = [];   // logical-px word hit-boxes (+ absolute char ranges) for the painter's word picking
+        rLines.forEach((line, li) => {
+          const y = y0 + li * lineH;
+          const lw = segW(line, fontPx);
+          let gx = pad;
+          if (alignR === 'center') gx = (canvas.width - lw) / 2;
+          else if (alignR === 'right') gx = canvas.width - pad - lw;
+          const lineLeft = gx;
+          groupsOf(line).forEach((g) => {
+            ctx.font = fontFor(g.st, fontPx);
+            const gw = ctx.measureText(g.text).width;
+            const gc = g.st.c;
+            if (effect === 'outline') {
+              ctx.save();
+              ctx.lineJoin = 'round';
+              ctx.lineWidth = Math.max(1, fontPx * 0.24 * k);
+              const lum = (() => { const c2 = shadeHex(gc, 0); const r2 = parseInt(c2.slice(1, 3), 16), g2 = parseInt(c2.slice(3, 5), 16), b2 = parseInt(c2.slice(5, 7), 16); return 0.299 * r2 + 0.587 * g2 + 0.114 * b2; })();
+              ctx.strokeStyle = hasEffColor ? effColor : (lum > 140 ? '#000000' : '#ffffff');
+              ctx.strokeText(g.text, gx, y);
+              ctx.fillStyle = gc;
+              ctx.fillText(g.text, gx, y);
+              ctx.restore();
+            } else if (effect === 'shadow') {
+              ctx.save();
+              ctx.shadowColor = hasEffColor ? effColor : 'rgba(0,0,0,0.55)';
+              ctx.shadowBlur = fontPx * 0.32 * k;
+              ctx.shadowOffsetX = Math.round(fontPx * 0.10 * k);
+              ctx.shadowOffsetY = Math.round(fontPx * 0.10 * k);
+              ctx.fillStyle = gc;
+              ctx.fillText(g.text, gx, y);
+              ctx.restore();
+            } else if (effect === 'neon') {
+              ctx.save();
+              const glow = hasEffColor ? effColor : gc;
+              ctx.shadowColor = glow;
+              ctx.shadowBlur = fontPx * 0.9 * k;
+              ctx.fillStyle = gc;
+              ctx.fillText(g.text, gx, y);
+              ctx.fillText(g.text, gx, y);
+              ctx.fillText(g.text, gx, y);
+              ctx.shadowBlur = fontPx * 0.4 * k;
+              ctx.fillStyle = shadeHex(gc, 0.7);
+              ctx.fillText(g.text, gx, y);
+              ctx.restore();
+            } else if (effect === '3d') {
+              ctx.save();
+              const darker = hasEffColor ? effColor : shadeHex(gc, -0.5);
+              const step = fontPx * 0.035 * k;
+              for (let d3 = 8; d3 >= 1; d3--) {
+                ctx.fillStyle = darker;
+                ctx.fillText(g.text, gx + d3 * step, y + d3 * step);
+              }
+              ctx.fillStyle = gc;
+              ctx.fillText(g.text, gx, y);
+              ctx.restore();
+            } else {
+              ctx.fillStyle = gc;
+              ctx.fillText(g.text, gx, y);
+            }
+            if (g.st.u) {
+              ctx.save();
+              ctx.strokeStyle = gc;
+              ctx.lineWidth = Math.max(2, fontPx * 0.06);
+              const uy = y + fontPx * 0.92;
+              ctx.beginPath(); ctx.moveTo(gx, uy); ctx.lineTo(gx + gw, uy); ctx.stroke();
+              ctx.restore();
+            }
+            if (g.st.s) {
+              ctx.save();
+              ctx.strokeStyle = gc;
+              ctx.lineWidth = Math.max(2, fontPx * 0.06);
+              const sy = y + fontPx * 0.42;
+              ctx.beginPath(); ctx.moveTo(gx, sy); ctx.lineTo(gx + gw, sy); ctx.stroke();
+              ctx.restore();
+            }
+            gx += gw;
+          });
+          // Word hit-boxes: per-char x walk (kerning-lossy but plenty for word picking).
+          let cx = lineLeft, wStart = -1, wX0 = 0;
+          for (let ci = 0; ci <= line.length; ci++) {
+            const c = line[ci];
+            const isSpace = !c || c.ch === ' ';
+            if (!isSpace && wStart < 0) { wStart = ci; wX0 = cx; }
+            if (isSpace && wStart >= 0) {
+              wordBoxes.push({ x0: wX0 / _q, x1: cx / _q, y0: y / _q, y1: (y + lineH) / _q, start: line[wStart].ai, end: line[ci - 1].ai + 1 });
+              wStart = -1;
+            }
+            if (c) { ctx.font = fontFor(c.st, fontPx); cx += ctx.measureText(c.ch).width; }
+          }
+        });
+        if (_q !== 1) { canvas.style.width = (canvas.width / _q) + 'px'; canvas.style.height = (canvas.height / _q) + 'px'; }
+        canvas._logicalW = canvas.width / _q; canvas._logicalH = canvas.height / _q; canvas._q = _q;
+        canvas._pad = pad / _q;
+        canvas._inkW = Math.max(1, (canvas.width - 2 * pad) / _q);
+        canvas._inkH = Math.max(1, (canvas.height - 2 * pad) / _q);
+        canvas._lineH = lineH / _q;
+        canvas._fbAsc = fbAscTop / _q;
+        canvas._fbDesc = fbDescTop / _q;
+        canvas._aAscTop = aAscTop / _q;
+        canvas._fitFontPx = fontPx / _q;
+        canvas._wordBoxes = wordBoxes;
         return canvas;
       }
       // Widest line decides the canvas width.
@@ -11518,6 +11795,13 @@
         b.addEventListener('click', (e) => {
           e.stopPropagation(); e.preventDefault();
           ensureSel();
+          // v3.1 (Terry SS1) — MID-EDIT: B/I/U style the SELECTION (or the caret's typing
+          // style), not the whole box — the guard above kept focus in the editable, so the
+          // execCommand lands on the live selection and 'input' re-syncs runs + canvas.
+          if (editingText === layer && layer.editEl) {
+            const cmd = (d.key === 'bold') ? 'bold' : (d.key === 'italic') ? 'italic' : 'underline';
+            if (applyInlineToEditable_(layer, cmd)) return;
+          }
           beginCollageChange();
           // v3.1 (Terry SS1) — B now drives the WEIGHT (400 ↔ 700) so it composes with
           // the Weight menu; the other three stay simple flag flips.
@@ -12208,7 +12492,10 @@
       // never shift the text. Only the caret (real colour) + selection show.
       ed.style.color = 'transparent';
       ed.style.textAlign = layer.align || 'center';
-      ed.style.caretColor = layer.color || '#ffffff';
+      // v3.1 (Terry SS1) — a mid-edit colour pick sets the TYPING colour; keep the caret
+      // hinting it across re-renders (every keystroke re-runs this) instead of snapping
+      // back to the layer colour. Cleared on exit (the edit session owns it).
+      ed.style.caretColor = (editingText === layer && layer._typingColor) ? layer._typingColor : (layer.color || '#ffffff');
       // ── v2.1 round 217 (Terry) — KILL the display↔edit glyph JUMP ────────────
       // The canvas pins its TOPMOST-LINE INK to box-y g (renderTextToCanvas draws
       // from y0 = pad − inkTopRel so ink-top = pad in the canvas, then renderText-
@@ -12276,6 +12563,179 @@
         ed.style.wordBreak = '';
       }
     }
+    // ═══ v3.1 (Terry SS1) — INLINE TEXT RUNS ("multi-coloured and formatted within the
+    // same text box"). A text layer may carry `runs`: consecutive segments of layer.text,
+    // each with optional per-run overrides { t, c?, b?, i?, u?, s? } = text, colour, bold,
+    // italic, underline, strike. An absent field inherits the layer-level value, so runs
+    // only ever record the DIFFERENCES. layer.text ALWAYS equals the joined run text.
+    // No runs (null) = the untouched single-style engine — every existing collage renders
+    // byte-for-byte as before; the runs path only exists once a box actually mixes styles.
+    function runsJoin_(runs) { return (runs || []).map((r) => String(r.t || '')).join(''); }
+    function runsStyleEq_(a, b) {
+      return (a.c || null) === (b.c || null) && (a.b === b.b) && (a.i === b.i) && (a.u === b.u) && (a.s === b.s);
+    }
+    // Collapse overrides equal to the layer-level style back to "inherit", merge adjacent
+    // identical runs, and drop runs entirely when nothing differs (→ pure legacy path).
+    function normalizeTextRuns_(layer) {
+      let runs = layer.runs;
+      if (!runs || !runs.length) { layer.runs = null; return; }
+      runs = runs.filter((r) => r && String(r.t || '').length > 0)
+        .map((r) => ({ t: String(r.t), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined) }));
+      const lc = (layer.color || '#ffffff').toLowerCase();
+      const lb = textWeightOf(layer) >= 600, li = !!layer.italic, lu = !!layer.underline, ls = !!layer.strike;
+      runs.forEach((r) => {
+        if (r.c != null && r.c.toLowerCase() === lc) r.c = undefined;
+        if (r.b != null && r.b === lb) r.b = undefined;
+        if (r.i != null && r.i === li) r.i = undefined;
+        if (r.u != null && r.u === lu) r.u = undefined;
+        if (r.s != null && r.s === ls) r.s = undefined;
+      });
+      const out = [];
+      runs.forEach((r) => { const p = out[out.length - 1]; if (p && runsStyleEq_(p, r)) p.t += r.t; else out.push(r); });
+      const allPlain = out.every((r) => r.c == null && r.b == null && r.i == null && r.u == null && r.s == null);
+      if (out.length) layer.text = runsJoin_(out);
+      layer.runs = (!out.length || allPlain) ? null : out;
+    }
+    // Fill the contentEditable from the layer: plain text when there are no runs (the
+    // legacy path, unchanged), else one <span> per run piece with the METRIC-affecting
+    // styles real (font-weight / font-style — the caret and wrapping must feel them) and
+    // the paint-only ones as data- attributes (colour/underline/strike — the canvas shows
+    // those; a CSS rule forces every descendant's text transparent so nothing doubles).
+    function fillEditableFromLayer_(layer, ed) {
+      const runs = (layer.runs && layer.runs.length) ? layer.runs : null;
+      if (!runs) { ed.textContent = String(layer.text == null ? '' : layer.text); return; }
+      ed.textContent = '';
+      runs.forEach((r) => {
+        const parts = String(r.t).split('\n');
+        parts.forEach((p, pi) => {
+          if (pi > 0) ed.appendChild(document.createElement('br'));
+          if (!p) return;
+          const sp = document.createElement('span');
+          if (r.c != null) { sp.setAttribute('data-c', r.c); sp.style.color = r.c; }
+          if (r.b != null) sp.style.fontWeight = r.b ? '700' : '400';
+          if (r.i != null) sp.style.fontStyle = r.i ? 'italic' : 'normal';
+          if (r.u != null) sp.setAttribute('data-u', r.u ? '1' : '0');
+          if (r.s != null) sp.setAttribute('data-s', r.s ? '1' : '0');
+          sp.textContent = p;
+          ed.appendChild(sp);
+        });
+      });
+    }
+    // Parse the contentEditable back into runs: walk the DOM accumulating effective
+    // style (our spans + whatever execCommand produced — <font color>, <b>/<i>/<u>/<s>,
+    // styleWithCSS spans). <br> and block boundaries become '\n' (innerText semantics),
+    // and the single trailing newline is stripped exactly like readTextEditable.
+    function readRunsFromEditable_(layer) {
+      const ed = layer && layer.editEl;
+      if (!ed) return null;
+      const runs = [];
+      const push = (t, st) => {
+        if (!t) return;
+        const p = runs[runs.length - 1];
+        const r = { t: t, c: st.c, b: st.b, i: st.i, u: st.u, s: st.s };
+        if (p && runsStyleEq_(p, r)) p.t += t; else runs.push(r);
+      };
+      const BLOCK = { DIV: 1, P: 1, LI: 1 };
+      const walk = (node, st) => {
+        if (node.nodeType === 3) { push(String(node.nodeValue || '').replace(/\r/g, '').replace(/\n/g, '').replace(/\u200B/g, ''), st); return; }   // ​ = the typing-colour ZWSP marker — DOM-only, never reaches the model
+        if (node.nodeType !== 1) return;
+        const tag = node.tagName;
+        if (tag === 'BR') { push('\n', st); return; }
+        const s = Object.assign({}, st);
+        if (tag === 'B' || tag === 'STRONG') s.b = true;
+        if (tag === 'I' || tag === 'EM') s.i = true;
+        if (tag === 'U') s.u = true;
+        if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') s.s = true;
+        if (tag === 'FONT' && node.getAttribute('color')) s.c = node.getAttribute('color');
+        const ds = node.dataset || {};
+        if (ds.c != null) s.c = ds.c;
+        if (ds.u != null) s.u = ds.u === '1';
+        if (ds.s != null) s.s = ds.s === '1';
+        const ist = node.style;
+        if (ist) {
+          if (ist.color && ist.color !== 'transparent' && ds.c == null) s.c = rgbToHexSafe_(ist.color) || s.c;
+          if (ist.fontWeight) { const w = parseInt(ist.fontWeight, 10); if (isFinite(w)) s.b = w >= 600; else if (ist.fontWeight === 'bold') s.b = true; else if (ist.fontWeight === 'normal') s.b = false; }
+          if (ist.fontStyle === 'italic') s.i = true; else if (ist.fontStyle === 'normal') s.i = false;
+          if (/underline/.test(ist.textDecorationLine || ist.textDecoration || '')) s.u = true;
+          if (/line-through/.test(ist.textDecorationLine || ist.textDecoration || '')) s.s = true;
+        }
+        // A block element starting after existing content = a line break (innerText model).
+        if (BLOCK[tag] && runs.length && !/\n$/.test(runs[runs.length - 1].t)) push('\n', st);
+        for (let ch = node.firstChild; ch; ch = ch.nextSibling) walk(ch, s);
+      };
+      for (let ch = ed.firstChild; ch; ch = ch.nextSibling) walk(ch, {});
+      if (runs.length) { const last = runs[runs.length - 1]; if (/\n$/.test(last.t)) { last.t = last.t.slice(0, -1); if (!last.t) runs.pop(); } }
+      return runs;
+    }
+    function rgbToHexSafe_(rgb) {
+      try {
+        if (/^#/.test(rgb)) return rgb;
+        const m = /rgba?\((\d+)[,\s]+(\d+)[,\s]+(\d+)/.exec(rgb);
+        if (!m) return null;
+        return '#' + (0x1000000 | (parseInt(m[1], 10) << 16) | (parseInt(m[2], 10) << 8) | parseInt(m[3], 10)).toString(16).slice(1);
+      } catch (_) { return null; }
+    }
+    // One sync point: editable DOM → layer.runs + layer.text (used on input + exit).
+    function syncLayerFromEditable_(layer) {
+      const runs = readRunsFromEditable_(layer);
+      if (runs == null) { layer.text = readTextEditable(layer); return; }
+      layer.runs = runs;
+      normalizeTextRuns_(layer);
+      if (!layer.runs) layer.text = runsJoin_(runs) || readTextEditable(layer);
+    }
+    // Apply an inline command to the CURRENT SELECTION inside a layer's editable —
+    // the "pick a colour / hit B and keep typing" path (Terry SS1). A collapsed caret
+    // sets Chromium's pending typing style, so the NEXT characters typed carry it; a
+    // real selection restyles those characters (execCommand fires 'input', which
+    // re-syncs runs + re-renders the canvas). Returns false when the selection isn't
+    // in this editable (caller falls back to the whole-box behaviour).
+    function applyInlineToEditable_(layer, cmd, value) {
+      const ed = layer && layer.editEl;
+      if (!ed) return false;
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !ed.contains(sel.anchorNode)) return false;
+      try { ed.focus(); } catch (_) {}
+      // v3.1 (Terry SS1) — COLLAPSED caret + colour: Chromium's "pending typing style" is
+      // flaky (it silently drops), so make it DETERMINISTIC: plant a zero-width-space span
+      // in the picked colour at the caret and put the caret inside it — every character
+      // typed next lands in that span. The ZWSP itself is stripped when the DOM is read
+      // back into runs, so it never reaches the model, the canvas, or the saved text.
+      if (cmd === 'foreColor' && sel.isCollapsed) {
+        try {
+          const sp = document.createElement('span');
+          sp.style.color = value;
+          sp.setAttribute('data-c', value);
+          sp.textContent = String.fromCharCode(0x200B);   // the ZWSP, written explicitly (an invisible literal is unmaintainable)
+          const rng = sel.getRangeAt(0);
+          rng.insertNode(sp);
+          const r2 = document.createRange();
+          r2.setStart(sp.firstChild, 1);
+          r2.collapse(true);
+          sel.removeAllRanges(); sel.addRange(r2);
+          layer._typingColor = value;
+          try { ed.style.caretColor = value; } catch (_) {}
+          return true;
+        } catch (_) { /* fall through to execCommand */ }
+      }
+      try { document.execCommand('styleWithCSS', false, true); } catch (_) {}
+      let ok = false;
+      try { ok = document.execCommand(cmd, false, value); } catch (_) { ok = false; }
+      if (cmd === 'foreColor' && ok) { layer._typingColor = value; try { ed.style.caretColor = value; } catch (_) {} }   // remembered so styleTextEditable keeps the caret hinting the picked colour across keystroke re-renders
+      return ok;
+    }
+    // v3.1 (Terry SS1) — while a text box is being edited, clicking a colour swatch, a
+    // toolbar style button or a toolbar popover must NOT steal focus (the editable's blur
+    // exits edit mode): swallow the mousedown so the caret + selection survive — the CLICK
+    // still fires, applies to the selection, and you just keep typing ("select a different
+    // colour from the palette and then continue on the keyboard typing without having to
+    // click back inside the text box"). Real inputs (the size field) still take focus.
+    document.addEventListener('mousedown', (e) => {
+      if (!editingText) return;
+      const t = e.target;
+      if (!(t instanceof Element)) return;
+      if (t.closest('input, select, textarea, [contenteditable="true"]')) return;
+      if (t.closest('.frame-swatch, .ch-tb-topstrip, .ch-tb-pop, .ch-toolbar[data-text-tb]')) e.preventDefault();
+    }, true);
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
     // trailing newline some browsers append. This is what renderTextToCanvas
@@ -12284,7 +12744,7 @@
       const ed = layer && layer.editEl;
       if (!ed) return '';
       let t = ed.innerText != null ? ed.innerText : (ed.textContent || '');
-      t = t.replace(/\r/g, '');
+      t = t.replace(/\r/g, '').replace(/\u200B/g, '');   // v3.1 (Terry SS1) — strip the typing-colour ZWSP marker (DOM-only)
       if (t.endsWith('\n')) t = t.slice(0, -1);
       return t;
     }
@@ -12315,7 +12775,7 @@
         // box tracks the typed text — the handles/ring stay hugging the glyphs.
         ed.addEventListener('input', () => {
           if (editingText !== layer) return;
-          layer.text = readTextEditable(layer);
+          syncLayerFromEditable_(layer);   // v3.1 (Terry SS1) — runs + text from the DOM (typed chars inherit the caret's run / pending typing style)
           renderTextLayer(layer);   // canvas stays hidden (editingText === layer); resizes the wrapper to fit
         });
         // v2.1 round 215 (Terry) — Enter now INSERTS A NEWLINE (Terry: "Pressing
@@ -12357,7 +12817,9 @@
         layer.editEl = ed;
       }
       // Fill from the model, hide the canvas, style to match the render.
-      ed.textContent = String(layer.text == null ? '' : layer.text);
+      // v3.1 (Terry SS1) — runs-aware: spans per run (metric styles real, paint styles as
+      // data-attrs) so the caret/wrap feel bold/italic; plain text when there are no runs.
+      fillEditableFromLayer_(layer, ed);
       // v2.1 round 218 (Terry) — keep the canvas visible; the editable overlays it
       // with transparent text (the canvas is the visible text → no edit-jump).
       if (layer.canvasEl) layer.canvasEl.style.display = 'block';
@@ -12400,7 +12862,8 @@
       // blur that .remove() synchronously fires sees editingText === null and the
       // blur handler's guard no-ops (no re-entrant exit / text loss).
       const ed = layer.editEl;
-      if (ed) layer.text = readTextEditable(layer);
+      if (ed) syncLayerFromEditable_(layer);   // v3.1 (Terry SS1) — runs + text (was layer.text = readTextEditable)
+      layer._typingColor = null;   // v3.1 (Terry SS1) — the mid-edit typing colour ends with the session
       editingText = null;
       layer.editEl = null;
       const preSnap = textEditSnap; textEditSnap = null;
@@ -13085,6 +13548,8 @@
         effectColor: layer.effectColor || '',
         locked: false, lockLayer: false,   // the clone starts unlocked (both kinds)
         flipH: !!layer.flipH, flipV: !!layer.flipV,   // v3.1 (Terry) — the clone keeps the emoji mirror/flip
+        // v3.1 (Terry SS1) — INLINE RUNS: the clone deep-copies the per-word colours/styles.
+        runs: (layer.runs && layer.runs.length) ? layer.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined) })) : null,
         // v3.1 (Terry) — EMOJI appearance parity: the clone copies the emoji's enh (deep
         // copy — the corners array must not be shared) so a duplicated emoji keeps its
         // Looks/Effects/Glow/Tone styling. null/absent = no effects (plain emoji, text).
@@ -16814,7 +17279,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', enh: (t.isEmoji && t.enh) ? t.enh : undefined, locked: !!t.locked, lockLayer: !!t.lockLayer, flipH: !!t.flipH, flipV: !!t.flipV })),   // v3.1 (Terry) — carry an EMOJI's enh (Looks/Effects/Glow/Tone parity; undefined = key omitted by JSON.stringify, so plain emoji/text snapshots are byte-identical to before); v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', enh: (t.isEmoji && t.enh) ? t.enh : undefined, locked: !!t.locked, lockLayer: !!t.lockLayer, flipH: !!t.flipH, flipV: !!t.flipV, runs: (t.runs && t.runs.length) ? t.runs.map((r) => { const o = { t: String(r.t || '') }; if (r.c != null) o.c = r.c; if (r.b != null) o.b = !!r.b; if (r.i != null) o.i = !!r.i; if (r.u != null) o.u = !!r.u; if (r.s != null) o.s = !!r.s; return o; }) : undefined })),   /* v3.1 (Terry SS1) — INLINE RUNS round-trip; undefined = key omitted, so runs-less snapshots stay byte-identical */   // v3.1 (Terry) — carry an EMOJI's enh (Looks/Effects/Glow/Tone parity; undefined = key omitted by JSON.stringify, so plain emoji/text snapshots are byte-identical to before); v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -17055,7 +17520,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; });   // v3.1 (Terry) — stage-level toolbars + top-bar strips torn down with the els (they live OUTSIDE the canvas now)
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, flipH: !!st.flipH, flipV: !!st.flipV, el: null, canvasEl: null }));   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, flipH: !!st.flipH, flipV: !!st.flipV, runs: (Array.isArray(st.runs) && st.runs.length) ? st.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined) })) : null, el: null, canvasEl: null }));   /* v3.1 (Terry SS1) — INLINE RUNS restore (old snapshots lack the key → null = single-style path) */   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -23984,9 +24449,23 @@
     }
     function setTextColor(hex) {
       if (!selectedText) return;
-      selectedText.color = hex || '#ffffff';
-      lastTextColor = selectedText.color;   // v2.1 round 187 (Terry) — next text inherits this colour
+      const h = hex || '#ffffff';
+      lastTextColor = h;                    // v2.1 round 187 (Terry) — next text inherits this colour
       textSaveLastColor(lastTextColor);     // v2.1 round 209 (Terry) — persist across window opens
+      // v3.1 (Terry SS1) — MID-EDIT: colour the SELECTION (or set the caret's typing colour,
+      // so you pick a swatch and just keep typing — the palette's mousedown is swallowed so
+      // focus never leaves the box). execCommand fires 'input' → runs sync + canvas re-render.
+      // Only when NOT editing does a pick recolour the WHOLE box (and clear per-word colours,
+      // so a whole-box pick still wins over earlier word colours — one obvious rule).
+      if (editingText === selectedText && selectedText.editEl && applyInlineToEditable_(selectedText, 'foreColor', h)) {
+        syncTextColorPaletteRings();
+        return;
+      }
+      selectedText.color = h;
+      if (selectedText.runs && selectedText.runs.length) {
+        selectedText.runs.forEach((r) => { r.c = undefined; });
+        normalizeTextRuns_(selectedText);
+      }
       renderTextLayer(selectedText);
       // v2.1 round 194 (Terry) — re-ring the single palette so the active swatch
       // tracks the new colour. Custom colours match nothing.
