@@ -11087,7 +11087,7 @@
       // (== the base sizeFrac px unless the fixed-box autoFit stepped it down).
       // styleTextEditable reads this so the contentEditable overlay types at the
       // FITTED size and its caret/lines keep tracking the canvas.
-      canvas._fitFontPx = fontPx;
+      canvas._fitFontPx = fontPx / _q;   // v3.1 (Terry SS1/SS2) — LOGICAL px like every other stash above (÷_q). Was stashed in Q-scaled px, so the contentEditable typed at 2–3× the real size: text looked massive while editing, wrapped twice as often as the canvas, and the caret sank a full row below the box.
       return canvas;
     }
     // The collage canvas's on-screen short side (drives the preview render).
@@ -12416,19 +12416,21 @@
     // width / N, so a new box wraps WITHIN its page and never stretches across the whole carousel.
     // The user can drag the side bars, toggle to hug-text ('auto'), or opt into spanning pages.
     function defaultTextBoxWFrac() {
+      // Carousel: page geometry is FIXED (1080:1350 per page, short side = the canvas height),
+      // so one page is always 0.8 × shortPx wide → 85% of a page = 0.68, a constant. Using the
+      // constant (not clientWidth at call time) makes the default immune to layout/zoom timing.
+      if (carouselMode) return 0.68;
       const shortPx = collageShortPx();
-      if (!shortPx || !collageCanvasEl) return 0.7;
+      if (!shortPx || !collageCanvasEl) return 0.85;
       const cw = collageCanvasEl.clientWidth || shortPx;
-      const N = (carouselMode ? Math.max(1, carouselPageCount) : 1);
-      const pageW = cw / N;
-      return Math.max(0.1, Math.min(3, (pageW * 0.85) / shortPx));
+      return Math.max(0.1, Math.min(3, (cw * 0.85) / shortPx));   // single collage: 85% of the canvas width
     }
     function addTextLayer() {
       // v2.1 round 204 (Terry) — if a previous edit session is open (e.g. clicking
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, boxMode: 'fixed', boxWFrac: defaultTextBoxWFrac(), boxHFrac: null, /* v3.1 (Terry SS1) — new text now WRAPS within ~one page by default (Canva-style) instead of extending right forever; a side-bar drag resizes the width, the Wrap toggle flips to hug-text 'auto', and the page-span override lets it cross pages. boxHFrac null = the box auto-grows downward as lines wrap. */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: (carouselMode ? 0.064 : 0.08),   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page; v3.1 (Terry SS1) — carousel default = 0.064 (0.08 × the 0.8 page-width factor) so the font-to-PAGE proportion matches a single collage — 0.08 of the wide canvas's height read oversized on a page */ scaleX: 1, scaleY: 1, boxMode: 'fixed', boxWFrac: defaultTextBoxWFrac(), boxHFrac: null, /* v3.1 (Terry SS1) — new text now WRAPS within ~one page by default (Canva-style) instead of extending right forever; a side-bar drag resizes the width, the Wrap toggle flips to hug-text 'auto', and the page-span override lets it cross pages. boxHFrac null = the box auto-grows downward as lines wrap. */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
