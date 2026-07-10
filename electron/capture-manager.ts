@@ -3838,6 +3838,36 @@ function notifyWidgetCamState(): void {
   }
 }
 
+// v3.1 (Terry) — HOVER over the bubble is detected in MAIN, not the renderer. The bubble is an
+// -webkit-app-region:drag window, and drag regions swallow mouse events (the OS uses them for window
+// dragging), so a renderer :hover only fired on the thin no-drag edge, never the draggable middle
+// ("controls appear on the circumference, disappear in the middle"). We poll the screen cursor against
+// each visible bubble's bounds and send cam-do {action:'hover'} only when the over/out state flips.
+// Cheap (a getCursorScreenPoint + rect test at ~9Hz) and only runs while a bubble is on screen.
+let camHoverPoll: NodeJS.Timeout | null = null;
+const camHoverLast: Record<number, boolean> = { 1: false, 2: false };
+function startCamHoverPoll(): void {
+  if (camHoverPoll) return;
+  camHoverPoll = setInterval(() => {
+    let any = false;
+    let pt: Electron.Point;
+    try { pt = screen.getCursorScreenPoint(); } catch { return; }
+    for (const which of [1, 2]) {
+      const win = camWindows[which];
+      if (!win || win.isDestroyed() || !camVisibles[which]) { camHoverLast[which] = false; continue; }
+      any = true;
+      let over = false;
+      try { const b = win.getBounds(); over = pt.x >= b.x && pt.x < b.x + b.width && pt.y >= b.y && pt.y < b.y + b.height; } catch { /* non-fatal */ }
+      if (over !== camHoverLast[which]) {
+        camHoverLast[which] = over;
+        try { win.webContents.send('capture:cam-do', { action: 'hover', over }); } catch { /* non-fatal */ }
+      }
+    }
+    if (!any) stopCamHoverPoll();
+  }, 110);
+}
+function stopCamHoverPoll(): void { if (camHoverPoll) { clearInterval(camHoverPoll); camHoverPoll = null; } camHoverLast[1] = false; camHoverLast[2] = false; }
+
 function createCamBubble(display: Electron.Display, which: number = 1): void {
   const existing = camWindows[which];
   if (existing && !existing.isDestroyed()) return;
@@ -3919,6 +3949,7 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
     win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId });
     win.showInactive();
     camVisibles[which] = true;
+    startCamHoverPoll();   // v3.1 (Terry) — main-driven hover for the controls (works over the drag region)
     notifyWidgetCamState();
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
@@ -4166,6 +4197,7 @@ function toggleCamBubble(which: number = 1): void {
     try { win.showInactive(); } catch { /* non-fatal */ }
     try { win.webContents.send('capture:cam-do', { action: 'show' }); } catch { /* non-fatal */ }
     camVisibles[which] = true;
+    startCamHoverPoll();   // v3.1 (Terry) — resume the hover poll when a bubble is re-shown
     notifyWidgetCamState();
   }
 }
@@ -4179,6 +4211,7 @@ function closeCamBubble(): void {
     camWindows[which] = null;
     camVisibles[which] = false;
   }
+  stopCamHoverPoll();   // v3.1 (Terry) — no bubbles left → stop the cursor poll
 }
 
 function registerCamHotkey(): void {
