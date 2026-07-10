@@ -279,8 +279,15 @@
   var bdpop = document.getElementById('bdpop');
   var bdOpen = false;
   var GRAD_LABELS = { lavender: 'Lavender', gold: 'Gold', studio: 'Dark Studio', navy: 'Navy', fuchsia: 'Fuchsia', forest: 'Forest' };
+  // v3.1 (Terry) — the PDR-original textured backdrops, as swatches (id + label + a CSS preview).
+  var TEXTURES_LIST = [
+    { id: 'bokehWarm', label: 'Warm bokeh', sw: 'radial-gradient(circle at 32% 30%, #ffce78, #2a1e08)' },
+    { id: 'bokehCool', label: 'Cool bokeh', sw: 'radial-gradient(circle at 32% 30%, #aab6ff, #141b33)' },
+    { id: 'spotlight', label: 'Spotlight', sw: 'radial-gradient(circle at 50% 26%, #ffffff, #0c0c12)' },
+    { id: 'mesh', label: 'Mesh', sw: 'linear-gradient(135deg, #A99CFF, #D946EF 55%, #FEC242)' },
+  ];
   function bdBubbleSet(bg) { try { if (pdr && pdr.capture && pdr.capture.camBubbleSetBg) pdr.capture.camBubbleSetBg(bg); } catch (e) {} }
-  function bdKey(bg) { if (!bg || !bg.type || bg.type === 'none') return 'none'; if (bg.type === 'blur') return 'blur'; if (bg.type === 'gradient') return 'g:' + (bg.value || ''); if (bg.type === 'image') return 'image'; return 'none'; }
+  function bdKey(bg) { if (!bg || !bg.type || bg.type === 'none') return 'none'; if (bg.type === 'blur') return 'blur'; if (bg.type === 'gradient') return 'g:' + (bg.value || ''); if (bg.type === 'texture') return 't:' + (bg.value || ''); if (bg.type === 'image') return 'image'; return 'none'; }
   function buildBackdropPop() {
     var html = '';
     html += '<button class="bdsw" data-bd="none" data-tip="No backdrop"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="6" y1="18" x2="18" y2="6"/></svg></button>';
@@ -288,6 +295,9 @@
     Object.keys(GRADIENTS).forEach(function (k) {
       var g = GRADIENTS[k];
       html += '<button class="bdsw" data-bd="g:' + k + '" data-tip="' + (GRAD_LABELS[k] || k) + '" style="background:linear-gradient(135deg,' + g[0] + ',' + g[1] + ');border-color:rgba(255,255,255,0.4)"></button>';
+    });
+    TEXTURES_LIST.forEach(function (tx) {   // v3.1 (Terry) — PDR-original textured backdrops
+      html += '<button class="bdsw" data-bd="t:' + tx.id + '" data-tip="' + tx.label + '" style="background:' + tx.sw + ';border-color:rgba(255,255,255,0.4)"></button>';
     });
     html += '<button class="bdsw" data-bd="pick" data-tip="My picture"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="8.5" cy="10" r="1.6"/><path d="M4 18l5-4 3 2 4-3 4 3"/></svg></button>';
     bdpop.innerHTML = html;
@@ -299,7 +309,7 @@
         e.stopPropagation();
         var v = sw.getAttribute('data-bd');
         if (v === 'pick') { closeBackdropPop(); try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (err) {} return; }
-        var bg = (v === 'blur') ? { type: 'blur' } : (v.indexOf('g:') === 0) ? { type: 'gradient', value: v.slice(2) } : { type: 'none' };
+        var bg = (v === 'blur') ? { type: 'blur' } : (v.indexOf('g:') === 0) ? { type: 'gradient', value: v.slice(2) } : (v.indexOf('t:') === 0) ? { type: 'texture', value: v.slice(2) } : { type: 'none' };
         segFailed = false; applyBg(bg); bdBubbleSet(bg);
         closeBackdropPop();
       });
@@ -365,10 +375,58 @@
     c.fillRect(0, 0, cv.width, cv.height);
     return cv;
   }
+  // v3.1 (Terry) — PDR-ORIGINAL textured backdrops ("something more interesting than a solid colour"
+  // without using anyone else's IP): all generated procedurally in-app, so they're ours + weigh nothing.
+  var BOKEH_POS = [   // fixed (deterministic) so the "blurred lights" look the same every time
+    [0.12, 0.20, 0.10, 0.55], [0.31, 0.12, 0.06, 0.35], [0.48, 0.27, 0.13, 0.60], [0.68, 0.15, 0.08, 0.40],
+    [0.83, 0.30, 0.11, 0.50], [0.20, 0.55, 0.14, 0.45], [0.41, 0.67, 0.07, 0.30], [0.60, 0.54, 0.12, 0.55],
+    [0.78, 0.66, 0.09, 0.42], [0.91, 0.50, 0.06, 0.30], [0.10, 0.80, 0.08, 0.35], [0.35, 0.88, 0.11, 0.45],
+    [0.58, 0.82, 0.06, 0.30], [0.73, 0.90, 0.10, 0.40], [0.92, 0.80, 0.07, 0.32],
+  ];
+  function drawBokeh(c, w, h, a, b, r, g, bl) {
+    var grad = c.createLinearGradient(0, 0, 0, h); grad.addColorStop(0, a); grad.addColorStop(1, b);
+    c.fillStyle = grad; c.fillRect(0, 0, w, h);
+    BOKEH_POS.forEach(function (p) {
+      var cx = p[0] * w, cy = p[1] * h, rad = p[2] * h, al = p[3];
+      var rg = c.createRadialGradient(cx, cy, 0, cx, cy, rad);
+      rg.addColorStop(0, 'rgba(' + r + ',' + g + ',' + bl + ',' + al.toFixed(2) + ')');
+      rg.addColorStop(0.55, 'rgba(' + r + ',' + g + ',' + bl + ',' + (al * 0.45).toFixed(2) + ')');
+      rg.addColorStop(1, 'rgba(' + r + ',' + g + ',' + bl + ',0)');
+      c.fillStyle = rg; c.beginPath(); c.arc(cx, cy, rad, 0, Math.PI * 2); c.fill();
+    });
+  }
+  var TEXTURES = {
+    bokehWarm: function (c, w, h) { drawBokeh(c, w, h, '#2a1e08', '#0e0a04', 255, 206, 120); },
+    bokehCool: function (c, w, h) { drawBokeh(c, w, h, '#141b33', '#070912', 170, 182, 255); },
+    spotlight: function (c, w, h) {
+      c.fillStyle = '#0c0c12'; c.fillRect(0, 0, w, h);
+      var s = c.createRadialGradient(w * 0.5, h * 0.24, 0, w * 0.5, h * 0.5, h * 1.05);
+      s.addColorStop(0, 'rgba(255,250,235,0.5)'); s.addColorStop(0.4, 'rgba(255,250,235,0.11)'); s.addColorStop(1, 'rgba(255,250,235,0)');
+      c.fillStyle = s; c.fillRect(0, 0, w, h);
+      var v = c.createRadialGradient(w / 2, h / 2, h * 0.3, w / 2, h / 2, h); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.5)');
+      c.fillStyle = v; c.fillRect(0, 0, w, h);
+    },
+    mesh: function (c, w, h) {
+      c.fillStyle = '#14101f'; c.fillRect(0, 0, w, h);
+      [[0.25, 0.30, '#A99CFF'], [0.76, 0.34, '#D946EF'], [0.50, 0.82, '#FEC242'], [0.86, 0.74, '#5B6CFF']].forEach(function (b) {
+        var rg = c.createRadialGradient(b[0] * w, b[1] * h, 0, b[0] * w, b[1] * h, h * 0.62);
+        rg.addColorStop(0, b[2] + '99'); rg.addColorStop(1, b[2] + '00');
+        c.fillStyle = rg; c.fillRect(0, 0, w, h);
+      });
+      var v = c.createRadialGradient(w / 2, h * 0.42, h * 0.28, w / 2, h / 2, h * 0.95); v.addColorStop(0, 'rgba(0,0,0,0)'); v.addColorStop(1, 'rgba(0,0,0,0.35)');
+      c.fillStyle = v; c.fillRect(0, 0, w, h);
+    },
+  };
+  function makeTextureLayer(id) {
+    var cv = document.createElement('canvas'); cv.width = 640; cv.height = 480;
+    (TEXTURES[id] || TEXTURES.mesh)(cv.getContext('2d'), cv.width, cv.height);
+    return cv;
+  }
   function buildBgLayer(bg, onReady) {
     var key = bg.type + ':' + (bg.value || '');
     if (key === bgLayerKey && bgLayer) { onReady(); return; }
     if (bg.type === 'gradient') { bgLayer = makeGradientLayer(bg.value || 'studio'); bgLayerKey = key; onReady(); return; }
+    if (bg.type === 'texture') { bgLayer = makeTextureLayer(bg.value || 'mesh'); bgLayerKey = key; onReady(); return; }
     if (bg.type === 'image' && bg.value) {
       var img = new Image();
       img.onload = function () { bgLayer = img; bgLayerKey = key; onReady(); };
