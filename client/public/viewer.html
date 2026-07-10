@@ -10700,7 +10700,7 @@
       const _q = (opts && typeof opts.qualityMul === 'number') ? Math.max(1, opts.qualityMul)
                : Math.max(1, Math.min(3, (window.devicePixelRatio || 1) * 2));
       shortPx = (shortPx || 0) * _q;
-      let fontPx = Math.max(8 * _q, (layer.sizeFrac || 0.08) * shortPx);   // v3.1 (Terry) — let (not const): fixed-box autoFit below may step it down. 8px floor kept in LOGICAL px (×_q here)
+      let fontPx = Math.max(2 * _q, (layer.sizeFrac || 0.08) * shortPx);   // v3.1 (Terry) — let (not const): fixed-box autoFit below may step it down. v3.1 (Terry SS1) — floor LOWERED 8→2px logical: at a small carousel window the old 8px floor stopped the text shrinking while the page kept shrinking, so it grew disproportionate and BLED past the page (editor-only; export renders at ~1350px where any floor is moot). 2px keeps the on-screen text page-proportional (WYSIWYG with the export) down to tiny sizes without a degenerate canvas.
       // v3.1 (Terry) — the CASE transform is applied to the RENDERED text only; the
       // underlying layer.text stays editable/unchanged (mirrors Canva's aA).
       let lines = applyLetterCase(layer.text, layer.letterCase).split('\n');   // v3.1 (Terry) — let: fixed mode replaces these with the wrapped lines
@@ -11541,6 +11541,33 @@
       try { tbar.insertBefore(wChev, ctl.styleBtns.italic); } catch (_) { ins(wChev); }   // sits between B and I
       push(wChev);
 
+      // ---- WRAP toggle (Terry SS1): fixed-width WRAP (text flows onto new lines, stays on its
+      // page) ↔ auto/HUG (the box hugs the text and grows sideways). New text now defaults to
+      // wrap; this flips it. Dragging a side bar wider than a page is the "span pages" override. ----
+      ins(document.createElement('div')).className = 'ch-tb-sep';
+      const wrapBtn = document.createElement('button');
+      wrapBtn.type = 'button'; wrapBtn.className = 'ch-tb-btn ch-tb-toggle ch-tb-wrap';
+      wrapBtn.setAttribute('data-pdr-tooltip', 'Wrap text in a box (flows onto new lines, stays on its page). Off = the box hugs the text and grows sideways. Drag a side bar wider than a page to span pages.');
+      wrapBtn.innerHTML = '<svg viewBox="0 0 24 24"><line x1="3" y1="6" x2="21" y2="6"/><path d="M3 12h13a3 3 0 0 1 0 6h-3"/><polyline points="15 15 13 18 15 21"/><line x1="3" y1="18" x2="8" y2="18"/></svg>';
+      ctl.wrapBtn = wrapBtn;
+      ctl.syncWrap = () => { wrapBtn.classList.toggle('active', layer.boxMode === 'fixed'); };
+      ctl.syncWrap();
+      wrapBtn.addEventListener('click', (e) => {
+        e.stopPropagation(); e.preventDefault();
+        ensureSel();
+        beginCollageChange();
+        if (layer.boxMode === 'fixed') {
+          layer.boxMode = 'auto'; layer.boxWFrac = null; layer.boxHFrac = null;   // → hug the text
+        } else {
+          layer.boxMode = 'fixed'; layer.boxWFrac = defaultTextBoxWFrac(); layer.boxHFrac = null;   // → wrap in a one-page box
+        }
+        renderTextLayer(layer);
+        commitCollageChange();
+        ctl.syncWrap();
+        try { syncTextControls(); } catch (_) {}
+      });
+      ins(wrapBtn); push(wrapBtn);
+
       ins(document.createElement('div')).className = 'ch-tb-sep';
 
       // ---- ALIGN: L / C / R (sets the SAME layer.align the panel does) ----
@@ -12007,7 +12034,7 @@
       const _pad = canvas._pad || 0;
       const _inkW = (typeof canvas._inkW === 'number') ? canvas._inkW : Math.max(1, canvas.width - 2 * _pad);
       const _inkH = (typeof canvas._inkH === 'number') ? canvas._inkH : Math.max(1, canvas.height - 2 * _pad);
-      const _fontPx = Math.max(8, (layer.sizeFrac || 0.08) * collageShortPx());
+      const _fontPx = Math.max(2, (layer.sizeFrac || 0.08) * collageShortPx());   // v3.1 (Terry SS1) — floor 8→2 to match renderTextToCanvas (box gap tracks the page-proportional font at small windows; no bleed)
       const _g = Math.round(_fontPx * (layer.isEmoji ? 0.04 : 0.16));   // v3.0 r385 (Terry) — EMOJI box hugs the glyph tight (Canva SS1); text keeps its snug gap
       // v2.1 round 222 (Terry) — NON-UNIFORM STRETCH via the SIDE handles. scaleX/
       // scaleY (default 1) stretch the ink one axis WITHOUT touching renderTextToCanvas
@@ -12383,12 +12410,25 @@
       selectText(layer);               // keep it selected
       pushCollageUndoIfChanged(preSnap);   // one undo step for the whole edit session (text changed)
     }
+    // v3.1 (Terry SS1) — a sensible default WRAP width for a NEW text box: ~85% of ONE PAGE's
+    // width, expressed as the boxWFrac fraction the fixed-mode renderer wants (fraction of the
+    // short side, since _fixW = boxWFrac * collageShortPx()). Carousel-aware: one page = canvas
+    // width / N, so a new box wraps WITHIN its page and never stretches across the whole carousel.
+    // The user can drag the side bars, toggle to hug-text ('auto'), or opt into spanning pages.
+    function defaultTextBoxWFrac() {
+      const shortPx = collageShortPx();
+      if (!shortPx || !collageCanvasEl) return 0.7;
+      const cw = collageCanvasEl.clientWidth || shortPx;
+      const N = (carouselMode ? Math.max(1, carouselPageCount) : 1);
+      const pageW = cw / N;
+      return Math.max(0.1, Math.min(3, (pageW * 0.85) / shortPx));
+    }
     function addTextLayer() {
       // v2.1 round 204 (Terry) — if a previous edit session is open (e.g. clicking
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
       beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, boxMode: 'auto', boxWFrac: null, boxHFrac: null, /* v3.1 (Terry) — FIXED TEXT AREA: new text starts in today's extend-right 'auto' mode; grabbing a side bar flips it to 'fixed' (wrap width / fixed height, fractions of the short side) */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: 0.08,   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page */ scaleX: 1, scaleY: 1, boxMode: 'fixed', boxWFrac: defaultTextBoxWFrac(), boxHFrac: null, /* v3.1 (Terry SS1) — new text now WRAPS within ~one page by default (Canva-style) instead of extending right forever; a side-bar drag resizes the width, the Wrap toggle flips to hug-text 'auto', and the page-span override lets it cross pages. boxHFrac null = the box auto-grows downward as lines wrap. */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
