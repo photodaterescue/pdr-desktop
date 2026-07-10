@@ -331,7 +331,7 @@
   <div id="confirm">
     <span class="cfm-label" id="cfmLabel">Save this recording?</span>
     <button id="cfmSave" type="button" title="Save the recording to your library">Save recording</button>
-    <button id="cfmDiscard" type="button" title="Throw this recording away — it is not saved anywhere">Discard</button>
+    <button id="cfmDiscard" type="button" title="Throw this take away and stay ready to record again — nothing is saved">Discard</button>
     <button id="cfmKeep" type="button" title="Go back — keep recording from where you paused">Keep recording</button>
   </div>
 <script>
@@ -381,6 +381,8 @@
   var QUALITY_BITRATE = { tiny: 2000000, compact: 4000000, standard: 8000000, high: 12000000 };   // v3.1 (Terry) — Tiny records at 2 Mbps; the save step downscales to ≤1280w too
   var blurCount = 0;            // number of blur regions currently open (multiple allowed)
   var blurSelecting = false;    // the selection overlay is up
+  var rearming = false;         // v3.1 (Terry) — Discard-then-rearm in flight (stopping the take to re-arm)
+  var currentRegion = null;     // v3.1 (Terry) — the live area crop (for the "Ready · W×H" readout on re-arm)
   // Round 129 — armed stage: init is stored, the engine stays cold,
   // and NOTHING is captured until the user presses Record.
   var storedInit = null;
@@ -642,7 +644,11 @@
         stopTracks();
         // Give the final ondataavailable chunk a beat to cross IPC.
         setTimeout(function () {
-          if (cancelled) {
+          if (rearming) {
+            // v3.1 (Terry) — bin this take, keep the bar and re-arm for another go.
+            if (pdr && pdr.capture && pdr.capture.recordDiscardRearm) pdr.capture.recordDiscardRearm();
+            resetToArmed();
+          } else if (cancelled) {
             if (pdr && pdr.capture && pdr.capture.recordCancelled) pdr.capture.recordCancelled();
           } else {
             if (pdr && pdr.capture && pdr.capture.recordStopped) pdr.capture.recordStopped({});
@@ -680,6 +686,40 @@
     } catch (e) {
       reportError('Stop failed: ' + e.message);
     }
+  }
+
+  // v3.1 (Terry) — DISCARD then RE-ARM: throw this take away but keep the bar UP, ready to record
+  // again — no relaunching from the titlebar. Stops the recorder; onstop tells main to bin the temp
+  // and reset to armed, then the bar re-arms itself. (finish() tears everything down; this doesn't.)
+  function discardRearm() {
+    if (finished || rearming) return;
+    if (zoomActive) {
+      zoomActive = false;
+      try { if (pdr && pdr.capture && pdr.capture.recordZoom) pdr.capture.recordZoom({ type: 'close', endMs: clockMs() }); } catch (e) {}
+    }
+    rearming = true;
+    sizeEl.textContent = 'Discarding…';
+    allButtons.forEach(function (b) { b.disabled = true; });
+    try {
+      if (recorder && recorder.state !== 'inactive') recorder.stop();   // onstop → recordDiscardRearm + resetToArmed
+      else { if (pdr && pdr.capture && pdr.capture.recordDiscardRearm) pdr.capture.recordDiscardRearm(); resetToArmed(); }
+    } catch (e) { reportError('Discard failed: ' + e.message); }
+  }
+  // Return the bar to the ARMED state (Record showing, nothing captured). Mirrors the first-arm setup.
+  function resetToArmed() {
+    rearming = false; finished = false; cancelled = false;
+    recorder = null; stream = null;
+    startedAtMs = 0; pausedTotalMs = 0; pausedAtMs = 0; paused = false; capturedBytes = 0; zoomActive = false;
+    // clear the paused pulse + restore the Pause button
+    pauseBtn.classList.remove('pausing'); timeEl.classList.remove('pausing'); sizeEl.classList.remove('paused-status');
+    pauseBtn.textContent = 'Pause'; pauseBtn.title = 'Pause recording';
+    // reset the blur counter + button label
+    blurCount = 0; blurSelecting = false;
+    blurBtn.textContent = 'Blur';
+    blurBtn.title = 'Blur an area — pause, then drag a box; the saved video blurs it. Add as many as you like.';
+    timeEl.textContent = '0:00';
+    allButtons.forEach(function (b) { b.disabled = false; });
+    enterArmedUI(currentRegion);   // Record shows; pause/snap/blur/zoom disabled again
   }
 
   // ── Round 128: quality dropdown (was a cycle button — Terry:
@@ -896,16 +936,27 @@
   var confirmEl = document.getElementById('confirm');
   var cfmLabel = document.getElementById('cfmLabel');
   var confirmWasPaused = false;
+  var confirmKind = 'stop';   // v3.1 (Terry) — 'stop' (Save?) vs 'cancel' (the ✕ / Discard?) — decides what Discard does
   function openConfirm(kind) {
     if (finished || !recorder) return;
+    confirmKind = kind;
     confirmWasPaused = paused;
     if (!paused) { try { doPause(); } catch (e) {} }
     cfmLabel.textContent = (kind === 'cancel') ? 'Discard this recording?' : 'Save this recording?';
+    // v3.1 (Terry) — Discard's meaning depends on how we got here; reflect it in the tooltip.
+    cfmDiscardBtn.title = (kind === 'cancel')
+      ? 'Discard this recording and close the recorder — nothing is saved'
+      : 'Throw this take away and stay ready to record again — nothing is saved';
     confirmEl.classList.add('show');
   }
   function closeConfirm() { confirmEl.classList.remove('show'); }
   document.getElementById('cfmSave').addEventListener('click', function () { closeConfirm(); finish(false); });
-  document.getElementById('cfmDiscard').addEventListener('click', function () { closeConfirm(); finish(true); });
+  // Discard from Stop ("Save this recording?") re-arms for another go; Discard from the ✕ ("Discard this
+  // recording?") is a deliberate abort → close the recorder, as the ✕ implies.
+  document.getElementById('cfmDiscard').addEventListener('click', function () {
+    closeConfirm();
+    if (confirmKind === 'cancel') finish(true); else discardRearm();
+  });
   document.getElementById('cfmKeep').addEventListener('click', function () {
     closeConfirm();
     if (!confirmWasPaused) { try { doResume(); } catch (e) {} }   // you'd paused yourself → stay paused
@@ -1016,6 +1067,7 @@
         if (cmd.action === 'stop') finish(false);
         else if (cmd.action === 'cancel') finish(true);
         else if (cmd.action === 'area-set') {
+          currentRegion = cmd.region || null;   // v3.1 (Terry) — remembered so a re-arm shows the same crop
           if (armed && !finished) {
             sizeEl.textContent = cmd.region ? 'Ready · ' + cmd.region.width + '×' + cmd.region.height : 'Ready';
             requestResize();
@@ -1031,6 +1083,7 @@
             if (cmd.maxHeight) storedInit.maxHeight = cmd.maxHeight;
           }
           if (cmd.screenId) screenSel.value = cmd.screenId;
+          currentRegion = null;   // v3.1 (Terry) — new screen resets to full-frame
           if (armed && !finished) { sizeEl.textContent = 'Ready'; requestResize(); }
         }
         else if (cmd.action === 'cam-state') {

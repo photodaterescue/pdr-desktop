@@ -548,6 +548,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     recordStopped: (info: Record<string, never> | { durationMs?: number }) =>
       ipcRenderer.send('capture:record-stopped', info),
     recordCancelled: () => ipcRenderer.send('capture:record-cancelled'),
+    recordDiscardRearm: () => ipcRenderer.send('capture:record-discard-rearm'),   // v3.1 (Terry) — discard the take, keep the bar armed
     recordError: (info: { message: string }) => ipcRenderer.send('capture:record-error', info),
     // â”€â”€ Region-overlay page channels (capture-overlay.html only) â”€â”€
     // The overlay window loads this same preload; these three are its

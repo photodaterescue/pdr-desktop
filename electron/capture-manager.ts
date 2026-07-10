@@ -3082,6 +3082,38 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
   broadcastRecordingState();
 }
 
+// v3.1 (Terry) — DISCARD the current take but RE-ARM: keep the recorder bar, the camera bubble(s), the
+// chosen screen and any region crop, and go back to 'armed' so the user can record again without
+// relaunching from the titlebar. Recording-time overlays/hooks (they belong to a live take) are torn down.
+function discardAndRearm(): void {
+  closeRippleOverlay();
+  closeBlurOverlay();
+  closeRegionMarker();
+  if (recordStream) {
+    try { recordStream.end(); } catch { /* non-fatal */ }
+    recordStream = null;
+  }
+  if (recordTempPath) {
+    const p = recordTempPath;
+    // Give the stream a beat to flush before unlinking (same as teardown's discard).
+    setTimeout(() => {
+      try { fs.unlinkSync(toLongPath(p)); } catch { /* non-fatal */ }
+      try { fs.unlinkSync(toLongPath(blurSidecarPath(p))); } catch { /* non-fatal */ }
+    }, 500);
+  }
+  recordBlurSegments = [];
+  recordZoomSegments = [];
+  if (autoZoomTimer) { clearTimeout(autoZoomTimer); autoZoomTimer = null; }
+  autoZoomOpenFocal = null;
+  stopRippleHook();   // closeRippleOverlay skips this while autoZoomEnabled — force it (the take is over)
+  recordTempPath = null;
+  recordStartedAt = null;
+  recordMeta = { width: null, height: null, hasAudio: false };
+  // Back to ARMED — recordDisplay + recordRegionCrop are kept so the next take reuses the same setup.
+  recordingState = 'armed';
+  broadcastRecordingState();
+}
+
 export interface StartRecordingResult {
   success: boolean;
   alreadyRecording?: boolean;
@@ -3605,6 +3637,13 @@ ipcMain.on('capture:record-cancelled', (event) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
     log.info('[capture] recording cancelled by user — discarded');
     teardownRecording({ discardTemp: true });
+  }
+});
+// v3.1 (Terry) — the confirm bar's Discard: bin this take but keep the bar up, re-armed for another go.
+ipcMain.on('capture:record-discard-rearm', (event) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    log.info('[capture] recording discarded — re-armed for another take');
+    discardAndRearm();
   }
 });
 ipcMain.on('capture:record-error', (event, info: { message?: string }) => {
