@@ -442,6 +442,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // (capture-cam.html) receives init/show/hide and reports fades
     // and camera failures.
     recordCamToggle: (which?: number) => ipcRenderer.send('capture:record-cam-toggle', { which: which || 1 }),   // v3.1 (Terry) â€” which: 1 = main cam, 2 = second cam
+    recordCamOnlyToggle: () => ipcRenderer.send('capture:record-camonly-toggle'),   // v3.1 (Terry 2026-07-11) â€” live "cam only" (desktop-hiding curtain) on/off
     // v3.0 round 410 â€” microphone/voiceover. The widget reports the on/off
     // toggle + chosen device so they persist for future recordings.
     recordMicToggle: (info: { enabled: boolean }) => ipcRenderer.send('capture:record-mic-toggle', info),

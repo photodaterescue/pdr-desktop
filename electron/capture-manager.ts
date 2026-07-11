@@ -2960,6 +2960,14 @@ function driveAutoZoom(p: { x: number; y: number }): void {
 const camWindows: Record<number, BrowserWindow | null> = { 1: null, 2: null };
 const camVisibles: Record<number, boolean> = { 1: false, 2: false };
 let camHotkeyAccelerator: string | null = null;
+// v3.1 (Terry 2026-07-11) — LIVE "cam only" mode: an opaque full-screen CURTAIN window that covers
+// the recorded display BELOW the cam bubbles, hiding the desktop so the footage shows just the
+// camera(s). Toggled mid-recording from the bar. NOT content-protected (it must be filmed); sits at
+// a lower always-on-top level than the cams ('screen-saver'), captures clicks so the hidden live
+// desktop can't be mis-clicked. This reuses the existing desktop-capture pipeline untouched (no
+// canvas compositor) — see [[project_capture_record_modes]].
+let recordCamOnly = false;
+let recordCurtainWindow: BrowserWindow | null = null;
 // Bubble size presets per shape (v3.1 Terry — "increase/decrease the bubble"): cycled S→M→L from the
 // bubble's hover size button; persisted per camera (captureCamSize / captureCam2Size).
 // v3.1 (Terry SS1) — three shapes now (circle, rounded square, rectangle). Circle + square share 1:1
@@ -3044,6 +3052,7 @@ function ffmpegPath(): string | null {
 
 function teardownRecording(opts: { discardTemp: boolean }): void {
   closeCamBubble();
+  closeRecordCurtain(); recordCamOnly = false;   // v3.1 (Terry) — drop the cam-only curtain
   closeRippleOverlay();
   closeTooltipWindow();
   closeBlurOverlay();
@@ -3087,6 +3096,7 @@ function teardownRecording(opts: { discardTemp: boolean }): void {
 // relaunching from the titlebar. Recording-time overlays/hooks (they belong to a live take) are torn down.
 function discardAndRearm(): void {
   closeRippleOverlay();
+  closeRecordCurtain(); recordCamOnly = false;   // v3.1 (Terry) — cam-only is a recording-time mode; drop it on re-arm
   closeBlurOverlay();
   closeRegionMarker();
   if (recordStream) {
@@ -3882,7 +3892,7 @@ function closeRegionMarker(): void {
 
 function notifyWidgetCamState(): void {
   if (recordWidget && !recordWidget.isDestroyed()) {
-    try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisibles[1], visible2: camVisibles[2] }); } catch { /* non-fatal */ }
+    try { recordWidget.webContents.send('capture:record-do', { action: 'cam-state', visible: camVisibles[1], visible2: camVisibles[2], camOnly: recordCamOnly }); } catch { /* non-fatal */ }
   }
 }
 
@@ -4263,6 +4273,54 @@ function closeCamBubble(): void {
   closeBackdropPicker();
 }
 
+// ─── v3.1 (Terry 2026-07-11): LIVE "cam only" — the desktop-hiding curtain ───
+function closeRecordCurtain(): void {
+  const w = recordCurtainWindow;
+  recordCurtainWindow = null;
+  if (w && !w.isDestroyed()) { try { w.close(); } catch { /* non-fatal */ } }
+}
+function createRecordCurtain(display: Electron.Display): void {
+  if (recordCurtainWindow && !recordCurtainWindow.isDestroyed()) return;
+  const b = display.bounds;
+  const win = new BrowserWindow({
+    x: b.x, y: b.y, width: b.width, height: b.height,
+    frame: false, show: false, transparent: false, hasShadow: false,
+    resizable: false, movable: false, minimizable: false, maximizable: false,
+    fullscreenable: false, skipTaskbar: true, alwaysOnTop: true, focusable: false,
+    backgroundColor: '#000000',
+    webPreferences: { contextIsolation: true, nodeIntegration: false },
+  });
+  recordCurtainWindow = win;
+  // NO setContentProtection — the curtain MUST appear in the footage (it's the cam-only backdrop).
+  win.setMenu(null);
+  // Sit ABOVE the desktop but BELOW the cam bubbles ('screen-saver' level) so the cams show on top.
+  try { win.setAlwaysOnTop(true, 'pop-up-menu'); } catch { /* non-fatal */ }
+  try { win.setIgnoreMouseEvents(false); } catch { /* non-fatal */ }   // block clicks → the hidden live desktop can't be mis-clicked
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) { try { win.showInactive(); } catch { /* non-fatal */ } } });
+  void win.loadURL('about:blank');   // opaque black via backgroundColor
+  try { win.showInactive(); } catch { /* non-fatal */ }
+}
+function raiseCamsAboveCurtain(): void {
+  for (const which of [1, 2]) {
+    const w = camWindows[which];
+    if (w && !w.isDestroyed()) { try { w.setAlwaysOnTop(true, 'screen-saver'); w.moveTop(); } catch { /* non-fatal */ } }
+  }
+}
+// Flip live "cam only": show/hide the curtain. Needs at least one camera on (turns cam 1 on if none).
+function setRecordCamOnly(on: boolean): void {
+  if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
+  if (on) {
+    if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on the black curtain
+    createRecordCurtain(recordDisplay);
+    setTimeout(raiseCamsAboveCurtain, 60);   // keep the cams on top once the curtain has shown
+    recordCamOnly = true;
+  } else {
+    closeRecordCurtain();
+    recordCamOnly = false;
+  }
+  notifyWidgetCamState();
+}
+
 // v3.1 (Terry) — the BACKDROP PICKER is its own roomy window (the bubble is too small for the scene
 // thumbnails). Opened from the bubble's Backdrop button; content-protected so it never appears in the
 // footage; centred on the recorded display. Choices route back through main to persist + apply per camera.
@@ -4528,6 +4586,12 @@ ipcMain.on('capture:record-resize', (event, width: number) => {
 ipcMain.on('capture:record-cam-toggle', (event, info?: { which?: number }) => {
   if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
     toggleCamBubble(info && info.which === 2 ? 2 : 1);   // v3.1 (Terry) — Cam / Cam 2 toggle their own bubbles
+  }
+});
+// v3.1 (Terry 2026-07-11) — LIVE "cam only": flip the desktop-hiding curtain on/off mid-recording.
+ipcMain.on('capture:record-camonly-toggle', (event) => {
+  if (recordWidget && !recordWidget.isDestroyed() && event.sender === recordWidget.webContents) {
+    setRecordCamOnly(!recordCamOnly);
   }
 });
 // v3.1 (Terry) — cycle a bubble's size S→M→L→S (the bubble's hover ⤢ button). Resizes the window

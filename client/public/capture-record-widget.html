@@ -305,6 +305,8 @@
     <!-- v3.1 (Terry) — SECOND camera bubble. Only appears when Windows reports 2+ cameras. Runs
          alongside Cam or on its own — each button toggles its own bubble. -->
     <button id="cam2" type="button" title="Show or hide a second camera bubble (your other camera) in the recording" style="display:none">Cam 2</button>
+    <!-- v3.1 (Terry 2026-07-11) — LIVE "cam only": hide the desktop behind a black screen so the footage shows just your camera(s); click again to bring the screen back. Switch as often as you like mid-recording. -->
+    <button id="camonly" type="button" title="Cam only — hide the desktop and record just your camera(s). Click again to bring the screen back. You can switch any time while recording.">Cam only</button>
     <button id="mic" type="button" title="Record your microphone (voiceover) — turn it on before recording; while recording this mutes/unmutes your voice">Mic</button>
     <select id="micSel" title="Which microphone to record"></select>
     <button id="clicks" type="button" title="Show a gold ripple wherever you click — helps viewers follow your cursor in tutorials">Clicks</button>
@@ -344,6 +346,7 @@
   var areaBtn = document.getElementById('area');
   var camBtn = document.getElementById('cam');
   var cam2Btn = document.getElementById('cam2');     // v3.1 (Terry) — second camera bubble (shown when 2+ cameras exist)
+  var camOnlyBtn = document.getElementById('camonly');   // v3.1 (Terry 2026-07-11) — live "cam only" (desktop-hiding curtain)
   var micBtn = document.getElementById('mic');
   var micSel = document.getElementById('micSel');
   var clicksBtn = document.getElementById('clicks');
@@ -746,6 +749,12 @@
     if (finished) return;
     try { if (pdr && pdr.capture && pdr.capture.recordCamToggle) pdr.capture.recordCamToggle(2); } catch (e) {}
   });
+  // v3.1 (Terry 2026-07-11) — LIVE "cam only": main owns the curtain window; the active state comes
+  // back via record-do {action:'cam-state', camOnly}. Works armed or recording.
+  if (camOnlyBtn) camOnlyBtn.addEventListener('click', function () {
+    if (finished) return;
+    try { if (pdr && pdr.capture && pdr.capture.recordCamOnlyToggle) pdr.capture.recordCamOnlyToggle(); } catch (e) {}
+  });
   // Show the Cam 2 button only when Windows reports 2+ cameras (labels don't matter, count does).
   (function detectSecondCamera() {
     try {
@@ -1092,6 +1101,11 @@
           // v3.1 (Terry) — second camera lights its own button. (Backdrop now lives on each bubble.)
           cam2Btn.classList.toggle('active', !!cmd.visible2);
           cam2Btn.title = cmd.visible2 ? 'Second camera is in the recording — click to hide it' : 'Show or hide a second camera bubble (your other camera) in the recording';
+          // v3.1 (Terry 2026-07-11) — reflect the live "cam only" curtain state.
+          if (camOnlyBtn) {
+            camOnlyBtn.classList.toggle('active', !!cmd.camOnly);
+            camOnlyBtn.title = cmd.camOnly ? 'Cam only is ON — the desktop is hidden; click to bring the screen back' : 'Cam only — hide the desktop and record just your camera(s). Click again to bring the screen back.';
+          }
           requestResize();
         }
         else if (cmd.action === 'blur-opened') {
