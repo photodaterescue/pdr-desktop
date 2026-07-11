@@ -12266,7 +12266,9 @@
           // style), not the whole box — the guard above kept focus in the editable, so the
           // execCommand lands on the live selection and 'input' re-syncs runs + canvas.
           if (editingText === layer && layer.editEl) {
-            const cmd = (d.key === 'bold') ? 'bold' : (d.key === 'italic') ? 'italic' : 'underline';
+            // v3.1 round 7 (Terry SS1) — FIX: the strike button used to map to 'underline' (the
+            // fallthrough), so mid-edit strike silently underlined instead. Map S → strikeThrough.
+            const cmd = (d.key === 'bold') ? 'bold' : (d.key === 'italic') ? 'italic' : (d.key === 'underline') ? 'underline' : 'strikeThrough';
             if (applyInlineToEditable_(layer, cmd)) return;
           }
           beginCollageChange();
@@ -12971,7 +12973,12 @@
       // while editing): base colour = the layer colour; per-run spans carry their own.
       // Caret + selection highlight are therefore ALWAYS exactly on the glyphs.
       ed.style.color = layer.color || '#ffffff';
-      ed.style.textDecoration = (layer.underline ? 'underline' : '') + (layer.strike ? (layer.underline ? ' line-through' : 'line-through') : '') || 'none';
+      // v3.1 round 7 (Terry SS1) — the base editable must carry NO text-decoration line: CSS
+      // propagates an ancestor's underline/strike to every descendant and a child CANNOT cancel
+      // it (text-decoration:none on a span does nothing against an underlined parent). That's why
+      // "deselect underline" left it on. Underline/strike now live PER-SPAN only (fillEditable +
+      // the typing span resolve the effective value), so any word can truly drop them.
+      ed.style.textDecoration = 'none';
       // v3.1 round 6 (Terry) — the whole-box effect renders live on the editable too (spans with
       // their own effect override it; a data-e="none" span clears it). Effect colour now shows
       // mid-flow instead of only after exit.
@@ -13110,7 +13117,27 @@
     // those; a CSS rule forces every descendant's text transparent so nothing doubles).
     function fillEditableFromLayer_(layer, ed) {
       const runs = (layer.runs && layer.runs.length) ? layer.runs : null;
-      if (!runs) { ed.textContent = String(layer.text == null ? '' : layer.text); return; }
+      if (!runs) {
+        // v3.1 round 7 (Terry SS1) — no runs: plain text, BUT if the whole box is underlined/
+        // struck it must ride on a SPAN (not the base, which can't be per-word-cancelled). Split
+        // on \n so line breaks survive.
+        ed.textContent = '';
+        const txt = String(layer.text == null ? '' : layer.text);
+        if (layer.underline || layer.strike) {
+          const deco = (layer.underline ? 'underline' : '') + (layer.strike ? (layer.underline ? ' line-through' : 'line-through') : '');
+          txt.split('\n').forEach((p, pi) => {
+            if (pi > 0) ed.appendChild(document.createElement('br'));
+            if (!p) return;
+            const sp = document.createElement('span');
+            if (layer.underline) sp.setAttribute('data-u', '1');
+            if (layer.strike) sp.setAttribute('data-s', '1');
+            sp.style.textDecoration = deco;
+            sp.textContent = p;
+            ed.appendChild(sp);
+          });
+        } else { ed.textContent = txt; }
+        return;
+      }
       ed.textContent = '';
       runs.forEach((r) => {
         const parts = String(r.t).split('\n');
@@ -13124,13 +13151,12 @@
           if (r.i != null) sp.style.fontStyle = r.i ? 'italic' : 'normal';
           if (r.u != null) sp.setAttribute('data-u', r.u ? '1' : '0');
           if (r.s != null) sp.setAttribute('data-s', r.s ? '1' : '0');
-          // v3.1 round 3 — editing is now VISIBLE DOM (the canvas hides while typing), so
-          // underline/strike must really draw; metrics unaffected either way.
-          const deco = [];
-          if (r.u != null ? r.u : false) deco.push('underline');
-          if (r.s != null ? r.s : false) deco.push('line-through');
-          if (deco.length) sp.style.textDecoration = deco.join(' ');
-          else if (r.u != null || r.s != null) sp.style.textDecoration = 'none';
+          // v3.1 round 7 (Terry SS1) — every span carries its EFFECTIVE decoration (run override,
+          // else the layer default) explicitly, since the base editable declares none. That way a
+          // run that turns underline OFF genuinely shows no underline (no ancestor bleed-through).
+          const effU = (r.u != null ? r.u : !!layer.underline);
+          const effS = (r.s != null ? r.s : !!layer.strike);
+          sp.style.textDecoration = (effU ? 'underline' : '') + (effS ? (effU ? ' line-through' : 'line-through') : '') || 'none';
           // v3.1 (Terry SS1 round 2) — font + size are METRIC styles (the caret/wrap must feel
           // them); size as em so it rides the editable's base px; a unitless line-height keeps
           // the DOM line box tracking the canvas's per-line height. Effect = paint-only attrs.
@@ -13296,6 +13322,42 @@
         el.style.textShadow = editEffectShadowCss_(e, k, (ec != null && ec !== '') ? ec : (layer.effectColor || ''));
       } catch (_) {}
     }
+    // v3.1 round 7 (Terry SS1) — re-apply the live effect CSS to the WHOLE editable (base + every
+    // effect span) so a whole-box effect/strength/colour change (e.g. the Strength slider) shows
+    // instantly while editing, without rebuilding the DOM (the caret/selection are untouched).
+    function refreshEditEffectLive_(layer) {
+      const ed = layer && layer.editEl;
+      if (!ed) return;
+      applyEditEffectCss_(ed, layer, layer.effect || 'none', layer.effectStrength, layer.effectColor);
+      ed.querySelectorAll('[data-e]').forEach((sp) => {
+        const se = sp.getAttribute('data-e'); const sesRaw = sp.getAttribute('data-es');
+        applyEditEffectCss_(sp, layer, se, (sesRaw != null && isFinite(parseFloat(sesRaw))) ? parseFloat(sesRaw) : undefined, sp.getAttribute('data-ec'));
+      });
+    }
+    // v3.1 round 7 (Terry SS1) — a native range <input> STEALS focus on mousedown, which blurs the
+    // editable → ends the edit session → "the cursor doesn't stay in place". When a text box is
+    // being edited, drive the slider from the pointer WITHOUT letting it take focus (preventDefault
+    // the mousedown), so the caret stays exactly where it was and the change applies live. Off the
+    // edit path the slider is 100% native.
+    function makeSliderCaretSafe_(slider) {
+      if (!slider || slider._caretSafe) return; slider._caretSafe = true;
+      const valAt = (clientX) => {
+        const r = slider.getBoundingClientRect();
+        const min = parseFloat(slider.min) || 0, max = (slider.max !== '' ? parseFloat(slider.max) : 100), step = parseFloat(slider.step) || 1;
+        let frac = r.width > 0 ? (clientX - r.left) / r.width : 0; frac = Math.max(0, Math.min(1, frac));
+        let v = min + frac * (max - min); v = Math.round(v / step) * step; return Math.max(min, Math.min(max, v));
+      };
+      const fire = (v) => { slider.value = String(v); slider.dispatchEvent(new Event('input', { bubbles: true })); };
+      slider.addEventListener('mousedown', (e) => {
+        if (!(editingText && editingText.editEl)) return;   // not editing text → leave the native slider alone
+        e.preventDefault();                                  // keep the editable focused → caret stays put + visible
+        fire(valAt(e.clientX));
+        const moveH = (ev) => fire(valAt(ev.clientX));
+        const upH = () => { document.removeEventListener('mousemove', moveH); document.removeEventListener('mouseup', upH); slider.dispatchEvent(new Event('change', { bubbles: true })); };
+        document.addEventListener('mousemove', moveH);
+        document.addEventListener('mouseup', upH);
+      });
+    }
     // v3.1 round 6 (Terry) — the B/I/U/S + effect button pressed-states must reflect what's
     // active AT THE CARET / SELECTION while editing (not just the whole box), so the buttons
     // light up as you move through differently-styled text. fmtStyleAtSelection_ reads the
@@ -13353,6 +13415,49 @@
         applyEditEffectCss_(sp, layer, se, (sesRaw != null && isFinite(parseFloat(sesRaw))) ? parseFloat(sesRaw) : undefined, sp.getAttribute('data-ec'));
       }
     }
+    // v3.1 round 7 (Terry SS1) — insert `node` at the collapsed caret but HOISTED to be a DIRECT
+    // child of `ed`, splitting any inline ancestor spans between the caret and `ed`. A top-level
+    // typing span has NO decorated ancestor, so toggling underline/strike OFF actually shows (a
+    // nested span cannot cancel an ancestor's text-decoration line — it propagates in CSS).
+    function insertNodeAtEditableTop_(ed, node) {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) { ed.appendChild(node); return; }
+      const range = sel.getRangeAt(0);
+      let container = range.startContainer, offset = range.startOffset;
+      if (container === ed) { ed.insertBefore(node, ed.childNodes[offset] || null); return; }
+      let right;
+      if (container.nodeType === 3) {
+        right = (offset <= 0) ? container : (offset >= container.nodeValue.length) ? container.nextSibling : container.splitText(offset);
+        container = (right ? right.parentNode : container.parentNode);
+      } else { right = container.childNodes[offset] || null; }
+      while (container && container !== ed) {
+        const parent = container.parentNode;
+        if (right) {
+          const clone = container.cloneNode(false);
+          let cur = right; while (cur) { const nx = cur.nextSibling; clone.appendChild(cur); cur = nx; }
+          parent.insertBefore(clone, container.nextSibling);
+          right = clone;
+        } else { right = container.nextSibling; }
+        container = parent;
+      }
+      ed.insertBefore(node, right || null);
+    }
+    // Apply a FULL effective style (from fmtStyleAtSelection_) to a fresh span, so a typing span
+    // that breaks out to the top level keeps colour / weight / italic / font / size / effect
+    // continuity — only its decoration is reset to the effective underline/strike.
+    function applyFullStyleToSpan_(sp, layer, eff) {
+      if (!eff) return;
+      if (eff.color != null) { sp.style.color = eff.color; sp.setAttribute('data-c', eff.color); }
+      if (eff.weight != null) sp.style.fontWeight = String(eff.weight);
+      else if (eff.bold != null) sp.style.fontWeight = eff.bold ? '700' : '400';
+      if (eff.italic != null) sp.style.fontStyle = eff.italic ? 'italic' : 'normal';
+      const u = !!eff.underline, s = !!eff.strike;
+      sp.setAttribute('data-u', u ? '1' : '0'); sp.setAttribute('data-s', s ? '1' : '0');
+      sp.style.textDecoration = (u ? 'underline' : '') + (s ? (u ? ' line-through' : 'line-through') : '') || 'none';
+      if (eff.font != null) sp.style.fontFamily = '"' + eff.font + '"';
+      if (typeof eff.zm === 'number' && isFinite(eff.zm) && eff.zm !== 1) { sp.style.fontSize = eff.zm + 'em'; sp.style.lineHeight = String((typeof layer.lineHeight === 'number' && isFinite(layer.lineHeight)) ? Math.max(0.5, Math.min(3, layer.lineHeight)) : 1.25); }
+      if (eff.e != null && eff.e !== 'none') { sp.setAttribute('data-e', eff.e); if (eff.es != null) sp.setAttribute('data-es', String(eff.es)); if (eff.ec) sp.setAttribute('data-ec', eff.ec); applyEditEffectCss_(sp, layer, eff.e, eff.es, eff.ec); }
+    }
     // Plant (or merge into) the ZWSP typing span at the collapsed caret. Successive picks
     // while the caret is still in the (empty) span MERGE — pick a colour, then a size, then
     // a font, and keep typing: the next characters carry all three.
@@ -13367,10 +13472,15 @@
         let sp = null;
         if (host && host !== ed && host.getAttribute && host.getAttribute('data-pdrtyping') === '1' && String(host.textContent || '').replace(/\u200B/g, '') === '') sp = host;
         if (!sp) {
+          // v3.1 round 7 (Terry SS1) — capture the caret's FULL effective style first, then break
+          // the new typing span out to the TOP LEVEL carrying it (so continuity holds AND no
+          // ancestor underline/strike can bleed into text that just turned it off).
+          let eff = null; try { eff = fmtStyleAtSelection_(layer); } catch (_) {}
           sp = document.createElement('span');
           sp.setAttribute('data-pdrtyping', '1');
           sp.textContent = String.fromCharCode(0x200B);
-          sel.getRangeAt(0).insertNode(sp);
+          applyFullStyleToSpan_(sp, layer, eff);
+          insertNodeAtEditableTop_(ed, sp);
         }
         styleSpanFromDelta_(sp, layer, delta, sp.parentNode);
         const r2 = document.createRange();
@@ -23901,7 +24011,9 @@
         selectedText.sizeFrac = pct / 100;
         if (sizeVal) sizeVal.textContent = pct + '%';
         renderTextLayer(selectedText);
+        if (editingText === selectedText) { try { styleTextEditable(selectedText); } catch (_) {} }   // v3.1 round 7 (Terry SS1) — keep the editable's live font size in step, caret untouched
       });
+      if (sizeSlider) makeSliderCaretSafe_(sizeSlider);
       // v3.1 (Terry) — TEXT Transparency slider (panel; replaces the bar popover).
       // Undo rides the panel-wide pointerdown/up begin/commit wrapper, like Size.
       const txTranSlider = document.getElementById('collage-text-transparency');
@@ -23912,7 +24024,9 @@
         selectedText.opacity = pct;
         if (txTranVal) txTranVal.textContent = pct + '%';
         renderTextLayer(selectedText);
+        if (editingText === selectedText && selectedText.editEl) { try { selectedText.editEl.style.opacity = String(pct / 100); } catch (_) {} }   // v3.1 round 7 — live on the editable
       });
+      if (txTranSlider) makeSliderCaretSafe_(txTranSlider);
       // v3.1 (Terry) — panel Line spacing (parity with the bar's popover; same 0.5–3 range).
       const txLsSlider = document.getElementById('collage-text-linespacing');
       const txLsVal = document.getElementById('val-text-linespacing');
@@ -23922,7 +24036,9 @@
         selectedText.lineHeight = v;
         if (txLsVal) txLsVal.textContent = v.toFixed(2) + '×';
         renderTextLayer(selectedText);
+        if (editingText === selectedText) { try { styleTextEditable(selectedText); } catch (_) {} }   // v3.1 round 7 — keep the editable's line spacing in step, caret untouched
       });
+      if (txLsSlider) makeSliderCaretSafe_(txLsSlider);
       const alignWrap = document.getElementById('collage-text-align');
       if (alignWrap) alignWrap.addEventListener('click', (e) => {
         const b = e.target.closest ? e.target.closest('.ec-toggle-btn') : null;
@@ -23995,7 +24111,9 @@
         if (strVal) strVal.textContent = String(sv);
         renderTextLayer(selectedText);
         commitCollageChange();
+        if (editingText === selectedText) { try { refreshEditEffectLive_(selectedText); } catch (_) {} }   // v3.1 round 7 (Terry SS1) — show the strength change live on the editable, caret untouched
       });
+      if (strSlider) makeSliderCaretSafe_(strSlider);
       // v2.1 round 195 (Terry) — ONE shared Colour control. The target-chip row
       // (#collage-color-targets) names what the single palette colours; clicking a
       // chip switches colorTarget and re-points the palette. The chips themselves
@@ -24511,6 +24629,11 @@
       // can see what's applied even when that colour's swatch is tucked inside a collapsed collection.
       const curWrap = document.createElement('div');
       curWrap.className = 'frame-current';
+      // v3.1 round 7 (Terry SS1) — for TEXT/EFFECT the chips above each carry their own colour
+      // tile now, so this shared "current colour" readout is redundant + confusing ("what is the
+      // tile that says None?"). Hide it for those two; keep it for Frame/Background (their single
+      // target has no per-chip tile, so it's the only indicator).
+      if (colorTarget === 'text' || colorTarget === 'effect') curWrap.style.display = 'none';
       const curSw = document.createElement('span'); curSw.className = 'frame-current-sw';
       const curName = document.createElement('span'); curName.className = 'frame-current-name';
       curWrap.appendChild(curSw); curWrap.appendChild(curName);
