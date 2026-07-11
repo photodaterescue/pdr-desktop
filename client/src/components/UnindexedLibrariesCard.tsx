@@ -3,6 +3,7 @@ import { Sparkles, X, Database } from 'lucide-react';
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { runLibraryRefresh, isLibraryRefreshRunning } from '@/lib/library-refresh';
 
 // UnindexedLibrariesCard — Dashboard banner that surfaces libraries
 // whose files-on-disk count exceeds their search-DB count, prompting
@@ -40,16 +41,15 @@ export function UnindexedLibrariesCard() {
   const [dismissedAt, setDismissedAt] = useState<string | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [rows, setRows] = useState<LibraryRow[]>([]);
-  const [indexing, setIndexing] = useState(false);
-  // Session-only hide once "Index now" has been clicked — we don't
-  // persist a dismiss to settings until either (a) the indexer's
-  // final `complete` event fires for the last root, or (b) the user
-  // hits the X. This closes the loophole where an immediate persist
-  // would silence the banner forever even if the indexer crashed,
-  // the user closed PDR before it finished, or the IPC errored out.
-  // On the failure path we flip this back to false so the banner
-  // reappears in-session for retry.
-  const [hiddenWhileIndexing, setHiddenWhileIndexing] = useState(false);
+  // v3.0.1 (Terry 2026-07-12) — the banner now hides itself for as long as a
+  // library refresh is actually running, sourced from the shared
+  // runLibraryRefresh coordinator (isLibraryRefreshRunning). This covers a
+  // refresh started from HERE and one started from the Library Drive Manager —
+  // either way the nag disappears while the work is in flight and re-probes the
+  // gap when it ends (so it clears if the gap closed, or returns to offer a
+  // retry if the refresh failed). Nothing is persisted until the explicit X or
+  // the gap naturally closing on a later probe.
+  const [refreshRunning, setRefreshRunning] = useState<boolean>(isLibraryRefreshRunning());
 
   // Probe the row data once. Extracted so we can re-run on
   // pdr:libraryRebuildComplete and reflect the post-index state
@@ -119,26 +119,29 @@ export function UnindexedLibrariesCard() {
     // Without this listener, indexing via the LDM would clear the
     // LDM pill but leave the Dashboard banner showing the stale
     // gap until the next mount. Terry 2026-05-23.
-    const onRebuildComplete = () => {
-      void probeRows(cancelledRef);
-      // Also clear the in-session "indexing" hide flag so if the
-      // user returns to this view after indexing finished, the
-      // banner state reflects fresh data rather than the
-      // mid-indexing optimistic hide.
-      setHiddenWhileIndexing(false);
-    };
+    const onRebuildComplete = () => { void probeRows(cancelledRef); };
     window.addEventListener('pdr:libraryRebuildComplete', onRebuildComplete);
+    // v3.0.1 (Terry 2026-07-12) — reflect the shared refresh state: hide the
+    // banner while a refresh runs (from here OR the Library Drive Manager) and
+    // re-probe the gap the moment it ends.
+    const onRefreshState = () => {
+      const r = isLibraryRefreshRunning();
+      setRefreshRunning(r);
+      if (!r) void probeRows(cancelledRef);
+    };
+    window.addEventListener('pdr:libraryRefreshStateChange', onRefreshState);
 
     return () => {
       cancelledRef.current = true;
       window.removeEventListener('pdr:libraryRebuildComplete', onRebuildComplete);
+      window.removeEventListener('pdr:libraryRefreshStateChange', onRefreshState);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   if (!loaded) return null;
   if (dismissedAt) return null;
-  if (hiddenWhileIndexing) return null;
+  if (refreshRunning) return null;   // a refresh (here or the Library Drive Manager) is in flight
 
   // 5 % slack so a single new file between the two probes doesn't
   // trip the banner. Unreachable libraries (onDiskCount === null)
@@ -170,106 +173,18 @@ export function UnindexedLibrariesCard() {
   };
 
   const handleIndexNow = async () => {
-    if (indexing) return;
-    setIndexing(true);
-    const pathsToIndex = stale.map((r) => r.path);
-    const totalLibraries = pathsToIndex.length;
-
-    // Toast-driven progress. Sonner's loading toast updates in place
-    // as rebuildProgress events come in, then resolves to success on
-    // the final phase='complete' event from the last root. Banner
-    // dismisses immediately so the user can navigate freely — the
-    // toast follows them across views (it's mounted on <Toaster />
-    // at the workspace root).
-    const toastId = toast.loading(
-      `Refreshing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
-      { description: 'Starting…' }
-    );
-
-    // Subscribe to rebuild progress BEFORE firing the IPC so we don't
-    // miss the very first 'walking' event. Unsubscribes itself on the
-    // final 'complete' event of the last root.
-    let lastRootIndex = -1;
-    const unsubscribe = (window as any).pdr?.search?.onRebuildProgress?.((progress: {
-      phase: 'walking' | 'reading-exif' | 'inserting' | 'complete';
-      rootIndex: number;
-      rootCount: number;
-      rootPath: string;
-      current: number;
-      total: number;
-      currentFile: string;
-    }) => {
-      const rootName = progress.rootPath.split(/[\\/]/).filter(Boolean).pop() ?? progress.rootPath;
-      const libProgress = progress.rootCount > 1
-        ? `(library ${progress.rootIndex + 1} of ${progress.rootCount}) `
-        : '';
-      let description = '';
-      if (progress.phase === 'walking') {
-        description = `${libProgress}Scanning "${rootName}"…`;
-      } else if (progress.phase === 'reading-exif') {
-        description = `${libProgress}Reading "${rootName}" — ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}`;
-      } else if (progress.phase === 'inserting') {
-        description = `${libProgress}Saving "${rootName}"…`;
-      } else if (progress.phase === 'complete') {
-        if (progress.rootIndex >= progress.rootCount - 1) {
-          // Last root finished — resolve the loading toast.
-          toast.success(`Refreshed ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}`,
-            { id: toastId, description: 'Your photos are now searchable in S&D, Memories, and the Date Editor.' });
-          // Broadcast so any surface that's currently mounted can
-          // re-fetch its data without the user having to close and
-          // reopen PDR. Listeners: SearchPanel (reloads filter
-          // options + active query), MemoriesView (reloads runs +
-          // buckets), LibraryPanel (refreshes per-row file counts).
-          // Terry 2026-05-20: "There should be a refresh button for
-          // the indexing... because I think I might have to close
-          // PDR just to get this to update on S&D."
-          window.dispatchEvent(new CustomEvent('pdr:libraryRebuildComplete'));
-          unsubscribe?.();
-          return;
-        }
-      }
-      lastRootIndex = progress.rootIndex;
-      toast.loading(`Refreshing ${totalLibraries} librar${totalLibraries === 1 ? 'y' : 'ies'}…`,
-        { id: toastId, description });
-    });
-
-    try {
-      // Fire-and-forget — we don't await, so the user can navigate
-      // away while the indexer runs. Resolution is driven by the
-      // progress subscription above.
-      void (window as any).pdr?.search?.rebuildFromLibraries?.(pathsToIndex)
-        .catch((e: any) => {
-          console.warn('[UnindexedLibrariesCard] rebuild failed:', e);
-          toast.error('Refresh failed', { id: toastId, description: String(e?.message ?? e) });
-          unsubscribe?.();
-          // Bring the banner back so the user can retry. We deliberately
-          // do NOT persist a dismiss timestamp on failure — that would
-          // silence the banner forever even though the gap is still
-          // there. Persisted dismiss is reserved for explicit X clicks.
-          setHiddenWhileIndexing(false);
-        });
-      // Hide the banner in-session so it doesn't keep nagging while
-      // the background indexer churns. Crucially, this is NOT
-      // persisted to settings — if the indexer crashes, the user
-      // quits PDR mid-run, or anything else interrupts the rebuild,
-      // the next launch will probe the gap again from scratch and
-      // re-show the banner if files are still missing. The
-      // persistent dismiss flag stays untouched until either the
-      // explicit X click or (implicitly) the gap closes on next
-      // launch — meaning a fresh probe finds nothing stale and the
-      // banner naturally stays hidden via the stale.length === 0
-      // early return above. (`lastRootIndex` is touched here only to
-      // shut up the unused-variable TS warning in strict mode.)
-      void lastRootIndex;
-      setHiddenWhileIndexing(true);
-    } catch (e) {
-      console.warn('[UnindexedLibrariesCard] refresh-now failed:', e);
-      toast.error('Refresh failed to start', { id: toastId });
-      unsubscribe?.();
-      setHiddenWhileIndexing(false);
-    } finally {
-      setIndexing(false);
-    }
+    if (isLibraryRefreshRunning()) return;
+    // v3.0.1 (Terry 2026-07-12) — delegate to the SINGLE shared refresh owner
+    // (client/src/lib/library-refresh.ts). It creates exactly one progress
+    // toast and runs exactly one rebuild — so this banner and the Library Drive
+    // Manager can no longer each spawn their own toast/rebuild (the "2 toast
+    // screens ... freaking out" bug). runLibraryRefresh dispatches
+    // pdr:libraryRefreshStateChange (which hides this banner via the effect's
+    // listener) and, on success, pdr:libraryRebuildComplete (which re-probes
+    // the gap here + re-fetches data across S&D/Memories/LDM). We deliberately
+    // never persist a dismiss on failure — a failed refresh leaves the gap, so
+    // the re-probe simply brings the banner back for a retry.
+    await runLibraryRefresh(stale.map((r) => r.path));
   };
 
   return (
@@ -289,13 +204,13 @@ export function UnindexedLibrariesCard() {
         </p>
       </div>
       <div className="flex items-center gap-2 shrink-0">
-        <Button onClick={handleIndexNow} variant="primary" size="sm" disabled={indexing} data-testid="unindexed-libraries-index-now">
-          {indexing ? 'Starting…' : 'Refresh now'}
+        <Button onClick={handleIndexNow} variant="primary" size="sm" disabled={refreshRunning} data-testid="unindexed-libraries-index-now">
+          Refresh now
         </Button>
         <IconTooltip label="Dismiss" side="top">
           <button
             onClick={handleDismiss}
-            disabled={indexing}
+            disabled={refreshRunning}
             className="p-1.5 rounded-md hover:bg-primary/10 text-muted-foreground hover:text-foreground transition-colors disabled:opacity-40"
             aria-label="Dismiss advisory"
             data-testid="unindexed-libraries-dismiss"

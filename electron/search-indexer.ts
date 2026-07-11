@@ -62,6 +62,9 @@ export interface IndexProgress {
 // ─── Cancellation ────────────────────────────────────────────────────────────
 
 let indexCancelled = false;
+// v3.0.1 (Terry 2026-07-12) — single-flight guard for rebuildIndexFromLibraries
+// (see the long note there). Only one library rebuild may run at a time.
+let rebuildInProgress = false;
 
 export function cancelIndexing(): void {
   indexCancelled = true;
@@ -533,7 +536,21 @@ export async function rebuildIndexFromLibraries(
   totalFiles: number;
   perRoot: Array<{ root: string; runId: number | null; fileCount: number }>;
   error?: string;
+  alreadyRunning?: boolean;
 }> {
+  // v3.0.1 (Terry 2026-07-12) — SINGLE-FLIGHT GUARD. There are two UI entry
+  // points into this rebuild (the Dashboard "isn't fully searchable" banner
+  // and the Library Drive Manager per-row "Refresh"), and nothing stopped the
+  // user from firing both. Two concurrent rebuilds share this module's state:
+  // the `indexCancelled` flag AND, worse, the single ExifTool subprocess — the
+  // first run to reach its `finally` calls shutdownIndexerExiftool() and kills
+  // the ExifTool the OTHER run is still reading with, so the second run fails
+  // mid-way. They also both pumped progress to the renderer, which surfaced as
+  // "2 toast screens ... freaking out". Refuse a second concurrent rebuild.
+  if (rebuildInProgress) {
+    return { success: false, runIds: [], totalFiles: 0, perRoot: [], error: 'A library refresh is already running.', alreadyRunning: true };
+  }
+  rebuildInProgress = true;
   indexCancelled = false;
   const perRoot: Array<{ root: string; runId: number | null; fileCount: number }> = [];
 
@@ -757,5 +774,9 @@ export async function rebuildIndexFromLibraries(
       perRoot,
       error: (err as Error).message,
     };
+  } finally {
+    // Always release the single-flight guard, on success, error, or early
+    // return inside the body — so a future refresh can start.
+    rebuildInProgress = false;
   }
 }

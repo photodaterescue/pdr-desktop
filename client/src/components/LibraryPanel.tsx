@@ -30,6 +30,7 @@ import {
 import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
+import { runLibraryRefresh, isLibraryRefreshRunning } from '@/lib/library-refresh';
 import { TakeoutMetadataSection } from './TakeoutMetadataSection';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import {
@@ -1229,91 +1230,37 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // index DB concept) keep the noun "index" — only the user-facing
   // verb changed.
   const handleRefreshLibrary = async (targetPath: string) => {
-    if (indexingPaths.has(targetPath)) return;
+    if (indexingPaths.has(targetPath)) return;   // this row is already refreshing
+    // v3.0.1 (Terry 2026-07-12) — route through the SINGLE shared refresh owner
+    // (client/src/lib/library-refresh.ts) so the LDM and the Dashboard "isn't
+    // fully searchable" banner can no longer EACH spawn their own progress
+    // toast + rebuild. Two concurrent rebuilds also fought over the one
+    // ExifTool subprocess (the first to finish killed it under the second) —
+    // that's what "2 toast screens ... freaking out" was. If a refresh is
+    // already running (from either surface), don't start a second; just say so.
+    if (isLibraryRefreshRunning()) {
+      toast.info('A library refresh is already running', {
+        description: 'Please wait for it to finish, then refresh this library.',
+        duration: 5000,
+      });
+      return;
+    }
     setIndexingPaths(prev => new Set(prev).add(targetPath));
-    const rootName = targetPath.split(/[\\/]/).filter(Boolean).pop() ?? targetPath;
-    const toastId = toast.loading(`Refreshing "${rootName}"…`, { description: 'Starting…' });
-    const unsubscribe = (window as any).pdr?.search?.onRebuildProgress?.((progress: {
-      phase: 'walking' | 'reading-exif' | 'inserting' | 'complete';
-      rootIndex: number;
-      rootCount: number;
-      rootPath: string;
-      current: number;
-      total: number;
-      currentFile: string;
-    }) => {
-      // Filter — only respond to events for THIS path, not other
-      // simultaneous rebuilds. EXCEPT the 'complete' event, which the
-      // indexer emits with rootPath='' (empty string) at the very end
-      // of rebuildIndexFromLibraries regardless of which roots ran. We
-      // pass exactly one path into the rebuild here, so any complete
-      // event arriving while we're listening means OUR path is done.
-      // Without this carve-out the pill stays stuck on "Saving…"
-      // because the complete event's rootPath doesn't match targetPath.
-      if (progress.phase !== 'complete' && progress.rootPath !== targetPath) return;
-      if (progress.phase === 'walking') {
-        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'walking', current: 0, total: 0 } }));
-        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: 'Scanning…' });
-      } else if (progress.phase === 'reading-exif') {
-        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'reading-exif', current: progress.current, total: progress.total } }));
-        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: `Reading ${progress.current.toLocaleString()} of ${progress.total.toLocaleString()}` });
-      } else if (progress.phase === 'inserting') {
-        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: 'inserting', current: progress.current, total: progress.total } }));
-        toast.loading(`Refreshing "${rootName}"…`, { id: toastId, description: 'Saving…' });
-      } else if (progress.phase === 'complete') {
-        toast.success(`Refreshed "${rootName}"`, { id: toastId, description: 'PDR\'s view of this library is now up to date — new photos are searchable in S&D, Memories, and the Date Editor.' });
-        // Re-probe the on-disk count so the pill reflects the new
-        // state. The indexed count comes through automatically on
-        // the next refreshPathCounts.
+    // The shared owner drives the toast; onProgress feeds THIS row's inline
+    // "Refreshing N%" pill, and onSettled clears the pill + re-probes counts.
+    await runLibraryRefresh([targetPath], {
+      onProgress: (p) => {
+        if (p.phase === 'complete') return;            // terminal (rootPath=''): handled by onSettled
+        if (p.rootPath !== targetPath) return;          // ignore other roots' events
+        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: p.phase, current: p.current, total: p.total } }));
+      },
+      onSettled: () => {
+        setIndexingPaths(prev => { const next = new Set(prev); next.delete(targetPath); return next; });
+        setIndexingProgress(prev => { const next = { ...prev }; delete next[targetPath]; return next; });
         void refreshOnDiskCounts([targetPath]);
         void refreshPathCounts([targetPath]);
-        setIndexingPaths(prev => {
-          const next = new Set(prev);
-          next.delete(targetPath);
-          return next;
-        });
-        setIndexingProgress(prev => {
-          const next = { ...prev };
-          delete next[targetPath];
-          return next;
-        });
-        // Broadcast so other surfaces refresh their data.
-        window.dispatchEvent(new CustomEvent('pdr:libraryRebuildComplete'));
-        unsubscribe?.();
-      }
+      },
     });
-    try {
-      void (window as any).pdr?.search?.rebuildFromLibraries?.([targetPath])
-        .catch((e: any) => {
-          console.warn('[LibraryPanel] handleRefreshLibrary failed:', e);
-          toast.error('Refresh failed', { id: toastId, description: String(e?.message ?? e) });
-          unsubscribe?.();
-          setIndexingPaths(prev => {
-            const next = new Set(prev);
-            next.delete(targetPath);
-            return next;
-          });
-          setIndexingProgress(prev => {
-            const next = { ...prev };
-            delete next[targetPath];
-            return next;
-          });
-        });
-    } catch (e) {
-      console.warn('[LibraryPanel] handleRefreshLibrary kickoff failed:', e);
-      toast.error('Refresh failed to start', { id: toastId });
-      unsubscribe?.();
-      setIndexingPaths(prev => {
-        const next = new Set(prev);
-        next.delete(targetPath);
-        return next;
-      });
-      setIndexingProgress(prev => {
-        const next = { ...prev };
-        delete next[targetPath];
-        return next;
-      });
-    }
   };
 
   // v2.0.15 (Terry 2026-06-04) — remove a saved destination from the
