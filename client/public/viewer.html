@@ -4084,6 +4084,13 @@
        chip buttons reuse the .ec-color-toggle / .ec-ctgl styling. Chips size to
        content (not full-width like the old 2-way toggle) so 1–2 chips look right. */
     #collage-color-targets .ec-ctgl { flex: 0 1 auto; min-width: 64px; }
+    /* v3.1 round 6 (Terry) — each target chip carries its OWN always-visible colour tile to
+       the right (Text = the letter colour, Effect = the effect colour), so both are readable at
+       a glance instead of one tile that doubles up for whichever target is active. */
+    #collage-color-targets .ec-ctgl { display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    #collage-color-targets .ec-ctgl-tile { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.28); }
+    #collage-color-targets .ec-ctgl-tile.is-auto { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 6px 6px; }
+    #collage-color-targets .ec-ctgl.is-disabled .ec-ctgl-tile { opacity: 0.4; }
     /* v2.1 round 195 (Terry) — lock EVERY swatch row in the shared palette to
        exactly 8 columns at any panel width, so rows are always full (no ragged
        right-edge gaps). Applies to Favourites and each collection grid.
@@ -12497,7 +12504,7 @@
       if (!ctl) return;
       if (ctl.fontLbl) { const f = layer.font || 'Impact'; ctl.fontLbl.textContent = (typeof COLLAGE_FONT_LABELS === 'object' && COLLAGE_FONT_LABELS[f]) ? COLLAGE_FONT_LABELS[f] : f; ctl.fontLbl.style.fontFamily = "'" + f + "'"; }
       if (ctl.sizeNum && ctl.sizeNum.dataset.editing !== '1' && document.activeElement !== ctl.sizeNum) ctl.sizeNum.value = String(Math.round((layer.sizeFrac || 0.08) * 100));
-      if (ctl.styleBtns) { ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (!ctl.styleBtns[k]) return; const on = (k === 'bold') ? (textWeightOf(layer) >= 600) : !!layer[k]; ctl.styleBtns[k].classList.toggle('active', on); }); }   // v3.1 (Terry SS1) — B reflects the WEIGHT (≥600), not just the legacy flag
+      if (ctl.styleBtns) { const sf = styleFlagsForLayer_(layer); ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (!ctl.styleBtns[k]) return; ctl.styleBtns[k].classList.toggle('active', !!sf[k]); }); }   // v3.1 round 6 (Terry) — pressed-state reflects the CARET's effective style (weight≥600 = bold), not just the whole box
       if (ctl.alignBtns) { const a = layer.align || 'center'; Object.keys(ctl.alignBtns).forEach((k) => ctl.alignBtns[k].classList.toggle('active', k === a)); }
       if (ctl.caseLbl && ctl.caseGlyph) {
         const c = layer.letterCase || 'none';
@@ -12965,6 +12972,10 @@
       // Caret + selection highlight are therefore ALWAYS exactly on the glyphs.
       ed.style.color = layer.color || '#ffffff';
       ed.style.textDecoration = (layer.underline ? 'underline' : '') + (layer.strike ? (layer.underline ? ' line-through' : 'line-through') : '') || 'none';
+      // v3.1 round 6 (Terry) — the whole-box effect renders live on the editable too (spans with
+      // their own effect override it; a data-e="none" span clears it). Effect colour now shows
+      // mid-flow instead of only after exit.
+      applyEditEffectCss_(ed, layer, layer.effect || 'none', layer.effectStrength, layer.effectColor);
       ed.style.textAlign = layer.align || 'center';
       // v3.1 (Terry SS1) — a mid-edit colour pick sets the TYPING colour; keep the caret
       // hinting it across re-renders (every keystroke re-runs this) instead of snapping
@@ -13128,6 +13139,7 @@
           if (r.e != null) sp.setAttribute('data-e', r.e);
           if (r.es != null) sp.setAttribute('data-es', String(r.es));
           if (r.ec != null) sp.setAttribute('data-ec', r.ec);
+          if (r.e != null) applyEditEffectCss_(sp, layer, r.e, (typeof r.es === 'number' ? r.es : undefined), r.ec);   // v3.1 round 6 — a reopened box's per-run effect renders live too
           sp.textContent = p;
           ed.appendChild(sp);
         });
@@ -13256,6 +13268,54 @@
       });
       return Math.max(0.05, zm);
     }
+    // v3.1 round 6 (Terry) — effects now RENDER LIVE on the editable while typing (round 4
+    // hid the canvas, so effects vanished mid-edit and the effect colour looked dead). This
+    // maps a PDR effect → a CSS text-shadow (em units → scales with the glyph) that
+    // APPROXIMATES the canvas bake, so the effect + its colour are visible as you type; the
+    // exact canvas returns on exit. Fractions mirror renderTextToCanvas (0.24 outline / 0.32
+    // shadow / 0.9 neon / 0.035×steps 3d), k = strength/100. Defaults when no effect colour:
+    // outline→black, shadow→translucent black, neon→currentColor (the glyph's own colour), 3d→
+    // translucent black — the true auto-contrast/derived shades return on the canvas at exit.
+    function editEffectShadowCss_(e, k, ec) {
+      if (!e || e === 'none' || !(k > 0)) return 'none';
+      const hasEc = !!(ec && String(ec).trim());
+      if (e === 'outline') {
+        const w = Math.max(0.02, 0.12 * k).toFixed(3), c = hasEc ? ec : '#000000';
+        return [[w, '0'], ['-' + w, '0'], ['0', w], ['0', '-' + w], [w, w], ['-' + w, '-' + w], [w, '-' + w], ['-' + w, w]]
+          .map((d) => d[0] + 'em ' + d[1] + 'em 0 ' + c).join(', ');
+      }
+      if (e === 'shadow') { const o = (0.10 * k).toFixed(3), b = (0.32 * k).toFixed(3); return o + 'em ' + o + 'em ' + b + 'em ' + (hasEc ? ec : 'rgba(0,0,0,0.55)'); }
+      if (e === 'neon') { const r1 = (0.9 * k).toFixed(3), r2 = (0.4 * k).toFixed(3), g = hasEc ? ec : 'currentColor'; return '0 0 ' + r1 + 'em ' + g + ', 0 0 ' + r1 + 'em ' + g + ', 0 0 ' + r2 + 'em ' + g; }
+      if (e === '3d') { const s = 0.035 * k, c = hasEc ? ec : 'rgba(0,0,0,0.5)'; const p = []; for (let i = 1; i <= 6; i++) { const o = (s * i).toFixed(3); p.push(o + 'em ' + o + 'em 0 ' + c); } return p.join(', '); }
+      return 'none';
+    }
+    // Set (or clear) the live effect text-shadow on a span/editable for a given effect triple.
+    function applyEditEffectCss_(el, layer, e, es, ec) {
+      try {
+        const k = ((typeof es === 'number' && isFinite(es)) ? es : (typeof layer.effectStrength === 'number' ? layer.effectStrength : 50)) / 100;
+        el.style.textShadow = editEffectShadowCss_(e, k, (ec != null && ec !== '') ? ec : (layer.effectColor || ''));
+      } catch (_) {}
+    }
+    // v3.1 round 6 (Terry) — the B/I/U/S + effect button pressed-states must reflect what's
+    // active AT THE CARET / SELECTION while editing (not just the whole box), so the buttons
+    // light up as you move through differently-styled text. fmtStyleAtSelection_ reads the
+    // caret's effective style; fall back to the layer values when not editing this layer.
+    function styleFlagsForLayer_(layer) {
+      if (layer && editingText === layer && layer.editEl) {
+        try { const st = fmtStyleAtSelection_(layer); if (st) return { bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, e: (st.e != null ? st.e : (layer.effect || 'none')) }; } catch (_) {}
+      }
+      return { bold: (textWeightOf(layer) >= 600), italic: !!layer.italic, underline: !!layer.underline, strike: !!layer.strike, e: (layer.effect || 'none') };
+    }
+    // Refresh JUST the B/I/U/S + effect-chip pressed states (panel + floating toolbar) from the
+    // caret-effective style. Light (class toggles only) so it can run on every selectionchange.
+    function syncTextStyleButtons_() {
+      if (!selectedText || selectedText.isEmoji) return;
+      const sf = styleFlagsForLayer_(selectedText);
+      document.querySelectorAll('#collage-text-style .ec-toggle-btn').forEach((b) => { if (!b.dataset.style) return; b.classList.toggle('active', !!sf[b.dataset.style]); });
+      document.querySelectorAll('#collage-text-effect .ec-effect-btn').forEach((b) => { b.classList.toggle('active', b.dataset.effect === (sf.e || 'none')); });
+      const ctl = selectedText._tbCtl;
+      if (ctl && ctl.styleBtns) ['bold', 'italic', 'underline', 'strike'].forEach((k) => { if (ctl.styleBtns[k]) ctl.styleBtns[k].classList.toggle('active', !!sf[k]); });
+    }
     // Apply a style DELTA to a span (shared by the typing span + the selection wrap).
     // delta: { color?, bold?, italic?, underline?, strike?, font?, zm?, effect?:{e?,es?,ec?} }
     function styleSpanFromDelta_(sp, layer, delta, zmCtxNode) {
@@ -13284,6 +13344,13 @@
         if (delta.effect.e != null) sp.setAttribute('data-e', delta.effect.e);
         if (delta.effect.es != null) sp.setAttribute('data-es', String(delta.effect.es));
         if (delta.effect.ec != null) sp.setAttribute('data-ec', delta.effect.ec);
+      }
+      // v3.1 round 6 (Terry) — render this span's effect LIVE (so an effect / effect-colour
+      // picked mid-flow shows immediately). Compute from the span's effective effect attrs.
+      const se = sp.getAttribute('data-e');
+      if (se != null) {
+        const sesRaw = sp.getAttribute('data-es');
+        applyEditEffectCss_(sp, layer, se, (sesRaw != null && isFinite(parseFloat(sesRaw))) ? parseFloat(sesRaw) : undefined, sp.getAttribute('data-ec'));
       }
     }
     // Plant (or merge into) the ZWSP typing span at the collapsed caret. Successive picks
@@ -13367,6 +13434,14 @@
       // still toggles open on click). Real inputs (the size field) return early above and keep focus.
       if (t.closest('.frame-swatch, .ch-tb-topstrip, .ch-tb-pop, .ch-toolbar[data-text-tb], #collage-font-menu, #collage-text-style, #collage-text-effect, #collage-text-palette, #collage-color-targets, .ch-tb-weightpop')) e.preventDefault();
     }, true);
+    // v3.1 round 6 (Terry) — as the caret moves through differently-styled text while editing,
+    // light the B/I/U/S + effect buttons to match what's under it (both panel + floating strip).
+    document.addEventListener('selectionchange', () => {
+      if (!editingText) return;
+      try { refreshTextToolbar(editingText); } catch (_) {}
+      try { syncTextStyleButtons_(); } catch (_) {}
+      try { syncColorTargetTiles_(); } catch (_) {}
+    });
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
     // trailing newline some browsers append. This is what renderTextToCanvas
@@ -14934,15 +15009,9 @@
       document.querySelectorAll('#collage-text-align .ec-toggle-btn').forEach((b) => {
         b.classList.toggle('active', b.dataset.align === (selectedText.align || 'center'));
       });
-      // v2.1 round 188 (Terry) — Style toggles: pressed-state per B/I/U flag.
-      document.querySelectorAll('#collage-text-style .ec-toggle-btn').forEach((b) => {
-        if (!b.dataset.style) return;   // v3.1 (Terry SS1) — skip the Weight trigger (no data-style)
-        b.classList.toggle('active', b.dataset.style === 'bold' ? (textWeightOf(selectedText) >= 600) : !!selectedText[b.dataset.style]);   // v3.1 (Terry SS1) — B reflects the weight
-      });
-      // v2.1 round 188 (Terry) — Effect chips: ring the active effect.
-      document.querySelectorAll('#collage-text-effect .ec-effect-btn').forEach((b) => {
-        b.classList.toggle('active', b.dataset.effect === (selectedText.effect || 'none'));
-      });
+      // v2.1 round 188 (Terry) — Style toggles + Effect chips: pressed-state per flag.
+      // v3.1 round 6 (Terry) — now caret-effective (lights up per the selection/typing point).
+      syncTextStyleButtons_();
       // v2.1 round 191 (Terry) — Strength slider: load from the layer (default 50)
       // and show it only when an effect is active (hidden for None).
       const strSlider = document.getElementById('collage-text-strength');
@@ -25098,7 +25167,10 @@
       chips.forEach((c) => {
         const b = document.createElement('button');
         b.type = 'button'; b.className = 'ec-ctgl'; b.dataset.target = c.t;
-        b.textContent = c.label;
+        // v3.1 round 6 (Terry) — label + its own colour tile (Text|Effect), instead of one
+        // shared tile. The label is a span so the tile can sit to its right, always visible.
+        const lbl = document.createElement('span'); lbl.className = 'ec-ctgl-lbl'; lbl.textContent = c.label; b.appendChild(lbl);
+        if (c.t === 'text' || c.t === 'effect') { const tile = document.createElement('span'); tile.className = 'ec-ctgl-tile'; tile.dataset.tile = c.t; b.appendChild(tile); }
         b.setAttribute('data-pdr-tooltip', c.tip || '');
         // v2.1 round 205 (Terry) — mark "disabled" via CLASS + aria, NOT the
         // disabled attribute. A real disabled <button> swallows mouse events, so
@@ -25109,6 +25181,7 @@
         if (c.t === colorTarget) b.classList.add('active');
         wrap.appendChild(b);
       });
+      try { syncColorTargetTiles_(); } catch (_) {}   // v3.1 round 6 — fill the tiles with each target's current colour
       // v2.1 round 197 (Terry) — only Text shows the chip row now (the [Text|
       // Effect] sub-toggle, chips.length === 2). Background + Frame are single
       // targets, so the row is hidden and the GOLD subcategory header is the only
@@ -25151,6 +25224,23 @@
     // change so the active swatch tracks the new colour.
     function syncTextColorPaletteRings() {
       textColorPalettes.forEach((p) => markTextColorPaletteActive(p.host, p.getCurrent));
+      try { syncColorTargetTiles_(); } catch (_) {}   // v3.1 round 6 — keep the per-target tiles fresh after every pick
+    }
+    // v3.1 round 6 (Terry) — paint the Text + Effect target chips' own colour tiles. Caret-
+    // effective while editing (so they track the letter under the cursor); '' effect colour →
+    // the checker 'auto' tile.
+    function syncColorTargetTiles_() {
+      const wrap = document.getElementById('collage-color-targets');
+      if (!wrap || !selectedText || selectedText.isEmoji) return;
+      let curColor = selectedText.color || '#ffffff';
+      let curEc = selectedText.effectColor || '';
+      if (editingText === selectedText && selectedText.editEl) {
+        try { const st = fmtStyleAtSelection_(selectedText); if (st) { if (st.color) curColor = st.color; if (st.ec != null && st.ec !== '') curEc = st.ec; } } catch (_) {}
+      }
+      const tText = wrap.querySelector('.ec-ctgl-tile[data-tile="text"]');
+      const tEff = wrap.querySelector('.ec-ctgl-tile[data-tile="effect"]');
+      if (tText) { tText.classList.remove('is-auto'); tText.style.background = curColor; }
+      if (tEff) { if (curEc) { tEff.classList.remove('is-auto'); tEff.style.background = curEc; } else { tEff.classList.add('is-auto'); tEff.style.background = ''; } }
     }
     function setTextColor(hex) {
       if (!selectedText) return;
