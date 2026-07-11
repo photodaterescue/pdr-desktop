@@ -761,7 +761,10 @@
       if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
       navigator.mediaDevices.enumerateDevices().then(function (devs) {
         var cams = devs.filter(function (d) { return d.kind === 'videoinput'; });
-        if (cams.length >= 2) { cam2Btn.style.display = ''; requestResize(); }
+        // v3.1 (Terry 2026-07-11) — when there ARE two cameras, the first button reads "Cam 1" (to pair
+        // with "Cam 2"); with only one camera it stays plain "Cam".
+        if (cams.length >= 2) { cam2Btn.style.display = ''; camBtn.textContent = 'Cam 1'; requestResize(); }
+        else { camBtn.textContent = 'Cam'; }
       }).catch(function () {});
     } catch (e) {}
   })();

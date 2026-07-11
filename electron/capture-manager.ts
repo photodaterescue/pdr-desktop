@@ -4278,6 +4278,23 @@ function closeCamBubble(): void {
 }
 
 // ─── v3.1 (Terry 2026-07-11): LIVE "cam only" — the desktop-hiding curtain ───
+// v3.1 (Terry) — a filmed FADE for the screen↔cam switch: step a window's opacity from→to over ms.
+function fadeWindowOpacity(win: BrowserWindow | null, from: number, to: number, ms: number, done?: () => void): void {
+  if (!win || win.isDestroyed()) { if (done) done(); return; }
+  const steps = 14;
+  const dt = Math.max(12, Math.round(ms / steps));
+  try { win.setOpacity(from); } catch { /* non-fatal */ }
+  let i = 0;
+  const tick = (): void => {
+    if (!win || win.isDestroyed()) { if (done) done(); return; }
+    i++;
+    const v = from + (to - from) * (i / steps);
+    try { win.setOpacity(Math.max(0, Math.min(1, v))); } catch { /* non-fatal */ }
+    if (i >= steps) { if (done) done(); return; }
+    setTimeout(tick, dt);
+  };
+  setTimeout(tick, dt);
+}
 function closeRecordCurtain(): void {
   const w = recordCurtainWindow;
   recordCurtainWindow = null;
@@ -4300,6 +4317,7 @@ function createRecordCurtain(display: Electron.Display): void {
   // Sit ABOVE the desktop but BELOW the cam bubbles ('screen-saver' level) so the cams show on top.
   try { win.setAlwaysOnTop(true, 'pop-up-menu'); } catch { /* non-fatal */ }
   try { win.setIgnoreMouseEvents(false); } catch { /* non-fatal */ }   // block clicks → the hidden live desktop can't be mis-clicked
+  try { win.setOpacity(0); } catch { /* non-fatal */ }   // start invisible → setRecordCamOnly fades it in (filmed transition)
   win.once('ready-to-show', () => { if (!win.isDestroyed()) { try { win.showInactive(); } catch { /* non-fatal */ } raiseOverlaysAboveCurtain(); } });
   void win.loadURL('about:blank');   // opaque black via backgroundColor
   try { win.showInactive(); } catch { /* non-fatal */ }
@@ -4328,8 +4346,13 @@ function layoutCamsForCamOnly(display: Electron.Display): void {
     if (n === 1) { x = b.x; y = b.y; w = b.width; h = b.height; }               // one cam → full screen
     else { w = Math.round(b.width / 2); h = b.height; y = b.y; x = b.x + idx * w; }   // two cams → left | right halves
     if (!camSavedBounds[which]) { try { camSavedBounds[which] = win.getBounds(); } catch { /* non-fatal */ } }
-    try { win.setBounds({ x, y, width: w, height: h }); } catch { /* non-fatal */ }
     try { win.webContents.send('capture:cam-do', { action: 'fill', on: true }); } catch { /* non-fatal */ }
+    // A non-resizable frameless window can silently CLAMP a setBounds bigger than its creation size on
+    // Windows — so lift the size ceiling first, then set the bounds (Terry: "one cam only occupies half").
+    try { win.setResizable(true); } catch { /* non-fatal */ }
+    try { win.setMaximumSize(0, 0); } catch { /* non-fatal */ }   // 0,0 = no maximum
+    try { win.setBounds({ x, y, width: w, height: h }); } catch { /* non-fatal */ }
+    try { const got = win.getBounds(); log.info(`[capture] cam-only fill n=${n} cam${which} want ${w}x${h}@${x},${y} got ${got.width}x${got.height}@${got.x},${got.y} (display ${b.width}x${b.height})`); } catch { /* non-fatal */ }
   });
 }
 function restoreCamBoundsFromCamOnly(): void {
@@ -4337,7 +4360,10 @@ function restoreCamBoundsFromCamOnly(): void {
     const win = camWindows[which];
     if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'fill', on: false }); } catch { /* non-fatal */ } }
     const saved = camSavedBounds[which];
-    if (saved && win && !win.isDestroyed()) { try { win.setBounds(saved); } catch { /* non-fatal */ } }
+    if (saved && win && !win.isDestroyed()) {
+      try { win.setBounds(saved); } catch { /* non-fatal */ }
+      try { win.setResizable(false); } catch { /* non-fatal */ }   // back to a fixed-size spotlight bubble
+    }
     camSavedBounds[which] = null;
   }
 }
@@ -4350,12 +4376,17 @@ function setRecordCamOnly(on: boolean): void {
     if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on the black curtain
     createRecordCurtain(recordDisplay);
     recordCamOnly = true;
+    fadeWindowOpacity(recordCurtainWindow, 0, 1, 260);   // desktop fades to black
     const relayout = () => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } };
     setTimeout(relayout, 80);
     setTimeout(relayout, 320);   // a second pass covers a cam bubble that was just auto-created (async load)
   } else {
-    closeRecordCurtain();
+    // Cam back to spotlight FIRST (so the full-screen cam no longer covers the curtain), THEN fade the
+    // black out to reveal the desktop again — a filmed transition both ways.
     restoreCamBoundsFromCamOnly();
+    const curtain = recordCurtainWindow;
+    recordCurtainWindow = null;   // hand the reference to the fade so a fast re-toggle can make a fresh one
+    fadeWindowOpacity(curtain, 1, 0, 260, () => { if (curtain && !curtain.isDestroyed()) { try { curtain.close(); } catch { /* non-fatal */ } } });
     recordCamOnly = false;
   }
   notifyWidgetCamState();
