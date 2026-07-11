@@ -11548,7 +11548,7 @@
         { key: 'effect', label: 'Effect',        fields: ['effect', 'effectStrength', 'effectColor'] },
       ],
       enh: [
-        { key: 'tone',    label: 'Tone & colour', fields: ['brightness', 'contrast', 'saturation', 'temperature', 'colour', 'tone'] },
+        { key: 'tone',    label: 'Tone & color', fields: ['brightness', 'contrast', 'saturation', 'temperature', 'colour', 'tone'] },
         { key: 'effects', label: 'Effects',       fields: ['opacity', 'blend', 'corners', 'blur', 'vignette', 'vignetteShape', 'grain', 'pixelate', 'borderColor', 'borderWeight', 'borderPct'] },
         { key: 'glow',    label: 'Glow & shadow', fields: ['glow', 'dropShadow', 'lift', 'neon', 'outline', 'glowColor', 'dropShadowColor', 'liftColor', 'neonColor', 'outlineColor'] },
       ],
@@ -11826,7 +11826,7 @@
       panel.className = 'collage-fmt-popup';
       panel.innerHTML = '<div class="cfp-title">Click the word/s to paint</div>'
         + '<div class="cfp-chips" style="max-width:240px;padding:2px 0 6px;"></div>'
-        + '<div style="font-size:10.5px;color:rgba(255,255,255,0.45);padding-bottom:6px;">Words take the colour &amp; style. Font, size &amp; effects stay whole-box.</div>'
+        + '<div style="font-size:10.5px;color:rgba(255,255,255,0.45);padding-bottom:6px;">Words take the color &amp; style. Font, size &amp; effects stay whole-box.</div>'
         + '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Done</button></div>';
       panel.addEventListener('pointerdown', (e) => e.stopPropagation());
       document.body.appendChild(panel);
@@ -23705,7 +23705,7 @@
         function colourRows(t) {
           var rows = TEXT_SWATCHES.map(function (s) { return { swatch: s[1], label: s[0], on: ((t.color || '').toLowerCase() === s[1].toLowerCase()), fn: function () { textColor(t, s[1]); } }; });
           rows.push({ sep: true });
-          rows.push({ ic: I.palette, label: 'More colours…', fn: function () { openTextPanel(t); } });
+          rows.push({ ic: I.palette, label: 'More colors…', fn: function () { openTextPanel(t); } });
           return rows;
         }
         function fmtDate(iso) { try { var d = new Date(iso); if (isNaN(d.getTime())) return iso || '—'; return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }); } catch (_) { return iso || '—'; } }

@@ -364,7 +364,7 @@
   var cfmSaveBtn = document.getElementById('cfmSave');       // v3.1 (Terry) — stop-save double-check buttons; wired for PDR tooltips too
   var cfmDiscardBtn = document.getElementById('cfmDiscard');
   var cfmKeepBtn = document.getElementById('cfmKeep');
-  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn, cfmSaveBtn, cfmDiscardBtn, cfmKeepBtn];
+  var allButtons = [screenSel, areaBtn, camBtn, cam2Btn, camOnlyBtn, micBtn, micSel, clicksBtn, blurBtn, unblurBtn, zoomBtn, autoZoomBtn, qualitySel, snapBtn, muteBtn, pauseBtn, recordBtn, stopBtn, cancelBtn, cfmSaveBtn, cfmDiscardBtn, cfmKeepBtn];   // v3.1 (Terry 2026-07-11) — camOnlyBtn added so it gets the PDR tooltip (its native title was leaking) + the enable/disable
 
   var recorder = null;
   var stream = null;
@@ -1104,10 +1104,12 @@
           // v3.1 (Terry) — second camera lights its own button. (Backdrop now lives on each bubble.)
           cam2Btn.classList.toggle('active', !!cmd.visible2);
           cam2Btn.title = cmd.visible2 ? 'Second camera is in the recording — click to hide it' : 'Show or hide a second camera bubble (your other camera) in the recording';
-          // v3.1 (Terry 2026-07-11) — reflect the live "cam only" curtain state.
+          // v3.1 (Terry 2026-07-11) — reflect the live "cam only" state: when it's ON, the button
+          // becomes the way BACK to the screen, so the label + tip say so (short + suitable).
           if (camOnlyBtn) {
             camOnlyBtn.classList.toggle('active', !!cmd.camOnly);
-            camOnlyBtn.title = cmd.camOnly ? 'Cam only is ON — the desktop is hidden; click to bring the screen back' : 'Cam only — hide the desktop and record just your camera(s). Click again to bring the screen back.';
+            camOnlyBtn.textContent = cmd.camOnly ? 'Show screen' : 'Cam only';
+            camOnlyBtn.setAttribute('title', cmd.camOnly ? 'Show screen — bring the desktop back into the recording (your camera returns to its spotlight)' : 'Cam only — hide the desktop and record just your camera(s). Click any time to switch back.');
           }
           requestResize();
         }
