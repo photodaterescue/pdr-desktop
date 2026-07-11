@@ -2992,6 +2992,26 @@ function camShapeSettingKey(which: number): 'captureCamShape' | 'captureCam2Shap
 function getCamShape(which: number): CamShapeKey {
   try { const v = getSettings()[camShapeSettingKey(which)] as CamShapeKey; return (v === 'square' || v === 'rectangle') ? v : 'circle'; } catch { return 'circle'; }
 }
+// v3.1 (Terry 2026-07-11) — the bubble is now CONTINUOUSLY sizeable (drag the ⤢ handle) instead of a
+// 3-step S/M/L cycle, and can grow to 4× the old Large. The size is persisted as a numeric HEIGHT in
+// px (captureCamSizePx / captureCam2SizePx); width follows the shape's aspect. Falls back to the old
+// s/m/l preset height so existing setups keep their size.
+const CAM_MIN_H = 150;
+function camAspect(shape: CamShapeKey): number { const m = CAM_SIZES[shape].m; return m.w / m.h; }   // circle/square = 1, rectangle ≈ 1.57
+function camMaxH(shape: CamShapeKey): number { return CAM_SIZES[shape].l.h * 4; }                      // Terry: 4× the current largest
+function camSizePxKey(which: number): 'captureCamSizePx' | 'captureCam2SizePx' { return which === 2 ? 'captureCam2SizePx' : 'captureCamSizePx'; }
+function getCamSizeH(which: number): number {
+  const shape = getCamShape(which);
+  try {
+    const px = getSettings()[camSizePxKey(which)] as number | undefined;
+    if (typeof px === 'number' && isFinite(px) && px > 0) return Math.max(CAM_MIN_H, Math.min(camMaxH(shape), Math.round(px)));
+  } catch { /* fall through */ }
+  return CAM_SIZES[shape][getCamSize(which)].h;   // legacy s/m/l → its height
+}
+function camDimsFor(which: number, shape: CamShapeKey, hOverride?: number): { w: number; h: number } {
+  const h = Math.max(CAM_MIN_H, Math.min(camMaxH(shape), Math.round(hOverride != null ? hOverride : getCamSizeH(which))));
+  return { w: Math.round(h * camAspect(shape)), h };
+}
 // v3.1 (Terry SS1) — PER-CAMERA backdrop. Cam 1 keeps captureCamBg; Cam 2 has captureCam2Bg (so the
 // second camera no longer inherits the first's backdrop).
 function camBgSettingKey(which: number): 'captureCamBg' | 'captureCam2Bg' { return which === 2 ? 'captureCam2Bg' : 'captureCamBg'; }
@@ -3747,7 +3767,7 @@ ipcMain.on('capture:cam-shape', (event, info?: { which?: number }) => {
   if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
   const next = CAM_SHAPE_ORDER[(CAM_SHAPE_ORDER.indexOf(getCamShape(which)) + 1) % CAM_SHAPE_ORDER.length];
   try { setSetting(camShapeSettingKey(which), next); } catch { /* non-fatal */ }
-  const dims = CAM_SIZES[next][getCamSize(which)];
+  const dims = camDimsFor(which, next);   // v3.1 — keep the current (numeric) height, apply the new shape's aspect
   try {
     const b = win.getBounds();
     win.setBounds({ x: Math.round(b.x + (b.width - dims.w) / 2), y: Math.round(b.y + (b.height - dims.h) / 2), width: dims.w, height: dims.h });
@@ -3940,8 +3960,9 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
   const avoidDeviceId = (() => {
     try { return which === 2 ? (getSettings().captureCamDevice || '') : ''; } catch { return ''; }
   })();
-  // v3.1 (Terry) — per-camera persisted size preset (S/M/L, cycled from the bubble's hover button).
-  const dims = CAM_SIZES[shape][getCamSize(which)];
+  // v3.1 (Terry) — per-camera persisted size — now a continuous height (px), drag-resized from the ⤢
+  // handle, up to 4× the old Large.
+  const dims = camDimsFor(which, shape);
   const width = dims.w;
   const height = dims.h;
   const win = new BrowserWindow({
@@ -4724,25 +4745,36 @@ ipcMain.on('capture:record-camonly-toggle', (event) => {
 });
 // v3.1 (Terry) — cycle a bubble's size S→M→L→S (the bubble's hover ⤢ button). Resizes the window
 // around its centre (the page's fluid inset layout reflows itself) and persists per camera.
+// Resize the bubble around its centre to a target HEIGHT (px), clamped + aspect-kept, and persist it.
+function applyCamHeight(which: number, h: number, persist: boolean): void {
+  const win = camWindows[which];
+  if (!win || win.isDestroyed() || recordCamOnly) return;   // never resize the spotlight while cam-only is filling the screen
+  const shape = getCamShape(which);
+  const dims = camDimsFor(which, shape, h);
+  try {
+    const b = win.getBounds();
+    win.setBounds({ x: Math.round(b.x + (b.width - dims.w) / 2), y: Math.round(b.y + (b.height - dims.h) / 2), width: dims.w, height: dims.h });
+  } catch { /* non-fatal */ }
+  if (persist) { try { setSetting(camSizePxKey(which), dims.h); } catch { /* non-fatal */ } }
+}
+// Click the ⤢ handle → step through 5 sizes (Terry: "5 different sizes"), smallest→4× the old Large.
 ipcMain.on('capture:cam-size', (event, info?: { which?: number }) => {
   const which = info && info.which === 2 ? 2 : 1;
   const win = camWindows[which];
   if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
-  const shape = getCamShape(which);   // v3.1 (Terry SS1) — per-camera shape
-  const order: CamSizeKey[] = ['s', 'm', 'l'];
-  const next = order[(order.indexOf(getCamSize(which)) + 1) % order.length];
-  try { setSetting(camSizeSettingKey(which), next); } catch { /* non-fatal */ }
-  const dims = CAM_SIZES[shape][next];
-  try {
-    const b = win.getBounds();
-    win.setBounds({
-      x: Math.round(b.x + (b.width - dims.w) / 2),
-      y: Math.round(b.y + (b.height - dims.h) / 2),
-      width: dims.w,
-      height: dims.h,
-    });
-  } catch { /* non-fatal */ }
-  log.info(`[capture] cam ${which} size → ${next}`);
+  const shape = getCamShape(which);
+  const steps = [0, 0.25, 0.5, 0.75, 1].map((f) => Math.round(CAM_MIN_H + f * (camMaxH(shape) - CAM_MIN_H)));
+  const cur = getCamSizeH(which);
+  const next = steps.find((s) => s > cur + 4) ?? steps[0];   // next larger, wrapping to smallest
+  applyCamHeight(which, next, true);
+  log.info(`[capture] cam ${which} size step → ${next}px`);
+});
+// Drag the ⤢ handle → continuous resize (Terry: "a slider on a sliding scale"). commit persists.
+ipcMain.on('capture:cam-resize', (event, info?: { which?: number; h?: number; commit?: boolean }) => {
+  const which = info && info.which === 2 ? 2 : 1;
+  const win = camWindows[which];
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return;
+  if (typeof info?.h === 'number' && isFinite(info.h)) applyCamHeight(which, info.h, !!info.commit);
 });
 // v3.0 round 410 (Terry) — microphone/voiceover on/off + device, reported from
 // the recording bar so they persist for future recordings (same persist+sync

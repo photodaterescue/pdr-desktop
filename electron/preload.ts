@@ -514,6 +514,7 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
     // v3.1 (Terry) â€” SECOND CAMERA + bubble size: Cam/Cam 2 toggle their own bubbles (which: 1|2);
     // camSizeCycle steps the given bubble Sâ†’Mâ†’L (main resizes the window + persists).
     camSizeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-size', info),
+    camResize: (info: { which: number; h: number; commit?: boolean }) => ipcRenderer.send('capture:cam-resize', info),   // v3.1 (Terry 2026-07-11) â€” drag the â¤¢ handle to resize the bubble on a sliding scale (up to 4Ã— the old Large)
     camShapeCycle: (info: { which: number }) => ipcRenderer.send('capture:cam-shape', info),   // v3.1 (Terry SS1) — circle/square/rectangle per camera
     // v3.1 (Terry) — the BACKDROP is now set from a button ON the cam bubble; the bubble tells main to
     // persist it (main knows which camera this window is from the sender), and applies it locally itself.

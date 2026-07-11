@@ -176,6 +176,8 @@ export interface PDRSettings {
   /** v3.1 (Terry) — bubble size presets (S/M/L), cycled from each bubble's size button. */
   captureCamSize: 's' | 'm' | 'l';
   captureCam2Size: 's' | 'm' | 'l';
+  captureCamSizePx: number;   // v3.1 (Terry 2026-07-11) — continuous bubble height (px); supersedes the s/m/l preset
+  captureCam2SizePx: number;
   /** v3.1 (Terry SS1) — SECOND camera's own backdrop (cam 2 no longer inherits cam 1's). Same shape
    *  as captureCamBg. */
   captureCam2Bg: { type: string; value?: string };
@@ -387,6 +389,8 @@ export const optimisedDefaults: PDRSettings = {
   captureCamBg: { type: 'none' },
   captureCam2Device: '',
   captureCamSize: 'm',
+  captureCamSizePx: 0,   // 0 = not set yet → fall back to the s/m/l preset height
+  captureCam2SizePx: 0,
   captureCam2Size: 'm',
   captureCam2Bg: { type: 'none' },
   captureCam2Shape: 'circle',
@@ -493,6 +497,8 @@ export function getSettings(): PDRSettings {
     captureCam2Device: store.get('captureCam2Device', optimisedDefaults.captureCam2Device),
     captureCamSize: store.get('captureCamSize', optimisedDefaults.captureCamSize),
     captureCam2Size: store.get('captureCam2Size', optimisedDefaults.captureCam2Size),
+    captureCamSizePx: store.get('captureCamSizePx', optimisedDefaults.captureCamSizePx),
+    captureCam2SizePx: store.get('captureCam2SizePx', optimisedDefaults.captureCam2SizePx),
     captureCam2Bg: store.get('captureCam2Bg', optimisedDefaults.captureCam2Bg),
     captureCam2Shape: store.get('captureCam2Shape', optimisedDefaults.captureCam2Shape),
     captureCamHotkey: store.get('captureCamHotkey', optimisedDefaults.captureCamHotkey),

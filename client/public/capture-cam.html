@@ -168,7 +168,7 @@
       <button id="shapeBtn" class="cbtn" type="button" data-tip="Shape">
         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>
       </button>
-      <button id="sizeBtn" class="cbtn" type="button" data-tip="Size">
+      <button id="sizeBtn" class="cbtn" type="button" data-tip="Drag to resize · click to step">
         <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
       <button id="zoomBtn" class="cbtn" type="button" data-tip="Zoom">1×</button>
@@ -209,12 +209,37 @@
     zoomIdx = (zoomIdx + 1) % ZOOMS.length;
     applyCamZoom();
   });
-  // v3.1 (Terry) — bubble SIZE cycle (S→M→L): main resizes this window around its centre; the fluid
-  // inset layout reflows on its own, so nothing else to do here.
-  document.getElementById('sizeBtn').addEventListener('click', function (e) {
-    e.stopPropagation();
-    try { if (pdr && pdr.capture && pdr.capture.camSizeCycle) pdr.capture.camSizeCycle({ which: camWhich }); } catch (err) {}
-  });
+  // v3.1 (Terry 2026-07-11) — bubble SIZE: DRAG the ⤢ handle to resize on a sliding scale (up to 4×
+  // the old Large); a plain CLICK steps through 5 sizes. Main resizes the window around its centre;
+  // the fluid inset layout reflows on its own. Pointer capture keeps the drag smooth as the window
+  // grows/shrinks under the cursor. Disabled while cam-only fills the screen.
+  (function () {
+    var sizeBtn = document.getElementById('sizeBtn');
+    var dragging = false, startY = 0, startH = 0, moved = false;
+    sizeBtn.addEventListener('pointerdown', function (e) {
+      if (shell.classList.contains('fill')) return;   // cam-only fullscreen → no resize
+      e.preventDefault(); e.stopPropagation();
+      dragging = true; moved = false; startY = e.clientY; startH = window.innerHeight;
+      try { sizeBtn.setPointerCapture(e.pointerId); } catch (err) {}
+    });
+    sizeBtn.addEventListener('pointermove', function (e) {
+      if (!dragging) return;
+      var dy = e.clientY - startY;
+      if (Math.abs(dy) > 3) moved = true;
+      // Drag DOWN grows (centre fixed → the handle tracks the cursor as the box grows by ~2·dy).
+      var h = Math.round(startH + dy * 2);
+      try { if (pdr && pdr.capture && pdr.capture.camResize) pdr.capture.camResize({ which: camWhich, h: h }); } catch (err) {}
+    });
+    var endDrag = function (e) {
+      if (!dragging) return;
+      dragging = false;
+      try { sizeBtn.releasePointerCapture(e.pointerId); } catch (err) {}
+      if (moved) { var h = Math.round(startH + (e.clientY - startY) * 2); try { pdr.capture.camResize({ which: camWhich, h: h, commit: true }); } catch (err) {} }
+      else { try { if (pdr && pdr.capture && pdr.capture.camSizeCycle) pdr.capture.camSizeCycle({ which: camWhich }); } catch (err) {} }   // no drag → a click = step size
+    };
+    sizeBtn.addEventListener('pointerup', endDrag);
+    sizeBtn.addEventListener('pointercancel', endDrag);
+  })();
   // v3.1 (Terry SS1) — SHAPE cycle (circle → square → rectangle): main resizes + re-shapes this
   // window and persists per-camera; it echoes the new shape back so the border-radius updates.
   document.getElementById('shapeBtn').addEventListener('click', function (e) {
