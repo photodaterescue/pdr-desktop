@@ -9164,6 +9164,7 @@
     const collageRootEl = document.getElementById('collage-root');
     const collageStageEl = document.getElementById('collage-stage');
     const collageCanvasEl = document.getElementById('collage-canvas');
+    let lastCollageClickFrac = null;   // v3.1 round 3 (Terry) — last canvas click (fraction of the whole canvas) → where a new text box lands
     // v2.1 round 266 (Terry) — Phase 4: the unclipped floating-chrome overlay layer.
     const collageChromeEl = document.getElementById('collage-chrome');
 
@@ -11562,12 +11563,14 @@
     // whole box (runs included), else null (mixed). A runs-less box is uniform by definition.
     function fmtEffectiveTextStyle_(ref) {
       const baseB = textWeightOf(ref) >= 600;
-      const out = { color: ref.color || '#ffffff', bold: baseB, italic: !!ref.italic, underline: !!ref.underline, strike: !!ref.strike,
+      const out = { color: ref.color || '#ffffff', bold: baseB, weight: textWeightOf(ref) || 400, italic: !!ref.italic, underline: !!ref.underline, strike: !!ref.strike,
         font: ref.font || 'Montserrat', zm: 1, e: ref.effect || 'none', es: (typeof ref.effectStrength === 'number') ? ref.effectStrength : 50, ec: ref.effectColor || '' };
       if (!(ref.runs && ref.runs.length)) return out;
+      const baseW = textWeightOf(ref) || 400;
       const eff = ref.runs.map((r) => ({
         c: (r.c != null ? String(r.c).toLowerCase() : (ref.color || '#ffffff').toLowerCase()),
-        b: (r.b != null ? !!r.b : baseB),
+        w: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : (r.b != null ? (r.b ? 700 : 400) : baseW),   // v3.1 round 3 — a word bolded via the Weight menu carries its weight
+        b: (r.b != null ? !!r.b : (typeof r.w === 'number' && isFinite(r.w) ? r.w >= 600 : baseB)),   // …and reads as bold for the painter
         i: (r.i != null ? !!r.i : !!ref.italic),
         u: (r.u != null ? !!r.u : !!ref.underline),
         s: (r.s != null ? !!r.s : !!ref.strike),
@@ -11579,9 +11582,10 @@
       }));
       const uni = (key) => { const v = eff[0][key]; return eff.every((e) => e[key] === v) ? v : null; };
       const c = uni('c'), b = uni('b'), i = uni('i'), u = uni('u'), s = uni('s');
-      const f = uni('f'), zm = uni('zm'), e = uni('e'), es = uni('es'), ec = uni('ec');
+      const f = uni('f'), zm = uni('zm'), e = uni('e'), es = uni('es'), ec = uni('ec'), w = uni('w');
       if (c != null) out.color = c; out.colorMixed = (c == null);
-      if (b != null) out.bold = b; out.boldMixed = (b == null);
+      if (w != null) { out.weight = w; out.bold = w >= 600; } out.weightMixed = (w == null);   // v3.1 round 3 — carry the exact weight; bold follows it
+      if (b != null && w == null) out.bold = b; out.boldMixed = (b == null && w == null);
       if (i != null) out.italic = i; out.italicMixed = (i == null);
       if (u != null) out.underline = u; out.underlineMixed = (u == null);
       if (s != null) out.strike = s; out.strikeMixed = (s == null);
@@ -11603,13 +11607,13 @@
       if (!sel || !sel.rangeCount || !ed.contains(sel.anchorNode)) return null;
       let node = sel.anchorNode;
       if (node.nodeType === 3) node = node.parentNode;
-      const st = { color: null, bold: null, italic: null, underline: null, strike: null, font: null, e: null, es: null, ec: null };
+      const st = { color: null, bold: null, weight: null, italic: null, underline: null, strike: null, font: null, e: null, es: null, ec: null };
       while (node && node !== ed) {
         const tag = node.tagName;
         const ds = node.dataset || {};
         const is = node.style;
         if (st.color == null) { if (ds.c != null) st.color = ds.c; else if (tag === 'FONT' && node.getAttribute('color')) st.color = node.getAttribute('color'); else if (is && is.color && is.color !== 'transparent') st.color = rgbToHexSafe_(is.color); }
-        if (st.bold == null) { if (tag === 'B' || tag === 'STRONG') st.bold = true; else if (is && is.fontWeight) { const w = parseInt(is.fontWeight, 10); st.bold = isFinite(w) ? (w >= 600) : (is.fontWeight === 'bold'); } }
+        if (st.bold == null) { if (tag === 'B' || tag === 'STRONG') { st.bold = true; if (st.weight == null) st.weight = 700; } else if (is && is.fontWeight) { const w = parseInt(is.fontWeight, 10); st.bold = isFinite(w) ? (w >= 600) : (is.fontWeight === 'bold'); if (st.weight == null && isFinite(w)) st.weight = w; } }   // v3.1 round 3 — capture the exact weight, not just the bold bool
         if (st.italic == null) { if (tag === 'I' || tag === 'EM') st.italic = true; else if (is && is.fontStyle) st.italic = (is.fontStyle === 'italic'); }
         if (st.underline == null) { if (tag === 'U') st.underline = true; else if (ds.u != null) st.underline = ds.u === '1'; }
         if (st.strike == null) { if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') st.strike = true; else if (ds.s != null) st.strike = ds.s === '1'; }
@@ -11623,6 +11627,7 @@
       return {
         color: st.color != null ? st.color : (ref.color || '#ffffff'),
         bold: st.bold != null ? st.bold : (textWeightOf(ref) >= 600),
+        weight: st.weight != null ? st.weight : (textWeightOf(ref) || 400),   // v3.1 round 3 — the exact weight at the selection (Text Style is all-encompassing)
         italic: st.italic != null ? st.italic : !!ref.italic,
         underline: st.underline != null ? st.underline : !!ref.underline,
         strike: st.strike != null ? st.strike : !!ref.strike,
@@ -11656,6 +11661,7 @@
       const st = groups.style || {};
       if (inline.color != null && !inline.colorMixed) st.color = inline.color;
       if (!inline.boldMixed) { st.bold = inline.bold; if (inline.bold && !(typeof st.fontWeight === 'number' && st.fontWeight >= 600)) st.fontWeight = 700; if (!inline.bold && typeof st.fontWeight === 'number' && st.fontWeight >= 600) st.fontWeight = 400; }
+      if (inline.weight != null && !inline.weightMixed) { st.fontWeight = inline.weight; st.bold = inline.weight >= 600; }   // v3.1 round 3 — carry the EXACT weight (Thin…Black), not just bold on/off
       if (!inline.italicMixed) st.italic = inline.italic;
       if (!inline.underlineMixed) st.underline = inline.underline;
       if (!inline.strikeMixed) st.strike = inline.strike;
@@ -12024,7 +12030,8 @@
       const base = fmtEffectiveTextStyle_(ref);
       const effOf = (r) => ({
         color: (r.c != null ? String(r.c).toLowerCase() : (ref.color || '#ffffff').toLowerCase()),
-        bold: (r.b != null ? !!r.b : (textWeightOf(ref) >= 600)),
+        weight: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : (r.b != null ? (r.b ? 700 : 400) : (textWeightOf(ref) || 400)),   // v3.1 round 3 — weight-menu boldness carries + reads as bold
+        bold: (r.b != null ? !!r.b : (typeof r.w === 'number' && isFinite(r.w) ? r.w >= 600 : (textWeightOf(ref) >= 600))),
         italic: (r.i != null ? !!r.i : !!ref.italic),
         underline: (r.u != null ? !!r.u : !!ref.underline),
         strike: (r.s != null ? !!r.s : !!ref.strike),
@@ -13352,7 +13359,13 @@
       const t = e.target;
       if (!(t instanceof Element)) return;
       if (t.closest('input, select, textarea, [contenteditable="true"]')) return;
-      if (t.closest('.frame-swatch, .ch-tb-topstrip, .ch-tb-pop, .ch-toolbar[data-text-tb], #collage-font-menu, #collage-text-style, #collage-text-effect')) e.preventDefault();   // v3.1 round 2 — the panel's font menu + B/I/U/S + Effect chips keep the caret alive too
+      // v3.1 round 3 (Terry SS) — guard the WHOLE colour region (#collage-text-palette) and the
+      // Text/Effect target tabs (#collage-color-targets), not just the swatches: expanding a
+      // collapsed palette, or clicking the "Effect" tab, used to blur the editable → exit edit →
+      // the effect colour then hit the WHOLE box and the caret/selection was lost. Swallowing the
+      // mousedown keeps focus + the live selection; the click still fires (and a <details> summary
+      // still toggles open on click). Real inputs (the size field) return early above and keep focus.
+      if (t.closest('.frame-swatch, .ch-tb-topstrip, .ch-tb-pop, .ch-toolbar[data-text-tb], #collage-font-menu, #collage-text-style, #collage-text-effect, #collage-text-palette, #collage-color-targets, .ch-tb-weightpop')) e.preventDefault();
     }, true);
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
@@ -13381,7 +13394,10 @@
       // Capture a dedicated pre-edit snapshot for ONE undo step (pushed on exit
       // if the text changed). Independent of collagePendingSnap so a side-panel
       // click made while editing can't clobber it.
-      textEditSnap = (typeof snapshotCollage === 'function') ? snapshotCollage() : null;
+      // v3.1 round 3 (Terry) — a JUST-ADDED box hands in its PRE-ADD snapshot so the whole
+      // add+type is a single undo (see addTextLayer); otherwise snapshot the current state.
+      if (layer._freshAdd) { textEditSnap = (layer._freshAddSnap != null ? layer._freshAddSnap : ((typeof snapshotCollage === 'function') ? snapshotCollage() : null)); layer._freshAdd = false; layer._freshAddSnap = null; }
+      else textEditSnap = (typeof snapshotCollage === 'function') ? snapshotCollage() : null;
       const el = layer.el;
       let ed = layer.editEl;
       if (!ed || ed.parentNode !== el) {
@@ -13527,12 +13543,25 @@
       // v2.1 round 204 (Terry) — if a previous edit session is open (e.g. clicking
       // Add text with another text still being edited), commit it first.
       if (editingText) exitTextEdit();
-      beginCollageChange();
-      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: carouselCenterXFrac(), yFrac: 0.5, sizeFrac: (carouselMode ? 0.064 : 0.08),   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page; v3.1 (Terry SS1) — carousel default = 0.064 (0.08 × the 0.8 page-width factor) so the font-to-PAGE proportion matches a single collage — 0.08 of the wide canvas's height read oversized on a page */ scaleX: 1, scaleY: 1, boxMode: 'fixed', boxWFrac: defaultTextBoxWFrac(), boxHFrac: null, /* v3.1 (Terry SS1) — new text now WRAPS within ~one page by default (Canva-style) instead of extending right forever; a side-bar drag resizes the width, the Wrap toggle flips to hug-text 'auto', and the page-span override lets it cross pages. boxHFrac null = the box auto-grows downward as lines wrap. */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
+      // v3.1 round 3 (Terry) — the ADD + the first burst of typing collapse into ONE undo step:
+      // snapshot the PRE-ADD state and hand it to the edit session as its baseline (enterTextEdit
+      // picks it up via _freshAddSnap). A single Undo then removes a just-added box, text and all —
+      // not the old two-step (undo the text → an empty "Your text" box lingers → undo again).
+      const preAddSnap = (typeof snapshotCollage === 'function') ? snapshotCollage() : null;
+      // v3.1 round 3 (Terry) — a new box lands where the user LAST CLICKED on the canvas, instead of
+      // always the dead-centre of the first box. Repeated adds without a fresh click cascade slightly
+      // so they don't stack exactly. No click yet → the focused-page centre, as before.
+      let _ntx = carouselCenterXFrac(), _nty = 0.5;
+      if (lastCollageClickFrac && isFinite(lastCollageClickFrac.x) && isFinite(lastCollageClickFrac.y)) {
+        _ntx = Math.max(0.04, Math.min(0.96, lastCollageClickFrac.x));
+        _nty = Math.max(0.06, Math.min(0.94, lastCollageClickFrac.y));
+        lastCollageClickFrac = { x: Math.min(0.96, lastCollageClickFrac.x + 0.02), y: Math.min(0.94, lastCollageClickFrac.y + 0.02) };
+      }
+      const layer = { id: collageTextSeq++, text: 'Your text', xFrac: _ntx, yFrac: _nty, sizeFrac: (carouselMode ? 0.064 : 0.08),   /* v2.1 round 270 (Terry) — drop new text onto the focused carousel page; v3.1 (Terry SS1) — carousel default = 0.064 (0.08 × the 0.8 page-width factor) so the font-to-PAGE proportion matches a single collage — 0.08 of the wide canvas's height read oversized on a page */ scaleX: 1, scaleY: 1, boxMode: 'fixed', boxWFrac: defaultTextBoxWFrac(), boxHFrac: null, /* v3.1 (Terry SS1) — new text now WRAPS within ~one page by default (Canva-style) instead of extending right forever; a side-bar drag resizes the width, the Wrap toggle flips to hug-text 'auto', and the page-span override lets it cross pages. boxHFrac null = the box auto-grows downward as lines wrap. */ font: 'Montserrat', color: lastTextColor, align: 'center', rot: 0, z: collageTexts.length + 1, bold: false, italic: false, underline: false, strike: false, lineHeight: 1.25, opacity: 100, letterCase: 'none', effect: 'none', effectStrength: 50, effectColor: '', el: null };   // v2.1 round 187 (Terry) — default to last-used colour (black first time); round 188 — style + effect defaults; round 191 — effectStrength 0–100 (moderate 50); round 193 — effectColor '' = AUTO/derived (preserves today's look); round 222 (Terry) — scaleX/scaleY = non-uniform STRETCH from the SIDE handles (1 = unstretched; corners still scale uniformly via sizeFrac); v3.1 (Terry) — strike/lineHeight/opacity/letterCase drive the new floating toolbar text controls (defaults preserve today's look: no strike, 1.25× spacing, opaque, no case transform)
       collageTexts.push(layer);
       renderTextLayer(layer);
       selectText(layer);
-      commitCollageChange();   // the ADD is its own undo step
+      layer._freshAdd = true; layer._freshAddSnap = preAddSnap;   // v3.1 round 3 — enterTextEdit uses this as the ONE-step baseline (no separate ADD undo step)
       // v2.1 round 204 (Terry) — immediately enter in-canvas edit with the
       // placeholder "Your text" SELECTED, so the user can just start typing to
       // replace it ("Add text → type"). The edit session is a separate undo step.
@@ -23183,6 +23212,19 @@
         e.preventDefault(); e.stopPropagation();
         try { document.body.classList.add('collage-space-pan-active'); } catch (_) {}
         startViewPan(e, { noSelect: true, anyButton: true });
+      }, true);
+
+      // v3.1 round 3 (Terry) — remember where the user LAST CLICKED on the canvas, as a fraction of
+      // the (whole, carousel-wide) canvas, so a following "Add text" drops the box there instead of
+      // always dead-centre. Capture phase on the canvas fires before any child item swallows the
+      // press, so clicking on/near an existing item still records the spot. Pans are excluded.
+      collageCanvasEl.addEventListener('pointerdown', (e) => {
+        if (e.button !== 0 || collageSpaceHeld) return;
+        const r = collageCanvasEl.getBoundingClientRect();
+        if (!(r.width > 0 && r.height > 0)) return;
+        const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
+        if (fx < -0.02 || fx > 1.02 || fy < -0.02 || fy > 1.02) return;
+        lastCollageClickFrac = { x: Math.max(0, Math.min(1, fx)), y: Math.max(0, Math.min(1, fy)) };
       }, true);
 
       // ===== v3.1 (Terry) — COLLAGE SCROLLBARS. When the view is zoomed in enough that the canvas overflows
