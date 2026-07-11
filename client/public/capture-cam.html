@@ -66,6 +66,9 @@
   #shell.square { border-radius: 22px; }
   #shell.rectangle { border-radius: 14px; }
   #shell.visible { opacity: 1; transform: scale(1); }
+  /* v3.1 (Terry 2026-07-11) — "cam only" FILL: the camera fills the whole window edge-to-edge (no
+     bubble inset / border / rounding), so at full-display (or half-display) size it fills the screen. */
+  #shell.fill { inset: 0 !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; -webkit-app-region: no-drag !important; }
   /* v3.1 (Terry) — shape / size / zoom / backdrop controls. Shown whenever the mouse is over the
      camera window (JS-tracked — CSS :hover flickered on the transparent bubble, so they "disappeared
      randomly"), hidden when the mouse leaves. Same in armed + recording, so they only appear in the
@@ -585,6 +588,7 @@
         else if (cmd.action === 'hide') fadeOut();
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
         else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
+        else if (cmd.action === 'fill') { try { shell.classList.toggle('fill', !!cmd.on); } catch (e) {} }   // v3.1 (Terry) — cam-only fullscreen fill (no bubble shape)
         else if (cmd.action === 'hover') { if (cmd.over) ctrlsShow(); else ctrlsHideSoon(); }   // v3.1 (Terry) — main-driven hover (works over the drag region)
         else if (cmd.action === 'pick-image') { try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {} }   // v3.1 (Terry) — picker's "My picture" → library pick
       });

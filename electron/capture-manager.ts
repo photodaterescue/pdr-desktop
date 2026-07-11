@@ -4313,35 +4313,30 @@ function raiseOverlaysAboveCurtain(): void {
   }
   if (recordWidget && !recordWidget.isDestroyed()) { try { recordWidget.setAlwaysOnTop(true, 'screen-saver'); recordWidget.moveTop(); } catch { /* non-fatal */ } }
 }
-// v3.1 Stage 2 (Terry) — while cam-only, ENLARGE + CENTRE the visible cam(s) so they fill the black
-// screen (1 cam = centred; 2 = side by side). Saves each cam's bounds first so they restore on exit.
+// v3.1 Stage 2 (Terry) — while cam-only the visible cam(s) FILL THE SCREEN (Terry: "fill the screen,
+// not just a larger circle"): 1 cam = the whole display; 2 cams = split-screen, each half. The bubble
+// goes full-bleed (cam-do 'fill' → no inset/border/rounding, object-fit:cover fills). Bounds are saved
+// so the cam restores to its corner spotlight on exit.
 function layoutCamsForCamOnly(display: Electron.Display): void {
   const b = display.bounds;
   const on = [1, 2].filter((w) => camVisibles[w] && camWindows[w] && !camWindows[w]!.isDestroyed());
   const n = on.length;
   if (!n) return;
-  const gap = 28;
   on.forEach((which, idx) => {
     const win = camWindows[which]!;
-    const shape = getCamShape(which);
-    const preset = CAM_SIZES[shape][getCamSize(which)];
-    const aspect = preset.w / preset.h;
-    let h = Math.round(b.height * (n >= 2 ? 0.52 : 0.66));
-    let w = Math.round(h * aspect);
-    const maxW = n >= 2 ? Math.round((b.width - gap * 3) / 2) : Math.round(b.width * 0.82);
-    if (w > maxW) { w = maxW; h = Math.round(w / aspect); }
-    const y = b.y + Math.round((b.height - h) / 2);
-    let x: number;
-    if (n === 1) { x = b.x + Math.round((b.width - w) / 2); }
-    else { const totalW = w * 2 + gap; const startX = b.x + Math.round((b.width - totalW) / 2); x = startX + idx * (w + gap); }
+    let x: number, y: number, w: number, h: number;
+    if (n === 1) { x = b.x; y = b.y; w = b.width; h = b.height; }               // one cam → full screen
+    else { w = Math.round(b.width / 2); h = b.height; y = b.y; x = b.x + idx * w; }   // two cams → left | right halves
     if (!camSavedBounds[which]) { try { camSavedBounds[which] = win.getBounds(); } catch { /* non-fatal */ } }
     try { win.setBounds({ x, y, width: w, height: h }); } catch { /* non-fatal */ }
+    try { win.webContents.send('capture:cam-do', { action: 'fill', on: true }); } catch { /* non-fatal */ }
   });
 }
 function restoreCamBoundsFromCamOnly(): void {
   for (const which of [1, 2]) {
-    const saved = camSavedBounds[which];
     const win = camWindows[which];
+    if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'fill', on: false }); } catch { /* non-fatal */ } }
+    const saved = camSavedBounds[which];
     if (saved && win && !win.isDestroyed()) { try { win.setBounds(saved); } catch { /* non-fatal */ } }
     camSavedBounds[which] = null;
   }
