@@ -69,20 +69,19 @@
   /* v3.1 (Terry 2026-07-11) — "cam only" FILL: the camera fills the whole window edge-to-edge (no
      bubble inset / border / rounding), so at full-display (or half-display) size it fills the screen. */
   #shell.fill { inset: 0 !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; -webkit-app-region: no-drag !important; }
-  /* v3.1 (Terry 2026-07-11) — macOS-style "wormhole" swirl for the screen↔cam switch: the cam spirals
-     out of / into the screen centre (scale from a point + a big rotation + a little blur). */
-  @keyframes camSwirlIn {
-    0%   { transform: scale(0.03) rotate(-430deg); opacity: 0; filter: blur(12px); }
-    55%  { opacity: 1; }
-    100% { transform: scale(1) rotate(0deg); opacity: 1; filter: blur(0); }
+  /* v3.1 (Terry 2026-07-11) — macOS "Scale Effect" for the screen↔cam switch: the cam grows smoothly
+     from the screen centre to full (and shrinks back), like an app opening from the Dock. No rotation,
+     no blur — a clean scale + fade that stays in-keeping with PDR. */
+  @keyframes camScaleIn {
+    0%   { transform: scale(0.35); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
   }
-  @keyframes camSwirlOut {
-    0%   { transform: scale(1) rotate(0deg); opacity: 1; filter: blur(0); }
-    45%  { opacity: 1; }
-    100% { transform: scale(0.03) rotate(430deg); opacity: 0; filter: blur(12px); }
+  @keyframes camScaleOut {
+    0%   { transform: scale(1); opacity: 1; }
+    100% { transform: scale(0.35); opacity: 0; }
   }
-  #shell.fill.swirl-in  { animation: camSwirlIn 0.62s cubic-bezier(0.16, 0.9, 0.3, 1) both; transform-origin: center center; }
-  #shell.fill.swirl-out { animation: camSwirlOut 0.44s cubic-bezier(0.6, 0, 0.75, 0.35) both; transform-origin: center center; }
+  #shell.fill.swirl-in  { animation: camScaleIn 0.42s cubic-bezier(0.22, 0.68, 0.24, 1) both; transform-origin: center center; }
+  #shell.fill.swirl-out { animation: camScaleOut 0.32s cubic-bezier(0.4, 0, 0.7, 0.35) both; transform-origin: center center; }
   /* v3.1 (Terry) — shape / size / zoom / backdrop controls. Shown whenever the mouse is over the
      camera window (JS-tracked — CSS :hover flickered on the transparent bubble, so they "disappeared
      randomly"), hidden when the mouse leaves. Same in armed + recording, so they only appear in the
@@ -132,6 +131,44 @@
     pointer-events: none;
     transform: translateX(-50%);
   }
+  /* v3.1 (Terry 2026-07-11) — bubble SIZE is a HORIZONTAL slider (the same kind used across Collages),
+     opened by the ⤢ button and floating just above the controls row. Replaces the diagonal drag, which
+     felt jerky. Gold-filled track + round thumb to match PDR. */
+  #sizePop {
+    position: absolute;
+    left: 50%;
+    bottom: 22%;
+    transform: translateX(-50%);
+    width: 76%;
+    min-width: 108px;
+    max-width: 260px;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 11px;
+    border-radius: 14px;
+    background: rgba(10, 10, 16, 0.86);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, 0.5);
+    -webkit-app-region: no-drag;
+    z-index: 7;
+  }
+  body.ctrls-on.sizepop-open #sizePop { display: flex; }
+  #sizePop .szico { flex: none; color: rgba(255, 255, 255, 0.65); font: 700 10px/1 system-ui, 'Segoe UI', sans-serif; }
+  #sizePop .szico.big { font-size: 14px; }
+  #sizeRange {
+    -webkit-appearance: none; appearance: none;
+    flex: 1 1 auto; min-width: 0;
+    height: 4px; border-radius: 3px;
+    background: rgba(255, 255, 255, 0.22);
+    outline: none; cursor: pointer;
+  }
+  #sizeRange::-webkit-slider-thumb {
+    -webkit-appearance: none; appearance: none;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #FEC242; border: 2px solid #14121f;
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55); cursor: pointer;
+  }
   video, #camc {
     position: absolute;
     inset: 0;
@@ -168,7 +205,7 @@
       <button id="shapeBtn" class="cbtn" type="button" data-tip="Shape">
         <svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/></svg>
       </button>
-      <button id="sizeBtn" class="cbtn" type="button" data-tip="Drag to resize · click to step">
+      <button id="sizeBtn" class="cbtn" type="button" data-tip="Resize">
         <svg viewBox="0 0 24 24"><polyline points="15 3 21 3 21 9"/><polyline points="9 21 3 21 3 15"/><line x1="21" y1="3" x2="14" y2="10"/><line x1="3" y1="21" x2="10" y2="14"/></svg>
       </button>
       <button id="zoomBtn" class="cbtn" type="button" data-tip="Zoom">1×</button>
@@ -176,6 +213,12 @@
       <button id="bdBtn" class="cbtn" type="button" data-tip="Backdrop">
         <svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="14" rx="2"/><circle cx="9" cy="10" r="2"/><path d="M4 17l5-4 4 3 3-2 4 3"/></svg>
       </button>
+    </div>
+    <!-- v3.1 (Terry 2026-07-11) — horizontal SIZE slider, opened by the ⤢ button (replaces the diagonal drag). -->
+    <div id="sizePop">
+      <span class="szico">S</span>
+      <input id="sizeRange" type="range" min="150" max="1168" step="1" value="292">
+      <span class="szico big">L</span>
     </div>
     <!-- v3.1 (Terry) — PDR-style tooltip for the camera controls (replaces native `title`). -->
     <div id="camtip"></div>
@@ -209,37 +252,44 @@
     zoomIdx = (zoomIdx + 1) % ZOOMS.length;
     applyCamZoom();
   });
-  // v3.1 (Terry 2026-07-11) — bubble SIZE: DRAG the ⤢ handle to resize on a sliding scale (up to 4×
-  // the old Large); a plain CLICK steps through 5 sizes. Main resizes the window around its centre;
-  // the fluid inset layout reflows on its own. Pointer capture keeps the drag smooth as the window
-  // grows/shrinks under the cursor. Disabled while cam-only fills the screen.
-  (function () {
-    var sizeBtn = document.getElementById('sizeBtn');
-    var dragging = false, startY = 0, startH = 0, moved = false;
-    sizeBtn.addEventListener('pointerdown', function (e) {
-      if (shell.classList.contains('fill')) return;   // cam-only fullscreen → no resize
-      e.preventDefault(); e.stopPropagation();
-      dragging = true; moved = false; startY = e.clientY; startH = window.innerHeight;
-      try { sizeBtn.setPointerCapture(e.pointerId); } catch (err) {}
-    });
-    sizeBtn.addEventListener('pointermove', function (e) {
-      if (!dragging) return;
-      var dy = e.clientY - startY;
-      if (Math.abs(dy) > 3) moved = true;
-      // Drag DOWN grows (centre fixed → the handle tracks the cursor as the box grows by ~2·dy).
-      var h = Math.round(startH + dy * 2);
-      try { if (pdr && pdr.capture && pdr.capture.camResize) pdr.capture.camResize({ which: camWhich, h: h }); } catch (err) {}
-    });
-    var endDrag = function (e) {
-      if (!dragging) return;
-      dragging = false;
-      try { sizeBtn.releasePointerCapture(e.pointerId); } catch (err) {}
-      if (moved) { var h = Math.round(startH + (e.clientY - startY) * 2); try { pdr.capture.camResize({ which: camWhich, h: h, commit: true }); } catch (err) {} }
-      else { try { if (pdr && pdr.capture && pdr.capture.camSizeCycle) pdr.capture.camSizeCycle({ which: camWhich }); } catch (err) {} }   // no drag → a click = step size
-    };
-    sizeBtn.addEventListener('pointerup', endDrag);
-    sizeBtn.addEventListener('pointercancel', endDrag);
-  })();
+  // v3.1 (Terry 2026-07-11) — bubble SIZE is a HORIZONTAL slider (like the ones across Collages), opened
+  // by the ⤢ button. Drag it to resize on a sliding scale (up to 4× the old Large); main resizes the
+  // window around its centre and the fluid inset layout reflows on its own. Bounds (min/max) come from
+  // main (they depend on the shape). Disabled while cam-only fills the screen.
+  var sizeBtn = document.getElementById('sizeBtn');
+  var sizePop = document.getElementById('sizePop');
+  var sizeRange = document.getElementById('sizeRange');
+  var sizeMinH = 150, sizeMaxH = 1168;
+  function paintSizeFill() {
+    var span = (sizeRange.max - sizeRange.min) || 1;
+    var pct = (Number(sizeRange.value) - sizeRange.min) / span * 100;
+    sizeRange.style.background = 'linear-gradient(90deg, #FEC242 0%, #FEC242 ' + pct + '%, rgba(255,255,255,0.22) ' + pct + '%, rgba(255,255,255,0.22) 100%)';
+  }
+  function setSizeBounds(min, max, cur) {
+    if (typeof min === 'number' && isFinite(min)) sizeMinH = Math.round(min);
+    if (typeof max === 'number' && isFinite(max)) sizeMaxH = Math.round(max);
+    sizeRange.min = sizeMinH; sizeRange.max = sizeMaxH;
+    var v = (typeof cur === 'number' && isFinite(cur)) ? cur : Number(sizeRange.value);
+    sizeRange.value = Math.max(sizeMinH, Math.min(sizeMaxH, Math.round(v)));
+    paintSizeFill();
+  }
+  sizeBtn.addEventListener('click', function (e) {
+    e.stopPropagation();
+    if (shell.classList.contains('fill')) return;   // cam-only fullscreen → no resize
+    // Reflect the live window height in case it drifted, then toggle the slider.
+    setSizeBounds(sizeMinH, sizeMaxH, window.innerHeight);
+    document.body.classList.toggle('sizepop-open');
+  });
+  sizeRange.addEventListener('input', function () {
+    paintSizeFill();
+    try { if (pdr && pdr.capture && pdr.capture.camResize) pdr.capture.camResize({ which: camWhich, h: Number(sizeRange.value) }); } catch (err) {}
+  });
+  sizeRange.addEventListener('change', function () {
+    try { if (pdr && pdr.capture && pdr.capture.camResize) pdr.capture.camResize({ which: camWhich, h: Number(sizeRange.value), commit: true }); } catch (err) {}
+  });
+  // Keep dragging the slider from being read as a window-drag / from bubbling to other handlers.
+  sizePop.addEventListener('pointerdown', function (e) { e.stopPropagation(); });
+  paintSizeFill();
   // v3.1 (Terry SS1) — SHAPE cycle (circle → square → rectangle): main resizes + re-shapes this
   // window and persists per-camera; it echoes the new shape back so the border-radius updates.
   document.getElementById('shapeBtn').addEventListener('click', function (e) {
@@ -258,7 +308,7 @@
   // the window bounds and tells us. The short grace on hide stops flicker at the very edge.
   var ctrlsHideT = null;
   function ctrlsShow() { if (ctrlsHideT) { clearTimeout(ctrlsHideT); ctrlsHideT = null; } document.body.classList.add('ctrls-on'); }
-  function ctrlsHideSoon() { if (ctrlsHideT) clearTimeout(ctrlsHideT); ctrlsHideT = setTimeout(function () { document.body.classList.remove('ctrls-on'); hideCamtip(); }, 260); }
+  function ctrlsHideSoon() { if (ctrlsHideT) clearTimeout(ctrlsHideT); ctrlsHideT = setTimeout(function () { document.body.classList.remove('ctrls-on', 'sizepop-open'); hideCamtip(); }, 260); }
 
   // v3.1 (Terry) — PDR-style tooltip for the camera pills (replaces the native `title`). Short labels;
   // positioned above the hovered control and clamped inside the bubble.
@@ -576,6 +626,7 @@
   async function start(init) {
     setShellShape((init && init.shape) || 'circle');   // v3.1 (Terry SS1) — circle / square / rectangle
     camWhich = (init && init.which === 2) ? 2 : 1;
+    if (init) setSizeBounds(init.sizeMin, init.sizeMax, init.sizeCur);   // v3.1 (Terry) — size-slider range (per shape)
     try {
       var constraints = { audio: false, video: true };
       if (init && init.deviceId) {
@@ -626,7 +677,7 @@
         if (cmd.action === 'show') fadeIn();
         else if (cmd.action === 'hide') fadeOut();
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
-        else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
+        else if (cmd.action === 'shape') { setShellShape(cmd.shape || 'circle'); setSizeBounds(sizeMinH, cmd.sizeMax, cmd.sizeCur); }   // v3.1 (Terry SS1) — new shape + refreshed size range from main
         else if (cmd.action === 'fill') {   // v3.1 (Terry) — cam-only fullscreen fill (no bubble shape) + swirl transition
           try {
             if (cmd.on) {

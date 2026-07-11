@@ -3772,7 +3772,7 @@ ipcMain.on('capture:cam-shape', (event, info?: { which?: number }) => {
     const b = win.getBounds();
     win.setBounds({ x: Math.round(b.x + (b.width - dims.w) / 2), y: Math.round(b.y + (b.height - dims.h) / 2), width: dims.w, height: dims.h });
   } catch { /* non-fatal */ }
-  try { win.webContents.send('capture:cam-do', { action: 'shape', shape: next }); } catch { /* non-fatal */ }
+  try { win.webContents.send('capture:cam-do', { action: 'shape', shape: next, sizeMax: camMaxH(next), sizeCur: getCamSizeH(which) }); } catch { /* non-fatal */ }
   log.info(`[capture] cam ${which} shape → ${next}`);
 });
 // v3.1 (Terry) — the BACKDROP now comes from a button ON the bubble. The bubble applies it locally and
@@ -4027,7 +4027,7 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
     // v3.1 (Terry SS1) — pass THIS camera's own backdrop (per-camera now) + shape + which; and tell
     // the bubble whether we're already recording, so it hides its controls (armed = controls shown).
     const bg = getCamBg(which);
-    win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId });
+    win.webContents.send('capture:cam-init', { deviceId, shape, bg, which, avoidDeviceId, sizeMin: CAM_MIN_H, sizeMax: camMaxH(shape), sizeCur: getCamSizeH(which) });
     win.showInactive();
     camVisibles[which] = true;
     startCamHoverPoll();   // v3.1 (Terry) — main-driven hover for the controls (works over the drag region)
@@ -4379,8 +4379,8 @@ function raiseOverlaysAboveCurtain(): void {
 }
 // v3.1 Stage 2 (Terry) — while cam-only the visible cam(s) FILL THE SCREEN: 1 cam = the whole display;
 // 2 cams = split-screen, each half. The bubble goes full-bleed (cam-do 'fill'). Bounds saved so the cam
-// restores to its corner spotlight on exit. opts.anim → the cam plays the swirl-in (macOS-style vortex).
-const CAMONLY_SWIRL_OUT_MS = 460;
+// restores to its corner spotlight on exit. opts.anim → the cam plays the scale-in (macOS "Scale Effect").
+const CAMONLY_SWIRL_OUT_MS = 340;   // matches the 0.32s scale-out in capture-cam.html + a small buffer
 function layoutCamsForCamOnly(display: Electron.Display, opts?: { anim?: boolean }): void {
   const b = display.bounds;
   const on = [1, 2].filter((w) => camVisibles[w] && camWindows[w] && !camWindows[w]!.isDestroyed());
