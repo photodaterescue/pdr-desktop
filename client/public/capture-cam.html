@@ -69,6 +69,20 @@
   /* v3.1 (Terry 2026-07-11) — "cam only" FILL: the camera fills the whole window edge-to-edge (no
      bubble inset / border / rounding), so at full-display (or half-display) size it fills the screen. */
   #shell.fill { inset: 0 !important; border: none !important; border-radius: 0 !important; box-shadow: none !important; -webkit-app-region: no-drag !important; }
+  /* v3.1 (Terry 2026-07-11) — macOS-style "wormhole" swirl for the screen↔cam switch: the cam spirals
+     out of / into the screen centre (scale from a point + a big rotation + a little blur). */
+  @keyframes camSwirlIn {
+    0%   { transform: scale(0.03) rotate(-430deg); opacity: 0; filter: blur(12px); }
+    55%  { opacity: 1; }
+    100% { transform: scale(1) rotate(0deg); opacity: 1; filter: blur(0); }
+  }
+  @keyframes camSwirlOut {
+    0%   { transform: scale(1) rotate(0deg); opacity: 1; filter: blur(0); }
+    45%  { opacity: 1; }
+    100% { transform: scale(0.03) rotate(430deg); opacity: 0; filter: blur(12px); }
+  }
+  #shell.fill.swirl-in  { animation: camSwirlIn 0.62s cubic-bezier(0.16, 0.9, 0.3, 1) both; transform-origin: center center; }
+  #shell.fill.swirl-out { animation: camSwirlOut 0.44s cubic-bezier(0.6, 0, 0.75, 0.35) both; transform-origin: center center; }
   /* v3.1 (Terry) — shape / size / zoom / backdrop controls. Shown whenever the mouse is over the
      camera window (JS-tracked — CSS :hover flickered on the transparent bubble, so they "disappeared
      randomly"), hidden when the mouse leaves. Same in armed + recording, so they only appear in the
@@ -588,7 +602,18 @@
         else if (cmd.action === 'hide') fadeOut();
         else if (cmd.action === 'set-bg') { segFailed = false; applyBg(cmd.bg || { type: 'none' }); }   // a re-pick retries a failed engine
         else if (cmd.action === 'shape') setShellShape(cmd.shape || 'circle');   // v3.1 (Terry SS1) — new shape from main
-        else if (cmd.action === 'fill') { try { shell.classList.toggle('fill', !!cmd.on); } catch (e) {} }   // v3.1 (Terry) — cam-only fullscreen fill (no bubble shape)
+        else if (cmd.action === 'fill') {   // v3.1 (Terry) — cam-only fullscreen fill (no bubble shape) + swirl transition
+          try {
+            if (cmd.on) {
+              shell.classList.add('fill');
+              if (cmd.anim) { shell.classList.remove('swirl-out'); void shell.offsetWidth; shell.classList.add('swirl-in'); }
+              else { shell.classList.remove('swirl-in', 'swirl-out'); }
+            } else {
+              if (cmd.anim) { shell.classList.remove('swirl-in'); void shell.offsetWidth; shell.classList.add('swirl-out'); }   // spin AWAY (main restores the spotlight after the anim)
+              else { shell.classList.remove('fill', 'swirl-in', 'swirl-out'); }
+            }
+          } catch (e) {}
+        }
         else if (cmd.action === 'hover') { if (cmd.over) ctrlsShow(); else ctrlsHideSoon(); }   // v3.1 (Terry) — main-driven hover (works over the drag region)
         else if (cmd.action === 'pick-image') { try { if (pdr && pdr.capture && pdr.capture.camBgPickFromLibrary) pdr.capture.camBgPickFromLibrary(); } catch (e) {} }   // v3.1 (Terry) — picker's "My picture" → library pick
       });

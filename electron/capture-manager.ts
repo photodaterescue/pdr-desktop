@@ -4011,8 +4011,8 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
     camVisibles[which] = true;
     startCamHoverPoll();   // v3.1 (Terry) — main-driven hover for the controls (works over the drag region)
     notifyWidgetCamState();
-    // v3.1 Stage 2 (Terry) — if we're in cam-only, a freshly-created bubble must join the enlarged layout.
-    if (recordCamOnly && recordDisplay) { setTimeout(() => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } }, 120); }
+    // v3.1 Stage 2 (Terry) — if we're in cam-only, a freshly-created bubble must join the fill layout.
+    if (recordCamOnly && recordDisplay) { setTimeout(() => { relayoutCamOnlyIfActive(); }, 120); }
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
 }
@@ -4261,6 +4261,7 @@ function toggleCamBubble(which: number = 1): void {
     camVisibles[which] = true;
     startCamHoverPoll();   // v3.1 (Terry) — resume the hover poll when a bubble is re-shown
     notifyWidgetCamState();
+    if (recordCamOnly && recordDisplay) setTimeout(() => { relayoutCamOnlyIfActive(); }, 60);   // v3.1 (Terry) — re-showing a cam during cam-only → re-split full↔split
   }
 }
 
@@ -4331,63 +4332,86 @@ function raiseOverlaysAboveCurtain(): void {
   }
   if (recordWidget && !recordWidget.isDestroyed()) { try { recordWidget.setAlwaysOnTop(true, 'screen-saver'); recordWidget.moveTop(); } catch { /* non-fatal */ } }
 }
-// v3.1 Stage 2 (Terry) — while cam-only the visible cam(s) FILL THE SCREEN (Terry: "fill the screen,
-// not just a larger circle"): 1 cam = the whole display; 2 cams = split-screen, each half. The bubble
-// goes full-bleed (cam-do 'fill' → no inset/border/rounding, object-fit:cover fills). Bounds are saved
-// so the cam restores to its corner spotlight on exit.
-function layoutCamsForCamOnly(display: Electron.Display): void {
+// v3.1 Stage 2 (Terry) — while cam-only the visible cam(s) FILL THE SCREEN: 1 cam = the whole display;
+// 2 cams = split-screen, each half. The bubble goes full-bleed (cam-do 'fill'). Bounds saved so the cam
+// restores to its corner spotlight on exit. opts.anim → the cam plays the swirl-in (macOS-style vortex).
+const CAMONLY_SWIRL_OUT_MS = 460;
+function layoutCamsForCamOnly(display: Electron.Display, opts?: { anim?: boolean }): void {
   const b = display.bounds;
   const on = [1, 2].filter((w) => camVisibles[w] && camWindows[w] && !camWindows[w]!.isDestroyed());
   const n = on.length;
   if (!n) return;
+  const anim = !!(opts && opts.anim);
   on.forEach((which, idx) => {
     const win = camWindows[which]!;
     let x: number, y: number, w: number, h: number;
     if (n === 1) { x = b.x; y = b.y; w = b.width; h = b.height; }               // one cam → full screen
     else { w = Math.round(b.width / 2); h = b.height; y = b.y; x = b.x + idx * w; }   // two cams → left | right halves
     if (!camSavedBounds[which]) { try { camSavedBounds[which] = win.getBounds(); } catch { /* non-fatal */ } }
-    try { win.webContents.send('capture:cam-do', { action: 'fill', on: true }); } catch { /* non-fatal */ }
     // A non-resizable frameless window can silently CLAMP a setBounds bigger than its creation size on
     // Windows — so lift the size ceiling first, then set the bounds (Terry: "one cam only occupies half").
     try { win.setResizable(true); } catch { /* non-fatal */ }
     try { win.setMaximumSize(0, 0); } catch { /* non-fatal */ }   // 0,0 = no maximum
     try { win.setBounds({ x, y, width: w, height: h }); } catch { /* non-fatal */ }
-    try { const got = win.getBounds(); log.info(`[capture] cam-only fill n=${n} cam${which} want ${w}x${h}@${x},${y} got ${got.width}x${got.height}@${got.x},${got.y} (display ${b.width}x${b.height})`); } catch { /* non-fatal */ }
+    try { win.webContents.send('capture:cam-do', { action: 'fill', on: true, anim }); } catch { /* non-fatal */ }
+    try { const got = win.getBounds(); log.info(`[capture] cam-only fill n=${n} cam${which} want ${w}x${h} got ${got.width}x${got.height} (display ${b.width}x${b.height})`); } catch { /* non-fatal */ }
   });
 }
-function restoreCamBoundsFromCamOnly(): void {
+// v3.1 (Terry) — re-fill on ANY cam change during cam-only: 2→1 goes split→FULL (no black half left),
+// 1→2 goes full→split. A cam that's no longer visible drops out of the fill (back to its spotlight
+// bounds) so the remaining one can take the whole screen.
+function relayoutCamOnlyIfActive(): void {
+  if (!recordCamOnly || !recordDisplay) return;
   for (const which of [1, 2]) {
-    const win = camWindows[which];
-    if (win && !win.isDestroyed()) { try { win.webContents.send('capture:cam-do', { action: 'fill', on: false }); } catch { /* non-fatal */ } }
-    const saved = camSavedBounds[which];
-    if (saved && win && !win.isDestroyed()) {
-      try { win.setBounds(saved); } catch { /* non-fatal */ }
-      try { win.setResizable(false); } catch { /* non-fatal */ }   // back to a fixed-size spotlight bubble
+    if (!camVisibles[which] && camSavedBounds[which]) {
+      const win = camWindows[which];
+      if (win && !win.isDestroyed()) {
+        try { win.webContents.send('capture:cam-do', { action: 'fill', on: false }); } catch { /* non-fatal */ }
+        try { win.setBounds(camSavedBounds[which]!); } catch { /* non-fatal */ }
+        try { win.setResizable(false); } catch { /* non-fatal */ }
+      }
+      camSavedBounds[which] = null;
     }
-    camSavedBounds[which] = null;
+  }
+  layoutCamsForCamOnly(recordDisplay);
+  raiseOverlaysAboveCurtain();
+}
+function restoreOneCamToSpotlight(which: number): void {
+  const win = camWindows[which];
+  const saved = camSavedBounds[which];
+  if (win && !win.isDestroyed()) {
+    try { win.webContents.send('capture:cam-do', { action: 'fill', on: false }); } catch { /* non-fatal */ }
+    if (saved) { try { win.setBounds(saved); } catch { /* non-fatal */ } try { win.setResizable(false); } catch { /* non-fatal */ } }
+  }
+  camSavedBounds[which] = null;
+}
+function restoreCamBoundsFromCamOnly(animOut: boolean): void {
+  if (animOut) {
+    for (const which of [1, 2]) {
+      const win = camWindows[which];
+      if (win && !win.isDestroyed() && camSavedBounds[which]) { try { win.webContents.send('capture:cam-do', { action: 'fill', on: false, anim: true }); } catch { /* non-fatal */ } }   // swirl OUT (keeps fullscreen)
+    }
+    setTimeout(() => { restoreOneCamToSpotlight(1); restoreOneCamToSpotlight(2); }, CAMONLY_SWIRL_OUT_MS);
+  } else {
+    restoreOneCamToSpotlight(1); restoreOneCamToSpotlight(2);
   }
 }
-// Flip live "cam only": show/hide the curtain + enlarge/restore the cam(s). Needs at least one camera
-// on (turns cam 1 on if none). Re-asserts the bar + cams above the curtain a couple of times so the
-// fullscreen curtain's async show can't leave them buried.
+// Flip live "cam only": show/hide the curtain + fill/restore the cam(s), with a macOS-style swirl.
 function setRecordCamOnly(on: boolean): void {
   if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
   if (on) {
-    if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on the black curtain
+    if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on entering cam-only
     createRecordCurtain(recordDisplay);
     recordCamOnly = true;
-    fadeWindowOpacity(recordCurtainWindow, 0, 1, 260);   // desktop fades to black
-    const relayout = () => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } };
-    setTimeout(relayout, 80);
-    setTimeout(relayout, 320);   // a second pass covers a cam bubble that was just auto-created (async load)
+    fadeWindowOpacity(recordCurtainWindow, 0, 1, 200);   // desktop fades to black fast, THEN the cam swirls in
+    setTimeout(() => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay, { anim: true }); raiseOverlaysAboveCurtain(); } }, 200);
+    setTimeout(() => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } }, 520);   // safety re-assert (async cam) — no swirl
   } else {
-    // Cam back to spotlight FIRST (so the full-screen cam no longer covers the curtain), THEN fade the
-    // black out to reveal the desktop again — a filmed transition both ways.
-    restoreCamBoundsFromCamOnly();
-    const curtain = recordCurtainWindow;
-    recordCurtainWindow = null;   // hand the reference to the fade so a fast re-toggle can make a fresh one
-    fadeWindowOpacity(curtain, 1, 0, 260, () => { if (curtain && !curtain.isDestroyed()) { try { curtain.close(); } catch { /* non-fatal */ } } });
     recordCamOnly = false;
+    restoreCamBoundsFromCamOnly(true);   // swirl the cam(s) out, restore spotlight after the anim
+    const curtain = recordCurtainWindow;
+    recordCurtainWindow = null;
+    setTimeout(() => { fadeWindowOpacity(curtain, 1, 0, 240, () => { if (curtain && !curtain.isDestroyed()) { try { curtain.close(); } catch { /* non-fatal */ } } }); }, CAMONLY_SWIRL_OUT_MS);   // black → desktop AFTER the cam swirls away
   }
   notifyWidgetCamState();
 }
@@ -4735,6 +4759,8 @@ ipcMain.on('capture:cam-fadedout', (event) => {
       try { win.hide(); } catch { /* non-fatal */ }
     }
   }
+  // v3.1 (Terry) — a cam hidden DURING cam-only → the remaining one takes the whole screen (no black half).
+  relayoutCamOnlyIfActive();
 });
 ipcMain.on('capture:cam-error', (event, info: { message?: string }) => {
   const camWindow = [1, 2].map((w) => camWindows[w]).find((w) => w && !w.isDestroyed() && event.sender === w.webContents) || null;   // v3.1 (Terry) — resolve which bubble errored
