@@ -13368,6 +13368,24 @@
       }
       return { bold: (textWeightOf(layer) >= 600), italic: !!layer.italic, underline: !!layer.underline, strike: !!layer.strike, e: (layer.effect || 'none') };
     }
+    // v3.1 round 8 (Terry SS) — show/hide + fill the Effect STRENGTH slider from the CARET-effective
+    // effect (a per-run or typing-point Shadow/Neon/etc.), not just the whole-box layer.effect. The
+    // effect chips went caret-aware in round 6, so keying the slider off layer.effect left the chip
+    // lit "Shadow" while the slider was hidden — "where is my effects slider?!". Also drives the
+    // slider value from the caret's strength.
+    function syncStrengthRow_() {
+      if (!selectedText || selectedText.isEmoji) return;
+      let effEffect = selectedText.effect || 'none';
+      let effStrength = (typeof selectedText.effectStrength === 'number') ? selectedText.effectStrength : 50;
+      if (editingText === selectedText && selectedText.editEl) {
+        try { const st = fmtStyleAtSelection_(selectedText); if (st) { if (st.e != null) effEffect = st.e; if (typeof st.es === 'number') effStrength = st.es; } } catch (_) {}
+      }
+      const anyRunEffect = !!(selectedText.runs && selectedText.runs.some((r) => r.e && r.e !== 'none'));
+      const strSlider = document.getElementById('collage-text-strength');
+      const strVal = document.getElementById('val-text-strength');
+      if (strSlider) { strSlider.value = String(effStrength); if (strVal) strVal.textContent = String(effStrength); }
+      try { setStrengthRowVisible((effEffect && effEffect !== 'none') || anyRunEffect); } catch (_) {}
+    }
     // Refresh JUST the B/I/U/S + effect-chip pressed states (panel + floating toolbar) from the
     // caret-effective style. Light (class toggles only) so it can run on every selectionchange.
     function syncTextStyleButtons_() {
@@ -13551,6 +13569,7 @@
       try { refreshTextToolbar(editingText); } catch (_) {}
       try { syncTextStyleButtons_(); } catch (_) {}
       try { syncColorTargetTiles_(); } catch (_) {}
+      try { syncStrengthRow_(); } catch (_) {}
     });
     // Read the editable's text back to a plain string with real newlines. Use
     // innerText (it renders <div>/<br> line breaks as \n), then strip a single
@@ -15156,16 +15175,9 @@
       // v2.1 round 188 (Terry) — Style toggles + Effect chips: pressed-state per flag.
       // v3.1 round 6 (Terry) — now caret-effective (lights up per the selection/typing point).
       syncTextStyleButtons_();
-      // v2.1 round 191 (Terry) — Strength slider: load from the layer (default 50)
-      // and show it only when an effect is active (hidden for None).
-      const strSlider = document.getElementById('collage-text-strength');
-      const strVal = document.getElementById('val-text-strength');
-      if (strSlider) {
-        const sv = (typeof selectedText.effectStrength === 'number') ? selectedText.effectStrength : 50;
-        strSlider.value = String(sv);
-        if (strVal) strVal.textContent = String(sv);
-      }
-      setStrengthRowVisible((selectedText.effect || 'none') !== 'none');
+      // v2.1 round 191 (Terry) — Strength slider: show it only when an effect is active.
+      // v3.1 round 8 (Terry SS) — caret-effective (per-run / typing-point effects reveal it too).
+      syncStrengthRow_();
       // v2.1 round 193 (Terry) — ring the active swatch in BOTH the fill-colour
       // and effect-colour palettes (each against its own getCurrent: fill =
       // layer.color, effect = layer.effectColor where '' rings the Auto swatch).
@@ -24122,6 +24134,7 @@
         if (editingText === selectedText && selectedText.editEl && applyInlineDeltaToEditable_(selectedText, { effect: { e: b.dataset.effect || 'none' } })) {
           effectWrap.querySelectorAll('.ec-effect-btn').forEach((x) => x.classList.toggle('active', x === b));
           try { updateColorTargets(); } catch (_) {}   // v3.1 round 3 — unlock the Effect colour target for the mid-flow effect
+          try { syncStrengthRow_(); } catch (_) {}     // v3.1 round 8 (Terry SS) — reveal the Strength slider for the mid-flow effect
           return;
         }
         beginCollageChange();
