@@ -11509,11 +11509,81 @@
       if (ref.imgEl || (ref.path && !ref.isBg)) return 'enh';          // photo tile
       return null;
     }
+    // v3.1 (Terry SS1) — the EFFECTIVE inline style of a text layer's runs: for each of
+    // colour / bold / italic / underline / strike, the value when it's UNIFORM across the
+    // whole box (runs included), else null (mixed). A runs-less box is uniform by definition.
+    function fmtEffectiveTextStyle_(ref) {
+      const baseB = textWeightOf(ref) >= 600;
+      const out = { color: ref.color || '#ffffff', bold: baseB, italic: !!ref.italic, underline: !!ref.underline, strike: !!ref.strike };
+      if (!(ref.runs && ref.runs.length)) return out;
+      const eff = ref.runs.map((r) => ({
+        c: (r.c != null ? String(r.c).toLowerCase() : (ref.color || '#ffffff').toLowerCase()),
+        b: (r.b != null ? !!r.b : baseB),
+        i: (r.i != null ? !!r.i : !!ref.italic),
+        u: (r.u != null ? !!r.u : !!ref.underline),
+        s: (r.s != null ? !!r.s : !!ref.strike),
+      }));
+      const uni = (key) => { const v = eff[0][key]; return eff.every((e) => e[key] === v) ? v : null; };
+      const c = uni('c'), b = uni('b'), i = uni('i'), u = uni('u'), s = uni('s');
+      if (c != null) out.color = c; out.colorMixed = (c == null);
+      if (b != null) out.bold = b; out.boldMixed = (b == null);
+      if (i != null) out.italic = i; out.italicMixed = (i == null);
+      if (u != null) out.underline = u; out.underlineMixed = (u == null);
+      if (s != null) out.strike = s; out.strikeMixed = (s == null);
+      return out;
+    }
+    // The effective style AT the current selection inside a layer's editable (Terry's
+    // "highlight the text within a text box … and then select the format painter"): climb
+    // from the selection anchor collecting colour/bold/italic/underline/strike, falling
+    // back to the layer-level values. Returns null when the selection isn't in this layer.
+    function fmtStyleAtSelection_(ref) {
+      const ed = ref && ref.editEl;
+      if (!ed || editingText !== ref) return null;
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount || !ed.contains(sel.anchorNode)) return null;
+      let node = sel.anchorNode;
+      if (node.nodeType === 3) node = node.parentNode;
+      const st = { color: null, bold: null, italic: null, underline: null, strike: null };
+      while (node && node !== ed) {
+        const tag = node.tagName;
+        const ds = node.dataset || {};
+        const is = node.style;
+        if (st.color == null) { if (ds.c != null) st.color = ds.c; else if (tag === 'FONT' && node.getAttribute('color')) st.color = node.getAttribute('color'); else if (is && is.color && is.color !== 'transparent') st.color = rgbToHexSafe_(is.color); }
+        if (st.bold == null) { if (tag === 'B' || tag === 'STRONG') st.bold = true; else if (is && is.fontWeight) { const w = parseInt(is.fontWeight, 10); st.bold = isFinite(w) ? (w >= 600) : (is.fontWeight === 'bold'); } }
+        if (st.italic == null) { if (tag === 'I' || tag === 'EM') st.italic = true; else if (is && is.fontStyle) st.italic = (is.fontStyle === 'italic'); }
+        if (st.underline == null) { if (tag === 'U') st.underline = true; else if (ds.u != null) st.underline = ds.u === '1'; }
+        if (st.strike == null) { if (tag === 'S' || tag === 'STRIKE' || tag === 'DEL') st.strike = true; else if (ds.s != null) st.strike = ds.s === '1'; }
+        node = node.parentNode;
+      }
+      return {
+        color: st.color != null ? st.color : (ref.color || '#ffffff'),
+        bold: st.bold != null ? st.bold : (textWeightOf(ref) >= 600),
+        italic: st.italic != null ? st.italic : !!ref.italic,
+        underline: st.underline != null ? st.underline : !!ref.underline,
+        strike: st.strike != null ? st.strike : !!ref.strike,
+      };
+    }
     function captureFormat_(ref, family) {
       const src = (family === 'text') ? ref : (ref.enh || {});
       const groups = {};
       FMT_GROUPS[family].forEach((g) => { const o = {}; g.fields.forEach((f) => { o[f] = _fmtClone(src[f]); }); groups[g.key] = o; });
-      return { family: family, groups: groups, srcRef: ref };
+      // v3.1 (Terry SS1) — the brush must carry what the source LOOKS like, not its base
+      // fields: a box whose green lives in per-word runs has a stale layer.color. Capture
+      // the effective style — from the text SELECTION when the box is being edited
+      // (highlight a word → the painter copies that word's look), else the uniform runs
+      // style, else the layer fields. The style group's copied fields are overwritten so
+      // whole-box paints land the visible look; `inline` drives the certain-words apply.
+      let inline = null;
+      if (family === 'text' && !ref.isEmoji) {
+        inline = fmtStyleAtSelection_(ref) || fmtEffectiveTextStyle_(ref);
+        const st = groups.style || {};
+        if (inline.color != null && !inline.colorMixed) st.color = inline.color;
+        if (!inline.boldMixed) { st.bold = inline.bold; if (inline.bold && !(typeof st.fontWeight === 'number' && st.fontWeight >= 600)) st.fontWeight = 700; if (!inline.bold && typeof st.fontWeight === 'number' && st.fontWeight >= 600) st.fontWeight = 400; }
+        if (!inline.italicMixed) st.italic = inline.italic;
+        if (!inline.underlineMixed) st.underline = inline.underline;
+        if (!inline.strikeMixed) st.strike = inline.strike;
+      }
+      return { family: family, groups: groups, srcRef: ref, inline: inline };
     }
     // Copy the TICKED groups from the brush onto ONE target + re-render it (no undo wrapping — callers batch).
     function applyFormatCore_(ref, family, tickedKeys) {
@@ -11524,8 +11594,46 @@
         if (family === 'text') { g.fields.forEach((f) => { if (vals[f] !== undefined) ref[f] = _fmtClone(vals[f]); }); }
         else { if (!ref.enh) ref.enh = {}; g.fields.forEach((f) => { if (vals[f] !== undefined) ref.enh[f] = _fmtClone(vals[f]); }); }
       });
+      // v3.1 (Terry SS1) — painting the STYLE group onto the whole box must actually SHOW:
+      // a destination with per-word runs kept its own colours/styles over the painted ones
+      // (Terry: "changed the font size and the effect, but didn't change the colour").
+      // A whole-box paint means "make it all look like the source" → drop the destination's
+      // per-run style overrides so the painted layer-level style is what renders.
+      if (family === 'text' && !ref.isEmoji && tickedKeys.indexOf('style') >= 0 && ref.runs && ref.runs.length) {
+        ref.runs.forEach((r) => { r.c = undefined; r.b = undefined; r.i = undefined; r.u = undefined; r.s = undefined; });
+        try { normalizeTextRuns_(ref); } catch (_) {}
+      }
       if (family === 'text' || ref.isEmoji) { try { renderTextLayer(ref); } catch (_) {} }
       else { try { renderCollageItem(ref); } catch (_) {} try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.applyTileEnh) window.pdrEnhanceBridge.applyTileEnh(ref); } catch (_) {} }
+    }
+    // v3.1 (Terry SS1) — apply an inline style to a CHARACTER RANGE of a text layer's runs
+    // (the format painter's "certain words"). Splices the runs at [start, end): the middle
+    // piece takes the brush's colour/bold/italic/underline/strike; the rest is untouched.
+    // Materializes runs for a plain box first (one run covering the whole text).
+    function applyInlineStyleToRange_(ref, start, end, st) {
+      if (!ref || ref.isEmoji || !(end > start)) return;
+      if (!(ref.runs && ref.runs.length)) ref.runs = [{ t: String(ref.text == null ? '' : ref.text) }];
+      const out = [];
+      let pos = 0;
+      ref.runs.forEach((r) => {
+        const t = String(r.t || '');
+        const rEnd = pos + t.length;
+        const a = Math.max(start, pos), b = Math.min(end, rEnd);
+        if (!(b > a)) { out.push(r); pos = rEnd; return; }
+        const pre = t.slice(0, a - pos), mid = t.slice(a - pos, b - pos), post = t.slice(b - pos);
+        if (pre) out.push({ t: pre, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s });
+        const m = { t: mid, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s };
+        if (st.color != null) m.c = st.color;
+        if (st.bold != null) m.b = !!st.bold;
+        if (st.italic != null) m.i = !!st.italic;
+        if (st.underline != null) m.u = !!st.underline;
+        if (st.strike != null) m.s = !!st.strike;
+        out.push(m);
+        if (post) out.push({ t: post, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s });
+        pos = rEnd;
+      });
+      ref.runs = out;
+      try { normalizeTextRuns_(ref); } catch (_) {}
     }
     // Apply to one ref OR a whole set (v3.1 Terry SS2 — "format paint to a whole selection, not just
     // individually"). Locked layers + the brush's own source are skipped; the batch is ONE undo step.
@@ -11549,6 +11657,125 @@
       return null;
     }
     function closeFmtPopup_() { if (collageFmtPopupEl) { try { collageFmtPopupEl.remove(); } catch (_) {} collageFmtPopupEl = null; } }
+    // ═══ v3.1 (Terry SS1) — FORMAT PAINTER: "certain word/s" DISTRIBUTION ═══
+    // Terry's flow: paint onto a text box → the popup asks whole-box vs certain words →
+    // in words mode, CLICK the words in the destination box (each shows a gold highlight
+    // and a chip in the little Apply window; click a chip or the word again to unpick),
+    // then Done paints the brush's colour/bold/italic/underline/strike onto JUST those
+    // words via runs. Font, size and effects are whole-box properties — words mode says so.
+    let fmtWordPick = null;   // { ref, picked:[{start,end,text}], panel, chipsEl, overlays:[], onDown }
+    function fmtWordPickRefresh_() {
+      const wp = fmtWordPick; if (!wp) return;
+      // Chips.
+      wp.chipsEl.textContent = '';
+      if (!wp.picked.length) {
+        const hint = document.createElement('div');
+        hint.style.cssText = 'font-size:11.5px;color:rgba(255,255,255,0.55);padding:2px 0 4px;';
+        hint.textContent = 'Click a word in the text box to add it…';
+        wp.chipsEl.appendChild(hint);
+      } else {
+        wp.picked.forEach((w) => {
+          const chip = document.createElement('button');
+          chip.type = 'button';
+          chip.style.cssText = 'display:inline-flex;align-items:center;gap:5px;margin:2px 4px 2px 0;padding:3px 8px;border-radius:999px;border:1px solid rgba(254,194,66,0.55);background:rgba(254,194,66,0.14);color:#FEC242;font-size:11.5px;cursor:pointer;';
+          chip.innerHTML = '<span></span><span style="opacity:0.75">✕</span>';
+          chip.firstChild.textContent = w.text;
+          chip.setAttribute('data-pdr-tooltip', 'Remove this word');
+          chip.addEventListener('click', (e) => { e.stopPropagation(); wp.picked = wp.picked.filter((p) => !(p.start === w.start && p.end === w.end)); fmtWordPickRefresh_(); });
+          wp.chipsEl.appendChild(chip);
+        });
+      }
+      // Gold word highlights over the live canvas (client-space, so zoom/stretch are free).
+      wp.overlays.forEach((o) => { try { o.remove(); } catch (_) {} });
+      wp.overlays = [];
+      const cv = wp.ref.canvasEl;
+      if (!cv || !cv._wordBoxes) return;
+      const rect = cv.getBoundingClientRect();
+      if (!(rect.width > 0 && cv._logicalW > 0)) return;
+      const sx = rect.width / cv._logicalW, sy = rect.height / cv._logicalH;
+      wp.picked.forEach((w) => {
+        const wb = (cv._wordBoxes || []).find((b) => b.start === w.start && b.end === w.end);
+        if (!wb) return;
+        const o = document.createElement('div');
+        o.style.cssText = 'position:fixed;pointer-events:none;z-index:200003;border:2px solid #FEC242;border-radius:4px;background:rgba(254,194,66,0.16);'
+          + 'left:' + (rect.left + wb.x0 * sx - 2) + 'px;top:' + (rect.top + wb.y0 * sy - 2) + 'px;width:' + ((wb.x1 - wb.x0) * sx + 4) + 'px;height:' + ((wb.y1 - wb.y0) * sy + 4) + 'px;';
+        document.body.appendChild(o);
+        wp.overlays.push(o);
+      });
+    }
+    function endFmtWordPick_(applied) {
+      const wp = fmtWordPick; if (!wp) return;
+      fmtWordPick = null;
+      wp.overlays.forEach((o) => { try { o.remove(); } catch (_) {} });
+      try { wp.panel.remove(); } catch (_) {}
+      document.removeEventListener('pointerdown', wp.onDown, true);
+      // A cancel on a box whose runs were only materialized for hit-testing collapses back to plain.
+      if (!applied) { try { normalizeTextRuns_(wp.ref); renderTextLayer(wp.ref); } catch (_) {} }
+    }
+    function startFmtWordPick_(ref) {
+      if (!collageFormatBrush) return;
+      if (fmtWordPick) endFmtWordPick_(false);
+      if (ref.rot) { try { if (typeof cctxToast === 'function') cctxToast('Word picking needs a straight box — reset its rotation first (whole-box painting works rotated)'); } catch (_) {} return; }
+      // Materialize runs so the render stashes the word hit-boxes.
+      if (!(ref.runs && ref.runs.length)) { ref.runs = [{ t: String(ref.text == null ? '' : ref.text) }]; try { renderTextLayer(ref); } catch (_) {} }
+      const panel = document.createElement('div');
+      panel.className = 'collage-fmt-popup';
+      panel.innerHTML = '<div class="cfp-title">Click the word/s to paint</div>'
+        + '<div class="cfp-chips" style="max-width:240px;padding:2px 0 6px;"></div>'
+        + '<div style="font-size:10.5px;color:rgba(255,255,255,0.45);padding-bottom:6px;">Words take the colour &amp; style. Font, size &amp; effects stay whole-box.</div>'
+        + '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Done</button></div>';
+      panel.addEventListener('pointerdown', (e) => e.stopPropagation());
+      document.body.appendChild(panel);
+      // Sit the panel beside the destination box (clamped on-screen).
+      try {
+        const r = ref.el.getBoundingClientRect();
+        const pw = panel.offsetWidth, ph = panel.offsetHeight;
+        panel.style.left = Math.max(8, Math.min(r.right + 10, window.innerWidth - pw - 8)) + 'px';
+        panel.style.top = Math.max(8, Math.min(r.top, window.innerHeight - ph - 8)) + 'px';
+      } catch (_) {}
+      const wp = { ref: ref, picked: [], panel: panel, chipsEl: panel.querySelector('.cfp-chips'), overlays: [], onDown: null };
+      wp.onDown = (e) => {
+        if (!fmtWordPick) return;
+        if (panel.contains(e.target)) return;   // the Apply window itself
+        const el = e.target.closest && e.target.closest('.collage-text');
+        if (el && ref.el === el) {
+          e.preventDefault(); e.stopPropagation();
+          const cv = ref.canvasEl;
+          if (!cv || !cv._wordBoxes) return;
+          const rect = cv.getBoundingClientRect();
+          if (!(rect.width > 0 && cv._logicalW > 0)) return;
+          const x = (e.clientX - rect.left) / (rect.width / cv._logicalW);
+          const y = (e.clientY - rect.top) / (rect.height / cv._logicalH);
+          const wb = (cv._wordBoxes || []).find((b) => x >= b.x0 - 2 && x <= b.x1 + 2 && y >= b.y0 && y <= b.y1);
+          if (!wb) return;
+          const had = wp.picked.find((p) => p.start === wb.start && p.end === wb.end);
+          if (had) wp.picked = wp.picked.filter((p) => p !== had);
+          else wp.picked.push({ start: wb.start, end: wb.end, text: String(ref.text || '').slice(wb.start, wb.end) });
+          fmtWordPickRefresh_();
+          return;
+        }
+        // Anywhere else while picking: swallow — only Done / Cancel / Esc leave the mode.
+        e.preventDefault(); e.stopPropagation();
+      };
+      document.addEventListener('pointerdown', wp.onDown, true);
+      panel.querySelector('.cfp-apply').addEventListener('click', (e) => {
+        e.stopPropagation();
+        const brush = collageFormatBrush;
+        const inline = brush && brush.inline;
+        if (wp.picked.length && inline) {
+          beginCollageChange();
+          wp.picked.forEach((w) => applyInlineStyleToRange_(ref, w.start, w.end, inline));
+          try { renderTextLayer(ref); } catch (_) {}
+          commitCollageChange();
+          try { syncTextControls(); } catch (_) {}
+        }
+        endFmtWordPick_(true);
+      });
+      panel.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); endFmtWordPick_(false); });
+      fmtWordPick = wp;
+      fmtWordPickRefresh_();
+      try { if (typeof cctxToast === 'function') cctxToast('Click each word to paint, then Done'); } catch (_) {}
+    }
     // The per-apply CHECKBOX popup (Terry's design): tick which groups to carry, then Apply. `targets` is one
     // ref or MANY — many comes from the paint-marquee (drag an area over the boxes you want painted); the
     // title says how many so you can see exactly what's about to change. No "apply to all" radios (v3.1
@@ -11572,6 +11799,15 @@
         const on = collageFmtLastPick[family][g.key] !== false;
         html += '<label class="cfp-row"><input type="checkbox" data-g="' + g.key + '"' + (on ? ' checked' : '') + '><span>' + g.label + '</span></label>';
       });
+      // v3.1 (Terry SS1) — the DISTRIBUTION question (a single text box only): paint the
+      // whole box, or pick certain word/s in it (click the words, then Done).
+      const wordable = (family === 'text' && list.length === 1 && list[0] && !list[0].isEmoji);
+      if (wordable) {
+        html += '<div style="border-top:1px solid rgba(255,255,255,0.10);margin:6px 0 4px;padding-top:6px;">'
+          + '<label class="cfp-row"><input type="radio" name="cfpdist" value="box" checked><span>Apply to the whole text box</span></label>'
+          + '<label class="cfp-row"><input type="radio" name="cfpdist" value="words"><span>Apply to certain word/s&hellip;</span></label>'
+          + '</div>';
+      }
       html += '<div class="cfp-actions"><button type="button" class="cfp-cancel">Cancel</button><button type="button" class="cfp-apply">Apply</button></div>';
       pop.innerHTML = html;
       pop.addEventListener('pointerdown', (e) => e.stopPropagation());
@@ -11583,8 +11819,12 @@
       const doApply = () => {
         const ticked = [];
         pop.querySelectorAll('input[type=checkbox]').forEach((cb) => { collageFmtLastPick[family][cb.dataset.g] = cb.checked; if (cb.checked) ticked.push(cb.dataset.g); });
+        // v3.1 (Terry SS1) — read the distribution choice BEFORE the popup goes away.
+        const dist = wordable ? (((pop.querySelector('input[name=cfpdist]:checked') || {}).value) || 'box') : 'box';
         closeFmtPopup_();
-        if (ticked.length) applyFormatGroups_(list, family, ticked);
+        if (!ticked.length) return;
+        if (dist === 'words') startFmtWordPick_(list[0]);
+        else applyFormatGroups_(list, family, ticked);
       };
       pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); doApply(); });
       pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
@@ -11594,11 +11834,12 @@
       if (collageFmtPaintWired_) return; collageFmtPaintWired_ = true;
       window.addEventListener('keydown', (e) => {
         if (!collageFormatBrush) return;
-        if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_(); }
+        if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); if (fmtWordPick) endFmtWordPick_(false); else if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_(); }   // v3.1 (Terry SS1) — Esc backs out of word picking first (the roller stays loaded)
       });
       // Capture phase, so a paint click beats the layer's own select/drag/edit handlers.
       document.addEventListener('pointerdown', (e) => {
         if (!collageFormatBrush) return;
+        if (fmtWordPick) return;   // v3.1 (Terry SS1) — word-pick mode owns the pointer (its own capture handler runs next)
         if (e.target.closest && e.target.closest('.collage-fmt-popup, .ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;   // popup / toolbar / roller → let it work
         const target = fmtTargetFromEvent_(e);
         if (target && target.ref === collageFormatBrush.srcRef) { e.preventDefault(); e.stopPropagation(); return; }   // the source → ignore
