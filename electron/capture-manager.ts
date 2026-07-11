@@ -2968,6 +2968,8 @@ let camHotkeyAccelerator: string | null = null;
 // canvas compositor) — see [[project_capture_record_modes]].
 let recordCamOnly = false;
 let recordCurtainWindow: BrowserWindow | null = null;
+// Cam bubble bounds saved on entering cam-only (so they enlarge/centre while cam-only, then restore).
+const camSavedBounds: Record<number, Electron.Rectangle | null> = { 1: null, 2: null };
 // Bubble size presets per shape (v3.1 Terry — "increase/decrease the bubble"): cycled S→M→L from the
 // bubble's hover size button; persisted per camera (captureCamSize / captureCam2Size).
 // v3.1 (Terry SS1) — three shapes now (circle, rounded square, rectangle). Circle + square share 1:1
@@ -4009,6 +4011,8 @@ function createCamBubble(display: Electron.Display, which: number = 1): void {
     camVisibles[which] = true;
     startCamHoverPoll();   // v3.1 (Terry) — main-driven hover for the controls (works over the drag region)
     notifyWidgetCamState();
+    // v3.1 Stage 2 (Terry) — if we're in cam-only, a freshly-created bubble must join the enlarged layout.
+    if (recordCamOnly && recordDisplay) { setTimeout(() => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } }, 120); }
   });
   void win.loadFile(path.join(__dirname, '../dist/public/capture-cam.html'));
 }
@@ -4296,26 +4300,67 @@ function createRecordCurtain(display: Electron.Display): void {
   // Sit ABOVE the desktop but BELOW the cam bubbles ('screen-saver' level) so the cams show on top.
   try { win.setAlwaysOnTop(true, 'pop-up-menu'); } catch { /* non-fatal */ }
   try { win.setIgnoreMouseEvents(false); } catch { /* non-fatal */ }   // block clicks → the hidden live desktop can't be mis-clicked
-  win.once('ready-to-show', () => { if (!win.isDestroyed()) { try { win.showInactive(); } catch { /* non-fatal */ } } });
+  win.once('ready-to-show', () => { if (!win.isDestroyed()) { try { win.showInactive(); } catch { /* non-fatal */ } raiseOverlaysAboveCurtain(); } });
   void win.loadURL('about:blank');   // opaque black via backgroundColor
   try { win.showInactive(); } catch { /* non-fatal */ }
 }
-function raiseCamsAboveCurtain(): void {
+// Keep the cam bubbles AND the recorder bar above the curtain (Terry SS: the curtain was covering
+// the bar, so you couldn't turn cam-only back off). The bar is content-protected → still not filmed.
+function raiseOverlaysAboveCurtain(): void {
   for (const which of [1, 2]) {
     const w = camWindows[which];
     if (w && !w.isDestroyed()) { try { w.setAlwaysOnTop(true, 'screen-saver'); w.moveTop(); } catch { /* non-fatal */ } }
   }
+  if (recordWidget && !recordWidget.isDestroyed()) { try { recordWidget.setAlwaysOnTop(true, 'screen-saver'); recordWidget.moveTop(); } catch { /* non-fatal */ } }
 }
-// Flip live "cam only": show/hide the curtain. Needs at least one camera on (turns cam 1 on if none).
+// v3.1 Stage 2 (Terry) — while cam-only, ENLARGE + CENTRE the visible cam(s) so they fill the black
+// screen (1 cam = centred; 2 = side by side). Saves each cam's bounds first so they restore on exit.
+function layoutCamsForCamOnly(display: Electron.Display): void {
+  const b = display.bounds;
+  const on = [1, 2].filter((w) => camVisibles[w] && camWindows[w] && !camWindows[w]!.isDestroyed());
+  const n = on.length;
+  if (!n) return;
+  const gap = 28;
+  on.forEach((which, idx) => {
+    const win = camWindows[which]!;
+    const shape = getCamShape(which);
+    const preset = CAM_SIZES[shape][getCamSize(which)];
+    const aspect = preset.w / preset.h;
+    let h = Math.round(b.height * (n >= 2 ? 0.52 : 0.66));
+    let w = Math.round(h * aspect);
+    const maxW = n >= 2 ? Math.round((b.width - gap * 3) / 2) : Math.round(b.width * 0.82);
+    if (w > maxW) { w = maxW; h = Math.round(w / aspect); }
+    const y = b.y + Math.round((b.height - h) / 2);
+    let x: number;
+    if (n === 1) { x = b.x + Math.round((b.width - w) / 2); }
+    else { const totalW = w * 2 + gap; const startX = b.x + Math.round((b.width - totalW) / 2); x = startX + idx * (w + gap); }
+    if (!camSavedBounds[which]) { try { camSavedBounds[which] = win.getBounds(); } catch { /* non-fatal */ } }
+    try { win.setBounds({ x, y, width: w, height: h }); } catch { /* non-fatal */ }
+  });
+}
+function restoreCamBoundsFromCamOnly(): void {
+  for (const which of [1, 2]) {
+    const saved = camSavedBounds[which];
+    const win = camWindows[which];
+    if (saved && win && !win.isDestroyed()) { try { win.setBounds(saved); } catch { /* non-fatal */ } }
+    camSavedBounds[which] = null;
+  }
+}
+// Flip live "cam only": show/hide the curtain + enlarge/restore the cam(s). Needs at least one camera
+// on (turns cam 1 on if none). Re-asserts the bar + cams above the curtain a couple of times so the
+// fullscreen curtain's async show can't leave them buried.
 function setRecordCamOnly(on: boolean): void {
   if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
   if (on) {
     if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on the black curtain
     createRecordCurtain(recordDisplay);
-    setTimeout(raiseCamsAboveCurtain, 60);   // keep the cams on top once the curtain has shown
     recordCamOnly = true;
+    const relayout = () => { if (recordCamOnly && recordDisplay) { layoutCamsForCamOnly(recordDisplay); raiseOverlaysAboveCurtain(); } };
+    setTimeout(relayout, 80);
+    setTimeout(relayout, 320);   // a second pass covers a cam bubble that was just auto-created (async load)
   } else {
     closeRecordCurtain();
+    restoreCamBoundsFromCamOnly();
     recordCamOnly = false;
   }
   notifyWidgetCamState();
