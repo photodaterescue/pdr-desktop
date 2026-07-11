@@ -13642,8 +13642,42 @@
           return (ev.clientX - r.left < m || r.right - ev.clientX < m || ev.clientY - r.top < m || r.bottom - ev.clientY < m);
         };
         ed.addEventListener('pointerdown', (e) => {
+          if (e.button !== 0) { e.stopPropagation(); return; }
           if (!(layer && layer.locked) && ctEditEdgeBand(e)) { startTextDrag(layer, e); return; }   // edge → move the box
-          e.stopPropagation();   // inside → place the caret
+          // v3.1 round 8 (Terry SS) — the TEXT itself is grabbable now: press-and-drag anywhere on
+          // it MOVES the box (so a freshly-added box with its placeholder still highlighted can be
+          // dragged), while a plain click / double / triple click still does the normal text thing
+          // (caret / select word / select all). We watch for movement past a small threshold; if it
+          // never comes, the native click/caret behaviour is untouched.
+          if (!(layer && layer.locked)) {
+            const sx = e.clientX, sy = e.clientY, origE = e;
+            let started = false;
+            const onMove = (ev) => {
+              if (started) return;
+              if (Math.abs(ev.clientX - sx) > 5 || Math.abs(ev.clientY - sy) > 5) {
+                started = true; teardown();
+                try { window.getSelection().removeAllRanges(); } catch (_) {}
+                try { ed.style.userSelect = 'none'; } catch (_) {}   // stop the native selection from flickering during the move
+                const wasPlaceholder = (String(layer.text || '') === 'Your text');
+                startTextDrag(layer, origE);
+                const restore = () => {
+                  try { ed.style.userSelect = ''; } catch (_) {}
+                  // Re-select the untouched placeholder so "type to replace" still works after a nudge.
+                  if (wasPlaceholder && editingText === layer && layer.editEl && String(layer.text || '') === 'Your text') {
+                    try { const r = document.createRange(); r.selectNodeContents(layer.editEl); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); layer.editEl.focus(); } catch (_) {}
+                  }
+                  document.removeEventListener('pointerup', restore, true); document.removeEventListener('pointercancel', restore, true);
+                };
+                document.addEventListener('pointerup', restore, true);
+                document.addEventListener('pointercancel', restore, true);
+              }
+            };
+            const onUp = () => teardown();
+            const teardown = () => { document.removeEventListener('pointermove', onMove, true); document.removeEventListener('pointerup', onUp, true); };
+            document.addEventListener('pointermove', onMove, true);
+            document.addEventListener('pointerup', onUp, true);
+          }
+          e.stopPropagation();   // inside → place the caret (native); don't bubble to the canvas
         });
         ed.addEventListener('pointermove', (e) => { try { ed.style.cursor = ctEditEdgeBand(e) ? 'move' : 'text'; } catch (_) {} });
         ed.addEventListener('dblclick', (e) => { e.stopPropagation(); });
