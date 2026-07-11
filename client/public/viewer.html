@@ -12979,7 +12979,10 @@
       const D       = (cv && typeof cv._fbDesc  === 'number') ? cv._fbDesc  : (fontPx * 0.25);
       const aAscTop = (cv && typeof cv._aAscTop === 'number') ? cv._aAscTop : (fontPx * 0.7);
       const g = Math.round(fontPx * 0.16);   // SAME uniform gap renderTextLayer uses for the box
-      const marginTop = g - (lineH / 2) + aAscTop + ((D - A) / 2);
+      // v3.1 (Terry SS1 round 3) — EMPTY box: the ink-alignment formula has no real ink to pin
+      // to (fallback metrics drove marginTop negative → the caret flashed ABOVE the box).
+      // With no glyphs to align, just sit the caret line at the box top, inside the outline.
+      const marginTop = String(layer.text || '').length ? (g - (lineH / 2) + aAscTop + ((D - A) / 2)) : g;
       ed.style.display = 'block';            // never flex on a contentEditable (caret/selection)
       ed.style.lineHeight = lineH + 'px';    // EXACT canvas spacing (px), not unitless 1.25
       ed.style.marginTop = marginTop + 'px';
@@ -13355,6 +13358,18 @@
         ed.addEventListener('input', () => {
           if (editingText !== layer) return;
           syncLayerFromEditable_(layer);   // v3.1 (Terry SS1) — runs + text from the DOM (typed chars inherit the caret's run / pending typing style)
+          // v3.1 (Terry SS1 round 3) — box EMPTIED (select-all + delete): Chromium leaves a stray
+          // <br> + emptied style spans behind, whose line box floated the caret OUTSIDE the box.
+          // Sweep them so the caret sits cleanly in the (empty) box; typing starts fresh.
+          if (!String(layer.text || '').length && ed.firstChild) {
+            ed.textContent = '';
+            try {
+              const sel = window.getSelection();
+              const rng = document.createRange();
+              rng.selectNodeContents(ed); rng.collapse(true);
+              sel.removeAllRanges(); sel.addRange(rng);
+            } catch (_) {}
+          }
           renderTextLayer(layer);   // canvas stays hidden (editingText === layer); resizes the wrapper to fit
         });
         // v2.1 round 215 (Terry) — Enter now INSERTS A NEWLINE (Terry: "Pressing
@@ -13382,7 +13397,11 @@
         // drag). The gold selection outline marks the grabbable edge; the cursor flips to a move arrow over it.
         const ctEditEdgeBand = (ev) => {
           const r = el.getBoundingClientRect();
-          const m = Math.min(14, Math.min(r.width, r.height) * 0.3);
+          // v3.1 (Terry SS1 round 3) — was 0.3 per side = 60% of a SMALL box (a zoomed-out
+          // carousel box is ~25px tall), which swallowed caret clicks + double-click word
+          // selection ("double-clicking a word to highlight it … doesn't work" until zoomed
+          // in). 0.18 per side caps the band at 36% worst-case, keeping the middle clickable.
+          const m = Math.min(14, Math.min(r.width, r.height) * 0.18);
           return (ev.clientX - r.left < m || r.right - ev.clientX < m || ev.clientY - r.top < m || r.bottom - ev.clientY < m);
         };
         ed.addEventListener('pointerdown', (e) => {
