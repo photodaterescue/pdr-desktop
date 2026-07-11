@@ -2969,15 +2969,12 @@
       -webkit-user-select: text; user-select: text;
       -webkit-user-drag: none;
     }
-    /* v3.1 (Terry SS1) — INLINE RUNS: the editable may now contain spans/<font>/<b> from
-       per-word styling (ours + whatever execCommand produces). The CANVAS is the visible
-       text, so EVERY descendant's glyphs must stay invisible — colour/decoration forced
-       transparent (the metric styles — font-weight/style — still apply, so the caret and
-       wrapping feel bold/italic). caret-color survives independently of text colour. */
+    /* v3.1 (Terry SS1 round 3) — while EDITING, the editable IS the visible text (the canvas
+       hides): spans render their real colours/fonts/sizes/weights/decorations, so the caret
+       and the selection highlight sit exactly on the glyphs by construction (the transparent
+       -overlay model drifted on wrapped mixed-style lines — Terry's SS2/SS3). Keep only the
+       background neutral so execCommand leftovers can't paint highlights. */
     .collage-text .collage-text-edit * {
-      color: transparent !important;
-      -webkit-text-fill-color: transparent !important;
-      text-decoration-color: transparent !important;
       background: transparent !important;
     }
     /* ─── v2.1 round 158 (Terry) — COLLAGE IDENTITY = GOLD ───────────────
@@ -10638,6 +10635,14 @@
             e.stopPropagation();
             const L = layer; if (!L || selectedText !== layer) return;   // menu's own layer only
             restorePreview();   // back to the true pre-state so the undo snapshot is honest
+            // v3.1 (Terry SS1 round 3) — MID-EDIT: the weight applies to the selection / the
+            // typing point, like every other mid-flow property ("The Bold dropdown doesn't
+            // allow the user to select one of these things in the same way").
+            if (editingText === L && L.editEl && applyInlineDeltaToEditable_(L, { weight: w })) {
+              try { document.fonts.load(w + ' 16px "' + fam + '"').then(() => { try { if (selectedText === L) renderTextLayer(L); } catch (_) {} }); } catch (_) {}
+              closeTbPop();
+              return;
+            }
             beginCollageChange();
             L.fontWeight = w; L.bold = w >= 600;
             renderTextLayer(L);
@@ -10877,7 +10882,7 @@
           i: (r.i != null ? !!r.i : baseSt.i),
           u: (r.u != null ? !!r.u : baseSt.u),
           s: (r.s != null ? !!r.s : baseSt.s),
-          w: (r.b != null ? (r.b ? Math.max(700, baseWt) : 400) : baseWt),
+          w: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : (r.b != null ? (r.b ? Math.max(700, baseWt) : 400) : baseWt),   // v3.1 round 3 — an explicit per-run WEIGHT (the Thin…Black menu) wins over the bold flag
           f: (r.f != null ? String(r.f) : null),
           zm: clampZm(r.zm),
           e: (r.e != null ? String(r.e) : null),
@@ -11699,21 +11704,23 @@
         const a = Math.max(start, pos), b = Math.min(end, rEnd);
         if (!(b > a)) { out.push(r); pos = rEnd; return; }
         const pre = t.slice(0, a - pos), mid = t.slice(a - pos, b - pos), post = t.slice(b - pos);
-        if (pre) out.push({ t: pre, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s });
-        const m = { t: mid, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s, f: r.f, zm: r.zm, e: r.e, es: r.es, ec: r.ec };
+        const carry = (txt) => ({ t: txt, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s, f: r.f, zm: r.zm, e: r.e, es: r.es, ec: r.ec, w: r.w });   // v3.1 round 3 — splinters keep EVERY override (pre/post used to drop font/size/effect/weight)
+        if (pre) out.push(carry(pre));
+        const m = carry(mid);
         if (st.color != null) m.c = st.color;
         if (st.bold != null) m.b = !!st.bold;
         if (st.italic != null) m.i = !!st.italic;
         if (st.underline != null) m.u = !!st.underline;
         if (st.strike != null) m.s = !!st.strike;
-        // v3.1 (Terry SS1 round 2) — the painter's word mode carries font / size / effect too.
+        // v3.1 (Terry SS1 round 2/3) — the painter's word mode carries font / size / effect / weight too.
         if (st.font != null) m.f = st.font;
         if (st.zm != null) m.zm = st.zm;
         if (st.e != null) m.e = st.e;
         if (st.es != null) m.es = st.es;
         if (st.ec != null) m.ec = st.ec;
+        if (st.weight != null) m.w = st.weight;
         out.push(m);
-        if (post) out.push({ t: post, c: r.c, b: r.b, i: r.i, u: r.u, s: r.s });
+        if (post) out.push(carry(post));
         pos = rEnd;
       });
       ref.runs = out;
@@ -12368,6 +12375,7 @@
             // typing point (like colour), not the whole box.
             if (editingText === layer && layer.editEl && applyInlineDeltaToEditable_(layer, { effect: { e: d.v } })) {
               row.querySelectorAll('.ch-tb-eff-btn').forEach((x) => x.classList.toggle('active', x === b));
+              try { syncTextControls(); } catch (_) {}   // v3.1 round 3 — unlock the Effect colour target for the mid-flow effect
               return;
             }
             beginCollageChange();
@@ -12807,11 +12815,16 @@
       // editable's inline styling so live font/size/colour/align changes from the
       // side panel show in the editable too.
       if (editingText === layer && layer.editEl) {
-        // v2.1 round 218 (Terry) — keep the rendered canvas VISIBLE during edit
-        // (the editable's text is transparent and overlays it). The visible text
-        // is ALWAYS the canvas, so it can't shift when you double-click to edit —
-        // the rounds 214-217 glyph-jump is structurally impossible now.
+        // v3.1 (Terry SS1 round 3) — WHILE EDITING, the visible text is now the EDITABLE
+        // ITSELF (real colours/fonts/sizes/weights on its spans), and the canvas hides
+        // (opacity 0 — kept in the DOM so the swap bookkeeping + wrapper sizing stand).
+        // The old transparent-overlay-over-canvas model could never keep the caret and
+        // the selection highlight in perfect register on wrapped MIXED-style lines
+        // (Terry's SS2/SS3: caret a line off at the box end, highlight offset from the
+        // glyphs). With the DOM as the visible truth during edit, caret + highlight are
+        // structurally exact; the canvas returns on exit (it stays the saved/exported truth).
         canvas.style.display = 'block';
+        canvas.style.opacity = '0';
         if (layer.canvasEl && layer.canvasEl.parentNode === el) el.replaceChild(canvas, layer.canvasEl);
         else el.insertBefore(canvas, el.firstChild);
         layer.canvasEl = canvas;
@@ -12940,10 +12953,11 @@
       ed.style.fontWeight = layer.bold ? 'bold' : 'normal';
       ed.style.fontStyle = layer.italic ? 'italic' : 'normal';
       ed.style.textDecoration = layer.underline ? 'underline' : 'none';
-      // v2.1 round 218 (Terry) — the editable's TEXT is transparent: the visible
-      // text is the rendered canvas sitting directly behind it, so editing can
-      // never shift the text. Only the caret (real colour) + selection show.
-      ed.style.color = 'transparent';
+      // v3.1 (Terry SS1 round 3) — the editable's text is now VISIBLE (the canvas hides
+      // while editing): base colour = the layer colour; per-run spans carry their own.
+      // Caret + selection highlight are therefore ALWAYS exactly on the glyphs.
+      ed.style.color = layer.color || '#ffffff';
+      ed.style.textDecoration = (layer.underline ? 'underline' : '') + (layer.strike ? (layer.underline ? ' line-through' : 'line-through') : '') || 'none';
       ed.style.textAlign = layer.align || 'center';
       // v3.1 (Terry SS1) — a mid-edit colour pick sets the TYPING colour; keep the caret
       // hinting it across re-renders (every keystroke re-runs this) instead of snapping
@@ -13031,7 +13045,8 @@
     function runsStyleEq_(a, b) {
       return (a.c || null) === (b.c || null) && (a.b === b.b) && (a.i === b.i) && (a.u === b.u) && (a.s === b.s)
         && (a.f || null) === (b.f || null) && (a.zm == null ? 1 : a.zm) === (b.zm == null ? 1 : b.zm)
-        && (a.e || null) === (b.e || null) && (a.es == null ? null : a.es) === (b.es == null ? null : b.es) && (a.ec || null) === (b.ec || null);   // v3.1 (Terry SS1 round 2) — font/size/effect overrides count too
+        && (a.e || null) === (b.e || null) && (a.es == null ? null : a.es) === (b.es == null ? null : b.es) && (a.ec || null) === (b.ec || null)
+        && (a.w == null ? null : a.w) === (b.w == null ? null : b.w);   // v3.1 (Terry SS1 round 2/3) — font/size/effect/weight overrides count too
     }
     // Collapse overrides equal to the layer-level style back to "inherit", merge adjacent
     // identical runs, and drop runs entirely when nothing differs (→ pure legacy path).
@@ -13044,7 +13059,8 @@
           zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? Math.max(0.2, Math.min(8, r.zm)) : undefined,
           e: (r.e != null ? String(r.e) : undefined),
           es: (typeof r.es === 'number' && isFinite(r.es)) ? Math.max(0, Math.min(100, r.es)) : undefined,
-          ec: (r.ec != null ? String(r.ec) : undefined) }));   // v3.1 (Terry SS1 round 2) — carry font/size/effect overrides
+          ec: (r.ec != null ? String(r.ec) : undefined),
+          w: (typeof r.w === 'number' && isFinite(r.w)) ? Math.max(100, Math.min(900, Math.round(r.w))) : undefined }));   // v3.1 (Terry SS1 round 2/3) — carry font/size/effect/weight overrides
       const lc = (layer.color || '#ffffff').toLowerCase();
       const lb = textWeightOf(layer) >= 600, li = !!layer.italic, lu = !!layer.underline, ls = !!layer.strike;
       const lf = layer.font || 'Montserrat', le = layer.effect || 'none';
@@ -13060,10 +13076,12 @@
         if (r.e != null && r.e === le) { r.e = undefined; if (r.es != null && r.es === les) r.es = undefined; if (r.ec != null && r.ec === lec) r.ec = undefined; }
         if (r.e == null && r.es != null && r.es === les) r.es = undefined;
         if (r.e == null && r.ec != null && r.ec === lec) r.ec = undefined;
+        if (r.w != null && r.w === textWeightOf(layer)) r.w = undefined;   // v3.1 round 3 — weight equal to the box's = inherit
+        if (r.w != null && r.b != null) r.b = undefined;                   // an explicit weight supersedes the bold flag
       });
       const out = [];
       runs.forEach((r) => { const p = out[out.length - 1]; if (p && runsStyleEq_(p, r)) p.t += r.t; else out.push(r); });
-      const allPlain = out.every((r) => r.c == null && r.b == null && r.i == null && r.u == null && r.s == null && r.f == null && r.zm == null && r.e == null && r.es == null && r.ec == null);
+      const allPlain = out.every((r) => r.c == null && r.b == null && r.i == null && r.u == null && r.s == null && r.f == null && r.zm == null && r.e == null && r.es == null && r.ec == null && r.w == null);
       if (out.length) layer.text = runsJoin_(out);
       layer.runs = (!out.length || allPlain) ? null : out;
     }
@@ -13083,10 +13101,18 @@
           if (!p) return;
           const sp = document.createElement('span');
           if (r.c != null) { sp.setAttribute('data-c', r.c); sp.style.color = r.c; }
-          if (r.b != null) sp.style.fontWeight = r.b ? '700' : '400';
+          if (r.w != null) sp.style.fontWeight = String(r.w);   // v3.1 round 3 — explicit weight wins over the bold flag
+          else if (r.b != null) sp.style.fontWeight = r.b ? '700' : '400';
           if (r.i != null) sp.style.fontStyle = r.i ? 'italic' : 'normal';
           if (r.u != null) sp.setAttribute('data-u', r.u ? '1' : '0');
           if (r.s != null) sp.setAttribute('data-s', r.s ? '1' : '0');
+          // v3.1 round 3 — editing is now VISIBLE DOM (the canvas hides while typing), so
+          // underline/strike must really draw; metrics unaffected either way.
+          const deco = [];
+          if (r.u != null ? r.u : false) deco.push('underline');
+          if (r.s != null ? r.s : false) deco.push('line-through');
+          if (deco.length) sp.style.textDecoration = deco.join(' ');
+          else if (r.u != null || r.s != null) sp.style.textDecoration = 'none';
           // v3.1 (Terry SS1 round 2) — font + size are METRIC styles (the caret/wrap must feel
           // them); size as em so it rides the editable's base px; a unitless line-height keeps
           // the DOM line box tracking the canvas's per-line height. Effect = paint-only attrs.
@@ -13111,7 +13137,7 @@
       const push = (t, st) => {
         if (!t) return;
         const p = runs[runs.length - 1];
-        const r = { t: t, c: st.c, b: st.b, i: st.i, u: st.u, s: st.s, f: st.f, zm: st.zm, e: st.e, es: st.es, ec: st.ec };   // v3.1 (Terry SS1 round 2) — carry font/size/effect
+        const r = { t: t, c: st.c, b: st.b, i: st.i, u: st.u, s: st.s, f: st.f, zm: st.zm, e: st.e, es: st.es, ec: st.ec, w: st.w };   // v3.1 (Terry SS1 round 2/3) — carry font/size/effect/weight
         if (p && runsStyleEq_(p, r)) p.t += t; else runs.push(r);
       };
       const BLOCK = { DIV: 1, P: 1, LI: 1 };
@@ -13137,7 +13163,7 @@
         const ist = node.style;
         if (ist) {
           if (ist.color && ist.color !== 'transparent' && ds.c == null) s.c = rgbToHexSafe_(ist.color) || s.c;
-          if (ist.fontWeight) { const w = parseInt(ist.fontWeight, 10); if (isFinite(w)) s.b = w >= 600; else if (ist.fontWeight === 'bold') s.b = true; else if (ist.fontWeight === 'normal') s.b = false; }
+          if (ist.fontWeight) { const w = parseInt(ist.fontWeight, 10); if (isFinite(w)) { s.b = w >= 600; s.w = w; } else if (ist.fontWeight === 'bold') { s.b = true; s.w = 700; } else if (ist.fontWeight === 'normal') { s.b = false; s.w = 400; } }   // v3.1 round 3 — keep the EXACT weight (Thin…Black), not just the bold bool
           if (ist.fontStyle === 'italic') s.i = true; else if (ist.fontStyle === 'normal') s.i = false;
           if (/underline/.test(ist.textDecorationLine || ist.textDecoration || '')) s.u = true;
           if (/line-through/.test(ist.textDecorationLine || ist.textDecoration || '')) s.s = true;
@@ -13227,10 +13253,20 @@
     // delta: { color?, bold?, italic?, underline?, strike?, font?, zm?, effect?:{e?,es?,ec?} }
     function styleSpanFromDelta_(sp, layer, delta, zmCtxNode) {
       if (delta.color != null) { sp.style.color = delta.color; sp.setAttribute('data-c', delta.color); }
-      if (delta.bold != null) sp.style.fontWeight = delta.bold ? '700' : '400';
+      if (delta.weight != null) sp.style.fontWeight = String(delta.weight);   // v3.1 round 3 — the Thin…Black menu mid-flow
+      else if (delta.bold != null) sp.style.fontWeight = delta.bold ? '700' : '400';
       if (delta.italic != null) sp.style.fontStyle = delta.italic ? 'italic' : 'normal';
       if (delta.underline != null) sp.setAttribute('data-u', delta.underline ? '1' : '0');
       if (delta.strike != null) sp.setAttribute('data-s', delta.strike ? '1' : '0');
+      // v3.1 round 3 — editing is visible DOM now: draw the decorations for real.
+      if (delta.underline != null || delta.strike != null) {
+        const u = delta.underline != null ? delta.underline : (sp.getAttribute('data-u') === '1');
+        const st2 = delta.strike != null ? delta.strike : (sp.getAttribute('data-s') === '1');
+        const deco = [];
+        if (u) deco.push('underline');
+        if (st2) deco.push('line-through');
+        sp.style.textDecoration = deco.length ? deco.join(' ') : 'none';
+      }
       if (delta.font != null) sp.style.fontFamily = '"' + delta.font + '"';
       if (delta.zm != null) {
         const ctxZm = inheritedZmAt_(layer.editEl, zmCtxNode || sp.parentNode || layer.editEl);
@@ -13418,9 +13454,10 @@
       // v3.1 (Terry SS1) — runs-aware: spans per run (metric styles real, paint styles as
       // data-attrs) so the caret/wrap feel bold/italic; plain text when there are no runs.
       fillEditableFromLayer_(layer, ed);
-      // v2.1 round 218 (Terry) — keep the canvas visible; the editable overlays it
-      // with transparent text (the canvas is the visible text → no edit-jump).
-      if (layer.canvasEl) layer.canvasEl.style.display = 'block';
+      // v3.1 (Terry SS1 round 3) — while editing, the EDITABLE is the visible text (real
+      // styles on its spans) and the canvas hides (opacity 0, still in the DOM for layout
+      // + swap bookkeeping) — caret/selection can no longer drift from the glyphs.
+      if (layer.canvasEl) { layer.canvasEl.style.display = 'block'; layer.canvasEl.style.opacity = '0'; }
       ed.style.display = 'block';   // v2.1 round 217 (Terry) — stays BLOCK (no flex); styleTextEditable does the glyph-exact vertical alignment via line-height + margin-top
       styleTextEditable(layer);
       el.classList.add('selected');
@@ -13466,7 +13503,7 @@
       layer.editEl = null;
       const preSnap = textEditSnap; textEditSnap = null;
       if (ed) { try { ed.remove(); } catch (_) { if (ed.parentNode) ed.parentNode.removeChild(ed); } }
-      if (layer.canvasEl) layer.canvasEl.style.display = 'block';
+      if (layer.canvasEl) { layer.canvasEl.style.display = 'block'; layer.canvasEl.style.opacity = ''; }   // v3.1 round 3 — the canvas returns (it was hidden while the editable was the visible text)
       renderTextLayer(layer);          // re-render the canvas that drives the bake
       selectText(layer);               // keep it selected
       pushCollageUndoIfChanged(preSnap);   // one undo step for the whole edit session (text changed)
@@ -14147,7 +14184,7 @@
         locked: false, lockLayer: false,   // the clone starts unlocked (both kinds)
         flipH: !!layer.flipH, flipV: !!layer.flipV,   // v3.1 (Terry) — the clone keeps the emoji mirror/flip
         // v3.1 (Terry SS1) — INLINE RUNS: the clone deep-copies the per-word colours/styles.
-        runs: (layer.runs && layer.runs.length) ? layer.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined), f: (r.f != null ? String(r.f) : undefined), zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? r.zm : undefined, e: (r.e != null ? String(r.e) : undefined), es: (typeof r.es === 'number' && isFinite(r.es)) ? r.es : undefined, ec: (r.ec != null ? String(r.ec) : undefined) })) : null,
+        runs: (layer.runs && layer.runs.length) ? layer.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined), f: (r.f != null ? String(r.f) : undefined), zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? r.zm : undefined, e: (r.e != null ? String(r.e) : undefined), es: (typeof r.es === 'number' && isFinite(r.es)) ? r.es : undefined, ec: (r.ec != null ? String(r.ec) : undefined), w: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : undefined })) : null,
         // v3.1 (Terry) — EMOJI appearance parity: the clone copies the emoji's enh (deep
         // copy — the corners array must not be shared) so a duplicated emoji keeps its
         // Looks/Effects/Glow/Tone styling. null/absent = no effects (plain emoji, text).
@@ -17888,7 +17925,7 @@
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
-        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', enh: (t.isEmoji && t.enh) ? t.enh : undefined, locked: !!t.locked, lockLayer: !!t.lockLayer, flipH: !!t.flipH, flipV: !!t.flipV, runs: (t.runs && t.runs.length) ? t.runs.map((r) => { const o = { t: String(r.t || '') }; if (r.c != null) o.c = r.c; if (r.b != null) o.b = !!r.b; if (r.i != null) o.i = !!r.i; if (r.u != null) o.u = !!r.u; if (r.s != null) o.s = !!r.s; if (r.f != null) o.f = r.f; if (typeof r.zm === 'number') o.zm = r.zm; if (r.e != null) o.e = r.e; if (typeof r.es === 'number') o.es = r.es; if (r.ec != null) o.ec = r.ec; return o; }) : undefined })),   /* v3.1 (Terry SS1) — INLINE RUNS round-trip; undefined = key omitted, so runs-less snapshots stay byte-identical */   // v3.1 (Terry) — carry an EMOJI's enh (Looks/Effects/Glow/Tone parity; undefined = key omitted by JSON.stringify, so plain emoji/text snapshots are byte-identical to before); v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
+        texts: collageTexts.map((t) => ({ id: t.id, isEmoji: !!t.isEmoji, text: t.text, xFrac: t.xFrac, yFrac: t.yFrac, sizeFrac: t.sizeFrac, scaleX: (typeof t.scaleX === 'number') ? t.scaleX : 1, scaleY: (typeof t.scaleY === 'number') ? t.scaleY : 1, boxMode: (t.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof t.boxWFrac === 'number' && isFinite(t.boxWFrac) && t.boxWFrac > 0) ? t.boxWFrac : null, boxHFrac: (typeof t.boxHFrac === 'number' && isFinite(t.boxHFrac) && t.boxHFrac > 0) ? t.boxHFrac : null, font: t.font, color: t.color, align: t.align, rot: t.rot, z: t.z, bold: !!t.bold, italic: !!t.italic, underline: !!t.underline, strike: !!t.strike, fontWeight: (typeof t.fontWeight === 'number') ? t.fontWeight : null, lineHeight: (typeof t.lineHeight === 'number') ? t.lineHeight : 1.25, opacity: (typeof t.opacity === 'number') ? t.opacity : 100, letterCase: t.letterCase || 'none', effect: t.effect || 'none', effectStrength: (typeof t.effectStrength === 'number') ? t.effectStrength : 50, effectColor: t.effectColor || '', enh: (t.isEmoji && t.enh) ? t.enh : undefined, locked: !!t.locked, lockLayer: !!t.lockLayer, flipH: !!t.flipH, flipV: !!t.flipV, runs: (t.runs && t.runs.length) ? t.runs.map((r) => { const o = { t: String(r.t || '') }; if (r.c != null) o.c = r.c; if (r.b != null) o.b = !!r.b; if (r.i != null) o.i = !!r.i; if (r.u != null) o.u = !!r.u; if (r.s != null) o.s = !!r.s; if (r.f != null) o.f = r.f; if (typeof r.zm === 'number') o.zm = r.zm; if (r.e != null) o.e = r.e; if (typeof r.es === 'number') o.es = r.es; if (r.ec != null) o.ec = r.ec; if (typeof r.w === 'number') o.w = r.w; return o; }) : undefined })),   /* v3.1 (Terry SS1) — INLINE RUNS round-trip; undefined = key omitted, so runs-less snapshots stay byte-identical */   // v3.1 (Terry) — carry an EMOJI's enh (Looks/Effects/Glow/Tone parity; undefined = key omitted by JSON.stringify, so plain emoji/text snapshots are byte-identical to before); v2.1 round 191 (Terry) — carry effectStrength; round 193 — carry effectColor ('' = AUTO/derived); round 219 (Terry) — carry isEmoji so emoji layers round-trip through undo/redo; round 221 (Terry) — carry `locked` so the lock toggle is undoable + round-trips; round 222 (Terry) — carry scaleX/scaleY so the non-uniform stretch is undoable + round-trips; v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (the new toolbar text controls) so they're undoable + round-trip through save/reopen (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA) so a side-bar box drag is undoable + the wrap/fit round-trips (old snapshots default 'auto'/null = extend-right)
         selTextId: selectedText ? selectedText.id : null,
         // v3.0 (Terry) — layered-bg texture ELEMENTS (glow/blur circles); old snapshots lack it → [].
         bgFx: (function () { var f = ensureCollageBgFx(); var pick = function (e) { return { kind: e.kind, on: !!e.on, shape: e.shape, color: e.color, size: e.size, stretch: e.stretch, angle: e.angle, blend: e.blend, opacity: e.opacity, posX: e.posX, posY: e.posY, blur: e.blur, grain: e.grain, grainSize: e.grainSize, pixelate: e.pixelate }; }; return { glow: pick(f.glow), blur: pick(f.blur), applyToPhoto: !!f.applyToPhoto }; })(),   // v3.0 round 537 — carry the "apply effects to the background photo" opt-in
@@ -18129,7 +18166,7 @@
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
       collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; });   // v3.1 (Terry) — stage-level toolbars + top-bar strips torn down with the els (they live OUTSIDE the canvas now)
-      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, flipH: !!st.flipH, flipV: !!st.flipV, runs: (Array.isArray(st.runs) && st.runs.length) ? st.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined), f: (r.f != null ? String(r.f) : undefined), zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? r.zm : undefined, e: (r.e != null ? String(r.e) : undefined), es: (typeof r.es === 'number' && isFinite(r.es)) ? r.es : undefined, ec: (r.ec != null ? String(r.ec) : undefined) })) : null, el: null, canvasEl: null }));   /* v3.1 (Terry SS1) — INLINE RUNS restore (old snapshots lack the key → null = single-style path) */   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
+      collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, flipH: !!st.flipH, flipV: !!st.flipV, runs: (Array.isArray(st.runs) && st.runs.length) ? st.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined), f: (r.f != null ? String(r.f) : undefined), zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? r.zm : undefined, e: (r.e != null ? String(r.e) : undefined), es: (typeof r.es === 'number' && isFinite(r.es)) ? r.es : undefined, ec: (r.ec != null ? String(r.ec) : undefined), w: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : undefined })) : null, el: null, canvasEl: null }));   /* v3.1 (Terry SS1) — INLINE RUNS restore (old snapshots lack the key → null = single-style path) */   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
       selectedText = (s.selTextId != null) ? (collageTexts.find((t) => t.id === s.selTextId) || null) : null;
@@ -23823,6 +23860,7 @@
         // v3.1 (Terry SS1 round 2) — MID-EDIT: effect to the selection / typing point.
         if (editingText === selectedText && selectedText.editEl && applyInlineDeltaToEditable_(selectedText, { effect: { e: b.dataset.effect || 'none' } })) {
           effectWrap.querySelectorAll('.ec-effect-btn').forEach((x) => x.classList.toggle('active', x === b));
+          try { updateColorTargets(); } catch (_) {}   // v3.1 round 3 — unlock the Effect colour target for the mid-flow effect
           return;
         }
         beginCollageChange();
@@ -24966,7 +25004,13 @@
       if (!wrap || !block) return;
       // Build the list of valid targets for the current selection.
       let chips = [];
-      const effectOn = !!(selectedText && (selectedText.effect || 'none') !== 'none');
+      // v3.1 (Terry SS1 round 3) — an effect may now live PER-WORD (runs) or at the caret's
+      // typing style, not just on the whole box; the Effect colour target unlocks for those
+      // too ("I was able to change the effect mid-flow, but the colour palette for the
+      // effect was greyed out").
+      const effectOn = !!(selectedText && ((selectedText.effect || 'none') !== 'none'
+        || (selectedText.runs && selectedText.runs.some((r) => r.e && r.e !== 'none'))
+        || (editingText === selectedText && (function () { try { const st = fmtStyleAtSelection_(selectedText); return !!(st && st.e && st.e !== 'none'); } catch (_) { return false; } })())));
       // v2.1 round 219 (Terry) — an EMOJI layer is a fixed colour glyph: NO Text /
       // Effect colour targets (the palette would do nothing), so it contributes no
       // chips → the whole Colour Palette block hides for an emoji selection.
