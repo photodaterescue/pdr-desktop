@@ -4244,6 +4244,30 @@ function toggleCamBubble(which: number = 1): void {
   // Armed counts too (round 129) — the user frames their camera
   // BEFORE pressing Record.
   if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
+  // v3.1 (Terry 2026-07-11) — in CAM-ONLY the Cam buttons are a SOLO source SWITCH, not a toggle:
+  // clicking a camera shows ONLY that one (the other turns off), so you flip cam 1 ↔ cam 2 in a
+  // single click and can NEVER end up on a black screen with no camera (Terry: "why is there a black
+  // curtain"). Clicking the camera that's already showing does nothing (leave via "Show screen").
+  if (recordCamOnly) {
+    const other = which === 1 ? 2 : 1;
+    if (camVisibles[which] && !camVisibles[other]) return;   // already the sole shown cam → no-op
+    if (camVisibles[other]) {                                // hide the other camera
+      const ow = camWindows[other];
+      if (ow && !ow.isDestroyed()) { try { ow.webContents.send('capture:cam-do', { action: 'hide' }); } catch { /* non-fatal */ } }
+      camVisibles[other] = false;
+    }
+    const w = camWindows[which];                             // show / create the chosen camera
+    if (!w || w.isDestroyed()) { createCamBubble(recordDisplay, which); }
+    else if (!camVisibles[which]) {
+      try { w.showInactive(); } catch { /* non-fatal */ }
+      try { w.webContents.send('capture:cam-do', { action: 'show' }); } catch { /* non-fatal */ }
+      camVisibles[which] = true;
+      startCamHoverPoll();
+    }
+    notifyWidgetCamState();
+    setTimeout(() => relayoutCamOnlyIfActive(), 90);   // fill the screen with the chosen camera
+    return;
+  }
   const win = camWindows[which];
   if (!win || win.isDestroyed()) {
     createCamBubble(recordDisplay, which);
@@ -4400,7 +4424,16 @@ function restoreCamBoundsFromCamOnly(animOut: boolean): void {
 function setRecordCamOnly(on: boolean): void {
   if ((recordingState !== 'recording' && recordingState !== 'armed') || !recordDisplay) return;
   if (on) {
-    if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);   // something to show on entering cam-only
+    // Cam-only shows ONE camera at a time. Start solo: none on → turn cam 1 on; BOTH on → drop to cam 1
+    // (the Cam buttons then SWITCH between them). recordCamOnly is still false here, so toggleCamBubble
+    // takes its normal path for the auto-add.
+    if (!camVisibles[1] && !camVisibles[2]) toggleCamBubble(1);
+    else if (camVisibles[1] && camVisibles[2]) {
+      const w2 = camWindows[2];
+      if (w2 && !w2.isDestroyed()) { try { w2.webContents.send('capture:cam-do', { action: 'hide' }); } catch { /* non-fatal */ } }
+      camVisibles[2] = false;
+      notifyWidgetCamState();
+    }
     createRecordCurtain(recordDisplay);
     recordCamOnly = true;
     fadeWindowOpacity(recordCurtainWindow, 0, 1, 200);   // desktop fades to black fast, THEN the cam swirls in
@@ -4768,6 +4801,7 @@ ipcMain.on('capture:cam-error', (event, info: { message?: string }) => {
     log.warn(`[capture] camera bubble failed: ${info?.message ?? 'unknown'}`);
     broadcast('capture:recordError', { message: 'The camera couldn\'t start — check Windows camera privacy settings. The recording itself is unaffected.' });
     closeCamBubble();
+    if (recordCamOnly) setRecordCamOnly(false);   // v3.1 (Terry) — cam-only with no working camera → show the desktop, never a blank black screen
     notifyWidgetCamState();
   }
 });
