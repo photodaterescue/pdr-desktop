@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2 } from 'lucide-react';
+import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { useFixInProgress } from '@/lib/fix-state';
 import { getFixProgress, onFixProgress, type FixProgressPayload } from '@/lib/electron-bridge';
 
@@ -103,13 +104,13 @@ export function FixStatusChip({ interactive = false }: { interactive?: boolean }
 
   return (
     <AnimatePresence>
+      <IconTooltip label={interactive ? 'Click to view full progress' : 'A Fix is in progress in the main PDR window'}>
       <motion.div
         initial={{ opacity: 0, y: -8 }}
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: -8 }}
         className={`fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta ${interactive ? 'cursor-pointer' : 'pointer-events-none'}`}
         data-testid={interactive ? 'fix-progress-chip' : 'fix-progress-chip-passive'}
-        title={interactive ? 'Click to view full progress' : 'A Fix is in progress in the main PDR window'}
         onClick={interactive ? handleOpenClick : undefined}
         style={interactive ? ({ WebkitAppRegion: 'no-drag' } as React.CSSProperties) : undefined}
       >
@@ -135,6 +136,7 @@ export function FixStatusChip({ interactive = false }: { interactive?: boolean }
           </button>
         )}
       </motion.div>
+      </IconTooltip>
     </AnimatePresence>
   );
 }

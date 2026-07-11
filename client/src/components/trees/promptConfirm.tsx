@@ -882,12 +882,14 @@ function Avatar({ avatar }: { avatar?: ConfirmAvatar }) {
   if (!avatar) return null;
   const initial = avatar.initial?.trim() || avatar.label?.trim()?.[0] || '?';
   return (
-    <div className="shrink-0 w-14 h-14 rounded-full overflow-hidden ring-2 ring-primary/20 bg-primary/10 flex items-center justify-center" title={avatar.label}>
+    <IconTooltip label={avatar.label}>
+    <div className="shrink-0 w-14 h-14 rounded-full overflow-hidden ring-2 ring-primary/20 bg-primary/10 flex items-center justify-center">
       {avatar.src ? (
         <img src={avatar.src} alt="" className="w-full h-full object-cover" />
       ) : (
         <span className="text-base font-semibold text-primary">{initial}</span>
       )}
     </div>
+    </IconTooltip>
   );
 }

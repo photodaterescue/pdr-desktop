@@ -202,13 +202,14 @@ export default function AddToAlbumPopover({ open, onOpenChange, createMode = fal
     const all = inCount >= total;
     const label = total === 1 ? 'In here' : (all ? `All ${total} here` : `${inCount} of ${total} here`);
     return (
+      <IconTooltip label={all ? 'All selected photos are already in this album' : `${inCount} of ${total} selected are already in this album`}>
       <span
         className={`shrink-0 text-[10px] font-medium flex items-center gap-0.5 ${all ? 'text-emerald-600 dark:text-emerald-400' : 'text-muted-foreground'}`}
-        title={all ? 'All selected photos are already in this album' : `${inCount} of ${total} selected are already in this album`}
       >
         {all && <Check className="w-3 h-3" />}
         {label}
       </span>
+      </IconTooltip>
     );
   };
 

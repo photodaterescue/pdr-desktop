@@ -4253,18 +4253,19 @@ function FaceGridModal({ cluster, cropUrl, existingPersons, onReassignFace, onSe
                   />
                   <p className="text-[10px] text-muted-foreground/85 -mt-1 px-0.5">Shown on Tree cards. Leave blank to fall back to short name.</p>
                   <div className="flex gap-1.5">
+                    <IconTooltip label={unverifiedSelectedCount === 0 ? 'All selected faces are already verified.' : undefined}>
                     <button
                       onClick={() => handleBatchAction(effectiveShortName, true)}
                       disabled={!effectiveShortName || unverifiedSelectedCount === 0}
                       className={`flex-1 px-2 py-1.5 rounded-lg bg-purple-500 hover:bg-purple-600 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium transition-colors ${
                         effectiveShortName && unverifiedSelectedCount > 0 ? 'animate-pulse-cta ring-2 ring-purple-300/60 ring-offset-1 ring-offset-background' : ''
                       }`}
-                      title={unverifiedSelectedCount === 0 ? 'All selected faces are already verified.' : undefined}
                     >
                       {unverifiedSelectedCount === 0
                         ? 'Already verified'
                         : `Verify${unverifiedSelectedCount > 1 ? ` (${unverifiedSelectedCount})` : ''}`}
                     </button>
+                    </IconTooltip>
                     <button
                       onClick={() => { setSelectedFaceIds(new Set()); setReassignName(''); setReassignFullName(''); }}
                       className="px-2 py-1.5 rounded-lg border border-border hover:bg-secondary text-sm font-medium transition-colors"

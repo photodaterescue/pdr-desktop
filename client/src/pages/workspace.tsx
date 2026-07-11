@@ -3786,13 +3786,13 @@ return (
 	      setAnalysisMinimized(false);
 	    };
 	    return (
+	      <IconTooltip label="Click to restore the analysis view">
 	      <motion.div
 	        initial={{ opacity: 0, y: -8 }}
 	        animate={{ opacity: 1, y: 0 }}
 	        exit={{ opacity: 0, y: -8 }}
 	        className="fixed top-1.5 left-1/2 -translate-x-1/2 z-[60] flex items-center gap-2 pl-3 pr-2 py-1.5 rounded-full bg-amber-500 text-white shadow-lg ring-2 ring-amber-300/60 select-none animate-pulse-cta cursor-pointer"
 	        data-testid="analysis-progress-chip"
-	        title="Click to restore the analysis view"
 	        onClick={() => handleRestore()}
 	        // v2.0.11 (Terry 2026-05-24) — opt out of the title bar's
 	        // drag region. Without this Windows interprets clicks on
@@ -3820,6 +3820,7 @@ return (
 	          Open
 	        </button>
 	      </motion.div>
+	      </IconTooltip>
 	    );
 	  })()}
       {showPreviewModal && <PreviewModal onClose={() => setShowPreviewModal(false)} results={analysisResults} fileResults={sourceAnalysisResults} />}
@@ -7744,16 +7745,17 @@ function ScanningOverlay({ message, percent, onCancel, showCancelConfirm, onConf
             cancel-confirm overlay (the user is mid-decision and
             shouldn't be tempted to walk away). */}
         {onMinimize && !showCancelConfirm && (
+          <IconTooltip label="Hide this view and keep working in PDR while analysis runs">
           <button
             type="button"
             onClick={onMinimize}
             className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-white bg-amber-500 shadow-lg ring-2 ring-amber-300/60 hover:bg-amber-600 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
             data-testid="button-minimize-analysis"
-            title="Hide this view and keep working in PDR while analysis runs"
           >
             <ChevronDown className="w-3.5 h-3.5" />
             Work in background
           </button>
+          </IconTooltip>
         )}
         <div className="mb-8">
           <div className="w-16 h-16 bg-primary/10 rounded-full flex items-center justify-center mx-auto mb-6 relative">
@@ -9378,16 +9380,17 @@ function FixProgressModal({ onClose, totalFiles, destinationPath, sources, fileR
             Destination. animate-pulse-cta is the same attention-
             grabbing pulse used on PM's Verify CTA. */}
         {!isComplete && (
+          <IconTooltip label="Hide this view and keep working in PDR while the fix runs">
           <button
             type="button"
             onClick={() => setFixMinimized(true)}
             className="absolute -top-3 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full text-[12px] font-semibold text-white bg-amber-500 shadow-lg ring-2 ring-amber-300/60 hover:bg-amber-600 transition-colors flex items-center gap-1.5 animate-pulse-cta whitespace-nowrap"
             data-testid="button-minimize-fix"
-            title="Hide this view and keep working in PDR while the fix runs"
           >
             <ChevronDown className="w-3.5 h-3.5" />
             Work in background
           </button>
+          </IconTooltip>
         )}
         {!isComplete ? (
           <>
@@ -16682,11 +16685,11 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               without "Photo Date Rescue" being replaced.
               v3.0 round 551 (Terry) — the version is now a quiet link that
               closes Settings and replays the "What's new in 3.0" showcase. */}
+          <IconTooltip label="Replay the What’s new in 3.0 showcase">
           <button
             type="button"
             onClick={() => { onClose(); try { window.dispatchEvent(new CustomEvent('pdr:replay-whatsnew30')); } catch { /* non-fatal */ } }}
             className="group inline-flex items-center gap-1.5 text-xs text-left"
-            title="Replay the What’s new in 3.0 showcase"
           >
             <span className="text-muted-foreground group-hover:text-foreground transition-colors">
               PDR Photos &middot; Photo Date Rescue v{typeof __APP_VERSION__ !== 'undefined' ? __APP_VERSION__ : '1.0.1'}
@@ -16697,6 +16700,7 @@ function SettingsModal({ initialTab, onClose, folderStructure, onFolderStructure
               What’s new
             </span>
           </button>
+          </IconTooltip>
           <IconTooltip
             label={settingsMutationsBlocked ? settingsMutationsBlockedTooltip : 'Restore every setting on this dialog to PDR defaults'}
             side="top"
