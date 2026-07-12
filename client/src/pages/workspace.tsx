@@ -12680,14 +12680,11 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
-                  {/* v3.0.2 (Terry 2026-07-12) — point release: a big, focused polish
-                      pass on Collages & Carousels (text studio, emoji effects, format painter,
-                      carousel behaviour) AND Screen Capture (virtual camera backgrounds, second
-                      camera + bubble controls + size slider, cam-only full-screen, Tiny quality,
-                      stop-save double-check) + Viewer/Collages open-instantly perf + a sturdier,
-                      smarter library refresh. Supersedes the brief v3.0.1 (2 days out) — this entry
-                      covers everything in it plus the extra polish. Carries the "Current version"
-                      tag once appVersion is 3.0.2. */}
+                  {/* v3.0.2 (Terry 2026-07-12) — point release ON TOP OF the shipped v3.0.1:
+                      everything added since v3.0.1 went live (2026-07-10) — a much smarter Collage
+                      text studio, the full-screen Cam-only mode + bigger camera bubbles, and a
+                      sturdier/smarter library refresh. Carries the "Current version" tag once
+                      appVersion is 3.0.2. The v3.0.1 entry below stays as its own shipped release. */}
                   <AccordionItem
                     value="ver-3.0.2"
                     id="changelog-ver-3.0.2"
@@ -12703,21 +12700,54 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                     </AccordionTrigger>
                     <AccordionContent className="pt-2 pb-4">
                       <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">The finishing touches on 3.0.</strong> Everything added since v3.0.1 went live: a much smarter Collage text studio, a full-screen camera mode with bigger bubbles, and a library refresh that&apos;s sturdier and smarter &mdash; all still on your own hardware, with nothing uploaded.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Style every part of your text as you type</strong> &mdash; change any property mid-sentence, just like color already did: font, size, bold / italic / underline / strike-through, effect, effect color and weight. Give individual words their own look within a single box, or pick a color and keep typing for inline multi-color. The caret and highlight never drift, the effect strength slider follows your cursor, and you can grab a box by its text to move it &mdash; even while it&apos;s highlighted.</li>
+                        <li><strong className="text-foreground font-medium">Format painter, smarter</strong> &mdash; it now carries the whole look, weight and all; paint the entire box or just the words you tap; and when the box you pick up mixes several looks, PDR shows them and asks which one to copy.</li>
+                        <li><strong className="text-foreground font-medium">Cam only &mdash; go full-screen on camera</strong> &mdash; mid-recording, drop the desktop away and fill the screen with just your camera: one camera fills the screen, or show both side by side. Turn either on or off without ever hitting a blank screen, then bring the desktop back whenever you like &mdash; the camera glides in and out with a smooth grow-and-shrink each way.</li>
+                        <li><strong className="text-foreground font-medium">Bigger camera bubbles</strong> &mdash; resize each camera on a simple slider, now up to four times bigger than before.</li>
+                        <li><strong className="text-foreground font-medium">A sturdier, smarter library refresh</strong> &mdash; one clear progress message that can&apos;t be started twice, it saves as it goes so an interruption just picks up where it left off, and it no longer asks you to re-index photos already searchable from another drive.</li>
+                        <li><strong className="text-foreground font-medium">Faster and smoother</strong> &mdash; the main window now stays grabbable while the background library scan runs, so the titlebar responds the first time you reach for it.</li>
+                        <li><strong className="text-foreground font-medium">Polish</strong> &mdash; recorder-bar tooltips stay in the PDR style even as their buttons update mid-recording, plus dozens of smaller fixes.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
+                  {/* v3.0.1 (Terry 2026-07-09/10) — SHIPPED + published to R2 on 2026-07-10. Point
+                      release: a big, focused polish pass on Collages & Carousels (text studio, emoji
+                      effects, format painter, carousel behaviour) AND Screen Capture (virtual camera
+                      backgrounds, second camera + bubble controls, Tiny quality, stop-save double-check)
+                      + Viewer/Collages open-instantly perf. It went live, so it STAYS in the history as
+                      its own entry; the "Current version" tag now lives on v3.0.2 above. */}
+                  <AccordionItem
+                    value="ver-3.0.1"
+                    id="changelog-ver-3.0.1"
+                    className="border border-border rounded-lg px-4"
+                  >
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v3.0.1</span>
+                        {appVersion === '3.0.1' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
                         <strong className="text-foreground">The Collage studio and Screen Capture both grow up.</strong> A focused polish release. Collages become a genuine design tool &mdash; a professional-grade text studio, emojis with real effects, a format painter, and carousels that behave &mdash; while Screen Capture gains virtual camera backgrounds, a second camera, and smaller recordings. Windows open and move the instant they appear, and it&apos;s all still on your own hardware, with nothing uploaded.
                       </p>
                       <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
-                        <li><strong className="text-foreground font-medium">A proper text studio</strong> &mdash; every text box gets a floating toolbar over it (and a matching side panel): font, the full weight range from Thin to Black, size, bold / italic / underline, alignment, UPPER / lower / Title case, effects, line spacing, transparency and color. Style individual words within a single box &mdash; a different color, font, size, weight or effect on each &mdash; and change any of them mid-sentence, so only what you type next takes the new look, just like the color does. Choose a fixed text area and the type wraps and auto-shrinks to fit, or let it flow freely as you type; grab a box by the text itself to move it, even while it&apos;s highlighted.</li>
+                        <li><strong className="text-foreground font-medium">A proper text studio</strong> &mdash; every text box gets a floating toolbar over it (and a matching side panel): font, the full weight range from Thin to Black, size, bold / italic / underline, alignment, UPPER / lower / Title case, effects, line spacing, transparency and color. Choose a fixed text area and the type wraps and auto-shrinks to fit, or let it flow freely as you type.</li>
                         <li><strong className="text-foreground font-medium">Symbols &amp; arrows</strong> &mdash; a new picker under Add text drops in arrows of every shape, plus stars, shapes, ticks, math and currency symbols &mdash; as ordinary text, so they take your color, font, size and effects. A gold outlined arrow or a pink neon star in two clicks.</li>
                         <li><strong className="text-foreground font-medium">Emojis with real effects</strong> &mdash; emojis are now first-class layers. Apply Looks, Effects, Glow &amp; shadow, Tone &amp; color and Flip &amp; rotate exactly as you would to a photo, with glow and outline that hug the emoji&apos;s actual shape.</li>
                         <li><strong className="text-foreground font-medium">A control bar for every layer</strong> &mdash; photos, frames, emojis and text each get their own top-center toolbar plus quick chips that jump straight to the matching side-panel section, so what you can do is visible at a glance.</li>
-                        <li><strong className="text-foreground font-medium">Format painter</strong> &mdash; style one text box, photo or emoji just how you like it, then copy that whole look onto others: pick up the paint-roller and brush it over the layers you want, or drag a box across a group to style them all in one go. Paint the whole box or just the words you tap; and when the box you pick up mixes several looks, PDR shows them and asks which one to copy. Your own colors now save into seven numbered slots too, alongside a dedicated PDR palette of the app&apos;s brand colors.</li>
+                        <li><strong className="text-foreground font-medium">Format painter</strong> &mdash; style one text box, photo or emoji just how you like it, then copy that whole look onto others: pick up the paint-roller and brush it over the layers you want, or drag a box across a group to style them all in one go. Your own colors now save into seven numbered slots too, alongside a dedicated PDR palette of the app&apos;s brand colors.</li>
                         <li><strong className="text-foreground font-medium">Carousels that behave</strong> &mdash; duplicate a caption or photo to the exact same spot on every page in one step; equal-margin guides and snapping now work on every page, not just the ends; set your default page count; and add stylable page outlines.</li>
                         <li><strong className="text-foreground font-medium">Virtual camera backgrounds</strong> &mdash; no greenscreen needed. Drop your webcam bubble into a screen recording, open its Backdrop button, and a roomy picker opens: blur your real room or give it a softer, portrait-style depth of field, pixelate it for privacy (each with a strength slider), choose one of sixteen tasteful room scenes, or pick from the full PDR brand palette and textures. Prefer your own? Use any picture &mdash; from your Memories or your PC &mdash; or design one in Collages with your logo and choose it here. You&apos;re separated from your background right on your PC, with nothing uploaded, and any words in a picture stay the right way around.</li>
-                        <li><strong className="text-foreground font-medium">A second camera, with controls</strong> &mdash; add a second camera and show both at once, or either on its own; resize each bubble on a simple slider &mdash; now up to four times bigger than before &mdash; zoom in on yourself, and let it pop in and out. Plug in another webcam and PDR picks it up automatically.</li>
-                        <li><strong className="text-foreground font-medium">Cam only &mdash; go full-screen on camera</strong> &mdash; mid-recording, drop the desktop away and fill the screen with just your camera: one camera fills the screen, or show both side by side. Turn either camera on or off without leaving the mode &mdash; it never falls to a blank screen &mdash; then bring the desktop back whenever you like. The camera glides in and out with a smooth grow-and-shrink each way. Perfect for a talking-head intro before a screen walk-through, or an on-camera aside partway through.</li>
+                        <li><strong className="text-foreground font-medium">A second camera, with controls</strong> &mdash; add a second camera and show both at once, or either on its own; resize each bubble, zoom in on yourself, and let it pop in and out. Plug in another webcam and PDR picks it up automatically.</li>
                         <li><strong className="text-foreground font-medium">Smaller recordings, and a save check</strong> &mdash; a new Tiny quality makes much smaller files when size matters more than sharpness. And stopping a recording now asks whether to Save, Discard or keep going &mdash; so a mis-click can&apos;t lose a take, or save one you didn&apos;t mean to keep.</li>
                         <li><strong className="text-foreground font-medium">Faster and smoother</strong> &mdash; the Collages and Viewer windows open and can be moved the instant they appear (no more waiting for every thumbnail to load first), and zooming a carousel is smooth.</li>
-                        <li><strong className="text-foreground font-medium">Polish throughout</strong> &mdash; transparent images preview on a checkerboard instead of black, glow and shadow follow a cut-out&apos;s real edges rather than its box, one consistent name (&ldquo;Transparency&rdquo;) for see-through everywhere, refreshing a library to make it searchable is sturdier and smarter &mdash; one clear progress message that can&apos;t be started twice, it saves as it goes so an interruption just picks up where it left off, and it no longer asks you to re-index photos already searchable from another drive &mdash; tidier tooltips, and dozens of smaller fixes.</li>
+                        <li><strong className="text-foreground font-medium">Polish throughout</strong> &mdash; transparent images preview on a checkerboard instead of black, glow and shadow follow a cut-out&apos;s real edges rather than its box, one consistent name (&ldquo;Transparency&rdquo;) for see-through everywhere, tidier tooltips, and dozens of smaller fixes.</li>
                       </ul>
                     </AccordionContent>
                   </AccordionItem>
