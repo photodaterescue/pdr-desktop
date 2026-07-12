@@ -606,9 +606,9 @@ export async function rebuildIndexFromLibraries(
         // were new, that meant ExifTool ran 67k pointless times —
         // a 30-minute scan. Now we filter walked → unindexed BEFORE
         // Phase 2, so ExifTool only sees the truly new files. The
-        // Phase 3 existing-paths recheck below stays as a defensive
-        // belt-and-braces (cheap on a small newRecords set; covers
-        // the case where another process inserted a row mid-scan).
+        // per-batch existing-paths recheck in flushBatch below stays as
+        // a defensive belt-and-braces (cheap; covers a path already
+        // saved by an earlier batch of this same resumable run).
         const knownExisting = findExistingFilePaths(walked);
         const files = walked.filter(p => !knownExisting.has(p));
         const total = files.length;
@@ -625,17 +625,41 @@ export async function rebuildIndexFromLibraries(
         }
 
         // Create one synthetic run per library so the UI can group + filter
-        // by library. Stable id keyed off rootPath so re-running the rebuild
-        // wouldn't keep accumulating duplicate runs (existing run is
-        // removed first by the caller via clearAllIndexData if desired).
+        // by library.
         const reportId = `library-rebuild-${path.basename(rootPath).replace(/[^A-Za-z0-9]+/g, '-')}-${Date.now()}`;
         const sourceLabels = `Library: ${rootPath}`;
-        const runId = insertRun(reportId, rootPath, sourceLabels);
-        runIds.push(runId);
 
-        // Phase 2: read EXIF + build records (only for the new files
-        // after the pre-filter above).
-        const records: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'>[] = [];
+        // v3.0.1 (Terry 2026-07-12) — BATCHED, RESUMABLE insert. Previously every new file's record
+        // was accumulated in memory and inserted in ONE go at the very end, so any interruption during
+        // the long EXIF read — a crash, a power cut, or PDR being restarted — lost the WHOLE run's work
+        // and left an empty run row behind (Terry's D: library: a 7,705-file refresh cut off by a
+        // restart saved nothing). Now we commit in small batches as we read, keeping the run's saved
+        // count current, so whatever finished is durably on disk. Because the pre-filter above skips
+        // files already in the index, simply re-running the refresh after an interruption resumes
+        // exactly where it left off. The run row is created LAZILY on the first committed batch, so an
+        // interruption before any batch lands leaves NO empty "ghost" run at all.
+        const BATCH_SIZE = 250;
+        let runId: number | null = null;
+        let insertedForRoot = 0;
+        let batch: Omit<IndexedFile, 'id' | 'run_id' | 'indexed_at'>[] = [];
+        const flushBatch = () => {
+          if (batch.length === 0) return;
+          // v2.0.6 data-loss guard — rebuild MUST be non-destructive. insertFiles UPSERTs on
+          // file_path, so drop any path already indexed (by an earlier batch of this same run, or a
+          // prior interrupted run) before inserting. Existing rows are left completely untouched.
+          const existing = findExistingFilePaths(batch.map(rec => rec.file_path));
+          const fresh = batch.filter(rec => !existing.has(rec.file_path));
+          batch = [];
+          if (fresh.length === 0) return;
+          if (runId == null) { runId = insertRun(reportId, rootPath, sourceLabels); runIds.push(runId); }
+          const n = insertFiles(runId, fresh);
+          insertedForRoot += n;
+          grandTotal += n;
+          updateRunFileCount(runId, insertedForRoot);
+        };
+
+        // Phase 2: read EXIF + build records (only for the new files after the pre-filter above),
+        // committing each batch as it fills.
         for (let i = 0; i < files.length; i++) {
           if (indexCancelled) break;
           const filePath = files[i];
@@ -703,52 +727,25 @@ export async function rebuildIndexFromLibraries(
 
           try {
             const record = await buildFileRecord(et, filePath, syntheticChange);
-            records.push(record);
+            batch.push(record);
           } catch (fileErr) {
             console.error(`[rebuild] Failed to build record for ${filePath}:`, fileErr);
           }
 
+          if (batch.length >= BATCH_SIZE) flushBatch();   // commit progress as we go — durable + resumable
           if (i % 50 === 0) {
             await new Promise((resolve) => setImmediate(resolve));
           }
         }
 
-        // Phase 3: insert
-        //
-        // v2.0.6 data-loss fix — rebuild MUST be non-destructive.
-        // The previous behaviour passed every walked file to insertFiles
-        // which UPSERTs on file_path, overwriting confidence,
-        // original_filename, date_source, and run_id on any pre-existing
-        // row. Terry's Parallel Library investigation 2026-05-16: the
-        // post-PL rebuild walked the destination tree and silently
-        // flipped Recovered → Confirmed and blanked Original Name on
-        // master-library rows whose paths happened to live under that
-        // tree. The rebuild's intent is "discover files PDR doesn't
-        // already know about" — never "re-classify what Fix earlier
-        // categorised." So we filter records down to file_paths NOT
-        // already in indexed_files, and insert only those. Existing
-        // rows are left completely untouched.
-        const allPaths = records.map(r => r.file_path);
-        const existing = findExistingFilePaths(allPaths);
-        const newRecords = records.filter(r => !existing.has(r.file_path));
-        const skippedExisting = records.length - newRecords.length;
+        // Commit the final partial batch. This also runs when the loop broke on cancel, so we KEEP
+        // whatever was already read rather than discarding it. (The non-destructive guarantee — never
+        // re-classify a file Fix already categorised — is enforced inside flushBatch via
+        // findExistingFilePaths before every insert; see the v2.0.6 note there.)
+        flushBatch();
 
-        onProgress?.({
-          phase: 'inserting',
-          rootIndex: r,
-          rootCount: rootPaths.length,
-          rootPath,
-          current: 0,
-          total: newRecords.length,
-          currentFile: '',
-        });
-        const inserted = newRecords.length > 0 ? insertFiles(runId, newRecords) : 0;
-        updateRunFileCount(runId, inserted);
-        grandTotal += inserted;
-        perRoot.push({ root: rootPath, runId, fileCount: inserted });
-        if (skippedExisting > 0) {
-          console.log(`[rebuild] ${rootPath}: ${inserted} new, ${skippedExisting} already-indexed (preserved)`);
-        }
+        perRoot.push({ root: rootPath, runId, fileCount: insertedForRoot });
+        console.log(`[rebuild] ${rootPath}: ${insertedForRoot} new file(s) saved${indexCancelled ? ' — interrupted, safe to resume' : ''}`);
       }
     } finally {
       // Free the ExifTool subprocess once all libraries are processed.
