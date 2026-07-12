@@ -444,7 +444,7 @@ import {
   getUserRotation,
   type SearchQuery,
 } from './search-database.js';
-import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, walkMediaFiles, type IndexProgress, type RebuildProgress } from './search-indexer.js';
+import { indexFixRun, cancelIndexing, shutdownIndexerExiftool, rebuildIndexFromLibraries, walkMediaFiles, walkMediaFilesAsync, type IndexProgress, type RebuildProgress } from './search-indexer.js';
 import { loadReport as loadReportForIndex } from './report-storage.js';
 import {
   gatherTakeoutEnrichmentFromFixResults,
@@ -11326,7 +11326,10 @@ ipcMain.handle('library:countOnDiskFiles', async (_event, rootPath: unknown) => 
     if (!fs.existsSync(rootPath)) {
       return { success: true, data: { onDiskCount: null, uncoveredCount: null, reachable: false } };
     }
-    const files = walkMediaFiles(rootPath);
+    // v3.0.1 (Terry 2026-07-12) — yielding walk so a 73k-file library doesn't
+    // freeze the titlebar drag (WM_NCHITTEST) while this probe runs on the main
+    // thread on every Dashboard mount ("having to grab the titlebar several times").
+    const files = await walkMediaFilesAsync(rootPath);
     const onDiskCount = files.length;
 
     // v3.0.1 (Terry 2026-07-12) — "uncovered" count: on-disk media files under
@@ -11355,6 +11358,9 @@ ipcMain.handle('library:countOnDiskFiles', async (_event, rootPath: unknown) => 
     let uncoveredCount = cheapGap;
     if (cheapGap > gapThreshold) {
       try {
+        // Let the message pump run before the (synchronous) index read + Set build
+        // so the titlebar drag isn't blocked back-to-back with the walk above.
+        await new Promise<void>((resolve) => setImmediate(resolve));
         const db = getDb();
         const rows = db.prepare(`SELECT filename, size_bytes FROM indexed_files WHERE filename != '' AND size_bytes > 0`).all() as { filename: string; size_bytes: number }[];
         const covered = new Set<string>();

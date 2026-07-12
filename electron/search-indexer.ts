@@ -517,6 +517,47 @@ export function walkMediaFiles(root: string): string[] {
   return results;
 }
 
+// v3.0.1 (Terry 2026-07-12) — async, event-loop-YIELDING twin of walkMediaFiles.
+// The synchronous walk of a 73k-file library blocks the Electron MAIN thread for
+// ~500ms. During that block Windows can't service the titlebar's
+// -webkit-app-region drag hit-test, so the user "has to grab the titlebar
+// several times to move the window". This variant yields to the event loop every
+// 200 directories so the message pump keeps running and the window stays
+// draggable. Used by the countOnDiskFiles probe (Dashboard banner + Library Drive
+// Manager), which runs on every Dashboard mount. The rebuild keeps the plain sync
+// walkMediaFiles (it runs to completion off the interactive path anyway).
+export async function walkMediaFilesAsync(root: string): Promise<string[]> {
+  const results: string[] = [];
+  const stack: string[] = [toLongPath(root)];
+  let sinceYield = 0;
+  while (stack.length > 0) {
+    const dir = stack.pop()!;
+    let entries: fs.Dirent[];
+    try {
+      entries = fs.readdirSync(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const ent of entries) {
+      if (ent.name.startsWith('.') || ent.name.startsWith('$')) continue;
+      if (ent.name === 'System Volume Information') continue;
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        stack.push(full);
+      } else if (ent.isFile()) {
+        const ext = path.extname(ent.name).toLowerCase();
+        if (MEDIA_EXTENSIONS_FOR_REBUILD.has(ext)) {
+          results.push(fromLongPath(full));
+        }
+      }
+    }
+    // Yield after every 200 directories so the main thread's message pump runs
+    // (keeps the titlebar draggable + IPC responsive during a big walk).
+    if (++sinceYield >= 200) { sinceYield = 0; await new Promise<void>((resolve) => setImmediate(resolve)); }
+  }
+  return results;
+}
+
 export interface RebuildProgress {
   phase: 'walking' | 'reading-exif' | 'inserting' | 'complete';
   rootIndex: number;
