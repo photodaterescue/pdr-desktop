@@ -1002,6 +1002,26 @@
     }
     allButtons.forEach(function (el) {
       if (!el) return;
+      // v3.0.2 (Terry 2026-07-12) — several buttons RE-SET their `title` dynamically
+      // as recording state changes (cam-only, mic, pause, zoom, blur, the confirm
+      // buttons…). If that fires WHILE the button is hovered — after mouseenter has
+      // already stripped the title — the native OS tooltip reappears and can leak into
+      // the footage (Terry caught "Cam only — hide the desktop…" showing native after
+      // toggling cam-only). Watch the title attribute and re-strip anything set while
+      // this button is the active/stripped one, keeping the PDR tooltip text current.
+      try {
+        var mo = new MutationObserver(function () {
+          if (el !== tipEl) return;                  // only the currently-hovered (stripped) button
+          var t = el.getAttribute('title');
+          if (t == null || t === '') return;         // our own removeAttribute — ignore
+          el._tipText = t;                           // remember the new text for restore-on-leave
+          el.removeAttribute('title');               // re-strip so no native tooltip shows
+          if (!tipTimer) {                            // PDR tooltip already visible → refresh its text
+            try { var r = el.getBoundingClientRect(); pdr.capture.recordTip({ text: t, x: r.left + r.width / 2, y: r.top }); } catch (e) {}
+          }
+        });
+        mo.observe(el, { attributes: true, attributeFilter: ['title'] });
+      } catch (e) { /* MutationObserver unavailable — non-fatal */ }
       el.addEventListener('mouseenter', function () {
         var text = el.getAttribute('title') || el.getAttribute('aria-label');
         if (!text) return;
