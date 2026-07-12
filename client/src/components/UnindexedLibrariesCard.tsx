@@ -33,6 +33,11 @@ interface LibraryRow {
   path: string;
   indexedCount: number;
   onDiskCount: number | null; // null when path isn't reachable
+  // v3.0.1 (Terry 2026-07-12) — on-disk files NOT covered anywhere in the index
+  // by (filename, size). This, not the raw onDisk−indexed gap, is what actually
+  // "needs refreshing": files already indexed under another drive (a test/backup
+  // copy of the real library) are searchable and must not nag. null = unreachable.
+  uncoveredCount: number | null;
 }
 
 const SAVED_DESTINATIONS_KEY = 'pdr-saved-destinations';
@@ -90,6 +95,7 @@ export function UnindexedLibrariesCard() {
             path: p,
             indexedCount: idxRes.data?.indexedFileCount ?? 0,
             onDiskCount: diskRes.data?.reachable ? (diskRes.data?.onDiskCount ?? 0) : null,
+            uncoveredCount: diskRes.data?.reachable ? (diskRes.data?.uncoveredCount ?? 0) : null,
           };
         } catch { return null; }
       }));
@@ -143,15 +149,17 @@ export function UnindexedLibrariesCard() {
   if (dismissedAt) return null;
   if (refreshRunning) return null;   // a refresh (here or the Library Drive Manager) is in flight
 
-  // 5 % slack so a single new file between the two probes doesn't
-  // trip the banner. Unreachable libraries (onDiskCount === null)
-  // are excluded because we can't actually compare.
-  const stale = rows.filter((r) =>
-    r.onDiskCount !== null && r.onDiskCount > Math.ceil(r.indexedCount * 1.05)
-  );
+  // v3.0.1 (Terry 2026-07-12) — a library is "stale" only if it has a real
+  // number of files that aren't indexed ANYWHERE (uncoveredCount), not merely
+  // files missing from THIS path's rows. This stops the banner nagging about a
+  // test/backup drive whose photos are already searchable via the real library
+  // (they de-dupe to the other drive, so onDisk−indexed looks big but uncovered
+  // is ~0). Small floor of 10 so a handful of freshly-added files don't nag.
+  // Unreachable libraries (uncoveredCount === null) are excluded.
+  const stale = rows.filter((r) => r.uncoveredCount !== null && r.uncoveredCount > 10);
   if (stale.length === 0) return null;
 
-  const totalMissing = stale.reduce((sum, r) => sum + ((r.onDiskCount ?? 0) - r.indexedCount), 0);
+  const totalMissing = stale.reduce((sum, r) => sum + (r.uncoveredCount ?? 0), 0);
 
   const handleDismiss = async () => {
     try {

@@ -272,6 +272,12 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
   // the pill stays hidden in that case to avoid prompting users to
   // index something we can't even read.
   const [onDiskCounts, setOnDiskCounts] = useState<Record<string, number | null>>({});
+  // v3.0.1 (Terry 2026-07-12) — on-disk files NOT indexed ANYWHERE (by filename
+  // + size), per root. This, not onDisk−indexed, is the real "needs refresh"
+  // count: a test/backup drive whose photos are already indexed under the real
+  // library de-dupes to that drive, so its rows drop from ITS path but the
+  // photos stay searchable — those must not show a "+N to refresh" pill.
+  const [uncoveredCounts, setUncoveredCounts] = useState<Record<string, number | null>>({});
   // Per-path indexing state — set when a per-row Index pill is
   // clicked. Disables the pill + shows progress until the
   // rebuildProgress subscription fires its terminal 'complete' event.
@@ -523,6 +529,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
     const uniquePaths = Array.from(new Set(paths.filter(p => typeof p === 'string' && p.length > 0)));
     if (uniquePaths.length === 0) {
       setOnDiskCounts({});
+      setUncoveredCounts({});
       return;
     }
     try {
@@ -530,16 +537,19 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         try {
           const res = await (window as any).pdr?.library?.countOnDiskFiles?.(p);
           if (res?.success && res.data?.reachable) {
-            return [p, (res.data.onDiskCount as number) ?? 0] as const;
+            // uncoveredCount = on-disk files not indexed anywhere (by filename+size)
+            return [p, (res.data.onDiskCount as number) ?? 0, (res.data.uncoveredCount as number) ?? 0] as const;
           }
-          return [p, null] as const;
+          return [p, null, null] as const;
         } catch {
-          return [p, null] as const;
+          return [p, null, null] as const;
         }
       }));
       const map: Record<string, number | null> = {};
-      entries.forEach(([p, c]) => { map[p] = c; });
+      const umap: Record<string, number | null> = {};
+      entries.forEach(([p, c, u]) => { map[p] = c; umap[p] = u; });
       setOnDiskCounts(map);
+      setUncoveredCounts(umap);
     } catch (e) {
       console.warn('[LibraryPanel] onDiskCounts refresh failed:', e);
     }
@@ -1252,7 +1262,10 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       onProgress: (p) => {
         if (p.phase === 'complete') return;            // terminal (rootPath=''): handled by onSettled
         if (p.rootPath !== targetPath) return;          // ignore other roots' events
-        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase: p.phase, current: p.current, total: p.total } }));
+        // Capture the narrowed phase in a const — the narrowing from the early
+        // return above doesn't carry into the nested setState closure otherwise.
+        const phase = p.phase, current = p.current, total = p.total;
+        setIndexingProgress(prev => ({ ...prev, [targetPath]: { phase, current, total } }));
       },
       onSettled: () => {
         setIndexingPaths(prev => { const next = new Set(prev); next.delete(targetPath); return next; });
@@ -1789,6 +1802,10 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
       // indexedFileCount by more than the 5 % slack. null when the
       // probe hasn't completed yet OR the path isn't reachable.
       onDiskCount: number | null;
+      // v3.0.1 (Terry 2026-07-12) — on-disk files not indexed ANYWHERE
+      // (by filename+size). Drives the pill instead of onDisk−indexed, so a
+      // test/backup drive already covered by the real library doesn't nag.
+      uncoveredCount: number | null;
     };
     const allDrives: UnifiedDriveRow[] = [];
     if (currentPath) {
@@ -1824,6 +1841,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         busType: driveDetails?.busType ?? null,
         mediaType: driveDetails?.mediaType ?? null,
         onDiskCount: onDiskCounts[currentPath] ?? null,
+        uncoveredCount: uncoveredCounts[currentPath] ?? null,
       });
     }
     // Compute the set of drive letters already covered by a registered
@@ -1872,6 +1890,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         busType: null,
         mediaType: null,
         onDiskCount: onDiskCounts[d.path] ?? null,
+        uncoveredCount: uncoveredCounts[d.path] ?? null,
       });
     });
 
@@ -1923,6 +1942,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
         busType: details?.busType ?? null,
         mediaType: details?.mediaType ?? null,
         onDiskCount: onDiskCounts[savedPath] ?? null,
+        uncoveredCount: uncoveredCounts[savedPath] ?? null,
       });
     });
 
@@ -2295,9 +2315,13 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
                         {(() => {
                           if (drive.onDiskCount === null) return null;
                           const isIndexing = indexingPaths.has(drive.path);
-                          const gap = drive.onDiskCount - drive.indexedFileCount;
-                          const slack = Math.ceil(drive.indexedFileCount * 0.05);
-                          if (!isIndexing && gap <= slack) return null;
+                          // v3.0.1 (Terry 2026-07-12) — the pill counts files not indexed
+                          // ANYWHERE (uncoveredCount), not this path's onDisk−indexed gap, so a
+                          // test/backup drive whose photos are already searchable via the real
+                          // library (they de-dupe to that drive) no longer nags "+N to refresh".
+                          // Falls back to the raw gap only until the uncovered probe lands.
+                          const gap = drive.uncoveredCount ?? Math.max(0, drive.onDiskCount - drive.indexedFileCount);
+                          if (!isIndexing && gap <= 10) return null;
                           // Live progress label. The pill renders the
                           // phase + percentage so the user sees how
                           // far the indexer's got without having to

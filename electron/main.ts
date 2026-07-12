@@ -11324,11 +11324,61 @@ ipcMain.handle('library:countOnDiskFiles', async (_event, rootPath: unknown) => 
     // Return a distinct flag instead so the caller can hide the row
     // from comparisons until the drive comes back.
     if (!fs.existsSync(rootPath)) {
-      return { success: true, data: { onDiskCount: null, reachable: false } };
+      return { success: true, data: { onDiskCount: null, uncoveredCount: null, reachable: false } };
     }
     const files = walkMediaFiles(rootPath);
-    log.info(`[library:countOnDiskFiles] rootPath=${JSON.stringify(rootPath)} onDiskCount=${files.length}`);
-    return { success: true, data: { onDiskCount: files.length, reachable: true } };
+    const onDiskCount = files.length;
+
+    // v3.0.1 (Terry 2026-07-12) — "uncovered" count: on-disk media files under
+    // this path whose (filename, size) is NOT in the index ANYWHERE. The plain
+    // gap (onDisk − indexed-under-this-path) over-reports for a library whose
+    // files are already indexed under a DIFFERENT drive: PDR de-duplicates the
+    // index by (filename, size_bytes) at startup, so an old test/backup drive
+    // that holds copies of the real library gets its rows dropped from ITS path
+    // yet the photos ARE searchable via the real drive. Counting those as
+    // "needs refresh" is what wrongly nagged Terry to re-index H: files already
+    // covered by D:. So we count only files covered NOWHERE.
+    let indexedHere = 0;
+    try {
+      const db = getDb();
+      let prefix = rootPath.replace(/[\\/]+$/, '').replace(/\\/g, '\\\\').replace(/%/g, '\\%').replace(/_/g, '\\_');
+      const likeWin = `${prefix}\\\\%`;
+      const likePosix = `${prefix.replace(/\\\\/g, '/')}/%`;
+      indexedHere = (db.prepare(`SELECT COUNT(*) AS c FROM indexed_files WHERE file_path LIKE ? ESCAPE '\\' OR file_path LIKE ? ESCAPE '\\'`).get(likeWin, likePosix) as { c: number }).c;
+    } catch { /* best-effort; leaves indexedHere = 0 */ }
+
+    const cheapGap = Math.max(0, onDiskCount - indexedHere);
+    // Only do the expensive covered-elsewhere check when the cheap gap is
+    // non-trivial — so a fully-indexed 73k-file library isn't stat'd on every
+    // probe. A fully-indexed path just reports its (tiny) cheap gap.
+    const gapThreshold = Math.max(5, Math.floor(onDiskCount * 0.02));
+    let uncoveredCount = cheapGap;
+    if (cheapGap > gapThreshold) {
+      try {
+        const db = getDb();
+        const rows = db.prepare(`SELECT filename, size_bytes FROM indexed_files WHERE filename != '' AND size_bytes > 0`).all() as { filename: string; size_bytes: number }[];
+        const covered = new Set<string>();
+        for (const r of rows) covered.add(`${r.filename} ${r.size_bytes}`);
+        let uncovered = 0;
+        const BATCH = 500;
+        for (let i = 0; i < files.length; i += BATCH) {
+          const end = Math.min(i + BATCH, files.length);
+          for (let j = i; j < end; j++) {
+            let size = -1;
+            try { size = fs.statSync(files[j]).size; } catch { /* unreadable → treat as uncovered */ }
+            if (!covered.has(`${path.basename(files[j])} ${size}`)) uncovered++;
+          }
+          // Yield between batches so the main thread stays responsive.
+          await new Promise<void>((resolve) => setImmediate(resolve));
+        }
+        uncoveredCount = uncovered;
+      } catch (e) {
+        log.warn('[library:countOnDiskFiles] covered-elsewhere check failed; using cheap gap:', (e as Error).message);
+      }
+    }
+
+    log.info(`[library:countOnDiskFiles] rootPath=${JSON.stringify(rootPath)} onDiskCount=${onDiskCount} indexedHere=${indexedHere} uncovered=${uncoveredCount}`);
+    return { success: true, data: { onDiskCount, uncoveredCount, reachable: true } };
   } catch (err) {
     log.error('[library:countOnDiskFiles] failed:', (err as Error).message);
     return { success: false, error: (err as Error).message };
