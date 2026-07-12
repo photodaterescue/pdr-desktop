@@ -12680,21 +12680,23 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
-                  {/* v3.0.1 (Terry 2026-07-09/10) — point release: a big, focused polish
+                  {/* v3.0.2 (Terry 2026-07-12) — point release: a big, focused polish
                       pass on Collages & Carousels (text studio, emoji effects, format painter,
                       carousel behaviour) AND Screen Capture (virtual camera backgrounds, second
-                      camera + bubble controls, Tiny quality, stop-save double-check) + Viewer/
-                      Collages open-instantly perf. Sits above v3.0.0; carries the "Current
-                      version" tag once appVersion is 3.0.1. */}
+                      camera + bubble controls + size slider, cam-only full-screen, Tiny quality,
+                      stop-save double-check) + Viewer/Collages open-instantly perf + a sturdier,
+                      smarter library refresh. Supersedes the brief v3.0.1 (2 days out) — this entry
+                      covers everything in it plus the extra polish. Carries the "Current version"
+                      tag once appVersion is 3.0.2. */}
                   <AccordionItem
-                    value="ver-3.0.1"
-                    id="changelog-ver-3.0.1"
+                    value="ver-3.0.2"
+                    id="changelog-ver-3.0.2"
                     className="border border-border rounded-lg px-4"
                   >
                     <AccordionTrigger className="text-foreground font-medium hover:no-underline">
                       <div className="flex items-center gap-2">
-                        <span>v3.0.1</span>
-                        {appVersion === '3.0.1' && (
+                        <span>v3.0.2</span>
+                        {appVersion === '3.0.2' && (
                           <span className="text-xs font-normal text-emerald-600 ml-1">— Current version</span>
                         )}
                       </div>
