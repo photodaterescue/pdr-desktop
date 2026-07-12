@@ -45,7 +45,6 @@ export function TranscriptBadge({ hasTranscript, hasCaption = false }: Transcrip
       className={`pointer-events-none absolute bottom-1.5 ${rightClass} w-5 h-5 rounded-full bg-primary ring-1 ring-black/15 shadow-sm flex items-center justify-center`}
       aria-hidden="true"
       data-testid="transcript-badge"
-      title="Transcript available"
     >
       <span className="text-[10px] font-bold leading-none text-primary-foreground">T</span>
     </div>
