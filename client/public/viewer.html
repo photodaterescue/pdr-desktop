@@ -15499,22 +15499,42 @@
       const _gRect = collageCanvasEl.getBoundingClientRect();
       const s2cX = (_gRect.width > 0) ? (collageCanvasEl.clientWidth / _gRect.width) : 1;
       const s2cY = (_gRect.height > 0) ? (collageCanvasEl.clientHeight / _gRect.height) : 1;
+      // v3.0.3 (Terry SS1) — SCOPE the gold guide to the dragged tile, NOT the whole canvas. A guide
+      // that spans the full page height, and worse the full width across all 6 carousel pages, is
+      // meaningless noise (Terry: "the horizontal one going across all 6 pages makes no sense"). Draw
+      // each guide only as a short segment covering the tile's own extent + a small margin, on the
+      // snapped axis — a local alignment cue. Falls back to the full span if no single tile is focused.
+      const _cw = collageCanvasEl.clientWidth, _ch = collageCanvasEl.clientHeight;
+      let _fL = 0, _fT = 0, _fW = _cw, _fH = _ch;
+      const _selEl = (typeof collageSelected !== 'undefined' && collageSelected && collageSelected.el) ? collageSelected.el : null;
+      if (_selEl) {
+        const fr = _selEl.getBoundingClientRect();
+        const M = 36;   // layout-px margin so the stub reads a touch past the tile edge
+        _fL = Math.max(0, (fr.left - _gRect.left) * s2cX - M);
+        _fT = Math.max(0, (fr.top - _gRect.top) * s2cY - M);
+        _fW = Math.min(_cw - _fL, fr.width * s2cX + 2 * M);
+        _fH = Math.min(_ch - _fT, fr.height * s2cY + 2 * M);
+      }
       if (vGuide != null) {
         if (!collageSnapVEl) {
           collageSnapVEl = document.createElement('div');
-          collageSnapVEl.style.cssText = 'position:absolute;top:0;width:1px;height:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
+          collageSnapVEl.style.cssText = 'position:absolute;width:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapVEl);
         }
         collageSnapVEl.style.left = Math.round(vGuide * s2cX) + 'px';
+        collageSnapVEl.style.top = Math.round(_fT) + 'px';
+        collageSnapVEl.style.height = Math.max(1, Math.round(_fH)) + 'px';
         collageSnapVEl.style.display = 'block';
       } else if (collageSnapVEl) { collageSnapVEl.style.display = 'none'; }
       if (hGuide != null) {
         if (!collageSnapHEl) {
           collageSnapHEl = document.createElement('div');
-          collageSnapHEl.style.cssText = 'position:absolute;left:0;height:1px;width:100%;background:#FEC242;pointer-events:none;z-index:2147483646;';
+          collageSnapHEl.style.cssText = 'position:absolute;height:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapHEl);
         }
         collageSnapHEl.style.top = Math.round(hGuide * s2cY) + 'px';
+        collageSnapHEl.style.left = Math.round(_fL) + 'px';
+        collageSnapHEl.style.width = Math.max(1, Math.round(_fW)) + 'px';
         collageSnapHEl.style.display = 'block';
       } else if (collageSnapHEl) { collageSnapHEl.style.display = 'none'; }
     }
