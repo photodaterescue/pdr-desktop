@@ -2531,21 +2531,36 @@ ipcMain.handle('collage:saveCarousel', async (_event, layout: CollageLayout, pag
       }
     }
 
+    // v3.0.3 (Terry) — DPR-correct slicing. captureCollageExport returns an offscreen paint
+    // frame at the display's scaleFactor, so on a HiDPI screen wideBuf comes back at
+    // wideWidth×wideHeight in DEVICE pixels (e.g. n*1080*2.5 × 1350*2.5), NOT the nominal
+    // n*1080 × 1350. Slicing with fixed logical 1080-px offsets then kept only the top-left
+    // 1/scaleFactor of each page — at 250% scaling that's the top 40%, the bottom 60% cropped
+    // (Terry's multi-page background vanished below the fold in the export). This bit carousels
+    // only; the single-collage path (saveLayout) adopts the real captured dims and was always
+    // safe. Fix: derive each slice's geometry from the REAL buffer width, then downscale to the
+    // canonical 1080×1350 IG slide size — a no-op on 100% displays, a clean supersample on HiDPI.
+    const sliceW = Math.max(1, Math.round(wideWidth / n));
+    const sliceH = wideHeight;
     const files: Array<{ filePath: string; filename: string; fileId: number | null }> = [];
     for (let i = 0; i < n; i++) {
-      const left = i * CAROUSEL_SLICE_W;
-      // Slice-accuracy guard: the crop must sit wholly inside the baked buffer.
-      // If the bake came back narrower than expected (clamp / unexpected dims),
-      // stop rather than ask sharp to extract past the edge (which throws).
-      if (left + CAROUSEL_SLICE_W > wideWidth || CAROUSEL_SLICE_H > wideHeight) {
-        log.warn(`[collage] carousel slice ${i + 1} out of bounds (left ${left}+${CAROUSEL_SLICE_W} > wide ${wideWidth}×${wideHeight}) — stopping`);
+      const left = i * sliceW;
+      // Slice-accuracy guard: the crop must sit wholly inside the captured buffer.
+      // If capture came back narrower than expected, stop rather than ask sharp to
+      // extract past the edge (which throws).
+      if (left + sliceW > wideWidth || sliceH > wideHeight) {
+        log.warn(`[collage] carousel slice ${i + 1} out of bounds (left ${left}+${sliceW} > wide ${wideWidth}×${wideHeight}) — stopping`);
         break;
       }
       let buf: Buffer;
       try {
-        // Each slice is EXACTLY 1080×1350. PNG when transparent (keep alpha),
-        // else mozjpeg q92 — matching the single-collage encoder choice.
-        const slice = sharp(wideBuf).extract({ left, top: 0, width: CAROUSEL_SLICE_W, height: CAROUSEL_SLICE_H });
+        // Extract the full-height page region at its true (possibly DPR-scaled) size, then
+        // resize to EXACTLY 1080×1350 (the size each slide is indexed at below). The page
+        // region is already 4:5, so fit:'fill' hits the exact dims without distortion. PNG
+        // when transparent (keep alpha), else mozjpeg q92 — matching the single-collage encoder.
+        const slice = sharp(wideBuf)
+          .extract({ left, top: 0, width: sliceW, height: sliceH })
+          .resize(CAROUSEL_SLICE_W, CAROUSEL_SLICE_H, { fit: 'fill' });
         buf = transparent
           ? await slice.png().toBuffer()
           : await slice.jpeg({ quality: 92, mozjpeg: true }).toBuffer();

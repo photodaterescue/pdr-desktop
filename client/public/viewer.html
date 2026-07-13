@@ -10289,7 +10289,11 @@
         el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         el.textContent = String(val);
-        el.style.display = val > 0 ? 'block' : 'none';
+        // v3.0.3 (Terry) — show "0" on any edge that's flush/snapped (was val > 0, which hid it,
+        // so he couldn't tell at-the-edge from just-before/just-past). A tile in a corner snaps both
+        // axes to 0 → both pills read 0. The connector line above stays gated (nothing to draw at a
+        // zero gap), so this renders a clean "0" pill sitting right on the snapped edge.
+        el.style.display = val >= 0 ? 'block' : 'none';
       };
       line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL, peL);
       badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL);
@@ -19319,18 +19323,18 @@
     // the real aspect from the loaded <img> when available (falls back to it.aspect before load).
     function placeInCarouselSliceFit(it, sliceIdx) {
       const N = Math.max(1, carouselPageCount);
-      const cw = collageCanvasEl.clientWidth || 1, ch = collageCanvasEl.clientHeight || 1;
       const a = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (it.aspect || 1);
-      // v3.0.0 (Terry 2026-07-06) — shape the tile BOX to the photo. Without this, it.aspect stayed
-      // at the default 1 (square), so a landscape photo's box rendered TALLER than the photo →
-      // spare empty space below it in the carousel (and collage). effectiveAspect() reads it.aspect.
+      // Shape the tile BOX to the photo's real aspect (renderCollageItem reads it.aspect for the box height).
       it.aspect = a;
-      const sliceWpx = cw / N, sliceHpx = ch;
-      let wpx = sliceWpx, hpx = wpx / a;
-      if (hpx > sliceHpx) { hpx = sliceHpx; wpx = hpx * a; }
-      it.wFrac = wpx / cw;
-      it.xFrac = sliceIdx / N + (sliceWpx - wpx) / (2 * cw);
-      it.yFrac = Math.max(0, (sliceHpx - hpx) / (2 * ch));
+      // v3.0.3 (Terry) — STARTING placement = flush to the page's TOP-LEFT at full page WIDTH: the
+      // right edge meets the page edge, and the height follows the photo's own aspect so the BOTTOM
+      // lands wherever landscape/portrait puts it (a landscape shot leaves a gap below; a tall
+      // portrait runs past the page bottom). No crop, no vertical centring, no height clamp — this is
+      // just the anchor the user resizes from. (Was: fit-inside-the-slice + vertical centring, which
+      // letterboxed a landscape photo with equal gaps top AND bottom and read as "the frame's wrong size".)
+      it.wFrac = 1 / N;
+      it.xFrac = sliceIdx / N;
+      it.yFrac = 0;
     }
     function addPhotoToCollage(fp, noGrid) {
       if (!fp || !collageMode) return;
@@ -19366,7 +19370,7 @@
         const sliceOf = (t) => Math.floor((((t.xFrac || 0) + (t.wFrac || 0) / 2)) * carouselPageCount);
         const occ = collageItems.filter((t) => t && t.on && !t.isBg && t !== it && sliceOf(t) === slice).length;
         const fitToPage = () => {
-          placeInCarouselSliceFit(it, slice);   // first photo on the page fills it, like a proper slide
+          placeInCarouselSliceFit(it, slice);   // first photo anchors top-left at full page width (natural height)
           if (occ > 0) {
             // the page already has a photo — drop this one SMALLER + offset so it's a distinct, draggable
             // card (a full-page fit would sit exactly on top of the existing one → looks like nothing happened).
@@ -19553,7 +19557,17 @@
         bgRemovedPath: null, bgRemoveStrength: 50,
         enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
       };
-      placeCenter(it);   // sensible default size + centred, like a normal tile
+      // v3.0.3 (Terry) — a Background photo starts flush to the page's TOP-LEFT at full page WIDTH
+      // (the right edge meets the page edge), height following the photo's own aspect so the bottom
+      // varies with landscape/portrait. The user resizes from this anchor — e.g. drag it wider to span
+      // carousel pages. Carousel → the focused page; single collage → the whole canvas. (Was
+      // placeCenter: a ~42%-of-page-width centred floating tile, which Terry read as a gap / wrong-sized frame.)
+      if (carouselMode) {
+        placeInCarouselSliceFit(it, Math.max(0, Math.min(Math.max(1, carouselPageCount) - 1, carouselFocusPage | 0)));
+      } else {
+        it.wFrac = 1; it.xFrac = 0; it.yFrac = 0;
+        it.aspect = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (it.aspect || 1);
+      }
       collageItems.push(it);
       buildCollageItemEl(it);
       renderCollageItem(it);
