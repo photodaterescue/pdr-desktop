@@ -10276,37 +10276,45 @@
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
       const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
-      const line = (el, x, y, len, horiz, sym, pe) => {
+      const line = (el, x, y, len, horiz, sym, pe, show) => {
         el.classList.toggle('pageEq', !!pe);
         el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         if (horiz) { el.style.width = Math.max(0, len) + 'px'; el.style.height = '1px'; }
         else { el.style.height = Math.max(0, len) + 'px'; el.style.width = '1px'; }
-        el.style.display = len > 2 ? 'block' : 'none';
+        el.style.display = (show && len > 2) ? 'block' : 'none';
       };
-      const badge = (el, x, y, val, sym, pe, atEdge) => {
+      const badge = (el, x, y, val, sym, pe, atEdge, show) => {
         el.classList.toggle('pageEq', !!pe);
         el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         el.textContent = String(val);
-        // v3.0.3 (Terry) — a positive gap always shows; "0" shows ONLY when this side is flush to a
-        // real canvas/page EDGE. The earlier val >= 0 surfaced a spurious "0" whenever the nearest
-        // reference happened to be a touching NEIGHBOUR (Terry SS1: "0 on the top edge when there's
-        // clearly a gap to the canvas"). atEdge = this side's reference IS the canvas/page edge.
-        el.style.display = (val > 0 || (val === 0 && atEdge)) ? 'block' : 'none';
+        // v3.0.3 (Terry) — a positive gap shows; "0" shows ONLY when this side is flush to a real
+        // canvas/page EDGE. The earlier val >= 0 surfaced a spurious "0" whenever the nearest reference
+        // was a touching NEIGHBOUR (Terry SS1: "0 on the top when there's clearly a gap to the canvas").
+        el.style.display = (show && (val > 0 || (val === 0 && atEdge))) ? 'block' : 'none';
       };
       // A side is "at a real edge" only when its reference stayed the canvas/page edge (no nearer
       // neighbour claimed it). c is the tile's page rect in carousel mode, the whole canvas otherwise.
       const atEdgeL = Math.abs(leftRef - c.left) < 0.5, atEdgeR = Math.abs(rightRef - c.right) < 0.5;
       const atEdgeT = Math.abs(topRef - c.top) < 0.5, atEdgeB = Math.abs(botRef - c.bottom) < 0.5;
-      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL, peL);
-      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL, atEdgeL);
-      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR, peR);
-      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR, peR, atEdgeR);
-      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT, peT);
-      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT, peT, atEdgeT);
-      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB, peB);
-      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB, atEdgeB);
+      // v3.0.3 (Terry) — Canva-style "hide until near": a distance to a PAGE/CANVAS EDGE only shows as
+      // you APPROACH or snap to that edge, not as a long ruler across the empty part of a tall carousel
+      // page (Terry SS2). A distance to a NEIGHBOUR always shows (the spacing/equidistant cue). "Near" =
+      // within 15% of the page dimension on that axis; a snapped side (green grX / lavender peX) always reveals.
+      const revealX = 0.15 * c.width, revealY = 0.15 * c.height;
+      const showL = !atEdgeL || mLeft < revealX || grL || peL;
+      const showR = !atEdgeR || mRight < revealX || grR || peR;
+      const showT = !atEdgeT || mTop < revealY || grT || peT;
+      const showB = !atEdgeB || mBot < revealY || grB || peB;
+      line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL, peL, showL);
+      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL, atEdgeL, showL);
+      line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR, peR, showR);
+      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR, peR, atEdgeR, showR);
+      line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT, peT, showT);
+      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT, peT, atEdgeT, showT);
+      line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB, peB, showB);
+      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB, atEdgeB, showB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
       // v3.1 (Terry) — activating the container for a TEXT/EMOJI measure must not resurrect
