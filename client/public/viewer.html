@@ -10284,25 +10284,29 @@
         else { el.style.height = Math.max(0, len) + 'px'; el.style.width = '1px'; }
         el.style.display = len > 2 ? 'block' : 'none';
       };
-      const badge = (el, x, y, val, sym, pe) => {
+      const badge = (el, x, y, val, sym, pe, atEdge) => {
         el.classList.toggle('pageEq', !!pe);
         el.classList.toggle('sym', !!sym && !pe);
         el.style.left = x + 'px'; el.style.top = y + 'px';
         el.textContent = String(val);
-        // v3.0.3 (Terry) — show "0" on any edge that's flush/snapped (was val > 0, which hid it,
-        // so he couldn't tell at-the-edge from just-before/just-past). A tile in a corner snaps both
-        // axes to 0 → both pills read 0. The connector line above stays gated (nothing to draw at a
-        // zero gap), so this renders a clean "0" pill sitting right on the snapped edge.
-        el.style.display = val >= 0 ? 'block' : 'none';
+        // v3.0.3 (Terry) — a positive gap always shows; "0" shows ONLY when this side is flush to a
+        // real canvas/page EDGE. The earlier val >= 0 surfaced a spurious "0" whenever the nearest
+        // reference happened to be a touching NEIGHBOUR (Terry SS1: "0 on the top edge when there's
+        // clearly a gap to the canvas"). atEdge = this side's reference IS the canvas/page edge.
+        el.style.display = (val > 0 || (val === 0 && atEdge)) ? 'block' : 'none';
       };
+      // A side is "at a real edge" only when its reference stayed the canvas/page edge (no nearer
+      // neighbour claimed it). c is the tile's page rect in carousel mode, the whole canvas otherwise.
+      const atEdgeL = Math.abs(leftRef - c.left) < 0.5, atEdgeR = Math.abs(rightRef - c.right) < 0.5;
+      const atEdgeT = Math.abs(topRef - c.top) < 0.5, atEdgeB = Math.abs(botRef - c.bottom) < 0.5;
       line(els.lL, leftRef - s.left, cyMid - s.top, mLeft, true, grL, peL);
-      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL);
+      badge(els.bL, leftRef + mLeft / 2 - s.left, cyMid - s.top, pxX(mLeft), grL, peL, atEdgeL);
       line(els.lR, r.right - s.left, cyMid - s.top, mRight, true, grR, peR);
-      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR, peR);
+      badge(els.bR, r.right + mRight / 2 - s.left, cyMid - s.top, pxX(mRight), grR, peR, atEdgeR);
       line(els.lT, cxMid - s.left, topRef - s.top, mTop, false, grT, peT);
-      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT, peT);
+      badge(els.bT, cxMid - s.left, topRef + mTop / 2 - s.top, pxY(mTop), grT, peT, atEdgeT);
       line(els.lB, cxMid - s.left, r.bottom - s.top, mBot, false, grB, peB);
-      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB);
+      badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, pxY(mBot), grB, peB, atEdgeB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
       // v3.1 (Terry) — activating the container for a TEXT/EMOJI measure must not resurrect
@@ -22043,8 +22047,18 @@
       const cr = collageCanvasEl.getBoundingClientRect();
       const _imgs = document.querySelectorAll('#collage-canvas img');
       let _loaded = 0; _imgs.forEach((im) => { if (im.complete && im.naturalWidth > 0) _loaded++; });
+      // v3.0.3 (Terry) — TEMP #1 diagnostics: dump each background / wide tile's ACTUAL rendered box vs
+      // the page so we can see why a spanning background exports shorter than the editor. boxHFrac<1 =
+      // the box stops short of the page bottom (bare canvas below — the crop Terry hit).
+      let _bgDbg = null;
+      try {
+        _bgDbg = (collageItems || []).filter((o) => o && o.el && (o.bgPhoto || (o.wFrac || 0) >= 0.3)).map((o) => {
+          const br = o.el.getBoundingClientRect();
+          return { z: o.z, bg: !!o.bgPhoto, cf: !!o.coverFill, ba: (o.boxAspect != null ? +(+o.boxAspect).toFixed(3) : null), asp: (o.aspect != null ? +(+o.aspect).toFixed(3) : null), w: +(+o.wFrac).toFixed(3), y: +(+o.yFrac).toFixed(3), crop: (o.crop ? [+(+o.crop.l).toFixed(2), +(+o.crop.t).toFixed(2), +(+o.crop.r).toFixed(2), +(+o.crop.b).toFixed(2)] : null), ea: (typeof effectiveAspect === 'function' ? +(+effectiveAspect(o)).toFixed(3) : null), boxHFrac: cr.height ? +(br.height / cr.height).toFixed(3) : null, boxTopFrac: cr.height ? +((br.top - cr.top) / cr.height).toFixed(3) : null };
+        });
+      } catch (_) { _bgDbg = null; }
       return { x: Math.round(cr.left), y: Math.round(cr.top), w: Math.round(cr.width), h: Math.round(cr.height),
-        dbg: { cw: collageCanvasEl.offsetWidth, ch: collageCanvasEl.offsetHeight, nImgs: _imgs.length, nLoaded: _loaded, items: (typeof collageItems !== 'undefined' ? collageItems.length : -1), glow: _glowDbg } };
+        dbg: { cw: collageCanvasEl.offsetWidth, ch: collageCanvasEl.offsetHeight, carousel: (typeof carouselMode !== 'undefined' ? carouselMode : null), gca: (typeof getCanvasAspect === 'function' ? +(+getCanvasAspect()).toFixed(3) : null), nImgs: _imgs.length, nLoaded: _loaded, items: (typeof collageItems !== 'undefined' ? collageItems.length : -1), glow: _glowDbg, bgTiles: _bgDbg } };
     };
     function layoutCanvasSize() {
       if (!collageStageEl) return;
