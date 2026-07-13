@@ -15506,6 +15506,7 @@
       // snapped axis — a local alignment cue. Falls back to the full span if no single tile is focused.
       const _cw = collageCanvasEl.clientWidth, _ch = collageCanvasEl.clientHeight;
       let _fL = 0, _fT = 0, _fW = _cw, _fH = _ch;
+      let _tL = 0, _tR = _cw, _tCx = _cw / 2, _tT = 0, _tB = _ch, _tCy = _ch / 2;
       const _selEl = (typeof collageSelected !== 'undefined' && collageSelected && collageSelected.el) ? collageSelected.el : null;
       if (_selEl) {
         const fr = _selEl.getBoundingClientRect();
@@ -15514,8 +15515,19 @@
         _fT = Math.max(0, (fr.top - _gRect.top) * s2cY - M);
         _fW = Math.min(_cw - _fL, fr.width * s2cX + 2 * M);
         _fH = Math.min(_ch - _fT, fr.height * s2cY + 2 * M);
+        _tL = (fr.left - _gRect.left) * s2cX; _tR = (fr.right - _gRect.left) * s2cX; _tCx = (_tL + _tR) / 2;
+        _tT = (fr.top - _gRect.top) * s2cY; _tB = (fr.bottom - _gRect.top) * s2cY; _tCy = (_tT + _tB) / 2;
       }
-      if (vGuide != null) {
+      // v3.0.3 (Terry SS1) — a guide that runs through the tile's INTERIOR (not on an edge, not on the
+      // centre) is meaningless noise: the useful guides sit on the tile's own left/right (vertical) or
+      // top/bottom (horizontal) edge, or dead-centre. Suppress the LINE (the snap itself is unaffected).
+      const _TOL = 4;
+      const _vX = (vGuide != null) ? vGuide * s2cX : null;
+      const _hY = (hGuide != null) ? hGuide * s2cY : null;
+      const _vInside = !!(_selEl && _vX != null && _vX > _tL + _TOL && _vX < _tR - _TOL && Math.abs(_vX - _tCx) > _TOL);
+      const _hInside = !!(_selEl && _hY != null && _hY > _tT + _TOL && _hY < _tB - _TOL && Math.abs(_hY - _tCy) > _TOL);
+      try { if (vGuide != null || hGuide != null) console.log('[snapdbg] vX=' + (_vX != null ? Math.round(_vX) : '-') + ' hY=' + (_hY != null ? Math.round(_hY) : '-') + ' tileL=' + Math.round(_tL) + ' R=' + Math.round(_tR) + ' Cx=' + Math.round(_tCx) + ' T=' + Math.round(_tT) + ' B=' + Math.round(_tB) + ' Cy=' + Math.round(_tCy) + ' vIn=' + _vInside + ' hIn=' + _hInside); } catch (_) {}
+      if (vGuide != null && !_vInside) {
         if (!collageSnapVEl) {
           collageSnapVEl = document.createElement('div');
           collageSnapVEl.style.cssText = 'position:absolute;width:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
@@ -15526,7 +15538,7 @@
         collageSnapVEl.style.height = Math.max(1, Math.round(_fH)) + 'px';
         collageSnapVEl.style.display = 'block';
       } else if (collageSnapVEl) { collageSnapVEl.style.display = 'none'; }
-      if (hGuide != null) {
+      if (hGuide != null && !_hInside) {
         if (!collageSnapHEl) {
           collageSnapHEl = document.createElement('div');
           collageSnapHEl.style.cssText = 'position:absolute;height:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
