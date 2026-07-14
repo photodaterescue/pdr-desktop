@@ -36,6 +36,16 @@ export interface CollageProjectData {
   // v3.0 round 546 (Terry) — the wide (joined) design's library file id, so View can open it
   // directly — the carousel counterpart of exportedFileId.
   carouselWideFileId?: number | null;
+  // v2.1 round 376 (Terry) — a carousel is a single wide canvas; these flag it + its page count so
+  // reopen re-enters carousel mode. (Persisted by the renderer; previously read here via casts.)
+  carousel?: boolean;
+  carouselPages?: number;
+  // v3.1 (Terry) — the template a design was created from (openTemplateById re-links it), so
+  // reopening still offers "Update template". v3.0.3 (Terry 2026-07-14) — ALSO the key that
+  // converges every design opened from one template onto a SINGLE card (see saveProject) instead
+  // of spawning a fresh card every session the template is reopened.
+  sourceTemplateId?: string;
+  sourceTemplateName?: string;
 }
 
 export interface CollageProjectSummary {
@@ -183,13 +193,47 @@ function migrateOldProjects(): void {
   }
 }
 
+// v3.0.3 (Terry 2026-07-14) — converge template-derived designs onto ONE card.
+// Opening a saved template starts a NEW design (the renderer nulls the project id at
+// applyCollageRecordAsNew so the template stays pristine), so the FIRST autosave used to mint a
+// brand-new card EVERY session — Terry reopened his "PDR — Pain" template ~25× in one day and got
+// 25 near-identical carousel cards flooding the homepage. When a template-derived design has no id
+// yet, adopt the most-recent EXISTING (non-template) project from the SAME template and overwrite
+// it instead of creating another card. Never touches the template's own record. Async so the
+// once-per-template-open scan never blocks the main thread.
+async function latestProjectIdFromTemplate(dir: string, templateId: string, wantCarousel: boolean): Promise<string | null> {
+  let files: string[] = [];
+  try { files = (await fs.promises.readdir(dir)).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return null; }
+  let best: { id: string; savedAt: string } | null = null;
+  for (const f of files) {
+    try {
+      const rec = JSON.parse(await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8')) as CollageProjectData;
+      if (!rec || !rec.id) continue;
+      if (rec.kind === 'template') continue;                        // never overwrite a template itself
+      if ((rec.sourceTemplateId || '') !== templateId) continue;    // must be a design FROM this template
+      if (!!(rec as { carousel?: boolean }).carousel !== wantCarousel) continue;   // keep carousels + collages distinct
+      const sa = rec.savedAt || '';
+      if (!best || sa > best.savedAt) best = { id: rec.id, savedAt: sa };
+    } catch { /* skip a corrupt record */ }
+  }
+  return best ? best.id : null;
+}
+
 // Save (or overwrite, when `project.id` is supplied — that's what autosave does).
 ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, thumbnailDataUrl?: string) => {
   const _sp0 = Date.now();   // v3.0.3 TEMP (Terry ~4s freeze) — time the SYNC record write + library-drive copy on the main thread
   try {
     if (!project || typeof project.snapshot !== 'string') return { success: false, error: 'Nothing to save.' };
     const dir = projectsDir();
-    const id = project.id || genProjectId();
+    // v3.0.3 (Terry) — a template-derived design with no id yet: adopt the existing card from the
+    // same template rather than spawning a new one each session (see latestProjectIdFromTemplate).
+    // The returned id flows back to the renderer (currentCollageProjectId), so every later autosave
+    // this session overwrites the same card directly — the scan runs at most once per template-open.
+    let id = project.id || null;
+    if (!id && project.sourceTemplateId) {
+      try { id = await latestProjectIdFromTemplate(dir, project.sourceTemplateId, !!project.carousel); } catch { /* fall through to a fresh id */ }
+    }
+    if (!id) id = genProjectId();
     const rec: CollageProjectData = { ...project, id };
     const _json = JSON.stringify(rec);
     const _sw0 = Date.now();
