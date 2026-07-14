@@ -2554,6 +2554,22 @@
     .cws-year-head { display: flex; align-items: baseline; gap: 10px; position: sticky; top: 0; z-index: 5; background: rgba(20,18,32,0.92); backdrop-filter: blur(5px); padding: 4px 2px 8px; font-size: 17px; font-weight: 700; color: #ece9f7; }
     .cws-year-count { font-size: 11px; font-weight: 600; color: #9a96b5; }
     .cws-month-sub { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: #8b88a0; margin: 4px 2px 10px; }
+    /* v3.0.3 (Terry #13/#14) — collapsible homepage sections + a distinct look for Templates vs dated collages. */
+    .cws-section-head { cursor: pointer; user-select: none; }
+    .cws-collapse-chevron { width: 15px; height: 15px; flex: 0 0 auto; opacity: .7; transition: transform .16s ease; }
+    .cws-year-head .cws-collapse-chevron { align-self: center; }
+    .cws-year-head:hover .cws-collapse-chevron { opacity: 1; }
+    .cws-year-sec.cws-collapsed .cws-year-body { display: none; }
+    .cws-year-sec.cws-collapsed .cws-collapse-chevron { transform: rotate(-90deg); }
+    /* Templates header — purple-accented + iconed so it reads as a DIFFERENT kind of thing (reusable
+       starting points), never muddled with the dated collage year-groups below. */
+    .cws-templates-head { display: flex; align-items: center; gap: 8px; color: #cbbcff; margin-bottom: 12px;
+      padding: 7px 10px; border-radius: 9px; background: rgba(169,156,255,0.10); border: 1px solid rgba(169,156,255,0.22); }
+    .cws-templates-head:hover { background: rgba(169,156,255,0.15); }
+    .cws-templates-head .cws-templates-icon { width: 15px; height: 15px; opacity: .85; }
+    .cws-templates-head .cws-templates-tag { text-transform: none; letter-spacing: 0; font-weight: 500; font-size: 11px; color: #8f89b8; margin-left: 2px; }
+    .cws-templates-sec.cws-collapsed .cws-templates-body { display: none; }
+    .cws-templates-sec.cws-collapsed .cws-collapse-chevron { transform: rotate(-90deg); }
     .cws-card {
       position: relative; display: flex; flex-direction: column;
       background: #1f1f2b; border: 1px solid rgba(255,255,255,0.08);
@@ -2622,14 +2638,20 @@
     .cws-select-delete:hover:not(:disabled) { background: #c0392b; border-color: #c0392b; color: #fff; }
     .cws-select-delete:disabled { opacity: 0.4; cursor: default; }
     .cws-card-check {
-      position: absolute; top: 8px; left: 8px; width: 24px; height: 24px; border-radius: 6px;
+      position: absolute; top: 8px; left: 8px; width: 24px; height: 24px; border-radius: 6px; z-index: 6; cursor: pointer;
       display: none; align-items: center; justify-content: center;
-      background: rgba(10,10,26,0.78); border: 1.5px solid rgba(230,227,243,0.6); color: transparent;
+      background: rgba(10,10,26,0.82); border: 1.5px solid rgba(230,227,243,0.7); color: transparent;
+      transition: background .1s ease, border-color .1s ease;
     }
     .cws-card-check svg { width: 14px; height: 14px; }
-    .cws-selecting .cws-card-check { display: flex; }
-    /* in select mode the single-item buttons + goto links are irrelevant — hide them so only the checkbox shows */
-    .cws-selecting .cws-card-del, .cws-selecting .cws-card-rename, .cws-selecting .cws-card-sel, .cws-selecting .cws-card-go { display: none !important; }
+    /* v3.0.3 (Terry, Memories→Dates) — checkboxes show ONLY in Select mode, while Ctrl is held, or when a
+       card is ticked. The card body always opens; the checkbox (a separate click target) selects. */
+    .cws-selecting .cws-card-check, .cws-ctrl-held .cws-card-check, .cws-card.cws-check-on .cws-card-check { display: flex; }
+    .cws-card-check:hover { border-color: #FEC242; }
+    /* the checkbox sits top-left where the goto-tick also lives — hide the goto-tick whenever the checkbox shows */
+    .cws-selecting .cws-card-sel, .cws-ctrl-held .cws-card-sel, .cws-card.cws-check-on .cws-card-sel { display: none; }
+    /* in explicit Select mode, hide the per-card delete/rename/go so only the checkbox reads (transient Ctrl-select keeps them) */
+    .cws-selecting .cws-card-del, .cws-selecting .cws-card-rename, .cws-selecting .cws-card-go { display: none !important; }
     .cws-card.cws-check-on { border-color: rgba(254,194,66,0.95); box-shadow: 0 0 0 2px rgba(254,194,66,0.6), 0 10px 30px rgba(0,0,0,0.4); }
     .cws-card.cws-check-on .cws-card-check { background: #FEC242; border-color: #FEC242; color: #1a1a2e; }
     /* v3.0 round 545 (Terry) — titlebar View/Albums pair on the Home screen: dimmed until a
@@ -4584,10 +4606,19 @@
           </div>
           <!-- v2.1 round 323 (Terry) — Templates row (Word-style). Your saved templates; click one
                to start a NEW collage from it. The curated built-in starter set lands here next. -->
-          <div class="cws-recent cws-templates-sec">
-            <div class="cws-recent-title">Templates</div>
-            <div id="cws-templates-grid" class="cws-recent-grid" role="list"></div>
-            <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
+          <!-- v3.0.3 (Terry #13) — Templates are a DISTINCT kind of thing (reusable starting points), given a
+               purple-accented, collapsible header so they never get muddled with the dated collage projects below. -->
+          <div class="cws-recent cws-templates-sec" id="cws-templates-section">
+            <div class="cws-recent-title cws-section-head cws-templates-head" id="cws-templates-toggle" role="button" tabindex="0" data-pdr-tooltip="Show / hide your reusable templates">
+              <svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+              <svg class="cws-templates-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
+              <span>Templates</span>
+              <span class="cws-templates-tag">reusable starting points</span>
+            </div>
+            <div class="cws-templates-body">
+              <div id="cws-templates-grid" class="cws-recent-grid" role="list"></div>
+              <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
+            </div>
           </div>
           <div class="cws-recent">
             <div class="cws-recent-titlerow">
@@ -10747,11 +10778,21 @@
         const vLen = Math.max(EDGE_MIN, Math.min(EDGE_MAX, h * EDGE_FRAC));   // left/right bars run vertically → sized by box HEIGHT
         const hLen = Math.max(EDGE_MIN, Math.min(EDGE_MAX, w * EDGE_FRAC));   // top/bottom bars run horizontally → sized by box WIDTH
         let refs = box._cropRefs_;
-        if (!refs) { refs = box._cropRefs_ = { l: box.querySelector('.chx-crop-l'), r: box.querySelector('.chx-crop-r'), t: box.querySelector('.chx-crop-t'), b: box.querySelector('.chx-crop-b') }; }
+        if (!refs) { refs = box._cropRefs_ = { l: box.querySelector('.chx-crop-l'), r: box.querySelector('.chx-crop-r'), t: box.querySelector('.chx-crop-t'), b: box.querySelector('.chx-crop-b'),
+          tl: box.querySelector('.chx-res-tl'), tr: box.querySelector('.chx-res-tr'), bl: box.querySelector('.chx-res-bl'), br: box.querySelector('.chx-res-br') }; }
         if (refs.l) { refs.l.style.height = vLen + 'px'; refs.l.style.marginTop = (-vLen / 2) + 'px'; }
         if (refs.r) { refs.r.style.height = vLen + 'px'; refs.r.style.marginTop = (-vLen / 2) + 'px'; }
         if (refs.t) { refs.t.style.width = hLen + 'px'; refs.t.style.marginLeft = (-hLen / 2) + 'px'; }
         if (refs.b) { refs.b.style.width = hLen + 'px'; refs.b.style.marginLeft = (-hLen / 2) + 'px'; }
+        // v3.0.3 (Terry SS1) — same reduction for the CORNER dots (14px base): scale them down on small /
+        // zoomed-out tiles so they aren't disproportionate either. transform:scale keeps each dot centred on
+        // its corner (works with the coverfill-inset corners too), so the -7px positioning stays valid.
+        const cornerPx = Math.max(8, Math.min(14, Math.min(w, h) * 0.3));
+        const cScale = (cornerPx / 14).toFixed(3);
+        if (refs.tl) refs.tl.style.transform = 'scale(' + cScale + ')';
+        if (refs.tr) refs.tr.style.transform = 'scale(' + cScale + ')';
+        if (refs.bl) refs.bl.style.transform = 'scale(' + cScale + ')';
+        if (refs.br) refs.br.style.transform = 'scale(' + cScale + ')';
       } catch (_) {}
       // Rotate the whole chrome group about the box centre — matches the tile's own
       // rotate(it.rot) (renderCollageItem) which uses the default centre transform-origin.
@@ -18164,7 +18205,13 @@
           if (nm) { currentCollageProjectName = nm; try { updateCollageTitle(); } catch (_) {} try { scheduleCollageAutosave(); } catch (_) {} }
           const albumForExport = effCat;
           close();
-          try { saveCollage(albumForExport); } catch (_) {}
+          // v3.0.3 (Terry) — "Save as new" (chevron) makes a SEPARATE copy under the chosen name; a plain
+          // Save updates the existing one. saveAsNew is set only by collageSaveAsNew.
+          if (opts && opts.saveAsNew) {
+            try { if (carouselMode) saveCarousel(albumForExport, { forceNew: true }); else saveCollage(albumForExport, { action: 'new' }); } catch (_) {}
+          } else {
+            try { saveCollage(albumForExport); } catch (_) {}
+          }
           return;
         }
         if (nm) {
@@ -18663,9 +18710,32 @@
     let cwsSelectMode = false;
     const cwsSelectedForDelete = new Set();
     let cwsSelectAnchorId = null;   // v3.0.3 (Terry) — last-ticked card, the anchor for Shift+click range-select
-    // v3.0.3 (Terry) — Ctrl/Cmd+click toggles a card into the delete-selection, Shift+click selects the
-    // run from the anchor to here — the Memories→Dates instinct. Both auto-enter select mode. Mirrors the
-    // Dates multi-select so the whole app feels the same.
+    // v3.0.3 (Terry, Memories→Dates model): the card BODY always OPENS a project. Selection is a separate
+    // thing — via the corner CHECKBOX, which shows only while Select mode is on OR Ctrl is held OR the card
+    // is already ticked. Ctrl/Cmd+click and Shift+click on a card also select (they never open). The delete
+    // action bar appears whenever something is ticked, or in explicit Select mode. (Earlier build wrongly
+    // made every card tick-only in select mode, so cards couldn't be opened — this restores opening.)
+    function refreshCwsSelectionUI() {
+      const hasCards = !!document.querySelector('#cws-recent-grid .cws-card');
+      const barActive = hasCards && (cwsSelectMode || cwsSelectedForDelete.size > 0);
+      const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = barActive ? 'flex' : 'none';
+      const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = (hasCards && !barActive) ? '' : 'none';
+      const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = (hasCards && !barActive) ? '' : 'none';
+      updateCwsSelectBar();
+    }
+    function updateCwsSelectBar() {
+      const n = cwsSelectedForDelete.size;
+      const cnt = document.getElementById('cws-select-count');
+      if (cnt) cnt.textContent = n === 0 ? 'Tap collages to select' : (n + ' selected');
+      const del = document.getElementById('cws-select-delete');
+      if (del) { del.disabled = n === 0; del.textContent = n ? ('Delete (' + n + ')') : 'Delete'; }
+    }
+    function toggleCwsDeleteSelect(id, card) {
+      const key = String(id);
+      if (cwsSelectedForDelete.has(key)) { cwsSelectedForDelete.delete(key); if (card) card.classList.remove('cws-check-on'); }
+      else { cwsSelectedForDelete.add(key); if (card) card.classList.add('cws-check-on'); }
+      refreshCwsSelectionUI();
+    }
     function cwsRangeSelectTo(id) {
       const cards = Array.prototype.slice.call(document.querySelectorAll('#cws-recent-grid .cws-card'));
       const ids = cards.map((c) => String(c.dataset.projectId));
@@ -18675,37 +18745,37 @@
       if (fromIdx < 0) fromIdx = toIdx;
       const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
       for (let i = lo; i <= hi; i++) { cwsSelectedForDelete.add(ids[i]); if (cards[i]) cards[i].classList.add('cws-check-on'); }
-      updateCwsSelectBar();
-    }
-    function updateCwsSelectBar() {
-      const n = cwsSelectedForDelete.size;
-      const cnt = document.getElementById('cws-select-count');
-      if (cnt) cnt.textContent = n === 0 ? 'Tap collages to select' : (n + (n === 1 ? ' selected' : ' selected'));
-      const del = document.getElementById('cws-select-delete');
-      if (del) { del.disabled = n === 0; del.textContent = n ? ('Delete (' + n + ')') : 'Delete'; }
-    }
-    function toggleCwsDeleteSelect(id, card) {
-      const key = String(id);
-      if (cwsSelectedForDelete.has(key)) { cwsSelectedForDelete.delete(key); if (card) card.classList.remove('cws-check-on'); }
-      else { cwsSelectedForDelete.add(key); if (card) card.classList.add('cws-check-on'); }
-      updateCwsSelectBar();
+      refreshCwsSelectionUI();
     }
     function enterCwsSelectMode() {
-      cwsSelectMode = true; cwsSelectedForDelete.clear(); cwsSelectAnchorId = null;
+      // The "Select" button turns on always-show-checkboxes mode; it keeps any Ctrl-selected items.
+      cwsSelectMode = true;
       const grid = document.getElementById('cws-recent-grid'); if (grid) grid.classList.add('cws-selecting');
-      const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = 'none';
-      const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = 'none';
-      const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'flex';
-      updateCwsSelectBar();
+      refreshCwsSelectionUI();
     }
     function exitCwsSelectMode() {
       cwsSelectMode = false; cwsSelectedForDelete.clear(); cwsSelectAnchorId = null;
       const grid = document.getElementById('cws-recent-grid');
       if (grid) { grid.classList.remove('cws-selecting'); try { grid.querySelectorAll('.cws-card.cws-check-on').forEach((c) => c.classList.remove('cws-check-on')); } catch (_) {} }
-      const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = '';
-      const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = '';
-      const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'none';
+      refreshCwsSelectionUI();
     }
+    // While Ctrl/Cmd is held, reveal the checkboxes on every project card (the Dates affordance) so you can
+    // see you're able to multi-select without pressing Select first; a window blur clears the reveal.
+    (function wireCwsCtrlReveal() {
+      function upd(held) { const g = document.getElementById('cws-recent-grid'); if (g) g.classList.toggle('cws-ctrl-held', !!held); }
+      window.addEventListener('keydown', (e) => { if (e.ctrlKey || e.metaKey) upd(true); }, true);
+      window.addEventListener('keyup', (e) => { upd(!!(e.ctrlKey || e.metaKey)); }, true);
+      window.addEventListener('blur', () => upd(false), true);
+    })();
+    // v3.0.3 (Terry #13/#14) — collapsible homepage sections (the Templates row + each collage YEAR),
+    // remembered across opens so a tidy homepage stays tidy.
+    const CWS_COLLAPSED_YEARS_KEY = 'pdr.cws.collapsedYears';
+    const CWS_TEMPLATES_COLLAPSED_KEY = 'pdr.cws.templatesCollapsed';
+    function cwsLoadCollapsedSet() { try { return new Set(JSON.parse(localStorage.getItem(CWS_COLLAPSED_YEARS_KEY) || '[]')); } catch (_) { return new Set(); } }
+    function cwsIsYearCollapsed(y) { return cwsLoadCollapsedSet().has(String(y)); }
+    function cwsSetYearCollapsed(y, collapsed) { try { const s = cwsLoadCollapsedSet(); if (collapsed) s.add(String(y)); else s.delete(String(y)); localStorage.setItem(CWS_COLLAPSED_YEARS_KEY, JSON.stringify(Array.from(s))); } catch (_) {} }
+    function cwsIsTemplatesCollapsed() { try { return localStorage.getItem(CWS_TEMPLATES_COLLAPSED_KEY) === 'true'; } catch (_) { return false; } }
+    function cwsSetTemplatesCollapsed(collapsed) { try { localStorage.setItem(CWS_TEMPLATES_COLLAPSED_KEY, collapsed ? 'true' : 'false'); } catch (_) {} }
     function cwsSelectProject(id) {
       cwsSelectedProjectId = id;
       try { document.querySelectorAll('.cws-card').forEach((c) => c.classList.toggle('cws-selected', id != null && c.dataset.projectId === String(id))); } catch (_) {}
@@ -18799,18 +18869,17 @@
         ga.addEventListener('click', (e) => { e.stopPropagation(); collageGotoAlbums(p.exportedFileId); });
         go.appendChild(gv); go.appendChild(ga); meta.appendChild(go);
       }
-      // v3.0.3 (Terry #12) — bulk-select checkbox: only visible in select mode (CSS gates it on
-      // the grid's .cws-selecting class); a click anywhere on the card toggles it then.
+      // v3.0.3 (Terry #12 / Dates model) — the delete-checkbox. CSS shows it only in Select mode, while
+      // Ctrl is held, or when this card is ticked. Clicking IT selects (stopPropagation so the card body's
+      // open handler doesn't also fire); clicking the card BODY always opens the project.
       const chk = document.createElement('div'); chk.className = 'cws-card-check';
       chk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
       if (cwsSelectedForDelete.has(String(p.id))) card.classList.add('cws-check-on');
+      chk.addEventListener('click', (e) => { e.stopPropagation(); toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); });
       card.addEventListener('click', async (e) => {
-        // v3.0.3 (Terry) — Ctrl/Cmd+click toggles into the delete-selection, Shift+click range-selects
-        // from the anchor — the Memories→Dates instinct; both auto-enter select mode. Plain click opens
-        // (or ticks, once already in select mode via the Select button or a modifier click).
-        if (e.ctrlKey || e.metaKey) { if (!cwsSelectMode) enterCwsSelectMode(); toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); return; }
-        if (e.shiftKey) { if (!cwsSelectMode) enterCwsSelectMode(); cwsRangeSelectTo(p.id); return; }
-        if (cwsSelectMode) { toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); return; }   // #12 — in select mode a plain card click ticks it, never opens it
+        // The card body ALWAYS opens. Only modifier-clicks select (they never open) — matches Memories→Dates.
+        if (e.ctrlKey || e.metaKey) { toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); return; }
+        if (e.shiftKey) { cwsRangeSelectTo(p.id); return; }
         const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome();
       });
       card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel); card.appendChild(chk);
@@ -18881,18 +18950,24 @@
       years.forEach((y) => {
         const yd = byYear[y];
         const sec = document.createElement('div'); sec.className = 'cws-year-sec'; sec.id = 'cws-year-' + y;
-        const yh = document.createElement('div'); yh.className = 'cws-year-head';
-        yh.innerHTML = '<span>' + (y || 'Undated') + '</span><span class="cws-year-count">' + yd.count + '</span>';
+        if (cwsIsYearCollapsed(y)) sec.classList.add('cws-collapsed');
+        // v3.0.3 (Terry #14) — the year header collapses its whole year (chevron + click), persisted, so the
+        // dated collage groups can be folded away and never blur into the Templates row above.
+        const yh = document.createElement('div'); yh.className = 'cws-year-head cws-section-head'; yh.setAttribute('role', 'button'); yh.setAttribute('tabindex', '0');
+        yh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-year-label">' + (y || 'Undated') + '</span><span class="cws-year-count">' + yd.count + '</span>';
+        yh.addEventListener('click', () => { const now = !sec.classList.contains('cws-collapsed'); sec.classList.toggle('cws-collapsed', now); cwsSetYearCollapsed(y, now); });
         sec.appendChild(yh);
+        const ybody = document.createElement('div'); ybody.className = 'cws-year-body';
         const mkeys = Object.keys(yd.months).sort().reverse();
         mkeys.forEach((mk) => {
           const m = yd.months[mk];
           m.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-          if (mkeys.length > 1) { const mh = document.createElement('div'); mh.className = 'cws-month-sub'; mh.textContent = m.label; sec.appendChild(mh); }
+          if (mkeys.length > 1) { const mh = document.createElement('div'); mh.className = 'cws-month-sub'; mh.textContent = m.label; ybody.appendChild(mh); }
           const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
           m.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
-          sec.appendChild(mgrid);
+          ybody.appendChild(mgrid);
         });
+        sec.appendChild(ybody);
         grid.appendChild(sec);
       });
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
@@ -18901,11 +18976,7 @@
       // there are no projects, and hidden while select mode is active (the action bar replaces them).
       const clearBtn = document.getElementById('cws-recent-clear');
       const selectBtn = document.getElementById('cws-recent-select');
-      if (clearBtn) clearBtn.style.display = (list.length && !cwsSelectMode) ? '' : 'none';
-      if (selectBtn) {
-        selectBtn.style.display = (list.length && !cwsSelectMode) ? '' : 'none';
-        if (!selectBtn.dataset.wired) { selectBtn.dataset.wired = '1'; selectBtn.addEventListener('click', (e) => { e.stopPropagation(); enterCwsSelectMode(); }); }
-      }
+      if (selectBtn && !selectBtn.dataset.wired) { selectBtn.dataset.wired = '1'; selectBtn.addEventListener('click', (e) => { e.stopPropagation(); enterCwsSelectMode(); }); }
       if (clearBtn && !clearBtn.dataset.wired) {
         clearBtn.dataset.wired = '1';
         clearBtn.addEventListener('click', async (e) => {
@@ -18932,7 +19003,7 @@
             if (allOn) { cwsSelectedForDelete.delete(id); c.classList.remove('cws-check-on'); }
             else { cwsSelectedForDelete.add(id); c.classList.add('cws-check-on'); }
           });
-          updateCwsSelectBar();
+          refreshCwsSelectionUI();
         });
       }
       const doneBtn = document.getElementById('cws-select-done');
@@ -18951,16 +19022,16 @@
           buildCwsRecent();
         });
       }
-      // #12 — a rebuild WHILE selecting (e.g. album filter changed): keep the grid in select mode,
-      // drop ticks whose card is no longer visible, re-check the survivors, keep the bar showing.
-      if (cwsSelectMode) {
-        const grid2 = document.getElementById('cws-recent-grid'); if (grid2) grid2.classList.add('cws-selecting');
+      // #12 — after a rebuild: keep .cws-selecting if in Select mode, drop ticks whose card vanished,
+      // re-mark the survivors, then let refreshCwsSelectionUI show/hide the bar + Select/Clear buttons.
+      const grid3 = document.getElementById('cws-recent-grid');
+      if (grid3 && cwsSelectMode) grid3.classList.add('cws-selecting');
+      {
         const present = new Set(Array.prototype.slice.call(document.querySelectorAll('#cws-recent-grid .cws-card')).map((c) => String(c.dataset.projectId)));
         Array.from(cwsSelectedForDelete).forEach((id) => { if (!present.has(id)) cwsSelectedForDelete.delete(id); });
         try { document.querySelectorAll('#cws-recent-grid .cws-card').forEach((c) => { if (cwsSelectedForDelete.has(String(c.dataset.projectId))) c.classList.add('cws-check-on'); }); } catch (_) {}
-        const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'flex';
-        updateCwsSelectBar();
       }
+      refreshCwsSelectionUI();
     }
     // v2.1 round 323 (Terry) — the Templates row: your saved templates (kind:'template'). Clicking
     // one starts a NEW collage from it (openTemplateById → applyCollageRecordAsNew), leaving the
@@ -18969,6 +19040,16 @@
       const grid = document.getElementById('cws-templates-grid');
       const empty = document.getElementById('cws-templates-empty');
       if (!grid) return;
+      // v3.0.3 (Terry #13) — apply + wire the collapsible Templates header (persisted). One-time wiring.
+      try {
+        const sec = document.getElementById('cws-templates-section');
+        const tog = document.getElementById('cws-templates-toggle');
+        if (sec) sec.classList.toggle('cws-collapsed', cwsIsTemplatesCollapsed());
+        if (tog && sec && !tog.dataset.wired) {
+          tog.dataset.wired = '1';
+          tog.addEventListener('click', () => { const now = !sec.classList.contains('cws-collapsed'); sec.classList.toggle('cws-collapsed', now); cwsSetTemplatesCollapsed(now); });
+        }
+      } catch (_) {}
       grid.innerHTML = '';
       // v2.1 round 324 (Terry) — curated built-in starter templates FIRST (always present), then
       // the user's own saved templates.
@@ -23003,6 +23084,23 @@
       if (collageRootEl) collageRootEl.classList.add('active');
       collageExportTarget = { w: W, h: H };
       collageUserZoom = 1; collagePanX = 0; collagePanY = 0;
+      // v3.0.3 (Terry #1) — a CAROUSEL must bake in carousel MODE, or the per-page cover-fill / box math
+      // is wrong and background photos collapse to near-zero height → "parts of the picture missing" in the
+      // exported image. The editor enters carousel mode when you OPEN a carousel (reopenCollageProject); the
+      // export path did NOT, so it baked with carouselMode=false (confirmed by the render diagnostic:
+      // carousel:false on a 6480-wide canvas, bgTiles with boxHFrac:0). Detect the carousel from the
+      // snapshot's sizeId (carousels are the wide N×1080×1350 canvas; aspect is a fallback for old snapshots)
+      // and enter carousel mode BEFORE restore, exactly like reopen. collageExportTarget still forces the 1:1
+      // export px in layoutCanvasSize, so the canvas dimensions are unchanged — only the box math is corrected.
+      let _isCarExport = false, _carPagesExport = (typeof CAROUSEL_DEFAULT !== 'undefined' ? CAROUSEL_DEFAULT : 6);
+      try {
+        const _s = JSON.parse(opts.snapshot);
+        _isCarExport = (_s && _s.sizeId === CAROUSEL_SIZE_ID) || (H > 0 && (W / H) >= 2.5);
+        if (_isCarExport) _carPagesExport = Math.max(CAROUSEL_MIN, Math.min(CAROUSEL_MAX, Math.round(W / CAROUSEL_EXPORT_PX.w) || _carPagesExport));
+      } catch (_) { /* unparseable → single-collage render as before */ }
+      carouselMode = _isCarExport;   // explicit both ways so a single-collage export never inherits a prior carousel render's mode
+      if (_isCarExport) carouselPageCount = _carPagesExport;
+      try { document.body.classList.toggle('carousel-mode', _isCarExport); } catch (_) {}
       try { restoreCollageSnapshot(opts.snapshot); } catch (e) { return { error: String((e && e.message) || e) }; }
       collageExportTarget = { w: W, h: H };   // restore loads the snapshot's exportPx into collageExportPx; re-assert the render target
       // v3.0 (Terry, Tier-3 #11) — transparent collage: the capture window has alpha, so blank the page
@@ -23452,13 +23550,16 @@
     // success handlers already repoint collageExportedFileId / carouselExportedAlbumId at the result.
     function collageSaveAsNew() {
       try {
+        // v3.0.3 (Terry) — "Save as new carousel/collage" makes a SEPARATE copy, so it must let the user
+        // NAME / categorise it (it was silently reusing the current name, bypassing the wizard — Terry hit
+        // this on a carousel). Route through the naming wizard; its Save then does the forced-new export.
         if (carouselMode) {
           if (carouselExportedAlbumId == null) return;   // chevron only shows once saved
-          saveCarousel(collageCurrentAlbum(), { forceNew: true });
+          try { openCollageNameWizard({ exportMode: true, saveAsNew: true }); } catch (_) { saveCarousel(collageCurrentAlbum(), { forceNew: true }); }
           return;
         }
         if (collageExportedFileId == null) return;
-        saveCollage(collageCurrentAlbum(), { action: 'new' });
+        try { openCollageNameWizard({ exportMode: true, saveAsNew: true }); } catch (_) { saveCollage(collageCurrentAlbum(), { action: 'new' }); }
       } catch (_) {}
     }
     // The chevron menu next to Save/Update.
