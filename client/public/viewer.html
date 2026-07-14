@@ -16141,9 +16141,11 @@
     // v3.0.3 (Terry: mid-drag lag) — live pointer state, so the autosave can refuse to run heavy
     // work while ANY press/drag is in progress (its debounce timer used to land mid-gesture).
     let collagePointerDown_ = false;
-    window.addEventListener('pointerdown', function () { collagePointerDown_ = true; }, true);
-    window.addEventListener('pointerup', function () { collagePointerDown_ = false; }, true);
-    window.addEventListener('pointercancel', function () { collagePointerDown_ = false; }, true);
+    let lastPointerActivityAt_ = 0;   // v3.0.3 (Terry: 4s freezes on the 45s cadence) — the thumb bake now also needs ≥8s of hands-off quiet
+    window.addEventListener('pointerdown', function () { collagePointerDown_ = true; lastPointerActivityAt_ = Date.now(); }, true);
+    window.addEventListener('pointerup', function () { collagePointerDown_ = false; lastPointerActivityAt_ = Date.now(); }, true);
+    window.addEventListener('pointercancel', function () { collagePointerDown_ = false; lastPointerActivityAt_ = Date.now(); }, true);
+    window.addEventListener('pointermove', function () { lastPointerActivityAt_ = Date.now(); }, true);
     let collageMeasureEl = null;
     function refreshMeasureLiveState() {
       // Dividers/outlines/safe-zone/user-guides are the ALWAYS-on rules — redraw so their toggle shows
@@ -18175,7 +18177,7 @@
         // showing a generic icon — one was never made). Bake a small version through the export
         // pipeline, scaled to ~600px so it's cheap, guarded so overlapping autosaves don't stack bakes.
         let thumb;
-        if ((Date.now() - collageThumbLastAt_) > 45000 && !collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
+        if ((Date.now() - lastPointerActivityAt_) > 8000 && (Date.now() - collageThumbLastAt_) > 45000 && !collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {   // v3.0.3 (Terry) — bake ONLY after ≥8s hands-off: the 45s cadence alone still landed the ~4s bake between his drags while actively arranging
           collageThumbBusy = true;
           try {
             // v3.0 round 584 (Terry) — carousels bake to their FIRST PAGE (1/N of the wide strip), so
@@ -18184,10 +18186,16 @@
             // v3.1 (Terry) — SS2: the cap now goes INTO buildCollageLayout (its maxPx param) so the
             // text PNGs raster at the capped size too. Shrinking layout.canvas AFTER the build left
             // full-size text stacked over the small strip — the "jumbled pink text" carousel cards.
+            const _ap0 = performance.now();
             const layout = buildCollageLayout(carouselMode ? 1200 : 600);
+            const _ap1 = performance.now();
             if (layout && layout.canvas) {
               thumb = await window.pdr.collage.renderThumb(layout, carouselMode ? carouselPageCount : 0);   // v3.0 (Terry) — carousels thumbnail as their FIRST PAGE
             }
+            // v3.0.3 TEMP (Terry: ~4s freezes) — which side of the bake eats the time: build = the
+            // renderer-sync layout raster (freezes the UI directly), bakeIpc = the main-process
+            // sharp composite round-trip. Forwarded to main.log; read alongside [collage] renderThumb.
+            try { console.log('[asaveperf] build=' + Math.round(_ap1 - _ap0) + 'ms bakeIpc=' + Math.round(performance.now() - _ap1) + 'ms'); } catch (_) {}
           } catch (_) { /* thumb is best-effort */ }
           collageThumbBusy = false;
           if (thumb) collageThumbLastAt_ = Date.now();   // v3.0.3 — start the 45s throttle window

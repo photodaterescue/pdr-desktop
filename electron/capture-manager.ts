@@ -2206,6 +2206,7 @@ ipcMain.handle('collage:captureExportTest', async (_e, snapshot: string, w: numb
   }
 });
 ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout, pageCount?: number) => {
+  const _t0 = Date.now();   // v3.0.3 TEMP (Terry: ~4s freezes on the 45s thumb cadence) — time the whole bake
   try {
     if (!layout || !layout.canvas || !Array.isArray(layout.items) || layout.items.length === 0) return null;
     const sharp = (await import('sharp')).default;
@@ -2231,6 +2232,7 @@ ipcMain.handle('collage:renderThumb', async (_event, layout: CollageLayout, page
       }
     }
     const png = await sharp(buf).resize(360, 540, { fit: 'inside', withoutEnlargement: true }).png().toBuffer();
+    log.info(`[collage] renderThumb bake ${Date.now() - _t0}ms (${layout.items.length} items)`);   // v3.0.3 TEMP — main-side share of the 4s freeze
     return 'data:image/png;base64,' + png.toString('base64');
   } catch (err) {
     log.warn(`[collage] renderThumb failed (non-fatal): ${(err as Error).message}`);
