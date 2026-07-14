@@ -2612,6 +2612,26 @@
     .cws-card:hover .cws-card-sel { opacity: 1; }
     .cws-card.cws-selected .cws-card-sel { opacity: 1; background: #FEC242; border-color: #FEC242; color: #1a1a2e; }
     .cws-card-sel svg { width: 13px; height: 13px; }
+    /* v3.0.3 (Terry #12) — bulk-select + delete on the Collages homepage. A "Select" toggle turns
+       the grid into pick-mode: every card shows a checkbox, the per-card buttons hide, and a click
+       ticks the card instead of opening it. A contextual bar deletes the whole set after one confirm. */
+    .cws-select-bar { display: flex; align-items: center; gap: 8px; }
+    .cws-select-count { font-size: 12px; font-weight: 700; color: #cfc9ec; min-width: 96px; }
+    .cws-select-delete { background: rgba(192,57,43,0.16); border: 1px solid rgba(192,57,43,0.55); color: #ff8f80;
+      font-size: 12px; font-weight: 700; cursor: pointer; padding: 3px 12px; border-radius: 6px; transition: background .12s ease, color .12s ease, border-color .12s ease; }
+    .cws-select-delete:hover:not(:disabled) { background: #c0392b; border-color: #c0392b; color: #fff; }
+    .cws-select-delete:disabled { opacity: 0.4; cursor: default; }
+    .cws-card-check {
+      position: absolute; top: 8px; left: 8px; width: 24px; height: 24px; border-radius: 6px;
+      display: none; align-items: center; justify-content: center;
+      background: rgba(10,10,26,0.78); border: 1.5px solid rgba(230,227,243,0.6); color: transparent;
+    }
+    .cws-card-check svg { width: 14px; height: 14px; }
+    .cws-selecting .cws-card-check { display: flex; }
+    /* in select mode the single-item buttons + goto links are irrelevant — hide them so only the checkbox shows */
+    .cws-selecting .cws-card-del, .cws-selecting .cws-card-rename, .cws-selecting .cws-card-sel, .cws-selecting .cws-card-go { display: none !important; }
+    .cws-card.cws-check-on { border-color: rgba(254,194,66,0.95); box-shadow: 0 0 0 2px rgba(254,194,66,0.6), 0 10px 30px rgba(0,0,0,0.4); }
+    .cws-card.cws-check-on .cws-card-check { background: #FEC242; border-color: #FEC242; color: #1a1a2e; }
     /* v3.0 round 545 (Terry) — titlebar View/Albums pair on the Home screen: dimmed until a
        saved project is selected (the tooltip says why); pointer events stay on for the tooltip. */
     .collage-goto button.goto-dim { opacity: 0.35; cursor: default; }
@@ -4576,7 +4596,15 @@
               <div id="cws-rebake-progress" class="cws-rebake-progress" style="display:none" aria-live="polite"></div>
               <div class="cws-recent-tools">
                 <select id="cws-filter-album" class="cws-filter" aria-label="Filter by album"><option value="">All albums</option></select>
+                <button type="button" id="cws-recent-select" class="cws-recent-clear" data-pdr-tooltip="Select several collages to delete">Select</button>
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
+                <!-- v3.0.3 (Terry #12) — bulk-delete action bar, shown only while select mode is active -->
+                <div id="cws-select-bar" class="cws-select-bar" style="display:none">
+                  <span id="cws-select-count" class="cws-select-count">Tap collages to select</span>
+                  <button type="button" id="cws-select-all" class="cws-recent-clear">Select all</button>
+                  <button type="button" id="cws-select-delete" class="cws-select-delete" disabled>Delete</button>
+                  <button type="button" id="cws-select-done" class="cws-recent-clear">Done</button>
+                </div>
               </div>
             </div>
             <div class="cws-projects-body">
@@ -18613,6 +18641,40 @@
     // SELECTED tile (corner tick). Coming Home from the editor pre-selects the project just edited.
     let cwsSelectedProjectId = null;
     let cwsProjectsById = {};
+    // v3.0.3 (Terry #12) — bulk-select + delete on the Collages homepage: tick several project
+    // cards, then delete the whole set with one "are you sure?". Kept separate from the single
+    // cwsSelectedProjectId tick above (that one targets the titlebar View/Albums goto pair).
+    let cwsSelectMode = false;
+    const cwsSelectedForDelete = new Set();
+    function updateCwsSelectBar() {
+      const n = cwsSelectedForDelete.size;
+      const cnt = document.getElementById('cws-select-count');
+      if (cnt) cnt.textContent = n === 0 ? 'Tap collages to select' : (n + (n === 1 ? ' selected' : ' selected'));
+      const del = document.getElementById('cws-select-delete');
+      if (del) { del.disabled = n === 0; del.textContent = n ? ('Delete (' + n + ')') : 'Delete'; }
+    }
+    function toggleCwsDeleteSelect(id, card) {
+      const key = String(id);
+      if (cwsSelectedForDelete.has(key)) { cwsSelectedForDelete.delete(key); if (card) card.classList.remove('cws-check-on'); }
+      else { cwsSelectedForDelete.add(key); if (card) card.classList.add('cws-check-on'); }
+      updateCwsSelectBar();
+    }
+    function enterCwsSelectMode() {
+      cwsSelectMode = true; cwsSelectedForDelete.clear();
+      const grid = document.getElementById('cws-recent-grid'); if (grid) grid.classList.add('cws-selecting');
+      const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = 'none';
+      const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = 'none';
+      const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'flex';
+      updateCwsSelectBar();
+    }
+    function exitCwsSelectMode() {
+      cwsSelectMode = false; cwsSelectedForDelete.clear();
+      const grid = document.getElementById('cws-recent-grid');
+      if (grid) { grid.classList.remove('cws-selecting'); try { grid.querySelectorAll('.cws-card.cws-check-on').forEach((c) => c.classList.remove('cws-check-on')); } catch (_) {} }
+      const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = '';
+      const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = '';
+      const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'none';
+    }
     function cwsSelectProject(id) {
       cwsSelectedProjectId = id;
       try { document.querySelectorAll('.cws-card').forEach((c) => c.classList.toggle('cws-selected', id != null && c.dataset.projectId === String(id))); } catch (_) {}
@@ -18706,8 +18768,16 @@
         ga.addEventListener('click', (e) => { e.stopPropagation(); collageGotoAlbums(p.exportedFileId); });
         go.appendChild(gv); go.appendChild(ga); meta.appendChild(go);
       }
-      card.addEventListener('click', async () => { const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome(); });
-      card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel);
+      // v3.0.3 (Terry #12) — bulk-select checkbox: only visible in select mode (CSS gates it on
+      // the grid's .cws-selecting class); a click anywhere on the card toggles it then.
+      const chk = document.createElement('div'); chk.className = 'cws-card-check';
+      chk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
+      if (cwsSelectedForDelete.has(String(p.id))) card.classList.add('cws-check-on');
+      card.addEventListener('click', async () => {
+        if (cwsSelectMode) { toggleCwsDeleteSelect(p.id, card); return; }   // #12 — in select mode a card click ticks it, never opens it
+        const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome();
+      });
+      card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel); card.appendChild(chk);
       return card;
     }
     async function buildCwsRecent() {
@@ -18791,22 +18861,69 @@
       });
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
       // once; hidden when there are none.
+      // v3.0.3 (Terry #12) — Select (bulk-delete) + Clear all live side by side; both hidden when
+      // there are no projects, and hidden while select mode is active (the action bar replaces them).
       const clearBtn = document.getElementById('cws-recent-clear');
-      if (clearBtn) {
-        clearBtn.style.display = list.length ? '' : 'none';
-        if (!clearBtn.dataset.wired) {
-          clearBtn.dataset.wired = '1';
-          clearBtn.addEventListener('click', async (e) => {
-            e.stopPropagation();
-            let all = []; try { all = (window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) {}
-            const recents = all.filter((p) => p.kind !== 'template');
-            if (!recents.length) return;
-            const ok = await showPdrConfirm({ title: 'Clear all collages?', body: 'Delete all ' + recents.length + ' recent collages? This can’t be undone. (Templates are kept.)', confirmLabel: 'Clear all', cancelLabel: 'Cancel' });
-            if (!ok) return;
-            for (const p of recents) { try { await window.pdr.collage.deleteProject(p.id); } catch (_) {} }
-            buildCwsRecent();
+      const selectBtn = document.getElementById('cws-recent-select');
+      if (clearBtn) clearBtn.style.display = (list.length && !cwsSelectMode) ? '' : 'none';
+      if (selectBtn) {
+        selectBtn.style.display = (list.length && !cwsSelectMode) ? '' : 'none';
+        if (!selectBtn.dataset.wired) { selectBtn.dataset.wired = '1'; selectBtn.addEventListener('click', (e) => { e.stopPropagation(); enterCwsSelectMode(); }); }
+      }
+      if (clearBtn && !clearBtn.dataset.wired) {
+        clearBtn.dataset.wired = '1';
+        clearBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          let all = []; try { all = (window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) {}
+          const recents = all.filter((p) => p.kind !== 'template');
+          if (!recents.length) return;
+          const ok = await showPdrConfirm({ title: 'Clear all collages?', body: 'Delete all ' + recents.length + ' recent collages? This can’t be undone. (Templates are kept.)', confirmLabel: 'Clear all', cancelLabel: 'Cancel' });
+          if (!ok) return;
+          for (const p of recents) { try { await window.pdr.collage.deleteProject(p.id); } catch (_) {} }
+          buildCwsRecent();
+        });
+      }
+      // #12 — select-mode action bar (Select all / Delete (N) / Done), wired once.
+      const selAllBtn = document.getElementById('cws-select-all');
+      if (selAllBtn && !selAllBtn.dataset.wired) {
+        selAllBtn.dataset.wired = '1';
+        selAllBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const cards = Array.prototype.slice.call(document.querySelectorAll('#cws-recent-grid .cws-card'));
+          const allOn = cards.length > 0 && cards.every((c) => cwsSelectedForDelete.has(String(c.dataset.projectId)));
+          cards.forEach((c) => {
+            const id = String(c.dataset.projectId);
+            if (allOn) { cwsSelectedForDelete.delete(id); c.classList.remove('cws-check-on'); }
+            else { cwsSelectedForDelete.add(id); c.classList.add('cws-check-on'); }
           });
-        }
+          updateCwsSelectBar();
+        });
+      }
+      const doneBtn = document.getElementById('cws-select-done');
+      if (doneBtn && !doneBtn.dataset.wired) { doneBtn.dataset.wired = '1'; doneBtn.addEventListener('click', (e) => { e.stopPropagation(); exitCwsSelectMode(); }); }
+      const delSelBtn = document.getElementById('cws-select-delete');
+      if (delSelBtn && !delSelBtn.dataset.wired) {
+        delSelBtn.dataset.wired = '1';
+        delSelBtn.addEventListener('click', async (e) => {
+          e.stopPropagation();
+          const ids = Array.from(cwsSelectedForDelete);
+          if (!ids.length) return;
+          const ok = await showPdrConfirm({ title: 'Delete selected collages?', body: 'Delete ' + ids.length + (ids.length === 1 ? ' collage' : ' collages') + '? This can’t be undone.', confirmLabel: 'Delete ' + ids.length, cancelLabel: 'Cancel' });
+          if (!ok) return;
+          for (const id of ids) { try { await window.pdr.collage.deleteProject(id); } catch (_) {} }
+          exitCwsSelectMode();
+          buildCwsRecent();
+        });
+      }
+      // #12 — a rebuild WHILE selecting (e.g. album filter changed): keep the grid in select mode,
+      // drop ticks whose card is no longer visible, re-check the survivors, keep the bar showing.
+      if (cwsSelectMode) {
+        const grid2 = document.getElementById('cws-recent-grid'); if (grid2) grid2.classList.add('cws-selecting');
+        const present = new Set(Array.prototype.slice.call(document.querySelectorAll('#cws-recent-grid .cws-card')).map((c) => String(c.dataset.projectId)));
+        Array.from(cwsSelectedForDelete).forEach((id) => { if (!present.has(id)) cwsSelectedForDelete.delete(id); });
+        try { document.querySelectorAll('#cws-recent-grid .cws-card').forEach((c) => { if (cwsSelectedForDelete.has(String(c.dataset.projectId))) c.classList.add('cws-check-on'); }); } catch (_) {}
+        const bar = document.getElementById('cws-select-bar'); if (bar) bar.style.display = 'flex';
+        updateCwsSelectBar();
       }
     }
     // v2.1 round 323 (Terry) — the Templates row: your saved templates (kind:'template'). Clicking
