@@ -10315,7 +10315,7 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      const pageEq = ruleOn('cornerEqual') && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle too
+      const pageEq = (ruleOn('cornerEqual') || cornerGlideActive_) && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle; the explicit Ctrl+E glide always shows it
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       const line = (el, x, y, len, horiz, sym, pe, show) => {
         el.classList.toggle('pageEq', !!pe);
@@ -15762,7 +15762,15 @@
     ];
     const MEASURE_RULE_KEYS = MEASURE_RULES.reduce(function (a, g) { return a.concat(g.items.map(function (i) { return i.key; })); }, []);
     let collageMeasureRules = {};
-    function defaultMeasureRules() { const o = {}; MEASURE_RULE_KEYS.forEach(function (k) { o[k] = true; }); return o; }
+    function defaultMeasureRules() {
+      const o = {}; MEASURE_RULE_KEYS.forEach(function (k) { o[k] = true; });
+      // v3.0.3 (Terry) — MIRROR defaults OFF: twice its lone green (a margin coincidentally equal to
+      // some other item's margin — the "green 41", then the green line to the canvas top) read as
+      // senseless noise. The rule stays available in the panel for whoever wants it; a saved default
+      // overrides this as usual. (Every other rule stays ON by default per Terry's spec.)
+      o.mirror = false;
+      return o;
+    }
     function loadMeasureRules() {
       collageMeasureRules = defaultMeasureRules();
       try { const raw = localStorage.getItem('pdr.collage.measureRules'); if (raw) { const s = JSON.parse(raw); MEASURE_RULE_KEYS.forEach(function (k) { if (typeof s[k] === 'boolean') collageMeasureRules[k] = s[k]; }); } } catch (_) {}
@@ -15816,11 +15824,17 @@
     // its gap to the nearest vertical page edge equals its gap to the nearest horizontal edge (the
     // lavender corner-equal relationship), instead of free movement. Plain E still toggles Enhance.
     let cornerGlideHeld = false;
+    let cornerGlideActive_ = false;   // true only while a drag-move is actually gliding (drives the lavender pills)
     window.addEventListener('keydown', function (e) {
-      if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) { cornerGlideHeld = true; e.preventDefault(); }
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
+        // v3.0.3 (Terry) — LATCH ON CTRL: tapping E arms the glide and it stays armed while Ctrl is
+        // held (releasing just the E no longer kills it mid-drag — that made the gesture feel dead).
+        if (!cornerGlideHeld) { cornerGlideHeld = true; try { console.log('[glidedbg] Ctrl+E armed'); } catch (_) {} }
+        e.preventDefault();
+      }
     }, true);
     window.addEventListener('keyup', function (e) {
-      if (e.key === 'e' || e.key === 'E' || e.key === 'Control' || e.key === 'Meta') cornerGlideHeld = false;
+      if (e.key === 'Control' || e.key === 'Meta') { if (cornerGlideHeld) { try { console.log('[glidedbg] released'); } catch (_) {} } cornerGlideHeld = false; }
     }, true);
     window.addEventListener('blur', function () { cornerGlideHeld = false; });
     let collageMeasureEl = null;
@@ -16071,7 +16085,8 @@
         // nearest horizontal edge — snap into a corner (0/0), hold Ctrl+E, pull away, and it glides
         // out along the lavender equal-from-the-corner line. Terry's redesign of the old ambient
         // corner-equal auto-snap ("I really like this idea"). Normal snapping is bypassed while held.
-        if (cornerGlideHeld && ruleOn('cornerEqual')) {
+        if (cornerGlideHeld) {   // v3.0.3 (Terry) — an EXPLICIT hold always glides; the cornerEqual toggle only governs the ambient auto-snap ("it doesn't do it" was this gate)
+          if (!cornerGlideActive_) { cornerGlideActive_ = true; try { console.log('[glidedbg] gliding'); } catch (_) {} }
           const cR3 = collageCanvasEl.getBoundingClientRect();
           if (cR3.width && cR3.height) {
             const r3 = it.el.getBoundingClientRect();
@@ -16099,6 +16114,7 @@
             return;
           }
         }
+        cornerGlideActive_ = false;   // not gliding this move (fell through, or Ctrl released mid-drag)
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
@@ -16115,6 +16131,7 @@
       };
       const up = () => {
         it.el.classList.remove('dragging');
+        cornerGlideActive_ = false;   // v3.0.3 — end-of-drag: stop driving the lavender pills
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
