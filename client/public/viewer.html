@@ -10333,7 +10333,7 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      let pageEq = ruleOn('cornerEqual') && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle
+      let pageEq = (ruleOn('cornerEqual') || axisLockActive_) && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle; an explicit Shift/Ctrl one-axis drag always shows it
       let peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       // v3.0.3 (Terry SS1/SS2) — during the Ctrl+E glide the PURPLE pair sits on the LOCKED corner's
       // axes (the edges snapped to 0 when the glide began), NOT the nearest-edge pick above. For a
@@ -14827,6 +14827,7 @@
         else { yLock = null; }
         if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = layer.xFrac; }
         else { xLock = null; }
+        axisLockActive_ = (xLock !== null || yLock !== null);
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         layer.xFrac = Math.max(0, Math.min(1, sx + dx));
@@ -14851,6 +14852,7 @@
         showCollageMeasurements(layer);   // v3.0 r385 (Terry) — distance/spacing badges for text+emoji too
       };
       const up = () => {
+        axisLockActive_ = false;   // v3.0.3 — end of a text/emoji drag: stop the lock-driven purple
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         hideCollageMeasurements();   // v3.0 r385 (Terry)
         window.removeEventListener('pointermove', move);
@@ -15634,6 +15636,32 @@
       }
       // v3.0.3 (Terry) — equal-spacing / centre-between (#14) is one toggle.
       if (ruleOn('equalSpacing')) { vCand.push((lRef + rRef) / 2); hCand.push((tRef + bRef) / 2); }
+      // v3.0.3 (Terry SS1/SS2, Canva) — REPEAT-SPACING snap. Dragging the END item of a row/column
+      // now offers the position where its gap REPEATS the next pair's gap: with logos at gap 75,
+      // the dragged third logo locks at 75 too ("the gap on the 2 right will NOT snap to 75 but it
+      // should"). Midpoint-between only served an item BETWEEN two others; this serves the ends.
+      if (ruleOn('equalSpacing')) {
+        const _rr = [];
+        for (let ri = 0; ri < distCands.length; ri++) _rr.push(distCands[ri].el.getBoundingClientRect());
+        const _bV3 = (q) => q.top < dRect.bottom - 1 && q.bottom > dRect.top + 1;
+        const _bH3 = (q) => q.left < dRect.right - 1 && q.right > dRect.left + 1;
+        let n1 = null, n2 = null;
+        for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (_bV3(q) && q.right <= dRect.left + 1 && (!n1 || q.right > n1.right)) n1 = q; }
+        if (n1) { for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (q !== n1 && _bV3(q) && q.right <= n1.left + 1 && (!n2 || q.right > n2.right)) n2 = q; }
+          if (n2 && (n1.left - n2.right) > 0) vCand.push(n1.right - cRect.left + (n1.left - n2.right)); }
+        let m1 = null, m2 = null;
+        for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (_bV3(q) && q.left >= dRect.right - 1 && (!m1 || q.left < m1.left)) m1 = q; }
+        if (m1) { for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (q !== m1 && _bV3(q) && q.left >= m1.right - 1 && (!m2 || q.left < m2.left)) m2 = q; }
+          if (m2 && (m2.left - m1.right) > 0) vCand.push(m1.left - cRect.left - (m2.left - m1.right)); }
+        let u1 = null, u2 = null;
+        for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (_bH3(q) && q.bottom <= dRect.top + 1 && (!u1 || q.bottom > u1.bottom)) u1 = q; }
+        if (u1) { for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (q !== u1 && _bH3(q) && q.bottom <= u1.top + 1 && (!u2 || q.bottom > u2.bottom)) u2 = q; }
+          if (u2 && (u1.top - u2.bottom) > 0) hCand.push(u1.bottom - cRect.top + (u1.top - u2.bottom)); }
+        let b1 = null, b2 = null;
+        for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (_bH3(q) && q.top >= dRect.bottom - 1 && (!b1 || q.top < b1.top)) b1 = q; }
+        if (b1) { for (let i2 = 0; i2 < _rr.length; i2++) { const q = _rr[i2]; if (q !== b1 && _bH3(q) && q.top >= b1.bottom - 1 && (!b2 || q.top < b2.top)) b2 = q; }
+          if (b2 && (b2.top - b1.bottom) > 0) hCand.push(b1.top - cRect.top - (b2.top - b1.bottom)); }
+      }
       // v3.0.3 (Terry) — EDGE-PRIORITY pick. The candidate space is dense (every item's edges +
       // centres, mirrors, cross-page copies, midpoints…), so nearest-line-wins let a smart candidate
       // a few px closer OUTBID the true page edge — Terry: "green 0's aren't snapping at all". Now a
@@ -15675,7 +15703,12 @@
       // but it wouldn't stick — Terry: "they don't snap when both appear"). It claims both axes +
       // clears the gold guides; the lavender badges are the cue.
       out.pageEq = false;
-      if (ruleOn('cornerEqual')) {   // v3.0.3 (Terry) — corner-equal (#15) is toggleable
+      // v3.0.3 (Terry) — a HELD Shift/Ctrl one-axis drag is EXPLICIT intent (like the Ctrl+E glide):
+      // the equal-margin match always runs for it, regardless of the ambient corner-equal toggle,
+      // and it isn't vetoed by coincidental equidistant claims ("the WHOLE reason for having purple
+      // numbers... BUT they don't [snap]" — the gesture was dying inside the ambient gate).
+      const lockedDrag = !!(opts && (opts.lockX || opts.lockY));
+      if (ruleOn('cornerEqual') || lockedDrag) {   // v3.0.3 (Terry) — ambient corner-equal (#15) is toggleable; locked drags always match
         const mL = dLeft - lRef, mR = rRef - dRight, mT = dTop - tRef, mB = bRef - dBottom;
         const vIsTop = mT <= mB, vM = vIsTop ? mT : mB;   // nearest horizontal-edge margin
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
@@ -15692,7 +15725,7 @@
         // round-308/v3.0 priority (equidistant first) still applies.
         const cornerDominates = vM > 0 && hM > 0 &&
           ((vM + hM) / 2) < Math.min(Math.abs(dCx - (pgL + pgR) / 2), Math.abs(dCy - cRect.height / 2));
-        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && (cornerDominates || (!xIsEqui && !yIsEqui))) {
+        if (vVsPage && hVsPage && vM > 0 && hM > 0 && Math.abs(vM - hM) <= T && (lockedDrag || cornerDominates || (!xIsEqui && !yIsEqui))) {
           // v2.1 round 310 (Terry) — with Shift, one axis is LOCKED, so that margin is fixed and
           // corner-equal becomes a ONE-axis snap: move only the free axis so its margin matches
           // the fixed one. (Round 309 wrongly skipped it entirely → the lavender showed but it
@@ -15973,6 +16006,7 @@
     // lavender corner-equal relationship), instead of free movement. Plain E still toggles Enhance.
     let cornerGlideHeld = false;
     let cornerGlideActive_ = false;   // true only while a drag-move is actually gliding (drives the lavender pills)
+    let axisLockActive_ = false;      // v3.0.3 (Terry) — true while a Shift/Ctrl one-axis drag is underway: the equal-margin purple always shows for the explicit gesture
     let glideLock_ = null;            // v3.0.3 (Terry SS4/SS5) — the corner locked in for the CURRENT glide: {pgL, pgR, useLeft, useTop}
     // v3.0.3 (Terry) — the glide's displacement from the RAW cursor proposal. Carried into subsequent
     // free-drag moves so releasing Ctrl mid-drag CONTINUES from where the glide left the tile instead
@@ -16191,6 +16225,7 @@
         // act at pointerdown and are untouched — this engages only once a move is underway.
         if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = it.xFrac; }
         else { xLock = null; }
+        axisLockActive_ = (xLock !== null || yLock !== null);
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         // v2.1 round 286 Tier 2 — group drag: move every selected member by the
@@ -16313,7 +16348,7 @@
       };
       const up = () => {
         it.el.classList.remove('dragging');
-        cornerGlideActive_ = false; glideLock_ = null; glideOffX_ = 0; glideOffY_ = 0;   // v3.0.3 — end-of-drag: stop the lavender pills, free the locked corner, drop the carried glide offset
+        cornerGlideActive_ = false; glideLock_ = null; glideOffX_ = 0; glideOffY_ = 0; axisLockActive_ = false;   // v3.0.3 — end-of-drag: stop the lavender pills, free the locked corner, drop the carried glide offset
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
