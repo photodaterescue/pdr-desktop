@@ -20739,15 +20739,13 @@
       // carousel pages. Carousel → the focused page; single collage → the whole canvas. (Was
       // placeCenter: a ~42%-of-page-width centred floating tile, which Terry read as a gap / wrong-sized frame.)
       if (carouselMode) {
+        // v3.0.3 (Terry SS1) — REVERTED to the placement Terry asked for: full page WIDTH, top-left anchor,
+        // right edge meeting the page's right edge, height at the photo's NATURAL aspect (NOT the rejected
+        // cover-fill that made it narrow/portrait). The bottom-gap fix is a SEPARATE render fix, not this.
         placeInCarouselSliceFit(it, Math.max(0, Math.min(Math.max(1, carouselPageCount) - 1, carouselFocusPage | 0)));
-        // v3.0.3 (Terry SS4) — a background COVER-FILLS its page: the box is the PAGE shape and the photo
-        // covers it (objectFit:cover), so a landscape shot no longer leaves a bottom gap. Stays UNLOCKED so
-        // it's still freely movable/resizable (unlike the rejected round-263 LOCKED full-canvas cover).
-        it.coverFill = true; it.boxAspect = CAROUSEL_EXPORT_PX.w / CAROUSEL_EXPORT_PX.h;
       } else {
-        // v3.0.3 (Terry SS4) — single collage: cover-fill the whole canvas (no gap), unlocked.
-        it.coverFill = true; it.boxAspect = getCanvasAspect();
         it.wFrac = 1; it.xFrac = 0; it.yFrac = 0;
+        it.aspect = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (it.aspect || 1);
       }
       collageItems.push(it);
       buildCollageItemEl(it);
