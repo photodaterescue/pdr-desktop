@@ -10315,8 +10315,21 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      const pageEq = (ruleOn('cornerEqual') || cornerGlideActive_) && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle; the explicit Ctrl+E glide always shows it
-      const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
+      let pageEq = ruleOn('cornerEqual') && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle
+      let peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
+      // v3.0.3 (Terry SS1/SS2) — during the Ctrl+E glide the PURPLE pair sits on the LOCKED corner's
+      // axes (the edges snapped to 0 when the glide began), NOT the nearest-edge pick above. For a
+      // page-width tile the nearest H edge is the off-page NEGATIVE side, which failed the hM > 0
+      // test and suppressed the purple entirely ("neither version shows the purple numbers
+      // increasing in value equally for both axis"). The glide holds the two locked margins exactly
+      // equal in screen px, and the H/V export scales match (1080/pageW == 1350/canvasH), so the two
+      // displayed numbers tick up in lock-step.
+      if (cornerGlideActive_ && glideLock_) {
+        const hIsL2 = !!glideLock_.useLeft, vIsT2 = !!glideLock_.useTop;
+        const hM2 = hIsL2 ? mLeft : mRight, vM2 = vIsT2 ? mTop : mBot;
+        pageEq = hM2 > 0 && vM2 > 0 && pxX(hM2) === pxY(vM2);
+        peL = pageEq && hIsL2; peR = pageEq && !hIsL2; peT = pageEq && vIsT2; peB = pageEq && !vIsT2;
+      }
       const line = (el, x, y, len, horiz, sym, pe, show) => {
         el.classList.toggle('pageEq', !!pe);
         el.classList.toggle('sym', !!sym && !pe);
@@ -16110,7 +16123,11 @@
                 const pi3 = Math.max(0, Math.min(N3 - 1, Math.floor(cx3 / Math.max(1, pw3))));
                 pgL0 = pi3 * pw3; pgR0 = (pi3 + 1) * pw3;
               }
-              glideLock_ = { pgLF: pgL0 / cR3.width, pgRF: pgR0 / cR3.width, useLeft: (cx3 - pgL0) <= (pgR0 - cx3), useTop: ((tT3 + tB3) / 2) <= cR3.height / 2 };
+              // Axes = the edges nearest FLUSH at glide start ("the axis it was just snapped to"),
+              // ties -> left/top. The old centre-based pick was a coin-flip for a page-width tile
+              // (both H margins 0 at once) — Terry: "moves rather unpredictably either down and
+              // left or right and left".
+              glideLock_ = { pgLF: pgL0 / cR3.width, pgRF: pgR0 / cR3.width, useLeft: Math.abs(tL3 - pgL0) <= Math.abs(pgR0 - tR3), useTop: Math.abs(tT3) <= Math.abs(cR3.height - tB3) };
             }
             const Lk = glideLock_;
             const pgL3 = Lk.pgLF * cR3.width, pgR3 = Lk.pgRF * cR3.width;
