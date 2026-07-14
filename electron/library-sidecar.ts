@@ -1195,8 +1195,10 @@ async function tickBackgroundMirror(): Promise<void> {
   }
   mirrorInFlight = true;
   dbDirty = false; // clear before mirror; if it fails we'll re-mark
+  const _mt0 = Date.now();   // v3.0.3 TEMP (Terry: ~4s freeze every ~50s while editing) — time the 30s DB mirror; if it blocks the main thread it stalls the collage window too
   try {
     const result = await mirrorAllToSidecar(status.libraryRoot, 'recent', cachedDeviceName);
+    console.log(`[LibSidecar] background mirror ${Date.now() - _mt0}ms`);
     if (!result.ok) {
       dbDirty = true;
       console.warn('[LibSidecar] background mirror failed:', result.error);

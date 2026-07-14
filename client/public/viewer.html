@@ -16146,6 +16146,17 @@
     window.addEventListener('pointerup', function () { collagePointerDown_ = false; lastPointerActivityAt_ = Date.now(); }, true);
     window.addEventListener('pointercancel', function () { collagePointerDown_ = false; lastPointerActivityAt_ = Date.now(); }, true);
     window.addEventListener('pointermove', function () { lastPointerActivityAt_ = Date.now(); }, true);
+    // v3.0.3 TEMP (Terry: "4 second delay every 50 seconds") — catch ANY main-thread stall in the
+    // collage window regardless of source (GC pause, autosave, layout), with its true duration.
+    // dragperf/asaveperf only cover their own functions; this covers everything. Remove once found.
+    try {
+      if (window.PerformanceObserver) {
+        const _lto = new PerformanceObserver(function (list) {
+          list.getEntries().forEach(function (e) { if (e.duration > 200) { try { console.log('[longtask] ' + Math.round(e.duration) + 'ms @' + Math.round(e.startTime) + 'ms'); } catch (_) {} } });
+        });
+        _lto.observe({ entryTypes: ['longtask'] });
+      }
+    } catch (_) {}
     let collageMeasureEl = null;
     function refreshMeasureLiveState() {
       // Dividers/outlines/safe-zone/user-guides are the ALWAYS-on rules — redraw so their toggle shows
@@ -18200,7 +18211,12 @@
           collageThumbBusy = false;
           if (thumb) collageThumbLastAt_ = Date.now();   // v3.0.3 — start the 45s throttle window
         }
-        const res = await window.pdr.collage.saveProject(serializeCollageProject(), thumb || undefined);
+        const _sp0 = performance.now();
+        const _proj = serializeCollageProject();   // snapshotCollage() runs in here — time it separately from the IPC write
+        const _sp1 = performance.now();
+        const res = await window.pdr.collage.saveProject(_proj, thumb || undefined);
+        const _sp2 = performance.now();
+        if ((_sp2 - _sp0) > 80) { try { console.log('[asaveperf] serialize=' + Math.round(_sp1 - _sp0) + 'ms saveIpc=' + Math.round(_sp2 - _sp1) + 'ms'); } catch (_) {} }   // v3.0.3 TEMP (Terry ~4s freeze) — the un-timed autosave half
         if (res && res.success && res.id) currentCollageProjectId = res.id;
         updateCollageTitle();   // v2.1 round 347 (Terry) — reflect the (now-defaulted) project name
       } catch (_) { /* autosave is best-effort — a failed save must NEVER interrupt editing */ }
