@@ -3851,6 +3851,26 @@
     .csl-title span { color: #FEC242; }
     .csl-close { width: 30px; height: 30px; border-radius: 8px; border: 1px solid rgba(255,255,255,0.16); background: rgba(255,255,255,0.04); color: #cfcadf; font-size: 18px; line-height: 1; cursor: pointer; }
     .csl-close:hover { color: #fff; border-color: rgba(254,194,66,0.6); }
+    /* v3.0.3 (Terry) — Measurement rules panel; reuses the shortcuts overlay/card shell. */
+    #collage-measure-overlay { position: fixed; inset: 0; z-index: 2147483647; display: none; align-items: center; justify-content: center; background: rgba(8,7,18,0.6); }
+    #collage-measure-overlay.open { display: flex; }
+    .cml-card { width: min(470px, 94vw); }
+    .cml-group { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #FEC242; font-weight: 700; margin: 17px 0 5px; }
+    .cml-group:first-child { margin-top: 4px; }
+    .cml-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 4px; cursor: pointer; border-radius: 8px; margin: 0; }
+    .cml-row:hover { background: rgba(255,255,255,0.04); }
+    .cml-name { font-size: 13.5px; color: #e7e3f2; }
+    .cml-switch { position: relative; width: 38px; height: 22px; border-radius: 999px; background: rgba(255,255,255,0.16); flex: 0 0 auto; transition: background .16s; }
+    .cml-switch.on { background: #FEC242; }
+    .cml-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+    .cml-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .16s; box-shadow: 0 1px 3px rgba(0,0,0,.45); pointer-events: none; }
+    .cml-switch.on .cml-knob { transform: translateX(16px); }
+    .cml-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+    .cml-btn { font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
+    .cml-btn-ghost { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.16); color: #cfcadf; }
+    .cml-btn-ghost:hover { color: #fff; border-color: rgba(254,194,66,0.5); }
+    .cml-btn-gold { background: #FEC242; color: #1a1830; }
+    .cml-btn-gold:hover { background: #ffce5e; }
     .csl-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 30px; }
     .csl-col h4 { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: #FEC242; margin: 0 0 6px; }
     .csl-row { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,0.05); }
@@ -4449,6 +4469,8 @@
       <span class="tb-collage" id="collage-zoom-divider" aria-hidden="true"></span>
       <!-- v2.0.15 (Terry 2026-06-06) — Enhance panel opener. -->
       <button class="toolbar-btn" id="btn-enhance" data-pdr-tooltip="Enhance (E)">Enhance</button>
+      <!-- v3.0.3 (Terry) — Measurement rules panel; collage-only, sits between Enhance and the shortcuts legend. -->
+      <button class="toolbar-btn tb-collage" id="btn-collage-measure" data-pdr-tooltip="Measurement rules" aria-label="Measurement rules"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="8" width="20" height="8" rx="1.5"></rect><path d="M6 8v3M10 8v4M14 8v3M18 8v4"></path></svg></button>
       <!-- v2.1 round 290 (Terry) — keyboard-shortcuts legend; collage-only, sits beside Enhance. -->
       <button class="toolbar-btn tb-collage" id="btn-collage-shortcuts" data-pdr-tooltip="Keyboard shortcuts" aria-label="Keyboard shortcuts"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"></rect><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M6 14h.01M18 14h.01M10 14h4"></path></svg></button>
       <!-- v2.1 round 282 (Terry) — Print from the Viewer. Prints the filmstrip
@@ -10175,6 +10197,7 @@
     }
     function showCollageMeasurements(it) {
       if (!it || it.isBg || !it.el || !collageChromeEl || !collageCanvasEl || !collageStageEl) { hideCollageMeasurements(); return; }
+      if (typeof ruleOn === 'function' && !ruleOn('numbers')) { hideCollageMeasurements(); return; }   // v3.0.3 (Terry) — Measurement rules: distance numbers off
       if (typeof it.wFrac === 'number' && collageSelection && collageSelection.length > 1) { hideCollageMeasurements(); return; }   // single only (tiles; a text/emoji layer always measures)
       const cFull = collageCanvasEl.getBoundingClientRect();
       // v2.1 round 373 (Terry) — #10: in CAROUSEL mode the measurement reference is the PAGE the tile sits
@@ -15309,8 +15332,14 @@
       const dCy = dTop + dRect.height / 2;
       // Candidate alignment lines (canvas-relative px). Canvas-centre is listed
       // FIRST so that, with strict-less-than comparison below, it wins ties.
-      const vCand = [cRect.width / 2, 0, cRect.width];                 // centreX, left, right
-      const hCand = [cRect.height / 2, 0, cRect.height];               // centreY, top, bottom
+      // v3.0.3 (Terry) — each candidate group is gated by its Measurement-rules toggle (ruler button).
+      // Centre listed FIRST so it wins ties. The horizontal centre is the whole STRIP's centre in a
+      // carousel (#9) and the page centre in a single collage (#6); the vertical centre is the page's
+      // centre in both.
+      const vCand = [], hCand = [];
+      if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) vCand.push(cRect.width / 2);
+      if (ruleOn('pageCentre')) hCand.push(cRect.height / 2);
+      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); }
       // v2.1 round 264 (Terry) — snap: in carousel mode the wide canvas is N equal
       // 1080-wide pages; add every page boundary as a vertical snap candidate so a
       // tile's left/centre/right can snap to any page edge (e.g. lock a cover from
@@ -15320,12 +15349,12 @@
       // Strictly gated on carouselMode so single-collage snapping is unchanged.
       if (carouselMode) {
         const N = Math.max(1, carouselPageCount);
-        for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width);
+        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width); }
         // v2.1 round 270 (Terry) — also offer each PAGE's CENTRE as a snap line, so a tile /
         // text can be centred WITHIN a single page (the dividers act as edges → the midpoint
         // between two dividers is the page centre). Without this only the whole-strip centre
         // was findable, so you couldn't centre text on page 1.
-        for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
+        if (ruleOn('pageCentres')) { for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width); }
       }
       // v3.1 (Terry) — PER-PAGE reference box. In carousel mode the dragged tile's page
       // (the 1080-wide slice its centre sits on) is the symmetry/distribute/corner-equal
@@ -15353,20 +15382,25 @@
       const pushEdgesWithMirror = (r) => {
         const oL = r.left - cRect.left, oR = r.right - cRect.left, oCx = oL + r.width / 2;
         const oT = r.top - cRect.top, oB = r.bottom - cRect.top, oCy = oT + r.height / 2;
-        vCand.push(oL, oCx, oR, cRect.width - oL, cRect.width - oCx, cRect.width - oR);
-        if (carouselMode) vCand.push(pgL + pgR - oL, pgL + pgR - oCx, pgL + pgR - oR);
-        // v3.1 (Terry SS2) — CROSS-PAGE "same spot": translate this candidate's edges onto
-        // the DRAGGED tile's page (same intra-page offset), so a duplicate dragged on page 2
-        // SNAPS where the original sits on page 1. Y needs nothing — pages share the canvas
-        // top/bottom, so equal-Y is already a plain alignment candidate.
-        if (carouselMode) {
+        // v3.0.3 (Terry) — split by Measurement rule: another item's EDGES (#10), its CENTRE (#11),
+        // MIRROR / symmetry (#12) and cross-page "same spot" (#13) each gate independently.
+        if (ruleOn('objEdges')) { vCand.push(oL, oR); hCand.push(oT, oB); }
+        if (ruleOn('objCentre')) { vCand.push(oCx); hCand.push(oCy); }
+        if (ruleOn('mirror')) {
+          vCand.push(cRect.width - oL, cRect.width - oCx, cRect.width - oR);
+          if (carouselMode) vCand.push(pgL + pgR - oL, pgL + pgR - oCx, pgL + pgR - oR);
+          hCand.push(cRect.height - oT, cRect.height - oCy, cRect.height - oB);
+        }
+        // CROSS-PAGE "same spot": translate this candidate's edges onto the DRAGGED tile's page
+        // (same intra-page offset), so a duplicate dragged on page 2 SNAPS where the original sits
+        // on page 1. Y needs nothing — pages share the canvas top/bottom, so equal-Y is a plain candidate.
+        if (carouselMode && ruleOn('crossPage')) {
           const _N2 = Math.max(1, carouselPageCount);
           const _pw2 = cRect.width / _N2;
           const _oPg = Math.max(0, Math.min(_N2 - 1, Math.floor(oCx / Math.max(1, _pw2))));
           const _shift = pgL - _oPg * _pw2;
           if (Math.abs(_shift) > 0.5) vCand.push(oL + _shift, oCx + _shift, oR + _shift);
         }
-        hCand.push(oT, oCy, oB, cRect.height - oT, cRect.height - oCy, cRect.height - oB);
       };
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
@@ -15402,8 +15436,8 @@
           if (qT >= dBottom - 1 && qT < bRef) bRef = qT;    // nearest below
         }
       }
-      vCand.push((lRef + rRef) / 2);   // dragged CENTRE → midpoint of nearest L/R refs = equal gaps
-      hCand.push((tRef + bRef) / 2);
+      // v3.0.3 (Terry) — equal-spacing / centre-between (#14) is one toggle.
+      if (ruleOn('equalSpacing')) { vCand.push((lRef + rRef) / 2); hCand.push((tRef + bRef) / 2); }
       // Best snap on X: test the dragged element's left / centre / right against
       // every vertical candidate; keep the smallest gap within threshold.
       let bestVGap = T + 1;
@@ -15443,7 +15477,7 @@
       // but it wouldn't stick — Terry: "they don't snap when both appear"). It claims both axes +
       // clears the gold guides; the lavender badges are the cue.
       out.pageEq = false;
-      {
+      if (ruleOn('cornerEqual')) {   // v3.0.3 (Terry) — corner-equal (#15) is toggleable
         const mL = dLeft - lRef, mR = rRef - dRight, mT = dTop - tRef, mB = bRef - dBottom;
         const vIsTop = mT <= mB, vM = vIsTop ? mT : mB;   // nearest horizontal-edge margin
         const hIsLeft = mL <= mR, hM = hIsLeft ? mL : mR;  // nearest vertical-edge margin
@@ -15490,6 +15524,7 @@
     let collageSnapVEl = null, collageSnapHEl = null;
     function showCollageSnapGuides(vGuide, hGuide) {
       if (!collageCanvasEl) return;
+      if (typeof ruleOn === 'function' && !ruleOn('guideLine')) { hideCollageSnapGuides(); return; }   // v3.0.3 (Terry) — Measurement rules: snap guide line off
       // v2.1 round 253 (Terry) — vGuide/hGuide arrive in SCREEN px (computeDragSnap
       // measures off getBoundingClientRect, which includes the user-zoom transform),
       // but these guide lines are CHILDREN of #collage-canvas, so their left/top are
@@ -15627,6 +15662,109 @@
     function toggleCollageShortcuts(force) {
       const ov = buildCollageShortcutsOverlay();
       const open = (typeof force === 'boolean') ? force : !ov.classList.contains('open');
+      ov.classList.toggle('open', open);
+    }
+
+    // ─── v3.0.3 (Terry) — MEASUREMENT & SNAPPING RULES ─────────────────────────
+    // Every guide line, snap target and on-canvas measurement is individually toggleable from the
+    // ruler button on the titlebar (between Enhance and the ⌨ shortcuts). All default ON; "Save as
+    // my default" persists the chosen set to localStorage so it survives restarts. Toggling is LIVE.
+    // ruleOn(key) is read by renderCarouselGuides, showCollageSnapGuides, showCollageMeasurements
+    // and computeDragSnap to gate the matching line / candidate.
+    const MEASURE_RULES = [
+      { group: 'Always on the canvas', items: [
+        { key: 'dividers', name: 'Page divider lines' },
+        { key: 'outlines', name: 'Page outline frames' },
+      ] },
+      { group: 'Live guides (while dragging)', items: [
+        { key: 'guideLine', name: 'Snap guide line' },
+        { key: 'numbers', name: 'Measurement numbers' },
+      ] },
+      { group: 'Line up to its own page', items: [
+        { key: 'pageEdges', name: 'The page’s edges' },
+        { key: 'pageCentre', name: 'The page’s centre lines' },
+      ] },
+      { group: 'Line up across the carousel', items: [
+        { key: 'pageBoundaries', name: 'Every page boundary' },
+        { key: 'pageCentres', name: 'Each page’s own centre' },
+        { key: 'stripCentre', name: 'The whole strip’s centre' },
+      ] },
+      { group: 'Line up to other items', items: [
+        { key: 'objEdges', name: 'Another item’s edges' },
+        { key: 'objCentre', name: 'Another item’s centre' },
+      ] },
+      { group: 'Smart alignments', items: [
+        { key: 'mirror', name: 'Mirror / symmetry' },
+        { key: 'crossPage', name: 'Cross-page “same spot”' },
+        { key: 'equalSpacing', name: 'Equal spacing / centre-between' },
+        { key: 'cornerEqual', name: 'Corner-equal' },
+      ] },
+    ];
+    const MEASURE_RULE_KEYS = MEASURE_RULES.reduce(function (a, g) { return a.concat(g.items.map(function (i) { return i.key; })); }, []);
+    let collageMeasureRules = {};
+    function defaultMeasureRules() { const o = {}; MEASURE_RULE_KEYS.forEach(function (k) { o[k] = true; }); return o; }
+    function loadMeasureRules() {
+      collageMeasureRules = defaultMeasureRules();
+      try { const raw = localStorage.getItem('pdr.collage.measureRules'); if (raw) { const s = JSON.parse(raw); MEASURE_RULE_KEYS.forEach(function (k) { if (typeof s[k] === 'boolean') collageMeasureRules[k] = s[k]; }); } } catch (_) {}
+    }
+    function ruleOn(key) { return collageMeasureRules[key] !== false; }
+    loadMeasureRules();
+    let collageMeasureEl = null;
+    function refreshMeasureLiveState() {
+      // Dividers/outlines are the only ALWAYS-on rules — redraw them so their toggle shows instantly.
+      // The drag-time rules (guides, numbers, snap targets) apply on the next drag; clear any stray overlay.
+      try { renderCarouselGuides(); } catch (_) {}
+      try { hideCollageMeasurements(); } catch (_) {}
+    }
+    function syncMeasurePanelChecks() {
+      if (!collageMeasureEl) return;
+      Array.prototype.forEach.call(collageMeasureEl.querySelectorAll('input[data-rk]'), function (cb) {
+        const on = ruleOn(cb.dataset.rk); cb.checked = on;
+        const sw = cb.closest('.cml-switch'); if (sw) sw.classList.toggle('on', on);
+      });
+    }
+    function buildCollageMeasureOverlay() {
+      if (collageMeasureEl) return collageMeasureEl;
+      const ov = document.createElement('div'); ov.id = 'collage-measure-overlay';
+      const card = document.createElement('div'); card.className = 'csl-card cml-card';
+      const head = document.createElement('div'); head.className = 'csl-head';
+      head.innerHTML = '<div class="csl-title">Measurement <span>rules</span></div>';
+      const close = document.createElement('button'); close.className = 'csl-close'; close.textContent = '×'; close.setAttribute('aria-label', 'Close');
+      close.addEventListener('click', function () { toggleCollageMeasurePanel(false); });
+      head.appendChild(close);
+      const body = document.createElement('div'); body.className = 'cml-body';
+      MEASURE_RULES.forEach(function (sec) {
+        const h = document.createElement('h4'); h.className = 'cml-group'; h.textContent = sec.group; body.appendChild(h);
+        sec.items.forEach(function (it) {
+          const row = document.createElement('label'); row.className = 'cml-row';
+          const nm = document.createElement('span'); nm.className = 'cml-name'; nm.textContent = it.name;
+          const sw = document.createElement('span'); sw.className = 'cml-switch';
+          const cb = document.createElement('input'); cb.type = 'checkbox'; cb.checked = ruleOn(it.key); cb.dataset.rk = it.key;
+          const knob = document.createElement('span'); knob.className = 'cml-knob';
+          sw.classList.toggle('on', cb.checked);
+          cb.addEventListener('change', function () { collageMeasureRules[it.key] = cb.checked; sw.classList.toggle('on', cb.checked); refreshMeasureLiveState(); });
+          sw.appendChild(cb); sw.appendChild(knob);
+          row.appendChild(nm); row.appendChild(sw); body.appendChild(row);
+        });
+      });
+      const foot = document.createElement('div'); foot.className = 'cml-foot';
+      const allBtn = document.createElement('button'); allBtn.className = 'cml-btn cml-btn-ghost'; allBtn.textContent = 'All on';
+      allBtn.addEventListener('click', function () { MEASURE_RULE_KEYS.forEach(function (k) { collageMeasureRules[k] = true; }); syncMeasurePanelChecks(); refreshMeasureLiveState(); });
+      const saveBtn = document.createElement('button'); saveBtn.className = 'cml-btn cml-btn-gold'; saveBtn.textContent = 'Save as my default';
+      saveBtn.addEventListener('click', function () { try { localStorage.setItem('pdr.collage.measureRules', JSON.stringify(collageMeasureRules)); } catch (_) {} saveBtn.textContent = 'Saved ✓'; setTimeout(function () { saveBtn.textContent = 'Save as my default'; }, 1400); });
+      foot.appendChild(allBtn); foot.appendChild(saveBtn);
+      card.appendChild(head); card.appendChild(body); card.appendChild(foot);
+      ov.appendChild(card);
+      ov.addEventListener('pointerdown', function (e) { if (e.target === ov) toggleCollageMeasurePanel(false); });
+      document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && collageMeasureEl && collageMeasureEl.classList.contains('open')) { e.preventDefault(); e.stopPropagation(); toggleCollageMeasurePanel(false); } }, true);
+      document.body.appendChild(ov);
+      collageMeasureEl = ov;
+      return ov;
+    }
+    function toggleCollageMeasurePanel(force) {
+      const ov = buildCollageMeasureOverlay();
+      const open = (typeof force === 'boolean') ? force : !ov.classList.contains('open');
+      if (open) syncMeasurePanelChecks();
       ov.classList.toggle('open', open);
     }
 
@@ -21865,7 +22003,7 @@
       // v3.1 (Terry) — PAGE OUTLINES: when on, draw a stylable frame around EACH page (i = 0..N-1)
       // with box-sizing:border-box so the border sits INSIDE the page and never spills past the
       // canvas. When off, keep the original faint gold divider LINES on the N-1 boundaries.
-      if (collagePageOutline && collagePageOutline.on) {
+      if (collagePageOutline && collagePageOutline.on && (typeof ruleOn !== 'function' || ruleOn('outlines'))) {
         const wt = Math.max(1, (collagePageOutline.weight || 2));
         const col = collagePageOutline.color || '#FEC242';
         for (let i = 0; i < N; i++) {
@@ -21875,7 +22013,7 @@
           box.style.width = (100 / N) + '%';
           g.appendChild(box);
         }
-      } else {
+      } else if (typeof ruleOn !== 'function' || ruleOn('dividers')) {
         for (let i = 1; i < N; i++) {
           const line = document.createElement('div');
           // v2.1 round 262 (Terry) — page separators in PDR gold (was a faint 1px dark line
@@ -23072,6 +23210,9 @@
       // v2.1 round 290 (Terry) — open the keyboard-shortcuts legend.
       const shortcutsBtn = document.getElementById('btn-collage-shortcuts');
       if (shortcutsBtn) shortcutsBtn.addEventListener('click', () => { try { toggleCollageShortcuts(); } catch (_) {} });
+      // v3.0.3 (Terry) — open the Measurement rules panel (ruler button between Enhance + shortcuts).
+      const measureBtn = document.getElementById('btn-collage-measure');
+      if (measureBtn) measureBtn.addEventListener('click', () => { try { toggleCollageMeasurePanel(); } catch (_) {} });
       // v3.0 round 531 (Terry) — titlebar VIEW-zoom cluster (Trees-style: out · fit · in).
       const zOutBtn = document.getElementById('collage-zoom-out');
       if (zOutBtn) zOutBtn.addEventListener('click', () => { try { collageZoomStep(0.9); } catch (_) {} });
