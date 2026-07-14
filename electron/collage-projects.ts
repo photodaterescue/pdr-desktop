@@ -112,6 +112,8 @@ async function syncCollagesWithSidecarAsync(): Promise<void> {
     const local = projectsDir();
     const isProj = (f: string) => f.endsWith(PROJECT_EXT) || f.endsWith('.png');
     const statMs = async (p: string): Promise<number> => { try { return (await fs.promises.stat(toLongPath(p))).mtimeMs; } catch { return 0; } };
+    const _syT0 = Date.now();   // v3.0.3 TEMP (Terry ~3s/60s freeze) — time the once-a-minute sidecar sync + count copies
+    let _syCopies = 0;
     const [localFiles, scFiles] = await Promise.all([
       fs.promises.readdir(local).then((l) => l.filter(isProj)).catch(() => [] as string[]),
       fs.promises.readdir(sc).then((l) => l.filter(isProj)).catch(() => [] as string[]),
@@ -119,13 +121,14 @@ async function syncCollagesWithSidecarAsync(): Promise<void> {
     for (const f of localFiles) {
       const lp = path.join(local, f), sp = path.join(sc, f);
       const [a, b] = await Promise.all([statMs(lp), statMs(sp)]);
-      if (a > b) { try { copyPreservingMtime(lp, sp); } catch { /* best-effort */ } }
+      if (a > b) { try { copyPreservingMtime(lp, sp); _syCopies++; } catch { /* best-effort */ } }
     }
     for (const f of scFiles) {
       const sp = path.join(sc, f), lp = path.join(local, f);
       const [a, b] = await Promise.all([statMs(sp), statMs(lp)]);
-      if (a > b) { try { copyPreservingMtime(sp, lp); } catch { /* best-effort */ } }
+      if (a > b) { try { copyPreservingMtime(sp, lp); _syCopies++; } catch { /* best-effort */ } }
     }
+    if (Date.now() - _syT0 > 200 || _syCopies > 0) log.warn(`[collage-projects] TEMP sidecar sync ${Date.now() - _syT0}ms, ${localFiles.length}+${scFiles.length} files, ${_syCopies} sync copies`);
     sidecarSyncLastMs = Date.now();
   } finally { sidecarSyncInFlight = false; }
 }
@@ -259,6 +262,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
     } else if (Date.now() - sidecarSyncLastMs > 60_000) {
       void syncCollagesWithSidecarAsync().catch(() => { /* background best-effort */ });
     }
+    const _lpT0 = Date.now();   // v3.0.3 TEMP (Terry ~3s/60s freeze) — time the full list parse (scales with the 103 project files)
     const out: CollageProjectSummary[] = [];
     for (const f of recs) {
       try {
@@ -273,6 +277,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel, carouselPages: (typeof (rec as { carouselPages?: number }).carouselPages === 'number') ? (rec as { carouselPages?: number }).carouselPages : null });
       } catch { /* skip a corrupt record */ }
     }
+    if (Date.now() - _lpT0 > 200) log.warn(`[collage-projects] TEMP listProjects parsed ${recs.length} files in ${Date.now() - _lpT0}ms`);
     out.sort((a, b) => (a.savedAt < b.savedAt ? 1 : a.savedAt > b.savedAt ? -1 : 0));
     return out;
   } catch (err) {

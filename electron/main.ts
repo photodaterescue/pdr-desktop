@@ -2721,6 +2721,14 @@ app.whenReady().then(() => {
       if (lag > 250) log.warn(`[eventloop] blocked ${lag}ms (main thread)`);
       _elLast = now;
     }, 500);
+    // Is the block a V8 major GC? (silent, periodic, seconds-long — the signature of heap churn from
+    // parsing 100+ large project files.) Logs any GC pause >150ms so the [eventloop] block names itself.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { PerformanceObserver: _PO } = require('perf_hooks');
+    const _gcObs = new _PO((list: { getEntries: () => Array<{ duration: number; kind?: number; detail?: { kind?: number } }> }) => {
+      for (const e of list.getEntries()) { if (e.duration > 150) log.warn(`[gc] kind ${e.detail?.kind ?? e.kind ?? '?'} ${Math.round(e.duration)}ms`); }
+    });
+    _gcObs.observe({ entryTypes: ['gc'] });
   } catch {}
 
   // v2.0.15 (Terry 2026-06-01) — DISABLE WINDOWS GHOSTING.
