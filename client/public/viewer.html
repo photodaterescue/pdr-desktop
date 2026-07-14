@@ -16138,6 +16138,12 @@
       if (e.key === 'Control' || e.key === 'Meta') cornerGlideHeld = false;
     }, true);
     window.addEventListener('blur', function () { cornerGlideHeld = false; });
+    // v3.0.3 (Terry: mid-drag lag) — live pointer state, so the autosave can refuse to run heavy
+    // work while ANY press/drag is in progress (its debounce timer used to land mid-gesture).
+    let collagePointerDown_ = false;
+    window.addEventListener('pointerdown', function () { collagePointerDown_ = true; }, true);
+    window.addEventListener('pointerup', function () { collagePointerDown_ = false; }, true);
+    window.addEventListener('pointercancel', function () { collagePointerDown_ = false; }, true);
     let collageMeasureEl = null;
     function refreshMeasureLiveState() {
       // Dividers/outlines/safe-zone/user-guides are the ALWAYS-on rules — redraw so their toggle shows
@@ -18146,6 +18152,7 @@
       };
     }
     let collageThumbBusy = false;
+    let collageThumbLastAt_ = 0;   // v3.0.3 (Terry) — the homepage card preview re-bakes at most every 45s
     async function autosaveCollageProject() {
       // v2.1 round 376 (Terry) — carousels now AUTOSAVE to Recent too: the wide-canvas model (round 260)
       // means one snapshotCollage() captures the whole carousel, so the old "only the active page" reason is
@@ -18154,12 +18161,21 @@
       if (!collageMode || collageRestoring) return;
       if (!collageProjectHasContent()) return;
       if (!(window.pdr && window.pdr.collage && window.pdr.collage.saveProject)) return;
+      // v3.0.3 (Terry: "lag of up to 5 seconds" moving icons) — the AUTOSAVE was the freeze, not the
+      // drag: its debounce timer landed MID-GESTURE, and the thumb path's buildCollageLayout
+      // SYNCHRONOUSLY rasterises every text/emoji layer to a PNG on the UI thread before the
+      // main-process photo composite ("baked composite" in the log). Three gates: never while a
+      // gesture / pointer press is live (reschedule instead), only in an idle slot, and the thumb
+      // re-bakes at most every 45s — the project JSON itself still saves on every autosave.
+      if (collagePendingSnap != null || collagePointerDown_) { try { scheduleCollageAutosave(); } catch (_) {} return; }
+      await new Promise((res) => (window.requestIdleCallback ? window.requestIdleCallback(res, { timeout: 4000 }) : setTimeout(res, 250)));
+      if (collagePendingSnap != null || collagePointerDown_) { try { scheduleCollageAutosave(); } catch (_) {} return; }   // re-check: a drag may have started during the idle wait
       try {
         // v2.1 round 333 (Terry) — generate a REAL thumbnail for the Welcome-screen cards (they were
         // showing a generic icon — one was never made). Bake a small version through the export
         // pipeline, scaled to ~600px so it's cheap, guarded so overlapping autosaves don't stack bakes.
         let thumb;
-        if (!collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
+        if ((Date.now() - collageThumbLastAt_) > 45000 && !collageThumbBusy && window.pdr.collage.renderThumb && typeof buildCollageLayout === 'function') {
           collageThumbBusy = true;
           try {
             // v3.0 round 584 (Terry) — carousels bake to their FIRST PAGE (1/N of the wide strip), so
@@ -18174,6 +18190,7 @@
             }
           } catch (_) { /* thumb is best-effort */ }
           collageThumbBusy = false;
+          if (thumb) collageThumbLastAt_ = Date.now();   // v3.0.3 — start the 45s throttle window
         }
         const res = await window.pdr.collage.saveProject(serializeCollageProject(), thumb || undefined);
         if (res && res.success && res.id) currentCollageProjectId = res.id;
