@@ -10269,7 +10269,10 @@
       // number… it will therefore be a negative number").
       const mLeft = r.left - leftRef, mRight = rightRef - r.right;
       const mTop = r.top - topRef, mBot = botRef - r.bottom;
-      const balX = eqX(mLeft, mRight), balY = eqY(mTop, mBot);
+      // v3.0.3 (Terry SS1) — the COLOURING obeys the Measurement-rules toggles, exactly like the snap
+      // (before this, the greens ignored the panel entirely). Pair-green (both sides equal) = the
+      // equal-spacing rule; lone mirror/align greens = the mirror rule (gated below).
+      const balX = ruleOn('equalSpacing') && eqX(mLeft, mRight), balY = ruleOn('equalSpacing') && eqY(mTop, mBot);
       // v2.1 round 302 (Terry SS1) — green also when THIS edge is symmetric or aligned with
       // another photo, measured from the PAGE edges (round 301 only greened balanced gaps,
       // which lost the symmetric-pair confirmation). Per-edge: left photo's left margin ==
@@ -10277,7 +10280,10 @@
       // green (edge alignment). dLm/dRm/dTm/dBm = this photo's own margins to the page.
       const dLm = r.left - c.left, dRm = c.right - r.right, dTm = r.top - c.top, dBm = c.bottom - r.bottom;
       let eL = false, eR = false, eT = false, eB = false;
-      for (let mi = 0; mi < measureCands.length; mi++) {
+      // v3.0.3 (Terry SS1) — this loop is the MIRROR/ALIGN green (this side's margin equals some other
+      // item's margin — the "green 41" that confused Terry). It now runs only when Mirror/symmetry is
+      // on in the Measurement rules, so the toggle kills those lone greens.
+      if (ruleOn('mirror')) for (let mi = 0; mi < measureCands.length; mi++) {
         const o = measureCands[mi];
         const q = o.el.getBoundingClientRect();
         // v3.1 (Terry SS2) — CROSS-PAGE: measure the partner layer against ITS OWN page's
@@ -10309,7 +10315,7 @@
       // neighbour between), matching computeDragSnap's corner-equal so the colour == the snap.
       const hVsPage = hIsLeft ? (Math.abs(leftRef - c.left) < 0.5) : (Math.abs(rightRef - c.right) < 0.5);
       const vVsPage = vIsTop ? (Math.abs(topRef - c.top) < 0.5) : (Math.abs(botRef - c.bottom) < 0.5);
-      const pageEq = vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);
+      const pageEq = ruleOn('cornerEqual') && vVsPage && hVsPage && vM > 0 && hM > 0 && pxY(vM) === pxX(hM);   // v3.0.3 — lavender obeys its toggle too
       const peL = pageEq && hIsLeft, peR = pageEq && !hIsLeft, peT = pageEq && vIsTop, peB = pageEq && !vIsTop;
       const line = (el, x, y, len, horiz, sym, pe, show) => {
         el.classList.toggle('pageEq', !!pe);
@@ -15364,7 +15370,10 @@
       const vCand = [], hCand = [];
       if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) vCand.push(cRect.width / 2);
       if (ruleOn('pageCentre')) hCand.push(cRect.height / 2);
-      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); }
+      // v3.0.3 (Terry) — TRUE-EDGE candidates kept separately: page/canvas edges + page boundaries
+      // get PRIORITY in the pick below (they must never be outbid by a smart line a few px closer).
+      const vEdgeCand = [], hEdgeCand = [];
+      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); vEdgeCand.push(0, cRect.width); hEdgeCand.push(0, cRect.height); }
       // v3.0.3 (Terry) — user-placed guide lines are first-class snap targets.
       if (ruleOn('userGuides') && collageUserGuides.length) {
         collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') vCand.push(ug.frac * cRect.width); else hCand.push(ug.frac * cRect.height); });
@@ -15378,7 +15387,7 @@
       // Strictly gated on carouselMode so single-collage snapping is unchanged.
       if (carouselMode) {
         const N = Math.max(1, carouselPageCount);
-        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width); }
+        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) { vCand.push((i / N) * cRect.width); vEdgeCand.push((i / N) * cRect.width); } }
         // v2.1 round 270 (Terry) — also offer each PAGE's CENTRE as a snap line, so a tile /
         // text can be centred WITHIN a single page (the dividers act as edges → the midpoint
         // between two dividers is the page centre). Without this only the whole-strip centre
@@ -15481,27 +15490,29 @@
       }
       // v3.0.3 (Terry) — equal-spacing / centre-between (#14) is one toggle.
       if (ruleOn('equalSpacing')) { vCand.push((lRef + rRef) / 2); hCand.push((tRef + bRef) / 2); }
-      // Best snap on X: test the dragged element's left / centre / right against
-      // every vertical candidate; keep the smallest gap within threshold.
-      let bestVGap = T + 1;
+      // v3.0.3 (Terry) — EDGE-PRIORITY pick. The candidate space is dense (every item's edges +
+      // centres, mirrors, cross-page copies, midpoints…), so nearest-line-wins let a smart candidate
+      // a few px closer OUTBID the true page edge — Terry: "green 0's aren't snapping at all". Now a
+      // page/canvas edge or page boundary within the magnet WINS outright; nearest-of-everything
+      // applies only when no true edge is in reach.
       const dXEdges = [dLeft, dCx, dRight];
-      for (let c = 0; c < vCand.length; c++) {
-        for (let e = 0; e < dXEdges.length; e++) {
-          const gap = Math.abs(dXEdges[e] - vCand[c]);
-          if (gap < bestVGap) { bestVGap = gap; out.dx = vCand[c] - dXEdges[e]; out.vGuide = vCand[c]; }
-        }
-      }
-      if (bestVGap > T) { out.dx = 0; out.vGuide = null; }
-      // Best snap on Y: dragged top / centre / bottom vs horizontal candidates.
-      let bestHGap = T + 1;
       const dYEdges = [dTop, dCy, dBottom];
-      for (let c = 0; c < hCand.length; c++) {
-        for (let e = 0; e < dYEdges.length; e++) {
-          const gap = Math.abs(dYEdges[e] - hCand[c]);
-          if (gap < bestHGap) { bestHGap = gap; out.dy = hCand[c] - dYEdges[e]; out.hGuide = hCand[c]; }
+      const pick1D = (cands, dEdges) => {
+        let bg = T + 1, d = 0, gd = null;
+        for (let c = 0; c < cands.length; c++) {
+          for (let e = 0; e < dEdges.length; e++) {
+            const gap = Math.abs(dEdges[e] - cands[c]);
+            if (gap < bg) { bg = gap; d = cands[c] - dEdges[e]; gd = cands[c]; }
+          }
         }
-      }
-      if (bestHGap > T) { out.dy = 0; out.hGuide = null; }
+        return { bg: bg, d: d, gd: gd };
+      };
+      let pv = pick1D(vEdgeCand, dXEdges);
+      if (pv.gd == null || pv.bg > T) pv = pick1D(vCand, dXEdges);
+      if (pv.gd != null && pv.bg <= T) { out.dx = pv.d; out.vGuide = pv.gd; } else { out.dx = 0; out.vGuide = null; }
+      let ph = pick1D(hEdgeCand, dYEdges);
+      if (ph.gd == null || ph.bg > T) ph = pick1D(hCand, dYEdges);
+      if (ph.gd != null && ph.bg <= T) { out.dy = ph.d; out.hGuide = ph.gd; } else { out.dy = 0; out.hGuide = null; }
       // v3.0 (Terry) — the EQUIDISTANT snaps (canvas centre / distribute midpoint = equal gaps on an
       // axis) take PRIORITY: corner-equal must NOT override them, or "left == right" never locks in.
       var _vMid = (lRef + rRef) / 2, _hMid = (tRef + bRef) / 2;
@@ -15915,14 +15926,15 @@
       const vCand = [], hCand = [];
       if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) vCand.push(cRect.width / 2);
       if (ruleOn('pageCentre')) hCand.push(cRect.height / 2);
-      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); }
+      const vEdgeCand = [], hEdgeCand = [];   // true page/canvas edges — priority tier, same as the single-tile snap
+      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); vEdgeCand.push(0, cRect.width); hEdgeCand.push(0, cRect.height); }
       if (ruleOn('userGuides') && collageUserGuides.length) {
         collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') vCand.push(ug.frac * cRect.width); else hCand.push(ug.frac * cRect.height); });
       }
       if (carouselMode) {
         const N = Math.max(1, carouselPageCount);
         const pw = cRect.width / N;
-        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) vCand.push(i * pw); }
+        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) { vCand.push(i * pw); vEdgeCand.push(i * pw); } }
         const pi = Math.max(0, Math.min(N - 1, Math.floor(gcx / Math.max(1, pw))));
         if (ruleOn('pageCentres')) vCand.push((pi + 0.5) * pw);
         if (ruleOn('safeZone')) {
@@ -15932,12 +15944,20 @@
       }
       for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
       for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el)) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
-      let bV = T + 1; const dX = [gl, gcx, gr];
-      for (let c = 0; c < vCand.length; c++) for (let e = 0; e < dX.length; e++) { const g = Math.abs(dX[e] - vCand[c]); if (g < bV) { bV = g; out.dx = vCand[c] - dX[e]; out.vGuide = vCand[c]; } }
-      if (bV > T) { out.dx = 0; out.vGuide = null; }
-      let bH = T + 1; const dY = [gt, gcy, gb];
-      for (let c = 0; c < hCand.length; c++) for (let e = 0; e < dY.length; e++) { const g = Math.abs(dY[e] - hCand[c]); if (g < bH) { bH = g; out.dy = hCand[c] - dY[e]; out.hGuide = hCand[c]; } }
-      if (bH > T) { out.dy = 0; out.hGuide = null; }
+      // v3.0.3 (Terry) — EDGE-PRIORITY pick, matching the single-tile snap: a true page edge /
+      // boundary within the magnet wins outright over the smart candidates.
+      const dX = [gl, gcx, gr], dY = [gt, gcy, gb];
+      const gPick = (cands, dEdges) => {
+        let bg = T + 1, d = 0, gd = null;
+        for (let c = 0; c < cands.length; c++) for (let e = 0; e < dEdges.length; e++) { const g = Math.abs(dEdges[e] - cands[c]); if (g < bg) { bg = g; d = cands[c] - dEdges[e]; gd = cands[c]; } }
+        return { bg: bg, d: d, gd: gd };
+      };
+      let gv2 = gPick(vEdgeCand, dX);
+      if (gv2.gd == null || gv2.bg > T) gv2 = gPick(vCand, dX);
+      if (gv2.gd != null && gv2.bg <= T) { out.dx = gv2.d; out.vGuide = gv2.gd; } else { out.dx = 0; out.vGuide = null; }
+      let gh2 = gPick(hEdgeCand, dY);
+      if (gh2.gd == null || gh2.bg > T) gh2 = gPick(hCand, dY);
+      if (gh2.gd != null && gh2.bg <= T) { out.dy = gh2.d; out.hGuide = gh2.gd; } else { out.dy = 0; out.hGuide = null; }
       return out;
     }
     function startItemDrag(it, e) {
@@ -16138,10 +16158,11 @@
       // move snap), and MATCH-SIZE joins: while resizing, snap when the tile's width or height hits
       // another PHOTO's exact width/height (the grabbed edge lands at anchor ± that size).
       var xc = [], yc = [];
+      var xcE = [], ycE = [];   // v3.0.3 (Terry) — true-edge tier: page/canvas edges + boundaries win within the magnet
       if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) xc.push(rect.left + cw / 2);
       if (ruleOn('pageCentre')) yc.push(rect.top + ch / 2);
-      if (ruleOn('pageEdges')) { xc.push(rect.left, rect.left + cw); yc.push(rect.top, rect.top + ch); }
-      if (carouselMode && ruleOn('pageBoundaries')) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
+      if (ruleOn('pageEdges')) { xc.push(rect.left, rect.left + cw); yc.push(rect.top, rect.top + ch); xcE.push(rect.left, rect.left + cw); ycE.push(rect.top, rect.top + ch); }
+      if (carouselMode && ruleOn('pageBoundaries')) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) { xc.push(rect.left + (i / N) * cw); xcE.push(rect.left + (i / N) * cw); } }
       if (ruleOn('userGuides') && collageUserGuides.length) { collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') xc.push(rect.left + ug.frac * cw); else yc.push(rect.top + ug.frac * ch); }); }
       // v3.0.3 (Terry) — the Instagram safe-zone lines snap during RESIZE too (move already had them):
       // the grabbed edge's page supplies the two inset verticals; top/bottom insets are shared.
@@ -16165,8 +16186,13 @@
       var fixedHM = isLeftCorner ? (rect.right - anchorX) : (anchorX - rect.left);   // anchor's fixed horizontal margin
       if (ruleOn('mirror')) { xc.push(mirX(anchorX)); yc.push(mirY(anchorY)); }
       if (ruleOn('cornerEqual')) { xc.push(isLeftCorner ? (rect.left + fixedVM) : (rect.left + cw - fixedVM)); yc.push(isTopCorner ? (rect.top + fixedHM) : (rect.top + ch - fixedHM)); }
-      var bX = T + 1, sX = null; for (var c = 0; c < xc.length; c++) { var g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
-      var bY = T + 1, sY = null; for (var d = 0; d < yc.length; d++) { var g2 = Math.abs(grabY - yc[d]); if (g2 < bY) { bY = g2; sY = yc[d]; } }
+      // v3.0.3 (Terry) — EDGE-PRIORITY pick (same rule as the move snap): a true page edge /
+      // boundary within the magnet wins outright; everything else competes only when no edge is in reach.
+      var scan1 = function (cands, grab) { var b = T + 1, s = null; for (var c2 = 0; c2 < cands.length; c2++) { var g3 = Math.abs(grab - cands[c2]); if (g3 < b) { b = g3; s = cands[c2]; } } return { b: b, s: s }; };
+      var rx = scan1(xcE, grabX); if (rx.s == null || rx.b > T) rx = scan1(xc, grabX);
+      var ry = scan1(ycE, grabY); if (ry.s == null || ry.b > T) ry = scan1(yc, grabY);
+      var bX = rx.b, sX = rx.s;
+      var bY = ry.b, sY = ry.s;
       var okX = sX != null && bX <= T, okY = sY != null && bY <= T;
       if (okX && (!okY || bX <= bY)) { out.nw = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(sX - anchorX) / cw)); out.vGuide = sX - rect.left; }
       else if (okY) { out.nw = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(sY - anchorY) / (K * ch))); out.hGuide = sY - rect.top; }
