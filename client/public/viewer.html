@@ -3860,11 +3860,15 @@
     .cml-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 4px; cursor: pointer; border-radius: 8px; margin: 0; }
     .cml-row:hover { background: rgba(255,255,255,0.04); }
     .cml-name { font-size: 13.5px; color: #e7e3f2; }
-    .cml-switch { position: relative; width: 38px; height: 22px; border-radius: 999px; background: rgba(255,255,255,0.16); flex: 0 0 auto; transition: background .16s; }
-    .cml-switch.on { background: #FEC242; }
+    /* v3.0.3 (Terry) — muted PDR-gold treatment: translucent gold track + solid gold knob when ON
+       (the first pass used a full-saturation gold slab — "too bright"). */
+    .cml-switch { position: relative; width: 38px; height: 22px; border-radius: 999px; background: rgba(255,255,255,0.10); border: 1px solid rgba(255,255,255,0.18); flex: 0 0 auto; transition: background .16s, border-color .16s; }
+    .cml-switch.on { background: rgba(254,194,66,0.26); border-color: rgba(254,194,66,0.55); }
     .cml-switch input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
-    .cml-knob { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .16s; box-shadow: 0 1px 3px rgba(0,0,0,.45); pointer-events: none; }
-    .cml-switch.on .cml-knob { transform: translateX(16px); }
+    .cml-knob { position: absolute; top: 1px; left: 1px; width: 18px; height: 18px; border-radius: 50%; background: #b7b2c9; transition: transform .16s, background .16s; box-shadow: 0 1px 3px rgba(0,0,0,.45); pointer-events: none; }
+    .cml-switch.on .cml-knob { transform: translateX(16px); background: #FEC242; }
+    .cml-addrow { display: flex; gap: 8px; margin-top: 6px; }
+    .cml-hint { font-size: 11.5px; color: #8b84a6; margin: 6px 4px 0; }
     .cml-foot { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
     .cml-btn { font-size: 12.5px; font-weight: 600; padding: 8px 14px; border-radius: 9px; cursor: pointer; border: 1px solid transparent; }
     .cml-btn-ghost { background: rgba(255,255,255,0.05); border-color: rgba(255,255,255,0.16); color: #cfcadf; }
@@ -15340,6 +15344,10 @@
       if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) vCand.push(cRect.width / 2);
       if (ruleOn('pageCentre')) hCand.push(cRect.height / 2);
       if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); }
+      // v3.0.3 (Terry) — user-placed guide lines are first-class snap targets.
+      if (ruleOn('userGuides') && collageUserGuides.length) {
+        collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') vCand.push(ug.frac * cRect.width); else hCand.push(ug.frac * cRect.height); });
+      }
       // v2.1 round 264 (Terry) — snap: in carousel mode the wide canvas is N equal
       // 1080-wide pages; add every page boundary as a vertical snap candidate so a
       // tile's left/centre/right can snap to any page edge (e.g. lock a cover from
@@ -15354,7 +15362,14 @@
         // text can be centred WITHIN a single page (the dividers act as edges → the midpoint
         // between two dividers is the page centre). Without this only the whole-strip centre
         // was findable, so you couldn't centre text on page 1.
-        if (ruleOn('pageCentres')) { for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width); }
+        if (ruleOn('pageCentres')) {
+          // v3.0.3 (Terry) — offer the CURRENT page's centre only (was every page's centre at once,
+          // which cluttered the candidate space; "PDR's live pages beat Canva — just make the
+          // positioning work better"). The page = the one the dragged tile's centre sits on.
+          const _pwc = cRect.width / N;
+          const _pic = Math.max(0, Math.min(N - 1, Math.floor(dCx / Math.max(1, _pwc))));
+          vCand.push((_pic + 0.5) * _pwc);
+        }
       }
       // v3.1 (Terry) — PER-PAGE reference box. In carousel mode the dragged tile's page
       // (the 1080-wide slice its centre sits on) is the symmetry/distribute/corner-equal
@@ -15370,6 +15385,13 @@
         const _pw = cRect.width / _N;
         const _pi = Math.max(0, Math.min(_N - 1, Math.floor(dCx / Math.max(1, _pw))));
         pgL = _pi * _pw; pgR = (_pi + 1) * _pw;
+      }
+      // v3.0.3 (Terry) — the Instagram safe-zone lines snap too (carousel pages, where they're drawn):
+      // the current page's two inset verticals + the shared top/bottom insets.
+      if (carouselMode && ruleOn('safeZone')) {
+        const _pwS = pgR - pgL;
+        vCand.push(pgL + SAFE_ZONE_X * _pwS, pgR - SAFE_ZONE_X * _pwS);
+        hCand.push(SAFE_ZONE_Y * cRect.height, (1 - SAFE_ZONE_Y) * cRect.height);
       }
       // v2.1 round 297 (Terry) — SYMMETRY snap. Besides aligning to each other tile's edges
       // + centres, also offer the MIRROR of those edges about the canvas centre: snapping the
@@ -15620,6 +15642,7 @@
         { k: ['Shift'], d: 'Move in a straight line' },
         { k: ['Shift'], d: 'Rotate in 15° steps' },
         { k: ['Alt'], d: 'Ignore snapping (free placement)' },
+        { k: ['Ctrl', 'E'], d: 'Glide equal distance from a corner' },   // v3.0.3 (Terry) — corner-equal gesture
       ] },
     ];
     function buildCollageShortcutsOverlay() {
@@ -15675,6 +15698,7 @@
       { group: 'Always on the canvas', items: [
         { key: 'dividers', name: 'Page divider lines' },
         { key: 'outlines', name: 'Page outline frames' },
+        { key: 'safeZone', name: 'Instagram safe-zone guides' },
       ] },
       { group: 'Live guides (while dragging)', items: [
         { key: 'guideLine', name: 'Snap guide line' },
@@ -15697,7 +15721,11 @@
         { key: 'mirror', name: 'Mirror / symmetry' },
         { key: 'crossPage', name: 'Cross-page “same spot”' },
         { key: 'equalSpacing', name: 'Equal spacing / centre-between' },
-        { key: 'cornerEqual', name: 'Corner-equal' },
+        { key: 'cornerEqual', name: 'Corner-equal (hold Ctrl+E to glide)' },
+      ] },
+      { group: 'Sizing & your own guides', items: [
+        { key: 'matchSize', name: 'Match another photo’s size (resize)' },
+        { key: 'userGuides', name: 'Your own guide lines' },
       ] },
     ];
     const MEASURE_RULE_KEYS = MEASURE_RULES.reduce(function (a, g) { return a.concat(g.items.map(function (i) { return i.key; })); }, []);
@@ -15709,11 +15737,66 @@
     }
     function ruleOn(key) { return collageMeasureRules[key] !== false; }
     loadMeasureRules();
+    // v3.0.3 (Terry) — INSTAGRAM SAFE-ZONE: fraction of a page kept clear of IG's own UI overlays
+    // (username strip up top, caption/CTA down the bottom, rounded corners at the sides). Drawn as a
+    // faint dashed inset on each carousel page (editor-only, NEVER baked into the export) + offered
+    // as snap lines, so text/faces placed inside it can't get covered when posted.
+    const SAFE_ZONE_X = 0.04, SAFE_ZONE_Y = 0.08;
+    // v3.0.3 (Terry) — USER-PLACED GUIDES: your own snap lines. {axis:'v'|'h', frac 0..1 of the wide
+    // canvas}. Added from the Measurement-rules panel; drag to move, double-click to remove. Editor
+    // chrome only — gated off during the export render so they never bake into a saved file. Persisted
+    // in the snapshot (reopen/undo keep them; old snapshots without the field restore to none).
+    let collageUserGuides = [];
+    function renderUserGuides() {
+      if (!collageCanvasEl) return;
+      let g = document.getElementById('collage-user-guides');
+      const show = !collageExportTarget && collageMode && ruleOn('userGuides') && collageUserGuides.length;
+      if (!show) { if (g && g.parentNode) g.parentNode.removeChild(g); return; }
+      if (!g) { g = document.createElement('div'); g.id = 'collage-user-guides'; g.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2147483645;'; }
+      collageCanvasEl.appendChild(g);   // (re-)append so it sits above tiles rebuilt this pass
+      g.innerHTML = '';
+      collageUserGuides.forEach(function (ug) {
+        const v = ug.axis === 'v';
+        // 9px transparent hit zone with a 1px lavender visual centred inside — grabbable without hunting.
+        const hit = document.createElement('div');
+        hit.style.cssText = 'position:absolute;pointer-events:auto;' + (v ? 'top:0;bottom:0;width:9px;cursor:ew-resize;' : 'left:0;right:0;height:9px;cursor:ns-resize;');
+        const ln = document.createElement('div');
+        ln.style.cssText = 'position:absolute;background:rgba(169,156,255,0.85);pointer-events:none;' + (v ? 'top:0;bottom:0;left:4px;width:1px;' : 'left:0;right:0;top:4px;height:1px;');
+        hit.appendChild(ln);
+        const place = function () { if (v) hit.style.left = 'calc(' + (ug.frac * 100) + '% - 4.5px)'; else hit.style.top = 'calc(' + (ug.frac * 100) + '% - 4.5px)'; };
+        place();
+        hit.addEventListener('dblclick', function (e) { e.preventDefault(); e.stopPropagation(); const i = collageUserGuides.indexOf(ug); if (i >= 0) collageUserGuides.splice(i, 1); renderUserGuides(); });
+        hit.addEventListener('pointerdown', function (e) {
+          e.preventDefault(); e.stopPropagation();
+          const mv = function (ev) {
+            const cr = collageCanvasEl.getBoundingClientRect();
+            if (!cr.width || !cr.height) return;
+            ug.frac = Math.max(0, Math.min(1, v ? ((ev.clientX - cr.left) / cr.width) : ((ev.clientY - cr.top) / cr.height)));
+            place();
+          };
+          const up2 = function () { window.removeEventListener('pointermove', mv); window.removeEventListener('pointerup', up2); };
+          window.addEventListener('pointermove', mv); window.addEventListener('pointerup', up2);
+        });
+        g.appendChild(hit);
+      });
+    }
+    // v3.0.3 (Terry) — CTRL+E CORNER GLIDE: while held during a drag, the tile rides the line where
+    // its gap to the nearest vertical page edge equals its gap to the nearest horizontal edge (the
+    // lavender corner-equal relationship), instead of free movement. Plain E still toggles Enhance.
+    let cornerGlideHeld = false;
+    window.addEventListener('keydown', function (e) {
+      if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) { cornerGlideHeld = true; e.preventDefault(); }
+    }, true);
+    window.addEventListener('keyup', function (e) {
+      if (e.key === 'e' || e.key === 'E' || e.key === 'Control' || e.key === 'Meta') cornerGlideHeld = false;
+    }, true);
+    window.addEventListener('blur', function () { cornerGlideHeld = false; });
     let collageMeasureEl = null;
     function refreshMeasureLiveState() {
-      // Dividers/outlines are the only ALWAYS-on rules — redraw them so their toggle shows instantly.
-      // The drag-time rules (guides, numbers, snap targets) apply on the next drag; clear any stray overlay.
+      // Dividers/outlines/safe-zone/user-guides are the ALWAYS-on rules — redraw so their toggle shows
+      // instantly. The drag-time rules (guides, numbers, snap targets) apply on the next drag.
       try { renderCarouselGuides(); } catch (_) {}
+      try { renderUserGuides(); } catch (_) {}
       try { hideCollageMeasurements(); } catch (_) {}
     }
     function syncMeasurePanelChecks() {
@@ -15747,6 +15830,22 @@
           row.appendChild(nm); row.appendChild(sw); body.appendChild(row);
         });
       });
+      // v3.0.3 (Terry) — user-placed guides: add straight from the panel; drag on canvas to move,
+      // double-click a guide to remove it. Adding one switches the rule on so it shows immediately.
+      const addRow = document.createElement('div'); addRow.className = 'cml-addrow';
+      const mkAdd = function (label, axis) {
+        const b = document.createElement('button'); b.className = 'cml-btn cml-btn-ghost'; b.textContent = label;
+        b.addEventListener('click', function () {
+          collageUserGuides.push({ axis: axis, frac: 0.5 });
+          collageMeasureRules.userGuides = true;
+          syncMeasurePanelChecks(); renderUserGuides();
+        });
+        return b;
+      };
+      addRow.appendChild(mkAdd('+ Vertical guide', 'v')); addRow.appendChild(mkAdd('+ Horizontal guide', 'h'));
+      body.appendChild(addRow);
+      const hint = document.createElement('div'); hint.className = 'cml-hint'; hint.textContent = 'Drag a guide to move it · double-click it to remove it';
+      body.appendChild(hint);
       const foot = document.createElement('div'); foot.className = 'cml-foot';
       const allBtn = document.createElement('button'); allBtn.className = 'cml-btn cml-btn-ghost'; allBtn.textContent = 'All on';
       allBtn.addEventListener('click', function () { MEASURE_RULE_KEYS.forEach(function (k) { collageMeasureRules[k] = true; }); syncMeasurePanelChecks(); refreshMeasureLiveState(); });
@@ -15908,6 +16007,39 @@
         // v3.0 (Terry) — ALT = free drop (snap bypassed), but STILL show the gap numbers so you can
         // place the tile precisely by eye; only the snap + its gold guides are suppressed, not the readout.
         if (ev.altKey) { hideCollageSnapGuides(); try { showCollageMeasurements(it); } catch (_) {} return; }
+        // v3.0.3 (Terry) — CTRL+E CORNER GLIDE. Hold Ctrl+E while dragging: the tile rides the
+        // constrained diagonal where its gap to the nearest vertical page edge EQUALS its gap to the
+        // nearest horizontal edge — snap into a corner (0/0), hold Ctrl+E, pull away, and it glides
+        // out along the lavender equal-from-the-corner line. Terry's redesign of the old ambient
+        // corner-equal auto-snap ("I really like this idea"). Normal snapping is bypassed while held.
+        if (cornerGlideHeld && ruleOn('cornerEqual')) {
+          const cR3 = collageCanvasEl.getBoundingClientRect();
+          if (cR3.width && cR3.height) {
+            const r3 = it.el.getBoundingClientRect();
+            const cx3 = (r3.left + r3.right) / 2 - cR3.left;
+            let pgL3 = 0, pgR3 = cR3.width;
+            if (carouselMode) {
+              const N3 = Math.max(1, carouselPageCount);
+              const pw3 = cR3.width / N3;
+              const pi3 = Math.max(0, Math.min(N3 - 1, Math.floor(cx3 / Math.max(1, pw3))));
+              pgL3 = pi3 * pw3; pgR3 = (pi3 + 1) * pw3;
+            }
+            const tL3 = r3.left - cR3.left, tR3 = r3.right - cR3.left, tT3 = r3.top - cR3.top, tB3 = r3.bottom - cR3.top;
+            const useLeft = (cx3 - pgL3) <= (pgR3 - cx3);
+            const useTop = ((tT3 + tB3) / 2) <= cR3.height / 2;
+            const mH3 = useLeft ? (tL3 - pgL3) : (pgR3 - tR3);
+            const mV3 = useTop ? tT3 : (cR3.height - tB3);
+            const m3 = Math.max(0, (mH3 + mV3) / 2);   // equalised margin — the glide line
+            const gdx = useLeft ? (pgL3 + m3 - tL3) : (pgR3 - m3 - tR3);
+            const gdy = useTop ? (m3 - tT3) : (cR3.height - m3 - tB3);
+            it.xFrac += gdx / cR3.width;
+            it.yFrac += gdy / cR3.height;
+            renderCollageItem(it);
+            hideCollageSnapGuides();
+            try { showCollageMeasurements(it); } catch (_) {}   // lavender pills confirm the equal margins live
+            return;
+          }
+        }
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
@@ -15963,18 +16095,29 @@
       var T = 14;   // catch-zone (screen px) — matches the move snap magnet
       var grabX = isLeftCorner ? (anchorX - nw * cw) : (anchorX + nw * cw);
       var grabY = isTopCorner ? (anchorY - nw * K * ch) : (anchorY + nw * K * ch);
-      var xc = [rect.left, rect.left + cw / 2, rect.left + cw];   // canvas L / centre / R (screen px)
-      var yc = [rect.top, rect.top + ch / 2, rect.top + ch];      // canvas T / centre / B
-      if (carouselMode) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
+      // v3.0.3 (Terry) — every candidate group honours its Measurement-rules toggle (same keys as the
+      // move snap), and MATCH-SIZE joins: while resizing, snap when the tile's width or height hits
+      // another PHOTO's exact width/height (the grabbed edge lands at anchor ± that size).
+      var xc = [], yc = [];
+      if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) xc.push(rect.left + cw / 2);
+      if (ruleOn('pageCentre')) yc.push(rect.top + ch / 2);
+      if (ruleOn('pageEdges')) { xc.push(rect.left, rect.left + cw); yc.push(rect.top, rect.top + ch); }
+      if (carouselMode && ruleOn('pageBoundaries')) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
+      if (ruleOn('userGuides') && collageUserGuides.length) { collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') xc.push(rect.left + ug.frac * cw); else yc.push(rect.top + ug.frac * ch); }); }
       var mirX = function (x) { return 2 * rect.left + cw - x; }, mirY = function (y) { return 2 * rect.top + ch - y; };
-      var pushEdges = function (r) { xc.push(r.left, r.left + r.width / 2, r.right, mirX(r.left), mirX(r.left + r.width / 2), mirX(r.right)); yc.push(r.top, r.top + r.height / 2, r.bottom, mirY(r.top), mirY(r.top + r.height / 2), mirY(r.bottom)); };
-      for (var a = 0; a < collageItems.length; a++) { var o = collageItems[a]; if (o && o.el && o.el !== draggedEl && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect()); }
-      for (var b = 0; b < collageTexts.length; b++) { var o2 = collageTexts[b]; if (o2 && o2.el && o2.el !== draggedEl) pushEdges(o2.el.getBoundingClientRect()); }
+      var pushEdges = function (r, isTile) {
+        if (ruleOn('objEdges')) { xc.push(r.left, r.right); yc.push(r.top, r.bottom); }
+        if (ruleOn('objCentre')) { xc.push(r.left + r.width / 2); yc.push(r.top + r.height / 2); }
+        if (ruleOn('mirror')) { xc.push(mirX(r.left), mirX(r.left + r.width / 2), mirX(r.right)); yc.push(mirY(r.top), mirY(r.top + r.height / 2), mirY(r.bottom)); }
+        if (isTile && ruleOn('matchSize')) { xc.push(isLeftCorner ? (anchorX - r.width) : (anchorX + r.width)); yc.push(isTopCorner ? (anchorY - r.height) : (anchorY + r.height)); }
+      };
+      for (var a = 0; a < collageItems.length; a++) { var o = collageItems[a]; if (o && o.el && o.el !== draggedEl && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect(), true); }
+      for (var b = 0; b < collageTexts.length; b++) { var o2 = collageTexts[b]; if (o2 && o2.el && o2.el !== draggedEl) pushEdges(o2.el.getBoundingClientRect(), false); }
       // SYMMETRIC (green) + CORNER-EQUAL (purple) targets for the grabbed edges — the matches resize lacked.
       var fixedVM = isTopCorner ? (rect.bottom - anchorY) : (anchorY - rect.top);   // anchor's fixed vertical margin
       var fixedHM = isLeftCorner ? (rect.right - anchorX) : (anchorX - rect.left);   // anchor's fixed horizontal margin
-      xc.push(mirX(anchorX), isLeftCorner ? (rect.left + fixedVM) : (rect.left + cw - fixedVM));
-      yc.push(mirY(anchorY), isTopCorner ? (rect.top + fixedHM) : (rect.top + ch - fixedHM));
+      if (ruleOn('mirror')) { xc.push(mirX(anchorX)); yc.push(mirY(anchorY)); }
+      if (ruleOn('cornerEqual')) { xc.push(isLeftCorner ? (rect.left + fixedVM) : (rect.left + cw - fixedVM)); yc.push(isTopCorner ? (rect.top + fixedHM) : (rect.top + ch - fixedHM)); }
       var bX = T + 1, sX = null; for (var c = 0; c < xc.length; c++) { var g = Math.abs(grabX - xc[c]); if (g < bX) { bX = g; sX = xc[c]; } }
       var bY = T + 1, sY = null; for (var d = 0; d < yc.length; d++) { var g2 = Math.abs(grabY - yc[d]); if (g2 < bY) { bY = g2; sY = yc[d]; } }
       var okX = sX != null && bX <= T, okY = sY != null && bY <= T;
@@ -18373,6 +18516,9 @@
         // v3.1 (Terry) — PAGE OUTLINES: carry the carousel page-frame setting so a reopened
         // carousel keeps its outline on/off + colour + weight (old projects lack it → default gold).
         pageOutline: (collagePageOutline ? { on: !!collagePageOutline.on, color: collagePageOutline.color || '#FEC242', weight: collagePageOutline.weight || 2 } : { on: true, color: '#FEC242', weight: 2 }),
+        // v3.0.3 (Terry) — user-placed guide lines round-trip (reopen/undo keep them; old snapshots
+        // lack the field → none). Editor chrome only — never rendered during the export capture.
+        userGuides: collageUserGuides.map(function (ug) { return { axis: ug.axis === 'h' ? 'h' : 'v', frac: Math.max(0, Math.min(1, +ug.frac || 0)) }; }),
       });
     }
     function beginCollageChange() { if (collageMode) collagePendingSnap = snapshotCollage(); }
@@ -18473,6 +18619,13 @@
           weight: (_po && Number.isFinite(_po.weight)) ? Math.max(1, Math.min(8, _po.weight)) : 2,
         };
       } catch (_) { collagePageOutline = { on: true, color: '#FEC242', weight: 2 }; }
+      // v3.0.3 (Terry) — restore user-placed guides (validated; absent field → none).
+      try {
+        collageUserGuides = Array.isArray(s.userGuides)
+          ? s.userGuides.filter(function (ug) { return ug && (ug.axis === 'v' || ug.axis === 'h') && isFinite(+ug.frac); }).map(function (ug) { return { axis: ug.axis, frac: Math.max(0, Math.min(1, +ug.frac)) }; })
+          : [];
+      } catch (_) { collageUserGuides = []; }
+      try { renderUserGuides(); } catch (_) {}
       collageBgFxColorArmed = false;   // v3.0 (Terry) — undo/redo/reopen lands disarmed (the palette re-homes to Solid)
       try { renderCollageBgElementsList(); } catch (_) {}
       // v2.1 round 226 (Terry) — restore the Canvas Size selection + export px (old
@@ -19814,6 +19967,9 @@
       // runs with carouselMode=false but a carousel-size export target), so the page OUTLINES
       // bake into the exported slides. renderCarouselGuides() self-guards for both cases.
       if (carouselMode || (collageExportTarget && collageSizeId === CAROUSEL_SIZE_ID)) { try { renderCarouselGuides(); } catch (_) {} }
+      // v3.0.3 (Terry) — the rebuild's innerHTML clear also removed the user-guide layer; re-create it
+      // (self-gates: no-op during export / when the rule is off / no guides).
+      try { renderUserGuides(); } catch (_) {}
     }
 
     // v2.1 round 140 — background swatches live in the Enhance panel's
@@ -22021,6 +22177,20 @@
           line.style.cssText = 'position:absolute;top:0;bottom:0;width:2px;background:#FEC242;transform:translateX(-50%);';
           line.style.left = ((i / N) * 100) + '%';
           g.appendChild(line);
+        }
+      }
+      // v3.0.3 (Terry) — INSTAGRAM SAFE-ZONE: a faint dashed inset on each page marking where IG's
+      // own UI (username strip, caption/CTA, rounded corners) covers the image. EDITOR ONLY — gated
+      // off during the export render so it never bakes into a saved slide. Snaps live in computeDragSnap.
+      if (!collageExportTarget && typeof ruleOn === 'function' && ruleOn('safeZone')) {
+        for (let i = 0; i < N; i++) {
+          const sz = document.createElement('div');
+          sz.style.cssText = 'position:absolute;box-sizing:border-box;pointer-events:none;border:1px dashed rgba(254,194,66,0.32);border-radius:6px;';
+          sz.style.left = (((i + SAFE_ZONE_X) / N) * 100) + '%';
+          sz.style.width = (((1 - 2 * SAFE_ZONE_X) / N) * 100) + '%';
+          sz.style.top = (SAFE_ZONE_Y * 100) + '%';
+          sz.style.height = ((1 - 2 * SAFE_ZONE_Y) * 100) + '%';
+          g.appendChild(sz);
         }
       }
     }
@@ -27254,6 +27424,7 @@ function zoomTo(newZoom, centreX, centreY) {
       // outline Terry hit.
       window.addEventListener('keydown', function (e) {
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        if (e.ctrlKey || e.metaKey || e.altKey) return;   // v3.0.3 (Terry) — Ctrl+E belongs to the corner-glide gesture, not Enhance
         if (e.key === 'e' || e.key === 'E') {
           e.preventDefault();
           // v2.1 round 318 (Terry) — collage: E mirrors the Enhance button (toggle collapse).
