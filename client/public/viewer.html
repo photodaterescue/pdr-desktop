@@ -10815,12 +10815,18 @@
       const canvasRect = collageCanvasEl.getBoundingClientRect();   // POST-transform: includes zoom/pan + Behaviour A centring
       const stageRect = collageStageEl.getBoundingClientRect();
       if (!canvasRect.width || !canvasRect.height) { hideSelectionChrome(); return; }
-      const ihFrac = itemHeightFrac(it);
-      const w = it.wFrac * canvasRect.width;
-      const h = ihFrac * canvasRect.height;
+      // v3.0.3 (Terry SS1) — size/position the frame from the tile's ACTUAL rendered box (it.el.offset*),
+      // scaled to stage space, NOT recomputed from fractions × getCanvasAspect(). In carousel mode
+      // getCanvasAspect() (the intended wide aspect) doesn't exactly match the rendered canvas aspect, so the
+      // recomputed frame came out ~13% too tall and the purple frame hung below the photo. Reading the real
+      // box makes the frame hug the tile on ALL FOUR edges every time (offset* ignore the rotate transform).
+      const _sx = collageCanvasEl.clientWidth ? (canvasRect.width / collageCanvasEl.clientWidth) : 1;
+      const _sy = collageCanvasEl.clientHeight ? (canvasRect.height / collageCanvasEl.clientHeight) : 1;
+      const w = it.el.offsetWidth * _sx;
+      const h = it.el.offsetHeight * _sy;
       // Stage-relative px (the overlay is inset:0 inside the stage).
-      const left = canvasRect.left + it.xFrac * canvasRect.width - stageRect.left;
-      const top = canvasRect.top + it.yFrac * canvasRect.height - stageRect.top;
+      const left = canvasRect.left + (it.el.offsetLeft * _sx) - stageRect.left;
+      const top = canvasRect.top + (it.el.offsetTop * _sy) - stageRect.top;
       box.style.left = left + 'px';
       box.style.top = top + 'px';
       box.style.width = w + 'px';
@@ -19945,6 +19951,11 @@
         // it actually trims, so the final result is identical.
         collageStaggerAlphaTrim_(it);
         renderCollageItem(it);
+        // v3.0.3 (Terry SS1) — the tile is selected at ADD time, BEFORE this async decode, so the selection
+        // frame (chrome) was positioned to the pre-load box (a square/default aspect). Now that the real
+        // photo aspect is applied + the box re-rendered above, re-position the frame so it HUGS the photo on
+        // all four edges (the bug where the purple frame hung taller than the photo, with a bottom gap).
+        try { if (typeof collageSelected !== 'undefined' && collageSelected === it && typeof positionSelectionChrome === 'function') positionSelectionChrome(); } catch (_) {}
       };
       // v2.1 round 173 — show the background-removed cut-out if this tile has one
       // (a clone inherits it), else the original. (Initial tiles have none yet.)
