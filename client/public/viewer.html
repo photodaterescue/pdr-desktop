@@ -15796,15 +15796,48 @@
       // numbers/greens confirm them without a line through the tile.
       const _vInside = !!(_selEl && _vX != null && _vX > _tL + _TOL && _vX < _tR - _TOL);
       const _hInside = !!(_selEl && _hY != null && _hY > _tT + _TOL && _hY < _tB - _TOL);
+      // v3.0.3 (Terry SS1) — a guide sourced from ANOTHER element's edge/centre now SPANS to that
+      // element (Canva): a line that just crossed the dragged tile with no visible anchor read as
+      // noise ("this vertical line… seems to make the scene busy"). Page-boundary/centre guides
+      // (no partner element on the line) keep the short local stub.
+      const _extendToPartners = (guideLayout, vertical) => {
+        let lo = null, hi = null;
+        const scan = (el) => {
+          if (!el || el === _selEl) return;
+          const q = el.getBoundingClientRect();
+          if (vertical) {
+            const qL = (q.left - _gRect.left) * s2cX, qR = (q.right - _gRect.left) * s2cX;
+            if (Math.abs(qL - guideLayout) < 1.5 || Math.abs((qL + qR) / 2 - guideLayout) < 1.5 || Math.abs(qR - guideLayout) < 1.5) {
+              const qT = (q.top - _gRect.top) * s2cY, qB = (q.bottom - _gRect.top) * s2cY;
+              lo = lo === null ? qT : Math.min(lo, qT); hi = hi === null ? qB : Math.max(hi, qB);
+            }
+          } else {
+            const qT2 = (q.top - _gRect.top) * s2cY, qB2 = (q.bottom - _gRect.top) * s2cY;
+            if (Math.abs(qT2 - guideLayout) < 1.5 || Math.abs((qT2 + qB2) / 2 - guideLayout) < 1.5 || Math.abs(qB2 - guideLayout) < 1.5) {
+              const qL2 = (q.left - _gRect.left) * s2cX, qR2 = (q.right - _gRect.left) * s2cX;
+              lo = lo === null ? qL2 : Math.min(lo, qL2); hi = hi === null ? qR2 : Math.max(hi, qR2);
+            }
+          }
+        };
+        try {
+          (collageItems || []).forEach(function (o) { if (o && o.on && !o.isBg && o.el) scan(o.el); });
+          (collageTexts || []).forEach(function (o) { if (o && o.el) scan(o.el); });
+        } catch (_) {}
+        return lo === null ? null : { lo: lo, hi: hi };
+      };
       if (vGuide != null && !_vInside) {
         if (!collageSnapVEl) {
           collageSnapVEl = document.createElement('div');
           collageSnapVEl.style.cssText = 'position:absolute;width:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapVEl);
         }
-        collageSnapVEl.style.left = Math.round(vGuide * s2cX) + 'px';
-        collageSnapVEl.style.top = Math.round(_fT) + 'px';
-        collageSnapVEl.style.height = Math.max(1, Math.round(_fH)) + 'px';
+        const _vgx = vGuide * s2cX;
+        let _vT = _fT, _vB = _fT + _fH;
+        const _vp = _selEl ? _extendToPartners(_vgx, true) : null;
+        if (_vp) { _vT = Math.max(0, Math.min(_vT, _vp.lo)); _vB = Math.min(_ch, Math.max(_vB, _vp.hi)); }
+        collageSnapVEl.style.left = Math.round(_vgx) + 'px';
+        collageSnapVEl.style.top = Math.round(_vT) + 'px';
+        collageSnapVEl.style.height = Math.max(1, Math.round(_vB - _vT)) + 'px';
         collageSnapVEl.style.display = 'block';
       } else if (collageSnapVEl) { collageSnapVEl.style.display = 'none'; }
       if (hGuide != null && !_hInside) {
@@ -15813,9 +15846,13 @@
           collageSnapHEl.style.cssText = 'position:absolute;height:1px;background:#FEC242;pointer-events:none;z-index:2147483646;';
           collageCanvasEl.appendChild(collageSnapHEl);
         }
-        collageSnapHEl.style.top = Math.round(hGuide * s2cY) + 'px';
-        collageSnapHEl.style.left = Math.round(_fL) + 'px';
-        collageSnapHEl.style.width = Math.max(1, Math.round(_fW)) + 'px';
+        const _hgy = hGuide * s2cY;
+        let _hL = _fL, _hR = _fL + _fW;
+        const _hp = _selEl ? _extendToPartners(_hgy, false) : null;
+        if (_hp) { _hL = Math.max(0, Math.min(_hL, _hp.lo)); _hR = Math.min(_cw, Math.max(_hR, _hp.hi)); }
+        collageSnapHEl.style.top = Math.round(_hgy) + 'px';
+        collageSnapHEl.style.left = Math.round(_hL) + 'px';
+        collageSnapHEl.style.width = Math.max(1, Math.round(_hR - _hL)) + 'px';
         collageSnapHEl.style.display = 'block';
       } else if (collageSnapHEl) { collageSnapHEl.style.display = 'none'; }
     }
