@@ -3854,9 +3854,13 @@
     /* v3.0.3 (Terry) — Measurement rules panel; reuses the shortcuts overlay/card shell. */
     #collage-measure-overlay { position: fixed; inset: 0; z-index: 2147483647; display: none; align-items: center; justify-content: center; background: rgba(8,7,18,0.6); }
     #collage-measure-overlay.open { display: flex; }
-    .cml-card { width: min(470px, 94vw); }
-    .cml-group { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #FEC242; font-weight: 700; margin: 17px 0 5px; }
-    .cml-group:first-child { margin-top: 4px; }
+    /* v3.0.3 (Terry SS1) — "too tall and thin": the rules flow in TWO columns on a wider card, so the
+       whole panel fits without scrolling. Groups never split across a column break. */
+    .cml-card { width: min(840px, 94vw); }
+    .cml-body { column-count: 2; column-gap: 32px; margin-top: 6px; }
+    @media (max-width: 760px) { .cml-body { column-count: 1; } }
+    .cml-sec { break-inside: avoid; -webkit-column-break-inside: avoid; page-break-inside: avoid; margin: 0 0 16px; }
+    .cml-group { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: #FEC242; font-weight: 700; margin: 0 0 5px; }
     .cml-row { display: flex; align-items: center; justify-content: space-between; gap: 14px; padding: 7px 4px; cursor: pointer; border-radius: 8px; margin: 0; }
     .cml-row:hover { background: rgba(255,255,255,0.04); }
     .cml-name { font-size: 13.5px; color: #e7e3f2; }
@@ -15816,8 +15820,10 @@
       close.addEventListener('click', function () { toggleCollageMeasurePanel(false); });
       head.appendChild(close);
       const body = document.createElement('div'); body.className = 'cml-body';
+      let lastSecEl = null;   // v3.0.3 (Terry SS1) — each group in a .cml-sec so the 2-column flow never splits a group
       MEASURE_RULES.forEach(function (sec) {
-        const h = document.createElement('h4'); h.className = 'cml-group'; h.textContent = sec.group; body.appendChild(h);
+        const secEl = document.createElement('div'); secEl.className = 'cml-sec';
+        const h = document.createElement('h4'); h.className = 'cml-group'; h.textContent = sec.group; secEl.appendChild(h);
         sec.items.forEach(function (it) {
           const row = document.createElement('label'); row.className = 'cml-row';
           const nm = document.createElement('span'); nm.className = 'cml-name'; nm.textContent = it.name;
@@ -15827,8 +15833,10 @@
           sw.classList.toggle('on', cb.checked);
           cb.addEventListener('change', function () { collageMeasureRules[it.key] = cb.checked; sw.classList.toggle('on', cb.checked); refreshMeasureLiveState(); });
           sw.appendChild(cb); sw.appendChild(knob);
-          row.appendChild(nm); row.appendChild(sw); body.appendChild(row);
+          row.appendChild(nm); row.appendChild(sw); secEl.appendChild(row);
         });
+        body.appendChild(secEl);
+        lastSecEl = secEl;
       });
       // v3.0.3 (Terry) — user-placed guides: add straight from the panel; drag on canvas to move,
       // double-click a guide to remove it. Adding one switches the rule on so it shows immediately.
@@ -15843,9 +15851,9 @@
         return b;
       };
       addRow.appendChild(mkAdd('+ Vertical guide', 'v')); addRow.appendChild(mkAdd('+ Horizontal guide', 'h'));
-      body.appendChild(addRow);
       const hint = document.createElement('div'); hint.className = 'cml-hint'; hint.textContent = 'Drag a guide to move it · double-click it to remove it';
-      body.appendChild(hint);
+      // Keep the add-buttons + hint inside the last group's section so the column flow keeps them together.
+      if (lastSecEl) { lastSecEl.appendChild(addRow); lastSecEl.appendChild(hint); } else { body.appendChild(addRow); body.appendChild(hint); }
       const foot = document.createElement('div'); foot.className = 'cml-foot';
       const allBtn = document.createElement('button'); allBtn.className = 'cml-btn cml-btn-ghost'; allBtn.textContent = 'All on';
       allBtn.addEventListener('click', function () { MEASURE_RULE_KEYS.forEach(function (k) { collageMeasureRules[k] = true; }); syncMeasurePanelChecks(); refreshMeasureLiveState(); });
