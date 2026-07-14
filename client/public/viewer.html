@@ -15613,8 +15613,12 @@
       const _TOL = 4;
       const _vX = (vGuide != null) ? vGuide * s2cX : null;
       const _hY = (hGuide != null) ? hGuide * s2cY : null;
-      const _vInside = !!(_selEl && _vX != null && _vX > _tL + _TOL && _vX < _tR - _TOL && Math.abs(_vX - _tCx) > _TOL);
-      const _hInside = !!(_selEl && _hY != null && _hY > _tT + _TOL && _hY < _tB - _TOL && Math.abs(_hY - _tCy) > _TOL);
+      // v3.0.3 (Terry SS1-SS3) — lines draw ONLY on the tile's own EDGES now. The centre exemption
+      // let a centre-onto-page-boundary snap draw a line through the middle of the photo ("appearing
+      // for no reason whatsoever… is it adding any value?" — no). Centre snaps still snap; the
+      // numbers/greens confirm them without a line through the tile.
+      const _vInside = !!(_selEl && _vX != null && _vX > _tL + _TOL && _vX < _tR - _TOL);
+      const _hInside = !!(_selEl && _hY != null && _hY > _tT + _TOL && _hY < _tB - _TOL);
       try { if (vGuide != null || hGuide != null) console.log('[snapdbg] vX=' + (_vX != null ? Math.round(_vX) : '-') + ' hY=' + (_hY != null ? Math.round(_hY) : '-') + ' tileL=' + Math.round(_tL) + ' R=' + Math.round(_tR) + ' Cx=' + Math.round(_tCx) + ' T=' + Math.round(_tT) + ' B=' + Math.round(_tB) + ' Cy=' + Math.round(_tCy) + ' vIn=' + _vInside + ' hIn=' + _hInside); } catch (_) {}
       if (vGuide != null && !_vInside) {
         if (!collageSnapVEl) {
@@ -15825,6 +15829,7 @@
     // lavender corner-equal relationship), instead of free movement. Plain E still toggles Enhance.
     let cornerGlideHeld = false;
     let cornerGlideActive_ = false;   // true only while a drag-move is actually gliding (drives the lavender pills)
+    let glideLock_ = null;            // v3.0.3 (Terry SS4/SS5) — the corner locked in for the CURRENT glide: {pgL, pgR, useLeft, useTop}
     window.addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
         // v3.0.3 (Terry) — LATCH ON CTRL: tapping E arms the glide and it stays armed while Ctrl is
@@ -16086,35 +16091,43 @@
         // out along the lavender equal-from-the-corner line. Terry's redesign of the old ambient
         // corner-equal auto-snap ("I really like this idea"). Normal snapping is bypassed while held.
         if (cornerGlideHeld) {   // v3.0.3 (Terry) — an EXPLICIT hold always glides; the cornerEqual toggle only governs the ambient auto-snap ("it doesn't do it" was this gate)
-          if (!cornerGlideActive_) { cornerGlideActive_ = true; try { console.log('[glidedbg] gliding'); } catch (_) {} }
+          if (!cornerGlideActive_) { cornerGlideActive_ = true; glideLock_ = null; try { console.log('[glidedbg] gliding'); } catch (_) {} }
           const cR3 = collageCanvasEl.getBoundingClientRect();
           if (cR3.width && cR3.height) {
             const r3 = it.el.getBoundingClientRect();
-            const cx3 = (r3.left + r3.right) / 2 - cR3.left;
-            let pgL3 = 0, pgR3 = cR3.width;
-            if (carouselMode) {
-              const N3 = Math.max(1, carouselPageCount);
-              const pw3 = cR3.width / N3;
-              const pi3 = Math.max(0, Math.min(N3 - 1, Math.floor(cx3 / Math.max(1, pw3))));
-              pgL3 = pi3 * pw3; pgR3 = (pi3 + 1) * pw3;
-            }
             const tL3 = r3.left - cR3.left, tR3 = r3.right - cR3.left, tT3 = r3.top - cR3.top, tB3 = r3.bottom - cR3.top;
-            const useLeft = (cx3 - pgL3) <= (pgR3 - cx3);
-            const useTop = ((tT3 + tB3) / 2) <= cR3.height / 2;
-            const mH3 = useLeft ? (tL3 - pgL3) : (pgR3 - tR3);
-            const mV3 = useTop ? tT3 : (cR3.height - tB3);
+            // v3.0.3 (Terry SS4/SS5) — LOCK the corner on glide entry. Re-picking the nearest corner
+            // every move flipped anchors the instant the tile's centre crossed the page middle → a
+            // massive teleport instead of "1 by 1 number at a time". The corner (and its page) is
+            // chosen ONCE where the glide starts and held until Ctrl is released / the drag ends.
+            // Page bounds are stored as FRACTIONS so a mid-drag Ctrl+wheel zoom can't skew them.
+            if (!glideLock_) {
+              const cx3 = (tL3 + tR3) / 2;
+              let pgL0 = 0, pgR0 = cR3.width;
+              if (carouselMode) {
+                const N3 = Math.max(1, carouselPageCount);
+                const pw3 = cR3.width / N3;
+                const pi3 = Math.max(0, Math.min(N3 - 1, Math.floor(cx3 / Math.max(1, pw3))));
+                pgL0 = pi3 * pw3; pgR0 = (pi3 + 1) * pw3;
+              }
+              glideLock_ = { pgLF: pgL0 / cR3.width, pgRF: pgR0 / cR3.width, useLeft: (cx3 - pgL0) <= (pgR0 - cx3), useTop: ((tT3 + tB3) / 2) <= cR3.height / 2 };
+            }
+            const Lk = glideLock_;
+            const pgL3 = Lk.pgLF * cR3.width, pgR3 = Lk.pgRF * cR3.width;
+            const mH3 = Lk.useLeft ? (tL3 - pgL3) : (pgR3 - tR3);
+            const mV3 = Lk.useTop ? tT3 : (cR3.height - tB3);
             const m3 = Math.max(0, (mH3 + mV3) / 2);   // equalised margin — the glide line
-            const gdx = useLeft ? (pgL3 + m3 - tL3) : (pgR3 - m3 - tR3);
-            const gdy = useTop ? (m3 - tT3) : (cR3.height - m3 - tB3);
+            const gdx = Lk.useLeft ? (pgL3 + m3 - tL3) : (pgR3 - m3 - tR3);
+            const gdy = Lk.useTop ? (m3 - tT3) : (cR3.height - m3 - tB3);
             it.xFrac += gdx / cR3.width;
             it.yFrac += gdy / cR3.height;
             renderCollageItem(it);
             hideCollageSnapGuides();
-            try { showCollageMeasurements(it); } catch (_) {}   // lavender pills confirm the equal margins live
+            try { showCollageMeasurements(it); } catch (_) {}   // green 0/0 in the corner → PURPLE equal pair counting out (Terry's colour spec)
             return;
           }
         }
-        cornerGlideActive_ = false;   // not gliding this move (fell through, or Ctrl released mid-drag)
+        cornerGlideActive_ = false; glideLock_ = null;   // not gliding this move (fell through, or Ctrl released mid-drag) — next glide re-locks its corner
         const cRect = collageCanvasEl.getBoundingClientRect();
         const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
@@ -16131,7 +16144,7 @@
       };
       const up = () => {
         it.el.classList.remove('dragging');
-        cornerGlideActive_ = false;   // v3.0.3 — end-of-drag: stop driving the lavender pills
+        cornerGlideActive_ = false; glideLock_ = null;   // v3.0.3 — end-of-drag: stop driving the lavender pills + free the locked corner
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
