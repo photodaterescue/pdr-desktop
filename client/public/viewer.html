@@ -15892,15 +15892,29 @@
       movingEls.forEach((el) => { if (!el) return; const r = el.getBoundingClientRect(); gl = Math.min(gl, r.left - cRect.left); gt = Math.min(gt, r.top - cRect.top); gr = Math.max(gr, r.right - cRect.left); gb = Math.max(gb, r.bottom - cRect.top); });
       if (!isFinite(gl)) return out;
       const gcx = (gl + gr) / 2, gcy = (gt + gb) / 2;
-      const vCand = [cRect.width / 2, 0, cRect.width];
-      const hCand = [cRect.height / 2, 0, cRect.height];
+      // v3.0.3 (Terry) — group moves honour the Measurement-rules toggles too (same keys as the
+      // single-tile snap), incl. the #8 upgrade: only the page the GROUP's centre sits on offers
+      // its page-centre line.
+      const vCand = [], hCand = [];
+      if (ruleOn(carouselMode ? 'stripCentre' : 'pageCentre')) vCand.push(cRect.width / 2);
+      if (ruleOn('pageCentre')) hCand.push(cRect.height / 2);
+      if (ruleOn('pageEdges')) { vCand.push(0, cRect.width); hCand.push(0, cRect.height); }
+      if (ruleOn('userGuides') && collageUserGuides.length) {
+        collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') vCand.push(ug.frac * cRect.width); else hCand.push(ug.frac * cRect.height); });
+      }
       if (carouselMode) {
         const N = Math.max(1, carouselPageCount);
-        for (let i = 0; i <= N; i++) vCand.push((i / N) * cRect.width);
-        for (let i = 0; i < N; i++) vCand.push(((i + 0.5) / N) * cRect.width);
+        const pw = cRect.width / N;
+        if (ruleOn('pageBoundaries')) { for (let i = 0; i <= N; i++) vCand.push(i * pw); }
+        const pi = Math.max(0, Math.min(N - 1, Math.floor(gcx / Math.max(1, pw))));
+        if (ruleOn('pageCentres')) vCand.push((pi + 0.5) * pw);
+        if (ruleOn('safeZone')) {
+          vCand.push(pi * pw + SAFE_ZONE_X * pw, (pi + 1) * pw - SAFE_ZONE_X * pw);
+          hCand.push(SAFE_ZONE_Y * cRect.height, (1 - SAFE_ZONE_Y) * cRect.height);
+        }
       }
-      for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left); hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top); }
-      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el)) continue; const r = o.el.getBoundingClientRect(); vCand.push(r.left - cRect.left, r.left - cRect.left + r.width / 2, r.right - cRect.left); hCand.push(r.top - cRect.top, r.top - cRect.top + r.height / 2, r.bottom - cRect.top); }
+      for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
+      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el)) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
       let bV = T + 1; const dX = [gl, gcx, gr];
       for (let c = 0; c < vCand.length; c++) for (let e = 0; e < dX.length; e++) { const g = Math.abs(dX[e] - vCand[c]); if (g < bV) { bV = g; out.dx = vCand[c] - dX[e]; out.vGuide = vCand[c]; } }
       if (bV > T) { out.dx = 0; out.vGuide = null; }
@@ -16112,6 +16126,14 @@
       if (ruleOn('pageEdges')) { xc.push(rect.left, rect.left + cw); yc.push(rect.top, rect.top + ch); }
       if (carouselMode && ruleOn('pageBoundaries')) { var N = Math.max(1, carouselPageCount); for (var i = 0; i <= N; i++) xc.push(rect.left + (i / N) * cw); }
       if (ruleOn('userGuides') && collageUserGuides.length) { collageUserGuides.forEach(function (ug) { if (ug.axis === 'v') xc.push(rect.left + ug.frac * cw); else yc.push(rect.top + ug.frac * ch); }); }
+      // v3.0.3 (Terry) — the Instagram safe-zone lines snap during RESIZE too (move already had them):
+      // the grabbed edge's page supplies the two inset verticals; top/bottom insets are shared.
+      if (carouselMode && ruleOn('safeZone')) {
+        var Ns = Math.max(1, carouselPageCount), pws = cw / Ns;
+        var pis = Math.max(0, Math.min(Ns - 1, Math.floor((grabX - rect.left) / Math.max(1, pws))));
+        xc.push(rect.left + pis * pws + SAFE_ZONE_X * pws, rect.left + (pis + 1) * pws - SAFE_ZONE_X * pws);
+        yc.push(rect.top + SAFE_ZONE_Y * ch, rect.top + (1 - SAFE_ZONE_Y) * ch);
+      }
       var mirX = function (x) { return 2 * rect.left + cw - x; }, mirY = function (y) { return 2 * rect.top + ch - y; };
       var pushEdges = function (r, isTile) {
         if (ruleOn('objEdges')) { xc.push(r.left, r.right); yc.push(r.top, r.bottom); }
