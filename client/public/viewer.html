@@ -10259,7 +10259,7 @@
       let leftRef = c.left, rightRef = c.right, topRef = c.top, botRef = c.bottom;
       // v3.0 r385 (Terry) — measure against BOTH photo tiles AND text/emoji layers (was tiles only), so
       // every layer type shows the same distance/spacing badges. Text layers have .el but no .on/.isBg.
-      const measureCands = collageItems.filter(function (o) { return o && o.el && o.el !== it.el && o.on && !o.isBg; }).concat((collageTexts || []).filter(function (o) { return o && o.el && o.el !== it.el; }));
+      const measureCands = collageItems.filter(function (o) { return o && o.el && o.el !== it.el && o.on && !o.isBg; }).concat((collageTexts || []).filter(function (o) { return o && o.el && o.el !== it.el && alignableLayer(o); }));
       for (let mi = 0; mi < measureCands.length; mi++) {
         const o = measureCands[mi];
         const q = o.el.getBoundingClientRect();
@@ -15607,7 +15607,7 @@
       }
       for (let i = 0; i < collageTexts.length; i++) {
         const o = collageTexts[i];
-        if (!o || !o.el || o.el === draggedEl) continue;
+        if (!o || !o.el || o.el === draggedEl || !alignableLayer(o)) continue;   // v3.0.3 — captions gated
         pushEdgesWithMirror(o.el.getBoundingClientRect());
       }
       // v2.1 round 304 (Terry) — DISTRIBUTE snap. The measurement greens when the dragged
@@ -15620,7 +15620,7 @@
       let lRef = pgL, rRef = pgR, tRef = 0, bRef = cRect.height;   // v3.1 (Terry) — L/R refs start at the PAGE edges (carousel), so distribute/centre-between + corner-equal are page-relative on every page (single collage: pgL/pgR == 0/width, unchanged)
       // v3.0 r386 (Terry) — the distribute / "centre-between" snap now considers BOTH photo tiles AND
       // text/emoji layers (matches showCollageMeasurements), so the snap STICKS wherever the green shows.
-      const distCands = collageItems.filter(function (o) { return o && o.el && o.el !== draggedEl && o.on && !o.isBg; }).concat(collageTexts.filter(function (o) { return o && o.el && o.el !== draggedEl; }));
+      const distCands = collageItems.filter(function (o) { return o && o.el && o.el !== draggedEl && o.on && !o.isBg; }).concat(collageTexts.filter(function (o) { return o && o.el && o.el !== draggedEl && alignableLayer(o); }));
       for (let di = 0; di < distCands.length; di++) {
         const o = distCands[di];
         const q = o.el.getBoundingClientRect();
@@ -15821,7 +15821,7 @@
         };
         try {
           (collageItems || []).forEach(function (o) { if (o && o.on && !o.isBg && o.el) scan(o.el); });
-          (collageTexts || []).forEach(function (o) { if (o && o.el) scan(o.el); });
+          (collageTexts || []).forEach(function (o) { if (o && o.el && alignableLayer(o)) scan(o.el); });
         } catch (_) {}
         return lo === null ? null : { lo: lo, hi: hi };
       };
@@ -15966,6 +15966,7 @@
       { group: 'Line up to other items', items: [
         { key: 'objEdges', name: 'Another item’s edges' },
         { key: 'objCentre', name: 'Another item’s centre' },
+        { key: 'alignText', name: 'Line up to text & captions' },
       ] },
       { group: 'Smart alignments', items: [
         { key: 'mirror', name: 'Mirror / symmetry' },
@@ -15987,6 +15988,10 @@
       // senseless noise. The rule stays available in the panel for whoever wants it; a saved default
       // overrides this as usual. (Every other rule stays ON by default per Terry's spec.)
       o.mirror = false;
+      // v3.0.3 (Terry) — "Line up to text & captions" defaults OFF too: a caption's edge grabbing a
+      // photo/logo drag read as alignment to something "seemingly not related". Flip it on in the
+      // panel for deliberate text layout; emoji layers (logos/stickers) always align regardless.
+      o.alignText = false;
       return o;
     }
     function loadMeasureRules() {
@@ -15994,6 +15999,10 @@
       try { const raw = localStorage.getItem('pdr.collage.measureRules'); if (raw) { const s = JSON.parse(raw); MEASURE_RULE_KEYS.forEach(function (k) { if (typeof s[k] === 'boolean') collageMeasureRules[k] = s[k]; }); } } catch (_) {}
     }
     function ruleOn(key) { return collageMeasureRules[key] !== false; }
+    // v3.0.3 (Terry) — TEXT/CAPTION layers join alignment, snapping and measurement only while
+    // "Line up to text & captions" is ON (default OFF). EMOJI layers (logos/stickers) are graphical
+    // objects like photos and ALWAYS join — it was captions grabbing a logo drag that read as noise.
+    function alignableLayer(o) { return !!(o && (o.isEmoji || ruleOn('alignText'))); }
     loadMeasureRules();
     // v3.0.3 (Terry) — INSTAGRAM SAFE-ZONE: fraction of a page kept clear of IG's own UI overlays
     // (username strip up top, caption/CTA down the bottom, rounded corners at the sides). Drawn as a
@@ -16181,7 +16190,7 @@
         }
       }
       for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
-      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el)) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
+      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el) || !alignableLayer(o)) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
       // v3.0.3 (Terry) — EDGE-PRIORITY pick, matching the single-tile snap: a true page edge /
       // boundary within the magnet wins outright over the smart candidates.
       const dX = [gl, gcx, gr], dY = [gt, gcy, gb];
@@ -16451,7 +16460,7 @@
         if (isTile && ruleOn('matchSize')) { xc.push(isLeftCorner ? (anchorX - r.width) : (anchorX + r.width)); yc.push(isTopCorner ? (anchorY - r.height) : (anchorY + r.height)); }
       };
       for (var a = 0; a < collageItems.length; a++) { var o = collageItems[a]; if (o && o.el && o.el !== draggedEl && o.on && !o.isBg) pushEdges(o.el.getBoundingClientRect(), true); }
-      for (var b = 0; b < collageTexts.length; b++) { var o2 = collageTexts[b]; if (o2 && o2.el && o2.el !== draggedEl) pushEdges(o2.el.getBoundingClientRect(), false); }
+      for (var b = 0; b < collageTexts.length; b++) { var o2 = collageTexts[b]; if (o2 && o2.el && o2.el !== draggedEl && alignableLayer(o2)) pushEdges(o2.el.getBoundingClientRect(), false); }
       // SYMMETRIC (green) + CORNER-EQUAL (purple) targets for the grabbed edges — the matches resize lacked.
       var fixedVM = isTopCorner ? (rect.bottom - anchorY) : (anchorY - rect.top);   // anchor's fixed vertical margin
       var fixedHM = isLeftCorner ? (rect.right - anchorX) : (anchorX - rect.left);   // anchor's fixed horizontal margin
@@ -16705,7 +16714,7 @@
             if (carouselMode) { const N = Math.max(1, carouselPageCount); for (let i = 0; i <= N; i++) xc.push(cr.left + (i / N) * cr.width); }
             let lRef = cr.left, rRef = cr.left + cr.width;   // nearest L/R refs (for the distribute candidate)
             for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right, mirX(q.left), mirX(q.left + q.width / 2), mirX(q.right)); if (q.top < r.bottom - 1 && q.bottom > r.top + 1) { if (q.right <= r.left + 1 && q.right > lRef) lRef = q.right; if (q.left >= r.right - 1 && q.left < rRef) rRef = q.left; } } }
-            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right, mirX(q.left), mirX(q.left + q.width / 2), mirX(q.right)); } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el && alignableLayer(o)) { const q = o.el.getBoundingClientRect(); xc.push(q.left, q.left + q.width / 2, q.right, mirX(q.left), mirX(q.left + q.width / 2), mirX(q.right)); } }
             xc.push((edge === 'l') ? (lRef + (rRef - r.right)) : (rRef - (r.left - lRef)));   // distribute: makes left gap == right gap
             let best = T + 1, sX = null; for (let c = 0; c < xc.length; c++) { const g = Math.abs(grabX - xc[c]); if (g < best) { best = g; sX = xc[c]; } }
             if (sX != null && best <= T) {
@@ -16723,7 +16732,7 @@
             const yc = [cr.top, cr.top + cr.height / 2, cr.top + cr.height];
             let tRef = cr.top, bRef = cr.top + cr.height;   // nearest T/B refs (for distribute)
             for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (o && o.el && o.el !== it.el && o.on && !o.isBg) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom, mirY(q.top), mirY(q.top + q.height / 2), mirY(q.bottom)); if (q.left < r.right - 1 && q.right > r.left + 1) { if (q.bottom <= r.top + 1 && q.bottom > tRef) tRef = q.bottom; if (q.top >= r.bottom - 1 && q.top < bRef) bRef = q.top; } } }
-            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom, mirY(q.top), mirY(q.top + q.height / 2), mirY(q.bottom)); } }
+            for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (o && o.el && alignableLayer(o)) { const q = o.el.getBoundingClientRect(); yc.push(q.top, q.top + q.height / 2, q.bottom, mirY(q.top), mirY(q.top + q.height / 2), mirY(q.bottom)); } }
             yc.push((edge === 't') ? (tRef + (bRef - r.bottom)) : (bRef - (r.top - tRef)));   // distribute: makes top gap == bottom gap
             let best = T + 1, sY = null; for (let c = 0; c < yc.length; c++) { const g = Math.abs(grabY - yc[c]); if (g < best) { best = g; sY = yc[c]; } }
             if (sY != null && best <= T) {
