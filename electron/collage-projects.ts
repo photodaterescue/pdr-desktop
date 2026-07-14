@@ -182,12 +182,16 @@ function migrateOldProjects(): void {
 
 // Save (or overwrite, when `project.id` is supplied — that's what autosave does).
 ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, thumbnailDataUrl?: string) => {
+  const _sp0 = Date.now();   // v3.0.3 TEMP (Terry ~4s freeze) — time the SYNC record write + library-drive copy on the main thread
   try {
     if (!project || typeof project.snapshot !== 'string') return { success: false, error: 'Nothing to save.' };
     const dir = projectsDir();
     const id = project.id || genProjectId();
     const rec: CollageProjectData = { ...project, id };
-    fs.writeFileSync(toLongPath(recPath(dir, id)), JSON.stringify(rec), 'utf8');
+    const _json = JSON.stringify(rec);
+    const _sw0 = Date.now();
+    fs.writeFileSync(toLongPath(recPath(dir, id)), _json, 'utf8');
+    if (Date.now() - _sw0 > 150) log.warn(`[collage-projects] TEMP recWrite ${Date.now() - _sw0}ms (json ${(_json.length / 1024) | 0}KB)`);
     if (typeof thumbnailDataUrl === 'string' && thumbnailDataUrl.startsWith('data:image')) {
       const b64 = thumbnailDataUrl.split(',')[1] || '';
       if (b64) { try { fs.writeFileSync(toLongPath(thumbPath(dir, id)), Buffer.from(b64, 'base64')); } catch { /* thumb is best-effort */ } }
@@ -201,6 +205,7 @@ ipcMain.handle('collage:saveProject', async (_e, project: CollageProjectData, th
         if (fs.existsSync(toLongPath(tp))) { try { copyPreservingMtime(tp, thumbPath(sc, id)); } catch { /* thumb best-effort */ } }
       }
     } catch { /* drive offline — the next list-time sync catches up */ }
+    if (Date.now() - _sp0 > 200) log.warn(`[collage-projects] TEMP saveProject total ${Date.now() - _sp0}ms (the sync record write + library-drive copy on the main thread)`);
     return { success: true, id };
   } catch (err) {
     log.warn(`[collage-projects] save failed: ${(err as Error).message}`);

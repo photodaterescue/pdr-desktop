@@ -2708,6 +2708,20 @@ app.whenReady().then(() => {
     log.info(`[log] file: ${logPath}`);
     log.info(`[log] app version ${app.getVersion()} starting on ${process.platform} ${os.release()}`);
   } catch {}
+  // v3.0.3 TEMP (Terry: "4 second delay every ~50s" editing a collage; renderer longtask observer saw
+  // NOTHING → the block is on the MAIN process, which freezes every window without a renderer-visible
+  // long task). Event-loop-lag heartbeat: a 500ms timer that reports how LATE it actually fired. If the
+  // main thread was blocked N seconds, the tick lands N seconds late → logs [eventloop] blocked Nms, so
+  // the stall names its own duration + timestamp and we correlate with whatever else logged then.
+  try {
+    let _elLast = Date.now();
+    setInterval(() => {
+      const now = Date.now();
+      const lag = now - _elLast - 500;
+      if (lag > 250) log.warn(`[eventloop] blocked ${lag}ms (main thread)`);
+      _elLast = now;
+    }, 500);
+  } catch {}
 
   // v2.0.15 (Terry 2026-06-01) — DISABLE WINDOWS GHOSTING.
   // Windows ghosts (paints a white "Not Responding" overlay) on any
