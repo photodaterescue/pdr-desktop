@@ -11051,8 +11051,43 @@
         // glyph; fall back to a typical emoji box (most glyphs ≈ 1×fontPx tall).
         const aAsc = (typeof m.actualBoundingBoxAscent === 'number') ? m.actualBoundingBoxAscent : (fontPx * 0.82);
         const aDesc = (typeof m.actualBoundingBoxDescent === 'number') ? m.actualBoundingBoxDescent : (fontPx * 0.16);
-        const inkW = Math.max(2, glyphW);
-        const inkH = Math.max(2, aAsc + aDesc);
+        // v3.0.3 (Terry SS1) — NO BLEED. Colour-emoji bitmap metrics LIE: actualBoundingBox* comes
+        // back as the font's RESERVED box, not the visible pixels — under-reported once (the old
+        // "flattened off" bottom), then over-reported (a fat dead band under the glyph, so the
+        // box/frame bottom sat a load of pixels below the icon and wrecked bottom-edge alignment).
+        // Truth instead of guessed padding: draw the glyph once with generous headroom, PIXEL-SCAN
+        // its real ink bounds (cached per glyph as font-size ratios — one scan per glyph ever),
+        // then size the canvas to the VISIBLE ink + the same small pad on all four edges.
+        const inkCache = (window.__pdrEmojiInk = window.__pdrEmojiInk || new Map());
+        let inkR = inkCache.get(ch) || null;
+        if (!inkR) {
+          const M = Math.ceil(fontPx * 0.35);   // scan headroom — also protects against UNDER-reported metrics (the old clipping)
+          canvas.width = Math.max(2, Math.ceil(glyphW + 2 * (ePad + M)));
+          canvas.height = Math.max(2, Math.ceil(aAsc + aDesc + 2 * (ePad + M)));
+          ctx.font = eFont; ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'center';
+          const sBase = ePad + M + aAsc, sCx = canvas.width / 2;
+          ctx.fillText(ch, sCx, sBase);
+          try {
+            const d = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+            let minX = canvas.width, maxX = -1, minY = canvas.height, maxY = -1;
+            for (let y = 0; y < canvas.height; y++) {
+              const row = y * canvas.width;
+              for (let x = 0; x < canvas.width; x++) {
+                if (d[(row + x) * 4 + 3] > 8) {
+                  if (x < minX) minX = x; if (x > maxX) maxX = x;
+                  if (y < minY) minY = y; if (y > maxY) maxY = y;
+                }
+              }
+            }
+            if (maxX >= minX && maxY >= minY) inkR = { ascR: (sBase - minY) / fontPx, descR: (maxY + 1 - sBase) / fontPx, leftR: (sCx - minX) / fontPx, rightR: (maxX + 1 - sCx) / fontPx };
+          } catch (_) { inkR = null; }
+          if (!inkR) inkR = { ascR: aAsc / fontPx, descR: aDesc / fontPx, leftR: (glyphW / 2) / fontPx, rightR: (glyphW / 2) / fontPx };   // blank/unscannable glyph → measured metrics
+          inkCache.set(ch, inkR);
+          if (inkCache.size > 400) { try { inkCache.delete(inkCache.keys().next().value); } catch (_) {} }
+        }
+        const inkLeft = inkR.leftR * fontPx, inkAsc = inkR.ascR * fontPx;
+        const inkW = Math.max(2, (inkR.leftR + inkR.rightR) * fontPx);
+        const inkH = Math.max(2, (inkR.ascR + inkR.descR) * fontPx);
         canvas.width = Math.max(2, Math.ceil(inkW + ePad * 2));
         canvas.height = Math.max(2, Math.ceil(inkH + ePad * 2));
         // Resizing the canvas resets the 2D context — re-apply the font.
@@ -11065,8 +11100,10 @@
         // proofed live: max alpha stayed 255 at Fade 30). One dial, one field, and
         // now it actually draws.
         ctx.globalAlpha = ((typeof layer.opacity === 'number' && isFinite(layer.opacity)) ? Math.max(0, Math.min(100, layer.opacity)) : 100) / 100;
-        // Draw centred horizontally; baseline placed so the ink top lands at +ePad.
-        ctx.fillText(ch, canvas.width / 2, ePad + aAsc);
+        // Draw so the VISIBLE ink lands exactly at +ePad on both axes: textAlign is 'center', so
+        // x places the advance-centre at ePad + inkLeft (visible left edge = ePad), and the
+        // baseline sits at ePad + the true scanned ascent (visible top edge = ePad).
+        ctx.fillText(ch, ePad + inkLeft, ePad + inkAsc);
         // v3.1 (Terry SS1) — Q× backing → logical display; stashes divided back to logical.
         if (_q !== 1) { canvas.style.width = (canvas.width / _q) + 'px'; canvas.style.height = (canvas.height / _q) + 'px'; }
         canvas._logicalW = canvas.width / _q; canvas._logicalH = canvas.height / _q; canvas._q = _q;
@@ -11074,9 +11111,9 @@
         canvas._inkW = Math.max(1, (canvas.width - 2 * ePad) / _q);
         canvas._inkH = Math.max(1, (canvas.height - 2 * ePad) / _q);
         canvas._lineH = (fontPx * 1.25) / _q;
-        canvas._fbAsc = aAsc / _q;
-        canvas._fbDesc = aDesc / _q;
-        canvas._aAscTop = aAsc / _q;
+        canvas._fbAsc = inkAsc / _q;
+        canvas._fbDesc = Math.max(0, inkH - inkAsc) / _q;
+        canvas._aAscTop = inkAsc / _q;
         return canvas;
       }
       // ═══ v3.1 (Terry SS1) — INLINE RUNS render path ("multi-coloured and formatted within
