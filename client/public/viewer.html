@@ -2553,14 +2553,29 @@
     .cws-year-sec { scroll-margin-top: 8px; }
     .cws-year-head { display: flex; align-items: baseline; gap: 10px; position: sticky; top: 0; z-index: 5; background: rgba(20,18,32,0.92); backdrop-filter: blur(5px); padding: 4px 2px 8px; font-size: 17px; font-weight: 700; color: #ece9f7; }
     .cws-year-count { font-size: 11px; font-weight: 600; color: #9a96b5; }
-    .cws-month-sub { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: #8b88a0; margin: 4px 2px 10px; }
+    /* v3.0.3 (Terry #14) — each MONTH is a clearly-separated collapsible sub-section: a divider rule +
+       real top gap so a new month never looks cramped, with a chevron + a count pill. */
+    .cws-month-sec { margin-top: 24px; }
+    .cws-month-sec:first-child { margin-top: 8px; }
+    .cws-month-sub { display: flex; align-items: center; gap: 8px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .8px; color: #9a96b5; margin: 0 2px 14px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.07); }
+    .cws-month-sec:first-child .cws-month-sub { border-top: none; padding-top: 0; }
+    .cws-month-sub .cws-collapse-chevron { width: 13px; height: 13px; }
+    .cws-month-label { flex: 0 0 auto; }
+    .cws-month-count { font-size: 10.5px; font-weight: 600; color: #8f8ca6; background: rgba(255,255,255,0.05); padding: 1px 8px; border-radius: 999px; }
+    .cws-month-sec.cws-collapsed .cws-month-body { display: none; }
+    .cws-month-sec.cws-collapsed .cws-collapse-chevron { transform: rotate(-90deg); }
     /* v3.0.3 (Terry #13/#14) — collapsible homepage sections + a distinct look for Templates vs dated collages. */
     .cws-section-head { cursor: pointer; user-select: none; }
     .cws-collapse-chevron { width: 15px; height: 15px; flex: 0 0 auto; opacity: .7; transition: transform .16s ease; }
     .cws-year-head .cws-collapse-chevron { align-self: center; }
-    .cws-year-head:hover .cws-collapse-chevron { opacity: 1; }
+    .cws-year-head:hover .cws-collapse-chevron, .cws-month-sub:hover .cws-collapse-chevron { opacity: 1; }
     .cws-year-sec.cws-collapsed .cws-year-body { display: none; }
     .cws-year-sec.cws-collapsed .cws-collapse-chevron { transform: rotate(-90deg); }
+    /* v3.0.3 (Terry SS1) — the "× N selected" cancel pill in the select bar. */
+    .cws-select-countpill { display: inline-flex; align-items: center; gap: 5px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); border-radius: 999px; padding: 2px 11px 2px 3px; }
+    .cws-select-countpill .cws-select-count { min-width: 0; color: #e6e3f3; }
+    .cws-select-cancel { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.10); color: #cfc9ec; cursor: pointer; padding: 0; transition: background .12s ease, color .12s ease; }
+    .cws-select-cancel:hover { background: #c0392b; color: #fff; }
     /* Templates header — purple-accented + iconed so it reads as a DIFFERENT kind of thing (reusable
        starting points), never muddled with the dated collage year-groups below. */
     .cws-templates-head { display: flex; align-items: center; gap: 8px; color: #cbbcff; margin-bottom: 12px;
@@ -4631,10 +4646,13 @@
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
                 <!-- v3.0.3 (Terry #12) — bulk-delete action bar, shown only while select mode is active -->
                 <div id="cws-select-bar" class="cws-select-bar" style="display:none">
-                  <span id="cws-select-count" class="cws-select-count">Tap collages to select</span>
+                  <!-- v3.0.3 (Terry SS1) — Memories→Dates-style "× N selected" pill: the × cancels the selection. -->
+                  <span class="cws-select-countpill">
+                    <button type="button" id="cws-select-cancel" class="cws-select-cancel" aria-label="Cancel selection" data-pdr-tooltip="Cancel selection"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                    <span id="cws-select-count" class="cws-select-count">Tap collages to select</span>
+                  </span>
                   <button type="button" id="cws-select-all" class="cws-recent-clear">Select all</button>
                   <button type="button" id="cws-select-delete" class="cws-select-delete" disabled>Delete</button>
-                  <button type="button" id="cws-select-done" class="cws-recent-clear">Done</button>
                 </div>
               </div>
             </div>
@@ -18776,6 +18794,10 @@
     function cwsSetYearCollapsed(y, collapsed) { try { const s = cwsLoadCollapsedSet(); if (collapsed) s.add(String(y)); else s.delete(String(y)); localStorage.setItem(CWS_COLLAPSED_YEARS_KEY, JSON.stringify(Array.from(s))); } catch (_) {} }
     function cwsIsTemplatesCollapsed() { try { return localStorage.getItem(CWS_TEMPLATES_COLLAPSED_KEY) === 'true'; } catch (_) { return false; } }
     function cwsSetTemplatesCollapsed(collapsed) { try { localStorage.setItem(CWS_TEMPLATES_COLLAPSED_KEY, collapsed ? 'true' : 'false'); } catch (_) {} }
+    const CWS_COLLAPSED_MONTHS_KEY = 'pdr.cws.collapsedMonths';
+    function cwsLoadCollapsedMonthSet() { try { return new Set(JSON.parse(localStorage.getItem(CWS_COLLAPSED_MONTHS_KEY) || '[]')); } catch (_) { return new Set(); } }
+    function cwsIsMonthCollapsed(k) { return cwsLoadCollapsedMonthSet().has(String(k)); }
+    function cwsSetMonthCollapsed(k, collapsed) { try { const s = cwsLoadCollapsedMonthSet(); if (collapsed) s.add(String(k)); else s.delete(String(k)); localStorage.setItem(CWS_COLLAPSED_MONTHS_KEY, JSON.stringify(Array.from(s))); } catch (_) {} }
     function cwsSelectProject(id) {
       cwsSelectedProjectId = id;
       try { document.querySelectorAll('.cws-card').forEach((c) => c.classList.toggle('cws-selected', id != null && c.dataset.projectId === String(id))); } catch (_) {}
@@ -18962,10 +18984,22 @@
         mkeys.forEach((mk) => {
           const m = yd.months[mk];
           m.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-          if (mkeys.length > 1) { const mh = document.createElement('div'); mh.className = 'cws-month-sub'; mh.textContent = m.label; ybody.appendChild(mh); }
+          // v3.0.3 (Terry #14) — each MONTH is its own collapsible sub-section with a chevron header, a
+          // count, a divider rule and real breathing room, so a new month is clearly separated (was a
+          // cramped bare label). Persisted per year+month.
+          const mkey = y + '-' + mk;
+          const msec = document.createElement('div'); msec.className = 'cws-month-sec';
+          if (cwsIsMonthCollapsed(mkey)) msec.classList.add('cws-collapsed');
+          const mh = document.createElement('div'); mh.className = 'cws-month-sub cws-section-head'; mh.setAttribute('role', 'button'); mh.setAttribute('tabindex', '0');
+          mh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-month-label">' + m.label + '</span><span class="cws-month-count">' + m.items.length + '</span>';
+          mh.addEventListener('click', () => { const now = !msec.classList.contains('cws-collapsed'); msec.classList.toggle('cws-collapsed', now); cwsSetMonthCollapsed(mkey, now); });
+          msec.appendChild(mh);
+          const mbody = document.createElement('div'); mbody.className = 'cws-month-body';
           const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
           m.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
-          ybody.appendChild(mgrid);
+          mbody.appendChild(mgrid);
+          msec.appendChild(mbody);
+          ybody.appendChild(msec);
         });
         sec.appendChild(ybody);
         grid.appendChild(sec);
@@ -19006,8 +19040,8 @@
           refreshCwsSelectionUI();
         });
       }
-      const doneBtn = document.getElementById('cws-select-done');
-      if (doneBtn && !doneBtn.dataset.wired) { doneBtn.dataset.wired = '1'; doneBtn.addEventListener('click', (e) => { e.stopPropagation(); exitCwsSelectMode(); }); }
+      const cancelBtn = document.getElementById('cws-select-cancel');   // v3.0.3 (Terry SS1) — the × on the "N selected" pill cancels the whole selection (Dates-style)
+      if (cancelBtn && !cancelBtn.dataset.wired) { cancelBtn.dataset.wired = '1'; cancelBtn.addEventListener('click', (e) => { e.stopPropagation(); exitCwsSelectMode(); }); }
       const delSelBtn = document.getElementById('cws-select-delete');
       if (delSelBtn && !delSelBtn.dataset.wired) {
         delSelBtn.dataset.wired = '1';
@@ -20616,9 +20650,14 @@
       // placeCenter: a ~42%-of-page-width centred floating tile, which Terry read as a gap / wrong-sized frame.)
       if (carouselMode) {
         placeInCarouselSliceFit(it, Math.max(0, Math.min(Math.max(1, carouselPageCount) - 1, carouselFocusPage | 0)));
+        // v3.0.3 (Terry SS4) — a background COVER-FILLS its page: the box is the PAGE shape and the photo
+        // covers it (objectFit:cover), so a landscape shot no longer leaves a bottom gap. Stays UNLOCKED so
+        // it's still freely movable/resizable (unlike the rejected round-263 LOCKED full-canvas cover).
+        it.coverFill = true; it.boxAspect = CAROUSEL_EXPORT_PX.w / CAROUSEL_EXPORT_PX.h;
       } else {
+        // v3.0.3 (Terry SS4) — single collage: cover-fill the whole canvas (no gap), unlocked.
+        it.coverFill = true; it.boxAspect = getCanvasAspect();
         it.wFrac = 1; it.xFrac = 0; it.yFrac = 0;
-        it.aspect = (it.imgEl && it.imgEl.naturalWidth && it.imgEl.naturalHeight) ? (it.imgEl.naturalWidth / it.imgEl.naturalHeight) : (it.aspect || 1);
       }
       collageItems.push(it);
       buildCollageItemEl(it);
