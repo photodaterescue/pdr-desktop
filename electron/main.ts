@@ -12997,13 +12997,21 @@ ipcMain.handle('ai:personClusters', async () => {
   }
 });
 
-// Pre-warm handler — called from the main PDR window when it's idle,
-// so PM opens with a hot cache. Same code path as ai:personClusters
-// but always forces a fresh fetch to keep the cache from going
-// stale due to mutations we might have missed.
+// Pre-warm handler — called on a 60s timer from the main PDR window
+// (workspace.tsx) so PM opens with a hot cache. Only warms a COLD cache.
+//
+// v3.0.3 (Terry 2026-07-14): the old code ALWAYS force-recomputed here,
+// running getPersonClusters() + cleanupOrphanedPersons() — heavy
+// SYNCHRONOUS sqlite on the MAIN thread — every 60s even when nothing had
+// changed. On a large face library that blocks main ~3s, freezing every
+// window (including an open Collage) on a metronome-steady 60s cadence.
+// The cache is invalidated explicitly by every cluster mutation below, and
+// ai:personClusters re-fetches fresh on PM open once its 30s TTL lapses, so
+// warming only when the cache is cold keeps PM correct while removing the
+// periodic main-thread stall entirely.
 ipcMain.handle('ai:prewarmPersonClusters', async () => {
   try {
-    computePersonClustersFresh();
+    if (cachedPersonClusters == null) computePersonClustersFresh();
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
