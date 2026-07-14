@@ -10262,7 +10262,7 @@
       const measureCands = collageItems.filter(function (o) { return o && o.el && o.el !== it.el && o.on && !o.isBg; }).concat((collageTexts || []).filter(function (o) { return o && o.el && o.el !== it.el && alignableLayer(o); }));
       for (let mi = 0; mi < measureCands.length; mi++) {
         const o = measureCands[mi];
-        const q = o.el.getBoundingClientRect();
+        const q = dragRect_(o.el);
         if (overlapV(q)) {
           if (q.right <= r.left + 1 && q.right > leftRef) leftRef = q.right;     // nearest neighbour to the left
           if (q.left >= r.right - 1 && q.left < rightRef) rightRef = q.left;     // nearest to the right
@@ -10303,7 +10303,7 @@
       // on in the Measurement rules, so the toggle kills those lone greens.
       if (ruleOn('mirror')) for (let mi = 0; mi < measureCands.length; mi++) {
         const o = measureCands[mi];
-        const q = o.el.getBoundingClientRect();
+        const q = dragRect_(o.el);
         // v3.1 (Terry SS2) — CROSS-PAGE: measure the partner layer against ITS OWN page's
         // left/right edges (not the dragged tile's page), so "same spot on its page" turns
         // the badges green on page 2/3/4… exactly when the intra-page margins match page 1's.
@@ -10413,7 +10413,7 @@
       const _takeChain = () => { let p = els.chain[_chN]; if (!p) { p = { l: _mkC('cm-line sym'), b: _mkC('cm-badge sym') }; els.chain.push(p); } _chN++; return p; };
       const _takeDash = (vert) => { let d = els.dash[_dhN]; if (!d) { d = _mkC('cm-dash'); els.dash.push(d); } _dhN++; d.classList.toggle('v', !!vert); return d; };
       if (ruleOn('equalSpacing')) {
-        const _cands = measureCands.map(function (o) { return o.el.getBoundingClientRect(); });
+        const _cands = measureCands.map(function (o) { return dragRect_(o.el); });
         const _bandV = (q) => q.top < r.bottom - 1 && q.bottom > r.top + 1;
         const _bandH = (q) => q.left < r.right - 1 && q.right > r.left + 1;
         // Walk outward from the dragged rect along one axis-direction; pills for every gap beyond
@@ -14822,7 +14822,8 @@
       // following (and snapping). Release Shift to resume free movement.
       let yLock = null;
       let xLock = null;   // v3.0.3 (Terry) — Ctrl = vertical-only path for text/emoji too
-      const move = (ev) => {
+      let moveRaf_ = null, movePending_ = null;   // v3.0.3 (Terry: mid-drag lag) — coalesce pointermoves to one per frame
+      const doMoveInner = (ev) => {
         if (ev.shiftKey) { if (yLock === null) yLock = layer.yFrac; }
         else { yLock = null; }
         if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = layer.xFrac; }
@@ -14851,7 +14852,24 @@
         showCollageSnapGuides(xLock === null ? snap.vGuide : null, yLock === null ? snap.hGuide : null);
         showCollageMeasurements(layer);   // v3.0 r385 (Terry) — distance/spacing badges for text+emoji too
       };
+      // v3.0.3 (Terry: mid-drag lag) — same one-move-per-frame + rect-cache + stopwatch as the tile drag.
+      const doMove = (ev) => {
+        const _t0 = performance.now();
+        dragRectCache_ = new Map();
+        try { doMoveInner(ev); } finally {
+          dragRectCache_ = null;
+          const _dt = performance.now() - _t0;
+          if (_dt > 50) { try { console.log('[dragperf] text move ' + Math.round(_dt) + 'ms (items ' + collageItems.length + ', texts ' + collageTexts.length + ')'); } catch (_) {} }
+        }
+      };
+      const move = (ev) => {
+        movePending_ = ev;
+        if (moveRaf_ !== null) return;
+        moveRaf_ = requestAnimationFrame(() => { moveRaf_ = null; const e2 = movePending_; movePending_ = null; if (e2) doMove(e2); });
+      };
       const up = () => {
+        if (moveRaf_ !== null) { try { cancelAnimationFrame(moveRaf_); } catch (_) {} moveRaf_ = null; }
+        movePending_ = null;
         axisLockActive_ = false;   // v3.0.3 — end of a text/emoji drag: stop the lock-driven purple
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         hideCollageMeasurements();   // v3.0 r385 (Terry)
@@ -15603,12 +15621,12 @@
       for (let i = 0; i < collageItems.length; i++) {
         const o = collageItems[i];
         if (!o || !o.el || o.el === draggedEl || !o.on || o.isBg) continue;   // round 307 — skip OFF/removed + background tiles (were phantom snap targets)
-        pushEdgesWithMirror(o.el.getBoundingClientRect());
+        pushEdgesWithMirror(dragRect_(o.el));
       }
       for (let i = 0; i < collageTexts.length; i++) {
         const o = collageTexts[i];
         if (!o || !o.el || o.el === draggedEl || !alignableLayer(o)) continue;   // v3.0.3 — captions gated
-        pushEdgesWithMirror(o.el.getBoundingClientRect());
+        pushEdgesWithMirror(dragRect_(o.el));
       }
       // v2.1 round 304 (Terry) — DISTRIBUTE snap. The measurement greens when the dragged
       // tile's gaps to its NEAREST references (a neighbour's facing edge if one shares its
@@ -15623,7 +15641,7 @@
       const distCands = collageItems.filter(function (o) { return o && o.el && o.el !== draggedEl && o.on && !o.isBg; }).concat(collageTexts.filter(function (o) { return o && o.el && o.el !== draggedEl && alignableLayer(o); }));
       for (let di = 0; di < distCands.length; di++) {
         const o = distCands[di];
-        const q = o.el.getBoundingClientRect();
+        const q = dragRect_(o.el);
         const qL = q.left - cRect.left, qR = q.right - cRect.left, qT = q.top - cRect.top, qB = q.bottom - cRect.top;
         if (qT < dBottom - 1 && qB > dTop + 1) {           // shares the dragged tile's horizontal band
           if (qR <= dLeft + 1 && qR > lRef) lRef = qR;      // nearest neighbour to the left
@@ -15642,7 +15660,7 @@
       // should"). Midpoint-between only served an item BETWEEN two others; this serves the ends.
       if (ruleOn('equalSpacing')) {
         const _rr = [];
-        for (let ri = 0; ri < distCands.length; ri++) _rr.push(distCands[ri].el.getBoundingClientRect());
+        for (let ri = 0; ri < distCands.length; ri++) _rr.push(dragRect_(distCands[ri].el));
         const _bV3 = (q) => q.top < dRect.bottom - 1 && q.bottom > dRect.top + 1;
         const _bH3 = (q) => q.left < dRect.right - 1 && q.right > dRect.left + 1;
         let n1 = null, n2 = null;
@@ -15804,7 +15822,7 @@
         let lo = null, hi = null;
         const scan = (el) => {
           if (!el || el === _selEl) return;
-          const q = el.getBoundingClientRect();
+          const q = dragRect_(el);
           if (vertical) {
             const qL = (q.left - _gRect.left) * s2cX, qR = (q.right - _gRect.left) * s2cX;
             if (Math.abs(qL - guideLayout) < 1.5 || Math.abs((qL + qR) / 2 - guideLayout) < 1.5 || Math.abs(qR - guideLayout) < 1.5) {
@@ -16003,6 +16021,19 @@
     // "Line up to text & captions" is ON (default OFF). EMOJI layers (logos/stickers) are graphical
     // objects like photos and ALWAYS join — it was captions grabbing a logo drag that read as noise.
     function alignableLayer(o) { return !!(o && (o.isEmoji || ruleOn('alignText'))); }
+    // v3.0.3 (Terry: "lag of up to 5 seconds" mid-drag) — PER-MOVE RECT CACHE. One pointermove used
+    // to collect every other element's rect 4-5 separate times (snap edges, distribute refs,
+    // repeat-spacing, guide partner-scan, measurement refs, chain walk), and each pass after a style
+    // write forces a synchronous reflow of the whole wide canvas. The drag handler now opens a cache
+    // per move; every candidate read goes through dragRect_ so the canvas lays out ONCE. Outside a
+    // drag (cache null) it falls through to a direct read — resize/crop paths are unchanged.
+    let dragRectCache_ = null;
+    function dragRect_(el) {
+      if (!dragRectCache_) return el.getBoundingClientRect();
+      let r = dragRectCache_.get(el);
+      if (!r) { r = el.getBoundingClientRect(); dragRectCache_.set(el, r); }
+      return r;
+    }
     loadMeasureRules();
     // v3.0.3 (Terry) — INSTAGRAM SAFE-ZONE: fraction of a page kept clear of IG's own UI overlays
     // (username strip up top, caption/CTA down the bottom, rounded corners at the sides). Drawn as a
@@ -16189,8 +16220,8 @@
           hCand.push(SAFE_ZONE_Y * cRect.height, (1 - SAFE_ZONE_Y) * cRect.height);
         }
       }
-      for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
-      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el) || !alignableLayer(o)) continue; const r = o.el.getBoundingClientRect(); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
+      for (let i = 0; i < collageItems.length; i++) { const o = collageItems[i]; if (!o || !o.el || moving.has(o.el) || !o.on || o.isBg) continue; const r = dragRect_(o.el); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
+      for (let i = 0; i < collageTexts.length; i++) { const o = collageTexts[i]; if (!o || !o.el || moving.has(o.el) || !alignableLayer(o)) continue; const r = dragRect_(o.el); if (ruleOn('objEdges')) { vCand.push(r.left - cRect.left, r.right - cRect.left); hCand.push(r.top - cRect.top, r.bottom - cRect.top); } if (ruleOn('objCentre')) { vCand.push(r.left - cRect.left + r.width / 2); hCand.push(r.top - cRect.top + r.height / 2); } }
       // v3.0.3 (Terry) — EDGE-PRIORITY pick, matching the single-tile snap: a true page edge /
       // boundary within the magnet wins outright over the smart candidates.
       const dX = [gl, gcx, gr], dY = [gt, gcy, gb];
@@ -16262,7 +16293,8 @@
       let yLock = null;
       let xLock = null;   // v3.0.3 (Terry) — Ctrl = constrain to a VERTICAL path (the X twin of Shift)
       let dragMoved = false;   // v2.1 round 286 Tier 2 — track real drag vs plain click (group case)
-      const move = (ev) => {
+      let moveRaf_ = null, movePending_ = null;   // v3.0.3 (Terry: mid-drag lag) — coalesce pointermoves to one per frame
+      const doMoveInner = (ev) => {
         // Capture / release the Y lock on the Shift up→down / down→up transitions.
         if (ev.shiftKey) { if (yLock === null) yLock = it.yFrac; }
         else { yLock = null; }
@@ -16392,7 +16424,27 @@
         showCollageSnapGuides(xLock === null ? snap.vGuide : null, yLock === null ? snap.hGuide : null);
         try { showCollageMeasurements(it); } catch (_) {}   // v2.1 round 296 — live edge-to-page distances
       };
+      // v3.0.3 (Terry: "lag of up to 5 seconds" mid-drag) — run at most ONE move per animation frame
+      // (pointermove can outpace paint, and a backlog of expensive handlers reads as a multi-second
+      // freeze), open the per-move rect cache around the handler so the wide canvas lays out once,
+      // and time it: any frame over 50ms logs [dragperf] to main.log so a surviving spike names itself.
+      const doMove = (ev) => {
+        const _t0 = performance.now();
+        dragRectCache_ = new Map();
+        try { doMoveInner(ev); } finally {
+          dragRectCache_ = null;
+          const _dt = performance.now() - _t0;
+          if (_dt > 50) { try { console.log('[dragperf] tile move ' + Math.round(_dt) + 'ms (items ' + collageItems.length + ', texts ' + collageTexts.length + ')'); } catch (_) {} }
+        }
+      };
+      const move = (ev) => {
+        movePending_ = ev;
+        if (moveRaf_ !== null) return;
+        moveRaf_ = requestAnimationFrame(() => { moveRaf_ = null; const e2 = movePending_; movePending_ = null; if (e2) doMove(e2); });
+      };
       const up = () => {
+        if (moveRaf_ !== null) { try { cancelAnimationFrame(moveRaf_); } catch (_) {} moveRaf_ = null; }
+        movePending_ = null;
         it.el.classList.remove('dragging');
         cornerGlideActive_ = false; glideLock_ = null; glideOffX_ = 0; glideOffY_ = 0; axisLockActive_ = false;   // v3.0.3 — end-of-drag: stop the lavender pills, free the locked corner, drop the carried glide offset
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
