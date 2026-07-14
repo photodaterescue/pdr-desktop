@@ -2851,6 +2851,10 @@
     #collage-chrome .cm-badge { position: absolute; transform: translate(-50%, -50%); background: #FEC242; color: #1a1830; font-size: 10px; font-weight: 700; line-height: 1; padding: 2px 5px; border-radius: 4px; white-space: nowrap; pointer-events: none; box-shadow: 0 1px 4px rgba(0,0,0,0.4); display: none; z-index: 10; }
     #collage-chrome .cm-badge.sym { background: #5be0a0; }
     #collage-chrome .cm-badge.pageEq { background: #A99CFF; color: #1a1830; }
+    /* v3.0.3 (Terry SS4) — dashed alignment lines spanning an equal-spacing CHAIN (Canva's row read):
+       a horizontal dash above/below the run, or a vertical one beside a column. Faint gold, dashed. */
+    #collage-chrome .cm-dash { position: absolute; height: 0; border-top: 1px dashed rgba(254,194,66,0.55); pointer-events: none; display: none; z-index: 8; }
+    #collage-chrome .cm-dash.v { width: 0; border-top: none; border-left: 1px dashed rgba(254,194,66,0.55); }
     /* v2.1 round 149 (Terry 2026-06-13) — when the BACKGROUND is the
        selected element, ring the canvas itself (not the faded background
        layer) so the selection cue stays full-strength at any Fade level. */
@@ -10196,7 +10200,12 @@
     }
     function hideCollageMeasurements() {
       if (!collageMeasureEls) return;
-      Object.keys(collageMeasureEls).forEach((k) => { collageMeasureEls[k].style.display = 'none'; });
+      Object.keys(collageMeasureEls).forEach((k) => {
+        const v = collageMeasureEls[k];
+        // v3.0.3 (Terry SS4) — the chain/dash POOLS are arrays ({l,b} pairs / dash divs), not bare els.
+        if (Array.isArray(v)) { v.forEach(function (p) { if (!p) return; if (p.style) p.style.display = 'none'; else { if (p.l) p.l.style.display = 'none'; if (p.b) p.b.style.display = 'none'; } }); }
+        else v.style.display = 'none';
+      });
     }
     function collageExportDims() {
       if (collageExportPx && collageExportPx.w && collageExportPx.h) return { w: collageExportPx.w, h: collageExportPx.h };
@@ -10393,6 +10402,115 @@
       badge(els.bB, cxMid - s.left, r.bottom + mBot / 2 - s.top, dispB, grB, peB, atEdgeB, showB);
       // v2.1 round 301 — partner badges retired by the nearest-reference model (the gap IS the measure).
       els.lPh.style.display = 'none'; els.bPh.style.display = 'none'; els.lPv.style.display = 'none'; els.bPv.style.display = 'none';
+      // v3.0.3 (Terry SS4, Canva) — EQUAL-SPACING CHAIN. When the gap to the neighbour matches the
+      // NEXT gap(s) along the row/column, draw a green pill in EVERY equal gap (not only the two
+      // touching the dragged item) + dashed alignment lines spanning the chain when tops/bottoms
+      // (or lefts/rights, else centres) line up — Canva's "everything is evenly placed" read.
+      if (!els.chain) els.chain = [];
+      if (!els.dash) els.dash = [];
+      let _chN = 0, _dhN = 0;
+      const _mkC = (cls) => { const d = document.createElement('div'); d.className = cls; collageChromeEl.appendChild(d); return d; };
+      const _takeChain = () => { let p = els.chain[_chN]; if (!p) { p = { l: _mkC('cm-line sym'), b: _mkC('cm-badge sym') }; els.chain.push(p); } _chN++; return p; };
+      const _takeDash = (vert) => { let d = els.dash[_dhN]; if (!d) { d = _mkC('cm-dash'); els.dash.push(d); } _dhN++; d.classList.toggle('v', !!vert); return d; };
+      if (ruleOn('equalSpacing')) {
+        const _cands = measureCands.map(function (o) { return o.el.getBoundingClientRect(); });
+        const _bandV = (q) => q.top < r.bottom - 1 && q.bottom > r.top + 1;
+        const _bandH = (q) => q.left < r.right - 1 && q.right > r.left + 1;
+        // Walk outward from the dragged rect along one axis-direction; pills for every gap beyond
+        // the adjacent one that matches it. Returns the member rects when ≥1 extra equal gap exists.
+        const _walk = (horiz, dir, gap0) => {
+          const g0 = horiz ? pxX(gap0) : pxY(gap0);
+          if (!(gap0 > 0) || g0 <= 0) return null;
+          const members = [r];
+          let cur = r, extra = 0;
+          for (let st = 0; st < 8; st++) {
+            let best = null;
+            for (let ci = 0; ci < _cands.length; ci++) {
+              const q = _cands[ci];
+              if (members.indexOf(q) >= 0) continue;
+              if (horiz ? !_bandV(q) : !_bandH(q)) continue;
+              if (horiz) {
+                if (dir > 0) { if (q.left >= cur.right - 1 && (!best || q.left < best.left)) best = q; }
+                else { if (q.right <= cur.left + 1 && (!best || q.right > best.right)) best = q; }
+              } else {
+                if (dir > 0) { if (q.top >= cur.bottom - 1 && (!best || q.top < best.top)) best = q; }
+                else { if (q.bottom <= cur.top + 1 && (!best || q.bottom > best.bottom)) best = q; }
+              }
+            }
+            if (!best) break;
+            const gap = horiz ? (dir > 0 ? best.left - cur.right : cur.left - best.right)
+                              : (dir > 0 ? best.top - cur.bottom : cur.top - best.bottom);
+            if (gap <= 0 || (horiz ? pxX(gap) : pxY(gap)) !== g0) break;
+            if (st > 0) {   // the adjacent gap is already the main badge — pills start at the NEXT gap
+              const a = cur, b = best, p = _takeChain();
+              if (horiz) {
+                const x0 = dir > 0 ? a.right : b.right, x1 = dir > 0 ? b.left : a.left;
+                const ym = (Math.max(a.top, b.top) + Math.min(a.bottom, b.bottom)) / 2;
+                p.l.style.left = (x0 - s.left) + 'px'; p.l.style.top = (ym - s.top) + 'px';
+                p.l.style.width = Math.max(0, x1 - x0) + 'px'; p.l.style.height = '1px';
+                p.l.style.display = (x1 - x0) > 2 ? 'block' : 'none';
+                p.b.style.left = ((x0 + x1) / 2 - s.left) + 'px'; p.b.style.top = (ym - s.top) + 'px';
+                p.b.textContent = String(g0); p.b.style.display = 'block';
+              } else {
+                const y0 = dir > 0 ? a.bottom : b.bottom, y1 = dir > 0 ? b.top : a.top;
+                const xm = (Math.max(a.left, b.left) + Math.min(a.right, b.right)) / 2;
+                p.l.style.left = (xm - s.left) + 'px'; p.l.style.top = (y0 - s.top) + 'px';
+                p.l.style.width = '1px'; p.l.style.height = Math.max(0, y1 - y0) + 'px';
+                p.l.style.display = (y1 - y0) > 2 ? 'block' : 'none';
+                p.b.style.left = (xm - s.left) + 'px'; p.b.style.top = ((y0 + y1) / 2 - s.top) + 'px';
+                p.b.textContent = String(g0); p.b.style.display = 'block';
+              }
+              extra++;
+            }
+            members.push(best); cur = best;
+          }
+          return extra > 0 ? members : null;
+        };
+        const rowR = (!atEdgeR && mRight > 0) ? _walk(true, +1, mRight) : null;
+        const rowL = (!atEdgeL && mLeft > 0) ? _walk(true, -1, mLeft) : null;
+        const colB = (!atEdgeB && mBot > 0) ? _walk(false, +1, mBot) : null;
+        const colT = (!atEdgeT && mTop > 0) ? _walk(false, -1, mTop) : null;
+        // A confirmed chain greens the adjacent badge too — it's part of the same equal run.
+        if (rowR) { els.bR.classList.add('sym'); els.lR.classList.add('sym'); }
+        if (rowL) { els.bL.classList.add('sym'); els.lL.classList.add('sym'); }
+        if (colB) { els.bB.classList.add('sym'); els.lB.classList.add('sym'); }
+        if (colT) { els.bT.classList.add('sym'); els.lT.classList.add('sym'); }
+        // Dashed alignment lines spanning the chain (drawn just outside the run, Canva-style).
+        const _TOL2 = 1.5, _PAD2 = 8;
+        const _dashRow = (members) => {
+          let minL = Infinity, maxR = -Infinity, minT = Infinity, maxT = -Infinity, minB = Infinity, maxB = -Infinity, minC = Infinity, maxC = -Infinity;
+          members.forEach(function (q) { minL = Math.min(minL, q.left); maxR = Math.max(maxR, q.right); minT = Math.min(minT, q.top); maxT = Math.max(maxT, q.top); minB = Math.min(minB, q.bottom); maxB = Math.max(maxB, q.bottom); const cc = (q.top + q.bottom) / 2; minC = Math.min(minC, cc); maxC = Math.max(maxC, cc); });
+          const seg = (y) => { const d = _takeDash(false); d.style.left = (minL - _PAD2 - s.left) + 'px'; d.style.width = (maxR - minL + 2 * _PAD2) + 'px'; d.style.top = (y - s.top) + 'px'; d.style.height = '0px'; d.style.display = 'block'; };
+          const topsA = (maxT - minT) < _TOL2, botsA = (maxB - minB) < _TOL2;
+          if (topsA) seg(minT - 5);
+          if (botsA) seg(maxB + 5);
+          if (!topsA && !botsA && (maxC - minC) < _TOL2) seg((minC + maxC) / 2);
+        };
+        const _dashCol = (members) => {
+          let minT = Infinity, maxB = -Infinity, minL = Infinity, maxL = -Infinity, minR = Infinity, maxR = -Infinity, minC = Infinity, maxC = -Infinity;
+          members.forEach(function (q) { minT = Math.min(minT, q.top); maxB = Math.max(maxB, q.bottom); minL = Math.min(minL, q.left); maxL = Math.max(maxL, q.left); minR = Math.min(minR, q.right); maxR = Math.max(maxR, q.right); const cc = (q.left + q.right) / 2; minC = Math.min(minC, cc); maxC = Math.max(maxC, cc); });
+          const seg = (x) => { const d = _takeDash(true); d.style.top = (minT - _PAD2 - s.top) + 'px'; d.style.height = (maxB - minT + 2 * _PAD2) + 'px'; d.style.left = (x - s.left) + 'px'; d.style.width = '0px'; d.style.display = 'block'; };
+          const leftsA = (maxL - minL) < _TOL2, rightsA = (maxR - minR) < _TOL2;
+          if (leftsA) seg(minL - 5);
+          if (rightsA) seg(maxR + 5);
+          if (!leftsA && !rightsA && (maxC - minC) < _TOL2) seg((minC + maxC) / 2);
+        };
+        if (rowR || rowL) {
+          const set = [r];
+          if (rowL) rowL.forEach(function (q) { if (set.indexOf(q) < 0) set.push(q); });
+          if (rowR) rowR.forEach(function (q) { if (set.indexOf(q) < 0) set.push(q); });
+          _dashRow(set);
+        }
+        if (colT || colB) {
+          const set = [r];
+          if (colT) colT.forEach(function (q) { if (set.indexOf(q) < 0) set.push(q); });
+          if (colB) colB.forEach(function (q) { if (set.indexOf(q) < 0) set.push(q); });
+          _dashCol(set);
+        }
+      }
+      // Park the unused pooled chain/dash elements.
+      for (let pi = _chN; pi < els.chain.length; pi++) { els.chain[pi].l.style.display = 'none'; els.chain[pi].b.style.display = 'none'; }
+      for (let di = _dhN; di < els.dash.length; di++) { els.dash[di].style.display = 'none'; }
       // v3.1 (Terry) — activating the container for a TEXT/EMOJI measure must not resurrect
       // the photo handle box: without a live tile selection, force the box hidden (belt-and-
       // braces alongside the hideSelectionChrome fix — the "phantom mystery box").
@@ -14703,14 +14821,18 @@
       // drag: freeze yFrac at the value it held when Shift was pressed; X keeps
       // following (and snapping). Release Shift to resume free movement.
       let yLock = null;
+      let xLock = null;   // v3.0.3 (Terry) — Ctrl = vertical-only path for text/emoji too
       const move = (ev) => {
         if (ev.shiftKey) { if (yLock === null) yLock = layer.yFrac; }
         else { yLock = null; }
+        if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = layer.xFrac; }
+        else { xLock = null; }
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         layer.xFrac = Math.max(0, Math.min(1, sx + dx));
         layer.yFrac = Math.max(0, Math.min(1, sy + dy));
         if (yLock !== null) layer.yFrac = yLock;   // freeze Y while Shift held
+        if (xLock !== null) layer.xFrac = xLock;   // freeze X while Ctrl held
         renderTextLayer(layer);
         // v2.1 round 206 (Terry) — Canva-style snapping (same helper as tiles).
         // Text is centre-anchored, but xFrac/yFrac still move linearly with the
@@ -14719,13 +14841,13 @@
         // v3.0 (Terry) — under ALT still SHOW the gap numbers (snap + guides off only), for precise free placement.
         if (ev.altKey) { hideCollageSnapGuides(); try { showCollageMeasurements(layer); } catch (_) {} return; }
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(layer.el, collageCanvasEl, 14, { lockY: yLock !== null });   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate. v3.1 (Terry SS3) — pass lockY while Shift holds Y, so corner-equal takes the round-310 ONE-AXIS path: X snaps until the margin MATCHES the fixed vertical margin (the purple number) — Shift-slide into a page corner now locks.
-        if (snap.dx) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
+        const snap = computeDragSnap(layer.el, collageCanvasEl, 14, { lockY: yLock !== null, lockX: xLock !== null });   // v3.0 (Terry) — 14px snap magnet (catch range only; Terry felt 22 too grabby). The colour/number "equal" test is EXACT + separate. v3.1 (Terry SS3) — pass lockY while Shift holds Y, so corner-equal takes the round-310 ONE-AXIS path: X snaps until the margin MATCHES the fixed vertical margin (the purple number) — Shift-slide into a page corner now locks. v3.0.3 — Ctrl locks X the same way.
+        if (snap.dx && xLock === null) layer.xFrac = Math.max(0, Math.min(1, layer.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — X still snaps; skip the Y snap + its guide while
-        // Shift locks the vertical position (same composition as the tile drag).
+        // Shift locks the vertical position (same composition as the tile drag). v3.0.3 — Ctrl/X same.
         if (snap.dy && yLock === null) layer.yFrac = Math.max(0, Math.min(1, layer.yFrac + snap.dy / cRect.height));
-        if (snap.dx || (snap.dy && yLock === null)) renderTextLayer(layer);
-        showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
+        if ((snap.dx && xLock === null) || (snap.dy && yLock === null)) renderTextLayer(layer);
+        showCollageSnapGuides(xLock === null ? snap.vGuide : null, yLock === null ? snap.hGuide : null);
         showCollageMeasurements(layer);   // v3.0 r385 (Terry) — distance/spacing badges for text+emoji too
       };
       const up = () => {
@@ -15641,7 +15763,6 @@
       // numbers/greens confirm them without a line through the tile.
       const _vInside = !!(_selEl && _vX != null && _vX > _tL + _TOL && _vX < _tR - _TOL);
       const _hInside = !!(_selEl && _hY != null && _hY > _tT + _TOL && _hY < _tB - _TOL);
-      try { if (vGuide != null || hGuide != null) console.log('[snapdbg] vX=' + (_vX != null ? Math.round(_vX) : '-') + ' hY=' + (_hY != null ? Math.round(_hY) : '-') + ' tileL=' + Math.round(_tL) + ' R=' + Math.round(_tR) + ' Cx=' + Math.round(_tCx) + ' T=' + Math.round(_tT) + ' B=' + Math.round(_tB) + ' Cy=' + Math.round(_tCy) + ' vIn=' + _vInside + ' hIn=' + _hInside); } catch (_) {}
       if (vGuide != null && !_vInside) {
         if (!collageSnapVEl) {
           collageSnapVEl = document.createElement('div');
@@ -15697,7 +15818,8 @@
       ] },
       { group: 'While moving', items: [
         { k: ['Drag'], d: 'Move the whole selection together' },
-        { k: ['Shift'], d: 'Move in a straight line' },
+        { k: ['Shift'], d: 'Move in a straight horizontal line' },
+        { k: ['Ctrl'], d: 'Move in a straight vertical line' },   // v3.0.3 (Terry) — the X twin of Shift
         { k: ['Shift'], d: 'Rotate in 15° steps' },
         { k: ['Alt'], d: 'Ignore snapping (free placement)' },
         { k: ['Ctrl', 'E'], d: 'Glide equal distance from a corner' },   // v3.0.3 (Terry) — corner-equal gesture
@@ -15860,12 +15982,12 @@
       if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
         // v3.0.3 (Terry) — LATCH ON CTRL: tapping E arms the glide and it stays armed while Ctrl is
         // held (releasing just the E no longer kills it mid-drag — that made the gesture feel dead).
-        if (!cornerGlideHeld) { cornerGlideHeld = true; try { console.log('[glidedbg] Ctrl+E armed'); } catch (_) {} }
+        cornerGlideHeld = true;
         e.preventDefault();
       }
     }, true);
     window.addEventListener('keyup', function (e) {
-      if (e.key === 'Control' || e.key === 'Meta') { if (cornerGlideHeld) { try { console.log('[glidedbg] released'); } catch (_) {} } cornerGlideHeld = false; }
+      if (e.key === 'Control' || e.key === 'Meta') cornerGlideHeld = false;
     }, true);
     window.addEventListener('blur', function () { cornerGlideHeld = false; });
     let collageMeasureEl = null;
@@ -16058,11 +16180,17 @@
       // had the MOMENT Shift was pressed; X keeps following the cursor (and may
       // still snap). Releasing Shift clears the lock and resumes free movement.
       let yLock = null;
+      let xLock = null;   // v3.0.3 (Terry) — Ctrl = constrain to a VERTICAL path (the X twin of Shift)
       let dragMoved = false;   // v2.1 round 286 Tier 2 — track real drag vs plain click (group case)
       const move = (ev) => {
         // Capture / release the Y lock on the Shift up→down / down→up transitions.
         if (ev.shiftKey) { if (yLock === null) yLock = it.yFrac; }
         else { yLock = null; }
+        // v3.0.3 (Terry) — Ctrl (without the corner glide's E) freezes X the same way, so the tile
+        // moves in a dead-straight vertical line. Ctrl+CLICK multi-select and Ctrl-drag photo-pan
+        // act at pointerdown and are untouched — this engages only once a move is underway.
+        if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = it.xFrac; }
+        else { xLock = null; }
         const dx = (ev.clientX - startX) / cw;
         const dy = (ev.clientY - startY) / ch;
         // v2.1 round 286 Tier 2 — group drag: move every selected member by the
@@ -16071,10 +16199,11 @@
           if (!dragMoved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;   // below threshold → let a plain click collapse to one
           dragMoved = true;
           const dyEff = (yLock !== null) ? 0 : dy;
+          const dxEff = (xLock !== null) ? 0 : dx;   // v3.0.3 (Terry) — Ctrl locks X for group moves too
           // Tentative move of the whole group by the same delta (render first so the
           // group-bbox rects below are current).
-          it.xFrac = sx + dx; it.yFrac = sy + dyEff; renderCollageItem(it);
-          groupStarts.forEach(m => { m.g.xFrac = m.sx + dx; m.g.yFrac = m.sy + dyEff; renderCollageItem(m.g); });
+          it.xFrac = sx + dxEff; it.yFrac = sy + dyEff; renderCollageItem(it);
+          groupStarts.forEach(m => { m.g.xFrac = m.sx + dxEff; m.g.yFrac = m.sy + dyEff; renderCollageItem(m.g); });
           // v2.1 round 291 (Terry) — GROUP SNAP: align the whole selection's bounding box
           // to the canvas edges/centre, other (non-selected) tiles/text + their centres, and
           // carousel page lines — then shift every member by that one offset so they move as
@@ -16084,10 +16213,10 @@
             const cRect = collageCanvasEl.getBoundingClientRect();
             const movingEls = [it.el].concat(groupStarts.map(m => m.g.el));
             const gs = computeGroupDragSnap(movingEls, collageCanvasEl, 10);   // v3.0 r386 (Terry) — wider catch-zone
-            if (gs.dx && cRect.width) { const fdx = gs.dx / cRect.width; it.xFrac += fdx; groupStarts.forEach(m => { m.g.xFrac += fdx; }); }
+            if (gs.dx && xLock === null && cRect.width) { const fdx = gs.dx / cRect.width; it.xFrac += fdx; groupStarts.forEach(m => { m.g.xFrac += fdx; }); }
             if (gs.dy && yLock === null && cRect.height) { const fdy = gs.dy / cRect.height; it.yFrac += fdy; groupStarts.forEach(m => { m.g.yFrac += fdy; }); }
-            if (gs.dx || (gs.dy && yLock === null)) { renderCollageItem(it); groupStarts.forEach(m => renderCollageItem(m.g)); }
-            gv = gs.vGuide; gh = (yLock === null) ? gs.hGuide : null;
+            if ((gs.dx && xLock === null) || (gs.dy && yLock === null)) { renderCollageItem(it); groupStarts.forEach(m => renderCollageItem(m.g)); }
+            gv = (xLock === null) ? gs.vGuide : null; gh = (yLock === null) ? gs.hGuide : null;
           }
           try { positionSelectionChrome(); } catch (_) {}
           showCollageSnapGuides(gv, gh);
@@ -16102,10 +16231,11 @@
         // v3.0.3 (Terry) — rawX/rawY = the pure cursor proposal; glideOffX_/Y_ carry the Ctrl+E glide's
         // displacement so releasing Ctrl mid-drag continues from where the glide left the tile
         // (was: an instant snap-back to the diverged cursor line — the "unpredictable" jump).
-        const rawX = Math.max(-it.wFrac, Math.min(1 + it.wFrac, sx + dx));
+        let rawX = Math.max(-it.wFrac, Math.min(1 + it.wFrac, sx + dx));
         let rawY = Math.max(-ihFrac, Math.min(1 + ihFrac, sy + dy));
         if (yLock !== null) rawY = yLock;   // freeze Y while Shift held
-        it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, rawX + glideOffX_));
+        if (xLock !== null) rawX = xLock;   // v3.0.3 (Terry) — freeze X while Ctrl held (vertical-only path)
+        it.xFrac = (xLock !== null) ? rawX : Math.max(-it.wFrac, Math.min(1 + it.wFrac, rawX + glideOffX_));
         it.yFrac = (yLock !== null) ? rawY : Math.max(-ihFrac, Math.min(1 + ihFrac, rawY + glideOffY_));
         renderCollageItem(it);
         // v2.1 round 206 (Terry) — Canva-style snapping. Render at the proposed
@@ -16122,7 +16252,7 @@
         // out along the lavender equal-from-the-corner line. Terry's redesign of the old ambient
         // corner-equal auto-snap ("I really like this idea"). Normal snapping is bypassed while held.
         if (cornerGlideHeld) {   // v3.0.3 (Terry) — an EXPLICIT hold always glides; the cornerEqual toggle only governs the ambient auto-snap ("it doesn't do it" was this gate)
-          if (!cornerGlideActive_) { cornerGlideActive_ = true; glideLock_ = null; try { console.log('[glidedbg] gliding'); } catch (_) {} }
+          if (!cornerGlideActive_) { cornerGlideActive_ = true; glideLock_ = null; }
           const cR3 = collageCanvasEl.getBoundingClientRect();
           if (cR3.width && cR3.height) {
             const r3 = it.el.getBoundingClientRect();
@@ -16168,17 +16298,17 @@
         }
         cornerGlideActive_ = false; glideLock_ = null;   // not gliding this move (fell through, or Ctrl released mid-drag) — next glide re-locks its corner
         const cRect = collageCanvasEl.getBoundingClientRect();
-        const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null });   // round 309 — Shift locks Y; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
+        const snap = computeDragSnap(it.el, collageCanvasEl, 14, { lockY: yLock !== null, lockX: xLock !== null });   // round 309 — Shift locks Y; v3.0.3 — Ctrl locks X; v3.0 (Terry) — 14px snap MAGNET (catch range only; Terry felt 22 too grabby). The colour/number "equal" test stays EXACT + separate from this range.
         // v2.1 round 266 (Terry) — Phase 3: the snap re-clamps must use the SAME widened
         // [-wFrac, 1+wFrac] / [-ihFrac, 1+ihFrac] bounds as the move clamp above, or they
         // would fight an oversized tile's off-page drag.
-        if (snap.dx) it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, it.xFrac + snap.dx / cRect.width));
+        if (snap.dx && xLock === null) it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, it.xFrac + snap.dx / cRect.width));
         // v2.1 round 208 (Terry) — composes with round-206 snapping: X still snaps,
         // but while Shift locks Y we skip the Y snap AND suppress its guide line so
-        // the tile can't drift vertically off the locked path.
+        // the tile can't drift vertically off the locked path. v3.0.3 — same for Ctrl on X.
         if (snap.dy && yLock === null) it.yFrac = Math.max(-ihFrac, Math.min(1 + ihFrac, it.yFrac + snap.dy / cRect.height));
-        if (snap.dx || (snap.dy && yLock === null)) renderCollageItem(it);
-        showCollageSnapGuides(snap.vGuide, yLock === null ? snap.hGuide : null);
+        if ((snap.dx && xLock === null) || (snap.dy && yLock === null)) renderCollageItem(it);
+        showCollageSnapGuides(xLock === null ? snap.vGuide : null, yLock === null ? snap.hGuide : null);
         try { showCollageMeasurements(it); } catch (_) {}   // v2.1 round 296 — live edge-to-page distances
       };
       const up = () => {
