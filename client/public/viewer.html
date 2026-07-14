@@ -2576,6 +2576,29 @@
     .cws-select-countpill .cws-select-count { min-width: 0; color: #e6e3f3; }
     .cws-select-cancel { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.10); color: #cfc9ec; cursor: pointer; padding: 0; transition: background .12s ease, color .12s ease; }
     .cws-select-cancel:hover { background: #c0392b; color: #fff; }
+    /* v3.0.3 (Terry #1) — Projects | Templates tabs (separate the two so they stop sharing one scroll). */
+    .cws-tabs { display: flex; gap: 4px; margin: 6px 0 22px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .cws-tab { position: relative; background: none; border: none; color: #8b88a0; font-size: 14px; font-weight: 600; cursor: pointer; padding: 9px 14px 12px; display: inline-flex; align-items: center; gap: 7px; border-radius: 8px 8px 0 0; }
+    .cws-tab:hover { color: #cfc9ec; }
+    .cws-tab-active { color: #FEC242; }
+    .cws-tab-active::after { content: ''; position: absolute; left: 8px; right: 8px; bottom: -1px; height: 2px; background: #FEC242; border-radius: 2px; }
+    .cws-tab-count { font-size: 11px; font-weight: 700; color: #7e7c92; background: rgba(255,255,255,0.06); padding: 1px 7px; border-radius: 999px; min-width: 8px; text-align: center; }
+    .cws-tab-active .cws-tab-count { color: #1a1830; background: rgba(254,194,66,0.85); }
+    .cws-tab-count:empty { display: none; }
+    /* v3.0.3 (Terry #3) — assisted search: a name box + category chips (the handful) — find, don't scroll. */
+    .cws-search { position: relative; display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); border-radius: 8px; padding: 4px 8px; min-width: 200px; }
+    .cws-search:focus-within { border-color: rgba(254,194,66,0.6); }
+    .cws-search-ico { width: 15px; height: 15px; color: #8b88a0; flex: 0 0 auto; }
+    .cws-search-input { flex: 1; background: none; border: none; outline: none; color: #e6e3f3; font-size: 13px; min-width: 0; }
+    .cws-search-input::placeholder { color: #7e7c92; }
+    .cws-search-clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1); color: #cfc9ec; cursor: pointer; padding: 0; flex: 0 0 auto; }
+    .cws-search-clear:hover { background: #c0392b; color: #fff; }
+    .cws-cat-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 18px; }
+    .cws-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #cbc8dd; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 11px; border-radius: 999px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+    .cws-chip:hover { border-color: rgba(254,194,66,0.5); color: #ece9f7; }
+    .cws-chip-on { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.7); color: #FEC242; }
+    .cws-chip-n { font-size: 10.5px; font-weight: 700; color: #8f8ca6; background: rgba(0,0,0,0.25); padding: 0 6px; border-radius: 999px; }
+    .cws-chip-on .cws-chip-n { color: #FEC242; background: rgba(254,194,66,0.14); }
     /* Templates header — purple-accented + iconed so it reads as a DIFFERENT kind of thing (reusable
        starting points), never muddled with the dated collage year-groups below. */
     .cws-templates-head { display: flex; align-items: center; gap: 8px; color: #cbbcff; margin-bottom: 12px;
@@ -4619,10 +4642,14 @@
               </span>
             </button>
           </div>
-          <!-- v2.1 round 323 (Terry) — Templates row (Word-style). Your saved templates; click one
-               to start a NEW collage from it. The curated built-in starter set lands here next. -->
-          <!-- v3.0.3 (Terry #13) — Templates are a DISTINCT kind of thing (reusable starting points), given a
-               purple-accented, collapsible header so they never get muddled with the dated collage projects below. -->
+          <!-- v3.0.3 (Terry) — TABS separate Projects from Templates so the two stop sharing one scroll
+               (Terry: "different kind of thing"). Start-new cards stay pinned above, always one click. -->
+          <div class="cws-tabs" role="tablist">
+            <button type="button" id="cws-tab-projects" class="cws-tab cws-tab-active" role="tab">Projects<span class="cws-tab-count" id="cws-tab-count-projects"></span></button>
+            <button type="button" id="cws-tab-templates" class="cws-tab" role="tab">Templates<span class="cws-tab-count" id="cws-tab-count-templates"></span></button>
+          </div>
+          <!-- v2.1 round 323 (Terry) — Templates: your saved reusable starting points. Now its OWN tab. -->
+          <div id="cws-panel-templates" class="cws-tab-panel" style="display:none">
           <div class="cws-recent cws-templates-sec" id="cws-templates-section">
             <div class="cws-recent-title cws-section-head cws-templates-head" id="cws-templates-toggle" role="button" tabindex="0" data-pdr-tooltip="Show / hide your reusable templates">
               <svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
@@ -4635,13 +4662,22 @@
               <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
             </div>
           </div>
+          </div><!-- /#cws-panel-templates -->
+          <!-- Projects tab panel (default) -->
+          <div id="cws-panel-projects" class="cws-tab-panel">
           <div class="cws-recent">
             <div class="cws-recent-titlerow">
               <div class="cws-recent-title">Your Collage Projects</div>
               <!-- v3.1 (Terry) — one-time carousel-thumbnail re-bake progress line (hidden until a migration runs). -->
               <div id="cws-rebake-progress" class="cws-rebake-progress" style="display:none" aria-live="polite"></div>
               <div class="cws-recent-tools">
-                <select id="cws-filter-album" class="cws-filter" aria-label="Filter by album"><option value="">All albums</option></select>
+                <!-- v3.0.3 (Terry #3) — assisted search: type to filter by NAME; the category chips below
+                     cover the handful of categories. Together = find, don't scroll (78+ projects). -->
+                <div class="cws-search" id="cws-search-wrap">
+                  <svg class="cws-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <input type="text" id="cws-search-input" class="cws-search-input" placeholder="Search projects…" autocomplete="off" spellcheck="false">
+                  <button type="button" id="cws-search-clear" class="cws-search-clear" aria-label="Clear search" style="display:none"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                </div>
                 <button type="button" id="cws-recent-select" class="cws-recent-clear" data-pdr-tooltip="Select several collages to delete">Select</button>
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
                 <!-- v3.0.3 (Terry #12) — bulk-delete action bar, shown only while select mode is active -->
@@ -4656,12 +4692,15 @@
                 </div>
               </div>
             </div>
+            <div id="cws-cat-chips" class="cws-cat-chips" role="tablist" aria-label="Filter by category"></div>
+            <div id="cws-projects-empty-search" class="cws-recent-empty" style="display:none">No projects match your search.</div>
             <div class="cws-projects-body">
               <aside id="cws-year-rail" class="cws-year-rail" style="display:none" aria-label="Jump to year"></aside>
               <div id="cws-recent-grid" class="cws-projects-list" role="list"></div>
             </div>
             <div id="cws-recent-empty" class="cws-recent-empty">Your collages save themselves as you work — they'll show up here.</div>
           </div>
+          </div><!-- /#cws-panel-projects -->
         </div>
       </div>
     </div>
@@ -18718,6 +18757,56 @@
     // v3.0 (Terry) — "Your Collage Projects": filter state + helpers (one card; a project's album/date).
     let cwsFilterAlbum = '';
     let cwsFilterYear = '';
+    let cwsSearchTerm = '';                 // v3.0.3 (Terry #3) — live name search in the Projects tab
+    let cwsActiveTab = 'projects';          // v3.0.3 (Terry #1) — Projects | Templates tabs
+    function cwsSwitchTab(tab) {
+      cwsActiveTab = (tab === 'templates') ? 'templates' : 'projects';
+      const pp = document.getElementById('cws-panel-projects'), tp = document.getElementById('cws-panel-templates');
+      const pb = document.getElementById('cws-tab-projects'), tb = document.getElementById('cws-tab-templates');
+      if (pp) pp.style.display = (cwsActiveTab === 'projects') ? '' : 'none';
+      if (tp) tp.style.display = (cwsActiveTab === 'templates') ? '' : 'none';
+      if (pb) pb.classList.toggle('cws-tab-active', cwsActiveTab === 'projects');
+      if (tb) tb.classList.toggle('cws-tab-active', cwsActiveTab === 'templates');
+    }
+    function wireCwsTabsOnce() {
+      const pb = document.getElementById('cws-tab-projects'), tb = document.getElementById('cws-tab-templates');
+      if (pb && !pb.dataset.wired) { pb.dataset.wired = '1'; pb.addEventListener('click', () => cwsSwitchTab('projects')); }
+      if (tb && !tb.dataset.wired) { tb.dataset.wired = '1'; tb.addEventListener('click', () => cwsSwitchTab('templates')); }
+      const si = document.getElementById('cws-search-input');
+      if (si && !si.dataset.wired) {
+        si.dataset.wired = '1';
+        // stopPropagation so the collage/S&D global key handlers don't hijack typing (see feedback: SearchPanel Enter)
+        si.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); si.value = ''; cwsApplySearch(''); } });
+        si.addEventListener('input', () => cwsApplySearch(si.value));
+      }
+      const sc = document.getElementById('cws-search-clear');
+      if (sc && !sc.dataset.wired) { sc.dataset.wired = '1'; sc.addEventListener('click', () => { const s = document.getElementById('cws-search-input'); if (s) { s.value = ''; s.focus(); } cwsApplySearch(''); }); }
+    }
+    function cwsApplySearch(v) {
+      cwsSearchTerm = (v || '').trim();
+      const cl = document.getElementById('cws-search-clear'); if (cl) cl.style.display = cwsSearchTerm ? '' : 'none';
+      buildCwsRecent();
+    }
+    function buildCwsCatChips(list) {
+      const wrap = document.getElementById('cws-cat-chips'); if (!wrap) return;
+      const counts = {}; list.forEach((p) => { const c = cwsProjectAlbum(p) || 'General'; counts[c] = (counts[c] || 0) + 1; });
+      const cats = Object.keys(counts).sort((a, b) => (counts[b] - counts[a]) || a.localeCompare(b));
+      wrap.innerHTML = '';
+      const mk = (label, val, n) => {
+        const b = document.createElement('button'); b.type = 'button';
+        const on = (val === cwsFilterAlbum) || (val === '' && !cwsFilterAlbum);
+        b.className = 'cws-chip' + (on ? ' cws-chip-on' : '');
+        b.innerHTML = '<span>' + label + '</span>' + (n != null ? ('<span class="cws-chip-n">' + n + '</span>') : '');
+        b.addEventListener('click', () => { cwsFilterAlbum = (cwsFilterAlbum === val) ? '' : val; buildCwsRecent(); });
+        wrap.appendChild(b);
+      };
+      mk('All', '', list.length);
+      cats.forEach((c) => mk(c, c, counts[c]));
+      wrap.style.display = cats.length > 1 ? '' : 'none';   // only worth showing chips when there's more than one category
+    }
+    function setCwsTabCount(which, n) {
+      const el = document.getElementById('cws-tab-count-' + which); if (el) el.textContent = (n > 0) ? String(n) : '';
+    }
     // v3.0 round 545 (Terry) — Home-screen selection: the titlebar View/Albums pair follows the
     // SELECTED tile (corner tick). Coming Home from the editor pre-selects the project just edited.
     let cwsSelectedProjectId = null;
@@ -18907,13 +18996,16 @@
       card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel); card.appendChild(chk);
       return card;
     }
+    let cwsRecentBuildSeq = 0;   // v3.0.3 (Terry) — re-entrancy guard for the async build (chip/search fire it rapidly)
     async function buildCwsRecent() {
       const grid = document.getElementById('cws-recent-grid');
       const empty = document.getElementById('cws-recent-empty');
       if (!grid) return;
+      const _seq = ++cwsRecentBuildSeq;
       grid.innerHTML = '';
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
+      if (_seq !== cwsRecentBuildSeq) return;   // a newer build started during the await → bail before appending (was: two "2026" year sections)
       list = list.filter((p) => p.kind !== 'template');   // v2.1 round 323 (Terry) — templates have their OWN row
       // v3.0 round 545 (Terry) — cache the projects for the Home-screen selection (titlebar goto
       // pair reads the selected one); drop a selection whose project was deleted meanwhile.
@@ -18922,23 +19014,20 @@
       if (cwsSelectedProjectId != null && !cwsProjectsById[cwsSelectedProjectId]) cwsSelectedProjectId = null;
       try { updateCollageGoto(); } catch (_) {}
       // Populate the Album + Date filters from ALL projects (preserve the current selection).
-      const albumSel = document.getElementById('cws-filter-album');
-      const yearSel = document.getElementById('cws-filter-year');
-      if (albumSel) {
-        const albums = Array.from(new Set(list.map(cwsProjectAlbum).filter(Boolean))).sort();
-        albumSel.innerHTML = ''; const oA = document.createElement('option'); oA.value = ''; oA.textContent = 'All albums'; albumSel.appendChild(oA);
-        albums.forEach((a) => { const o = document.createElement('option'); o.value = a; o.textContent = a; albumSel.appendChild(o); });
-        albumSel.value = cwsFilterAlbum;
-        if (!albumSel.dataset.wired) { albumSel.dataset.wired = '1'; albumSel.addEventListener('change', () => { cwsFilterAlbum = albumSel.value; buildCwsRecent(); }); }
-      }
-      // Apply the album filter (date navigation is the year rail, not a dropdown).
+      // v3.0.3 (Terry #1/#3) — the old "All albums" dropdown is gone; category CHIPS + the name search
+      // box do the filtering now. Build the chips, wire the tabs, set the Projects-tab count.
+      try { buildCwsCatChips(list); wireCwsTabsOnce(); setCwsTabCount('projects', list.length); } catch (_) {}
+      // Apply the active category chip + the name search (date navigation is still the year rail).
+      const _q = (cwsSearchTerm || '').toLowerCase();
       const filtered = list.filter((p) => {
-        if (cwsFilterAlbum && cwsProjectAlbum(p).toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
+        // v3.0.3 (Terry) — map uncategorised → 'General' so the "General" chip (which counts them) matches.
+        if (cwsFilterAlbum && (cwsProjectAlbum(p) || 'General').toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
+        if (_q && (p.name || '').toLowerCase().indexOf(_q) < 0) return false;
         return true;
       });
       if (empty) {
         if (!list.length) { empty.style.display = 'block'; empty.textContent = 'Your collages save themselves as you work — they’ll show up here.'; }
-        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = 'No projects in this album.'; }
+        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = (_q || cwsFilterAlbum) ? 'No projects match — try a different search or category.' : 'No projects here.'; }
         else { empty.style.display = 'none'; }
       }
       // Group by YEAR (newest first), then MONTH within (newest first) — mirrors Memories › Dates.
@@ -19102,6 +19191,7 @@
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       list = list.filter((p) => p.kind === 'template');
+      try { setCwsTabCount('templates', (typeof BUILTIN_TEMPLATES !== 'undefined' ? BUILTIN_TEMPLATES.length : 0) + list.length); wireCwsTabsOnce(); } catch (_) {}   // v3.0.3 (Terry) — Templates tab badge
       if (empty) empty.style.display = 'none';   // built-ins are always present, so the row is never empty
       for (const p of list) {
         const card = document.createElement('div');
