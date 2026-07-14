@@ -10263,6 +10263,15 @@
           if (q.top >= r.bottom - 1 && q.top < botRef) botRef = q.top;           // nearest below
         }
       }
+      // v3.0.3 (Terry) — during the Ctrl+E glide the LOCKED sides always measure to the PAGE/CANVAS
+      // edge. Without this, a neighbour (e.g. the page's text block) could become the nearest
+      // reference mid-glide, silently switching that side's ruler to a gap-to-text — the page
+      // margins were equal but the DISPLAYED pair read 112 vs 102 and the purple died ("the numbers
+      // do not match beyond 2-2... I've stressed it being equal").
+      if (cornerGlideActive_ && glideLock_) {
+        if (glideLock_.useLeft) leftRef = c.left; else rightRef = c.right;
+        if (glideLock_.useTop) topRef = c.top; else botRef = c.bottom;
+      }
       // v3.0.3 (Terry SS1) — UNCLAMPED: an edge past its reference reads as a true NEGATIVE distance
       // (the old Math.max(0,…) flattened any off-page overshoot to a lying "0" — Terry: "the purple
       // outline has exceeded the gold outline of the page, this MUST be reflected with an accurate
@@ -15843,6 +15852,10 @@
     let cornerGlideHeld = false;
     let cornerGlideActive_ = false;   // true only while a drag-move is actually gliding (drives the lavender pills)
     let glideLock_ = null;            // v3.0.3 (Terry SS4/SS5) — the corner locked in for the CURRENT glide: {pgL, pgR, useLeft, useTop}
+    // v3.0.3 (Terry) — the glide's displacement from the RAW cursor proposal. Carried into subsequent
+    // free-drag moves so releasing Ctrl mid-drag CONTINUES from where the glide left the tile instead
+    // of snapping back to the (long-diverged) cursor line. Reset at drag end.
+    let glideOffX_ = 0, glideOffY_ = 0;
     window.addEventListener('keydown', function (e) {
       if ((e.ctrlKey || e.metaKey) && (e.key === 'e' || e.key === 'E')) {
         // v3.0.3 (Terry) — LATCH ON CTRL: tapping E arms the glide and it stays armed while Ctrl is
@@ -16086,9 +16099,14 @@
         // (Canva). xFrac/yFrac are the tile's TOP-LEFT corner; allowing [-wFrac, 1+wFrac]
         // lets the tile slide from just-off one edge to just-off the opposite edge. (Was
         // a centre-in-range clamp [-wFrac/2, 1-wFrac/2] that trapped a big tile on-page.)
-        it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, sx + dx));
-        it.yFrac = Math.max(-ihFrac, Math.min(1 + ihFrac, sy + dy));
-        if (yLock !== null) it.yFrac = yLock;   // freeze Y while Shift held
+        // v3.0.3 (Terry) — rawX/rawY = the pure cursor proposal; glideOffX_/Y_ carry the Ctrl+E glide's
+        // displacement so releasing Ctrl mid-drag continues from where the glide left the tile
+        // (was: an instant snap-back to the diverged cursor line — the "unpredictable" jump).
+        const rawX = Math.max(-it.wFrac, Math.min(1 + it.wFrac, sx + dx));
+        let rawY = Math.max(-ihFrac, Math.min(1 + ihFrac, sy + dy));
+        if (yLock !== null) rawY = yLock;   // freeze Y while Shift held
+        it.xFrac = Math.max(-it.wFrac, Math.min(1 + it.wFrac, rawX + glideOffX_));
+        it.yFrac = (yLock !== null) ? rawY : Math.max(-ihFrac, Math.min(1 + ihFrac, rawY + glideOffY_));
         renderCollageItem(it);
         // v2.1 round 206 (Terry) — Canva-style snapping. Render at the proposed
         // position first (above) so the element rect is current, then nudge each
@@ -16138,6 +16156,10 @@
             const gdy = Lk.useTop ? (m3 - tT3) : (cR3.height - m3 - tB3);
             it.xFrac += gdx / cR3.width;
             it.yFrac += gdy / cR3.height;
+            // Remember how far the glide has displaced the tile from the raw cursor proposal, so a
+            // Ctrl-release mid-drag continues from HERE (no snap-back to the cursor line).
+            glideOffX_ = it.xFrac - rawX;
+            glideOffY_ = it.yFrac - rawY;
             renderCollageItem(it);
             hideCollageSnapGuides();
             try { showCollageMeasurements(it); } catch (_) {}   // green 0/0 in the corner → PURPLE equal pair counting out (Terry's colour spec)
@@ -16161,7 +16183,7 @@
       };
       const up = () => {
         it.el.classList.remove('dragging');
-        cornerGlideActive_ = false; glideLock_ = null;   // v3.0.3 — end-of-drag: stop driving the lavender pills + free the locked corner
+        cornerGlideActive_ = false; glideLock_ = null; glideOffX_ = 0; glideOffY_ = 0;   // v3.0.3 — end-of-drag: stop the lavender pills, free the locked corner, drop the carried glide offset
         hideCollageSnapGuides();   // v2.1 round 206 (Terry) — clear guides on drop
         try { hideCollageMeasurements(); } catch (_) {}   // v2.1 round 296
         // v2.1 round 286 Tier 2 — a plain CLICK (no real drag) on a member of a
