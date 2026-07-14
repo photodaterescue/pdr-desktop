@@ -10737,6 +10737,22 @@
       box.style.top = top + 'px';
       box.style.width = w + 'px';
       box.style.height = h + 'px';
+      // v3.0.3 (Terry SS1) — the edge CROP grab-bars are a FIXED on-screen length (28px, stage-level
+      // chrome), so on a small / zoomed-out tile a 28px bar spans most of the side and the whole edge
+      // reads as bold + thick. Canva keeps a thin edge line with a SHORT pill in the middle. Cap each
+      // bar to a fraction of its own edge (grabbable floor) so it shrinks on small tiles and only
+      // reaches full length on big ones — unchanged at normal zoom, no longer dominant when zoomed out.
+      try {
+        const EDGE_MAX = 28, EDGE_MIN = 11, EDGE_FRAC = 0.4;
+        const vLen = Math.max(EDGE_MIN, Math.min(EDGE_MAX, h * EDGE_FRAC));   // left/right bars run vertically → sized by box HEIGHT
+        const hLen = Math.max(EDGE_MIN, Math.min(EDGE_MAX, w * EDGE_FRAC));   // top/bottom bars run horizontally → sized by box WIDTH
+        let refs = box._cropRefs_;
+        if (!refs) { refs = box._cropRefs_ = { l: box.querySelector('.chx-crop-l'), r: box.querySelector('.chx-crop-r'), t: box.querySelector('.chx-crop-t'), b: box.querySelector('.chx-crop-b') }; }
+        if (refs.l) { refs.l.style.height = vLen + 'px'; refs.l.style.marginTop = (-vLen / 2) + 'px'; }
+        if (refs.r) { refs.r.style.height = vLen + 'px'; refs.r.style.marginTop = (-vLen / 2) + 'px'; }
+        if (refs.t) { refs.t.style.width = hLen + 'px'; refs.t.style.marginLeft = (-hLen / 2) + 'px'; }
+        if (refs.b) { refs.b.style.width = hLen + 'px'; refs.b.style.marginLeft = (-hLen / 2) + 'px'; }
+      } catch (_) {}
       // Rotate the whole chrome group about the box centre — matches the tile's own
       // rotate(it.rot) (renderCollageItem) which uses the default centre transform-origin.
       box.style.transform = 'rotate(' + (it.rot || 0) + 'deg)';
@@ -18646,6 +18662,21 @@
     // cwsSelectedProjectId tick above (that one targets the titlebar View/Albums goto pair).
     let cwsSelectMode = false;
     const cwsSelectedForDelete = new Set();
+    let cwsSelectAnchorId = null;   // v3.0.3 (Terry) — last-ticked card, the anchor for Shift+click range-select
+    // v3.0.3 (Terry) — Ctrl/Cmd+click toggles a card into the delete-selection, Shift+click selects the
+    // run from the anchor to here — the Memories→Dates instinct. Both auto-enter select mode. Mirrors the
+    // Dates multi-select so the whole app feels the same.
+    function cwsRangeSelectTo(id) {
+      const cards = Array.prototype.slice.call(document.querySelectorAll('#cws-recent-grid .cws-card'));
+      const ids = cards.map((c) => String(c.dataset.projectId));
+      const toIdx = ids.indexOf(String(id));
+      if (toIdx < 0) return;
+      let fromIdx = (cwsSelectAnchorId != null) ? ids.indexOf(cwsSelectAnchorId) : toIdx;
+      if (fromIdx < 0) fromIdx = toIdx;
+      const lo = Math.min(fromIdx, toIdx), hi = Math.max(fromIdx, toIdx);
+      for (let i = lo; i <= hi; i++) { cwsSelectedForDelete.add(ids[i]); if (cards[i]) cards[i].classList.add('cws-check-on'); }
+      updateCwsSelectBar();
+    }
     function updateCwsSelectBar() {
       const n = cwsSelectedForDelete.size;
       const cnt = document.getElementById('cws-select-count');
@@ -18660,7 +18691,7 @@
       updateCwsSelectBar();
     }
     function enterCwsSelectMode() {
-      cwsSelectMode = true; cwsSelectedForDelete.clear();
+      cwsSelectMode = true; cwsSelectedForDelete.clear(); cwsSelectAnchorId = null;
       const grid = document.getElementById('cws-recent-grid'); if (grid) grid.classList.add('cws-selecting');
       const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = 'none';
       const clr = document.getElementById('cws-recent-clear'); if (clr) clr.style.display = 'none';
@@ -18668,7 +18699,7 @@
       updateCwsSelectBar();
     }
     function exitCwsSelectMode() {
-      cwsSelectMode = false; cwsSelectedForDelete.clear();
+      cwsSelectMode = false; cwsSelectedForDelete.clear(); cwsSelectAnchorId = null;
       const grid = document.getElementById('cws-recent-grid');
       if (grid) { grid.classList.remove('cws-selecting'); try { grid.querySelectorAll('.cws-card.cws-check-on').forEach((c) => c.classList.remove('cws-check-on')); } catch (_) {} }
       const sel = document.getElementById('cws-recent-select'); if (sel) sel.style.display = '';
@@ -18773,8 +18804,13 @@
       const chk = document.createElement('div'); chk.className = 'cws-card-check';
       chk.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
       if (cwsSelectedForDelete.has(String(p.id))) card.classList.add('cws-check-on');
-      card.addEventListener('click', async () => {
-        if (cwsSelectMode) { toggleCwsDeleteSelect(p.id, card); return; }   // #12 — in select mode a card click ticks it, never opens it
+      card.addEventListener('click', async (e) => {
+        // v3.0.3 (Terry) — Ctrl/Cmd+click toggles into the delete-selection, Shift+click range-selects
+        // from the anchor — the Memories→Dates instinct; both auto-enter select mode. Plain click opens
+        // (or ticks, once already in select mode via the Select button or a modifier click).
+        if (e.ctrlKey || e.metaKey) { if (!cwsSelectMode) enterCwsSelectMode(); toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); return; }
+        if (e.shiftKey) { if (!cwsSelectMode) enterCwsSelectMode(); cwsRangeSelectTo(p.id); return; }
+        if (cwsSelectMode) { toggleCwsDeleteSelect(p.id, card); cwsSelectAnchorId = String(p.id); return; }   // #12 — in select mode a plain card click ticks it, never opens it
         const ok = await reopenCollageProject(p.id); if (ok) hideCollageWelcome();
       });
       card.appendChild(thumb); card.appendChild(meta); card.appendChild(ren); card.appendChild(del); card.appendChild(sel); card.appendChild(chk);
@@ -29649,10 +29685,17 @@ function zoomTo(newZoom, centreX, centreY) {
         // the button reads "Update" → re-save over the SAME library photo, no wizard. Carousels keep their
         // direct slide export.
         if (carouselMode) {
-          // v3.0 round 495 (Terry) — carousels now show the SAME naming wizard as a single collage (it was
-          // bypassed, so a carousel saved with no name/category modal). The wizard names the project, then
-          // saveCollage() routes to saveCarousel() (which has its own empty-check) to export the slides
-          // under that chosen name. Falls back to the direct slide export if the wizard can't open.
+          // v3.0 round 495 (Terry) — carousels show the SAME naming wizard as a single collage.
+          // v3.0.3 (Terry #11) — but only the FIRST time. Once the carousel has been saved
+          // (carouselExportedAlbumId set → the button already reads "Update"), a Save re-exports
+          // straight to the SAME album under the existing name — NO repeat name/category prompt.
+          // Mirrors the single-collage collageExportedFileId Update branch just below.
+          if (carouselExportedAlbumId != null) {
+            try { saveCollage(collageCurrentAlbum(), { action: 'update' }); } catch (_) { try { openCollageNameWizard({ exportMode: true }); } catch (__) {} }
+            return;
+          }
+          // The wizard names the project, then saveCollage() routes to saveCarousel() (own empty-check)
+          // to export the slides under that name. Falls back to the direct slide export if it can't open.
           try { openCollageNameWizard({ exportMode: true }); } catch (_) { if (collageSaveFn) collageSaveFn(); }
           return;
         }
