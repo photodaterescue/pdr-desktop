@@ -17005,6 +17005,35 @@
       const cosR = Math.cos(rad), sinR = Math.sin(rad);
       const MIN = 0.08; // never crop below 8% of the photo
       const vSfix = S / aspect; // px per photo-height-fraction (for the top/bottom snap math)
+      // v3.0.3 (Terry) — CANVA-STATIC CROP. When the tile is ZOOMED (zoom>1) the render magnifies the
+      // crop-region CENTRE (visCenterX/Y in renderCollageItem), and that centre MOVES as you trim one
+      // edge — so the photo re-frames ("dynamic"). Capture the pre-drag visible-window edges (photo-
+      // fraction space) and, after each crop update, re-solve pan so the OPPOSITE (fixed) box edge keeps
+      // showing the SAME photo pixels. Net: the picture is STATIC, only the trimmed strip hides. No-op at
+      // zoom 1 (already static). Pan is stored, so render AND save/bake stay in lock-step — no render change.
+      const z0 = Math.max(1, Math.min(2.8, it.zoom || 1));
+      const _px0 = Math.max(-1, Math.min(1, it.panX || 0)), _py0 = Math.max(-1, Math.min(1, it.panY || 0));
+      const _vcx0 = (sc.l + sc.r) / 2 + _px0 * (sc.r - sc.l) * (1 - 1 / z0) / 2;
+      const _vcy0 = (sc.t + sc.b) / 2 + _py0 * (sc.b - sc.t) * (1 - 1 / z0) / 2;
+      const visR0 = _vcx0 + (sc.r - sc.l) / (2 * z0), visL0 = _vcx0 - (sc.r - sc.l) / (2 * z0);
+      const visB0 = _vcy0 + (sc.b - sc.t) / (2 * z0), visT0 = _vcy0 - (sc.b - sc.t) / (2 * z0);
+      const _reanchorCropPan = () => {
+        if (z0 <= 1.0001) return;                                   // zoom 1: no slack, already static
+        const c = it.crop;
+        if (edge === 'l' || edge === 'r') {
+          const w = c.r - c.l, den = w * (1 - 1 / z0) / 2;
+          if (den <= 1e-6) return;
+          const keep = (edge === 'l') ? visR0 : visL0, sgn = (edge === 'l') ? 1 : -1;
+          const vc = keep - sgn * (w / (2 * z0));
+          it.panX = Math.max(-1, Math.min(1, (vc - (c.l + c.r) / 2) / den));
+        } else {
+          const h = c.b - c.t, den = h * (1 - 1 / z0) / 2;
+          if (den <= 1e-6) return;
+          const keep = (edge === 't') ? visB0 : visT0, sgn = (edge === 't') ? 1 : -1;
+          const vc = keep - sgn * (h / (2 * z0));
+          it.panY = Math.max(-1, Math.min(1, (vc - (c.t + c.b) / 2) / den));
+        }
+      };
       const move = (ev) => {
         // v3.1 (Terry) — a hand crop is now permanent: mark the tile so the auto-trim NEVER re-crops it
         // (and never fires a queued trim mid-drag). Idempotent; only set once the pointer actually moves.
@@ -17023,6 +17052,7 @@
           else it.crop.b = Math.min(1, Math.max(sc.t + MIN, sc.b + localY / vSfix));
           if (edge === 't') it.yFrac = bottomFrac0 - itemHeightFrac(it); // bottom edge stays put
         }
+        _reanchorCropPan();   // v3.0.3 (Terry) — hold the fixed edge's photo pixels static under zoom
         renderCollageItem(it);
         // v2.1 round 293 (Terry) — CROP SNAPPING. Cropping is a form of resizing, so the
         // dragged crop EDGE snaps to the same alignment lines as a resize — canvas
@@ -17057,6 +17087,7 @@
               else it.crop.r = Math.min(1, Math.max(sc.l + MIN, it.crop.r + dCrop));
               it.wFrac = ((it.crop.r - it.crop.l) * S) / cwpx;
               if (edge === 'l') it.xFrac = rightFrac - it.wFrac;
+              _reanchorCropPan();   // v3.0.3 (Terry) — stay static after a snap-adjusted crop too
               renderCollageItem(it);
               vGuide = sX - cr.left;
             }
@@ -17074,6 +17105,7 @@
               if (edge === 't') it.crop.t = Math.max(0, Math.min(sc.b - MIN, it.crop.t + dCrop));
               else it.crop.b = Math.min(1, Math.max(sc.t + MIN, it.crop.b + dCrop));
               if (edge === 't') it.yFrac = bottomFrac0 - itemHeightFrac(it);
+              _reanchorCropPan();   // v3.0.3 (Terry) — stay static after a snap-adjusted crop too
               renderCollageItem(it);
               hGuide = sY - cr.top;
             }
