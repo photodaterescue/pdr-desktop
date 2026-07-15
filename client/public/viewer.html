@@ -2480,6 +2480,17 @@
       justify-content: center;
       padding: 22px;
     }
+    /* v3.0.3 (Terry) — when the window is too small to show the whole canvas at the minimum
+       usable page size, the layout freezes the canvas at that minimum and adds this class so the
+       stage SCROLLS instead of squashing the (wide carousel) pages into an illegible strip. 'safe'
+       keeps the canvas centred while it fits but flips to start-aligned once it overflows, so the
+       top-left never gets clipped out of reach. Gated to this case so normal pan/zoom (a transform
+       clipped by the base overflow:hidden) is untouched. */
+    #collage-stage.collage-stage-scroll { overflow: auto; align-items: safe center; justify-content: safe center; }
+    /* The canvas is a flex child (flex-shrink:1 by default), so a frozen-at-minimum canvas WIDER
+       than the stage would just shrink back to fit — squashing the pages and defeating the floor.
+       Pin flex-shrink:0 in scroll mode so it keeps its minimum size and the stage scrolls instead. */
+    #collage-stage.collage-stage-scroll > #collage-canvas { flex-shrink: 0; }
     /* The paper — the actual collage canvas. */
     #collage-canvas {
       position: relative;
@@ -23356,7 +23367,17 @@
       // top/bottom (and left/right) margins instead of hugging the titlebar.
       const FIT = 0.88;   // v3.0 (Terry) — more breathing room: the page sits further from the chrome (was 0.93)
       w *= FIT; h *= FIT;
+      // v3.0.3 (Terry) — MINIMUM usable page height. As the window shrinks, a wide carousel's
+      // width-limited fit drives the page height down until the pages squash into an illegible
+      // strip. Below this floor, freeze at the minimum and let the stage SCROLL (class toggled
+      // below) so the design keeps its integrity instead of collapsing. h IS the page height (the
+      // carousel canvas is N pages wide × ONE page tall), so this is a direct per-page floor; a
+      // large window still fits every page (h stays above the floor → no scroll).
+      const MIN_H = 240;
+      let _needScroll = false;
+      if (h < MIN_H) { h = MIN_H; w = h * a; _needScroll = true; }
       w = Math.max(120, w); h = Math.max(120, h);
+      try { collageStageEl.classList.toggle('collage-stage-scroll', _needScroll); } catch (_) {}
       collageCanvasEl.style.width = w + 'px';
       collageCanvasEl.style.height = h + 'px';
       // v2.1 round 235 (Terry) — route through applyCanvasBgVisual so a resize keeps
