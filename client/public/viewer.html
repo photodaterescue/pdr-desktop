@@ -5106,15 +5106,9 @@
             </button>
           </div>
           <div id="divider-controls" style="display:none">
-            <!-- v3.0.3 (Terry) — the Dividers colour palette is the SAME shared component as Text /
-                 Frame / Glow & shadow (swatch grid + PDR/NEON… PALETTES collections). refreshDividerControls()
-                 renders it into this host via renderTextColorPalette(); picking sets collageSelected.dividerColor
-                 and re-renders. -->
-            <!-- v3.0.3+ (Terry) — Expand all / Collapse all for the divider palette's OWN collection
-                 chevrons (Neon/Neutral/Seasonal…), mirroring the Text palette's #collage-unified-color
-                 control. Scoped strictly to #divider-swatches via setAllCollections(open,'divider-swatches'). -->
-            <div class="enhance-label-row" style="margin-top:8px"><label data-pdr-tooltip="Choose a color for this divider">Color Palette</label><span class="enhance-collapse-all"><button type="button" id="divider-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all color collections" aria-label="Expand all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="divider-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all color collections" aria-label="Collapse all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
-            <div class="frame-palette" id="divider-swatches" style="margin-top:2px"></div>
+            <!-- v3.0.3++ (Terry) — panel order MATCHES Text: H/V buttons → sliders (Thickness /
+                 Rounded ends / Transparency) → Effect chips → Colour Palette (LAST). The palette block
+                 now lives at the FOOT of #divider-controls (below the Effect chips). -->
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="slider-divider-thick" data-pdr-tooltip="How thick the divider line is, in pixels of the exported page">Thickness</label><span class="enhance-val" id="val-divider-thick">8 px</span></div>
               <input class="enhance-slider" id="slider-divider-thick" type="range" min="1" max="60" step="1" value="8">
@@ -5143,6 +5137,13 @@
                 <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Lifted 3D shadow">3D</button>
               </div>
             </div>
+            <!-- v3.0.3++ (Terry) — Colour Palette LAST (matching Text: controls → Effect → Colour).
+                 Shared component (renderTextColorPalette) rendered into #divider-swatches by
+                 refreshDividerControls(); Expand-all / Collapse-all drive its PDR/NEON… collections
+                 via setAllCollections(open,'divider-swatches'). All hooks are by id, so its DOM
+                 position here (moved from the top) changes nothing but the visual order. -->
+            <div class="enhance-label-row" style="margin-top:10px"><label data-pdr-tooltip="Choose a color for this divider">Color Palette</label><span class="enhance-collapse-all"><button type="button" id="divider-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all color collections" aria-label="Expand all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="divider-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all color collections" aria-label="Collapse all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
+            <div class="frame-palette" id="divider-swatches" style="margin-top:2px"></div>
           </div>
         </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
