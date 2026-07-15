@@ -4266,6 +4266,13 @@
     #collage-color-targets .ec-ctgl-tile { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.28); }
     #collage-color-targets .ec-ctgl-tile.is-auto { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 6px 6px; }
     #collage-color-targets .ec-ctgl.is-disabled .ec-ctgl-tile { opacity: 0.4; }
+    /* v3.0.3 (Terry) — the Dividers palette's [Divider | Effect] target toggle, same chip + tile look. */
+    #divider-color-targets { margin: 2px 0 8px; }
+    #divider-color-targets .ec-ctgl { flex: 0 1 auto; min-width: 64px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; }
+    #divider-color-targets .ec-ctgl-tile { display: inline-block; width: 14px; height: 14px; border-radius: 4px; flex: 0 0 auto; border: 1px solid rgba(255,255,255,0.4); box-shadow: inset 0 0 0 1px rgba(0,0,0,0.28); }
+    #divider-color-targets .ec-ctgl-tile.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 6px 6px; }
+    #divider-color-targets .ec-ctgl.is-disabled { opacity: 0.5; cursor: default; }
+    #divider-color-targets .ec-ctgl.is-disabled .ec-ctgl-tile { opacity: 0.4; }
     /* v2.1 round 195 (Terry) — lock EVERY swatch row in the shared palette to
        exactly 8 columns at any panel width, so rows are always full (no ragged
        right-edge gaps). Applies to Favourites and each collection grid.
@@ -5160,6 +5167,14 @@
                  via setAllCollections(open,'divider-swatches'). All hooks are by id, so its DOM
                  position here (moved from the top) changes nothing but the visual order. -->
             <div class="enhance-label-row" style="margin-top:10px"><label data-pdr-tooltip="Choose a color for this divider">Color Palette</label><span class="enhance-collapse-all"><button type="button" id="divider-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all color collections" aria-label="Expand all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="divider-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all color collections" aria-label="Collapse all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
+            <!-- v3.0.3 (Terry) — [Divider | Effect] colour-target toggle (mirrors Text's [Text | Effect]).
+                 Divider tile colours the line; Effect tile colours the selected effect (greyed until one
+                 is picked). refreshDividerColorTargets_ paints the tiles + enable state; the palette below
+                 routes onPick by dividerColorTarget_. -->
+            <div class="ec-color-toggle" id="divider-color-targets" role="group" aria-label="Divider colour target">
+              <button class="ec-ctgl active" type="button" data-target="divider" data-pdr-tooltip="Colour the divider line">Divider<span class="ec-ctgl-tile" data-tile="divider"></span></button>
+              <button class="ec-ctgl is-disabled" type="button" data-target="effect" data-pdr-tooltip="Colour the selected effect — pick an effect above first">Effect<span class="ec-ctgl-tile is-none" data-tile="effect"></span></button>
+            </div>
             <div class="frame-palette" id="divider-swatches" style="margin-top:2px"></div>
           </div>
         </details>
@@ -21125,6 +21140,37 @@
       }
       row.querySelectorAll('.ec-effect-btn').forEach((b) => b.classList.toggle('active', b.dataset.effect === eff));
     }
+    // v3.0.3 (Terry) — [Divider | Effect] colour-target toggle for the Dividers palette, mirroring
+    // Text's [Text | Effect]. dividerActiveFx_ = the single active edge effect (+ its enh colour key
+    // and applyTileEdgeFx default); null when no effect is on (the Effect target then greys out).
+    var dividerColorTarget_ = 'divider';
+    function dividerActiveFx_() {
+      var it = collageSelected;
+      if (!it || !it.divider) return null;
+      var e = it.enh || {};
+      var order = [['neon', 'neonColor', '#ff2bd6'], ['outline', 'outlineColor', '#ffffff'], ['dropShadow', 'dropShadowColor', '#000000'], ['lift', 'liftColor', '#000000'], ['glow', 'glowColor', '#ffffff']];
+      for (var i = 0; i < order.length; i++) { if ((e[order[i][0]] || 0) > 0) return { key: order[i][0], colorKey: order[i][1], def: order[i][2] }; }
+      return null;
+    }
+    function refreshDividerColorTargets_() {
+      var wrap = document.getElementById('divider-color-targets');
+      if (!wrap) return;
+      var it = collageSelected;
+      var fx = dividerActiveFx_();
+      if (!fx && dividerColorTarget_ === 'effect') dividerColorTarget_ = 'divider';
+      var divBtn = wrap.querySelector('.ec-ctgl[data-target="divider"]');
+      var effBtn = wrap.querySelector('.ec-ctgl[data-target="effect"]');
+      if (effBtn) effBtn.classList.toggle('is-disabled', !fx);
+      if (divBtn) divBtn.classList.toggle('active', dividerColorTarget_ === 'divider');
+      if (effBtn) effBtn.classList.toggle('active', dividerColorTarget_ === 'effect');
+      var dTile = wrap.querySelector('.ec-ctgl-tile[data-tile="divider"]');
+      var eTile = wrap.querySelector('.ec-ctgl-tile[data-tile="effect"]');
+      if (dTile) dTile.style.background = String((it && it.dividerColor) || '#FEC242');
+      if (eTile) {
+        if (fx) { var e = (it && it.enh) || {}; eTile.style.background = String(e[fx.colorKey] || fx.def); eTile.classList.remove('is-none'); }
+        else { eTile.style.background = ''; eTile.classList.add('is-none'); }
+      }
+    }
     // Panel sync: show the divider controls only while a divider is selected; mirror its values.
     function refreshDividerControls() {
       const wrap = document.getElementById('divider-controls');
@@ -21147,14 +21193,25 @@
         const op = Math.round((((it.enh && typeof it.enh.opacity === 'number') ? it.enh.opacity : 1)) * 100);
         const fade = document.getElementById('slider-divider-fade'), fv = document.getElementById('val-divider-fade');
         if (fade) fade.value = String(Math.max(10, op)); if (fv) fv.textContent = op + '%';
+        try { refreshDividerColorTargets_(); } catch (_) {}   // v3.0.3 (Terry) — [Divider | Effect] tiles + enable state
         const sw = document.getElementById('divider-swatches');
-        // v3.0.3 (Terry) — render the SHARED colour palette (swatches + PALETTES) into the divider host,
-        // exactly like renderEdgeInline() does for Glow & shadow. Picking sets dividerColor + re-renders;
-        // renderTextColorPalette rings the active swatch itself, so no manual .active toggle here.
-        if (sw) renderTextColorPalette(sw,
-          function () { return String((collageSelected && collageSelected.dividerColor) || '#FEC242').toLowerCase(); },
-          function (hex) { const t = collageSelected; if (!t || !t.divider || !hex) return; t.dividerColor = hex; renderCollageItem(t); refreshDividerControls(); },
-          {});
+        // v3.0.3 (Terry) — render the SHARED palette; getCurrent/onPick route by the active target:
+        // [Divider] → dividerColor, [Effect] → the active effect's colour key (enh.<fx>Color). Mirrors
+        // Text's [Text | Effect]. renderTextColorPalette rings the active swatch itself.
+        if (sw) {
+          const _fx = (function () { try { return dividerActiveFx_(); } catch (_) { return null; } })();
+          if (dividerColorTarget_ === 'effect' && _fx) {
+            renderTextColorPalette(sw,
+              function () { const t = collageSelected; const e = (t && t.enh) || {}; return String(e[_fx.colorKey] || _fx.def).toLowerCase(); },
+              function (hex) { const t = collageSelected; if (!t || !t.divider || !hex) return; t.enh = t.enh || {}; t.enh[_fx.colorKey] = hex; renderCollageItem(t); refreshDividerControls(); },
+              {});
+          } else {
+            renderTextColorPalette(sw,
+              function () { return String((collageSelected && collageSelected.dividerColor) || '#FEC242').toLowerCase(); },
+              function (hex) { const t = collageSelected; if (!t || !t.divider || !hex) return; t.dividerColor = hex; renderCollageItem(t); refreshDividerControls(); },
+              {});
+          }
+        }
         try { reflectDividerEffectChips(); } catch (_) {}   // v3.0.3+ (Terry) — ring the Effect chip matching the divider's current edge effects
       } catch (_) {}
     }
@@ -21222,7 +21279,18 @@
         renderCollageItem(it);
         try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {}   // reload state + Glow & shadow sliders from the new enh
         commitCollageChange();
-        try { reflectDividerEffectChips(); } catch (_) {}
+        try { refreshDividerControls(); } catch (_) {}   // v3.0.3 (Terry) — full resync so the [Effect] target un-greys + tiles update
+      });
+      // v3.0.3 (Terry) — [Divider | Effect] colour-target toggle: click a tile to point the palette at
+      // the divider line or the selected effect's colour. The Effect tile is greyed until an effect is on.
+      const dColorTargets = document.getElementById('divider-color-targets');
+      if (dColorTargets) dColorTargets.addEventListener('click', (e) => {
+        const b = e.target.closest ? e.target.closest('.ec-ctgl') : null;
+        if (!b || b.classList.contains('is-disabled')) return;
+        const t = b.dataset.target;
+        if (!t || t === dividerColorTarget_) return;
+        dividerColorTarget_ = t;
+        refreshDividerControls();
       });
     })();
     // Open the library picker to fill ONE frame (or replace a tile's photo).
