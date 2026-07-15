@@ -2151,11 +2151,63 @@ async function bakeCollageLayout(layout: CollageLayout): Promise<Buffer> {
 // export render (the checkerboard is an EDITOR cue, not content). Opaque exports keep the exact same
 // non-transparent window as before — zero change to that path.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+// v3.0.3 (Terry) — GENERAL export colour-fidelity fix. The old OSR (offscreen:true) export window
+// renders through a DIFFERENT compositing path than the on-screen editor, so EVERY semi-transparent
+// effect (bg glow/blur circles, scrims over photos, blend modes, shadows…) could bake differently —
+// Terry: "I don't want to test each and every effect". Fix the CLASS, not the effect: render the
+// export in a REAL GPU-composited window (same renderer as the editor, so every current and future
+// effect matches by construction), parked far off-screen (skipTaskbar, non-focusable, shown
+// inactive — the user never sees it; window occlusion throttling is already disabled app-wide).
+// Returns null when the OS clamps the window below the export size — caller falls back to OSR.
+async function captureCollageExportLiveGpu(snapshot: string, W: number, H: number, transparent: boolean): Promise<Buffer | null> {
+  const win = new BrowserWindow({
+    show: false, x: -32000 - W, y: 0, width: W, height: H, useContentSize: true,
+    frame: false, skipTaskbar: true, focusable: false, enableLargerThanScreen: true,
+    ...(transparent ? { transparent: true, backgroundColor: '#00000000' } : {}),
+    webPreferences: { contextIsolation: true, nodeIntegration: false, backgroundThrottling: false, preload: path.join(__dirname, 'preload.js') },
+  });
+  try {
+    try { win.setContentSize(W, H); } catch { /* noop */ }
+    win.showInactive();                                  // must be SHOWN to paint (hidden windows don't)
+    try { win.setPosition(-32000 - W, 0); } catch { /* noop */ }   // keep parked off-screen after show
+    const viewerHtml = path.join(__dirname, '../dist/public/viewer.html');
+    await win.loadFile(viewerHtml, { query: { collageExport: '1' } });
+    try { win.setContentSize(W, H); } catch { /* noop */ }
+    const cs = win.getContentSize();
+    if (!cs || cs[0] < W - 2 || cs[1] < H - 2) {
+      log.warn(`[collage] live-gpu export window clamped to ${cs && cs[0]}x${cs && cs[1]} (need ${W}x${H}) — falling back to OSR`);
+      return null;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const rect: any = await win.webContents.executeJavaScript(`window.__collageExportRender(${JSON.stringify({ snapshot, w: W, h: H })})`);
+    if (!rect || rect.error) throw new Error('live-gpu export render failed: ' + (rect && rect.error ? rect.error : 'no rect'));
+    if (rect.dbg) log.info(`[collage] wysiwyg render dbg (live-gpu): ${JSON.stringify(rect.dbg)}`);
+    await new Promise((r) => setTimeout(r, 350));         // let the final frame present
+    const img = await win.webContents.capturePage();
+    const sz = img.getSize();
+    if (sz.width < W - 2 || sz.height < H - 2) {
+      log.warn(`[collage] live-gpu capture came back ${sz.width}x${sz.height} (need ${W}x${H}) — falling back to OSR`);
+      return null;
+    }
+    const buf = img.toPNG();
+    return (buf && buf.length > 4000) ? buf : null;
+  } finally {
+    try { win.destroy(); } catch { /* noop */ }
+  }
+}
 async function captureCollageExport(snapshot: string, w: number, h: number, transparent = false): Promise<Buffer> {
   // v3.0 round 541 (Terry) — width ceiling 8000 → 11000 so a full 10-page carousel
   // (10×1080 = 10800 wide) can render WYSIWYG; offscreen windows aren't screen-clamped.
   const W = Math.max(16, Math.min(11000, Math.round(w || 1080)));
   const H = Math.max(16, Math.min(8000, Math.round(h || 1350)));
+  // v3.0.3 (Terry) — PRIMARY: the live-GPU window (same compositor as the editor → every effect
+  // matches). The OSR window below stays as the automatic fallback (e.g. if the OS clamps the size).
+  try {
+    const liveBuf = await captureCollageExportLiveGpu(snapshot, W, H, transparent);
+    if (liveBuf) return liveBuf;
+  } catch (liveErr) {
+    log.warn(`[collage] live-gpu export failed (${(liveErr as Error).message}) — falling back to OSR`);
+  }
   // OFFSCREEN rendering: the page renders to a bitmap with no visible window (no flash), and the
   // 'paint' event delivers full-window frames. (capturePage on a hidden / opacity-0 window came back
   // blank — Chromium doesn't paint an invisible window; offscreen always produces frames.) The window
