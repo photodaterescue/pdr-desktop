@@ -2782,6 +2782,23 @@
     .edge-swatch.active { border-color: #FEC242; box-shadow: 0 0 0 2px #FEC242, inset 0 0 0 1px rgba(0,0,0,0.3); }
     .edge-color-head { font-size: 11px; color: #99a; text-transform: uppercase; letter-spacing: 0.04em; margin: 12px 0 6px; }
     #edge-color-inline.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
+    /* v3.0.3 (Terry) — the Dividers colour palette reuses renderTextColorPalette (same as Text / Frame /
+       Glow & shadow). Give its host the SAME layout as #collage-text-palette: column stack + 8-col swatch
+       grid + current-colour / anchor / empty-slot styling, so it reads identically to the Text palette. */
+    #divider-swatches.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
+    #divider-swatches .frame-row { margin: 0; }
+    #divider-swatches .frame-favrow:empty { display: none; }
+    #divider-swatches .frame-toprow,
+    #divider-swatches .frame-favrow,
+    #divider-swatches .frame-coll-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center; align-items: center; }
+    #divider-swatches .frame-current { display: flex; align-items: center; gap: 8px; padding: 1px 2px 7px; margin-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    #divider-swatches .frame-current-sw { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.28); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
+    #divider-swatches .frame-current-sw.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 8px 8px !important; }
+    #divider-swatches .frame-current-name { font-size: 12px; font-weight: 600; color: #e8e3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #divider-swatches .frame-swatch.frame-anchor { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
+    #divider-swatches .frame-swatch.frame-anchor.active { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5), 0 0 0 2px #FEC242; }
+    #divider-swatches .frame-swatch.frame-slot-empty { position: relative; background: transparent !important; border: 1.5px dashed rgba(255,255,255,0.28); color: #8f88b5; font-size: 10.5px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; }
+    #divider-swatches .frame-swatch.frame-slot-empty:hover { border-color: rgba(254,194,66,0.75); color: #ffd778; }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -3473,6 +3490,17 @@
        smaller floating buttons do not actually work"). */
     #collage-text-topbar { position: absolute; top: 10px; left: 50%; transform: translateX(-50%); z-index: 40; display: none; pointer-events: auto; }
     #collage-chrome .ch-toolbar[data-text-tb] { pointer-events: auto; }
+    /* v3.0.3 (Terry #10 — proper fix) — the TEXT/EMOJI ROTATE handle is REPARENTED into
+       #collage-chrome (stage level, un-clipped — see renderTextLayer) so a box at the canvas
+       edge doesn't get its handle clipped by #collage-canvas overflow:hidden, exactly like a
+       photo tile's rotate handle. positionTextRotHandle_ sets left/top to the handle CENTRE in
+       stage px each frame; translate(-50%,-50%) centres it there and the in-canvas anchors
+       (left:50%/100%, the base -12px margin) are neutralised. position:absolute is restated
+       here because the .collage-text .ch rule that supplied it no longer matches once reparented.
+       Fixed screen size (no --ch-inv — stage level is zoom-independent) + the gold collage accent;
+       pointer-events re-enabled (the chrome container is a passthrough overlay). */
+    #collage-chrome .ch-rotate[data-text-rot] { position: absolute; left: 0; top: 0; margin: 0; width: 20px; height: 20px; transform: translate(-50%, -50%); pointer-events: auto; z-index: 30; border-color: #FEC242; }
+    #collage-chrome .ch-rotate[data-text-rot] svg { width: 14px; height: 14px; stroke: #5a4a12; }
     /* v3.1 (Terry SS1) — the top-centre bar wears the AI gradient outline (the #8b5cf6→#d946ef
        violet→fuchsia pair the AI accents use) via the padding-box/border-box dual background,
        plus "a little bit of lift on the underside": a deeper downward shadow + a soft violet cast. */
@@ -4175,6 +4203,16 @@
     body.collage-mode.collage-emoji-target #tile-bgremove-section,
     body.collage-mode.collage-emoji-target #enhance-frame-collapse,
     body.collage-mode.collage-emoji-target #collage-treatments-block { display: none !important; }
+    /* v3.0.3 (Terry) — a selected DIVIDER is a photo-less line: its whole look (colour / thickness /
+       rounded ends / Fade) lives in the Dividers section, and Glow & shadow adds depth. Hide every
+       photo-only appearance section so ONLY those two apply ("it should all just be controlled by the
+       Dividers section"). !important beats the #enhance-fx / #tile-transform-row [open] display rules. */
+    body.collage-mode.collage-divider-selected #enhance-looks-collapse,
+    body.collage-mode.collage-divider-selected #enhance-fx,
+    body.collage-mode.collage-divider-selected #enhance-levels,
+    body.collage-mode.collage-divider-selected #tile-transform-row,
+    body.collage-mode.collage-divider-selected #tile-bgremove-section,
+    body.collage-mode.collage-divider-selected #enhance-frame-collapse { display: none !important; }
     /* Controls that only make sense inside a collage (e.g. per-photo
        Opacity over the collage background). */
     .enhance-collage-only { display: none; }
@@ -5068,18 +5106,11 @@
             </button>
           </div>
           <div id="divider-controls" style="display:none">
-            <div class="frame-palette" id="divider-swatches" style="margin-top:8px">
-              <button class="frame-add" id="divider-custom-add" type="button" data-pdr-tooltip="Pick a custom color">
-                <span class="frame-add-plus">+</span>
-              </button>
-              <input type="color" id="divider-custom" value="#FEC242" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-              <button class="frame-swatch active" type="button" data-color="#FEC242" style="background:#FEC242" data-pdr-tooltip="Gold"></button>
-              <button class="frame-swatch" type="button" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
-              <button class="frame-swatch" type="button" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
-              <button class="frame-swatch" type="button" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
-              <button class="frame-swatch" type="button" data-color="#A99CFF" style="background:#A99CFF" data-pdr-tooltip="Lavender"></button>
-              <button class="frame-swatch" type="button" data-color="#D946EF" style="background:#D946EF" data-pdr-tooltip="Fuchsia"></button>
-            </div>
+            <!-- v3.0.3 (Terry) — the Dividers colour palette is the SAME shared component as Text /
+                 Frame / Glow & shadow (swatch grid + PDR/NEON… PALETTES collections). refreshDividerControls()
+                 renders it into this host via renderTextColorPalette(); picking sets collageSelected.dividerColor
+                 and re-renders. -->
+            <div class="frame-palette" id="divider-swatches" style="margin-top:8px"></div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="slider-divider-thick" data-pdr-tooltip="How thick the divider line is, in pixels of the exported page">Thickness</label><span class="enhance-val" id="val-divider-thick">8 px</span></div>
               <input class="enhance-slider" id="slider-divider-thick" type="range" min="1" max="60" step="1" value="8">
@@ -6661,9 +6692,9 @@
       // orphaned bars, ever. Scoped to [data-text-tb] / .ch-tb-topstrip so the photo
       // overlay bar (same .ch-toolbar class) is untouched.
       try {
-        collageChromeEl.querySelectorAll('.ch-toolbar[data-text-tb], .ch-tb-topstrip').forEach((n) => {
+        collageChromeEl.querySelectorAll('.ch-toolbar[data-text-tb], .ch-tb-topstrip, [data-text-rot]').forEach((n) => {
           if (n.dataset && n.dataset.tileStrip) return;   // v3.1 (Terry) — the PHOTO-TILE strip is a singleton owned by the tile chrome, not a text layer — never sweep it
-          const owned = collageTexts.some((t) => t && (t.tbarEl === n || t.topStripEl === n));
+          const owned = collageTexts.some((t) => t && (t.tbarEl === n || t.topStripEl === n || t.rotEl === n));   // v3.0.3 (Terry #10) — the stage-level rotate handle is swept the same way
           if (!owned) { try { n.remove(); } catch (_) {} }
         });
       } catch (_) {}
@@ -6675,7 +6706,7 @@
         const on = !!(L === sel && L.el && L.el.classList.contains('selected') && st);
         // v3.1 (Terry SS2) — the layer's TOP-CENTRE strip shows only while selected.
         if (L.topStripEl) { L.topStripEl.style.display = on ? 'inline-flex' : 'none'; }
-        try { clampTextRotHandle_(L, on, st); } catch (_) {}   // v3.0.3 (Terry #10) — keep the rotate handle reachable at the canvas edge
+        try { positionTextRotHandle_(L, on, st); } catch (_) {}   // v3.0.3 (Terry #10 — proper fix) — place the stage-level rotate handle; un-clipped past the canvas edge
         if (!L.tbarEl) continue;
         if (!on) { L.tbarEl.style.display = 'none'; continue; }
         const r = L.el.getBoundingClientRect();
@@ -6689,40 +6720,38 @@
       }
       updateCollageTopbarVis_();   // v3.1 (Terry) — the container now also hosts the PHOTO-TILE strip; show it when EITHER kind of strip is on
     }
-    // v3.0.3 (Terry #10) — keep the TEXT/EMOJI ROTATE handle reachable at the canvas edge.
-    // Unlike photo tiles (stage-level #collage-chrome-box), the text selection chrome is
-    // IN-CANVAS (a .collage-text child) and #collage-canvas is overflow:hidden — so a box
-    // at/past the canvas edge had its rotate handle (text: below-centre; emoji: right-
-    // middle) CLIPPED and ungrabbable. Same idea as the toolbar clamp: measure the
-    // handle's natural SCREEN rect, and if it pokes past the visible canvas∩stage box,
-    // shift it back inside with a local translate. The screen→local conversion un-rotates
-    // by the layer angle (the handle rides the ROTATED wrapper) and divides by the view
-    // zoom (the canvas transform scales local px by collageUserZoom), so the clamp is
-    // exact at any rotation + zoom; resets to '' whenever no clamp is needed. Runs from
-    // positionTextToolbarInView (every render / drag step / zoom-pan settle). Safe to
-    // move the handle because startTextRotate's grab is DELTA-anchored (no jump).
-    function clampTextRotHandle_(L, on, st) {
+    // v3.0.3 (Terry #10 — proper fix) — position the TEXT/EMOJI ROTATE handle at STAGE
+    // level (it's reparented into #collage-chrome; see renderTextLayer) so it escapes
+    // #collage-canvas's overflow:hidden and hangs into the dark margin at the canvas edge,
+    // exactly like a photo tile's rotate handle. Geometry mirrors positionSelectionChrome:
+    // the box CENTRE is (xFrac,yFrac) of the LIVE canvas rect (== startTextRotate's pivot),
+    // the rest offset is measured off the box's on-screen half-extent, then rotated by the
+    // layer angle — so the handle keeps its rest bearing (text: below-centre; emoji: right-
+    // middle) at ANY rotation/zoom/pan and startTextRotate's absolute map stays jump-free.
+    // Hidden when the layer isn't the (unlocked) selection. Runs from positionTextToolbarInView
+    // (every render / drag step / zoom-pan settle). Sets left/top only — the CSS rule centres
+    // it with translate(-50%,-50%); no inline transform, so nothing fights the centring.
+    function positionTextRotHandle_(L, on, st) {
       const h = L.rotEl;
       if (!h) return;
-      if (!on || !st || !collageCanvasEl) { if (h.style.transform) h.style.transform = ''; return; }
-      if (h.style.transform) h.style.transform = '';   // measure from the NATURAL (CSS) spot
-      const hr = h.getBoundingClientRect();
-      if (!hr.width || !hr.height) return;   // hidden (e.g. locked layer) — nothing to clamp
+      if (!on || L.locked || !st || !collageCanvasEl || !L.el) { h.style.display = 'none'; return; }
       const cr = collageCanvasEl.getBoundingClientRect();
-      const pad = 3;   // small breathing gap off the clip edge
-      const bL = Math.max(cr.left, st.left) + pad, bR = Math.min(cr.right, st.right) - pad;
-      const bT = Math.max(cr.top, st.top) + pad, bB = Math.min(cr.bottom, st.bottom) - pad;
-      if (bR - bL < hr.width || bB - bT < hr.height) return;   // visible box too small — leave it
-      let dx = 0, dy = 0;
-      if (hr.left < bL) dx = bL - hr.left; else if (hr.right > bR) dx = bR - hr.right;
-      if (hr.top < bT) dy = bT - hr.top; else if (hr.bottom > bB) dy = bB - hr.bottom;
-      if (!dx && !dy) return;
-      // Screen-px delta → the handle's LOCAL px: un-rotate by the layer angle, un-scale by zoom.
-      const radNeg = -((L.rot || 0) * Math.PI / 180);
+      if (!cr.width || !cr.height) { h.style.display = 'none'; return; }
       const z = Math.max(0.01, collageUserZoom);
-      const lx = (dx * Math.cos(radNeg) - dy * Math.sin(radNeg)) / z;
-      const ly = (dx * Math.sin(radNeg) + dy * Math.cos(radNeg)) / z;
-      h.style.transform = 'translate(' + lx.toFixed(2) + 'px, ' + ly.toFixed(2) + 'px)';
+      const cx = cr.left + (L.xFrac || 0) * cr.width;    // box centre, screen px (== startTextRotate)
+      const cy = cr.top + (L.yFrac || 0) * cr.height;
+      const halfW = (L.el.offsetWidth * z) / 2, halfH = (L.el.offsetHeight * z) / 2;
+      // Rest offset off the box, in screen px, matching the in-canvas CSS rest spots:
+      //   TEXT  → below the bottom edge, centred  (16px margin + 10px half-handle = 26)
+      //   EMOJI → right of the right edge, centred (14px margin + 10px half-handle = 24)
+      const ox = L.isEmoji ? (halfW + 24) : 0;
+      const oy = L.isEmoji ? 0 : (halfH + 26);
+      const rad = (L.rot || 0) * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+      const hx = cx + (ox * cos - oy * sin);   // rotate the rest offset by the layer angle (CSS-clockwise, y-down)
+      const hy = cy + (ox * sin + oy * cos);
+      h.style.display = '';                     // base .ch-rotate is display:flex → SVG stays centred
+      h.style.left = (hx - st.left) + 'px';
+      h.style.top = (hy - st.top) + 'px';
     }
     // v3.1 (Terry) — ONE place decides whether the top-centre bar CONTAINER shows:
     // any visible text/emoji strip OR the shared photo-tile strip. Called by both
@@ -13371,8 +13400,15 @@
         el.addEventListener('dblclick', (e) => { e.preventDefault(); e.stopPropagation(); selectText(layer); if (layer.isEmoji || layer.locked) return; enterTextEdit(layer, false, { x: e.clientX, y: e.clientY }); });   // v2.1 round 215 (Terry) — pass click coords so the caret lands where you double-clicked, not at end-of-line; v2.1 round 219 (Terry) — emoji layers have no text to edit, so double-click just selects (no contentEditable); v2.1 round 221 (Terry) — a LOCKED text layer is frozen, so double-click just selects (no edit)
         // v2.1 round 221 (Terry) — append the rotate + the full 8-handle resize set
         // + the floating toolbar (was just tRot + a single tRes pre-221).
-        el.appendChild(tRot);
-        layer.rotEl = tRot;   // v3.0.3 (Terry #10) — clampTextRotHandle_ keeps this handle inside the visible canvas∩stage box
+        // v3.0.3 (Terry #10 — proper fix) — the ROTATE handle is REPARENTED into #collage-chrome
+        // (stage level, un-clipped), exactly like the floating toolbar below: #collage-canvas is
+        // overflow:hidden, so a handle on a box AT the canvas edge was CLIPPED + ungrabbable.
+        // positionTextRotHandle_ places it each frame at its rest offset off the (rotated) box in
+        // STAGE px, so it hangs into the dark margin and stays grabbable — like a photo tile's.
+        tRot.dataset.textRot = '1';   // marks it for the stage-level CSS + the self-healing sweep
+        if (collageChromeEl) { collageChromeEl.appendChild(tRot); }
+        else { el.appendChild(tRot); }   // safety net if the stage chrome container is missing
+        layer.rotEl = tRot;
         el.appendChild(tResTL); el.appendChild(tResTR); el.appendChild(tResBL); el.appendChild(tResBR);
         el.appendChild(tResL); el.appendChild(tResR); el.appendChild(tResT); el.appendChild(tResB);
         // v3.1 (Terry SS1/SS2) — the toolbar lives at STAGE level (#collage-chrome, un-clipped)
@@ -15024,6 +15060,8 @@
       layer.tbarEl = null;
       if (layer.topStripEl && layer.topStripEl.parentNode) layer.topStripEl.parentNode.removeChild(layer.topStripEl);   // v3.1 (Terry SS2) — and its top-bar strip
       layer.topStripEl = null;
+      if (layer.rotEl && layer.rotEl.parentNode) layer.rotEl.parentNode.removeChild(layer.rotEl);   // v3.0.3 (Terry #10) — the stage-level rotate handle goes with the layer too
+      layer.rotEl = null;
       if (selectedText === layer) selectedText = null;
       syncTextControls();
       commitCollageChange();
@@ -15223,10 +15261,12 @@
       // v2.1 round 221 (Terry) — locked layer: select but don't drag (mirror the
       // tile lock in startItemDrag). The Lock/Dup/Remove toolbar stays clickable.
       if (layer && layer.locked) { selectText(layer); return; }
-      beginCollageChange();
       selectText(layer);
       // Bring this layer to the front of the text stack.
       if (!layer.lockLayer) layer.z = collageTexts.reduce((m, t) => Math.max(m, t.z || 0), 0) + 1;   // v3.1 (Terry) — Lock layer: a grab no longer raises z (mirrors the photo tiles' round-327 rule)
+      // BUG A fix (Terry) — capture the undo baseline AFTER selectText + the z-bump, so a pure click
+      // (which only changes the selection [selTextId] and front-bumps z) is NOT recorded as an edit.
+      beginCollageChange();
       // v2.1 round 253 (Terry) — scaled rect (not clientWidth) for the screen→fraction
       // conversion, so text tracks the cursor 1:1 under wheel zoom (mirrors startItemDrag).
       const _tRect = collageCanvasEl.getBoundingClientRect();
@@ -15239,7 +15279,10 @@
       let yLock = null;
       let xLock = null;   // v3.0.3 (Terry) — Ctrl = vertical-only path for text/emoji too
       let moveRaf_ = null, movePending_ = null;   // v3.0.3 (Terry: mid-drag lag) — coalesce pointermoves to one per frame
+      let tMoved = false;   // BUG B fix (Terry) — drag dead-zone: has the pointer crossed the click-vs-drag threshold yet?
       const doMoveInner = (ev) => {
+        if (!tMoved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;   // BUG B fix (Terry) — a click (sub-4px jitter) must leave the text EXACTLY where it was; no move until a real drag
+        tMoved = true;
         if (ev.shiftKey) { if (yLock === null) yLock = layer.yFrac; }
         else { yLock = null; }
         if (ev.ctrlKey && !cornerGlideHeld) { if (xLock === null) xLock = layer.xFrac; }
@@ -15521,16 +15564,12 @@
       const rect = collageCanvasEl.getBoundingClientRect();
       const centerX = rect.left + (layer.xFrac || 0) * rect.width;
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
-      // v3.0.3 (Terry #10) — DELTA grab (was absolute: deg = ang − rest-offset, r227).
-      // clampTextRotHandle_ can shift the handle OFF its rest bearing when the box sits
-      // at the canvas edge, so the absolute map would make the text JUMP on grab.
-      // Anchoring on the pointer's own start bearing (deg = startRot + (ang − ang0))
-      // is 1:1 with no jump from ANY grab point — clamped or not, text or emoji.
-      const ang0 = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
-      const rot0 = layer.rot || 0;
       const move = (ev) => {
         const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
-        let deg = rot0 + (ang - ang0);
+        // v2.1 round 227 (Terry) — the handle sits at its rest bearing (emoji 3 o'clock ⇒ 0°;
+        // text 6 o'clock ⇒ 90°), now GUARANTEED because positionTextRotHandle_ places it there
+        // at stage level, so the absolute map is jump-free at any grab point again.
+        let deg = ang - (layer.isEmoji ? 0 : 90);
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         layer.rot = deg;
         renderTextLayer(layer);
@@ -15874,6 +15913,7 @@
       collageSelected = it || null;
       if (it && !it.isBg && it.el) it.el.classList.add('selected');
       try { refreshDividerControls(); } catch (_) {}   // v3.0.3 (Terry) — the Dividers panel controls bind to the selected divider (hidden otherwise)
+      try { document.body.classList.toggle('collage-divider-selected', !!(it && it.divider)); } catch (_) {}   // v3.0.3 (Terry) — a selected divider hides the photo-only sections (CSS); leaves Dividers + Glow & shadow
       // Keep the multi-select set in sync with a plain single selection (a real
       // tile → [it]; background/null → []). Bulk entry points (marquee /
       // Ctrl+click / Ctrl+A) overwrite this afterwards.
@@ -15903,6 +15943,7 @@
       // wins over setLooksSubcatActive's bare open. (selectText handles text/emoji.)
       try {
         if (it && it.isBg) applyContextualSections('background');
+        else if (it && it.divider) applyContextualSections('divider');   // v3.0.3 (Terry) — a divider opens the Dividers section, not Looks
         else if (it) applyContextualSections('photo');
         else applyContextualSections('none');
       } catch (_) {}
@@ -16404,10 +16445,8 @@
       { group: 'Line up to other items', items: [
         { key: 'objEdges', name: 'Another item’s edges' },
         { key: 'objCentre', name: 'Another item’s centre' },
-        { key: 'alignText', name: 'Line up to text & captions' },
       ] },
       { group: 'Smart alignments', items: [
-        { key: 'mirror', name: 'Mirror / symmetry' },
         { key: 'crossPage', name: 'Cross-page “same spot”' },
         { key: 'equalSpacing', name: 'Equal spacing / centre-between' },
         { key: 'cornerEqual', name: 'Corner-equal (hold Ctrl+E to glide)' },
@@ -16421,14 +16460,11 @@
     let collageMeasureRules = {};
     function defaultMeasureRules() {
       const o = {}; MEASURE_RULE_KEYS.forEach(function (k) { o[k] = true; });
-      // v3.0.3 (Terry) — MIRROR defaults OFF: twice its lone green (a margin coincidentally equal to
-      // some other item's margin — the "green 41", then the green line to the canvas top) read as
-      // senseless noise. The rule stays available in the panel for whoever wants it; a saved default
-      // overrides this as usual. (Every other rule stays ON by default per Terry's spec.)
+      // v3.0.3 (Terry) — MIRROR + "Line up to text & captions" were REMOVED from the Measurement-rules
+      // panel (Terry SS3: "just noise"). Their keys are kept here FORCED OFF so ruleOn('mirror') /
+      // ruleOn('alignText') still resolve false everywhere they're read — the features are simply no
+      // longer user-toggleable. (Emoji logos/stickers still always align regardless of alignText.)
       o.mirror = false;
-      // v3.0.3 (Terry) — "Line up to text & captions" defaults OFF too: a caption's edge grabbing a
-      // photo/logo drag read as alignment to something "seemingly not related". Flip it on in the
-      // panel for deliberate text layout; emoji layers (logos/stickers) always align regardless.
       o.alignText = false;
       return o;
     }
@@ -16701,7 +16737,6 @@
       // v2.1 round 286 Tier 2 (Terry) — Ctrl/Cmd+click toggles this tile in the
       // multi-selection (no drag begins).
       if ((e.ctrlKey || e.metaKey) && !it.isBg) { toggleItemInSelection(it); return; }
-      beginCollageChange();
       // v2.1 round 332 (Terry) — clicking a GROUPED tile selects its whole group first, so the group
       // then moves/edits as one (Canva). Gated on groupId → ungrouped tiles are completely unaffected.
       if (it.groupId && !(collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)) {
@@ -16715,6 +16750,10 @@
         : null;
       if (!dragGroup) selectCollageItem(it);
       bringFront(it);
+      // BUG A fix (Terry) — capture the undo baseline AFTER select + bringFront, so a pure click's
+      // selection-only z-bump is NOT recorded as an edit. A real drag still changes xFrac/yFrac below,
+      // so commitCollageChange still pushes it.
+      beginCollageChange();
       // v2.1 round 253 (Terry) — use the SCALED rect (getBoundingClientRect, which
       // includes the user-zoom transform) for the screen-delta→fraction conversion, so
       // a tile tracks the cursor 1:1 at any zoom. (clientWidth is the un-scaled layout
@@ -16734,6 +16773,11 @@
       let dragMoved = false;   // v2.1 round 286 Tier 2 — track real drag vs plain click (group case)
       let moveRaf_ = null, movePending_ = null;   // v3.0.3 (Terry: mid-drag lag) — coalesce pointermoves to one per frame
       const doMoveInner = (ev) => {
+        // BUG B fix (Terry) — drag dead-zone (single + group tiles): a click that never crosses ~4px
+        // must NOT shift the tile a pixel. startX/startY = the pointerdown origin; the group branch's
+        // own 4px check below is now redundant but harmless.
+        if (!dragMoved && Math.hypot(ev.clientX - startX, ev.clientY - startY) < 4) return;
+        dragMoved = true;
         // Capture / release the Y lock on the Shift up→down / down→up transitions.
         if (ev.shiftKey) { if (yLock === null) yLock = it.yFrac; }
         else { yLock = null; }
@@ -16979,9 +17023,9 @@
       // Locked tile: select but don't resize.
       if (it && it.locked) { selectCollageItem(it); return; }
       corner = corner || 'br';
-      beginCollageChange();
       selectCollageItem(it);
       bringFront(it);
+      beginCollageChange();   // BUG A fix (Terry) — snapshot AFTER select + bringFront (exclude the selection-only z-bump)
       const rect = collageCanvasEl.getBoundingClientRect();
       const cw = rect.width, ch = rect.height;
       const ihFrac0 = itemHeightFrac(it);
@@ -17077,7 +17121,6 @@
       e.preventDefault(); e.stopPropagation();
       // v2.1 round 203 (Terry) — locked tile: select but don't rotate.
       if (it && it.locked) { selectCollageItem(it); return; }
-      beginCollageChange();
       // v2.1 round 292 (Terry) — rotating a member of a multi-selection rotates the WHOLE
       // group by the same delta (keep the selection rather than collapse to this tile).
       const rotGroup = (collageSelection && collageSelection.length > 1 && collageSelection.indexOf(it) >= 0)
@@ -17086,6 +17129,7 @@
       const rotStart0 = it.rot || 0;
       if (!rotGroup) selectCollageItem(it);
       bringFront(it);
+      beginCollageChange();   // BUG A fix (Terry) — snapshot AFTER select + bringFront (exclude the selection-only z-bump)
       const rect = collageCanvasEl.getBoundingClientRect();
       const cw = rect.width, ch = rect.height;
       const cxFrac = it.xFrac + it.wFrac / 2;
@@ -19929,7 +19973,7 @@
       // down the live els, recreate plain layer objects (renderAllTexts below
       // makes fresh els). selTextId restores the selection. Old snapshots in
       // the undo stack (pre-185) have no `texts` → treat as no text.
-      collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; });   // v3.1 (Terry) — stage-level toolbars + top-bar strips torn down with the els (they live OUTSIDE the canvas now)
+      collageTexts.forEach((t) => { if (t.el && t.el.parentNode) t.el.parentNode.removeChild(t.el); if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; if (t.rotEl && t.rotEl.parentNode) t.rotEl.parentNode.removeChild(t.rotEl); t.rotEl = null; });   // v3.1 (Terry) — stage-level toolbars + top-bar strips torn down with the els (they live OUTSIDE the canvas now); v3.0.3 (Terry #10) — the stage-level rotate handle too
       collageTexts = (Array.isArray(s.texts) ? s.texts : []).map((st) => ({ id: st.id, isEmoji: !!st.isEmoji, text: st.text, xFrac: st.xFrac, yFrac: st.yFrac, sizeFrac: st.sizeFrac, scaleX: (typeof st.scaleX === 'number') ? st.scaleX : 1, scaleY: (typeof st.scaleY === 'number') ? st.scaleY : 1, boxMode: (st.boxMode === 'fixed') ? 'fixed' : 'auto', boxWFrac: (typeof st.boxWFrac === 'number' && isFinite(st.boxWFrac) && st.boxWFrac > 0) ? st.boxWFrac : null, boxHFrac: (typeof st.boxHFrac === 'number' && isFinite(st.boxHFrac) && st.boxHFrac > 0) ? st.boxHFrac : null, font: st.font, color: st.color, align: st.align, rot: st.rot, z: st.z, bold: !!st.bold, italic: !!st.italic, underline: !!st.underline, strike: !!st.strike, fontWeight: (typeof st.fontWeight === 'number') ? st.fontWeight : null, lineHeight: (typeof st.lineHeight === 'number') ? st.lineHeight : 1.25, opacity: (typeof st.opacity === 'number') ? st.opacity : 100, letterCase: st.letterCase || 'none', effect: st.effect || 'none', effectStrength: (typeof st.effectStrength === 'number') ? st.effectStrength : 50, effectColor: st.effectColor || '', enh: (st.isEmoji && st.enh && typeof st.enh === 'object') ? st.enh : null, locked: !!st.locked, lockLayer: !!st.lockLayer, flipH: !!st.flipH, flipV: !!st.flipV, runs: (Array.isArray(st.runs) && st.runs.length) ? st.runs.map((r) => ({ t: String(r.t || ''), c: (r.c != null ? String(r.c) : undefined), b: (r.b != null ? !!r.b : undefined), i: (r.i != null ? !!r.i : undefined), u: (r.u != null ? !!r.u : undefined), s: (r.s != null ? !!r.s : undefined), f: (r.f != null ? String(r.f) : undefined), zm: (typeof r.zm === 'number' && isFinite(r.zm) && r.zm > 0) ? r.zm : undefined, e: (r.e != null ? String(r.e) : undefined), es: (typeof r.es === 'number' && isFinite(r.es)) ? r.es : undefined, ec: (r.ec != null ? String(r.ec) : undefined), w: (typeof r.w === 'number' && isFinite(r.w)) ? r.w : undefined })) : null, el: null, canvasEl: null }));   /* v3.1 (Terry SS1) — INLINE RUNS restore (old snapshots lack the key → null = single-style path) */   /* v3.1 (Terry) — restore an EMOJI's enh; old snapshots lack it → null = no effects */   // v2.1 round 187 (Terry) — canvasEl rebuilt by renderTextLayer; round 188 — carry style + effect (old snapshots default to none); round 191 — effectStrength (old snapshots default 50); round 193 — effectColor ('' = AUTO/derived; old snapshots default to AUTO); round 219 (Terry) — carry isEmoji (old snapshots default false); round 221 (Terry) — carry locked (old snapshots default false); round 222 (Terry) — carry scaleX/scaleY (old snapshots default 1 = unstretched); v3.1 (Terry) — carry strike/lineHeight/opacity/letterCase (old snapshots default: no strike, 1.25× spacing, opaque, no case); v3.1 (Terry) — carry boxMode/boxWFrac/boxHFrac (FIXED TEXT AREA; old snapshots default 'auto'/null, so undoing past a side-bar drag returns the layer to extend-right)
       const maxTid = collageTexts.reduce((m, t) => Math.max(m, t.id || 0), 0);
       if (maxTid >= collageTextSeq) collageTextSeq = maxTid + 1;
@@ -20993,8 +21037,12 @@
       const thickFrac = 0.006;   // default line weight ≈ 8 px on a 1350-high page
       const pgWFrac = (carouselMode && carouselPageCount > 1) ? (1 / carouselPageCount) : 1;
       let wFrac, aspect;
-      if (horiz) { wFrac = 0.6 * pgWFrac; aspect = (wFrac * gca) / thickFrac; }
-      else { wFrac = thickFrac / gca; aspect = (wFrac * gca) / 0.6; }
+      // v3.0.3 (Terry) — default length 3× longer than the first pass (0.6 was too short), clamped
+      // so a horizontal fills ~its page and a vertical fills most of the canvas height rather than spilling.
+      const hLenFrac = Math.min(0.96, 0.6 * 3);   // 0.96 of a page (carousel) / 0.96 of the canvas (single)
+      const vLenFrac = Math.min(0.92, 0.6 * 3);   // 0.92 of the canvas height
+      if (horiz) { wFrac = hLenFrac * pgWFrac; aspect = (wFrac * gca) / thickFrac; }
+      else { wFrac = thickFrac / gca; aspect = (wFrac * gca) / vLenFrac; }
       const it = {
         idx: -1, path: '', placeholder: false, divider: true, on: true,
         dividerColor: '#FEC242', dividerRadius: 1,
@@ -21005,8 +21053,10 @@
         bgRemovedPath: null, bgRemoveStrength: 50,
         enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
       };
-      // Land on the CURRENT page centre in a carousel (like a new text layer would), cascaded a touch.
-      try { placeCenter(it); } catch (_) {}
+      // Centre on the CURRENT page, but WITHOUT placeCenter's 0.42 width clamp — a divider is meant to
+      // be long (that clamp is what shrank it). Cascade each new one a touch so they don't stack exactly.
+      try { it.xFrac = (typeof carouselCenterXFrac === 'function' ? carouselCenterXFrac() : 0.5) - it.wFrac / 2; it.yFrac = 0.5 - itemHeightFrac(it) / 2; }
+      catch (_) { it.xFrac = 0.5 - it.wFrac / 2; it.yFrac = 0.45; }
       const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
       const off = (((n - 1) % 6)) * 0.02;
       it.xFrac = Math.max(0, Math.min(1 - it.wFrac, (it.xFrac || 0.2) + off));
@@ -21042,7 +21092,13 @@
         const fade = document.getElementById('slider-divider-fade'), fv = document.getElementById('val-divider-fade');
         if (fade) fade.value = String(Math.max(10, op)); if (fv) fv.textContent = op + '%';
         const sw = document.getElementById('divider-swatches');
-        if (sw) sw.querySelectorAll('.frame-swatch').forEach((b) => b.classList.toggle('active', (b.getAttribute('data-color') || '').toLowerCase() === String(it.dividerColor || '#FEC242').toLowerCase()));
+        // v3.0.3 (Terry) — render the SHARED colour palette (swatches + PALETTES) into the divider host,
+        // exactly like renderEdgeInline() does for Glow & shadow. Picking sets dividerColor + re-renders;
+        // renderTextColorPalette rings the active swatch itself, so no manual .active toggle here.
+        if (sw) renderTextColorPalette(sw,
+          function () { return String((collageSelected && collageSelected.dividerColor) || '#FEC242').toLowerCase(); },
+          function (hex) { const t = collageSelected; if (!t || !t.divider || !hex) return; t.dividerColor = hex; renderCollageItem(t); refreshDividerControls(); },
+          {});
       } catch (_) {}
     }
     (function wireDividerPanel() {
@@ -21051,19 +21107,9 @@
       if (addV) addV.addEventListener('click', () => addDividerToCollage('v'));
       // The Enhance panel's pointerdown→begin / pointerup→commit wrapper makes each change below ONE
       // undo step (same convention as Page outlines) — no per-handler begin/commit.
-      const sw = document.getElementById('divider-swatches');
-      if (sw) sw.addEventListener('click', (e) => {
-        const b = e.target && e.target.closest ? e.target.closest('.frame-swatch') : null;
-        if (!b) return;
-        const it = collageSelected; if (!it || !it.divider) return;
-        it.dividerColor = b.getAttribute('data-color') || '#FEC242';
-        renderCollageItem(it); refreshDividerControls();
-      });
-      const addBtn = document.getElementById('divider-custom-add'), inp = document.getElementById('divider-custom');
-      if (addBtn && inp) {
-        addBtn.addEventListener('click', () => { try { inp.click(); } catch (_) {} });
-        inp.addEventListener('input', () => { const it = collageSelected; if (!it || !it.divider) return; it.dividerColor = inp.value; renderCollageItem(it); refreshDividerControls(); });
-      }
+      // v3.0.3 (Terry) — colour picking is now owned by the shared palette rendered in
+      // refreshDividerControls() (renderTextColorPalette builds its own swatches, custom "+" and
+      // PALETTES, and its onPick sets dividerColor + re-renders). No per-swatch wiring needed here.
       const thick = document.getElementById('slider-divider-thick');
       if (thick) thick.addEventListener('input', () => {
         const it = collageSelected; if (!it || !it.divider) return;
@@ -21226,7 +21272,7 @@
       collageCanvasEl.innerHTML = '';
       // v2.1 round 185 (Text #1) — the innerHTML clear above also removed any
       // text els; null them so renderAllTexts (end of this fn) recreates them.
-      collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper. v3.1 (Terry) — the stage-level toolbar + top strip survive the canvas innerHTML wipe, so remove them explicitly or they orphan
+      collageTexts.forEach((t) => { t.el = null; t.canvasEl = null; if (t.tbarEl && t.tbarEl.parentNode) t.tbarEl.parentNode.removeChild(t.tbarEl); t.tbarEl = null; if (t.topStripEl && t.topStripEl.parentNode) t.topStripEl.parentNode.removeChild(t.topStripEl); t.topStripEl = null; if (t.rotEl && t.rotEl.parentNode) t.rotEl.parentNode.removeChild(t.rotEl); t.rotEl = null; });   // v2.1 round 187 (Terry) — canvasEl rebuilt with the wrapper. v3.1 (Terry) — the stage-level toolbar + top strip survive the canvas innerHTML wipe, so remove them explicitly or they orphan; v3.0.3 (Terry #10) — the stage-level rotate handle too
       // v2.1 round 206 (Terry) — the innerHTML clear also removed the snap-guide
       // overlay nodes; drop the cached refs so they're lazily recreated.
       collageSnapVEl = null; collageSnapHEl = null;
@@ -25210,7 +25256,7 @@
         try { collageStageEl.releasePointerCapture(collageMarquee.id); } catch (_) {}
         collageMarquee = null;
         if (collageMarqueeEl) collageMarqueeEl.style.display = 'none';
-        if (!moved) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); return; }   // plain click → deselect (existing behaviour)
+        if (!moved) { selectCollageItem(ensureCollageBgTile()); beginCollageChange(); return; }   // plain click → deselect (existing behaviour) — BUG A fix (Terry): snapshot AFTER deselect so a pure deselect is not an undo step
         const hits = collageItems.filter(it => it.on && !it.isBg && it.el).filter(it => {
           const r = it.el.getBoundingClientRect();
           return !(r.right < rb.l || r.left > rb.r || r.bottom < rb.t || r.top > rb.b);
@@ -25277,7 +25323,7 @@
         if (wasDrag) { try { applyCollageZoom(); } catch (_) {} }
         if (wasDrag) return;   // we panned — don't select/deselect on release
         if (noSelect) return;  // locked-tile pan: caller already selected it on press, a click changes nothing
-        if (onCanvas) { beginCollageChange(); selectCollageItem(ensureCollageBgTile()); }
+        if (onCanvas) { selectCollageItem(ensureCollageBgTile()); beginCollageChange(); }   // BUG A fix (Terry) — snapshot AFTER deselect so a pure deselect is not an undo step
         else { collapseAllSubcatsOnDeselect(); }
       };
       collageStageEl.addEventListener('pointerup', endCollagePan);
@@ -25328,6 +25374,44 @@
         const fx = (e.clientX - r.left) / r.width, fy = (e.clientY - r.top) / r.height;
         if (fx < -0.02 || fx > 1.02 || fy < -0.02 || fy > 1.02) return;
         lastCollageClickFrac = { x: Math.max(0, Math.min(1, fx)), y: Math.max(0, Math.min(1, fy)) };
+      }, true);
+
+      // v3.0.3 (Terry SS2) — DIVIDER GRAB RESOLVER. A divider is a razor-thin tile: when a larger
+      // tile's box overlaps it, that tile (higher in the z-stack, hit-tested first by the browser)
+      // swallowed the press and the divider became ungrabbable ("dominated" — sibling tiles never
+      // forward the event to each other). And even uncovered, a 2px line is a near-impossible pointer
+      // target. This CAPTURE-phase listener runs on the canvas BEFORE any tile's own bubble pointerdown:
+      // if the press lands inside a divider's thin band PLUS a ~10px grab slop (≈20px band around a 2px
+      // line), accounting for the tile's rotation and the live view zoom, we claim it for that divider
+      // (topmost by z on ties) and stopPropagation so the covering tile never selects. Clicks that miss
+      // every divider band fall straight through untouched — normal stacking / selection is unchanged.
+      // Chrome handles, toolbar buttons and text layers are excluded so they keep their own clicks.
+      collageCanvasEl.addEventListener('pointerdown', (e) => {
+        if (!collageMode || e.button !== 0 || collageSpaceHeld) return;
+        const tgt = e.target;
+        if (tgt && tgt.closest && (tgt.closest('.ch') || tgt.closest('button') || tgt.closest('.collage-text'))) return;
+        const cRect = collageCanvasEl.getBoundingClientRect();
+        if (!(cRect.width > 0 && cRect.height > 0)) return;
+        const scale = cRect.width / (collageCanvasEl.clientWidth || cRect.width);   // client px per layout px = live view zoom
+        const SLOP = 10;   // px of forgiveness each side of the thin axis → ~20px grab band around a 2px line
+        let best = null;
+        for (let i = 0; i < collageItems.length; i++) {
+          const it = collageItems[i];
+          if (!it || !it.divider || !it.on || !it.el) continue;
+          const eb = it.el.getBoundingClientRect();   // rotation is about the box centre → centre is exact
+          const cx = eb.left + eb.width / 2, cy = eb.top + eb.height / 2;
+          const hw = (parseFloat(it.el.style.width) || 0) * scale / 2;
+          const hh = (parseFloat(it.el.style.height) || 0) * scale / 2;
+          const ang = -(it.rot || 0) * Math.PI / 180;
+          const ddx = e.clientX - cx, ddy = e.clientY - cy;
+          const lx = ddx * Math.cos(ang) - ddy * Math.sin(ang);   // press point in the divider's un-rotated frame
+          const ly = ddx * Math.sin(ang) + ddy * Math.cos(ang);
+          if (Math.abs(lx) <= hw + SLOP && Math.abs(ly) <= hh + SLOP && (!best || (it.z || 0) > (best.z || 0))) best = it;
+        }
+        if (!best) return;
+        e.preventDefault(); e.stopPropagation();
+        if ((e.ctrlKey || e.metaKey) && !best.isBg) { toggleItemInSelection(best); return; }   // mirror the tile handler's Ctrl multi-select
+        startItemDrag(best, e);
       }, true);
 
       // ===== v3.1 (Terry) — COLLAGE SCROLLBARS. When the view is zoomed in enough that the canvas overflows
@@ -27038,6 +27122,7 @@
     function applyContextualSections(mode) {
       const byId = (id) => document.getElementById(id);
       if (mode === 'photo') focusSubcat(byId('enhance-looks-collapse'));
+      else if (mode === 'divider') focusSubcat(byId('collage-divider-collapse'));   // v3.0.3 (Terry) — a line opens ONLY the Dividers section
       else if (mode === 'text') focusSubcat(byId('collage-text-collapse'));
       else if (mode === 'background') focusSubcat(byId('collage-bg-collapse'));
       else focusSubcat(null);   // 'emoji' / 'none' → close + ungold all
@@ -28171,6 +28256,20 @@ function zoomTo(newZoom, centreX, centreY) {
             try {
               if (looksStrip && panel.classList.contains('open') && currentImageSrc() && currentImageSrc() !== looksStripSrc) buildLooksStrip();
             } catch (_) {}
+            return;
+          }
+          // v3.0.3 (Terry) — a DIVIDER is photo-less (imgEl === null), so the imgEl-gated tile write
+          // below never runs for it. Glow & shadow is the ONE photo section kept for a selected divider
+          // (see the collage-divider-selected CSS), so persist just its five edge effects (+ per-effect
+          // colours) into the divider's own enh and re-render — renderCollageItem → applyTileEdgeFx paints
+          // them on the fx holder. Colour / thickness / rounded ends / Fade (opacity) stay owned by the
+          // Dividers section, so we DON'T write state.opacity here (that would fight the Fade slider).
+          if (collageTile && collageTile.divider) {
+            if (collageTile.locked) { try { loadStateFromTile(collageTile); } catch (_) {} return; }
+            collageTile.enh = collageTile.enh || {};
+            collageTile.enh.glow = state.glow; collageTile.enh.dropShadow = state.dropShadow; collageTile.enh.lift = state.lift; collageTile.enh.neon = state.neon; collageTile.enh.outline = state.outline;
+            collageTile.enh.glowColor = state.glowColor; collageTile.enh.dropShadowColor = state.dropShadowColor; collageTile.enh.liftColor = state.liftColor; collageTile.enh.neonColor = state.neonColor; collageTile.enh.outlineColor = state.outlineColor;
+            renderCollageItem(collageTile);
             return;
           }
           // v2.1 round 203 (Terry) — APPEARANCE LOCK: a locked photo tile won't
@@ -30608,6 +30707,7 @@ function zoomTo(newZoom, centreX, centreY) {
           try { hideSelectionChrome(); } catch (_) {}                  // v2.1 round 266 (Terry) — Phase 4: drop the floating overlay on exit
           document.body.classList.remove('collage-no-tile');
           document.body.classList.remove('collage-bg-selected');
+          document.body.classList.remove('collage-divider-selected');   // v3.0.3 (Terry) — clear the divider panel state on mode exit
           if (resetBtn) resetBtn.textContent = 'Reset all';
         },
         // Point the panel at a tile, the background, or null (the "pick a
