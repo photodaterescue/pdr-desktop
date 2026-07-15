@@ -2728,6 +2728,20 @@
     }
     .collage-goto button:hover { background: rgba(254,194,66,0.9); border-color: #FEC242; color: #1a1a2e; }
     .collage-goto button svg { width: 15px; height: 15px; }
+    /* v3.0.3 (Terry) — live SAVE-STATE chip in the collage titlebar. The reopenable PROJECT
+       autosaves silently (autosaveCollageProject), so the user had "no clear-cut way of knowing
+       when it's been saved". Surface it next to the title: "Saving…" the instant a change is
+       pending, "All changes saved" once it lands (the Canva/Docs reassurance). Gated to the ACTIVE
+       editor with real content — hidden in the Viewer, on the welcome screen, and on a blank canvas.
+       Purely reflective; it never triggers a save. */
+    .collage-save-state { display: none; align-items: center; gap: 6px; margin-left: 10px; font-size: 11.5px; font-weight: 500; white-space: nowrap; -webkit-app-region: no-drag; user-select: none; }
+    .collage-save-state.on { display: inline-flex; }
+    .collage-save-state::before { content: ''; width: 7px; height: 7px; border-radius: 50%; flex: 0 0 auto; }
+    .collage-save-state[data-state="saved"] { color: #8fd0a3; }
+    .collage-save-state[data-state="saved"]::before { background: #4caf6f; box-shadow: 0 0 0 3px rgba(76,175,111,0.16); }
+    .collage-save-state[data-state="saving"] { color: #f0cd8a; }
+    .collage-save-state[data-state="saving"]::before { background: #FEC242; animation: collageSavePulse 1s ease-in-out infinite; }
+    @keyframes collageSavePulse { 0%,100% { opacity: 1; } 50% { opacity: 0.25; } }
     /* v2.1 round 348 (Terry) — Name-this-collage wizard (opt-in, reached by clicking the editor title). */
     .cnw-overlay { z-index: 200000; }   /* above the collage panel-toggle chevron (z 130000) so it can't poke through */
     .cnw-card { max-width: 460px; text-align: left; }
@@ -4524,6 +4538,9 @@
          pushed far right by flex:1 on the title alone. -->
     <div class="toolbar-title-wrap">
       <span class="toolbar-title" id="filename">PDR Viewer</span>
+      <!-- v3.0.3 (Terry) — live save-state chip: "Saving…" / "All changes saved" for the autosaved
+           project. Shown only in the collage editor with content (renderCollageSaveState_). -->
+      <span id="collage-save-state" class="collage-save-state" data-state="saved" aria-live="polite" data-pdr-tooltip="Your collage autosaves as you work — this shows when it's safely saved"></span>
       <!-- v3.0 round 543 (Terry) — collage boot: never show "PDR Viewer" in the title slot,
            not even for one frame; updateCollageTitle sets the real name once state loads. -->
       <script>try { if (document.documentElement.classList.contains('collage-boot')) document.getElementById('filename').textContent = 'Untitled collage'; } catch (e) {}</script>
@@ -18404,6 +18421,28 @@
         }
       } catch (_) {}
       try { updateCollageGoto(); } catch (_) {}
+      try { renderCollageSaveState_(); } catch (_) {}   // v3.0.3 (Terry) — keep the save-state chip in sync with mode / welcome / content
+    }
+    // v3.0.3 (Terry) — the live SAVE-STATE chip. The reopenable PROJECT autosaves silently, so the
+    // user had "no clear-cut way of knowing when it's been saved". This surfaces it beside the title:
+    // "Saving…" the moment a change schedules an autosave, "All changes saved" once it lands. Gated to
+    // the active editor holding real content (hidden in the Viewer, on the welcome screen, and on a
+    // blank canvas). Reflective only — it never kicks off a save.
+    let collageSaveState_ = 'saved';
+    function setCollageSaveState_(state) { collageSaveState_ = state; try { renderCollageSaveState_(); } catch (_) {} }
+    function renderCollageSaveState_() {
+      const el = document.getElementById('collage-save-state');
+      if (!el) return;
+      let show = false;
+      try {
+        show = (typeof collageMode !== 'undefined' && collageMode)
+            && !document.body.classList.contains('cws-open')
+            && collageProjectHasContent();
+      } catch (_) { show = false; }
+      el.classList.toggle('on', show);
+      if (!show) return;
+      el.setAttribute('data-state', collageSaveState_);
+      el.textContent = (collageSaveState_ === 'saving') ? 'Saving…' : 'All changes saved';
     }
     // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
     // hid the welcome screen, revealing the SAME collage underneath. Clears tiles / text / bg and starts
@@ -18730,6 +18769,7 @@
         const _sp2 = performance.now();
         if ((_sp2 - _sp0) > 80) { try { console.log('[asaveperf] serialize=' + Math.round(_sp1 - _sp0) + 'ms saveIpc=' + Math.round(_sp2 - _sp1) + 'ms'); } catch (_) {} }   // v3.0.3 TEMP (Terry ~4s freeze) — the un-timed autosave half
         if (res && res.success && res.id) currentCollageProjectId = res.id;
+        if (res && res.success) { try { setCollageSaveState_('saved'); } catch (_) {} }   // v3.0.3 (Terry) — autosave landed → "All changes saved"
         updateCollageTitle();   // v2.1 round 347 (Terry) — reflect the (now-defaulted) project name
       } catch (_) { /* autosave is best-effort — a failed save must NEVER interrupt editing */ }
     }
@@ -18738,6 +18778,7 @@
     function scheduleCollageAutosave() {
       if (collageMigratingThumbs) return;   // v3.1 (Terry) — no autosave scheduling during the thumbnail re-bake migration
       if (!collageMode) return;
+      try { setCollageSaveState_('saving'); } catch (_) {}   // v3.0.3 (Terry) — a change is pending → show "Saving…" until the debounced autosave lands
       if (collageAutosaveTimer) clearTimeout(collageAutosaveTimer);
       collageAutosaveTimer = setTimeout(() => { collageAutosaveTimer = null; autosaveCollageProject(); }, 1200);
     }
