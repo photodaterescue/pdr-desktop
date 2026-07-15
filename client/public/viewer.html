@@ -23370,6 +23370,13 @@
       // for large background photos needs naturalWidth>0, and the first layout pass above can run
       // before the freshly-restored <img>s finish decoding.
       try { renderAllCollage(); } catch (_) {}
+      // v3.0.3 (Terry) — PAGE OUTLINES export fix: renderAllCollage() does NOT rebuild the
+      // #carousel-guides overlay (that call lives in buildCollageItems() + editor handlers, none of
+      // which the export runs), so the page-outline / divider frames were absent from the WYSIWYG
+      // capture. Redraw them explicitly here — AFTER the final tile/text render at full export px —
+      // so the frames bake into the captured image like the editor (carouselMode + collagePageOutline
+      // are already restored above). Self-guards / no-ops for a single-collage export.
+      try { renderCarouselGuides(); } catch (_) {}
       // v3.0 (Terry 2026-07-05) — bake every cut-out tile's sharp glow at FULL export px + wait for the
       // <img>s to load, so capturePage sees the crisp silhouette outline (matches the editor + thumbnail).
       let _glowDbg = null;
