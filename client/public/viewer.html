@@ -9958,12 +9958,52 @@
         const halfRangeY = (c.b - c.t) * (1 - 1 / zoom) / 2;
         const visCenterX = ccx + Math.max(-1, Math.min(1, it.panX || 0)) * halfRangeX;
         const visCenterY = ccy + Math.max(-1, Math.min(1, it.panY || 0)) * halfRangeY;
-        it.imgEl.style.position = 'absolute';
-        it.imgEl.style.width = fullW + 'px';
-        it.imgEl.style.height = fullH + 'px';
-        it.imgEl.style.left = (innerW / 2 - visCenterX * fullW) + 'px';
-        it.imgEl.style.top = (innerH / 2 - visCenterY * fullH) + 'px';
-        it.imgEl.style.objectFit = 'fill';
+        // v3.0.3 (Terry #1) — EXPORT: a page-spanning background photo is shown by sizing its
+        // <img> far LARGER than the clip and offsetting it (overflow:hidden). That paints
+        // perfectly on-screen (the editor) but the offscreen export bake did NOT fully paint it:
+        // the exported page carried only the photo's top ~40% then bare gradient ("parts of the
+        // photo not saving"). Two independent causes stack: Chromium's GPU rasteriser under-fills
+        // a large composited layer (fixed app-wide by disabling GPU rasterisation for the bake),
+        // AND a hugely-oversized <img> still rasters short. So for a large photo in the export
+        // ONLY, paint the exact visible crop region into a BOX-SIZED <canvas> — an owned bitmap
+        // that rasters in full — instead of the oversized <img>. The clip carries the enhance
+        // filter + shape mask, which cascade onto the canvas, so it matches the editor exactly.
+        const _imgReady = it.imgEl.naturalWidth > 0 && it.imgEl.naturalHeight > 0;
+        const _bigDraw = (fullW > 1800 || fullH > 1800 || innerW > 1800 || innerH > 1800);
+        if (collageExportTarget && _imgReady && _bigDraw) {
+          const _nW = it.imgEl.naturalWidth, _nH = it.imgEl.naturalHeight;
+          const _chFrac = cropWH(it).ch;
+          let _sLf = visCenterX - (cropW / zoom) / 2, _sTf = visCenterY - (_chFrac / zoom) / 2;
+          const _sWf = cropW / zoom, _sHf = _chFrac / zoom;
+          _sLf = Math.max(0, Math.min(1 - _sWf, _sLf));
+          _sTf = Math.max(0, Math.min(1 - _sHf, _sTf));
+          const _cw2 = Math.max(1, Math.round(innerW)), _ch2 = Math.max(1, Math.round(innerH));
+          let _cv = it._expCanvas;
+          if (!_cv) { _cv = it._expCanvas = document.createElement('canvas'); _cv.className = 'collage-export-canvas'; }
+          if (_cv.parentNode !== it.clipEl) { try { it.clipEl.insertBefore(_cv, it.imgEl); } catch (_) { it.clipEl.appendChild(_cv); } }
+          if (_cv.width !== _cw2) _cv.width = _cw2;
+          if (_cv.height !== _ch2) _cv.height = _ch2;
+          _cv.style.position = 'absolute'; _cv.style.left = '0px'; _cv.style.top = '0px';
+          _cv.style.width = innerW + 'px'; _cv.style.height = innerH + 'px'; _cv.style.display = 'block';
+          const _cx = _cv.getContext('2d');
+          if (_cx) {
+            _cx.setTransform(1, 0, 0, 1, 0, 0); _cx.clearRect(0, 0, _cw2, _ch2);
+            const _fH = (it.enh && it.enh.flipH) ? -1 : 1, _fV = (it.enh && it.enh.flipV) ? -1 : 1;
+            if (_fH !== 1 || _fV !== 1) _cx.setTransform(_fH, 0, 0, _fV, _fH < 0 ? _cw2 : 0, _fV < 0 ? _ch2 : 0);
+            _cx.imageSmoothingEnabled = true; _cx.imageSmoothingQuality = 'high';
+            try { _cx.drawImage(it.imgEl, _sLf * _nW, _sTf * _nH, _sWf * _nW, _sHf * _nH, 0, 0, _cw2, _ch2); } catch (_) {}
+          }
+          it.imgEl.style.display = 'none';
+        } else {
+          if (it._expCanvas) it._expCanvas.style.display = 'none';
+          it.imgEl.style.display = '';
+          it.imgEl.style.position = 'absolute';
+          it.imgEl.style.width = fullW + 'px';
+          it.imgEl.style.height = fullH + 'px';
+          it.imgEl.style.left = (innerW / 2 - visCenterX * fullW) + 'px';
+          it.imgEl.style.top = (innerH / 2 - visCenterY * fullH) + 'px';
+          it.imgEl.style.objectFit = 'fill';
+        }
         // v2.1 round 164 (Terry) — curved corners + Blend feather, applied to
         // the clip (content area inside any frame). Same mask the bake uses, so
         // the preview matches the saved file.
@@ -23253,6 +23293,10 @@
       try { layoutCanvasSize(); } catch (_) {}
       try { applyCollageZoom(); } catch (_) {}
       try { await waitForCollageImages(); } catch (_) {}
+      // v3.0.3 (Terry #1) — re-render now the photos are DECODED: the export <canvas> raster path
+      // for large background photos needs naturalWidth>0, and the first layout pass above can run
+      // before the freshly-restored <img>s finish decoding.
+      try { renderAllCollage(); } catch (_) {}
       // v3.0 (Terry 2026-07-05) — bake every cut-out tile's sharp glow at FULL export px + wait for the
       // <img>s to load, so capturePage sees the crisp silhouette outline (matches the editor + thumbnail).
       let _glowDbg = null;
@@ -23274,7 +23318,7 @@
       try {
         _bgDbg = (collageItems || []).filter((o) => o && o.el && (o.bgPhoto || (o.wFrac || 0) >= 0.3)).map((o) => {
           const br = o.el.getBoundingClientRect();
-          return { z: o.z, bg: !!o.bgPhoto, cf: !!o.coverFill, ba: (o.boxAspect != null ? +(+o.boxAspect).toFixed(3) : null), asp: (o.aspect != null ? +(+o.aspect).toFixed(3) : null), w: +(+o.wFrac).toFixed(3), y: +(+o.yFrac).toFixed(3), crop: (o.crop ? [+(+o.crop.l).toFixed(2), +(+o.crop.t).toFixed(2), +(+o.crop.r).toFixed(2), +(+o.crop.b).toFixed(2)] : null), ea: (typeof effectiveAspect === 'function' ? +(+effectiveAspect(o)).toFixed(3) : null), boxHFrac: cr.height ? +(br.height / cr.height).toFixed(3) : null, boxTopFrac: cr.height ? +((br.top - cr.top) / cr.height).toFixed(3) : null, styleH: o.el.style.height, offH: o.el.offsetHeight, disp: (function(){try{return getComputedStyle(o.el).display}catch(_){return '?'}})(), inDom: (document.body ? document.body.contains(o.el) : null), img: (function(){try{var im=o.el.querySelector('img:not(.collage-cutout-glow)');return im?((im.complete?1:0)+'/'+im.naturalWidth+'/'+getComputedStyle(im).display):'noimg'}catch(_){return 'err'}})() };
+          return { z: o.z, bg: !!o.bgPhoto, cf: !!o.coverFill, ba: (o.boxAspect != null ? +(+o.boxAspect).toFixed(3) : null), asp: (o.aspect != null ? +(+o.aspect).toFixed(3) : null), w: +(+o.wFrac).toFixed(3), y: +(+o.yFrac).toFixed(3), crop: (o.crop ? [+(+o.crop.l).toFixed(2), +(+o.crop.t).toFixed(2), +(+o.crop.r).toFixed(2), +(+o.crop.b).toFixed(2)] : null), ea: (typeof effectiveAspect === 'function' ? +(+effectiveAspect(o)).toFixed(3) : null), boxHFrac: cr.height ? +(br.height / cr.height).toFixed(3) : null, boxTopFrac: cr.height ? +((br.top - cr.top) / cr.height).toFixed(3) : null, styleH: o.el.style.height, offH: o.el.offsetHeight, disp: (function(){try{return getComputedStyle(o.el).display}catch(_){return '?'}})(), inDom: (document.body ? document.body.contains(o.el) : null), img: (function(){try{var im=o.el.querySelector('img:not(.collage-cutout-glow)');var cvs=o.el.querySelector('canvas.collage-export-canvas');if(cvs)return 'canvas/'+cvs.offsetWidth+'x'+cvs.offsetHeight;return im?((im.complete?1:0)+'/'+im.naturalWidth+'/'+getComputedStyle(im).display):'noimg'}catch(_){return 'err'}})() };
         });
       } catch (_) { _bgDbg = null; }
       return { x: Math.round(cr.left), y: Math.round(cr.top), w: Math.round(cr.width), h: Math.round(cr.height),

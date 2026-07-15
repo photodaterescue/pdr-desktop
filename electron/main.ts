@@ -32,6 +32,18 @@ app.commandLine.appendSwitch('js-flags', '--max-old-space-size=4096');
 // restore instantly interactive. Paired with backgroundThrottling:false on the window (below).
 app.commandLine.appendSwitch('disable-features', 'CalculateNativeWinOcclusion');
 
+// v3.0.3 (Terry #1) — FIX "parts of a background photo not saving" in a carousel/collage export.
+// The export bakes the real DOM in an OFF-SCREEN window (captureCollageExport → viewer.html →
+// capturePage). Chromium's GPU rasteriser does NOT fully paint a LARGE composited layer in that
+// off-screen surface: a page-spanning background photo came out with only its top ~40% then bare
+// gradient below. Proven by a controlled size sweep (identical layout renders whole at a small
+// scale, clips above it) and by a direct toggle (the SAME export renders complete with GPU raster
+// off, clipped with it on). Forcing SOFTWARE rasterisation makes the off-screen bake paint the
+// whole photo. This disables GPU *rasterisation* only — GPU COMPOSITING (smooth canvas zoom/pan in
+// the editor) is untouched, and Chromium already software-rasters on many GPU/driver allowlists, so
+// the editor is unaffected; it only makes the export reliable. (GPU compositing scroll/zoom stays.)
+app.commandLine.appendSwitch('disable-gpu-rasterization');
+
 // Pin the app name BEFORE electron-log resolves its file path. In
 // production the packaged `productName` from package.json takes
 // effect automatically, but in development `npx electron` reports
