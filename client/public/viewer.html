@@ -10546,7 +10546,16 @@
       //   positive → neighbour gaps always show; page-edge gaps hide until near (within 15% of the
       //     page dimension) or snapped (green grX / lavender peX) — the Canva-style reveal.
       const NEG_FLOOR = -100;
-      const dispL = pxX(mLeft), dispR = pxX(mRight), dispT = pxY(mTop), dispB = pxY(mBot);
+      let dispL = pxX(mLeft), dispR = pxX(mRight), dispT = pxY(mTop), dispB = pxY(mBot);
+      // v3.0.3 (Terry) — AXIS-FILL green 0s: a translation drag-snap flushes only ONE edge per axis
+      // (computeDragSnap picks a single vertical + single horizontal guide), so a tile that SPANS the
+      // page — left on the page-left AND right on the page-right, or top+bottom — showed a green 0 on
+      // the snapped edge but a gold rounding-hair (1/2 px) on the opposite one. When BOTH edges of an
+      // axis rest on the page/canvas edge within a sub-visible tolerance the tile is flush on both, so
+      // BOTH now read a green 0 — the "0 on every snapped edge, not just one" Terry asked for.
+      const FILL_TOL = 2;   // export px — sub-visible; a genuinely inset/overshooting edge (>2px) keeps its true number
+      if (atEdgeL && atEdgeR && Math.abs(dispL) <= FILL_TOL && Math.abs(dispR) <= FILL_TOL) { dispL = 0; dispR = 0; }
+      if (atEdgeT && atEdgeB && Math.abs(dispT) <= FILL_TOL && Math.abs(dispB) <= FILL_TOL) { dispT = 0; dispB = 0; }
       const revealL = pxX(0.15 * c.width), revealT = pxY(0.15 * c.height);
       const sideVis = (disp, atEdge, gr, pe, reveal) => {
         if (disp < 0) return atEdge && disp >= NEG_FLOOR;
@@ -23301,6 +23310,31 @@
           document.body.style.background = 'transparent';
         } catch (_) {}
       }
+      // v3.0.3 (Terry SS1) — TEXT FONT PRE-LOAD (export WYSIWYG fix). Canvas fillText/measureText
+      // SILENTLY fall back to a system face for any web font+weight not ALREADY loaded in THIS
+      // window. The fresh offscreen export window never runs the editor's on-demand weight loads,
+      // and document.fonts.ready only waits for faces already in flight — so the baked text used
+      // FALLBACK metrics: narrower glyphs, different word-wrap (fewer words per line), and a
+      // lighter/duller look (a heavy 800/900 weight rendered as ~400). Explicitly load every
+      // family+weight the text layers (and their inline runs) actually use, await them, THEN bake.
+      try {
+        const _need = new Set();
+        const _face = (fam, wt) => _need.add((wt || 400) + ' 40px "' + (fam || 'Impact') + '"');
+        for (const _t of (collageTexts || [])) {
+          if (!_t || _t.isEmoji) continue;
+          const _bw = (typeof textWeightOf === 'function') ? textWeightOf(_t) : ((typeof _t.fontWeight === 'number') ? _t.fontWeight : (_t.bold ? 700 : 400));
+          _face(_t.font, _bw);
+          if (_t.runs && _t.runs.length) {
+            for (const r of _t.runs) {
+              if (!r) continue;
+              const _rw = (typeof r.w === 'number' && isFinite(r.w)) ? r.w
+                        : (r.b === true ? Math.max(700, _bw) : (r.b === false ? 400 : _bw));
+              _face(r.f || _t.font, _rw);
+            }
+          }
+        }
+        if (_need.size) await Promise.all(Array.from(_need).map((s) => document.fonts.load(s).catch(() => {})));
+      } catch (_) {}
       try { layoutCanvasSize(); } catch (_) {}
       try { applyCollageZoom(); } catch (_) {}
       try { await waitForCollageImages(); } catch (_) {}
