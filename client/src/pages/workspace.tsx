@@ -12678,6 +12678,38 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
                       former v2.0.15 AccordionItem has been deleted and
                       every one of its bullets is included in the v2.1
                       list below alongside the round 102–119 work. */}
+                  {/* v3.0.3 (Terry 2026-07-16) — the big Collages release ON TOP OF v3.0.2: Dividers, a
+                      proper project home (find any collage by category -> gallery -> date), pixel-exact
+                      export, designer-grade snapping/guides/measurements, a save-state indicator, and a
+                      real performance pass. Carries the "Current version" tag once appVersion is 3.0.3. */}
+                  <AccordionItem
+                    value="ver-3.0.3"
+                    id="changelog-ver-3.0.3"
+                    className="border border-border rounded-lg px-4"
+                  >
+                    <AccordionTrigger className="text-foreground font-medium hover:no-underline">
+                      <div className="flex items-center gap-2">
+                        <span>v3.0.3</span>
+                        {appVersion === '3.0.3' && (
+                          <span className="text-xs font-normal text-emerald-600 ml-1">&mdash; Current version</span>
+                        )}
+                      </div>
+                    </AccordionTrigger>
+                    <AccordionContent className="pt-2 pb-4">
+                      <p className="text-sm text-muted-foreground mb-3 leading-relaxed">
+                        <strong className="text-foreground">Collages grow up.</strong> Divider lines, a proper home for finding your projects, exports that match the editor pixel-for-pixel, designer-grade snapping and guides, and a clear sign that your work is saved &mdash; all still on your own hardware, with nothing uploaded.
+                      </p>
+                      <ul className="list-disc ml-5 space-y-1.5 text-sm text-muted-foreground">
+                        <li><strong className="text-foreground font-medium">Dividers</strong> &mdash; drop a crisp horizontal or vertical line into a collage, then style it like anything else: color, thickness, rounded or square ends, transparency, and an effect (outline, shadow, neon or 3D) with its own color.</li>
+                        <li><strong className="text-foreground font-medium">A real home for your collages</strong> &mdash; the Collages start screen is now a proper project browser. Search by name, filter by category, drop open a category to pick a specific gallery, and browse everything in collapsible month and year sections. Tick several and delete them in one go.</li>
+                        <li><strong className="text-foreground font-medium">What you see is what you save</strong> &mdash; a collage or carousel now exports through the very same engine that draws the editor, so every color, effect, glow, logo and full-bleed background photo comes out exactly as it looked on screen.</li>
+                        <li><strong className="text-foreground font-medium">Snap, align and measure like a designer</strong> &mdash; equal-spacing chains, edge-priority snapping, a green &ldquo;0&rdquo; on every flush edge, pull-out guides, a safe-zone for social posts, and a rules panel to switch each helper on or off. Hold Ctrl+E to glide a corner exactly into place.</li>
+                        <li><strong className="text-foreground font-medium">Always know it&apos;s saved</strong> &mdash; a small note by the title reads &ldquo;Saving&hellip;&rdquo; the instant you change something and &ldquo;All changes saved&rdquo; once it&apos;s safely stored, so you never have to wonder.</li>
+                        <li><strong className="text-foreground font-medium">Faster and steadier</strong> &mdash; tracked down and fixed the periodic pauses, so arranging a busy collage stays smooth even with a large library working in the background.</li>
+                        <li><strong className="text-foreground font-medium">Polish</strong> &mdash; while editing text, drag across it to highlight instead of moving the box; &ldquo;Check for Updates&rdquo; now checks the real thing; plus dozens of smaller fixes.</li>
+                      </ul>
+                    </AccordionContent>
+                  </AccordionItem>
                   {/* v3.0.2 (Terry 2026-07-12) — point release ON TOP OF the shipped v3.0.1:
                       everything added since v3.0.1 went live (2026-07-10) — a much smarter Collage
                       text studio, the full-screen Cam-only mode + bigger camera bubbles, and a
