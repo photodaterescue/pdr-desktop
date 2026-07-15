@@ -10178,6 +10178,7 @@
         // it, breaking multi-select + the in-frame pan). Plain click selects then drags.
         if (e.ctrlKey || e.metaKey) {
           const single = !!(collageSelection && collageSelection.length === 1 && collageSelection[0] === target);
+          if (target.bgPhoto || target.coverFill) { startItemPan(target, e); return; }   // v3.0.3 (Terry) — background-style photo pans on Ctrl+drag from ANY state (mirror of the per-tile handler)
           if (single && (target.zoom || 1) > 1) { startItemPan(target, e); return; }   // v2.1 round 330 — pan only the lone selected zoomed photo
           toggleItemInSelection(target); return;                                        // v2.1 round 330 — else Ctrl+click toggles selection (works on zoomed tiles)
         }
@@ -10439,6 +10440,23 @@
           if (q.top >= r.bottom - 1 && q.top < botRef) botRef = q.top;           // nearest below
         }
       }
+      // v3.0.3 (Terry) — GREEN 0 ON EVERY FLUSH EDGE, incl. a tile that SPANS carousel pages. In carousel
+      // mode `c` is the tile's CENTRE page, so a bg photo stretched across pages 3-5 measured its left/right
+      // to page-4's interior division lines -> a ~-pageWidth gap the -100 floor hid (only the top, shared by
+      // every page with the canvas, showed a green 0). Snap each edge's REFERENCE onto the nearest page-line /
+      // canvas outer edge it actually rests on, so a flush edge's gap - and its badge - collapse to a clean 0.
+      const _Npg = (carouselMode && carouselPageCount > 1) ? Math.max(1, carouselPageCount) : 1;
+      const _pgWpx = cFull.width / _Npg;
+      const _lineX = (x) => cFull.left + Math.max(0, Math.min(_Npg, Math.round((x - cFull.left) / _pgWpx))) * _pgWpx;
+      const EDGE_FILL = 2;   // export px — sub-visible tolerance; a genuinely inset edge (>2px) keeps its true gap
+      const flushL = Math.abs(pxX(r.left - _lineX(r.left))) <= EDGE_FILL;
+      const flushR = Math.abs(pxX(r.right - _lineX(r.right))) <= EDGE_FILL;
+      const flushT = Math.abs(pxY(r.top - cFull.top)) <= EDGE_FILL;
+      const flushB = Math.abs(pxY(r.bottom - cFull.bottom)) <= EDGE_FILL;
+      if (flushL) leftRef = r.left;
+      if (flushR) rightRef = r.right;
+      if (flushT) topRef = r.top;
+      if (flushB) botRef = r.bottom;
       // v3.0.3 (Terry) — during the Ctrl+E glide the LOCKED sides always measure to the PAGE/CANVAS
       // edge. Without this, a neighbour (e.g. the page's text block) could become the nearest
       // reference mid-glide, silently switching that side's ruler to a gap-to-text — the page
@@ -10536,8 +10554,8 @@
       };
       // A side is "at a real edge" only when its reference stayed the canvas/page edge (no nearer
       // neighbour claimed it). c is the tile's page rect in carousel mode, the whole canvas otherwise.
-      const atEdgeL = Math.abs(leftRef - c.left) < 0.5, atEdgeR = Math.abs(rightRef - c.right) < 0.5;
-      const atEdgeT = Math.abs(topRef - c.top) < 0.5, atEdgeB = Math.abs(botRef - c.bottom) < 0.5;
+      const atEdgeL = flushL || Math.abs(leftRef - c.left) < 0.5, atEdgeR = flushR || Math.abs(rightRef - c.right) < 0.5;
+      const atEdgeT = flushT || Math.abs(topRef - c.top) < 0.5, atEdgeB = flushB || Math.abs(botRef - c.bottom) < 0.5;
       // v3.0.3 (Terry SS1) — per-side visibility, judged on the DISPLAYED export-px value:
       //   negative (edge past the page) → show its true negative number down to −100, then it's no
       //     longer a point of interest (Terry's floor); only meaningful vs a real page/canvas edge —
@@ -18100,9 +18118,16 @@
       try {
         const fn = document.getElementById('filename');
         if (fn) {
-          const isCar = (typeof carouselMode !== 'undefined') && carouselMode;
-          fn.textContent = currentCollageProjectName || (isCar ? 'Untitled carousel' : 'Untitled collage');
-          fn.setAttribute('data-pdr-tooltip', isCar ? 'Click to name this carousel' : 'Click to name this collage');
+          // v3.0.3 (Terry) — the homepage/welcome screen is project-agnostic: show a generic
+          // "Collages" title there, never the last-opened project's name.
+          if (document.body.classList.contains('cws-open')) {
+            fn.textContent = 'Collages';
+            fn.setAttribute('data-pdr-tooltip', 'Collages');
+          } else {
+            const isCar = (typeof carouselMode !== 'undefined') && carouselMode;
+            fn.textContent = currentCollageProjectName || (isCar ? 'Untitled carousel' : 'Untitled collage');
+            fn.setAttribute('data-pdr-tooltip', isCar ? 'Click to name this carousel' : 'Click to name this collage');
+          }
         }
       } catch (_) {}
       try { updateCollageGoto(); } catch (_) {}
@@ -18207,7 +18232,7 @@
         + '<div class="cnw-label">Album</div><div class="cnw-chips" id="cnw-chips"></div>'
         + '<input id="cnw-custom" class="cnw-input" type="text" placeholder="Custom album…" autocomplete="off" style="display:none;margin-top:8px" />'
         + '<div id="cnw-nudge" class="cnw-nudge" style="display:none"></div>'
-        + '<div class="cnw-label">Type <span class="cnw-opt">— what kind of collage, e.g. Sinta Portraits (filter by it in Albums)</span></div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. Sinta Portraits, Holiday 2026" autocomplete="off" />'
+        + '<div class="cnw-label">Gallery <span class="cnw-opt">— what kind of collage, e.g. Sinta Portraits (filter by it in Albums)</span></div><input id="cnw-name" class="cnw-input" type="text" placeholder="e.g. Sinta Portraits, Holiday 2026" autocomplete="off" />'
         + '<div id="cnw-name-suggest" class="cnw-suggest" style="display:none"></div>'
         + '<div class="cnw-preview">Name: <span id="cnw-preview" class="cnw-preview-val">—</span></div>'
         + '<div id="cnw-export-note" class="cnw-export-note" style="display:none"></div>'
@@ -19300,6 +19325,7 @@
       }
       // Collapse the right menu; the (empty) filmstrip + titlebar stay framing the CWS.
       document.body.classList.add('collage-panel-collapsed', 'cws-open');
+      try { updateCollageTitle(); } catch (_) {}   // v3.0.3 (Terry) — the homepage title is agnostic: show generic "Collages", not the last project's name
       // v3.0 round 545 (Terry) — the project just edited comes back pre-selected (gold outline;
       // the titlebar View/Albums pair follows it). buildCwsRecent paints the outline + syncs the pair.
       try { if (typeof currentCollageProjectId !== 'undefined' && currentCollageProjectId != null) cwsSelectedProjectId = currentCollageProjectId; } catch (_) {}
@@ -19331,6 +19357,7 @@
       // the pair kept its Home-screen state (wrong tooltips) until some later redraw (his SS1 bug:
       // "erroneous tooltips ... move the screen around a little, it then removes the buttons").
       try { updateCollageGoto(); } catch (_) {}
+      try { updateCollageTitle(); } catch (_) {}   // v3.0.3 (Terry) — cws-open now removed → restore the opened project's name (else the header stays the generic "Collages")
       try { setTimeout(maybeShowCollageWelcomeCard, 450); } catch (_) {}
     }
     // v3.0 (Terry) — a gentle one-card explainer of project-vs-photo, shown the first few times you enter
@@ -20109,6 +20136,7 @@
         // in the multi-selection. (Round 169 in-frame pan kept, but scoped to the single selection.)
         if ((e.ctrlKey || e.metaKey) && !it.isBg) {
           const single = !!(collageSelection && collageSelection.length === 1 && collageSelection[0] === it);
+          if (it.bgPhoto || it.coverFill) { startItemPan(it, e); return; }   // v3.0.3 (Terry) — a BACKGROUND-style photo (bgPhoto / coverFill) pans on Ctrl+drag from ANY state: hold Ctrl FIRST, then grab & slide, even before it's selected. You don't multi-select a full-page background, so pan wins over select here.
           if (single && ((it.zoom || 1) > 1 || it.coverFill)) { startItemPan(it, e); return; }   // v2.1 round 362 (Terry) — a coverFill frame pans at zoom 1 too (don't force a zoom-in first to slide the photo)
           toggleItemInSelection(it); return;
         }

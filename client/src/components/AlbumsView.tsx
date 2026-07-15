@@ -2912,7 +2912,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
           // v3.0 (Terry) — "Date" removed: redundant — collage filenames are date-prefixed and the day
           // sub-headers already show the date. "Type" (the collage's category·type) only on PDR Collages
           // albums; off by default.
-          ...(selectedAlbum?.source === 'pdr_collages' ? [{ key: 'type' as AlbumTileMetaField, label: 'Type' }] : []),
+          ...(selectedAlbum?.source === 'pdr_collages' ? [{ key: 'type' as AlbumTileMetaField, label: 'Gallery' }] : []),
         ]).map((opt) => {
           const checked = metaFields.includes(opt.key);
           return (
@@ -3057,11 +3057,11 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
   const renderTypeButton = (compact = false, types: Array<[string, number]> = collageTypes) => {
     const count = typeFilter.size;
     const active = count > 0;
-    const pillLabel = count === 0 ? 'All' : count === 1 ? Array.from(typeFilter)[0] : `${count} types`;
+    const pillLabel = count === 0 ? 'All' : count === 1 ? Array.from(typeFilter)[0] : `${count} galleries`;
     const toggle = (t: string) => setTypeFilter((prev) => { const n = new Set(prev); if (n.has(t)) n.delete(t); else n.add(t); return n; });
     return (
       <Popover>
-        <IconTooltip label="Filter these collages by type" side="bottom">
+        <IconTooltip label="Filter these collages by gallery" side="bottom">
           <PopoverTrigger asChild>
             <button
               type="button"
@@ -3070,7 +3070,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
             >
               <span className="inline-flex items-center gap-1.5 relative">
                 <Filter className="w-3.5 h-3.5" />
-                {!compact && <span className="text-muted-foreground/85">Type:</span>}
+                {!compact && <span className="text-muted-foreground/85">Gallery:</span>}
                 {!compact && <span className="max-w-[120px] truncate">{pillLabel}</span>}
                 {active && compact && <span className="absolute -top-1.5 -right-2 w-2 h-2 rounded-full bg-primary" />}
               </span>
@@ -3080,7 +3080,7 @@ export default function AlbumsView({ headerSlot }: AlbumsViewProps = {}) {
         </IconTooltip>
         <PopoverContent align="start" className="w-64 p-1">
           <div className="flex items-center justify-between px-3 pt-2 pb-1">
-            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Filter by type — tick any</span>
+            <span className="text-[10px] text-muted-foreground uppercase font-semibold tracking-wider">Filter by gallery — tick any</span>
             {active && (
               <button type="button" onClick={() => setTypeFilter(new Set())} className="text-[11px] text-primary hover:underline">Clear</button>
             )}
