@@ -2605,20 +2605,19 @@
     .cws-search-clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1); color: #cfc9ec; cursor: pointer; padding: 0; flex: 0 0 auto; }
     .cws-search-clear:hover { background: #c0392b; color: #fff; }
     .cws-cat-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 18px; }
-    /* v3.0.3 (Terry #3) — the GALLERY filter dropdown on the Collages homepage (galleries within the
-       chosen category). Matches the chip palette; the popover list is dark + scrollable. */
-    .cws-gallery-row { display: flex; align-items: center; gap: 10px; margin: -8px 0 18px; }
-    .cws-gallery-label { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: .6px; color: #8f8ca6; }
-    .cws-gallery-dd { position: relative; }
-    .cws-gallery-btn { display: inline-flex; align-items: center; gap: 10px; min-width: 172px; justify-content: space-between; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.14); color: #d8d4ee; font-size: 12px; font-weight: 600; cursor: pointer; padding: 6px 11px; border-radius: 8px; transition: border-color .12s ease, color .12s ease; }
-    .cws-gallery-btn:hover { border-color: rgba(254,194,66,0.5); color: #ece9f7; }
-    .cws-gallery-btn svg { flex: 0 0 auto; opacity: 0.7; }
-    .cws-gallery-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 30; min-width: 210px; max-height: 300px; overflow-y: auto; background: #221f36; border: 1px solid rgba(255,255,255,0.14); border-radius: 9px; box-shadow: 0 12px 34px rgba(0,0,0,0.55); padding: 5px; }
-    .cws-gallery-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: #cbc8dd; cursor: pointer; }
-    .cws-gallery-opt:hover { background: rgba(255,255,255,0.06); color: #ece9f7; }
-    .cws-gallery-opt.cws-gallery-opt-on { color: #FEC242; }
-    .cws-gallery-optn { font-size: 10.5px; font-weight: 700; color: #8f8ca6; background: rgba(0,0,0,0.25); padding: 0 7px; border-radius: 999px; }
-    .cws-gallery-opt-on .cws-gallery-optn { color: #FEC242; background: rgba(254,194,66,0.14); }
+    /* v3.0.3 (Terry) — GALLERIES are folded INTO the album chips: a category chip that HAS galleries is a
+       dropdown ("All [Album] Galleries" + its galleries). No separate gallery row (Terry: "duplication"). */
+    .cws-chip-dd { position: relative; display: inline-flex; }
+    .cws-chip-hasdd { gap: 7px; }
+    .cws-chip-chev { flex: 0 0 auto; opacity: 0.6; }
+    .cws-chip-sub { color: #FEC242; font-weight: 700; }
+    .cws-chip-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; min-width: 200px; max-height: 320px; overflow-y: auto; background: #221f36; border: 1px solid rgba(255,255,255,0.14); border-radius: 9px; box-shadow: 0 12px 34px rgba(0,0,0,0.55); padding: 5px; }
+    .cws-chip-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: #cbc8dd; cursor: pointer; white-space: nowrap; }
+    .cws-chip-opt:hover { background: rgba(255,255,255,0.06); color: #ece9f7; }
+    .cws-chip-opt-on { color: #FEC242; }
+    .cws-chip-opt-all { border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 3px; padding-bottom: 8px; }
+    .cws-chip-optn { font-size: 10.5px; font-weight: 700; color: #8f8ca6; background: rgba(0,0,0,0.25); padding: 0 7px; border-radius: 999px; }
+    .cws-chip-opt-on .cws-chip-optn { color: #FEC242; background: rgba(254,194,66,0.14); }
     .cws-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #cbc8dd; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 11px; border-radius: 999px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
     .cws-chip:hover { border-color: rgba(254,194,66,0.5); color: #ece9f7; }
     .cws-chip-on { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.7); color: #FEC242; }
@@ -4754,7 +4753,7 @@
           <div id="cws-panel-projects" class="cws-tab-panel">
           <div class="cws-recent">
             <div class="cws-recent-titlerow">
-              <div class="cws-recent-title">Your Collage Projects</div>
+              <div class="cws-recent-title">Your Collage &amp; Carousel Projects</div>
               <!-- v3.1 (Terry) — one-time carousel-thumbnail re-bake progress line (hidden until a migration runs). -->
               <div id="cws-rebake-progress" class="cws-rebake-progress" style="display:none" aria-live="polite"></div>
               <div class="cws-recent-tools">
@@ -4780,17 +4779,8 @@
               </div>
             </div>
             <div id="cws-cat-chips" class="cws-cat-chips" role="tablist" aria-label="Filter by category"></div>
-            <!-- v3.0.3 (Terry #3) — GALLERY filter. Collages are named "Category · Gallery"; the chips above
-                 filter by Category, this dropdown narrows to a specific Gallery WITHIN the chosen category.
-                 The year/month date sections below stay in date order. Hidden when the current scope has no
-                 named galleries. buildCwsGalleryFilter() populates it; buildCwsRecent applies cwsFilterGallery. -->
-            <div id="cws-gallery-row" class="cws-gallery-row" style="display:none">
-              <span class="cws-gallery-label">Gallery</span>
-              <div class="cws-gallery-dd">
-                <button type="button" id="cws-gallery-btn" class="cws-gallery-btn" aria-haspopup="listbox" aria-expanded="false"><span id="cws-gallery-cur">All galleries</span><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
-                <div id="cws-gallery-menu" class="cws-gallery-menu" role="listbox" style="display:none"></div>
-              </div>
-            </div>
+            <!-- v3.0.3 (Terry #3) — GALLERIES live INSIDE the album chips above (each album with galleries is a
+                 dropdown: "All [Album] Galleries" + its galleries). No separate row — buildCwsCatChips builds it. -->
             <div id="cws-projects-empty-search" class="cws-recent-empty" style="display:none">No projects match your search.</div>
             <div class="cws-projects-body">
               <aside id="cws-year-rail" class="cws-year-rail" style="display:none" aria-label="Jump to year"></aside>
@@ -19233,21 +19223,63 @@
       const cl = document.getElementById('cws-search-clear'); if (cl) cl.style.display = cwsSearchTerm ? '' : 'none';
       buildCwsRecent();
     }
+    // v3.0.3 (Terry #3) — the ALBUM chips, with GALLERIES folded IN. A category that has named galleries
+    // renders as a DROPDOWN chip: clicking it opens a menu of "All [Album] Galleries" (filter the whole
+    // album) + each gallery (narrow to it). No separate gallery row (Terry: "duplication"). A category with
+    // no galleries — and "All" — stays a plain one-click chip. buildCwsRecent applies cwsFilterAlbum + cwsFilterGallery.
     function buildCwsCatChips(list) {
       const wrap = document.getElementById('cws-cat-chips'); if (!wrap) return;
-      const counts = {}; list.forEach((p) => { const c = cwsProjectAlbum(p) || 'General'; counts[c] = (counts[c] || 0) + 1; });
+      const items = (list || []).filter((p) => p && p.kind !== 'template');
+      const counts = {}, gals = {};
+      items.forEach((p) => {
+        const c = cwsProjectAlbum(p) || 'General';
+        counts[c] = (counts[c] || 0) + 1;
+        const g = cwsProjectGallery(p);
+        if (g) { (gals[c] = gals[c] || {}); gals[c][g] = (gals[c][g] || 0) + 1; }
+      });
       const cats = Object.keys(counts).sort((a, b) => (counts[b] - counts[a]) || a.localeCompare(b));
       wrap.innerHTML = '';
-      const mk = (label, val, n) => {
+      // Plain chip: All, or a category with no galleries — one click filters by that album.
+      const mkPlain = (label, val, n) => {
         const b = document.createElement('button'); b.type = 'button';
         const on = (val === cwsFilterAlbum) || (val === '' && !cwsFilterAlbum);
         b.className = 'cws-chip' + (on ? ' cws-chip-on' : '');
         b.innerHTML = '<span>' + label + '</span>' + (n != null ? ('<span class="cws-chip-n">' + n + '</span>') : '');
-        b.addEventListener('click', () => { cwsFilterAlbum = (cwsFilterAlbum === val) ? '' : val; cwsFilterGallery = ''; buildCwsRecent(); });   // v3.0.3 (Terry #3) — switching category resets the gallery filter
+        b.addEventListener('click', () => { cwsFilterAlbum = (cwsFilterAlbum === val) ? '' : val; cwsFilterGallery = ''; buildCwsRecent(); });
         wrap.appendChild(b);
       };
-      mk('All', '', list.length);
-      cats.forEach((c) => mk(c, c, counts[c]));
+      // Dropdown chip: a category WITH galleries.
+      const mkDropdown = (cat, n, gmap) => {
+        const catOn = (cwsFilterAlbum.toLowerCase() === cat.toLowerCase());
+        const gLabel = (catOn && cwsFilterGallery) ? cwsFilterGallery : '';
+        const dd = document.createElement('div'); dd.className = 'cws-chip-dd';
+        const b = document.createElement('button'); b.type = 'button';
+        b.className = 'cws-chip cws-chip-hasdd' + (catOn ? ' cws-chip-on' : '');
+        b.innerHTML = '<span>' + cat + (gLabel ? (' <span class="cws-chip-sub">· ' + gLabel + '</span>') : '') + '</span>'
+          + '<span class="cws-chip-n">' + n + '</span>'
+          + '<svg class="cws-chip-chev" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>';
+        const menu = document.createElement('div'); menu.className = 'cws-chip-menu'; menu.style.display = 'none';
+        const addOpt = (label, gVal, gn, isAll) => {
+          const o = document.createElement('div');
+          const optOn = isAll ? (catOn && !cwsFilterGallery) : (catOn && cwsFilterGallery.toLowerCase() === gVal.toLowerCase());
+          o.className = 'cws-chip-opt' + (isAll ? ' cws-chip-opt-all' : '') + (optOn ? ' cws-chip-opt-on' : '');
+          o.innerHTML = '<span>' + label + '</span>' + (gn != null ? ('<span class="cws-chip-optn">' + gn + '</span>') : '');
+          o.addEventListener('click', (e) => { e.stopPropagation(); cwsFilterAlbum = cat; cwsFilterGallery = isAll ? '' : gVal; buildCwsRecent(); });
+          menu.appendChild(o);
+        };
+        addOpt('All ' + cat + ' Galleries', '', n, true);
+        Object.keys(gmap).sort((a, b) => (gmap[b] - gmap[a]) || a.localeCompare(b)).forEach((g) => addOpt(g, g, gmap[g], false));
+        b.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const open = menu.style.display !== 'none';
+          wrap.querySelectorAll('.cws-chip-menu').forEach((m) => { if (m !== menu) m.style.display = 'none'; });
+          menu.style.display = open ? 'none' : 'block';
+        });
+        dd.appendChild(b); dd.appendChild(menu);
+        wrap.appendChild(dd);
+      };
+      mkPlain('All', '', items.length);
+      cats.forEach((c) => { if (gals[c] && Object.keys(gals[c]).length) mkDropdown(c, counts[c], gals[c]); else mkPlain(c, c, counts[c]); });
       wrap.style.display = cats.length > 1 ? '' : 'none';   // only worth showing chips when there's more than one category
     }
     function setCwsTabCount(which, n) {
@@ -19344,51 +19376,15 @@
     // the galleries offered are those WITHIN the currently-selected category chip (or all, when no category
     // is picked). Picking one sets cwsFilterGallery; buildCwsRecent narrows the list and keeps the year/month
     // date sections in date order. Hidden when the current scope has no named galleries.
-    function buildCwsGalleryFilter(list) {
-      const row = document.getElementById('cws-gallery-row');
-      const btn = document.getElementById('cws-gallery-btn');
-      const cur = document.getElementById('cws-gallery-cur');
-      const menu = document.getElementById('cws-gallery-menu');
-      if (!row || !btn || !cur || !menu) return;
-      // Galleries within the active CATEGORY scope (ignore the gallery filter itself so every option stays listed).
-      const inScope = (list || []).filter((p) => p && p.kind !== 'template' && (!cwsFilterAlbum || (cwsProjectAlbum(p) || 'General').toLowerCase() === cwsFilterAlbum.toLowerCase()));
-      const counts = {};
-      inScope.forEach((p) => { const g = cwsProjectGallery(p); if (g) counts[g] = (counts[g] || 0) + 1; });
-      const galleries = Object.keys(counts).sort((a, b) => (counts[b] - counts[a]) || a.localeCompare(b));
-      if (cwsFilterGallery && !counts[cwsFilterGallery]) cwsFilterGallery = '';   // chosen gallery fell out of scope
-      if (!galleries.length) { row.style.display = 'none'; menu.style.display = 'none'; return; }
-      row.style.display = '';
-      cur.textContent = cwsFilterGallery || 'All galleries';
-      cur.style.color = cwsFilterGallery ? '#FEC242' : '';
-      menu.innerHTML = '';
-      const addOpt = (label, val, n) => {
-        const o = document.createElement('div');
-        o.className = 'cws-gallery-opt' + ((val === cwsFilterGallery) ? ' cws-gallery-opt-on' : '');
-        o.setAttribute('role', 'option');
-        o.innerHTML = '<span>' + label + '</span>' + (n != null ? ('<span class="cws-gallery-optn">' + n + '</span>') : '');
-        o.addEventListener('click', () => { cwsFilterGallery = (val === cwsFilterGallery) ? '' : val; menu.style.display = 'none'; btn.setAttribute('aria-expanded', 'false'); buildCwsRecent(); });
-        menu.appendChild(o);
-      };
-      addOpt('All galleries', '', inScope.length);
-      galleries.forEach((g) => addOpt(g, g, counts[g]));
-    }
-    // Wire the dropdown open/close ONCE (the elements are static CWS markup). Click the button to toggle;
-    // a click anywhere else closes it. Idempotent via the dataset guard.
-    function wireCwsGalleryDdOnce() {
-      const btn = document.getElementById('cws-gallery-btn');
-      const menu = document.getElementById('cws-gallery-menu');
-      if (!btn || !menu || btn.dataset.wired) return;
-      btn.dataset.wired = '1';
-      btn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        const open = menu.style.display !== 'none';
-        menu.style.display = open ? 'none' : 'block';
-        btn.setAttribute('aria-expanded', open ? 'false' : 'true');
-      });
+    // v3.0.3 (Terry) — close any open album→gallery chip dropdown when clicking outside the chip row. Wired
+    // once; the chip + option handlers stopPropagation so their own clicks never reach this.
+    function wireCwsChipMenusOnce() {
+      if (document.body.dataset.cwsChipMenuWired) return;
+      document.body.dataset.cwsChipMenuWired = '1';
       document.addEventListener('click', (e) => {
-        if (menu.style.display === 'none') return;
-        if (e.target === btn || btn.contains(e.target) || menu.contains(e.target)) return;
-        menu.style.display = 'none'; btn.setAttribute('aria-expanded', 'false');
+        const wrap = document.getElementById('cws-cat-chips'); if (!wrap) return;
+        if (wrap.contains(e.target)) return;
+        wrap.querySelectorAll('.cws-chip-menu').forEach((m) => { m.style.display = 'none'; });
       });
     }
     function cwsProjectDate(p) { try { var d = new Date(p && p.savedAt); return isNaN(d.getTime()) ? null : d; } catch (_) { return null; } }
@@ -19514,12 +19510,9 @@
       // Populate the Album + Date filters from ALL projects (preserve the current selection).
       // v3.0.3 (Terry #1/#3) — the old "All albums" dropdown is gone; category CHIPS + the name search
       // box do the filtering now. Build the chips, wire the tabs, set the Projects-tab count.
-      try { buildCwsCatChips(list); wireCwsTabsOnce(); wireCwsGalleryDdOnce(); setCwsTabCount('projects', list.length); } catch (_) {}
+      try { buildCwsCatChips(list); wireCwsTabsOnce(); wireCwsChipMenusOnce(); setCwsTabCount('projects', list.length); } catch (_) {}
       // Apply the active category chip + the name search (date navigation is still the year rail).
       const _q = (cwsSearchTerm || '').toLowerCase();
-      // v3.0.3 (Terry #3) — build the Gallery dropdown from the projects in the CURRENT category, BEFORE the
-      // gallery filter narrows them (so the dropdown always lists every gallery in the category).
-      try { buildCwsGalleryFilter(list); } catch (_) {}
       const filtered = list.filter((p) => {
         // v3.0.3 (Terry) — map uncategorised → 'General' so the "General" chip (which counts them) matches.
         if (cwsFilterAlbum && (cwsProjectAlbum(p) || 'General').toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
