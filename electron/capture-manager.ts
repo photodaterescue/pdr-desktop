@@ -2186,6 +2186,16 @@ async function captureCollageExport(snapshot: string, w: number, h: number, tran
     await new Promise((r) => setTimeout(r, 250));
     try { win.webContents.invalidate(); } catch { /* noop */ }
     await new Promise((r) => setTimeout(r, 300));
+    // v3.0.3 (Terry #1) — prefer capturePage over the OSR 'paint' frame. The paint frame under-fills
+    // a LARGE photo layer in the offscreen surface (a page-spanning background exported with only its
+    // top ~40%). capturePage does a fresh GPU-composited full raster of the page, so it paints the
+    // whole photo AND keeps the editor's exact colours (the software-raster workaround lifted the
+    // export's brightness). Fall back to the paint frame if capturePage returns nothing usable.
+    try {
+      const capd = await win.webContents.capturePage();
+      const buf = capd.toPNG();
+      if (buf && buf.length > 4000) return buf;
+    } catch { /* fall through to the OSR paint frame */ }
     if (!lastPaint) throw new Error('no paint frame from the offscreen export window');
     return (lastPaint as { toPNG: () => Buffer }).toPNG();
   } finally {
