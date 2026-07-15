@@ -10941,19 +10941,17 @@ function PanelPlaceholder({ panelType, backLabel, onBackToWorkspace, onNavigateT
   const checkForUpdates = async () => {
     setUpdateStatus('checking');
     try {
-      const response = await fetch('https://www.photodaterescue.com/api/version.json', { cache: 'no-store' });
-      const data = await response.json();
-      const isNewer = (remote: string, local: string) => {
-        const r = remote.split('.').map(Number);
-        const l = local.split('.').map(Number);
-        for (let i = 0; i < Math.max(r.length, l.length); i++) {
-          if ((r[i] || 0) > (l[i] || 0)) return true;
-          if ((r[i] || 0) < (l[i] || 0)) return false;
-        }
-        return false;
-      };
-      if (data.version && isNewer(data.version, appVersion)) {
-        setLatestVersion(data.version);
+      // Ask the REAL updater (electron-updater → R2 latest.yml) via the same
+      // 'updates:check' IPC the background auto-updater uses, instead of the
+      // stale photodaterescue.com/api/version.json manifest that was never
+      // kept in sync. Returns the legacy UpdateInfo shape (see update-checker.ts).
+      const data = await (window as any).pdr?.updates?.check();
+      if (!data) {
+        setUpdateStatus('error');
+        return;
+      }
+      if (data.updateAvailable && data.latestVersion) {
+        setLatestVersion(data.latestVersion);
         setReleaseNotes(data.releaseNotes || null);
         setDownloadUrl(data.downloadUrl || null);
         setUpdateStatus('update-available');

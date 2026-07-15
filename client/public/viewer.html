@@ -5110,7 +5110,11 @@
                  Frame / Glow & shadow (swatch grid + PDR/NEON… PALETTES collections). refreshDividerControls()
                  renders it into this host via renderTextColorPalette(); picking sets collageSelected.dividerColor
                  and re-renders. -->
-            <div class="frame-palette" id="divider-swatches" style="margin-top:8px"></div>
+            <!-- v3.0.3+ (Terry) — Expand all / Collapse all for the divider palette's OWN collection
+                 chevrons (Neon/Neutral/Seasonal…), mirroring the Text palette's #collage-unified-color
+                 control. Scoped strictly to #divider-swatches via setAllCollections(open,'divider-swatches'). -->
+            <div class="enhance-label-row" style="margin-top:8px"><label data-pdr-tooltip="Choose a color for this divider">Color Palette</label><span class="enhance-collapse-all"><button type="button" id="divider-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all color collections" aria-label="Expand all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="divider-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all color collections" aria-label="Collapse all color collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
+            <div class="frame-palette" id="divider-swatches" style="margin-top:2px"></div>
             <div class="enhance-control" style="margin-top:8px">
               <div class="enhance-label-row"><label for="slider-divider-thick" data-pdr-tooltip="How thick the divider line is, in pixels of the exported page">Thickness</label><span class="enhance-val" id="val-divider-thick">8 px</span></div>
               <input class="enhance-slider" id="slider-divider-thick" type="range" min="1" max="60" step="1" value="8">
@@ -5120,8 +5124,24 @@
               <input class="enhance-slider" id="slider-divider-round" type="range" min="0" max="100" step="1" value="100">
             </div>
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label for="slider-divider-fade" data-pdr-tooltip="Divider transparency — lower fades it into the background">Fade</label><span class="enhance-val" id="val-divider-fade">100%</span></div>
+              <div class="enhance-label-row"><label for="slider-divider-fade" data-pdr-tooltip="How see-through the divider is — lower = more transparent">Transparency</label><span class="enhance-val" id="val-divider-fade">100%</span></div>
               <input class="enhance-slider" id="slider-divider-fade" type="range" min="10" max="100" step="1" value="100">
+            </div>
+            <!-- v3.0.3+ (Terry) — Effect chips, replicated from Text (None/Outline/Shadow/Neon/3D).
+                 SINGLE-SELECT quick picker mapped onto the divider's EXISTING Glow & shadow edge
+                 effects (outline→outline, shadow→dropShadow, neon→neon, 3d→lift). Picking writes the
+                 divider's enh + refreshes Glow & shadow (setTile), which stays below for fine strength
+                 + per-effect colour. wireDividerPanel() wires the click; refreshDividerControls /
+                 reflectDividerEffectChips ring the active chip. -->
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label data-pdr-tooltip="Add an outline, shadow, neon glow or 3D lift — fine-tune strength &amp; color in Glow &amp; shadow below">Effect</label></div>
+              <div class="ec-effect-row" id="divider-effect">
+                <button class="ec-effect-btn active" data-effect="none" type="button" data-pdr-tooltip="No effect">None</button>
+                <button class="ec-effect-btn" data-effect="outline" type="button" data-pdr-tooltip="Outlined edge">Outline</button>
+                <button class="ec-effect-btn" data-effect="shadow" type="button" data-pdr-tooltip="Drop shadow">Shadow</button>
+                <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon glow">Neon</button>
+                <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Lifted 3D shadow">3D</button>
+              </div>
             </div>
           </div>
         </details>
@@ -14325,39 +14345,13 @@
         ed.addEventListener('pointerdown', (e) => {
           if (e.button !== 0) { e.stopPropagation(); return; }
           if (!(layer && layer.locked) && ctEditEdgeBand(e)) { startTextDrag(layer, e); return; }   // edge → move the box
-          // v3.1 round 8 (Terry SS) — the TEXT itself is grabbable now: press-and-drag anywhere on
-          // it MOVES the box (so a freshly-added box with its placeholder still highlighted can be
-          // dragged), while a plain click / double / triple click still does the normal text thing
-          // (caret / select word / select all). We watch for movement past a small threshold; if it
-          // never comes, the native click/caret behaviour is untouched.
-          if (!(layer && layer.locked)) {
-            const sx = e.clientX, sy = e.clientY, origE = e;
-            let started = false;
-            const onMove = (ev) => {
-              if (started) return;
-              if (Math.abs(ev.clientX - sx) > 5 || Math.abs(ev.clientY - sy) > 5) {
-                started = true; teardown();
-                try { window.getSelection().removeAllRanges(); } catch (_) {}
-                try { ed.style.userSelect = 'none'; } catch (_) {}   // stop the native selection from flickering during the move
-                const wasPlaceholder = (String(layer.text || '') === 'Your text');
-                startTextDrag(layer, origE);
-                const restore = () => {
-                  try { ed.style.userSelect = ''; } catch (_) {}
-                  // Re-select the untouched placeholder so "type to replace" still works after a nudge.
-                  if (wasPlaceholder && editingText === layer && layer.editEl && String(layer.text || '') === 'Your text') {
-                    try { const r = document.createRange(); r.selectNodeContents(layer.editEl); const s = window.getSelection(); s.removeAllRanges(); s.addRange(r); layer.editEl.focus(); } catch (_) {}
-                  }
-                  document.removeEventListener('pointerup', restore, true); document.removeEventListener('pointercancel', restore, true);
-                };
-                document.addEventListener('pointerup', restore, true);
-                document.addEventListener('pointercancel', restore, true);
-              }
-            };
-            const onUp = () => teardown();
-            const teardown = () => { document.removeEventListener('pointermove', onMove, true); document.removeEventListener('pointerup', onUp, true); };
-            document.addEventListener('pointermove', onMove, true);
-            document.addEventListener('pointerup', onUp, true);
-          }
+          // v3.0.3 (Terry #6) — CARET LIVE = SELECT, NOT MOVE. While this layer is being edited the
+          // caret is active, so a press-drag on the TEXT BODY must run NATIVE text selection (highlight)
+          // — it must NOT move the box. We arm no body-grab drag here; the pointerdown falls through to
+          // the browser (caret placement + drag-to-highlight). To MOVE the box while editing, grab the
+          // EDGE band (handled just above — its move cursor marks it). (Removes the old round-8 "grab the
+          // text body to move" gesture, which called removeAllRanges()/userSelect:none and bled 'move
+          // box' over the highlight Terry wanted.)
           e.stopPropagation();   // inside → place the caret (native); don't bubble to the canvas
         });
         ed.addEventListener('pointermove', (e) => { try { ed.style.cursor = ctEditEdgeBand(e) ? 'move' : 'text'; } catch (_) {} });
@@ -21039,8 +21033,8 @@
       let wFrac, aspect;
       // v3.0.3 (Terry) — default length 3× longer than the first pass (0.6 was too short), clamped
       // so a horizontal fills ~its page and a vertical fills most of the canvas height rather than spilling.
-      const hLenFrac = Math.min(0.96, 0.6 * 3);   // 0.96 of a page (carousel) / 0.96 of the canvas (single)
-      const vLenFrac = Math.min(0.92, 0.6 * 3);   // 0.92 of the canvas height
+      const hLenFrac = 0.4;   // v3.0.3 (Terry) — default divider length = 40% of the page width (was 0.96)
+      const vLenFrac = 0.4;   // v3.0.3 (Terry) — default vertical divider = 40% of the canvas height
       if (horiz) { wFrac = hLenFrac * pgWFrac; aspect = (wFrac * gca) / thickFrac; }
       else { wFrac = thickFrac / gca; aspect = (wFrac * gca) / vLenFrac; }
       const it = {
@@ -21068,6 +21062,26 @@
       updateCollageFilmstrip();
       commitCollageChange();
       try { refreshDividerControls(); } catch (_) {}
+    }
+    // v3.0.3+ (Terry) — reflect a selected divider's current edge effects back onto the Effect chips:
+    // ring the single mapped effect when exactly one is active (outline→Outline, dropShadow→Shadow,
+    // neon→Neon, lift→3D), ring None when all five are off, and ring nothing for a glow-only or
+    // multi-effect combo dialled in via Glow & shadow. Class-toggles only (no palette rebuild) so it
+    // is safe to call on every Glow & shadow slider tick (from applyEnhanceFilter's divider branch).
+    function reflectDividerEffectChips() {
+      const row = document.getElementById('divider-effect');
+      if (!row) return;
+      const it = collageSelected;
+      let eff = '';
+      if (it && it.divider) {
+        const e = it.enh || {};
+        const FX_TO_EFFECT = { outline: 'outline', dropShadow: 'shadow', neon: 'neon', lift: '3d' };
+        const on = ['glow', 'dropShadow', 'lift', 'neon', 'outline'].filter((k) => (e[k] || 0) > 0);
+        if (on.length === 0) eff = 'none';
+        else if (on.length === 1 && FX_TO_EFFECT[on[0]]) eff = FX_TO_EFFECT[on[0]];
+        else eff = '';   // glow-only or a multi-combo → no single chip represents it
+      }
+      row.querySelectorAll('.ec-effect-btn').forEach((b) => b.classList.toggle('active', b.dataset.effect === eff));
     }
     // Panel sync: show the divider controls only while a divider is selected; mirror its values.
     function refreshDividerControls() {
@@ -21099,6 +21113,7 @@
           function () { return String((collageSelected && collageSelected.dividerColor) || '#FEC242').toLowerCase(); },
           function (hex) { const t = collageSelected; if (!t || !t.divider || !hex) return; t.dividerColor = hex; renderCollageItem(t); refreshDividerControls(); },
           {});
+        try { reflectDividerEffectChips(); } catch (_) {}   // v3.0.3+ (Terry) — ring the Effect chip matching the divider's current edge effects
       } catch (_) {}
     }
     (function wireDividerPanel() {
@@ -21142,6 +21157,30 @@
         it.enh = it.enh || {}; it.enh.opacity = p / 100;
         const fv = document.getElementById('val-divider-fade'); if (fv) fv.textContent = p + '%';
         renderCollageItem(it);
+      });
+      // v3.0.3+ (Terry) — Effect chips (replicated from Text). SINGLE-SELECT: map the clicked chip onto
+      // the divider's EXISTING enh edge effects and set just that one (keeping an already-dialled
+      // strength, else a tasteful 60), zeroing the rest. None clears all five. Writing enh + rendering
+      // mirrors the sliders above; setTile() then reloads the panel state so the Glow & shadow sliders
+      // (still visible for a divider) show the same values — one source of truth, no clash. Explicit
+      // begin/commit = one undo step (pointerup fires before click, so we can't lean on the panel wrapper).
+      const DIVIDER_EFFECT_FX = { outline: 'outline', shadow: 'dropShadow', neon: 'neon', '3d': 'lift' };
+      const effectRow = document.getElementById('divider-effect');
+      if (effectRow) effectRow.addEventListener('click', (e) => {
+        const b = e.target.closest ? e.target.closest('.ec-effect-btn') : null;
+        if (!b) return;
+        const it = collageSelected; if (!it || !it.divider) return;
+        const fx = DIVIDER_EFFECT_FX[b.dataset.effect || 'none'];   // undefined for None
+        beginCollageChange();
+        it.enh = it.enh || {};
+        ['glow', 'dropShadow', 'lift', 'neon', 'outline'].forEach((key) => {
+          const cur = Math.round(it.enh[key] || 0);
+          it.enh[key] = (key === fx) ? (cur > 0 ? cur : 60) : 0;   // keep an existing strength; else a tasteful 60
+        });
+        renderCollageItem(it);
+        try { if (window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {}   // reload state + Glow & shadow sliders from the new enh
+        commitCollageChange();
+        try { reflectDividerEffectChips(); } catch (_) {}
       });
     })();
     // Open the library picker to fill ONE frame (or replace a tile's photo).
@@ -26233,8 +26272,8 @@
       // collection's own 'toggle' listener (the scroll-into-view), which is fine.
       const palExpand = document.getElementById('collage-palette-expand-all');
       const palCollapse = document.getElementById('collage-palette-collapse-all');
-      const setAllCollections = (open) => {
-        const host = document.getElementById('collage-text-palette');
+      const setAllCollections = (open, hostId) => {
+        const host = document.getElementById(hostId || 'collage-text-palette');
         if (!host) return;
         // v2.1 round 223 (Terry) — the 12 categories now sit inside the collapsed
         // "Palettes" group; expanding them while the group is shut would show
@@ -26251,6 +26290,20 @@
       if (palCollapse && !palCollapse.dataset.wired) {
         palCollapse.dataset.wired = '1';
         palCollapse.addEventListener('click', () => setAllCollections(false));
+      }
+      // v3.0.3+ (Terry) — the SAME Expand-all / Collapse-all pair for the DIVIDER palette
+      // (#divider-swatches), reusing setAllCollections scoped to that host so no handler logic
+      // is duplicated. The divider palette renders the identical .frame-coll-group / .frame-coll-
+      // collapse collections (renderTextColorPalette), so this just drives them.
+      const divPalExpand = document.getElementById('divider-palette-expand-all');
+      const divPalCollapse = document.getElementById('divider-palette-collapse-all');
+      if (divPalExpand && !divPalExpand.dataset.wired) {
+        divPalExpand.dataset.wired = '1';
+        divPalExpand.addEventListener('click', () => setAllCollections(true, 'divider-swatches'));
+      }
+      if (divPalCollapse && !divPalCollapse.dataset.wired) {
+        divPalCollapse.dataset.wired = '1';
+        divPalCollapse.addEventListener('click', () => setAllCollections(false, 'divider-swatches'));
       }
       // v2.1 round 230 (Terry) — wire the Canvas Size Expand-all / Collapse-all icons.
       // They operate ONLY on the inner groups inside #ec-canvas-size-list
@@ -28270,6 +28323,7 @@ function zoomTo(newZoom, centreX, centreY) {
             collageTile.enh.glow = state.glow; collageTile.enh.dropShadow = state.dropShadow; collageTile.enh.lift = state.lift; collageTile.enh.neon = state.neon; collageTile.enh.outline = state.outline;
             collageTile.enh.glowColor = state.glowColor; collageTile.enh.dropShadowColor = state.dropShadowColor; collageTile.enh.liftColor = state.liftColor; collageTile.enh.neonColor = state.neonColor; collageTile.enh.outlineColor = state.outlineColor;
             renderCollageItem(collageTile);
+            try { reflectDividerEffectChips(); } catch (_) {}   // v3.0.3+ (Terry) — keep the Dividers Effect chip ring in step with a Glow & shadow slider drag
             return;
           }
           // v2.1 round 203 (Terry) — APPEARANCE LOCK: a locked photo tile won't
