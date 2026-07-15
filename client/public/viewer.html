@@ -5050,6 +5050,50 @@
             <input class="enhance-slider" id="slider-pageoutline-weight" type="range" min="1" max="8" step="1" value="2">
           </div>
         </details>
+        <!-- v3.0.3 (Terry) — DIVIDERS: horizontal + vertical line elements that sit between text or
+             tiles. Add drops a line on the canvas; it drags/snaps/rotates/locks/duplicates like any
+             tile, the corner handles resize it freely and the edge bars stretch length/thickness.
+             The controls below bind to the SELECTED divider (hidden otherwise) — same swatch palette
+             + slider primitives as Page outlines / Frame, so it reads as one system. -->
+        <details class="enhance-collapse" id="collage-divider-collapse">
+          <summary>Dividers</summary>
+          <div style="display:flex;gap:8px;margin-top:8px">
+            <button class="ec-tidy-btn" id="divider-add-h" type="button" style="flex:1" data-pdr-tooltip="Add a horizontal divider line. Drag it into place; drag its edge bars to stretch or thicken it.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="4" y1="12" x2="20" y2="12"/></svg>
+              Horizontal
+            </button>
+            <button class="ec-tidy-btn" id="divider-add-v" type="button" style="flex:1" data-pdr-tooltip="Add a vertical divider line. Drag it into place; drag its edge bars to stretch or thicken it.">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="12" y1="4" x2="12" y2="20"/></svg>
+              Vertical
+            </button>
+          </div>
+          <div id="divider-controls" style="display:none">
+            <div class="frame-palette" id="divider-swatches" style="margin-top:8px">
+              <button class="frame-add" id="divider-custom-add" type="button" data-pdr-tooltip="Pick a custom color">
+                <span class="frame-add-plus">+</span>
+              </button>
+              <input type="color" id="divider-custom" value="#FEC242" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
+              <button class="frame-swatch active" type="button" data-color="#FEC242" style="background:#FEC242" data-pdr-tooltip="Gold"></button>
+              <button class="frame-swatch" type="button" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
+              <button class="frame-swatch" type="button" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
+              <button class="frame-swatch" type="button" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
+              <button class="frame-swatch" type="button" data-color="#A99CFF" style="background:#A99CFF" data-pdr-tooltip="Lavender"></button>
+              <button class="frame-swatch" type="button" data-color="#D946EF" style="background:#D946EF" data-pdr-tooltip="Fuchsia"></button>
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="slider-divider-thick" data-pdr-tooltip="How thick the divider line is, in pixels of the exported page">Thickness</label><span class="enhance-val" id="val-divider-thick">8 px</span></div>
+              <input class="enhance-slider" id="slider-divider-thick" type="range" min="1" max="60" step="1" value="8">
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="slider-divider-round" data-pdr-tooltip="Round the divider's ends — 100% gives pill ends, 0% square">Rounded ends</label><span class="enhance-val" id="val-divider-round">100%</span></div>
+              <input class="enhance-slider" id="slider-divider-round" type="range" min="0" max="100" step="1" value="100">
+            </div>
+            <div class="enhance-control" style="margin-top:8px">
+              <div class="enhance-label-row"><label for="slider-divider-fade" data-pdr-tooltip="Divider transparency — lower fades it into the background">Fade</label><span class="enhance-val" id="val-divider-fade">100%</span></div>
+              <input class="enhance-slider" id="slider-divider-fade" type="range" min="10" max="100" step="1" value="100">
+            </div>
+          </div>
+        </details>
         <!-- v2.1 round 143 (Terry) — Arrange row: Tidy (neat grid) +
              Jumble (random scatter). Both re-arrange ALL photos, so they
              undo cleanly (see Undo/Redo). v2.1 round 156 — chevron. -->
@@ -6631,6 +6675,7 @@
         const on = !!(L === sel && L.el && L.el.classList.contains('selected') && st);
         // v3.1 (Terry SS2) — the layer's TOP-CENTRE strip shows only while selected.
         if (L.topStripEl) { L.topStripEl.style.display = on ? 'inline-flex' : 'none'; }
+        try { clampTextRotHandle_(L, on, st); } catch (_) {}   // v3.0.3 (Terry #10) — keep the rotate handle reachable at the canvas edge
         if (!L.tbarEl) continue;
         if (!on) { L.tbarEl.style.display = 'none'; continue; }
         const r = L.el.getBoundingClientRect();
@@ -6643,6 +6688,41 @@
         L.tbarEl.style.top = top + 'px';
       }
       updateCollageTopbarVis_();   // v3.1 (Terry) — the container now also hosts the PHOTO-TILE strip; show it when EITHER kind of strip is on
+    }
+    // v3.0.3 (Terry #10) — keep the TEXT/EMOJI ROTATE handle reachable at the canvas edge.
+    // Unlike photo tiles (stage-level #collage-chrome-box), the text selection chrome is
+    // IN-CANVAS (a .collage-text child) and #collage-canvas is overflow:hidden — so a box
+    // at/past the canvas edge had its rotate handle (text: below-centre; emoji: right-
+    // middle) CLIPPED and ungrabbable. Same idea as the toolbar clamp: measure the
+    // handle's natural SCREEN rect, and if it pokes past the visible canvas∩stage box,
+    // shift it back inside with a local translate. The screen→local conversion un-rotates
+    // by the layer angle (the handle rides the ROTATED wrapper) and divides by the view
+    // zoom (the canvas transform scales local px by collageUserZoom), so the clamp is
+    // exact at any rotation + zoom; resets to '' whenever no clamp is needed. Runs from
+    // positionTextToolbarInView (every render / drag step / zoom-pan settle). Safe to
+    // move the handle because startTextRotate's grab is DELTA-anchored (no jump).
+    function clampTextRotHandle_(L, on, st) {
+      const h = L.rotEl;
+      if (!h) return;
+      if (!on || !st || !collageCanvasEl) { if (h.style.transform) h.style.transform = ''; return; }
+      if (h.style.transform) h.style.transform = '';   // measure from the NATURAL (CSS) spot
+      const hr = h.getBoundingClientRect();
+      if (!hr.width || !hr.height) return;   // hidden (e.g. locked layer) — nothing to clamp
+      const cr = collageCanvasEl.getBoundingClientRect();
+      const pad = 3;   // small breathing gap off the clip edge
+      const bL = Math.max(cr.left, st.left) + pad, bR = Math.min(cr.right, st.right) - pad;
+      const bT = Math.max(cr.top, st.top) + pad, bB = Math.min(cr.bottom, st.bottom) - pad;
+      if (bR - bL < hr.width || bB - bT < hr.height) return;   // visible box too small — leave it
+      let dx = 0, dy = 0;
+      if (hr.left < bL) dx = bL - hr.left; else if (hr.right > bR) dx = bR - hr.right;
+      if (hr.top < bT) dy = bT - hr.top; else if (hr.bottom > bB) dy = bB - hr.bottom;
+      if (!dx && !dy) return;
+      // Screen-px delta → the handle's LOCAL px: un-rotate by the layer angle, un-scale by zoom.
+      const radNeg = -((L.rot || 0) * Math.PI / 180);
+      const z = Math.max(0.01, collageUserZoom);
+      const lx = (dx * Math.cos(radNeg) - dy * Math.sin(radNeg)) / z;
+      const ly = (dx * Math.sin(radNeg) + dy * Math.cos(radNeg)) / z;
+      h.style.transform = 'translate(' + lx.toFixed(2) + 'px, ' + ly.toFixed(2) + 'px)';
     }
     // v3.1 (Terry) — ONE place decides whether the top-centre bar CONTAINER shows:
     // any visible text/emoji strip OR the shared photo-tile strip. Called by both
@@ -9884,6 +9964,26 @@
       const _maskActive = !!(it.enh && ((it.enh.blend && it.enh.blend > 0) || (Array.isArray(it.enh.corners) && it.enh.corners.some(function (v) { return (v || 0) > 0.001; }))));
       const _hasFrame = !!(it.enh && (it.enh.borderColor || '').trim());
       it.el.style.boxShadow = (_maskActive || _hasFrame) ? 'none' : '';
+      // v3.0.3 (Terry) — DIVIDER tile: paint the clip a solid colour with optional pill ends and
+      // stop — there's no photo, crop, zoom or shape-mask maths to run. Fade rides enh.opacity on
+      // the clip (a divider has no <img> for applyFilterToEl to fade). Glow & Shadow edge effects
+      // still apply via the fx holder, so a divider can glow like any element.
+      if (it.divider) {
+        it.el.classList.add('is-divider');
+        it.el.style.boxShadow = 'none';
+        if (it.clipEl) {
+          it.clipEl.style.background = it.dividerColor || '#FEC242';
+          const _thin = Math.min(iwPx, ihPx);
+          const _rad = Math.max(0, Math.min(1, (typeof it.dividerRadius === 'number') ? it.dividerRadius : 1));
+          it.clipEl.style.borderRadius = ((_thin / 2) * _rad).toFixed(2) + 'px';
+          const _dop = (it.enh && typeof it.enh.opacity === 'number' && it.enh.opacity < 1) ? String(it.enh.opacity) : '';
+          it.clipEl.style.opacity = _dop;
+        }
+        applyTileEdgeFx(it, iwPx, ihPx);
+        refreshTileToolbar(it);
+        if (it === collageSelected) { try { positionSelectionChrome(); } catch (_) {} }
+        return;
+      }
       // v2.1 round 263 (Terry) — bg-tile: a coverFill tile reads as a BACKGROUND.
       // The <img> covers the WHOLE box (the box is itself the canvas at the locked
       // full-canvas default, or the dragged rectangle once unlocked + resized) with
@@ -12047,6 +12147,7 @@
     // Remembered checkbox picks per family, so the per-apply popup PRE-TICKS last time's choice (fast repeat).
     const collageFmtLastPick = { text: { style: true, effect: true }, enh: { tone: true, effects: true, glow: true } };
     let collageFormatBrush = null, collageFmtPaintWired_ = false, collageFmtPopupEl = null;
+    let fmtCancelPressAt_ = 0;   // v3.0.3 (Terry #8) — when the armed roller was put down on pointerdown, so the same press's trailing click can't re-arm it
     const _fmtClone = (v) => Array.isArray(v) ? v.slice() : v;
     // Which family a layer belongs to: 'text' (a text box) or 'enh' (a photo tile OR an emoji — both styled via .enh).
     function fmtFamilyOf_(ref) {
@@ -12357,7 +12458,8 @@
         e.stopPropagation();
         const brush = collageFormatBrush;
         const inline = brush && brush.inline;
-        if (wp.picked.length && inline) {
+        const painted = !!(wp.picked.length && inline);
+        if (painted) {
           beginCollageChange();
           wp.picked.forEach((w) => applyInlineStyleToRange_(ref, w.start, w.end, inline));
           try { renderTextLayer(ref); } catch (_) {}
@@ -12365,6 +12467,7 @@
           try { syncTextControls(); } catch (_) {}
         }
         endFmtWordPick_(true);
+        if (painted) openFmtAfterPastePop_(e.clientX, e.clientY);   // v3.0.3 (Terry #8) — landed → finish or keep painting?
       });
       panel.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); endFmtWordPick_(false); });
       fmtWordPick = wp;
@@ -12419,23 +12522,48 @@
         closeFmtPopup_();
         if (!ticked.length) return;
         if (dist === 'words') startFmtWordPick_(list[0]);
-        else applyFormatGroups_(list, family, ticked);
+        else if (applyFormatGroups_(list, family, ticked)) openFmtAfterPastePop_(x, y);   // v3.0.3 (Terry #8) — landed → finish or keep painting?
       };
       pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); doApply(); });
       pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
+      collageFmtPopupEl = pop;
+    }
+    // v3.0.3 (Terry #8) — after a paste LANDS: finish, or keep the roller? Same
+    // popup style as the apply checkboxes; registered as collageFmtPopupEl so
+    // Esc / outside-click / stopFormatPaint_ all close it via existing plumbing.
+    function openFmtAfterPastePop_(x, y) {
+      closeFmtPopup_();
+      if (!collageFormatBrush) return;
+      const pop = document.createElement('div'); pop.className = 'collage-fmt-popup';
+      pop.innerHTML = '<div class="cfp-title">Done, or paste this format elsewhere?</div>'
+        + '<div class="cfp-actions" style="margin-top:6px;"><button type="button" class="cfp-cancel">Done</button><button type="button" class="cfp-apply">Paste elsewhere</button></div>';
+      pop.addEventListener('pointerdown', (e) => e.stopPropagation());
+      pop.style.left = ((x || 0) + 8) + 'px'; pop.style.top = ((y || 0) + 8) + 'px';
+      document.body.appendChild(pop);
+      const pw = pop.offsetWidth, ph = pop.offsetHeight;
+      pop.style.left = Math.max(8, Math.min((x || 0) + 8, window.innerWidth - pw - 8)) + 'px';
+      pop.style.top = Math.max(8, Math.min((y || 0) + 8, window.innerHeight - ph - 8)) + 'px';
+      pop.querySelector('.cfp-cancel').addEventListener('click', (e) => { e.stopPropagation(); stopFormatPaint_(); });
+      pop.querySelector('.cfp-apply').addEventListener('click', (e) => { e.stopPropagation(); closeFmtPopup_(); });
       collageFmtPopupEl = pop;
     }
     function wireFormatPaintOnce_() {
       if (collageFmtPaintWired_) return; collageFmtPaintWired_ = true;
       window.addEventListener('keydown', (e) => {
         if (!collageFormatBrush) return;
-        if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); if (fmtWordPick) endFmtWordPick_(false); else if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_(); }   // v3.1 (Terry SS1) — Esc backs out of word picking first (the roller stays loaded)
-      });
+        if (e.key === 'Escape' || e.code === 'Escape') { e.preventDefault(); e.stopPropagation(); if (fmtWordPick) endFmtWordPick_(false); else if (collageFmtPopupEl) closeFmtPopup_(); else stopFormatPaint_(); }   // v3.1 (Terry SS1) — Esc backs out of word picking first (the roller stays loaded); v3.0.3 (Terry #8) — CAPTURE + stop so the maximised-window Esc-restore can never eat this keystroke
+      }, true);
       // Capture phase, so a paint click beats the layer's own select/drag/edit handlers.
       document.addEventListener('pointerdown', (e) => {
         if (!collageFormatBrush) return;
         if (fmtWordPick) return;   // v3.1 (Terry SS1) — word-pick mode owns the pointer (its own capture handler runs next)
-        if (e.target.closest && e.target.closest('.collage-fmt-popup, .ch-toolbar, #collage-text-topbar, .ch-tb-pop, .ch-tb-fmtpaint')) return;   // popup / toolbar / roller → let it work
+        // v3.0.3 (Terry #8) — the (gold) ROLLER BUTTON is the cancel: put the roller
+        // down HERE on pointerdown, not in its click handler. When the press also
+        // blurred an active text edit, the exit-edit re-bake shifted the selection
+        // chrome under the pointer and the button's click never landed — so the
+        // first press did nothing. preventDefault also keeps the caret where it was.
+        if (e.target.closest && e.target.closest('.ch-tb-fmtpaint')) { e.preventDefault(); e.stopPropagation(); fmtCancelPressAt_ = Date.now(); stopFormatPaint_(); return; }
+        if (e.target.closest && e.target.closest('.collage-fmt-popup, .ch-toolbar, #collage-text-topbar, .ch-tb-pop')) return;   // popup / toolbar → let it work
         const target = fmtTargetFromEvent_(e);
         if (target && target.ref === collageFormatBrush.srcRef) { e.preventDefault(); e.stopPropagation(); return; }   // the source → ignore
         if (target && target.family === collageFormatBrush.family) { e.preventDefault(); e.stopPropagation(); openFmtApplyPopup_([target.ref], e.clientX, e.clientY); return; }   // compatible → checkbox popup
@@ -12577,7 +12705,12 @@
         row.style.cssText = 'display:flex;align-items:center;gap:8px;width:100%;margin:3px 0;padding:6px 8px;border-radius:8px;border:1px solid rgba(255,255,255,0.14);background:rgba(255,255,255,0.05);cursor:pointer;text-align:left;';
         const chip = document.createElement('span');
         const s = lk.inline;
-        chip.style.cssText = 'display:inline-block;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;border-radius:6px;background:#efeef6;font-size:13px;line-height:1.25;';
+        // v3.0.3 (Terry #9) — the sample sat on a near-white chip, so a white/light
+        // look was an invisible white-on-white box. Text layers carry no background
+        // of their own, so preview on the dark editor card instead — flipping back
+        // to the light chip only for DARK looks, so every look stays readable.
+        const chipLum = (function (c) { try { let h = String(c || '').trim(); if (h[0] !== '#') return 1; h = h.slice(1); if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2]; const n = parseInt(h.slice(0, 6), 16); return (0.299 * ((n >> 16) & 255) + 0.587 * ((n >> 8) & 255) + 0.114 * (n & 255)) / 255; } catch (_) { return 1; } })(s.color);
+        chip.style.cssText = 'display:inline-block;max-width:190px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;padding:3px 9px;border-radius:6px;background:' + (chipLum < 0.35 ? '#efeef6' : '#14121f') + ';border:1px solid rgba(255,255,255,0.16);font-size:13px;line-height:1.25;';
         chip.style.color = s.color;
         chip.style.fontWeight = s.bold ? '700' : '400';
         chip.style.fontStyle = s.italic ? 'italic' : 'normal';
@@ -12629,6 +12762,7 @@
       try { if (typeof cctxToast === 'function') cctxToast('Look copied — click another ' + (family === 'text' ? 'text box' : 'photo or emoji') + ' to paint it (Esc to stop)'); } catch (_) {}
     }
     function startFormatPaint_(ref, family) {
+      if (Date.now() - fmtCancelPressAt_ < 500) return;   // v3.0.3 (Terry #8) — the press that just put the roller down still fires a click on the toggle button; don't let it re-arm
       family = family || fmtFamilyOf_(ref);
       if (!ref || !family) return;
       wireFormatPaintOnce_();
@@ -13238,6 +13372,7 @@
         // v2.1 round 221 (Terry) — append the rotate + the full 8-handle resize set
         // + the floating toolbar (was just tRot + a single tRes pre-221).
         el.appendChild(tRot);
+        layer.rotEl = tRot;   // v3.0.3 (Terry #10) — clampTextRotHandle_ keeps this handle inside the visible canvas∩stage box
         el.appendChild(tResTL); el.appendChild(tResTR); el.appendChild(tResBL); el.appendChild(tResBR);
         el.appendChild(tResL); el.appendChild(tResR); el.appendChild(tResT); el.appendChild(tResB);
         // v3.1 (Terry SS1/SS2) — the toolbar lives at STAGE level (#collage-chrome, un-clipped)
@@ -15386,13 +15521,16 @@
       const rect = collageCanvasEl.getBoundingClientRect();
       const centerX = rect.left + (layer.xFrac || 0) * rect.width;
       const centerY = rect.top + (layer.yFrac || 0) * rect.height;
+      // v3.0.3 (Terry #10) — DELTA grab (was absolute: deg = ang − rest-offset, r227).
+      // clampTextRotHandle_ can shift the handle OFF its rest bearing when the box sits
+      // at the canvas edge, so the absolute map would make the text JUMP on grab.
+      // Anchoring on the pointer's own start bearing (deg = startRot + (ang − ang0))
+      // is 1:1 with no jump from ANY grab point — clamped or not, text or emoji.
+      const ang0 = Math.atan2(e.clientY - centerY, e.clientX - centerX) * 180 / Math.PI;
+      const rot0 = layer.rot || 0;
       const move = (ev) => {
         const ang = Math.atan2(ev.clientY - centerY, ev.clientX - centerX) * 180 / Math.PI;
-        // v2.1 round 227 (Terry) — handle rest position differs by KIND, so the offset
-        // that maps "rest" → 0° differs: EMOJI handle is at the right-middle edge
-        // (rest ang≈0 ⇒ deg = ang, as round 225), TEXT handle is at the bottom-centre
-        // (rest ang≈90 ⇒ deg = ang − 90). This keeps the grab 1:1 with no jump for both.
-        let deg = ang - (layer.isEmoji ? 0 : 90);
+        let deg = rot0 + (ang - ang0);
         if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
         layer.rot = deg;
         renderTextLayer(layer);
@@ -15735,6 +15873,7 @@
       if (collageSelected && !collageSelected.isBg && collageSelected.el) collageSelected.el.classList.remove('selected');
       collageSelected = it || null;
       if (it && !it.isBg && it.el) it.el.classList.add('selected');
+      try { refreshDividerControls(); } catch (_) {}   // v3.0.3 (Terry) — the Dividers panel controls bind to the selected divider (hidden otherwise)
       // Keep the multi-select set in sync with a plain single selection (a real
       // tile → [it]; background/null → []). Bulk entry points (marquee /
       // Ctrl+click / Ctrl+A) overwrite this afterwards.
@@ -16868,9 +17007,9 @@
         // Non-frame photos keep the aspect-locked uniform resize + edge-snapping below.
         // v2.1 round 374 (Terry) — HOLD Shift (or Ctrl) while dragging a corner to KEEP the current shape
         // (enlarge a square AS a square): the modifier falls through to the aspect-locked uniform path below.
-        if (it.isFrame && !ev.shiftKey && !ev.ctrlKey) {
-          const _nwF = Math.max(collageMinWFrac(), Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
-          const _nhF = Math.max(0.05, Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientY - anchorY) / ch));
+        if ((it.isFrame || it.divider) && !ev.shiftKey && !ev.ctrlKey) {   // v3.0.3 (Terry) — dividers resize free-aspect like frames
+          const _nwF = Math.max((it.divider ? 0.0008 : collageMinWFrac()), Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientX - anchorX) / cw));
+          const _nhF = Math.max((it.divider ? 0.0008 : 0.05), Math.min(TILE_WFRAC_MAX, Math.abs(ev.clientY - anchorY) / ch));
           it.wFrac = _nwF;
           const _caF = getCanvasAspect();
           const _aspF = (_nhF > 0) ? ((_nwF * _caF) / _nhF) : (it.boxAspect || it.aspect || 1);
@@ -17000,6 +17139,43 @@
       if (it && it.locked) { selectCollageItem(it); return; }   // v2.1 round 203 — locked: no crop (handles are also hidden by CSS)
       beginCollageChange();
       selectCollageItem(it);
+      // v3.0.3 (Terry) — DIVIDER: the edge bars RESIZE the line (stretch length, thicken width),
+      // never crop — there's no photo, and stretching an end is the natural divider gesture. The
+      // opposite edge stays anchored; thickness holds constant while the length is dragged. The
+      // global pointerup→commit wrapper turns the whole drag into one undo step.
+      if (it.divider) {
+        const cwD = collageCanvasEl.clientWidth || 1, chD = collageCanvasEl.clientHeight || 1;
+        const gcaD = getCanvasAspect();
+        const swD = it.wFrac, sxD = it.xFrac, syD = it.yFrac;
+        const shD = (swD * gcaD) / (it.aspect || 1);   // start height fraction
+        const _cRectD = collageCanvasEl.getBoundingClientRect();
+        const s2cD = (_cRectD.width > 0) ? (cwD / _cRectD.width) : 1;   // screen px → content px (wheel zoom)
+        const moveD = (ev) => {
+          const dxF = ((ev.clientX - e.clientX) * s2cD) / cwD;
+          const dyF = ((ev.clientY - e.clientY) * s2cD) / chD;
+          if (edge === 'l' || edge === 'r') {
+            const nw = Math.max(0.002, (edge === 'l') ? (swD - dxF) : (swD + dxF));
+            it.wFrac = nw;
+            it.aspect = (nw * gcaD) / Math.max(0.0005, shD);   // hold thickness while the length stretches
+            if (edge === 'l') it.xFrac = sxD + (swD - nw);     // right end stays put
+          } else {
+            const nh = Math.max(0.002, (edge === 't') ? (shD - dyF) : (shD + dyF));
+            it.aspect = (it.wFrac * gcaD) / Math.max(0.0005, nh);
+            if (edge === 't') it.yFrac = syD + (shD - nh);     // bottom end stays put
+          }
+          renderCollageItem(it);
+          try { showCollageMeasurements(it); } catch (_) {}
+          try { refreshDividerControls(); } catch (_) {}
+        };
+        const upD = () => {
+          try { hideCollageMeasurements(); } catch (_) {}
+          window.removeEventListener('pointermove', moveD);
+          window.removeEventListener('pointerup', upD);
+        };
+        window.addEventListener('pointermove', moveD);
+        window.addEventListener('pointerup', upD);
+        return;
+      }
       const startX = e.clientX, startY = e.clientY;
       const sc = { l: it.crop.l, t: it.crop.t, r: it.crop.r, b: it.crop.b };
       const cwpx = collageCanvasEl.clientWidth;
@@ -19496,7 +19672,7 @@
         // v2.1 round 226 (Terry) — Canvas Size: carry the selected preset id + the
         // target export px so a size change is a single undoable step and round-trips.
         sizeId: collageSizeId, exportPx: collageExportPx,
-        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, bgPhoto: !!it.bgPhoto, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined, autoTrimV: (typeof it.autoTrimV === 'number') ? it.autoTrimV : 0, cropManual: !!it.cropManual })),   // v2.1 round 203 (Terry) — carry `locked` + `path`; v3.1 (Terry) — carry autoTrimV (auto-trim algorithm version, so an old tip-clipping trim re-runs on reopen) + cropManual (a hand crop is never auto-re-trimmed) (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo; v3.0 round 536 (Terry) — carry `bgPhoto` (the permanent Background-pick mark) so the chip indicator survives undo/reopen
+        items: collageItems.map((it) => ({ idx: it.idx, path: it.path, on: it.on, removed: !!it.removed, placeholder: !!it.placeholder, framed: !!it.framed, bgPhoto: !!it.bgPhoto, xFrac: it.xFrac, yFrac: it.yFrac, wFrac: it.wFrac, rot: it.rot, z: it.z, aspect: it.aspect, crop: it.crop, zoom: it.zoom, panX: it.panX, panY: it.panY, enh: it.enh, bgRemovedPath: it.bgRemovedPath || null, bgRemoveStrength: (typeof it.bgRemoveStrength === 'number') ? it.bgRemoveStrength : 50, locked: !!it.locked, lockLayer: !!it.lockLayer, groupId: it.groupId || null, coverFill: !!it.coverFill, boxAspect: (typeof it.boxAspect === 'number') ? it.boxAspect : undefined, autoTrimV: (typeof it.autoTrimV === 'number') ? it.autoTrimV : 0, cropManual: !!it.cropManual, divider: it.divider ? true : undefined, dividerColor: it.divider ? (it.dividerColor || '#FEC242') : undefined, dividerRadius: (it.divider && typeof it.dividerRadius === 'number') ? it.dividerRadius : undefined })),   // v2.1 round 203 (Terry) — carry `locked` + `path`; v3.1 (Terry) — carry autoTrimV (auto-trim algorithm version, so an old tip-clipping trim re-runs on reopen) + cropManual (a hand crop is never auto-re-trimmed) (path lets restore rebuild duplicated tiles, which live past the per-file originals); round 263 (Terry) — carry coverFill + boxAspect so a background-photo tile round-trips through undo/redo; round 304 (Terry) — carry `removed` so an X-removed photo stays out of the strip through undo/redo; v3.0 round 536 (Terry) — carry `bgPhoto` (the permanent Background-pick mark) so the chip indicator survives undo/reopen
         // v2.1 round 185 (Text #1) — serialize text layers WITHOUT the live
         // `el` (rebuilt on restore by renderAllTexts). selTextId remembers the
         // selection so undo/redo restores it too.
@@ -19651,6 +19827,8 @@
         it.placeholder = !!si.placeholder;   // v2.1 round 319 (Terry) — empty-frame state round-trips
         it.framed = !!si.framed;   // v2.1 round 325 (Terry) — a filled frame keeps its box aspect (no balloon on reload)
         it.bgPhoto = !!si.bgPhoto;   // v3.0 round 536 (Terry) — the permanent Background-pick mark round-trips
+        it.divider = !!si.divider;   // v3.0.3 (Terry) — divider lines round-trip
+        if (it.divider) { it.dividerColor = si.dividerColor || '#FEC242'; it.dividerRadius = (typeof si.dividerRadius === 'number') ? si.dividerRadius : 1; }
         it.xFrac = si.xFrac; it.yFrac = si.yFrac; it.wFrac = si.wFrac; it.rot = si.rot; it.z = si.z; it.aspect = si.aspect;
         // v2.1 round 263 (Terry) — bg-tile: restore coverFill + boxAspect (old snapshots
         // lack both → a normal tile). boxAspect only matters for coverFill; default to the
@@ -19725,6 +19903,7 @@
             coverFill: !!si.coverFill, boxAspect: (typeof si.boxAspect === 'number') ? si.boxAspect : undefined,
             placeholder: !!si.placeholder,   // v2.1 round 319 (Terry) — rebuild an empty frame (buildCollageItemEl reads this)
             framed: !!si.framed,   // v2.1 round 325 (Terry) — filled-frame keeps its box aspect on rebuild
+            divider: !!si.divider, dividerColor: si.dividerColor || '#FEC242', dividerRadius: (typeof si.dividerRadius === 'number') ? si.dividerRadius : 1,   // v3.0.3 (Terry) — rebuild a divider (buildCollageItemEl reads divider)
             z: si.z, el: null, imgEl: null, clipEl: null, locked: !!si.locked,
             crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
             bgRemovedPath: null, bgRemoveStrength: 50, enh: {},
@@ -20111,6 +20290,11 @@
       if (it.placeholder) {
         img.style.display = 'none';
         el.classList.add('is-frame');
+      } else if (it.divider) {
+        // v3.0.3 (Terry) — DIVIDER: no photo, no src; the clip is painted a solid colour in
+        // renderCollageItem. Not is-frame, so none of the drop-a-photo affordances attach.
+        img.style.display = 'none';
+        el.classList.add('is-divider');
       } else {
         img.src = getFileSrc(it.bgRemovedPath || it.path);
       }
@@ -20171,6 +20355,7 @@
       const tbRep = document.createElement('button'); tbRep.type = 'button'; tbRep.className = 'ch-tb-btn ch-tb-rep'; tbRep.setAttribute('data-pdr-tooltip', 'Replace photo');
       tbRep.innerHTML = '<svg viewBox="0 0 24 24"><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><polyline points="21 3 21 8 16 8"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/><polyline points="3 21 3 16 8 16"/></svg>';
       tbar.appendChild(tbLock); tbar.appendChild(tbDup); tbar.appendChild(tbRep); tbar.appendChild(tbRem);
+      if (it.divider) tbRep.style.display = 'none';   // v3.0.3 (Terry) — a divider has no photo to replace
       // v2.1 round 145 — crop edge handles (drag inward to trim a side).
       const hCropL = document.createElement('div'); hCropL.className = 'ch ch-crop ch-crop-l'; hCropL.setAttribute('data-pdr-tooltip', 'Crop left edge');
       const hCropR = document.createElement('div'); hCropR.className = 'ch ch-crop ch-crop-r'; hCropR.setAttribute('data-pdr-tooltip', 'Crop right edge');
@@ -20299,6 +20484,7 @@
       if (pos && typeof pos.x === 'number' && typeof pos.y === 'number') { nx = pos.x; ny = pos.y; }
       const clone = {
         idx: it.idx, path: it.path, on: true, placeholder: !!it.placeholder,   // v2.1 round 319 (Terry) — duplicating a frame keeps it a frame
+        divider: !!it.divider, dividerColor: it.dividerColor || undefined, dividerRadius: (typeof it.dividerRadius === 'number') ? it.dividerRadius : undefined,   // v3.0.3 (Terry) — duplicating a divider keeps it a divider (colour + ends ride along)
         bgPhoto: !!it.bgPhoto,   // v3.0 round 537 (Terry) — duplicating a background photo makes another background photo (same privileges: effects, purple chrome, chip indicator)
         framed: !!it.framed,   // v3.1 (Terry) — the clone keeps the decorative-frame flag (was silently dropped)
         coverFill: !!it.coverFill,   // v3.1 (Terry) — a filled frame / backdrop tile clones as coverFill too — without this the copy re-rendered by PHOTO aspect and the frame's box shape was lost
@@ -20789,6 +20975,129 @@
       updateCollageFilmstrip();
       commitCollageChange();
     }
+    // v3.0.3 (Terry) — DIVIDERS. A divider is a photo-less tile (like an empty frame) whose clip is
+    // painted a solid colour with optional pill ends — so it inherits EVERYTHING tiles already do:
+    // drag, snap + measurements, rotate, lock, duplicate, z-order, undo, save/reopen, and the WYSIWYG
+    // export (it's just a DOM box). Corner handles resize it freely; the edge bars stretch length /
+    // thickness (no photo → nothing to crop); the panel gives colour + thickness + rounded ends + fade.
+    function dividerIsHorizontal(it) {
+      const hF = (it.wFrac * getCanvasAspect()) / (it.aspect || 1);
+      return it.wFrac >= hF;
+    }
+    function addDividerToCollage(orientation) {
+      if (!collageMode) return;
+      if (document.body.classList.contains('cws-open')) { try { hideCollageWelcome(); } catch (_) {} }
+      beginCollageChange();
+      const horiz = orientation !== 'v';
+      const gca = getCanvasAspect();
+      const thickFrac = 0.006;   // default line weight ≈ 8 px on a 1350-high page
+      const pgWFrac = (carouselMode && carouselPageCount > 1) ? (1 / carouselPageCount) : 1;
+      let wFrac, aspect;
+      if (horiz) { wFrac = 0.6 * pgWFrac; aspect = (wFrac * gca) / thickFrac; }
+      else { wFrac = thickFrac / gca; aspect = (wFrac * gca) / 0.6; }
+      const it = {
+        idx: -1, path: '', placeholder: false, divider: true, on: true,
+        dividerColor: '#FEC242', dividerRadius: 1,
+        xFrac: 0.2, yFrac: 0.45, wFrac: wFrac, aspect: aspect, rot: 0,
+        z: ++collageZTop, el: null, imgEl: null, clipEl: null,
+        locked: false,
+        crop: { l: 0, t: 0, r: 1, b: 1 }, zoom: 1, panX: 0, panY: 0,
+        bgRemovedPath: null, bgRemoveStrength: 50,
+        enh: { brightness: 100, contrast: 100, saturation: 100, temperature: 0, colour: 50, flipH: false, flipV: false, tone: 'none', borderColor: '', borderWeight: 'thin', opacity: 1, blend: 0, corners: [0, 0, 0, 0] },
+      };
+      // Land on the CURRENT page centre in a carousel (like a new text layer would), cascaded a touch.
+      try { placeCenter(it); } catch (_) {}
+      const n = collageItems.filter((t) => t && t.on && !t.isBg).length;
+      const off = (((n - 1) % 6)) * 0.02;
+      it.xFrac = Math.max(0, Math.min(1 - it.wFrac, (it.xFrac || 0.2) + off));
+      it.yFrac = Math.max(0, Math.min(1 - itemHeightFrac(it), (it.yFrac || 0.45) + off));
+      collageItems.push(it);
+      buildCollageItemEl(it);
+      renderCollageItem(it);
+      selectCollageItem(it);
+      updateCollageFilmstrip();
+      commitCollageChange();
+      try { refreshDividerControls(); } catch (_) {}
+    }
+    // Panel sync: show the divider controls only while a divider is selected; mirror its values.
+    function refreshDividerControls() {
+      const wrap = document.getElementById('divider-controls');
+      if (!wrap) return;
+      const it = collageSelected;
+      const show = !!(it && it.divider);
+      wrap.style.display = show ? '' : 'none';
+      if (!show) return;
+      try {
+        const gca = getCanvasAspect();
+        const eW = (collageExportPx && collageExportPx.w) ? collageExportPx.w : Math.round(1350 * gca);
+        const eH = (collageExportPx && collageExportPx.h) ? collageExportPx.h : 1350;
+        const hF = (it.wFrac * gca) / (it.aspect || 1);
+        const px = Math.max(1, Math.round(dividerIsHorizontal(it) ? hF * eH : it.wFrac * eW));
+        const thick = document.getElementById('slider-divider-thick'), tv = document.getElementById('val-divider-thick');
+        if (thick) thick.value = String(Math.min(60, px)); if (tv) tv.textContent = px + ' px';
+        const rad = Math.round(((typeof it.dividerRadius === 'number') ? it.dividerRadius : 1) * 100);
+        const round = document.getElementById('slider-divider-round'), rv = document.getElementById('val-divider-round');
+        if (round) round.value = String(rad); if (rv) rv.textContent = rad + '%';
+        const op = Math.round((((it.enh && typeof it.enh.opacity === 'number') ? it.enh.opacity : 1)) * 100);
+        const fade = document.getElementById('slider-divider-fade'), fv = document.getElementById('val-divider-fade');
+        if (fade) fade.value = String(Math.max(10, op)); if (fv) fv.textContent = op + '%';
+        const sw = document.getElementById('divider-swatches');
+        if (sw) sw.querySelectorAll('.frame-swatch').forEach((b) => b.classList.toggle('active', (b.getAttribute('data-color') || '').toLowerCase() === String(it.dividerColor || '#FEC242').toLowerCase()));
+      } catch (_) {}
+    }
+    (function wireDividerPanel() {
+      const addH = document.getElementById('divider-add-h'), addV = document.getElementById('divider-add-v');
+      if (addH) addH.addEventListener('click', () => addDividerToCollage('h'));
+      if (addV) addV.addEventListener('click', () => addDividerToCollage('v'));
+      // The Enhance panel's pointerdown→begin / pointerup→commit wrapper makes each change below ONE
+      // undo step (same convention as Page outlines) — no per-handler begin/commit.
+      const sw = document.getElementById('divider-swatches');
+      if (sw) sw.addEventListener('click', (e) => {
+        const b = e.target && e.target.closest ? e.target.closest('.frame-swatch') : null;
+        if (!b) return;
+        const it = collageSelected; if (!it || !it.divider) return;
+        it.dividerColor = b.getAttribute('data-color') || '#FEC242';
+        renderCollageItem(it); refreshDividerControls();
+      });
+      const addBtn = document.getElementById('divider-custom-add'), inp = document.getElementById('divider-custom');
+      if (addBtn && inp) {
+        addBtn.addEventListener('click', () => { try { inp.click(); } catch (_) {} });
+        inp.addEventListener('input', () => { const it = collageSelected; if (!it || !it.divider) return; it.dividerColor = inp.value; renderCollageItem(it); refreshDividerControls(); });
+      }
+      const thick = document.getElementById('slider-divider-thick');
+      if (thick) thick.addEventListener('input', () => {
+        const it = collageSelected; if (!it || !it.divider) return;
+        const px = Math.max(1, parseInt(thick.value, 10) || 8);
+        const tv = document.getElementById('val-divider-thick'); if (tv) tv.textContent = px + ' px';
+        const gca = getCanvasAspect();
+        const eW = (collageExportPx && collageExportPx.w) ? collageExportPx.w : Math.round(1350 * gca);
+        const eH = (collageExportPx && collageExportPx.h) ? collageExportPx.h : 1350;
+        if (dividerIsHorizontal(it)) {
+          const tF = px / eH;                            // new height fraction; length unchanged
+          it.aspect = (it.wFrac * gca) / Math.max(0.0005, tF);
+        } else {
+          const hF = (it.wFrac * gca) / (it.aspect || 1);   // keep length
+          it.wFrac = Math.max(0.0005, px / eW);             // new thin width
+          it.aspect = (it.wFrac * gca) / Math.max(0.0005, hF);
+        }
+        renderCollageItem(it);
+      });
+      const round = document.getElementById('slider-divider-round');
+      if (round) round.addEventListener('input', () => {
+        const it = collageSelected; if (!it || !it.divider) return;
+        it.dividerRadius = Math.max(0, Math.min(100, parseInt(round.value, 10) || 0)) / 100;
+        const rv = document.getElementById('val-divider-round'); if (rv) rv.textContent = round.value + '%';
+        renderCollageItem(it);
+      });
+      const fade = document.getElementById('slider-divider-fade');
+      if (fade) fade.addEventListener('input', () => {
+        const it = collageSelected; if (!it || !it.divider) return;
+        const p = Math.max(10, Math.min(100, parseInt(fade.value, 10) || 100));
+        it.enh = it.enh || {}; it.enh.opacity = p / 100;
+        const fv = document.getElementById('val-divider-fade'); if (fv) fv.textContent = p + '%';
+        renderCollageItem(it);
+      });
+    })();
     // Open the library picker to fill ONE frame (or replace a tile's photo).
     function requestFillFrame(it) {
       if (!it || !collageMode) return;
@@ -25202,6 +25511,7 @@
         }
         function onOutside(e) { if (menuEl && menuEl.contains(e.target)) return; if (subEl && subEl.contains(e.target)) return; if (infoEl && infoEl.contains(e.target)) return; hideAll(); }
         function cctxToast(msg, ms) { var d = document.createElement('div'); d.className = 'cctx-toast'; d.textContent = msg; document.body.appendChild(d); if (ms !== 0) setTimeout(function () { try { d.remove(); } catch (_) {} }, ms || 1600); return d; }
+        window.cctxToast = cctxToast;   // v3.0.3 (Terry #8) — the format painter's guarded cctxToast calls live OUTSIDE this closure; expose it so "Look copied … (Esc to stop)" actually shows
         function onEsc(e) { if (e.key === 'Escape') hideAll(); }
         function armDismiss() { document.addEventListener('pointerdown', onOutside, true); document.addEventListener('keydown', onEsc, true); window.addEventListener('blur', hideAll); }
         function sync(it) { try { if (collageSelected === it && window.pdrEnhanceBridge && window.pdrEnhanceBridge.setTile) window.pdrEnhanceBridge.setTile(it); } catch (_) {} }
@@ -30782,6 +31092,12 @@ function zoomTo(newZoom, centreX, centreY) {
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         if (htmlFs()) return; // browser handles video-fullscreen Esc
+        // v3.0.3 (Terry #7/#8) — an EDITOR mode owns this Esc: typing inside a
+        // collage text box (editingText), the format painter's armed roller /
+        // word pick / apply popup (collageFormatBrush), or its "copy which
+        // look?" picker (fmtSourcePopEl_). Their own handlers exit just that
+        // mode — the window must NOT also restore from maximised/full screen.
+        if (editingText || collageFormatBrush || fmtSourcePopEl_) return;
         if (isMaximized || isElectronFs) {
           if (window.pdr && window.pdr.window && window.pdr.window.exitFullOrRestore) {
             try { window.pdr.window.exitFullOrRestore(); } catch (_) {}
