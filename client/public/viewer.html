@@ -9996,6 +9996,13 @@
           if (_cv.height !== _ch2) _cv.height = _ch2;
           _cv.style.position = 'absolute'; _cv.style.left = '0px'; _cv.style.top = '0px';
           _cv.style.width = innerW + 'px'; _cv.style.height = innerH + 'px'; _cv.style.display = 'block';
+          // v3.0.3 (Terry) — the canvas REPLACES the <img>, so it must inherit the img-level
+          // presentation applyFilterToEl puts ON the img: per-tile Fade (style.opacity) and any
+          // img-level filter. Without this the export baked the photo fully opaque/unfiltered —
+          // Terry's fade vanished and the bright photo covered the logos layered beneath it.
+          // (Flip is baked into the draw below; clip-level filter/mask cascade over the canvas.)
+          _cv.style.opacity = it.imgEl.style.opacity || '';
+          _cv.style.filter = it.imgEl.style.filter || '';
           const _cx = _cv.getContext('2d');
           if (_cx) {
             _cx.setTransform(1, 0, 0, 1, 0, 0); _cx.clearRect(0, 0, _cw2, _ch2);
