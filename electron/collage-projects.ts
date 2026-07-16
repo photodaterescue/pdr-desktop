@@ -10,7 +10,7 @@
 // still open with the library drive unplugged). v3.0 (Terry, #7): each project is ALSO written through to
 // the LIBRARY DRIVE at <LibraryRoot>\.pdr\collages\ so it survives a reinstall / new machine and travels
 // with the photos; a list-time newer-wins merge restores everything once the library is re-attached.
-import { app, ipcMain, shell } from 'electron';
+import { app, ipcMain, shell, BrowserWindow } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log/main.js';
@@ -46,6 +46,12 @@ export interface CollageProjectData {
   // of spawning a fresh card every session the template is reopened.
   sourceTemplateId?: string;
   sourceTemplateName?: string;
+  // v3.0.3 (Terry) — PDR Recycle Bin for collages. A soft-deleted project/template keeps its
+  // file (so it's restorable, shown by name + thumbnail in the Workspace Recycle Bin) but is
+  // hidden from every list. `trashed` travels IN the record, so the existing newer-wins sidecar
+  // merge propagates the delete/restore to the library drive for free (no resurrection on sync).
+  trashed?: boolean;
+  trashedAt?: string;       // ISO timestamp the item was moved to the Recycle Bin
 }
 
 export interface CollageProjectSummary {
@@ -59,6 +65,7 @@ export interface CollageProjectSummary {
   carouselWideFileId?: number | null;   // v3.0 round 546 (Terry) — the wide design's file id (Home View for carousels)
   carousel?: boolean;   // v3.0 round 548 (Terry) — carousel-vs-collage kind, for the free-trial creation caps (5 of each)
   carouselPages?: number | null;   // v3.0 round 584 (Terry) — page count, for the gallery card's "N pages" badge
+  trashedAt?: string | null;   // v3.0.3 (Terry) — set only for Recycle Bin listings; when the item was soft-deleted
 }
 
 const PROJECT_EXT = '.pdrcollage';
@@ -209,6 +216,7 @@ async function latestProjectIdFromTemplate(dir: string, templateId: string, want
     try {
       const rec = JSON.parse(await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8')) as CollageProjectData;
       if (!rec || !rec.id) continue;
+      if (rec.trashed) continue;                                    // v3.0.3 (Terry) — never adopt (and thus resurrect) a soft-deleted design
       if (rec.kind === 'template') continue;                        // never overwrite a template itself
       if ((rec.sourceTemplateId || '') !== templateId) continue;    // must be a design FROM this template
       if (!!(rec as { carousel?: boolean }).carousel !== wantCarousel) continue;   // keep carousels + collages distinct
@@ -318,6 +326,7 @@ ipcMain.handle('collage:listProjects', async (): Promise<CollageProjectSummary[]
         const raw = await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8');
         const rec = JSON.parse(raw) as CollageProjectData;
         if (!rec || !rec.id) continue;
+        if (rec.trashed) continue;   // v3.0.3 (Terry) — soft-deleted items live in the Recycle Bin, not the gallery
         out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: (rec.exportedFileId != null) ? rec.exportedFileId : null, carouselAlbumId: (rec.carouselAlbumId != null) ? rec.carouselAlbumId : null, carouselWideFileId: (rec.carouselWideFileId != null) ? rec.carouselWideFileId : null, carousel: !!(rec as { carousel?: boolean }).carousel, carouselPages: (typeof (rec as { carouselPages?: number }).carouselPages === 'number') ? (rec as { carouselPages?: number }).carouselPages : null });
       } catch { /* skip a corrupt record */ }
     }
@@ -373,19 +382,85 @@ ipcMain.handle('collage:loadProject', async (_e, id: string) => {
   }
 });
 
+// v3.0.3 (Terry) — PDR Recycle Bin for collages/templates. Read a record wherever it lives:
+// AppData working copy first, then the library-drive sidecar (e.g. straight after a reinstall).
+function readRecordAnywhere(id: string): CollageProjectData | null {
+  const dir = projectsDir();
+  for (const p of [recPath(dir, id), path.join(dir, `${id}${PROJECT_EXT}`)]) {
+    try { return JSON.parse(fs.readFileSync(toLongPath(p), 'utf8')) as CollageProjectData; } catch { /* try next */ }
+  }
+  const sc = sidecarCollagesDir();
+  if (sc) {
+    for (const p of [recPath(sc, id), path.join(sc, `${id}${PROJECT_EXT}`)]) {
+      try { return JSON.parse(fs.readFileSync(toLongPath(p), 'utf8')) as CollageProjectData; } catch { /* try next */ }
+    }
+  }
+  return null;
+}
+// Write a record to AppData + mirror to the sidecar. The trashed flag rides IN the record, so the
+// existing bidirectional newer-wins sidecar merge propagates a delete/restore to the drive itself.
+function writeRecordThrough(rec: CollageProjectData): void {
+  const dir = projectsDir();
+  const id = rec.id as string;
+  fs.writeFileSync(toLongPath(recPath(dir, id)), JSON.stringify(rec), 'utf8');
+  try { const sc = sidecarCollagesDir(); if (sc) copyPreservingMtime(recPath(dir, id), recPath(sc, id)); } catch { /* drive offline — the next list-time sync catches up */ }
+}
+// Tell every window a collage recycle change happened, so the Workspace Recycle Bin view + the
+// sidebar count badge refresh — the same channel the photo Recycle Bin already broadcasts on.
+function broadcastCollageRecycleChanged(kind: string): void {
+  try {
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('recycle:changed', { kind, count: 0 });
+    }
+  } catch { /* best-effort */ }
+}
+
+// Delete = SOFT delete → the Workspace Recycle Bin. The file stays (so it's restorable, shown by
+// name + thumbnail); only a flag flips. permanentDeleteProject is the "Delete forever" that finally
+// hands the files to the OS Recycle Bin.
 ipcMain.handle('collage:deleteProject', async (_e, id: string) => {
   try {
     if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
+    const rec = readRecordAnywhere(id);
+    if (!rec) return { success: false, error: 'Project not found.' };
+    rec.id = rec.id || id;
+    rec.trashed = true;
+    rec.trashedAt = new Date().toISOString();
+    writeRecordThrough(rec);
+    broadcastCollageRecycleChanged('collage-trash');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Restore a soft-deleted project/template back to the gallery.
+ipcMain.handle('collage:restoreProject', async (_e, id: string) => {
+  try {
+    if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
+    const rec = readRecordAnywhere(id);
+    if (!rec) return { success: false, error: 'Project not found.' };
+    rec.id = rec.id || id;
+    rec.trashed = false;
+    delete rec.trashedAt;
+    writeRecordThrough(rec);
+    broadcastCollageRecycleChanged('collage-restore');
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+// Delete forever — the ONLY step that removes the files. Sends them to the OS Recycle Bin
+// (shell.trashItem needs the PLAIN path; the Windows shell API rejects `\\?\` long-paths), with a
+// hard-unlink fallback if a volume has no Recycle Bin. Clears both AppData + sidecar copies.
+ipcMain.handle('collage:permanentDeleteProject', async (_e, id: string) => {
+  try {
+    if (typeof id !== 'string' || !id) return { success: false, error: 'No project.' };
     const dir = projectsDir();
-    const sc = sidecarCollagesDir();   // v3.0 r388 (Terry) — delete from the library drive too, so a delete doesn't resurrect on the next sync
-    // new (<id>_CP.pdrcollage / _CP.png) + legacy (<id>.pdrcollage / .png), in both AppData and the drive.
+    const sc = sidecarCollagesDir();
     const names = [`${id}${PROJECT_SUFFIX}${PROJECT_EXT}`, `${id}${PROJECT_SUFFIX}.png`, `${id}${PROJECT_EXT}`, `${id}.png`];
     const roots = sc ? [dir, sc] : [dir];
-    // v3.0.3 (Terry) — send to the OS Recycle Bin instead of a hard unlink, so a mistaken
-    // delete is recoverable. shell.trashItem needs the PLAIN path (the Windows shell API
-    // rejects `\\?\` extended-length paths), so we existsSync on the long path but trash the
-    // short one. If trashing isn't available (e.g. a network/USB volume with no Recycle Bin)
-    // we fall back to a hard unlink so the delete still succeeds.
     for (const root of roots) {
       for (const nm of names) {
         const plain = path.join(root, nm);
@@ -394,8 +469,51 @@ ipcMain.handle('collage:deleteProject', async (_e, id: string) => {
         catch { try { fs.unlinkSync(toLongPath(plain)); } catch { /* already gone */ } }
       }
     }
+    broadcastCollageRecycleChanged('collage-permadelete');
     return { success: true };
   } catch (err) {
     return { success: false, error: (err as Error).message };
   }
+});
+
+// List everything currently in the Recycle Bin (soft-deleted), most-recently-deleted first.
+ipcMain.handle('collage:listTrashed', async (): Promise<CollageProjectSummary[]> => {
+  try {
+    const dir = projectsDir();
+    let recs: string[] = [];
+    try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { recs = []; }
+    if (!recs.length && sidecarCollagesDir()) {
+      try { await syncCollagesWithSidecarAsync(); } catch { /* best-effort */ }
+      try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return []; }
+    }
+    const out: CollageProjectSummary[] = [];
+    for (const f of recs) {
+      try {
+        const rec = JSON.parse(await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8')) as CollageProjectData;
+        if (!rec || !rec.id || !rec.trashed) continue;
+        out.push({ id: rec.id, name: rec.name || 'Untitled collage', savedAt: rec.savedAt || '', thumbnailDataUrl: null, kind: rec.kind === 'template' ? 'template' : 'project', exportedFileId: null, carouselAlbumId: null, carouselWideFileId: null, carousel: !!(rec as { carousel?: boolean }).carousel, carouselPages: (typeof (rec as { carouselPages?: number }).carouselPages === 'number') ? (rec as { carouselPages?: number }).carouselPages : null, trashedAt: rec.trashedAt || null });
+      } catch { /* skip a corrupt record */ }
+    }
+    out.sort((a, b) => ((a.trashedAt || '') < (b.trashedAt || '') ? 1 : (a.trashedAt || '') > (b.trashedAt || '') ? -1 : 0));
+    return out;
+  } catch (err) {
+    log.warn(`[collage-projects] listTrashed failed: ${(err as Error).message}`);
+    return [];
+  }
+});
+
+// Count of soft-deleted items — for the sidebar Recycle Bin badge. Cheap async substring scan: a
+// top-level `"trashed":true` can only be the record's own flag (any nested "trashed" inside the
+// snapshot string is escaped as \"trashed\"), so we skip a full JSON.parse of every large snapshot.
+ipcMain.handle('collage:trashCount', async (): Promise<number> => {
+  try {
+    const dir = projectsDir();
+    let recs: string[] = [];
+    try { recs = fs.readdirSync(dir).filter((f) => f.endsWith(PROJECT_EXT)); } catch { return 0; }
+    let n = 0;
+    for (const f of recs) {
+      try { const raw = await fs.promises.readFile(toLongPath(path.join(dir, f)), 'utf8'); if (raw.includes('"trashed":true')) n++; } catch { /* skip */ }
+    }
+    return n;
+  } catch { return 0; }
 });

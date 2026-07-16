@@ -4262,8 +4262,10 @@ function Sidebar({ sources, onSourceClick, onSelectAll, isComplete, onAddSource,
     let cancelled = false;
     const refreshCount = async () => {
       try {
-        const r = await (await import('@/lib/electron-bridge')).getRecycleBinCount();
-        if (!cancelled && r.success) setRecycleCount(r.count ?? 0);
+        // v3.0.3 (Terry) — the badge now counts photos + soft-deleted collages/templates together.
+        const bridge = await import('@/lib/electron-bridge');
+        const [r, cc] = await Promise.all([bridge.getRecycleBinCount(), bridge.getCollageTrashCount()]);
+        if (!cancelled) setRecycleCount((r.success ? (r.count ?? 0) : 0) + (cc ?? 0));
       } catch { /* best-effort */ }
     };
     const refreshSetting = async () => {

@@ -659,6 +659,16 @@ openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
       ipcRenderer.invoke('collage:loadProject', id) as Promise<{ success: boolean; project?: { id: string; name: string; savedAt: string; files: string[]; names: string[]; snapshot: string; aspectKey?: string; kind?: 'project' | 'template' }; error?: string }>,
     deleteProject: (id: string) =>
       ipcRenderer.invoke('collage:deleteProject', id) as Promise<{ success: boolean; error?: string }>,
+    // v3.0.3 (Terry) — PDR Recycle Bin for collages/templates. deleteProject SOFT-deletes (into the
+    // Workspace Recycle Bin); these restore, list, count, and permanently delete (→ OS Recycle Bin).
+    restoreProject: (id: string) =>
+      ipcRenderer.invoke('collage:restoreProject', id) as Promise<{ success: boolean; error?: string }>,
+    permanentDeleteProject: (id: string) =>
+      ipcRenderer.invoke('collage:permanentDeleteProject', id) as Promise<{ success: boolean; error?: string }>,
+    listTrashed: () =>
+      ipcRenderer.invoke('collage:listTrashed') as Promise<Array<{ id: string; name: string; savedAt: string; kind: 'project' | 'template'; carousel?: boolean; carouselPages?: number | null; trashedAt?: string | null }>>,
+    trashCount: () =>
+      ipcRenderer.invoke('collage:trashCount') as Promise<number>,
     // v2.1 round 333 (Terry) â€” bake a small thumbnail of a collage layout (no library save) for the
     // Welcome Screen recent/template cards.
     renderThumb: (layout: unknown, pageCount?: number) =>

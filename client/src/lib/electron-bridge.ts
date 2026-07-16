@@ -2936,6 +2936,47 @@ export function onRecycleBinChanged(callback: (info: { kind: string; count: numb
   catch { return () => {}; }
 }
 
+// ─── Collage / template Recycle Bin (v3.0.3, Terry) ────────────────────────
+// Deleted collages, carousels and templates soft-delete into the SAME Workspace
+// Recycle Bin as photos. They live in the collage-projects store (not the photo
+// index), so they have their own list/restore/permanent-delete/count bridge —
+// all broadcasting on the shared `recycle:changed` channel so the bin + badge
+// refresh together.
+export interface CollageTrashEntry {
+  id: string;
+  name: string;
+  savedAt: string;
+  kind: 'project' | 'template';
+  carousel?: boolean;
+  carouselPages?: number | null;
+  trashedAt?: string | null;
+}
+
+export async function listCollageTrash(): Promise<CollageTrashEntry[]> {
+  if (!isElectron()) return [];
+  try { return (await (window as any).pdr?.collage?.listTrashed?.()) ?? []; } catch { return []; }
+}
+
+export async function restoreCollageFromTrash(id: string): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.collage?.restoreProject?.(id); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function permanentDeleteCollage(id: string): Promise<{ success: boolean; error?: string }> {
+  if (!isElectron()) return { success: false };
+  try { return await (window as any).pdr?.collage?.permanentDeleteProject?.(id); } catch (e) { return { success: false, error: (e as Error).message }; }
+}
+
+export async function getCollageTrashCount(): Promise<number> {
+  if (!isElectron()) return 0;
+  try { return (await (window as any).pdr?.collage?.trashCount?.()) ?? 0; } catch { return 0; }
+}
+
+export async function getCollageThumbnail(id: string): Promise<string | null> {
+  if (!isElectron()) return null;
+  try { return (await (window as any).pdr?.collage?.getProjectThumbnail?.(id)) ?? null; } catch { return null; }
+}
+
 // v2.0.15 (Terry 2026-06-06) — Phase 3a. Single-file additions outside
 // the Fix-run path (currently: the Viewer's "Save Enhanced" flow).
 // S&D / Memories / Albums views subscribe so the new file appears

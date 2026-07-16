@@ -17,8 +17,8 @@
  * File Explorer. Selection styling matches MemoriesView (gold).
  */
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { Trash2, RotateCcw, HardDrive, Check, Film, Image as ImageIcon, Inbox, ChevronLeft, ZoomIn, ZoomOut } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState, type ComponentType } from 'react';
+import { Trash2, RotateCcw, HardDrive, Check, Film, Image as ImageIcon, Inbox, ChevronLeft, ZoomIn, ZoomOut, LayoutTemplate, Images } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   listRecycleBin,
@@ -28,6 +28,11 @@ import {
   openSearchViewer,
   onRecycleBinChanged,
   type RecycleBinEntry,
+  listCollageTrash,
+  restoreCollageFromTrash,
+  permanentDeleteCollage,
+  getCollageThumbnail,
+  type CollageTrashEntry,
 } from '../lib/electron-bridge';
 import {
   ContextMenu,
@@ -76,6 +81,16 @@ export default function RecycleBinView({
   // disk space NOW, but cannot be recovered.
   const [skipOsRecycleBin, setSkipOsRecycleBin] = useState(false);
 
+  // v3.0.3 (Terry) — collages/carousels/templates soft-deleted into the SAME bin. They live in a
+  // separate store (not the photo index), so they get their own state + thumbnails + a confirm.
+  const [collageTrash, setCollageTrash] = useState<CollageTrashEntry[]>([]);
+  const [collageThumbs, setCollageThumbs] = useState<Record<string, string>>({});
+  const [collageBusy, setCollageBusy] = useState(false);
+  const [collageConfirmDelete, setCollageConfirmDelete] = useState<CollageTrashEntry | null>(null);
+  const templatesTrash = useMemo(() => collageTrash.filter(c => c.kind === 'template'), [collageTrash]);
+  const collagesTrash = useMemo(() => collageTrash.filter(c => c.kind !== 'template'), [collageTrash]);
+  const totalCount = entries.length + collageTrash.length;
+
   // v2.0.15 (Terry 2026-05-30) — zoom-pill state mirrored from
   // MemoriesView / AlbumsView. 0-100 slider maps to a 120-360px
   // minmax for the grid columns; default 35 matches the By Date
@@ -118,7 +133,7 @@ export default function RecycleBinView({
 
   const refresh = async () => {
     setLoading(true);
-    const r = await listRecycleBin();
+    const [r, ct] = await Promise.all([listRecycleBin(), listCollageTrash()]);
     if (r.success) {
       setEntries(r.data ?? []);
       // Drop any selections that no longer exist
@@ -131,6 +146,7 @@ export default function RecycleBinView({
     } else {
       toast.error('Couldn’t load Recycle Bin', { description: r.error });
     }
+    setCollageTrash(ct);
     setLoading(false);
   };
 
@@ -172,6 +188,23 @@ export default function RecycleBinView({
     })();
     return () => { cancelled = true; };
   }, [entries]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // v3.0.3 (Terry) — lazy-load collage/template thumbnails (baked PNGs from the collage store).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      for (const c of collageTrash) {
+        if (cancelled) return;
+        if (collageThumbs[c.id]) continue;
+        try {
+          const t = await getCollageThumbnail(c.id);
+          if (cancelled) return;
+          if (t) setCollageThumbs(prev => ({ ...prev, [c.id]: t }));
+        } catch { /* best-effort */ }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [collageTrash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const allSelected = entries.length > 0 && selected.size === entries.length;
 
@@ -231,7 +264,98 @@ export default function RecycleBinView({
     }
   };
 
+  // v3.0.3 (Terry) — collage/template restore + permanent-delete (their own store, per-tile actions).
+  const doCollageRestore = async (e: CollageTrashEntry) => {
+    setCollageBusy(true);
+    const r = await restoreCollageFromTrash(e.id);
+    setCollageBusy(false);
+    if (r.success) {
+      toast.success('Restored', { description: e.name });
+      await refresh();
+    } else {
+      toast.error('Couldn’t restore', { description: r.error });
+    }
+  };
+
+  const doCollagePermaDelete = async (e: CollageTrashEntry) => {
+    setCollageBusy(true);
+    const r = await permanentDeleteCollage(e.id);
+    setCollageBusy(false);
+    setCollageConfirmDelete(null);
+    if (r.success) {
+      toast.success('Deleted forever', { description: 'Sent to your computer’s Recycle Bin.' });
+      await refresh();
+    } else {
+      toast.error('Couldn’t delete', { description: r.error });
+    }
+  };
+
   const selectedIds = useMemo(() => Array.from(selected), [selected]);
+
+  // v3.0.3 (Terry) — one collage/template tile: whole design (object-contain), a type chip, hover
+  // Restore + Delete-forever, and a name/deleted-on footer. Mirrors the photo tile's look.
+  const renderCollageTile = (e: CollageTrashEntry) => {
+    const thumb = collageThumbs[e.id];
+    const typeLabel = e.kind === 'template' ? 'Template' : (e.carousel ? 'Carousel' : 'Collage');
+    return (
+      <div key={e.id} className="relative aspect-square overflow-hidden rounded-lg border border-border bg-card group">
+        {thumb ? (
+          <img src={thumb} alt={e.name} className="w-full h-full object-contain" style={{ background: '#0e0e16' }} />
+        ) : (
+          <div className="w-full h-full flex items-center justify-center text-muted-foreground/70" style={{ background: '#0e0e16' }}>
+            {e.kind === 'template' ? <LayoutTemplate className="w-6 h-6" /> : <Images className="w-6 h-6" />}
+          </div>
+        )}
+        <span className="absolute top-1.5 left-1.5 px-1.5 py-0.5 rounded text-[9px] font-semibold uppercase tracking-wide bg-black/55 text-white/85 pointer-events-none">{typeLabel}</span>
+        <div className="absolute top-1.5 right-1.5 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <IconTooltip label="Restore" side="bottom">
+            <button
+              type="button"
+              onClick={() => doCollageRestore(e)}
+              disabled={collageBusy}
+              className="w-7 h-7 rounded-md flex items-center justify-center bg-[rgba(18,18,26,0.82)] border border-white/15 text-white/90 hover:bg-emerald-600 hover:border-emerald-600 hover:text-white transition-colors disabled:opacity-40"
+              data-testid={`recycle-collage-restore-${e.id}`}
+              aria-label="Restore"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+          <IconTooltip label="Delete forever" side="bottom">
+            <button
+              type="button"
+              onClick={() => setCollageConfirmDelete(e)}
+              disabled={collageBusy}
+              className="w-7 h-7 rounded-md flex items-center justify-center bg-[rgba(18,18,26,0.82)] border border-white/15 text-white/90 hover:bg-[#c0392b] hover:border-[#c0392b] hover:text-white transition-colors disabled:opacity-40"
+              data-testid={`recycle-collage-delete-${e.id}`}
+              aria-label="Delete forever"
+            >
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          </IconTooltip>
+        </div>
+        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent px-2 pb-1.5 pt-6 pointer-events-none">
+          <div className="text-[11px] text-white/90 truncate">{e.name || 'Untitled'}</div>
+          <div className="text-[10px] text-white/70 truncate">Deleted {formatRecycledOn(e.trashedAt ?? null)}</div>
+        </div>
+      </div>
+    );
+  };
+
+  const renderCollageSection = (title: string, Icon: ComponentType<{ className?: string }>, items: CollageTrashEntry[]) => {
+    if (items.length === 0) return null;
+    return (
+      <div className="p-3">
+        <div className="flex items-center gap-2 mb-2 px-0.5">
+          <Icon className="w-3.5 h-3.5 text-muted-foreground" />
+          <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{title}</span>
+          <span className="text-[11px] text-muted-foreground/70 tabular-nums">{items.length}</span>
+        </div>
+        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tilePx}px, 1fr))` }}>
+          {items.map(renderCollageTile)}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div ref={rootRef} className="flex flex-col h-full">
@@ -265,8 +389,8 @@ export default function RecycleBinView({
         )}
         <div className="text-sm text-muted-foreground">
           {loading ? 'Loading…' :
-            entries.length === 0 ? 'Recycle Bin is empty'
-            : `${entries.length} item${entries.length === 1 ? '' : 's'}`}
+            totalCount === 0 ? 'Recycle Bin is empty'
+            : `${totalCount} item${totalCount === 1 ? '' : 's'}`}
         </div>
         {entries.length > 0 && (
           <>
@@ -378,13 +502,27 @@ export default function RecycleBinView({
 
       {/* Grid */}
       <div className="flex-1 min-h-0 overflow-y-auto">
-        {loading ? null : entries.length === 0 ? (
+        {loading ? null : totalCount === 0 ? (
           <div className="h-full flex flex-col items-center justify-center text-muted-foreground gap-3 px-6 text-center">
             <Inbox className="w-10 h-10 opacity-60" />
-            <div className="text-sm">Nothing here yet. Deleted photos land here first — restore or permanently delete from this view.</div>
+            <div className="text-sm">Nothing here yet. Deleted photos, collages and templates land here first — restore or permanently delete from this view.</div>
           </div>
         ) : (
-          <div className="grid p-3 gap-2"
+          <>
+            {/* v3.0.3 (Terry) — Templates first (precious, rarely deleted → their own row up top),
+                then Collages & carousels, then the existing Photos grid. Each hidden when empty. */}
+            {renderCollageSection('Templates', LayoutTemplate, templatesTrash)}
+            {renderCollageSection('Collages & carousels', Images, collagesTrash)}
+            {entries.length > 0 && (
+            <div className="p-3">
+              {(templatesTrash.length > 0 || collagesTrash.length > 0) && (
+                <div className="flex items-center gap-2 mb-2 px-0.5">
+                  <ImageIcon className="w-3.5 h-3.5 text-muted-foreground" />
+                  <span className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Photos</span>
+                  <span className="text-[11px] text-muted-foreground/70 tabular-nums">{entries.length}</span>
+                </div>
+              )}
+              <div className="grid gap-2"
                style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${tilePx}px, 1fr))` }}>
             {entries.map((e, idx) => {
               const isSelected = selected.has(e.id);
@@ -509,7 +647,10 @@ export default function RecycleBinView({
                 </ContextMenu>
               );
             })}
-          </div>
+              </div>
+            </div>
+            )}
+          </>
         )}
       </div>
 
@@ -572,6 +713,47 @@ export default function RecycleBinView({
               >
                 <Trash2 className="w-3.5 h-3.5 mr-1.5" />
                 {skipOsRecycleBin ? 'Delete from disk' : 'Delete permanently'}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* v3.0.3 (Terry) — confirm a collage/template "Delete forever". Last stop before the files
+          leave PDR (they go to the OS Recycle Bin). Mirrors the photo confirm modal's surface. */}
+      {collageConfirmDelete && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 px-4"
+          onClick={() => setCollageConfirmDelete(null)}
+        >
+          <div
+            className="w-full max-w-md rounded-xl bg-background border border-border shadow-xl p-5"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            <h3 className="text-base font-semibold text-foreground mb-2">
+              Delete {collageConfirmDelete.kind === 'template' ? 'template' : (collageConfirmDelete.carousel ? 'carousel' : 'collage')} forever?
+            </h3>
+            <p className="text-sm text-muted-foreground mb-4">
+              “{collageConfirmDelete.name || 'Untitled'}” will be sent to your computer’s Recycle Bin — the last place it can be recovered from. It won’t come back inside PDR.
+            </p>
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={() => setCollageConfirmDelete(null)}
+                disabled={collageBusy}
+              >
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                size="sm"
+                onClick={() => { if (collageConfirmDelete) void doCollagePermaDelete(collageConfirmDelete); }}
+                disabled={collageBusy}
+                data-testid="recycle-collage-confirm-delete"
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1.5" />
+                Delete forever
               </Button>
             </div>
           </div>
