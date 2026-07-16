@@ -19671,7 +19671,7 @@
       del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
       del.addEventListener('click', async (e) => {
         e.stopPropagation();
-        const ok = await showPdrConfirm({ title: 'Delete collage?', body: 'Delete "' + (p.name || 'Untitled collage') + '"? This can\'t be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
+        const ok = await showPdrConfirm({ title: 'Delete collage?', body: 'Delete "' + (p.name || 'Untitled collage') + '"? It moves to your Recycle Bin, so you can restore it if you change your mind.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
         if (!ok) return;
         try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
         buildCwsRecent();
@@ -19857,7 +19857,7 @@
           let all = []; try { all = (window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) {}
           const recents = all.filter((p) => p.kind !== 'template');
           if (!recents.length) return;
-          const ok = await showPdrConfirm({ title: 'Clear all collages?', body: 'Delete all ' + recents.length + ' recent collages? This can’t be undone. (Templates are kept.)', confirmLabel: 'Clear all', cancelLabel: 'Cancel' });
+          const ok = await showPdrConfirm({ title: 'Clear all collages?', body: 'Delete all ' + recents.length + ' recent collages? They move to your Recycle Bin, so you can restore them if you change your mind. (Templates are kept.)', confirmLabel: 'Clear all', cancelLabel: 'Cancel' });
           if (!ok) return;
           for (const p of recents) { try { await window.pdr.collage.deleteProject(p.id); } catch (_) {} }
           buildCwsRecent();
@@ -19888,7 +19888,7 @@
           e.stopPropagation();
           const ids = Array.from(cwsSelectedForDelete);
           if (!ids.length) return;
-          const ok = await showPdrConfirm({ title: 'Delete selected collages?', body: 'Delete ' + ids.length + (ids.length === 1 ? ' collage' : ' collages') + '? This can’t be undone.', confirmLabel: 'Delete ' + ids.length, cancelLabel: 'Cancel' });
+          const ok = await showPdrConfirm({ title: 'Delete selected collages?', body: 'Delete ' + ids.length + (ids.length === 1 ? ' collage' : ' collages') + '? They move to your Recycle Bin, so you can restore ' + (ids.length === 1 ? 'it' : 'them') + ' if you change your mind.', confirmLabel: 'Delete ' + ids.length, cancelLabel: 'Cancel' });
           if (!ok) return;
           for (const id of ids) { try { await window.pdr.collage.deleteProject(id); } catch (_) {} }
           exitCwsSelectMode();
@@ -19998,7 +19998,7 @@
         del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
         del.addEventListener('click', async (e) => {
           e.stopPropagation();
-          const ok = await showPdrConfirm({ title: 'Delete template?', body: 'Delete the template "' + (p.name || 'Template') + '"? This can\'t be undone.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
+          const ok = await showPdrConfirm({ title: 'Delete template?', body: 'Delete the template "' + (p.name || 'Template') + '"? It moves to your Recycle Bin, so you can restore it if you change your mind.', confirmLabel: 'Delete', cancelLabel: 'Cancel' });
           if (!ok) return;
           try { await window.pdr.collage.deleteProject(p.id); } catch (_) {}
           buildCwsTemplates();

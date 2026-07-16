@@ -10,7 +10,7 @@
 // still open with the library drive unplugged). v3.0 (Terry, #7): each project is ALSO written through to
 // the LIBRARY DRIVE at <LibraryRoot>\.pdr\collages\ so it survives a reinstall / new machine and travels
 // with the photos; a list-time newer-wins merge restores everything once the library is re-attached.
-import { app, ipcMain } from 'electron';
+import { app, ipcMain, shell } from 'electron';
 import * as path from 'path';
 import * as fs from 'fs';
 import log from 'electron-log/main.js';
@@ -380,9 +380,19 @@ ipcMain.handle('collage:deleteProject', async (_e, id: string) => {
     const sc = sidecarCollagesDir();   // v3.0 r388 (Terry) — delete from the library drive too, so a delete doesn't resurrect on the next sync
     // new (<id>_CP.pdrcollage / _CP.png) + legacy (<id>.pdrcollage / .png), in both AppData and the drive.
     const names = [`${id}${PROJECT_SUFFIX}${PROJECT_EXT}`, `${id}${PROJECT_SUFFIX}.png`, `${id}${PROJECT_EXT}`, `${id}.png`];
-    for (const nm of names) {
-      try { fs.unlinkSync(toLongPath(path.join(dir, nm))); } catch { /* already gone */ }
-      if (sc) { try { fs.unlinkSync(toLongPath(path.join(sc, nm))); } catch { /* already gone */ } }
+    const roots = sc ? [dir, sc] : [dir];
+    // v3.0.3 (Terry) — send to the OS Recycle Bin instead of a hard unlink, so a mistaken
+    // delete is recoverable. shell.trashItem needs the PLAIN path (the Windows shell API
+    // rejects `\\?\` extended-length paths), so we existsSync on the long path but trash the
+    // short one. If trashing isn't available (e.g. a network/USB volume with no Recycle Bin)
+    // we fall back to a hard unlink so the delete still succeeds.
+    for (const root of roots) {
+      for (const nm of names) {
+        const plain = path.join(root, nm);
+        if (!fs.existsSync(toLongPath(plain))) continue;
+        try { await shell.trashItem(plain); }
+        catch { try { fs.unlinkSync(toLongPath(plain)); } catch { /* already gone */ } }
+      }
     }
     return { success: true };
   } catch (err) {
