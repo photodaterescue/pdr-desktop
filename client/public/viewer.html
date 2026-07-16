@@ -2570,6 +2570,11 @@
     .cws-tab-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     #cws-panel-projects .cws-recent { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     #cws-panel-templates { overflow-y: auto; padding-bottom: 40px; }
+    /* v3.0.3 (Terry) — a subtle scrollbar for the frozen homepage list; the default Chromium one read too bright against the dark UI. */
+    .cws-projects-body::-webkit-scrollbar, #cws-panel-templates::-webkit-scrollbar { width: 10px; }
+    .cws-projects-body::-webkit-scrollbar-track, #cws-panel-templates::-webkit-scrollbar-track { background: transparent; }
+    .cws-projects-body::-webkit-scrollbar-thumb, #cws-panel-templates::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    .cws-projects-body::-webkit-scrollbar-thumb:hover, #cws-panel-templates::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: padding-box; }
     .cws-projects-body .cws-projects-list { flex: 1 1 auto; min-width: 0; gap: 20px; }
     .cws-year-rail { flex: 0 0 auto; width: 56px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px; align-self: flex-start; }
     .cws-year-btn { width: 100%; padding: 6px 4px; border-radius: 6px; background: none; border: none; font: 600 12px ui-monospace, 'Cascadia Code', Consolas, monospace; color: #8b88a0; cursor: pointer; transition: color .12s, background .12s; }
