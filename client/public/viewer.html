@@ -2502,14 +2502,15 @@
        Fills ONLY the stage (canvas area); the surrounding editor chrome stays. */
     #collage-welcome {
       position: absolute; inset: 0; z-index: 90000;
-      display: none; overflow: auto;
+      display: none; overflow: hidden;
       background:
         radial-gradient(120% 80% at 50% -12%, rgba(254,194,66,0.07), transparent 60%),
         #16161f;
       -webkit-app-region: no-drag;
     }
-    #collage-welcome.active { display: block; }
-    .cws-inner { max-width: 980px; margin: 0 auto; padding: 26px 40px 56px; }
+    /* v3.0.3 (Terry) — FREEZE-PANES: the homepage is a flex column; the header (title, tabs, search, filters, chips) stays put and ONLY the project list below scrolls. */
+    #collage-welcome.active { display: flex; flex-direction: column; }
+    .cws-inner { max-width: 980px; width: 100%; margin: 0 auto; padding: 26px 40px 0; box-sizing: border-box; flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
     /* v3.0.3 (Terry SS1) — the title and the two quick-start tiles now share ONE row (title left, tiles
        right), reclaiming the empty band at the top so tabs / filters / first projects sit higher. */
     .cws-hero { display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap; margin-bottom: 22px; }
@@ -2564,7 +2565,11 @@
     .cws-month[open] .cws-month-sum::before { transform: rotate(90deg); }
     .cws-month-count { margin-left: auto; background: rgba(255,255,255,0.08); color: #b7b3d0; border-radius: 9px; padding: 1px 9px; font-size: 11px; font-weight: 600; letter-spacing: 0; }
     /* v3.0 (Terry) — Dates-style year navigation: a left year rail (shown at 2+ years) + year sections. */
-    .cws-projects-body { display: flex; gap: 14px; align-items: flex-start; }
+    /* v3.0.3 (Terry) — freeze-panes: ONLY this row (year rail + project grid) scrolls; the header above it stays put. The rail is sticky, so it rides along at the top of the scroll. */
+    .cws-projects-body { display: flex; gap: 14px; align-items: flex-start; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
+    .cws-tab-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+    #cws-panel-projects .cws-recent { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+    #cws-panel-templates { overflow-y: auto; padding-bottom: 40px; }
     .cws-projects-body .cws-projects-list { flex: 1 1 auto; min-width: 0; gap: 20px; }
     .cws-year-rail { flex: 0 0 auto; width: 56px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px; align-self: flex-start; }
     .cws-year-btn { width: 100%; padding: 6px 4px; border-radius: 6px; background: none; border: none; font: 600 12px ui-monospace, 'Cascadia Code', Consolas, monospace; color: #8b88a0; cursor: pointer; transition: color .12s, background .12s; }
@@ -2596,7 +2601,7 @@
     .cws-select-cancel { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.10); color: #cfc9ec; cursor: pointer; padding: 0; transition: background .12s ease, color .12s ease; }
     .cws-select-cancel:hover { background: #c0392b; color: #fff; }
     /* v3.0.3 (Terry #1) — Projects | Templates tabs (separate the two so they stop sharing one scroll). */
-    .cws-tabs { display: flex; gap: 4px; margin: 6px 0 22px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+    .cws-tabs { display: flex; gap: 4px; margin: 6px 0 22px; border-bottom: 1px solid rgba(255,255,255,0.08); flex: 0 0 auto; }
     .cws-tab { position: relative; background: none; border: none; color: #8b88a0; font-size: 14px; font-weight: 600; cursor: pointer; padding: 9px 14px 12px; display: inline-flex; align-items: center; gap: 7px; border-radius: 8px 8px 0 0; }
     .cws-tab:hover { color: #cfc9ec; }
     .cws-tab-active { color: #FEC242; }
