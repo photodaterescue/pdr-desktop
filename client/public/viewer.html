@@ -2547,7 +2547,9 @@
     .cws-recent-clear:hover { color: #ff6b6b; background: rgba(255,107,107,0.1); }
     /* v3.0 (Terry) — Your Collage Projects: Album/Date filters + collapsible month groups. */
     .cws-recent-titlerow { align-items: center; }
-    .cws-recent-tools { display: flex; align-items: center; gap: 10px; }
+    .cws-recent-tools { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
+    /* v3.0.3 (Terry) — keep the section heading on one line; the controls wrap below it if the row runs out of room. */
+    .cws-recent-titlerow .cws-recent-title { white-space: nowrap; margin-bottom: 0; }
     /* v3.1 (Terry) — one-time carousel-thumbnail re-bake status line. Muted + a soft pulse so it reads as background work, not an error. */
     .cws-rebake-progress { margin-left: auto; margin-right: 12px; font-size: 12px; font-weight: 600; color: #a78bfa; opacity: .85; animation: cwsRebakePulse 1.4s ease-in-out infinite; }
     @keyframes cwsRebakePulse { 0%, 100% { opacity: .55; } 50% { opacity: .9; } }
@@ -2738,6 +2740,34 @@
     .cws-move-menu { background: rgba(28,26,46,0.98); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); padding: 6px; min-width: 160px; display: flex; flex-direction: column; gap: 2px; }
     .cws-move-opt { text-align: left; background: none; border: none; color: #e8e3ff; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
     .cws-move-opt:hover { background: rgba(254,194,66,0.16); color: #ffd778; }
+    /* v3.0.3 (Terry — 5-gap batch) — pin star, branded placeholder, recently-opened / pinned sections, sort + view, list view. */
+    .cws-card-meta { position: relative; }
+    .cws-card-name { padding-right: 20px; }
+    .cws-card-fav { position: absolute; top: 9px; right: 8px; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; border: none; background: none; color: #7e7c92; cursor: pointer; opacity: 0; transition: opacity .12s ease, color .12s ease; }
+    .cws-card:hover .cws-card-fav { opacity: 1; }
+    .cws-card-fav:hover { color: #FEC242; }
+    .cws-card-fav.on { opacity: 1; color: #FEC242; }
+    .cws-card-fav.on svg { fill: #FEC242; }
+    .cws-thumb-ph .cws-ph-inner { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+    .cws-thumb-ph .cws-ph-inner svg { width: 34px; height: 34px; opacity: .8; }
+    .cws-thumb-ph .cws-ph-bar { position: absolute; left: 0; right: 0; bottom: 0; height: 3px; opacity: .9; }
+    .cws-recent-sec, .cws-pinned-sec { margin-bottom: 22px; }
+    .cws-recent-subhead { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .6px; color: #8f8ca6; margin: 4px 0 12px; }
+    .cws-recent-subhead svg { width: 14px; height: 14px; opacity: .85; flex: 0 0 auto; }
+    .cws-recent-subhead .cws-month-count { text-transform: none; letter-spacing: 0; }
+    .cws-recent-grid.cws-recent-row { display: flex; grid-template-columns: none; gap: 12px; overflow-x: auto; padding-bottom: 6px; }
+    .cws-recent-grid.cws-recent-row .cws-card { flex: 0 0 150px; }
+    .cws-sort { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.16); color: #cbc8dd; font-size: 12px; font-weight: 600; border-radius: 999px; padding: 6px 10px; cursor: pointer; outline: none; }
+    .cws-sort:hover { border-color: rgba(255,255,255,0.28); }
+    .cws-sort option { background: #1f1f2b; color: #e6e3f3; }
+    .cws-view-seg { display: inline-flex; border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; overflow: hidden; }
+    .cws-view-btn { width: 30px; height: 28px; display: flex; align-items: center; justify-content: center; border: none; background: none; color: #8b88a0; cursor: pointer; }
+    .cws-view-btn:hover { color: #cbc8dd; background: rgba(255,255,255,0.05); }
+    .cws-view-btn.on { background: #FEC242; color: #1a1a2e; }
+    .cws-recent-grid.cws-list { display: flex; flex-direction: column; gap: 8px; }
+    .cws-recent-grid.cws-list .cws-card { flex-direction: row; align-items: stretch; }
+    .cws-recent-grid.cws-list .cws-card-thumb { flex: 0 0 116px; width: 116px; aspect-ratio: 4 / 3; }
+    .cws-recent-grid.cws-list .cws-card-meta { flex: 1 1 auto; display: flex; flex-direction: column; justify-content: center; padding: 10px 14px; min-width: 0; }
     /* v3.0 round 545 (Terry) — titlebar View/Albums pair on the Home screen: dimmed until a
        saved project is selected (the tooltip says why); pointer events stay on for the tooltip. */
     .collage-goto button.goto-dim { opacity: 0.35; cursor: default; }
@@ -4795,6 +4825,17 @@
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
                 <!-- v3.0.3 (Terry) — "Saved to library" filter: narrows the list to projects you've exported. -->
                 <button type="button" id="cws-filter-saved" class="cws-recent-clear" data-pdr-tooltip="Show only projects you've saved to your library">Saved to library</button>
+                <!-- v3.0.3 (Terry) — sort mode + grid/list view -->
+                <select id="cws-sort" class="cws-sort" aria-label="Sort projects" data-pdr-tooltip="Sort your projects">
+                  <option value="newest">Newest</option>
+                  <option value="oldest">Oldest</option>
+                  <option value="az">A-Z</option>
+                  <option value="recent">Recently opened</option>
+                </select>
+                <div class="cws-view-seg" role="group" aria-label="Grid or list view">
+                  <button type="button" id="cws-view-grid" class="cws-view-btn" data-pdr-tooltip="Grid view" aria-label="Grid view"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg></button>
+                  <button type="button" id="cws-view-list" class="cws-view-btn" data-pdr-tooltip="List view" aria-label="List view"><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3.5" y1="6" x2="3.51" y2="6"/><line x1="3.5" y1="12" x2="3.51" y2="12"/><line x1="3.5" y1="18" x2="3.51" y2="18"/></svg></button>
+                </div>
                 <!-- v3.0.3 (Terry #12) — bulk-delete action bar, shown only while select mode is active -->
                 <div id="cws-select-bar" class="cws-select-bar" style="display:none">
                   <!-- v3.0.3 (Terry SS1) — Memories→Dates-style "× N selected" pill: the × cancels the selection. -->
@@ -18884,6 +18925,7 @@
         const r = await window.pdr.collage.loadProject(id);
         if (!r || !r.success || !r.project) return false;
         const p = r.project;
+        try { cwsRecordOpen(id); } catch (_) {}   // v3.0.3 (Terry) — remember last-opened for the "recently opened" row + sort
         // Validate the snapshot BEFORE touching the live canvas, so a corrupt record can never
         // leave a half-rebuilt collage on screen.
         try { JSON.parse(p.snapshot); } catch (_) { return false; }
@@ -19248,10 +19290,28 @@
       } catch (_) { return ''; }
     }
     const CWS_THUMB_GLYPH = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#cfc9ec" stroke-width="1.4" style="opacity:.28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
+    // v3.0.3 (Terry) — a BRANDED, category-coded placeholder for cards whose thumbnail hasn't baked yet, so the
+    // homepage never shows a "broken image" glyph. Colour keys off the album (falls back to a name hash); the
+    // icon reflects collage vs carousel; a thin colour bar anchors it. Replaced by the real thumbnail once it loads.
+    const CWS_PH_COLORS = { uncategorized:'#8a8aa0', personal:'#a78bfa', business:'#38bdf8', family:'#f472b6', friends:'#34d399', gift:'#fbbf24', event:'#f87171', travel:'#2dd4bf', 'pdr — pain':'#fb7185' };
+    function cwsPlaceholderColor(p){ const c = (cwsProjectAlbum(p) || 'uncategorized').toLowerCase(); if (CWS_PH_COLORS[c]) return CWS_PH_COLORS[c]; let h = 0; const s = String((p && p.name) || ''); for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0; const hues = ['#a78bfa','#38bdf8','#f472b6','#34d399','#fbbf24','#f87171','#2dd4bf','#818cf8']; return hues[h % hues.length]; }
+    function cwsBrandedPlaceholder(p){ const col = cwsPlaceholderColor(p); const car = !!(p && p.carousel); const icon = car ? '<rect x="7" y="4" width="10" height="16" rx="1.6"/><path d="M3 8v8M21 8v8"/>' : '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>'; return '<div class="cws-ph-inner" style="color:' + col + '"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">' + icon + '</svg></div><div class="cws-ph-bar" style="background:' + col + '"></div>'; }
     // v3.0 (Terry) — "Your Collage Projects": filter state + helpers (one card; a project's album/date).
     let cwsFilterAlbum = '';
     let cwsFilterSaved = false;              // v3.0.3 (Terry) — homepage filter: show only projects saved to the library
     let cwsDragIds = [];                     // v3.0.3 (Terry) — the project id(s) being dragged onto a category chip
+    // v3.0.3 (Terry — homepage "5 gaps" batch) — sort mode, grid/list view, favorites (pin-to-top), last-opened times.
+    let cwsSortMode = (function(){ try { return localStorage.getItem('pdr.cws.sort') || 'newest'; } catch(_) { return 'newest'; } })();
+    let cwsViewMode = (function(){ try { return localStorage.getItem('pdr.cws.view') || 'grid'; } catch(_) { return 'grid'; } })();
+    let cwsFavSet_ = new Set();              // refreshed from localStorage at the top of each buildCwsRecent
+    let cwsOpenedMap_ = {};                  // { projectId: lastOpenedMs }
+    function cwsRefreshFavOpen(){ try { cwsFavSet_ = new Set((JSON.parse(localStorage.getItem('pdr.cws.favorites')||'[]')||[]).map(String)); } catch(_){ cwsFavSet_ = new Set(); } try { cwsOpenedMap_ = JSON.parse(localStorage.getItem('pdr.cws.openedAt')||'{}') || {}; } catch(_){ cwsOpenedMap_ = {}; } }
+    function cwsIsFav(id){ return cwsFavSet_.has(String(id)); }
+    function cwsToggleFav(id){ const k = String(id); if (cwsFavSet_.has(k)) cwsFavSet_.delete(k); else cwsFavSet_.add(k); try { localStorage.setItem('pdr.cws.favorites', JSON.stringify(Array.from(cwsFavSet_))); } catch(_){} }
+    function cwsRecordOpen(id){ try { const m = cwsOpenedMap_ || {}; m[String(id)] = Date.now(); cwsOpenedMap_ = m; localStorage.setItem('pdr.cws.openedAt', JSON.stringify(m)); } catch(_){} }
+    function cwsOpenedTs(p){ return (cwsOpenedMap_ && cwsOpenedMap_[String(p && p.id)]) || 0; }
+    function cwsSetSort(m){ cwsSortMode = m; try { localStorage.setItem('pdr.cws.sort', m); } catch(_){} try { buildCwsRecent(); } catch(_){} }
+    function cwsSetView(m){ cwsViewMode = m; try { localStorage.setItem('pdr.cws.view', m); } catch(_){} try { buildCwsRecent(); } catch(_){} }
     let cwsFilterGallery = '';               // v3.0.3 (Terry #3) — finer GALLERY filter (collage-name tail) within the chosen category
     let cwsFilterYear = '';
     let cwsSearchTerm = '';                 // v3.0.3 (Terry #3) — live name search in the Projects tab
@@ -19539,7 +19599,7 @@
       const thumb = document.createElement('div');
       thumb.className = 'cws-card-thumb';
       if (p.thumbnailDataUrl) { thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")'; }
-      else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0 (Terry) — lazy-load the thumbnail when this card scrolls into view (was bulk-loaded → froze the window)
+      else { thumb.classList.add('cws-thumb-ph'); thumb.innerHTML = cwsBrandedPlaceholder(p); cwsObserveThumb(thumb, p.id); }   // v3.0.3 (Terry) — a branded, category-coded placeholder (never a "broken image") until the baked thumbnail lazy-loads
       // v3.0 round 584 (Terry) — carousels now thumbnail to their FIRST page; a small stacked-pages
       // badge signals there are more pages behind it (so the wide strip isn't crammed into a 4:3 tile).
       if (p.carousel) {
@@ -19559,6 +19619,14 @@
       const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
       const date = document.createElement('div'); date.className = 'cws-card-date'; date.textContent = cwsFormatDate(p.savedAt);
       meta.appendChild(name); meta.appendChild(date);
+      // v3.0.3 (Terry) — a PIN star by the name: favorited projects gather in a "Pinned" row at the very top.
+      const fav = document.createElement('button');
+      fav.type = 'button'; fav.className = 'cws-card-fav' + (cwsIsFav(p.id) ? ' on' : '');
+      fav.setAttribute('aria-label', cwsIsFav(p.id) ? 'Unpin' : 'Pin to top');
+      fav.setAttribute('data-pdr-tooltip', cwsIsFav(p.id) ? 'Pinned to the top — click to unpin' : 'Pin to the top of your projects');
+      fav.innerHTML = '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 17.3l-6.18 3.7 1.64-7.03L4 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.1 4.73 1.64 7.03z"/></svg>';
+      fav.addEventListener('click', (e) => { e.stopPropagation(); cwsToggleFav(p.id); try { buildCwsRecent(); } catch (_) {} });
+      meta.appendChild(fav);
       const del = document.createElement('button');
       del.type = 'button'; del.className = 'cws-card-del'; del.setAttribute('aria-label', 'Delete collage'); del.setAttribute('data-pdr-tooltip', 'Delete this collage');
       del.innerHTML = '<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg>';
@@ -19619,6 +19687,7 @@
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       if (_seq !== cwsRecentBuildSeq) return;   // a newer build started during the await → bail before appending (was: two "2026" year sections)
       list = list.filter((p) => p.kind !== 'template');   // v2.1 round 323 (Terry) — templates have their OWN row
+      try { cwsRefreshFavOpen(); } catch (_) {}   // v3.0.3 (Terry) — load favorites + last-opened once per build (cards read the cached sets)
       // v3.0 round 545 (Terry) — cache the projects for the Home-screen selection (titlebar goto
       // pair reads the selected one); drop a selection whose project was deleted meanwhile.
       cwsProjectsById = {};
@@ -19644,69 +19713,97 @@
         else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = (_q || cwsFilterAlbum) ? 'No projects match — try a different search or category.' : 'No projects here.'; }
         else { empty.style.display = 'none'; }
       }
-      // Group by YEAR (newest first), then MONTH within (newest first) — mirrors Memories › Dates.
+      // v3.0.3 (Terry — 5-gap batch) — favorites PINNED on top, a RECENTLY-OPENED resume row, SORT modes and a LIST view.
+      const listMode = (cwsViewMode === 'list');
+      const noFilter = !cwsFilterAlbum && !cwsFilterGallery && !cwsFilterSaved && !_q;
       const MN = ['January','February','March','April','May','June','July','August','September','October','November','December'];
-      const byYear = {};
-      filtered.forEach((p) => {
-        const d = cwsProjectDate(p);
-        const y = d ? d.getFullYear() : 0;
-        const mk = d ? String(d.getMonth() + 1).padStart(2, '0') : '00';
-        const ml = d ? MN[d.getMonth()] : 'Undated';
-        if (!byYear[y]) byYear[y] = { count: 0, months: {} };
-        if (!byYear[y].months[mk]) byYear[y].months[mk] = { label: ml, items: [] };
-        byYear[y].months[mk].items.push(p);
-        byYear[y].count++;
-      });
-      const years = Object.keys(byYear).map(Number).sort((a, b) => b - a);
-      // Year rail (left) — only when there are 2+ years, exactly like the Dates view; click jumps to that year.
-      const rail = document.getElementById('cws-year-rail');
-      if (rail) {
-        rail.innerHTML = '';
-        if (years.length >= 2) {
-          rail.style.display = '';
-          years.forEach((y) => {
-            const yb = document.createElement('button'); yb.type = 'button'; yb.className = 'cws-year-btn'; yb.textContent = (y || 'Undated');
-            yb.addEventListener('click', () => { const sec = document.getElementById('cws-year-' + y); if (sec) sec.scrollIntoView({ block: 'start' }); });
-            rail.appendChild(yb);
-          });
-        } else { rail.style.display = 'none'; }
+      const mkGrid = () => { const g = document.createElement('div'); g.className = 'cws-recent-grid' + (listMode ? ' cws-list' : ''); return g; };
+      // (a) Recently opened — the last few you actually reopened, on the unfiltered default view (skipped when already sorting by recency).
+      if (noFilter && cwsSortMode !== 'recent') {
+        const opened = list.filter((p) => cwsOpenedTs(p) > 0).sort((a, b) => cwsOpenedTs(b) - cwsOpenedTs(a)).slice(0, 6);
+        if (opened.length) {
+          const sec = document.createElement('div'); sec.className = 'cws-recent-sec';
+          const h = document.createElement('div'); h.className = 'cws-recent-subhead';
+          h.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>Recently opened</span>';
+          const g = document.createElement('div'); g.className = 'cws-recent-grid cws-recent-row';
+          opened.forEach((p) => g.appendChild(cwsMakeCard(p)));
+          sec.appendChild(h); sec.appendChild(g); grid.appendChild(sec);
+        }
       }
-      // Year sections → month sub-groups → cards (newest first throughout).
-      years.forEach((y) => {
-        const yd = byYear[y];
-        const sec = document.createElement('div'); sec.className = 'cws-year-sec'; sec.id = 'cws-year-' + y;
-        if (cwsIsYearCollapsed(y)) sec.classList.add('cws-collapsed');
-        // v3.0.3 (Terry #14) — the year header collapses its whole year (chevron + click), persisted, so the
-        // dated collage groups can be folded away and never blur into the Templates row above.
-        const yh = document.createElement('div'); yh.className = 'cws-year-head cws-section-head'; yh.setAttribute('role', 'button'); yh.setAttribute('tabindex', '0');
-        yh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-year-label">' + (y || 'Undated') + '</span><span class="cws-year-count">' + yd.count + '</span>';
-        yh.addEventListener('click', () => { const now = !sec.classList.contains('cws-collapsed'); sec.classList.toggle('cws-collapsed', now); cwsSetYearCollapsed(y, now); });
-        sec.appendChild(yh);
-        const ybody = document.createElement('div'); ybody.className = 'cws-year-body';
-        const mkeys = Object.keys(yd.months).sort().reverse();
-        mkeys.forEach((mk) => {
-          const m = yd.months[mk];
-          m.items.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
-          // v3.0.3 (Terry #14) — each MONTH is its own collapsible sub-section with a chevron header, a
-          // count, a divider rule and real breathing room, so a new month is clearly separated (was a
-          // cramped bare label). Persisted per year+month.
-          const mkey = y + '-' + mk;
-          const msec = document.createElement('div'); msec.className = 'cws-month-sec';
-          if (cwsIsMonthCollapsed(mkey)) msec.classList.add('cws-collapsed');
-          const mh = document.createElement('div'); mh.className = 'cws-month-sub cws-section-head'; mh.setAttribute('role', 'button'); mh.setAttribute('tabindex', '0');
-          mh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-month-label">' + m.label + '</span><span class="cws-month-count">' + m.items.length + '</span>';
-          mh.addEventListener('click', () => { const now = !msec.classList.contains('cws-collapsed'); msec.classList.toggle('cws-collapsed', now); cwsSetMonthCollapsed(mkey, now); });
-          msec.appendChild(mh);
-          const mbody = document.createElement('div'); mbody.className = 'cws-month-body';
-          const mgrid = document.createElement('div'); mgrid.className = 'cws-recent-grid';
-          m.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
-          mbody.appendChild(mgrid);
-          msec.appendChild(mbody);
-          ybody.appendChild(msec);
+      // (b) Pinned favorites (within the current filter) — shown first + excluded from the main results below.
+      const favItems = filtered.filter((p) => cwsFavSet_.has(String(p.id)));
+      const rest = favItems.length ? filtered.filter((p) => !cwsFavSet_.has(String(p.id))) : filtered;
+      if (favItems.length) {
+        favItems.sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+        const sec = document.createElement('div'); sec.className = 'cws-pinned-sec';
+        const h = document.createElement('div'); h.className = 'cws-recent-subhead';
+        h.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 17.3l-6.18 3.7 1.64-7.03L4 9.24l7.19-.61L12 2l2.81 6.63 7.19.61-5.1 4.73 1.64 7.03z"/></svg><span>Pinned</span><span class="cws-month-count">' + favItems.length + '</span>';
+        const g = mkGrid();
+        favItems.forEach((p) => g.appendChild(cwsMakeCard(p)));
+        sec.appendChild(h); sec.appendChild(g); grid.appendChild(sec);
+      }
+      // (c) Main results — FLAT when sorting A–Z / recently opened, else DATE-GROUPED (newest default; oldest reverses).
+      const rail = document.getElementById('cws-year-rail');
+      if (cwsSortMode === 'az' || cwsSortMode === 'recent') {
+        if (rail) rail.style.display = 'none';
+        const items = rest.slice();
+        if (cwsSortMode === 'az') items.sort((a, b) => String(a.name || '').localeCompare(String(b.name || ''), undefined, { sensitivity: 'base' }));
+        else items.sort((a, b) => (cwsOpenedTs(b) - cwsOpenedTs(a)) || String(b.savedAt).localeCompare(String(a.savedAt)));
+        const g = mkGrid();
+        items.forEach((p) => g.appendChild(cwsMakeCard(p)));
+        grid.appendChild(g);
+      } else {
+        const asc = (cwsSortMode === 'oldest');
+        const byYear = {};
+        rest.forEach((p) => {
+          const d = cwsProjectDate(p);
+          const y = d ? d.getFullYear() : 0;
+          const mk = d ? String(d.getMonth() + 1).padStart(2, '0') : '00';
+          const ml = d ? MN[d.getMonth()] : 'Undated';
+          if (!byYear[y]) byYear[y] = { count: 0, months: {} };
+          if (!byYear[y].months[mk]) byYear[y].months[mk] = { label: ml, items: [] };
+          byYear[y].months[mk].items.push(p);
+          byYear[y].count++;
         });
-        sec.appendChild(ybody);
-        grid.appendChild(sec);
-      });
+        const years = Object.keys(byYear).map(Number).sort((a, b) => asc ? a - b : b - a);
+        if (rail) {
+          rail.innerHTML = '';
+          if (years.length >= 2) {
+            rail.style.display = '';
+            years.forEach((y) => { const yb = document.createElement('button'); yb.type = 'button'; yb.className = 'cws-year-btn'; yb.textContent = (y || 'Undated'); yb.addEventListener('click', () => { const s = document.getElementById('cws-year-' + y); if (s) s.scrollIntoView({ block: 'start' }); }); rail.appendChild(yb); });
+          } else { rail.style.display = 'none'; }
+        }
+        years.forEach((y) => {
+          const yd = byYear[y];
+          const sec = document.createElement('div'); sec.className = 'cws-year-sec'; sec.id = 'cws-year-' + y;
+          if (cwsIsYearCollapsed(y)) sec.classList.add('cws-collapsed');
+          const yh = document.createElement('div'); yh.className = 'cws-year-head cws-section-head'; yh.setAttribute('role', 'button'); yh.setAttribute('tabindex', '0');
+          yh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-year-label">' + (y || 'Undated') + '</span><span class="cws-year-count">' + yd.count + '</span>';
+          yh.addEventListener('click', () => { const now = !sec.classList.contains('cws-collapsed'); sec.classList.toggle('cws-collapsed', now); cwsSetYearCollapsed(y, now); });
+          sec.appendChild(yh);
+          const ybody = document.createElement('div'); ybody.className = 'cws-year-body';
+          const mkeys = Object.keys(yd.months).sort(); if (!asc) mkeys.reverse();
+          mkeys.forEach((mk) => {
+            const m = yd.months[mk];
+            m.items.sort((a, b) => asc ? String(a.savedAt).localeCompare(String(b.savedAt)) : String(b.savedAt).localeCompare(String(a.savedAt)));
+            const mkey = y + '-' + mk;
+            const msec = document.createElement('div'); msec.className = 'cws-month-sec';
+            if (cwsIsMonthCollapsed(mkey)) msec.classList.add('cws-collapsed');
+            const mh = document.createElement('div'); mh.className = 'cws-month-sub cws-section-head'; mh.setAttribute('role', 'button'); mh.setAttribute('tabindex', '0');
+            mh.innerHTML = '<svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg><span class="cws-month-label">' + m.label + '</span><span class="cws-month-count">' + m.items.length + '</span>';
+            mh.addEventListener('click', () => { const now = !msec.classList.contains('cws-collapsed'); msec.classList.toggle('cws-collapsed', now); cwsSetMonthCollapsed(mkey, now); });
+            msec.appendChild(mh);
+            const mbody = document.createElement('div'); mbody.className = 'cws-month-body';
+            const mgrid = mkGrid();
+            m.items.forEach((p) => mgrid.appendChild(cwsMakeCard(p)));
+            mbody.appendChild(mgrid);
+            msec.appendChild(mbody);
+            ybody.appendChild(msec);
+          });
+          sec.appendChild(ybody);
+          grid.appendChild(sec);
+        });
+      }
       // v2.1 round 334 (Terry) — "Clear all" deletes every recent collage (templates kept). Wired
       // once; hidden when there are none.
       // v3.0.3 (Terry #12) — Select (bulk-delete) + Clear all live side by side; both hidden when
@@ -19765,6 +19862,17 @@
         if (!savedFilterBtn.dataset.wired) { savedFilterBtn.dataset.wired = '1'; savedFilterBtn.addEventListener('click', (e) => { e.stopPropagation(); cwsFilterSaved = !cwsFilterSaved; buildCwsRecent(); }); }
         savedFilterBtn.classList.toggle('cws-filter-on', cwsFilterSaved);
       }
+      // v3.0.3 (Terry) — sort dropdown + grid/list view toggle (wired once; reflect current state each build).
+      const sortSel = document.getElementById('cws-sort');
+      if (sortSel) {
+        if (!sortSel.dataset.wired) { sortSel.dataset.wired = '1'; sortSel.addEventListener('change', (e) => { e.stopPropagation(); cwsSetSort(sortSel.value); }); }
+        sortSel.value = cwsSortMode;
+      }
+      const vGrid = document.getElementById('cws-view-grid'), vList = document.getElementById('cws-view-list');
+      if (vGrid && !vGrid.dataset.wired) { vGrid.dataset.wired = '1'; vGrid.addEventListener('click', (e) => { e.stopPropagation(); cwsSetView('grid'); }); }
+      if (vList && !vList.dataset.wired) { vList.dataset.wired = '1'; vList.addEventListener('click', (e) => { e.stopPropagation(); cwsSetView('list'); }); }
+      if (vGrid) vGrid.classList.toggle('on', cwsViewMode !== 'list');
+      if (vList) vList.classList.toggle('on', cwsViewMode === 'list');
       // v3.0.3 (Terry) — bulk "Move to…": open a category menu, then re-file every selected project into it.
       const moveBtn = document.getElementById('cws-select-move');
       if (moveBtn && !moveBtn.dataset.wired) {
