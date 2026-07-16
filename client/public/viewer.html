@@ -4231,11 +4231,14 @@
     body.collage-mode.collage-emoji-target #enhance-frame-collapse,
     body.collage-mode.collage-emoji-target #collage-treatments-block { display: none !important; }
     /* v3.0.3 (Terry) — a selected DIVIDER is a photo-less line: its whole look (colour / thickness /
-       rounded ends / Fade) lives in the Dividers section, and Glow & shadow adds depth. Hide every
-       photo-only appearance section so ONLY those two apply ("it should all just be controlled by the
-       Dividers section"). !important beats the #enhance-fx / #tile-transform-row [open] display rules. */
+       rounded ends / Transparency / effect + Strength) now lives ENTIRELY in the Dividers section, to
+       match Text. Hide every photo-only appearance section — INCLUDING Glow & shadow (#enhance-edge),
+       whose per-effect strength is now the Dividers "Strength" slider, so there is no duplicate control.
+       "It should all just be controlled by the Dividers section." !important beats the #enhance-fx /
+       #tile-transform-row [open] display rules. */
     body.collage-mode.collage-divider-selected #enhance-looks-collapse,
     body.collage-mode.collage-divider-selected #enhance-fx,
+    body.collage-mode.collage-divider-selected #enhance-edge,
     body.collage-mode.collage-divider-selected #enhance-levels,
     body.collage-mode.collage-divider-selected #tile-transform-row,
     body.collage-mode.collage-divider-selected #tile-bgremove-section,
@@ -5161,13 +5164,13 @@
               <input class="enhance-slider" id="slider-divider-fade" type="range" min="10" max="100" step="1" value="100">
             </div>
             <!-- v3.0.3+ (Terry) — Effect chips, replicated from Text (None/Outline/Shadow/Neon/3D).
-                 SINGLE-SELECT quick picker mapped onto the divider's EXISTING Glow & shadow edge
-                 effects (outline→outline, shadow→dropShadow, neon→neon, 3d→lift). Picking writes the
-                 divider's enh + refreshes Glow & shadow (setTile), which stays below for fine strength
-                 + per-effect colour. wireDividerPanel() wires the click; refreshDividerControls /
-                 reflectDividerEffectChips ring the active chip. -->
+                 SINGLE-SELECT quick picker mapped onto the divider's EXISTING edge effects
+                 (outline→outline, shadow→dropShadow, neon→neon, 3d→lift). Picking writes the divider's
+                 enh; the Strength slider below sets that effect's intensity (Glow & shadow is hidden for
+                 dividers, so this is the ONE strength control — Text parity). wireDividerPanel() wires
+                 the click; refreshDividerControls / reflectDividerEffectChips ring the active chip. -->
             <div class="enhance-control" style="margin-top:8px">
-              <div class="enhance-label-row"><label data-pdr-tooltip="Add an outline, shadow, neon glow or 3D lift — fine-tune strength &amp; color in Glow &amp; shadow below">Effect</label></div>
+              <div class="enhance-label-row"><label data-pdr-tooltip="Add an outline, shadow, neon glow or 3D lift — set how strong it is with Strength below">Effect</label></div>
               <div class="ec-effect-row" id="divider-effect">
                 <button class="ec-effect-btn active" data-effect="none" type="button" data-pdr-tooltip="No effect">None</button>
                 <button class="ec-effect-btn" data-effect="outline" type="button" data-pdr-tooltip="Outlined edge">Outline</button>
@@ -5175,6 +5178,14 @@
                 <button class="ec-effect-btn" data-effect="neon" type="button" data-pdr-tooltip="Neon glow">Neon</button>
                 <button class="ec-effect-btn" data-effect="3d" type="button" data-pdr-tooltip="Lifted 3D shadow">3D</button>
               </div>
+            </div>
+            <!-- v3.0.3 (Terry, SS1/SS2 parity) — Effect STRENGTH slider directly beneath the Effect
+                 chips, mirroring Text (#collage-text-strength-row). Edits the ACTIVE effect's enh
+                 amount (enh.outline/dropShadow/neon/lift, kept &ge;1); shown only when an effect is on.
+                 refreshDividerControls populates + shows/hides it; wireDividerPanel wires the drag. -->
+            <div class="enhance-control" id="divider-effect-strength-row" style="margin-top:8px;display:none">
+              <div class="enhance-label-row"><label for="slider-divider-strength" data-pdr-tooltip="How strong the effect is — mild to bold">Strength</label><span class="enhance-val" id="val-divider-strength">60</span></div>
+              <input class="enhance-slider" id="slider-divider-strength" type="range" min="1" max="100" step="1" value="60">
             </div>
             <!-- v3.0.3++ (Terry) — Colour Palette LAST (matching Text: controls → Effect → Colour).
                  Shared component (renderTextColorPalette) rendered into #divider-swatches by
@@ -21269,6 +21280,17 @@
         const fade = document.getElementById('slider-divider-fade'), fv = document.getElementById('val-divider-fade');
         if (fade) fade.value = String(Math.max(10, op)); if (fv) fv.textContent = op + '%';
         try { refreshDividerColorTargets_(); } catch (_) {}   // v3.0.3 (Terry) — [Divider | Effect] tiles + enable state
+        // v3.0.3 (Terry, SS1/SS2 parity) — Effect Strength row: show + populate from the active effect's
+        // enh amount (mirrors Text). Hidden when no effect is on (None); Glow & shadow is hidden for
+        // dividers, so this is the sole strength control.
+        try {
+          const _sfx = dividerActiveFx_();
+          const sRow = document.getElementById('divider-effect-strength-row');
+          const sSl = document.getElementById('slider-divider-strength');
+          const sVal = document.getElementById('val-divider-strength');
+          if (sRow) sRow.style.display = _sfx ? '' : 'none';
+          if (_sfx && sSl) { const sv = Math.max(1, Math.min(100, Math.round((it.enh && it.enh[_sfx.key]) || 60))); sSl.value = String(sv); if (sVal) sVal.textContent = String(sv); }
+        } catch (_) {}
         const sw = document.getElementById('divider-swatches');
         // v3.0.3 (Terry) — render the SHARED palette; getCurrent/onPick route by the active target:
         // [Divider] → dividerColor, [Effect] → the active effect's colour key (enh.<fx>Color). Mirrors
@@ -21332,11 +21354,24 @@
         const fv = document.getElementById('val-divider-fade'); if (fv) fv.textContent = p + '%';
         renderCollageItem(it);
       });
+      // v3.0.3 (Terry, SS1/SS2 parity) — Effect STRENGTH: edit the ACTIVE effect's enh amount live,
+      // mirroring Text's strength slider. The panel's pointerdown→begin / pointerup→commit wrapper makes
+      // each drag ONE undo step (same as Thickness / Rounded ends / Transparency above). Kept &ge;1 so the
+      // effect never silently switches off via this slider (use the None chip for that).
+      const dStrength = document.getElementById('slider-divider-strength');
+      if (dStrength) dStrength.addEventListener('input', () => {
+        const it = collageSelected; if (!it || !it.divider) return;
+        const fx = dividerActiveFx_(); if (!fx) return;
+        const v = Math.max(1, Math.min(100, parseInt(dStrength.value, 10) || 60));
+        it.enh = it.enh || {}; it.enh[fx.key] = v;
+        const sv = document.getElementById('val-divider-strength'); if (sv) sv.textContent = String(v);
+        renderCollageItem(it);
+      });
       // v3.0.3+ (Terry) — Effect chips (replicated from Text). SINGLE-SELECT: map the clicked chip onto
       // the divider's EXISTING enh edge effects and set just that one (keeping an already-dialled
       // strength, else a tasteful 60), zeroing the rest. None clears all five. Writing enh + rendering
-      // mirrors the sliders above; setTile() then reloads the panel state so the Glow & shadow sliders
-      // (still visible for a divider) show the same values — one source of truth, no clash. Explicit
+      // mirrors the sliders above; setTile() then reloads the panel state (Glow & shadow is hidden for
+      // dividers — the Strength slider above is the one strength control). Explicit
       // begin/commit = one undo step (pointerup fires before click, so we can't lean on the panel wrapper).
       const DIVIDER_EFFECT_FX = { outline: 'outline', shadow: 'dropShadow', neon: 'neon', '3d': 'lift' };
       const effectRow = document.getElementById('divider-effect');
