@@ -2953,7 +2953,7 @@ export function LibraryPanel({ isOpen, onClose }: LibraryPanelProps) {
 
   const renderVerifyKey = () => (
     <>
-      {renderHeader('Confirm with your license key', 'Enter your PDR license key to authorise this action. The same key gates every device-level change.', 'rose')}
+      {renderHeader('Confirm with your license key', 'Enter your PDR license key to authorize this action. The same key gates every device-level change.', 'rose')}
       <div className="px-6 pb-6 pt-2 space-y-4">
         <div>
           <label className="block text-label text-foreground mb-2">License key</label>

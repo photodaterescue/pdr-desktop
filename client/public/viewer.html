@@ -2716,6 +2716,19 @@
     .cws-selecting .cws-card-del, .cws-selecting .cws-card-rename, .cws-selecting .cws-card-go { display: none !important; }
     .cws-card.cws-check-on { border-color: rgba(254,194,66,0.95); box-shadow: 0 0 0 2px rgba(254,194,66,0.6), 0 10px 30px rgba(0,0,0,0.4); }
     .cws-card.cws-check-on .cws-card-check { background: #FEC242; border-color: #FEC242; color: #1a1a2e; }
+    /* v3.0.3 (Terry) — "Saved to library" badge on a project thumb (green tick + label), so previously-exported tiles stand out. */
+    .cws-card-saved { position: absolute; left: 8px; top: 8px; display: inline-flex; align-items: center; gap: 4px; padding: 3px 7px 3px 5px; border-radius: 999px; background: rgba(16,185,129,0.94); color: #fff; font-size: 10.5px; font-weight: 700; letter-spacing: .2px; box-shadow: 0 2px 6px rgba(0,0,0,0.35); z-index: 2; }
+    .cws-card-saved svg { width: 11px; height: 11px; }
+    /* v3.0.3 (Terry) — the "Saved to library" filter toggle, active state. */
+    #cws-filter-saved.cws-filter-on { background: rgba(16,185,129,0.16); border-color: rgba(16,185,129,0.6); color: #34d399; }
+    /* v3.0.3 (Terry) — drag project cards onto a category chip to re-file them; the chip lights up as a drop target. */
+    .cws-chip.cws-drop-hot, .cws-chip-dd.cws-drop-hot > .cws-chip { background: #FEC242 !important; color: #1a1a2e !important; border-color: #FEC242 !important; }
+    .cws-card[draggable="true"] { cursor: grab; }
+    .cws-card.cws-dragging { opacity: 0.45; }
+    /* v3.0.3 (Terry) — the bulk "Move to…" category menu (from the select action bar). */
+    .cws-move-menu { background: rgba(28,26,46,0.98); border: 1px solid rgba(255,255,255,0.16); border-radius: 10px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); padding: 6px; min-width: 160px; display: flex; flex-direction: column; gap: 2px; }
+    .cws-move-opt { text-align: left; background: none; border: none; color: #e8e3ff; font-size: 13px; font-weight: 600; padding: 8px 10px; border-radius: 7px; cursor: pointer; }
+    .cws-move-opt:hover { background: rgba(254,194,66,0.16); color: #ffd778; }
     /* v3.0 round 545 (Terry) — titlebar View/Albums pair on the Home screen: dimmed until a
        saved project is selected (the tooltip says why); pointer events stay on for the tooltip. */
     .collage-goto button.goto-dim { opacity: 0.35; cursor: default; }
@@ -4769,6 +4782,8 @@
                 </div>
                 <button type="button" id="cws-recent-select" class="cws-recent-clear" data-pdr-tooltip="Select several collages to delete">Select</button>
                 <button type="button" id="cws-recent-clear" class="cws-recent-clear">Clear all</button>
+                <!-- v3.0.3 (Terry) — "Saved to library" filter: narrows the list to projects you've exported. -->
+                <button type="button" id="cws-filter-saved" class="cws-recent-clear" data-pdr-tooltip="Show only projects you've saved to your library">Saved to library</button>
                 <!-- v3.0.3 (Terry #12) — bulk-delete action bar, shown only while select mode is active -->
                 <div id="cws-select-bar" class="cws-select-bar" style="display:none">
                   <!-- v3.0.3 (Terry SS1) — Memories→Dates-style "× N selected" pill: the × cancels the selection. -->
@@ -4777,6 +4792,7 @@
                     <span id="cws-select-count" class="cws-select-count">Tap collages to select</span>
                   </span>
                   <button type="button" id="cws-select-all" class="cws-recent-clear">Select all</button>
+                  <button type="button" id="cws-select-move" class="cws-recent-clear" data-pdr-tooltip="Move the selected projects into a category" disabled>Move to…</button>
                   <button type="button" id="cws-select-delete" class="cws-select-delete" disabled>Delete</button>
                 </div>
               </div>
@@ -18476,6 +18492,10 @@
     // the active editor holding real content (hidden in the Viewer, on the welcome screen, and on a
     // blank canvas). Reflective only — it never kicks off a save.
     let collageSaveState_ = 'saved';
+    // v3.0.3 (Terry, SS1/SS2) — the chip must NOT read "…Saved" on a bare open (opening a template/project
+    // saves nothing this session). It shows ONLY after a real change autosaves this session; reset on every
+    // open via hideCollageWelcome(). And the saved text names the album: "<Album> — Saved".
+    let collageSaveTouched_ = false;
     function setCollageSaveState_(state) { collageSaveState_ = state; try { renderCollageSaveState_(); } catch (_) {} }
     function renderCollageSaveState_() {
       const el = document.getElementById('collage-save-state');
@@ -18484,12 +18504,19 @@
       try {
         show = (typeof collageMode !== 'undefined' && collageMode)
             && !document.body.classList.contains('cws-open')
-            && collageProjectHasContent();
+            && collageProjectHasContent()
+            && collageSaveTouched_;   // v3.0.3 (Terry SS1) — nothing to report until a real change saved THIS session
       } catch (_) { show = false; }
       el.classList.toggle('on', show);
       if (!show) return;
       el.setAttribute('data-state', collageSaveState_);
-      el.textContent = (collageSaveState_ === 'saving') ? 'Saving…' : 'All changes saved';
+      if (collageSaveState_ === 'saving') { el.textContent = 'Saving…'; }
+      else {
+        // v3.0.3 (Terry SS2) — name WHERE it saved: "<Album> — Saved" (Uncategorized unless the user categorized it).
+        let alb = 'Uncategorized';
+        try { alb = parseCollageName(currentCollageProjectName || '').category || 'Uncategorized'; } catch (_) {}
+        el.textContent = alb + ' — Saved';
+      }
     }
     // v2.1 round 347 (Terry) — Home → "Blank collage" now starts a genuinely FRESH collage. Was: it only
     // hid the welcome screen, revealing the SAME collage underneath. Clears tiles / text / bg and starts
@@ -18521,7 +18548,7 @@
     // label + an optional version — so names stay tidy ("Business · v3.0 launch") not freeform mush.
     // Mitigations against duplicate custom categories: (1) show existing categories as chips, (2)
     // type-ahead filters them, (3) case/space-normalise on save, (5) soft near-match nudge.
-    const COLLAGE_FIXED_CATEGORIES = ['General', 'Personal', 'Business', 'Family', 'Friends', 'Gift', 'Event', 'Travel'];   // v3.0 round 499 (Terry) — General is the default/fallback album; now an explicit chip too
+    const COLLAGE_FIXED_CATEGORIES = ['Uncategorized', 'Personal', 'Business', 'Family', 'Friends', 'Gift', 'Event', 'Travel'];   // v3.0.3 (Terry) — the default/fallback album is "Uncategorized" (renamed from "General"); a pure relabel, projects don't move
     const COLLAGE_CAT_KEY = 'pdr-collage-categories';
     const COLLAGE_LASTCAT_KEY = 'pdr-collage-last-category';
     function loadCustomCategories() { try { const v = JSON.parse(localStorage.getItem(COLLAGE_CAT_KEY) || '[]'); return Array.isArray(v) ? v.filter((x) => typeof x === 'string') : []; } catch (_) { return []; } }
@@ -18554,7 +18581,10 @@
     }
     function assembleCollageName(cat, name, ver) {
       const parts = [];
-      if (cat && cat.trim()) parts.push(cat.trim());
+      // v3.0.3 (Terry) — "Uncategorized" is the implicit default album, so never bake it into the name: an
+      // un-picked collage keeps its bare timestamp / gallery name (not "Uncategorized · …"). Legacy 'General' too.
+      const c = (cat || '').trim();
+      if (c && c.toLowerCase() !== 'uncategorized' && c.toLowerCase() !== 'general') parts.push(c);
       if (name && name.trim()) parts.push(name.trim());
       // v3.0 round 496 (Terry) — v-numbers dropped: collages group by category/type + date, not version (ver now ignored).
       return parts.join(' · ');
@@ -18564,8 +18594,9 @@
       const out = { category: '', name: '', version: '' };
       if (!nm) return out;
       let parts = String(nm).split(' · ').map((s) => s.trim()).filter(Boolean);
-      const cats = COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories());
+      const cats = COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories()).concat(['General']);   // v3.0.3 (Terry) — 'General' is the LEGACY name of 'Uncategorized'; still recognised so old projects don't orphan
       if (parts.length && cats.some((c) => c.toLowerCase() === parts[0].toLowerCase())) out.category = parts.shift();
+      if (out.category.toLowerCase() === 'general') out.category = 'Uncategorized';   // v3.0.3 (Terry) — normalise legacy 'General' → 'Uncategorized'
       if (parts.length > 1 && /^v?\d/i.test(parts[parts.length - 1])) out.version = parts.pop().replace(/^v/i, '');
       out.name = parts.join(' · ');
       if (/^(Collage|Carousel) \d{4}-\d{2}-\d{2}/.test(out.name)) out.name = '';   // auto-names aren't meaningful — don't prefill (v3.0 round 533: carousels default to "Carousel …" now)
@@ -18598,7 +18629,7 @@
         + '<div class="enhance-ai-warning-actions"><button class="enhance-ai-warning-cancel" type="button" data-action="skip">Skip</button><button class="enhance-ai-warning-continue" type="button" data-action="save">Save name</button></div>'
         + '</div>';
       document.body.appendChild(overlay);
-      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Save collage to your library' : 'Categorise this collage'); } catch (_) {}
+      try { overlay.querySelector('.enhance-ai-warning-title').textContent = renameTarget ? 'Rename collage project' : (exportMode ? 'Save collage to your library' : 'Categorize this collage'); } catch (_) {}
       let selectedCat = '';
       const $ = (s) => overlay.querySelector(s);
       const chipsEl = $('#cnw-chips'), customEl = $('#cnw-custom'), nudgeEl = $('#cnw-nudge'), nameEl = $('#cnw-name'), suggestEl = $('#cnw-name-suggest'), previewEl = $('#cnw-preview'), exportNoteEl = $('#cnw-export-note'), saveBtn = $('[data-action="save"]');
@@ -18620,8 +18651,8 @@
       function refreshPreview() {
         previewEl.textContent = assembleCollageName(selectedCat, nameEl.value, verVal) || '—';
         saveBtn.disabled = exportMode ? false : !nameEl.value.trim();   // export can go to General with no name
-        if (exportMode && exportNoteEl) { exportNoteEl.textContent = 'Saves a JPG to Memories › Albums › PDR Collages › ' + (selectedCat || 'General') + ' — safe in your library.'; exportNoteEl.style.display = 'block'; }
-        if (exportMode) { try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); } catch (_) {} }
+        if (exportMode && exportNoteEl) { exportNoteEl.textContent = 'Saves a JPG to Memories › Albums › PDR Collages › ' + (selectedCat || 'Uncategorized') + ' — safe in your library.'; exportNoteEl.style.display = 'block'; }
+        if (exportMode) { try { saveBtn.textContent = 'Save to ' + (selectedCat || 'Uncategorized'); } catch (_) {} }
       }
       function buildChips(filter) {
         chipsEl.innerHTML = ''; const f = (filter || '').trim().toLowerCase();
@@ -18649,7 +18680,7 @@
       // Prefill the project's own category/name if it's already named; relabel the buttons for the export action.
       if (exportMode) {
         if (currentCollageProjectName) { const ep = parseCollageName(currentCollageProjectName); if (ep.category) selectedCat = ep.category; if (ep.name) nameEl.value = ep.name; if (ep.version) verVal = ep.version; }
-        try { saveBtn.textContent = 'Save to ' + (selectedCat || 'General'); const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
+        try { saveBtn.textContent = 'Save to ' + (selectedCat || 'Uncategorized'); const sk = $('[data-action="skip"]'); if (sk) sk.textContent = 'Cancel'; } catch (_) {}
       }
       // v3.0 round 495 / 497 (Terry) — default (titlebar) mode: prefill the saved category + type so re-opening
       // shows what was saved, not a blank field that reads as "unnamed". parseCollageName blanks auto-timestamp
@@ -18701,9 +18732,9 @@
       function doSave() {
         if (!exportMode && !nameEl.value.trim()) return;   // export allows a blank name (→ General + auto-name)
         if (customEl.value.trim()) { const t = customEl.value.trim(); const ex = allCats().find((c) => c.toLowerCase() === t.toLowerCase()); if (ex) selectedCat = ex; else { rememberCustomCategory(t); selectedCat = t; } }
-        // v3.0 round 499 (Terry) — no category chosen → General (the default album), applied to BOTH the name and
-        // the export album, so an un-picked collage files into General consistently (and re-opens showing General).
-        const effCat = selectedCat || 'General';
+        // v3.0.3 (Terry) — no category chosen → "Uncategorized" (the default album), used for the export album.
+        // assembleCollageName omits it from the NAME, so an un-picked collage keeps its bare timestamp/gallery name.
+        const effCat = selectedCat || 'Uncategorized';
         const nm = assembleCollageName(effCat, nameEl.value, verVal);
         try { if (nameEl.value.trim()) rememberWhatFor(nameEl.value); } catch (_) {}   // round 350 — feed the autofill history
         if (selectedCat) { try { localStorage.setItem(COLLAGE_LASTCAT_KEY, selectedCat); } catch (_) {} }
@@ -19208,6 +19239,8 @@
     const CWS_THUMB_GLYPH = '<svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#cfc9ec" stroke-width="1.4" style="opacity:.28"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="M21 15l-5-5L5 21"/></svg>';
     // v3.0 (Terry) — "Your Collage Projects": filter state + helpers (one card; a project's album/date).
     let cwsFilterAlbum = '';
+    let cwsFilterSaved = false;              // v3.0.3 (Terry) — homepage filter: show only projects saved to the library
+    let cwsDragIds = [];                     // v3.0.3 (Terry) — the project id(s) being dragged onto a category chip
     let cwsFilterGallery = '';               // v3.0.3 (Terry #3) — finer GALLERY filter (collage-name tail) within the chosen category
     let cwsFilterYear = '';
     let cwsSearchTerm = '';                 // v3.0.3 (Terry #3) — live name search in the Projects tab
@@ -19249,7 +19282,7 @@
       const items = (list || []).filter((p) => p && p.kind !== 'template');
       const counts = {}, gals = {};
       items.forEach((p) => {
-        const c = cwsProjectAlbum(p) || 'General';
+        const c = cwsProjectAlbum(p) || 'Uncategorized';
         counts[c] = (counts[c] || 0) + 1;
         const g = cwsProjectGallery(p);
         if (g) { (gals[c] = gals[c] || {}); gals[c][g] = (gals[c][g] || 0) + 1; }
@@ -19263,6 +19296,7 @@
         b.className = 'cws-chip' + (on ? ' cws-chip-on' : '');
         b.innerHTML = '<span>' + label + '</span>' + (n != null ? ('<span class="cws-chip-n">' + n + '</span>') : '');
         b.addEventListener('click', () => { cwsFilterAlbum = (cwsFilterAlbum === val) ? '' : val; cwsFilterGallery = ''; buildCwsRecent(); });
+        if (val) cwsMakeChipDroppable(b, val);   // v3.0.3 (Terry) — drop dragged projects here to re-file them ("All" isn't a category)
         wrap.appendChild(b);
       };
       // Dropdown chip: a category WITH galleries.
@@ -19292,6 +19326,7 @@
           wrap.querySelectorAll('.cws-chip-menu').forEach((m) => { if (m !== menu) m.style.display = 'none'; });
           menu.style.display = open ? 'none' : 'block';
         });
+        cwsMakeChipDroppable(b, cat);   // v3.0.3 (Terry) — drop dragged projects onto the album chip to re-file them
         dd.appendChild(b); dd.appendChild(menu);
         wrap.appendChild(dd);
       };
@@ -19331,6 +19366,8 @@
       if (cnt) cnt.textContent = n === 0 ? 'Tap collages to select' : (n + ' selected');
       const del = document.getElementById('cws-select-delete');
       if (del) { del.disabled = n === 0; del.textContent = n ? ('Delete (' + n + ')') : 'Delete'; }
+      const mv = document.getElementById('cws-select-move');
+      if (mv) { mv.disabled = n === 0; mv.textContent = n ? ('Move to… (' + n + ')') : 'Move to…'; }   // v3.0.3 (Terry) — bulk re-categorize
     }
     function toggleCwsDeleteSelect(id, card) {
       const key = String(id);
@@ -19389,6 +19426,41 @@
     }
     function cwsProjectAlbum(p) { try { return parseCollageName((p && p.name) || '').category || ''; } catch (_) { return ''; } }
     function cwsProjectGallery(p) { try { return parseCollageName((p && p.name) || '').name || ''; } catch (_) { return ''; } }
+    // v3.0.3 (Terry) — a project counts as "saved to the library" once it's been exported (a collage carries an
+    // exportedFileId; a carousel a carouselAlbumId / carouselWideFileId). Drives the card badge + the filter.
+    function cwsProjectSavedToLibrary(p) { return !!(p && (p.exportedFileId != null || p.carouselAlbumId != null || p.carouselWideFileId != null)); }
+    // v3.0.3 (Terry) — RE-CATEGORIZE: swap ONLY the category prefix of a project's name, keeping its gallery /
+    // timestamp tail intact. "Uncategorized" (and legacy "General") strips the prefix. Used by drag-drop onto a
+    // chip and the bulk "Move to…" action.
+    function recategorizedName(oldName, newCat) {
+      const cats = COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories()).concat(['General']);
+      let parts = String(oldName || '').split(' · ').map((s) => s.trim()).filter(Boolean);
+      if (parts.length && cats.some((c) => c.toLowerCase() === parts[0].toLowerCase())) parts.shift();
+      const tail = parts.join(' · ');
+      const cat = (!newCat || newCat.toLowerCase() === 'uncategorized' || newCat.toLowerCase() === 'general') ? '' : newCat;
+      return [cat, tail].filter(Boolean).join(' · ') || tail || String(oldName || '');
+    }
+    async function cwsRecategorize(ids, newCat) {
+      if (!ids || !ids.length || !(window.pdr && window.pdr.collage && window.pdr.collage.loadProject)) return;
+      for (const id of ids) {
+        try {
+          const r = await window.pdr.collage.loadProject(id);
+          if (r && r.success && r.project) {
+            const nn = recategorizedName(r.project.name || '', newCat);
+            if (nn && nn !== r.project.name) { r.project.name = nn; await window.pdr.collage.saveProject(r.project); }
+          }
+        } catch (_) {}
+      }
+      try { exitCwsSelectMode(); } catch (_) {}
+      try { buildCwsRecent(); } catch (_) {}
+    }
+    // v3.0.3 (Terry) — make a category chip a drop target for dragged project cards.
+    function cwsMakeChipDroppable(el, cat) {
+      if (!el || !cat) return;
+      el.addEventListener('dragover', (e) => { if (cwsDragIds.length) { e.preventDefault(); try { e.dataTransfer.dropEffect = 'move'; } catch (_) {} el.classList.add('cws-drop-hot'); } });
+      el.addEventListener('dragleave', () => el.classList.remove('cws-drop-hot'));
+      el.addEventListener('drop', (e) => { e.preventDefault(); el.classList.remove('cws-drop-hot'); const ids = cwsDragIds.slice(); if (ids.length) cwsRecategorize(ids, cat); });
+    }
     // v3.0.3 (Terry #3) — the GALLERY dropdown on the Collages homepage. "Galleries coming from the albums":
     // the galleries offered are those WITHIN the currently-selected category chip (or all, when no category
     // is picked). Picking one sets cwsFilterGallery; buildCwsRecent narrows the list and keeps the year/month
@@ -19418,7 +19490,8 @@
             // v3.0 round 584 (Terry) — drop the placeholder glyph but KEEP overlay children (the
             // carousel "N pages" badge lives inside the thumb) — a blanket innerHTML='' wiped it.
             Array.prototype.slice.call(el.childNodes).forEach((n) => {
-              if (!(n.nodeType === 1 && n.classList && n.classList.contains('cws-card-pages'))) el.removeChild(n);
+              // v3.0.3 (Terry) — KEEP overlay badges (carousel "N pages" AND the "Saved to library" tick); only the placeholder glyph goes.
+              if (!(n.nodeType === 1 && n.classList && (n.classList.contains('cws-card-pages') || n.classList.contains('cws-card-saved')))) el.removeChild(n);
             });
           }
         }).catch(() => {});
@@ -19442,6 +19515,16 @@
       card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', p.name || 'Untitled collage');   // v3.1 (Terry) — PDR-styled tooltip (was native title)
       card.dataset.projectId = String(p.id);   // v3.0 round 545 (Terry) — selection targeting
       if (p.id === cwsSelectedProjectId) card.classList.add('cws-selected');
+      // v3.0.3 (Terry) — drag a card onto a category chip to re-file it. If the card is part of a multi-select,
+      // the WHOLE ticked set moves together; otherwise just this one.
+      card.draggable = true;
+      card.addEventListener('dragstart', (e) => {
+        const id = String(p.id);
+        cwsDragIds = (cwsSelectedForDelete.size && cwsSelectedForDelete.has(id)) ? Array.from(cwsSelectedForDelete) : [id];
+        card.classList.add('cws-dragging');
+        try { e.dataTransfer.setData('text/plain', cwsDragIds.join(',')); e.dataTransfer.effectAllowed = 'move'; } catch (_) {}
+      });
+      card.addEventListener('dragend', () => { card.classList.remove('cws-dragging'); cwsDragIds = []; try { document.querySelectorAll('.cws-drop-hot').forEach((x) => x.classList.remove('cws-drop-hot')); } catch (_) {} });
       const thumb = document.createElement('div');
       thumb.className = 'cws-card-thumb';
       if (p.thumbnailDataUrl) { thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")'; }
@@ -19453,6 +19536,13 @@
         const badge = document.createElement('div'); badge.className = 'cws-card-pages';
         badge.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="7" width="13" height="13" rx="2"/><path d="M8 4h9a3 3 0 0 1 3 3v9"/></svg>' + (pagesN ? ('<span>' + pagesN + ' pages</span>') : '<span>Carousel</span>');
         thumb.appendChild(badge);
+      }
+      // v3.0.3 (Terry) — a green "Saved" tick marks projects already exported to the library, so you can tell
+      // at a glance which tile you saved before (otherwise every tile looks the same).
+      if (cwsProjectSavedToLibrary(p)) {
+        const svb = document.createElement('div'); svb.className = 'cws-card-saved'; svb.setAttribute('data-pdr-tooltip', 'Saved to your library — Memories › Albums › PDR Collages');
+        svb.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg><span>Saved</span>';
+        thumb.appendChild(svb);
       }
       const meta = document.createElement('div'); meta.className = 'cws-card-meta';
       const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Untitled collage';
@@ -19531,10 +19621,11 @@
       // Apply the active category chip + the name search (date navigation is still the year rail).
       const _q = (cwsSearchTerm || '').toLowerCase();
       const filtered = list.filter((p) => {
-        // v3.0.3 (Terry) — map uncategorised → 'General' so the "General" chip (which counts them) matches.
-        if (cwsFilterAlbum && (cwsProjectAlbum(p) || 'General').toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
+        // v3.0.3 (Terry) — map uncategorised → 'Uncategorized' so the "Uncategorized" chip (which counts them) matches.
+        if (cwsFilterAlbum && (cwsProjectAlbum(p) || 'Uncategorized').toLowerCase() !== cwsFilterAlbum.toLowerCase()) return false;
         if (cwsFilterGallery && (cwsProjectGallery(p) || '').toLowerCase() !== cwsFilterGallery.toLowerCase()) return false;   // v3.0.3 (Terry #3) — narrow to the chosen gallery
         if (_q && (p.name || '').toLowerCase().indexOf(_q) < 0) return false;
+        if (cwsFilterSaved && !cwsProjectSavedToLibrary(p)) return false;   // v3.0.3 (Terry) — "Saved to library" filter
         return true;
       });
       if (empty) {
@@ -19657,6 +19748,33 @@
           buildCwsRecent();
         });
       }
+      // v3.0.3 (Terry) — "Saved to library" filter toggle (wired once); reflects active state each build.
+      const savedFilterBtn = document.getElementById('cws-filter-saved');
+      if (savedFilterBtn) {
+        if (!savedFilterBtn.dataset.wired) { savedFilterBtn.dataset.wired = '1'; savedFilterBtn.addEventListener('click', (e) => { e.stopPropagation(); cwsFilterSaved = !cwsFilterSaved; buildCwsRecent(); }); }
+        savedFilterBtn.classList.toggle('cws-filter-on', cwsFilterSaved);
+      }
+      // v3.0.3 (Terry) — bulk "Move to…": open a category menu, then re-file every selected project into it.
+      const moveBtn = document.getElementById('cws-select-move');
+      if (moveBtn && !moveBtn.dataset.wired) {
+        moveBtn.dataset.wired = '1';
+        moveBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          const ids = Array.from(cwsSelectedForDelete); if (!ids.length) return;
+          const existing = document.getElementById('cws-move-menu'); if (existing) { existing.remove(); return; }
+          const menu = document.createElement('div'); menu.id = 'cws-move-menu'; menu.className = 'cws-move-menu';
+          COLLAGE_FIXED_CATEGORIES.concat(loadCustomCategories()).forEach((c) => {
+            const o = document.createElement('button'); o.type = 'button'; o.className = 'cws-move-opt'; o.textContent = c;
+            o.addEventListener('click', (ev) => { ev.stopPropagation(); menu.remove(); cwsRecategorize(ids, c); });
+            menu.appendChild(o);
+          });
+          const r = moveBtn.getBoundingClientRect();
+          menu.style.position = 'fixed'; menu.style.left = Math.round(r.left) + 'px'; menu.style.top = Math.round(r.bottom + 4) + 'px'; menu.style.zIndex = '300';
+          document.body.appendChild(menu);
+          const closer = (ev) => { if (!menu.contains(ev.target) && ev.target !== moveBtn) { try { menu.remove(); } catch (_) {} document.removeEventListener('click', closer, true); } };
+          setTimeout(() => document.addEventListener('click', closer, true), 0);
+        });
+      }
       // #12 — after a rebuild: keep .cws-selecting if in Select mode, drop ticks whose card vanished,
       // re-mark the survivors, then let refreshCwsSelectionUI show/hide the bar + Select/Clear buttons.
       const grid3 = document.getElementById('cws-recent-grid');
@@ -19769,6 +19887,7 @@
       try { maybeScheduleCarouselThumbRebake(); } catch (_) {}
     }
     function hideCollageWelcome() {
+      collageSaveTouched_ = false;   // v3.0.3 (Terry SS1) — entering the editor from the homepage: nothing saved THIS session yet, so the chip stays hidden until an edit
       const w = document.getElementById('collage-welcome');
       if (w) { w.classList.remove('active'); w.setAttribute('aria-hidden', 'true'); }
       // Restore the editing chrome (re-expand the menu for the work session).
@@ -19885,6 +20004,7 @@
         if (collageUndo.length > COLLAGE_UNDO_CAP) collageUndo.shift();
         collageRedo.length = 0;
         updateUndoButtons();
+        collageSaveTouched_ = true;   // v3.0.3 (Terry SS1) — a REAL user edit (not an on-open / template-derived autosave) → the chip may now report save state
         scheduleCollageAutosave();   // v2.1 round 315 (Terry) — persist this edit to the project (debounced)
       }
       collagePendingSnap = null;
@@ -24468,7 +24588,7 @@
     }
     // The album this collage saves into = the category part of its name (defaults to General).
     function collageCurrentAlbum() {
-      try { var p = parseCollageName(currentCollageProjectName || ''); return (p && p.category) ? p.category : 'General'; } catch (_) { return 'General'; }
+      try { var p = parseCollageName(currentCollageProjectName || ''); return (p && p.category) ? p.category : 'Uncategorized'; } catch (_) { return 'Uncategorized'; }
     }
     // v3.0 (Terry) — "take me there" for a SAVED collage: resolve where its exported photo lives, then open it in
     // the Viewer or jump to its album. Shared by the Home tile (per-project) and the titlebar (current project).
@@ -24690,7 +24810,7 @@
           // Viewer) so the caption stays ONE shared thing across Collages / Viewer / Albums / Dates / S&D.
           // v3.0 (Terry) — Update overwrites this same photo; New version makes a fresh one + repoints here.
           if (res.fileId != null) { collageExportedFileId = res.fileId; try { scheduleCollageAutosave(); } catch (_) {} try { updateCollageGoto(); } catch (_) {} }
-          const _alb = album || 'General';
+          const _alb = album || 'Uncategorized';
           const _act = saveOpts.action || 'save';
           const _where = 'Memories › Albums › PDR Collages › ' + _alb;
           const _msg = (_act === 'update') ? ('Updated in ' + _where + ' — safe in your library')
@@ -24771,7 +24891,7 @@
           } catch (_) {}
           // v3.0 (Terry) — same "saved to..." confirmation + "View in Albums" jump as a single collage,
           // pointing at the carousel's own album under PDR Collages › Carousels › ‹category›.
-          var _carWhere = 'Memories › Albums › PDR Collages › Carousels › ' + (album || 'General');
+          var _carWhere = 'Memories › Albums › PDR Collages › Carousels › ' + (album || 'Uncategorized');
           collageToast('Saved to ' + _carWhere + ' — safe in your library', 16000, { label: 'View in Albums', onClick: function () { try { window.pdr.collage.viewInAlbums((res && res.albumId != null) ? res.albumId : null); } catch (_) {} } });   // v3.0 round 541 (Terry) — save splash stays twice as long
           if (saveBtn) {
             saveBtn.disabled = false;

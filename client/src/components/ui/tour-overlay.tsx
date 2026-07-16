@@ -588,7 +588,7 @@ export const DATE_EDITOR_TOUR_STEPS: TourStep[] = [
     id: 'de-suggestions',
     targetSelector: '[data-tour="de-suggestions"]',
     title: 'Suggested Dates',
-    description: 'PDR offers candidate dates inferred from neighbours, GPS, faces, sequence numbers, or the filename itself. Each one shows where it came from so you can judge it. Click a suggestion to apply, or type your own.',
+    description: 'PDR offers candidate dates inferred from neighbors, GPS, faces, sequence numbers, or the filename itself. Each one shows where it came from so you can judge it. Click a suggestion to apply, or type your own.',
     preferredPositions: ['top', 'bottom', 'left'],
     highlightPadding: 8
   },
