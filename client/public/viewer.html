@@ -2695,6 +2695,9 @@
     }
     .cws-card:hover .cws-card-del { opacity: 1; }
     .cws-card-del:hover { background: #c0392b; border-color: #c0392b; color: #fff; }
+    /* v3.0.3 (Terry) — saved-template delete (x) is faintly visible at rest so it's discoverable, then brightens to full on card hover. Scoped to the Templates grid; project cards keep the pure hover-reveal. */
+    #cws-templates-grid .cws-card-del { opacity: 0.42; }
+    #cws-templates-grid .cws-card:hover .cws-card-del { opacity: 1; }
     .cws-card-rename {
       position: absolute; top: 8px; right: 40px; width: 26px; height: 26px;
       display: flex; align-items: center; justify-content: center;
