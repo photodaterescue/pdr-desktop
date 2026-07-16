@@ -9795,6 +9795,12 @@
       if (it.bgRemovedPath) { it.el.style.boxShadow = 'none'; it.el.style.filter = ''; it.el.style.borderRadius = ''; if (fxEl) fxEl.style.filter = ''; return; }
       var e = it.enh || {};
       var s = Math.max(1, Math.min(iwPx || 0, ihPx || 0));
+      // v3.0.3 (Terry) — a DIVIDER is a thin line, so its SHORT side is just the ~5px thickness. Every
+      // edge effect below scales off `s`, so on a divider glow/neon/shadow came out invisibly tiny
+      // ("the effects for Dividers is very small"). Scale a divider's effects off its LONG side (length)
+      // instead — a modest factor so the Strength slider spans a genuinely strong, visible range without
+      // the outline overwhelming the line. Photos / emoji / frames are untouched (they keep short-side).
+      if (it.divider) s = Math.max(1, Math.max(iwPx || 0, ihPx || 0) * 0.30);
       // v3.1 (Terry) — SS4: Glow & Shadow follow the OBJECT's alpha, not the tile box. The round-338
       // box-shadows on it.el ringed the RECTANGLE — on a transparent PNG (logo/sticker) the pink glow
       // outlined the invisible square instead of the visible shape. Emit drop-shadow() FILTERS on the
