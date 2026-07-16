@@ -2569,12 +2569,18 @@
     .cws-projects-body { display: flex; gap: 14px; align-items: flex-start; flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
     .cws-tab-panel { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
     #cws-panel-projects .cws-recent { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
-    #cws-panel-templates { overflow-y: auto; padding-bottom: 40px; }
-    /* v3.0.3 (Terry) — a subtle scrollbar for the frozen homepage list; the default Chromium one read too bright against the dark UI. */
-    .cws-projects-body::-webkit-scrollbar, #cws-panel-templates::-webkit-scrollbar { width: 10px; }
-    .cws-projects-body::-webkit-scrollbar-track, #cws-panel-templates::-webkit-scrollbar-track { background: transparent; }
-    .cws-projects-body::-webkit-scrollbar-thumb, #cws-panel-templates::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
-    .cws-projects-body::-webkit-scrollbar-thumb:hover, #cws-panel-templates::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: padding-box; }
+    /* v3.0.3 (Terry) — Templates tab freeze: the header (quick-start starters + search) stays; the "Saved templates" grid scrolls. */
+    .cws-tpl-head { flex: 0 0 auto; }
+    .cws-tpl-headrow { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+    .cws-tpl-headrow .cws-recent-subhead { margin: 4px 0 10px; }
+    #cws-tpl-search-wrap { min-width: 200px; }
+    #cws-templates-builtins { margin-bottom: 20px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    .cws-tpl-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; padding-bottom: 40px; }
+    /* v3.0.3 (Terry) — a subtle scrollbar for the frozen homepage lists; the default Chromium one read too bright against the dark UI. */
+    .cws-projects-body::-webkit-scrollbar, .cws-tpl-body::-webkit-scrollbar { width: 10px; }
+    .cws-projects-body::-webkit-scrollbar-track, .cws-tpl-body::-webkit-scrollbar-track { background: transparent; }
+    .cws-projects-body::-webkit-scrollbar-thumb, .cws-tpl-body::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+    .cws-projects-body::-webkit-scrollbar-thumb:hover, .cws-tpl-body::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); background-clip: padding-box; }
     .cws-projects-body .cws-projects-list { flex: 1 1 auto; min-width: 0; gap: 20px; }
     .cws-year-rail { flex: 0 0 auto; width: 56px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 8px; align-self: flex-start; }
     .cws-year-btn { width: 100%; padding: 6px 4px; border-radius: 6px; background: none; border: none; font: 600 12px ui-monospace, 'Cascadia Code', Consolas, monospace; color: #8b88a0; cursor: pointer; transition: color .12s, background .12s; }
@@ -4803,18 +4809,24 @@
           </div>
           <!-- v2.1 round 323 (Terry) — Templates: your saved reusable starting points. Now its OWN tab. -->
           <div id="cws-panel-templates" class="cws-tab-panel" style="display:none">
-          <div class="cws-recent cws-templates-sec" id="cws-templates-section">
-            <div class="cws-recent-title cws-section-head cws-templates-head" id="cws-templates-toggle" role="button" tabindex="0" data-pdr-tooltip="Show / hide your reusable templates">
-              <svg class="cws-collapse-chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
-              <svg class="cws-templates-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>
-              <span>Templates</span>
-              <span class="cws-templates-tag">reusable starting points</span>
+            <!-- v3.0.3 (Terry) — FROZEN header: the quick-start starter layouts (always one click) + a template search. -->
+            <div class="cws-tpl-head">
+              <div class="cws-tpl-headrow">
+                <div class="cws-recent-subhead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg><span>Quick-start layouts</span></div>
+                <div class="cws-search" id="cws-tpl-search-wrap">
+                  <svg class="cws-search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+                  <input type="text" id="cws-tpl-search" class="cws-search-input" placeholder="Search templates…" autocomplete="off" spellcheck="false">
+                  <button type="button" id="cws-tpl-search-clear" class="cws-search-clear" aria-label="Clear search" style="display:none"><svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M6 6l12 12M18 6L6 18"/></svg></button>
+                </div>
+              </div>
+              <div id="cws-templates-builtins" class="cws-recent-grid cws-recent-row" role="list"></div>
             </div>
-            <div class="cws-templates-body">
+            <!-- SCROLLS: your saved templates -->
+            <div class="cws-tpl-body">
+              <div class="cws-recent-subhead"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="10" rx="1"/></svg><span>Saved templates</span><span class="cws-month-count" id="cws-tpl-count"></span></div>
               <div id="cws-templates-grid" class="cws-recent-grid" role="list"></div>
               <div id="cws-templates-empty" class="cws-recent-empty">Make a collage you like, then "Save as template" in the editor — it'll appear here to reuse with fresh photos.</div>
             </div>
-          </div>
           </div><!-- /#cws-panel-templates -->
           <!-- Projects tab panel (default) -->
           <div id="cws-panel-projects" class="cws-tab-panel">
@@ -19354,6 +19366,23 @@
       const cl = document.getElementById('cws-search-clear'); if (cl) cl.style.display = cwsSearchTerm ? '' : 'none';
       buildCwsRecent();
     }
+    // v3.0.3 (Terry) — TEMPLATE search: filters the "Saved templates" grid only (the built-in starters stay pinned above).
+    let cwsTemplateSearch = '';
+    function wireCwsTplSearchOnce() {
+      const si = document.getElementById('cws-tpl-search');
+      if (si && !si.dataset.wired) {
+        si.dataset.wired = '1';
+        si.addEventListener('keydown', (e) => { e.stopPropagation(); if (e.key === 'Escape') { e.preventDefault(); si.value = ''; cwsApplyTplSearch(''); } });
+        si.addEventListener('input', () => cwsApplyTplSearch(si.value));
+      }
+      const sc = document.getElementById('cws-tpl-search-clear');
+      if (sc && !sc.dataset.wired) { sc.dataset.wired = '1'; sc.addEventListener('click', () => { const s = document.getElementById('cws-tpl-search'); if (s) { s.value = ''; s.focus(); } cwsApplyTplSearch(''); }); }
+    }
+    function cwsApplyTplSearch(v) {
+      cwsTemplateSearch = (v || '').trim();
+      const cl = document.getElementById('cws-tpl-search-clear'); if (cl) cl.style.display = cwsTemplateSearch ? '' : 'none';
+      buildCwsTemplates();
+    }
     // v3.0.3 (Terry #3) — the ALBUM chips, with GALLERIES folded IN. A category that has named galleries
     // renders as a DROPDOWN chip: clicking it opens a menu of "All [Album] Galleries" (filter the whole
     // album) + each gallery (narrow to it). No separate gallery row (Terry: "duplication"). A category with
@@ -19920,44 +19949,46 @@
     // template untouched. The curated built-in starter set will be added here next.
     async function buildCwsTemplates() {
       const grid = document.getElementById('cws-templates-grid');
+      const builtins = document.getElementById('cws-templates-builtins');
       const empty = document.getElementById('cws-templates-empty');
       if (!grid) return;
-      // v3.0.3 (Terry #13) — apply + wire the collapsible Templates header (persisted). One-time wiring.
-      try {
-        const sec = document.getElementById('cws-templates-section');
-        const tog = document.getElementById('cws-templates-toggle');
-        if (sec) sec.classList.toggle('cws-collapsed', cwsIsTemplatesCollapsed());
-        if (tog && sec && !tog.dataset.wired) {
-          tog.dataset.wired = '1';
-          tog.addEventListener('click', () => { const now = !sec.classList.contains('cws-collapsed'); sec.classList.toggle('cws-collapsed', now); cwsSetTemplatesCollapsed(now); });
-        }
-      } catch (_) {}
+      const q = (cwsTemplateSearch || '').toLowerCase();
+      // v2.1 round 324 (Terry) — curated built-in STARTER layouts: always present, PINNED at the top (not
+      // filtered by search) so they stay one click away. v3.0.3 (Terry) — they now live in their own frozen row.
+      if (builtins) {
+        builtins.innerHTML = '';
+        BUILTIN_TEMPLATES.forEach((spec) => {
+          const card = document.createElement('div');
+          card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', spec.name);
+          const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb'; thumb.innerHTML = builtinThumbSvg(spec.cols, spec.rows);
+          const meta = document.createElement('div'); meta.className = 'cws-card-meta';
+          const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = spec.name;
+          const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Starter';
+          meta.appendChild(name); meta.appendChild(tag);
+          card.appendChild(thumb); card.appendChild(meta);
+          card.addEventListener('click', async () => { if (!(await collageTrialGate('collage'))) return; try { if (openBuiltinTemplate(spec)) hideCollageWelcome(); } catch (_) {} });   // v3.0 round 548 (Terry) — trial cap
+          builtins.appendChild(card);
+        });
+      }
       grid.innerHTML = '';
-      // v2.1 round 324 (Terry) — curated built-in starter templates FIRST (always present), then
-      // the user's own saved templates.
-      BUILTIN_TEMPLATES.forEach((spec) => {
-        const card = document.createElement('div');
-        card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', spec.name);
-        const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb'; thumb.innerHTML = builtinThumbSvg(spec.cols, spec.rows);
-        const meta = document.createElement('div'); meta.className = 'cws-card-meta';
-        const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = spec.name;
-        const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Template';
-        meta.appendChild(name); meta.appendChild(tag);
-        card.appendChild(thumb); card.appendChild(meta);
-        card.addEventListener('click', async () => { if (!(await collageTrialGate('collage'))) return; try { if (openBuiltinTemplate(spec)) hideCollageWelcome(); } catch (_) {} });   // v3.0 round 548 (Terry) — trial cap
-        grid.appendChild(card);
-      });
       let list = [];
       try { list = (window.pdr && window.pdr.collage && window.pdr.collage.listProjects) ? await window.pdr.collage.listProjects() : []; } catch (_) { list = []; }
       list = list.filter((p) => p.kind === 'template');
-      try { setCwsTabCount('templates', (typeof BUILTIN_TEMPLATES !== 'undefined' ? BUILTIN_TEMPLATES.length : 0) + list.length); wireCwsTabsOnce(); } catch (_) {}   // v3.0.3 (Terry) — Templates tab badge
-      if (empty) empty.style.display = 'none';   // built-ins are always present, so the row is never empty
-      for (const p of list) {
+      try { setCwsTabCount('templates', (typeof BUILTIN_TEMPLATES !== 'undefined' ? BUILTIN_TEMPLATES.length : 0) + list.length); wireCwsTabsOnce(); wireCwsTplSearchOnce(); } catch (_) {}   // v3.0.3 (Terry) — Templates tab badge + template search
+      const cnt = document.getElementById('cws-tpl-count'); if (cnt) cnt.textContent = list.length ? String(list.length) : '';
+      // v3.0.3 (Terry) — search filters only YOUR saved templates (the built-in starters above always stay).
+      const filtered = q ? list.filter((p) => String(p.name || '').toLowerCase().indexOf(q) >= 0) : list;
+      if (empty) {
+        if (!list.length) { empty.style.display = 'block'; empty.textContent = 'Make a collage you like, then "Save as template" in the editor — it\'ll appear here to reuse with fresh photos.'; }
+        else if (!filtered.length) { empty.style.display = 'block'; empty.textContent = 'No saved templates match your search.'; }
+        else { empty.style.display = 'none'; }
+      }
+      for (const p of filtered) {
         const card = document.createElement('div');
         card.className = 'cws-card'; card.setAttribute('role', 'listitem'); card.setAttribute('data-pdr-tooltip', p.name || 'Template');
         const thumb = document.createElement('div'); thumb.className = 'cws-card-thumb';
         if (p.thumbnailDataUrl) thumb.style.backgroundImage = 'url("' + p.thumbnailDataUrl + '")';
-        else { thumb.innerHTML = CWS_THUMB_GLYPH; cwsObserveThumb(thumb, p.id); }   // v3.0.1 (Terry) — lazy-fetch the baked PNG like Recent cards do; this row omitted it, so templates never showed their thumbnail
+        else { thumb.classList.add('cws-thumb-ph'); thumb.innerHTML = cwsBrandedPlaceholder(p); cwsObserveThumb(thumb, p.id); }   // v3.0.3 (Terry) — branded placeholder until the baked thumbnail loads
         const meta = document.createElement('div'); meta.className = 'cws-card-meta';
         const name = document.createElement('div'); name.className = 'cws-card-name'; name.textContent = p.name || 'Template';
         const tag = document.createElement('div'); tag.className = 'cws-card-date'; tag.textContent = 'Your template';
