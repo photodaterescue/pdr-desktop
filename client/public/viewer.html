@@ -2509,11 +2509,14 @@
       -webkit-app-region: no-drag;
     }
     #collage-welcome.active { display: block; }
-    .cws-inner { max-width: 980px; margin: 0 auto; padding: 52px 40px 64px; }
-    .cws-head { margin-bottom: 30px; }
+    .cws-inner { max-width: 980px; margin: 0 auto; padding: 26px 40px 56px; }
+    /* v3.0.3 (Terry SS1) — the title and the two quick-start tiles now share ONE row (title left, tiles
+       right), reclaiming the empty band at the top so tabs / filters / first projects sit higher. */
+    .cws-hero { display: flex; align-items: center; justify-content: space-between; gap: 28px; flex-wrap: wrap; margin-bottom: 22px; }
+    .cws-head { margin-bottom: 0; }
     .cws-title { font-size: 30px; font-weight: 700; color: #f3f0ff; letter-spacing: 0.2px; }
     .cws-sub { margin-top: 6px; font-size: 14px; color: #9a98ad; }
-    .cws-start { margin-bottom: 40px; }
+    .cws-start { margin-bottom: 0; display: flex; gap: 12px; flex-wrap: wrap; }
     .cws-blank {
       display: inline-flex; align-items: center; gap: 16px;
       padding: 18px 28px 18px 18px;
@@ -2537,11 +2540,14 @@
     .cws-recent-empty { font-size: 13px; color: #6f6d80; padding: 6px 2px; }
     /* v2.1 round 334 (Terry) — "Clear all" for recent collages. */
     .cws-recent-titlerow { display: flex; align-items: baseline; justify-content: space-between; }
-    .cws-recent-clear { background: none; border: none; color: #8b88a0; font-size: 12px; font-weight: 600; cursor: pointer; padding: 2px 4px; border-radius: 5px; }
+    .cws-recent-clear { background: none; border: none; color: #8b88a0; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 7px; border-radius: 6px; }
+    /* v3.0.3 (Terry) — "Saved to library" is a FILTER, so it reads as a toggle pill (matches the category chips), not a bare text link. */
+    #cws-filter-saved { border: 1px solid rgba(255,255,255,0.16); border-radius: 999px; padding: 6px 12px; color: #cbc8dd; }
+    #cws-filter-saved:hover { border-color: rgba(255,255,255,0.28); color: #ffffff; background: rgba(255,255,255,0.05); }
     .cws-recent-clear:hover { color: #ff6b6b; background: rgba(255,107,107,0.1); }
     /* v3.0 (Terry) — Your Collage Projects: Album/Date filters + collapsible month groups. */
     .cws-recent-titlerow { align-items: center; }
-    .cws-recent-tools { display: flex; align-items: center; gap: 8px; }
+    .cws-recent-tools { display: flex; align-items: center; gap: 10px; }
     /* v3.1 (Terry) — one-time carousel-thumbnail re-bake status line. Muted + a soft pulse so it reads as background work, not an error. */
     .cws-rebake-progress { margin-left: auto; margin-right: 12px; font-size: 12px; font-weight: 600; color: #a78bfa; opacity: .85; animation: cwsRebakePulse 1.4s ease-in-out infinite; }
     @keyframes cwsRebakePulse { 0%, 100% { opacity: .55; } 50% { opacity: .9; } }
@@ -2604,12 +2610,13 @@
     .cws-search-input::placeholder { color: #7e7c92; }
     .cws-search-clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border-radius: 50%; border: none; background: rgba(255,255,255,0.1); color: #cfc9ec; cursor: pointer; padding: 0; flex: 0 0 auto; }
     .cws-search-clear:hover { background: #c0392b; color: #fff; }
-    .cws-cat-chips { display: flex; flex-wrap: wrap; gap: 7px; margin: 0 0 18px; }
+    /* v3.0.3 (Terry) — more air between the chips and a hairline that separates the whole control band from the date sections below. */
+    .cws-cat-chips { display: flex; flex-wrap: wrap; gap: 9px; margin: 4px 0 22px; padding-bottom: 20px; border-bottom: 1px solid rgba(255,255,255,0.07); }
     /* v3.0.3 (Terry) — GALLERIES are folded INTO the album chips: a category chip that HAS galleries is a
        dropdown ("All [Album] Galleries" + its galleries). No separate gallery row (Terry: "duplication"). */
     .cws-chip-dd { position: relative; display: inline-flex; }
     .cws-chip-hasdd { gap: 7px; }
-    .cws-chip-chev { flex: 0 0 auto; opacity: 0.6; }
+    .cws-chip-chev { flex: 0 0 auto; opacity: 0.7; margin-left: 1px; }
     .cws-chip-sub { color: #FEC242; font-weight: 700; }
     .cws-chip-menu { position: absolute; top: calc(100% + 5px); left: 0; z-index: 40; min-width: 200px; max-height: 320px; overflow-y: auto; background: #221f36; border: 1px solid rgba(255,255,255,0.14); border-radius: 9px; box-shadow: 0 12px 34px rgba(0,0,0,0.55); padding: 5px; }
     .cws-chip-opt { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border-radius: 6px; font-size: 12.5px; font-weight: 600; color: #cbc8dd; cursor: pointer; white-space: nowrap; }
@@ -2618,10 +2625,12 @@
     .cws-chip-opt-all { border-bottom: 1px solid rgba(255,255,255,0.08); margin-bottom: 3px; padding-bottom: 8px; }
     .cws-chip-optn { font-size: 10.5px; font-weight: 700; color: #8f8ca6; background: rgba(0,0,0,0.25); padding: 0 7px; border-radius: 999px; }
     .cws-chip-opt-on .cws-chip-optn { color: #FEC242; background: rgba(254,194,66,0.14); }
-    .cws-chip { display: inline-flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.12); color: #cbc8dd; font-size: 12px; font-weight: 600; cursor: pointer; padding: 5px 11px; border-radius: 999px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+    /* v3.0.3 (Terry) — roomier, higher-contrast category chips (the primary way to navigate 87 projects). */
+    .cws-chip { display: inline-flex; align-items: center; gap: 7px; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: #dcd9ec; font-size: 13px; font-weight: 600; cursor: pointer; padding: 7px 14px; border-radius: 999px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+    .cws-chip:hover { background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.24); color: #ffffff; }
     .cws-chip:hover { border-color: rgba(254,194,66,0.5); color: #ece9f7; }
     .cws-chip-on { background: rgba(254,194,66,0.16); border-color: rgba(254,194,66,0.7); color: #FEC242; }
-    .cws-chip-n { font-size: 10.5px; font-weight: 700; color: #8f8ca6; background: rgba(0,0,0,0.25); padding: 0 6px; border-radius: 999px; }
+    .cws-chip-n { font-size: 11px; font-weight: 700; color: #9d9ab4; background: rgba(0,0,0,0.28); padding: 1px 7px; border-radius: 999px; min-width: 10px; text-align: center; }
     .cws-chip-on .cws-chip-n { color: #FEC242; background: rgba(254,194,66,0.14); }
     /* Templates header — purple-accented + iconed so it reads as a DIFFERENT kind of thing (reusable
        starting points), never muddled with the dated collage year-groups below. */
@@ -4723,8 +4732,9 @@
            blank open; Blank + Recent are wired now, Templates is the next increment. -->
       <div id="collage-welcome" aria-hidden="true">
         <div class="cws-inner">
+          <div class="cws-hero">
           <div class="cws-head">
-            <div class="cws-title">Collages</div>
+            <div class="cws-title">Collages Homepage</div>
             <div class="cws-sub">Start something new — or pick up where you left off.</div>
           </div>
           <div class="cws-start">
@@ -4744,6 +4754,7 @@
               </span>
             </button>
           </div>
+          </div><!-- /.cws-hero (v3.0.3 Terry SS1 — title left, quick-start tiles right, everything pulled up) -->
           <!-- v3.0.3 (Terry) — TABS separate Projects from Templates so the two stop sharing one scroll
                (Terry: "different kind of thing"). Start-new cards stay pinned above, always one click. -->
           <div class="cws-tabs" role="tablist">
