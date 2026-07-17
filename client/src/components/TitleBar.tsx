@@ -6,7 +6,7 @@ import { LicenseStatusBadge } from '@/components/LicenseModal';
 import { TrialCounterChip } from '@/components/TrialCounterChip';
 import { TrialLimitsButton } from '@/components/TrialLimits';
 import { LibraryStatusButton } from '@/components/LibraryStatusButton';
-import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, captureCancelRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
+import { onAiProgress, pauseAi, resumeAi, cancelAi, getRecycleBinCount, getCollageTrashCount, onRecycleBinChanged, getSettings, captureScreenshot, captureRegion, captureStartRecording, captureStopRecording, captureCancelRecording, onCaptureRecordingState, onCaptureRecordError, onCaptureCompleted, onCapturePendingFlushed, openSearchViewer, type AiProgress, type CaptureDisplayInfo, type CaptureRecordingState } from '@/lib/electron-bridge';
 import { IconTooltip } from '@/components/ui/icon-tooltip';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
@@ -119,8 +119,9 @@ export function TitleBar() {
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      const r = await getRecycleBinCount();
-      if (!cancelled && r.success) setRecycleCount(r.count ?? 0);
+      // v3.0.3 (Terry) — count photos + soft-deleted collages/templates, so this matches the sidebar badge.
+      const [r, cc] = await Promise.all([getRecycleBinCount(), getCollageTrashCount()]);
+      if (!cancelled) setRecycleCount((r.success ? (r.count ?? 0) : 0) + (cc ?? 0));
     };
     refresh();
     const off = onRecycleBinChanged(() => { void refresh(); });
