@@ -54,7 +54,7 @@ Two free surfaces, three paid tiers (same desktop app, different licence duratio
 | Yearly | Desktop, recurring (best-value) | **$79/yr** | unlimited |
 | Lifetime | Desktop, one-time | **$199** | unlimited |
 
-- **Device limits per licence:** 3 (paid), 1 (trial).
+- **Device limits per license:** 3 (paid), **2 (trial)** — trial raised from 1 → 2 on 2026-07-18. Safe because the 1,000-file cap is per **license key** (shared across devices), so extra devices grant no extra trial; it cuts "max uses reached" support tickets and boosts adoption. New trial keys get 2 automatically; already-issued keys keep their stamped limit unless overridden per-license in Lemon Squeezy.
 - **Both** subscriptions **and** a Lifetime option exist — never describe PDR as only-subscription or only-one-off.
 - **Retention pricing** ($9/3mo, $55/yr, $139) is shown **only** inside the in-app cancellation flow —
   never on the public site or storefront.
