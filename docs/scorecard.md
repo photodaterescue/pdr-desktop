@@ -25,10 +25,10 @@
 | Search & Discover | 72 | 85 | Natural-language query + better recall on vague clues; combine signals (person+place+date) in one query. |
 | Screen Capture | 72 | 84 | Fix the uiohook mouse-lag → unpark click-ripple and default-on auto-zoom. |
 | Sharing | 70 | 82 | Ship the parked Share/Email path; more export presets; direct-to-social sizes. |
-| Ask PDR | 58 | 78 | Improve retrieval/answers (v3.1 task) — better indexing of PDR's own docs/features; grounded, cited answers. Big-LLM stays on ice. |
+| Ask PDR | 72 | 82 | Judged on its own merit as a lightweight, in-app helper (NOT against a big local LLM — deliberately ruled out on app-size grounds). Improve retrieval/answers (v3.1 task): better indexing of PDR's own docs/features; grounded, cited answers scoped to what the app can do. |
 
 **Biggest wins today:** Date engine + Collages.
-**Biggest upside:** Ask PDR and Search & Discover — most under-realised vs potential.
+**Biggest upside:** Search & Discover and Sharing — most under-realised vs potential.
 
 ## Monthly log
 
@@ -36,4 +36,4 @@ Add a new dated row-set on the 1st of each month. Keep just the numbers here for
 
 | Date | Fix-date | Fix-structure | Needs Dates | Mem-Dates | Mem-Albums | S&D | People | Trees | Collages | Viewer | Ask PDR | On-device AI | Screen Cap | Sharing | Update/License |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
-| 2026-07-19 (baseline) | 88 | 86 | 80 | 84 | 82 | 72 | 78 | 80 | 90 | 82 | 58 | 78 | 72 | 70 | 85 |
+| 2026-07-19 (baseline) | 88 | 86 | 80 | 84 | 82 | 72 | 78 | 80 | 90 | 82 | 72 | 78 | 72 | 70 | 85 |
