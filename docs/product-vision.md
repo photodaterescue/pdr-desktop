@@ -54,17 +54,16 @@ Two free surfaces, three paid tiers (same desktop app, different licence duratio
 | Yearly | Desktop, recurring (best-value) | **$79/yr** | unlimited |
 | Lifetime | Desktop, one-time | **$199** | unlimited |
 
-- **Device limits per license:** 3 (paid), **2 (trial)** — trial raised from 1 → 2 on 2026-07-18. Safe because the 1,000-file cap is per **license key** (shared across devices), so extra devices grant no extra trial; it cuts "max uses reached" support tickets and boosts adoption. New trial keys get 2 automatically; already-issued keys keep their stamped limit unless overridden per-license in Lemon Squeezy.
+- **Device limits per license (confirmed by Terry 2026-07-22, matches Lemon Squeezy):** Free trial **2**, Monthly **3**, Yearly **3**, Lifetime **5**. Trial was raised from 1 → 2 on 2026-07-18. Safe because the 1,000-file cap is per **license key** (shared across devices), so extra devices grant no extra trial; it cuts "max uses reached" support tickets and boosts adoption. New trial keys get 2 automatically; already-issued keys keep their stamped limit unless overridden per-license in Lemon Squeezy.
+- **Lifetime availability:** immediately purchasable and usable — **no prior paid-cycle prerequisite** (that requirement was removed; confirmed by Terry 2026-07-22). Anyone visiting the website can buy Lifetime directly.
 - **Both** subscriptions **and** a Lifetime option exist — never describe PDR as only-subscription or only-one-off.
 - **Retention pricing** ($9/3mo, $55/yr, $139) is shown **only** inside the in-app cancellation flow —
   never on the public site or storefront.
 - These must match across: the website pricing page, the Lemon Squeezy storefront, in-app upgrade CTAs,
   and any About/Best-Practices copy.
 
-> ⚠️ **FLAG for Terry — verify before Leo uses pricing:** the canonical prices are **$79/yr** and **$199
-> lifetime**. As of 2026-05-09 the *website* was still showing introductory **$59/yr** and **$119
-> lifetime**, with a rebasing "queued". I don't know the current live state. **Which is correct today —
-> and is the website in sync?** Leo should not quote prices until this is confirmed.
+> **Pricing confirmed (2026-07-22):** canonical live prices are **$19/mo**, **$79/yr**, **$199 lifetime**,
+> and the live website matches (verified 2026-07-21). The earlier $59/$119 introductory rebasing is complete.
 
 ## Support philosophy
 
