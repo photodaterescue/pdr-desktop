@@ -1,10 +1,24 @@
 # Feature Catalogue (current, by surface)
 
 > **Owner:** Claude — updated when features ship · **Update when:** a capability is added/changed/removed ·
-> **Last reviewed:** 2026-07-17 (v3.0.3) · **Audience:** Leo (primary), Claude
+> **Last reviewed:** 2026-07-22 (v3.0.3) · **Audience:** Leo (primary), Claude
 >
 > Supersedes the frozen `FEATURE_INVENTORY_v2.0.0.md` at the repo root. Surface names here are the
 > **user-facing** names — always use these, never the React component names.
+
+## Library Drive Advisor (Plan & Protect)
+- Helps the user choose a permanent **Library Drive** before committing a growing library to the wrong
+  place. Guidance, not a setup wizard.
+- **Scans connected drives** and scores each on **capacity, free space, speed tier, connection type and
+  reliability**; marks a **Recommended** drive and shows a per-drive space bar + estimated processing time.
+- **System-drive guard** — flags the Windows system drive (C:) as risky (updates / virtual memory / boot
+  failures / forgotten files) and steers the user to an alternative.
+- **Collection-size estimate** — via the Library Planner (photos, videos, multiple sources), so a
+  recommendation can hold the *whole* library, not just the current fix; recommends ~10–20% headroom.
+- **Speed vs capacity** — distinguishes a fast working **Library Drive** from slower **NAS / network**
+  storage (too slow/unreliable for processing → use locally first, back up to NAS/cloud afterwards).
+- **Drive-type guidance** — explains NVMe/M.2 SSD, SATA SSD, external SSD and budget HDD tiers (generic
+  technology categories; no product/retailer recommendations). "Don't show automatically" opt-out.
 
 ## Fix (dates & filenames) — the core workflow
 - Add **sources**: folders, ZIP archives, external/USB drives; understands **Google Takeout** and
