@@ -28,22 +28,30 @@ describe('DEV-0006 — F2 enters text edit (Excel-style)', () => {
   });
 });
 
-describe('DEV-0008 — Page Outline receives the complete shared palette', () => {
-  it('generates the page-outline swatches from the shared palette data', () => {
-    expect(html).toMatch(/function buildPageOutlineSwatches/);
+describe('DEV-0008 — Page Outline reuses the shared text-palette component', () => {
+  // Revised per Terry: not a flat wall of ~199 swatches, but the SAME presentation
+  // component the Text and Divider pickers use (renderTextColorPalette) — current-colour
+  // readout, quick colours, custom "+", saved slots and collapsible named collections.
+  it('renders the page-outline palette via the shared renderTextColorPalette component', () => {
+    expect(html).toMatch(/function renderPageOutlinePalette\(\)[\s\S]{0,400}renderTextColorPalette\(/);
   });
 
-  it('the builder pulls from the SAME shared palette constants the text picker uses', () => {
-    // Single source of truth: TEXT_COLOR_DEFAULTS (quick colours) + COLOR_COLLECTIONS
-    // (the 12 named collections), not a hand-maintained subset.
-    expect(html).toMatch(/function buildPageOutlineSwatches[\s\S]{0,1200}TEXT_COLOR_DEFAULTS[\s\S]{0,300}COLOR_COLLECTIONS/);
+  it('the palette writes the picked colour back to collagePageOutline.color', () => {
+    // onPick drives the single source of truth for the page-outline colour.
+    expect(html).toMatch(/function renderPageOutlinePalette\(\)[\s\S]{0,600}collagePageOutline\.color\s*=\s*hex/);
   });
 
-  it('the builder runs idempotently (marks the row once built)', () => {
-    expect(html).toMatch(/function buildPageOutlineSwatches[\s\S]{0,700}dataset\.fullPalette/);
+  it('renders into the same #pageoutline-swatches host the component styles reuse', () => {
+    expect(html).toMatch(/function renderPageOutlinePalette\(\)[\s\S]{0,300}getElementById\('pageoutline-swatches'\)/);
   });
 
-  it('syncPageOutlineUi builds the full palette before ringing the active swatch', () => {
-    expect(html).toMatch(/function syncPageOutlineUi\(\)[\s\S]{0,200}buildPageOutlineSwatches\(\)/);
+  it('exposes Expand/Collapse-all for the collapsible named collections (setAllCollections scoped to the host)', () => {
+    // Proves the collapsible collections are present and driveable — same as the Divider pair.
+    expect(html).toMatch(/setAllCollections\(true,\s*'pageoutline-swatches'\)/);
+    expect(html).toMatch(/setAllCollections\(false,\s*'pageoutline-swatches'\)/);
+  });
+
+  it('syncPageOutlineUi rebuilds the shared palette (which rings the active colour itself)', () => {
+    expect(html).toMatch(/function syncPageOutlineUi\(\)[\s\S]{0,200}renderPageOutlinePalette\(\)/);
   });
 });

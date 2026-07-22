@@ -2883,20 +2883,24 @@
     /* v3.0.3 (Terry) — the Dividers colour palette reuses renderTextColorPalette (same as Text / Frame /
        Glow & shadow). Give its host the SAME layout as #collage-text-palette: column stack + 8-col swatch
        grid + current-colour / anchor / empty-slot styling, so it reads identically to the Text palette. */
-    #divider-swatches.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
-    #divider-swatches .frame-row { margin: 0; }
-    #divider-swatches .frame-favrow:empty { display: none; }
-    #divider-swatches .frame-toprow,
-    #divider-swatches .frame-favrow,
-    #divider-swatches .frame-coll-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center; align-items: center; }
-    #divider-swatches .frame-current { display: flex; align-items: center; gap: 8px; padding: 1px 2px 7px; margin-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.07); }
-    #divider-swatches .frame-current-sw { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.28); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
-    #divider-swatches .frame-current-sw.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 8px 8px !important; }
-    #divider-swatches .frame-current-name { font-size: 12px; font-weight: 600; color: #e8e3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-    #divider-swatches .frame-swatch.frame-anchor { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
-    #divider-swatches .frame-swatch.frame-anchor.active { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5), 0 0 0 2px #FEC242; }
-    #divider-swatches .frame-swatch.frame-slot-empty { position: relative; background: transparent !important; border: 1.5px dashed rgba(255,255,255,0.28); color: #8f88b5; font-size: 10.5px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; }
-    #divider-swatches .frame-swatch.frame-slot-empty:hover { border-color: rgba(254,194,66,0.75); color: #ffd778; }
+    /* DEV-0008 (v3.1, Terry) — the Page outline palette reuses the SAME shared component
+       (renderTextColorPalette) as the divider, so give #pageoutline-swatches the identical
+       column-stack + 8-col grid + current/anchor/empty-slot styling. Listed alongside
+       #divider-swatches so the two panels read as one system and never drift. */
+    #divider-swatches.frame-palette, #pageoutline-swatches.frame-palette { flex-direction: column; align-items: stretch; gap: 8px; }
+    #divider-swatches .frame-row, #pageoutline-swatches .frame-row { margin: 0; }
+    #divider-swatches .frame-favrow:empty, #pageoutline-swatches .frame-favrow:empty { display: none; }
+    #divider-swatches .frame-toprow, #pageoutline-swatches .frame-toprow,
+    #divider-swatches .frame-favrow, #pageoutline-swatches .frame-favrow,
+    #divider-swatches .frame-coll-grid, #pageoutline-swatches .frame-coll-grid { display: grid; grid-template-columns: repeat(8, 1fr); gap: 7px; justify-items: center; align-items: center; }
+    #divider-swatches .frame-current, #pageoutline-swatches .frame-current { display: flex; align-items: center; gap: 8px; padding: 1px 2px 7px; margin-bottom: 3px; border-bottom: 1px solid rgba(255,255,255,0.07); }
+    #divider-swatches .frame-current-sw, #pageoutline-swatches .frame-current-sw { width: 20px; height: 20px; border-radius: 5px; border: 1px solid rgba(255,255,255,0.28); flex: 0 0 auto; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.25); }
+    #divider-swatches .frame-current-sw.is-none, #pageoutline-swatches .frame-current-sw.is-none { background: repeating-conic-gradient(#4a4668 0% 25%, #2e2b47 0% 50%) 50% / 8px 8px !important; }
+    #divider-swatches .frame-current-name, #pageoutline-swatches .frame-current-name { font-size: 12px; font-weight: 600; color: #e8e3ff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    #divider-swatches .frame-swatch.frame-anchor, #pageoutline-swatches .frame-swatch.frame-anchor { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5); }
+    #divider-swatches .frame-swatch.frame-anchor.active, #pageoutline-swatches .frame-swatch.frame-anchor.active { box-shadow: inset 0 0 0 1.5px rgba(255,255,255,0.5), 0 0 0 2px #FEC242; }
+    #divider-swatches .frame-swatch.frame-slot-empty, #pageoutline-swatches .frame-swatch.frame-slot-empty { position: relative; background: transparent !important; border: 1.5px dashed rgba(255,255,255,0.28); color: #8f88b5; font-size: 10.5px; font-weight: 700; line-height: 1; display: flex; align-items: center; justify-content: center; }
+    #divider-swatches .frame-swatch.frame-slot-empty:hover, #pageoutline-swatches .frame-swatch.frame-slot-empty:hover { border-color: rgba(254,194,66,0.75); color: #ffd778; }
     /* ─── v2.1 round 266 (Terry) — Phase 4: FLOATING selection-chrome overlay ───
        A stage-level layer (peer of #collage-canvas) that is NOT clipped, so the
        selected tile's ring/handles/rotate/toolbar can render in the dark margin
@@ -5203,20 +5207,14 @@
             <label for="toggle-page-outline" style="cursor:pointer" data-pdr-tooltip="Draw a frame around each page. The frame sits inside the page edge and never extends past the canvas.">Show page outlines</label>
             <input type="checkbox" class="enhance-toggle" id="toggle-page-outline" checked>
           </div>
-          <!-- Colour: the shared Frame swatch palette (same look as Frame) + a native picker for
-               any custom colour. data-color drives collagePageOutline.color. -->
-          <div class="frame-palette" id="pageoutline-swatches" style="margin-top:6px">
-            <button class="frame-add" id="pageoutline-add" type="button" data-pdr-tooltip="Pick a custom color">
-              <span class="frame-add-plus">+</span>
-            </button>
-            <input type="color" id="pageoutline-custom" value="#FEC242" style="position:absolute;width:1px;height:1px;opacity:0;pointer-events:none" aria-hidden="true" />
-            <button class="frame-swatch active" type="button" data-color="#FEC242" style="background:#FEC242" data-pdr-tooltip="Gold"></button>
-            <button class="frame-swatch" type="button" data-color="#ffffff" style="background:#ffffff" data-pdr-tooltip="White"></button>
-            <button class="frame-swatch" type="button" data-color="#111111" style="background:#111111" data-pdr-tooltip="Black"></button>
-            <button class="frame-swatch" type="button" data-color="#f5efe0" style="background:#f5efe0" data-pdr-tooltip="Cream"></button>
-            <button class="frame-swatch" type="button" data-color="#1f2a44" style="background:#1f2a44" data-pdr-tooltip="Navy"></button>
-            <button class="frame-swatch" type="button" data-color="#e8c4c0" style="background:#e8c4c0" data-pdr-tooltip="Blush"></button>
-          </div>
+          <!-- DEV-0008 (v3.1, Terry) — Colour: the COMPLETE shared Collages palette, rendered by the
+               same component (renderTextColorPalette) the Text and Divider pickers use — current-colour
+               readout, quick colours, custom "+", saved slots and the collapsible named collections —
+               instead of the old hand-maintained six swatches. renderPageOutlinePalette() populates the
+               empty host below; Expand-all / Collapse-all drive its collections via
+               setAllCollections(open,'pageoutline-swatches'). Its onPick sets collagePageOutline.color. -->
+          <div class="enhance-label-row" style="margin-top:10px"><label data-pdr-tooltip="Choose a colour for the page outline">Colour Palette</label><span class="enhance-collapse-all"><button type="button" id="pageoutline-palette-expand-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Expand all colour collections" aria-label="Expand all colour collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M2 4l3 3 3-3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button><button type="button" id="pageoutline-palette-collapse-all" style="color:#FEC242;opacity:0.75" data-pdr-tooltip="Collapse all colour collections" aria-label="Collapse all colour collections"><svg width="23" height="14" viewBox="0 0 23 14" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="display:block"><path d="M3 4l3 3-3 3"/><line x1="13" y1="3" x2="21" y2="3"/><line x1="13" y1="7" x2="21" y2="7"/><line x1="13" y1="11" x2="21" y2="11"/></svg></button></span></div>
+          <div class="frame-palette" id="pageoutline-swatches" style="margin-top:2px"></div>
           <!-- Weight: 1–8 px, same slider primitive as Frame thickness. -->
           <div class="enhance-control" id="pageoutline-weight-row" style="margin-top:8px">
             <div class="enhance-label-row"><label for="slider-pageoutline-weight" data-pdr-tooltip="How thick the page outline is, in pixels. Double-click to reset.">Outline weight</label><span class="enhance-val" id="val-pageoutline-weight">2 px</span></div>
@@ -23400,18 +23398,12 @@
           else { collageGrain = val; applyCollageTreatments(); }
         });
       }
-      // v3.1 (Terry) — PAGE OUTLINES controls: on/off toggle + colour swatches + custom picker +
-      // weight slider. Each change updates collagePageOutline and repaints the page frames; the
-      // panel-wide pointerdown/up wrapper makes it one undo step AND autosaves (same as the
-      // vignette/grain sliders above). markPageOutlineSwatch rings the active colour.
-      function markPageOutlineSwatch(color) {
-        var row = document.getElementById('pageoutline-swatches');
-        if (!row) return;
-        var c = String(color || '').toLowerCase();
-        row.querySelectorAll('.frame-swatch').forEach(function (sw) {
-          sw.classList.toggle('active', String(sw.getAttribute('data-color') || '').toLowerCase() === c);
-        });
-      }
+      // v3.1 (Terry) — PAGE OUTLINES controls: on/off toggle + weight slider. The COLOUR picker is
+      // now owned by the shared palette component (renderTextColorPalette via renderPageOutlinePalette,
+      // below) — same as the Divider panel — so there is NO per-swatch / custom-picker wiring here:
+      // the palette builds its own swatches, custom "+" and collections, and its onPick sets
+      // collagePageOutline.color + repaints. The panel-wide pointerdown/up wrapper still makes each
+      // change ONE undo step AND autosaves (same as the vignette/grain sliders above).
       var poToggle = document.getElementById('toggle-page-outline');
       if (poToggle) {
         poToggle.addEventListener('change', function () {
@@ -23423,31 +23415,18 @@
           renderCarouselGuides();
         });
       }
-      var poSwatches = document.getElementById('pageoutline-swatches');
-      if (poSwatches) {
-        poSwatches.addEventListener('click', function (e) {
-          var sw = e.target.closest ? e.target.closest('.frame-swatch') : null;
-          if (!sw || !poSwatches.contains(sw)) return;
-          var col = sw.getAttribute('data-color') || '#FEC242';
-          collagePageOutline.color = col;
-          markPageOutlineSwatch(col);
-          var cust = document.getElementById('pageoutline-custom'); if (cust) cust.value = col;
-          renderCarouselGuides();
-        });
+      // DEV-0008 (v3.1, Terry) — Expand-all / Collapse-all for the Page outline palette, reusing the
+      // SAME setAllCollections scoped to #pageoutline-swatches (mirrors the Divider pair). The palette
+      // renders identical .frame-coll-collapse collections, so this just drives them open/closed.
+      var poPalExpand = document.getElementById('pageoutline-palette-expand-all');
+      var poPalCollapse = document.getElementById('pageoutline-palette-collapse-all');
+      if (poPalExpand && !poPalExpand.dataset.wired) {
+        poPalExpand.dataset.wired = '1';
+        poPalExpand.addEventListener('click', function () { setAllCollections(true, 'pageoutline-swatches'); });
       }
-      var poAdd = document.getElementById('pageoutline-add');
-      var poCustom = document.getElementById('pageoutline-custom');
-      if (poAdd && poCustom) {
-        // + button opens the native picker; the panel wrapper's pointerdown already snapshotted.
-        poAdd.addEventListener('click', function () { try { poCustom.click(); } catch (_) {} });
-        poCustom.addEventListener('input', function () {
-          collagePageOutline.color = poCustom.value || '#FEC242';
-          markPageOutlineSwatch(collagePageOutline.color);
-          renderCarouselGuides();
-        });
-        // A custom pick settles on 'change'; commit its own undo step (the picker steals the
-        // pointerup that the panel wrapper relies on, like the frame custom picker).
-        poCustom.addEventListener('change', function () { try { commitCollageChange(); } catch (_) {} try { beginCollageChange(); } catch (_) {} });
+      if (poPalCollapse && !poPalCollapse.dataset.wired) {
+        poPalCollapse.dataset.wired = '1';
+        poPalCollapse.addEventListener('click', function () { setAllCollections(false, 'pageoutline-swatches'); });
       }
       var poWeight = document.getElementById('slider-pageoutline-weight');
       var poWeightVal = document.getElementById('val-pageoutline-weight');
@@ -23557,43 +23536,31 @@
       if (gv) gv.textContent = String(collageGrain || 0);
       applyCollageTreatments();
     }
-    // DEV-0008 (v3.1) — the Page Outline colour picker gets the COMPLETE shared Collages palette,
-    // not the old hand-maintained six swatches (Gold/White/Black/Cream/Navy/Blush). We generate one
-    // .frame-swatch per colour from the SAME source-of-truth constants the text picker uses —
-    // TEXT_COLOR_DEFAULTS (quick colours) + COLOR_COLLECTIONS (the 12 named collections) — so the two
-    // palettes never drift. The existing #pageoutline-swatches wiring (click delegation, active ring,
-    // custom "+" picker, weight slider) is data-color driven and target-agnostic, so it keeps working
-    // for every generated swatch untouched. Idempotent: builds once, guarded by dataset.fullPalette.
-    // Called lazily from syncPageOutlineUi (runs on collage enter / undo-redo / restore) so the
-    // palette constants — declared later in this script — are always defined by call time.
-    function buildPageOutlineSwatches() {
-      var row = document.getElementById('pageoutline-swatches');
-      if (!row || row.dataset.fullPalette === '1') return;
-      // Drop the static starter swatches; keep the "+" add button and the hidden custom input.
-      row.querySelectorAll('.frame-swatch').forEach(function (sw) { try { sw.remove(); } catch (_) {} });
-      var seen = {};
-      var addSwatch = function (hex, name) {
-        if (!hex) return;
-        var key = String(hex).toLowerCase();
-        if (seen[key]) return;
-        seen[key] = 1;
-        var b = document.createElement('button');
-        b.type = 'button';
-        b.className = 'frame-swatch';
-        b.setAttribute('data-color', hex);
-        b.style.background = hex;
-        if (name) b.setAttribute('data-pdr-tooltip', name);
-        row.appendChild(b);
-      };
-      try { TEXT_COLOR_DEFAULTS.forEach(function (p) { addSwatch(p[0], p[1]); }); } catch (_) {}
-      try { COLOR_COLLECTIONS.forEach(function (c) { (c.colors || []).forEach(function (p) { addSwatch(p[0], p[1]); }); }); } catch (_) {}
-      row.dataset.fullPalette = '1';
+    // DEV-0008 (v3.1, Terry) — the Page Outline colour picker gets the COMPLETE shared Collages palette
+    // by reusing the SAME component the Text and Divider pickers use — renderTextColorPalette — rather
+    // than a hand-maintained subset OR a flat wall of ~199 swatches. That gives the identical experience:
+    // a current-colour readout, quick colours, a custom "+" picker, saved slots and the collapsible
+    // named collections (TEXT_COLOR_DEFAULTS + COLOR_COLLECTIONS are the palette's own single source of
+    // truth), so the two panels never drift. getCurrent reads / onPick writes collagePageOutline.color
+    // and repaints the page frames; the palette rings the active swatch itself. Undo is one step via the
+    // Enhance panel's pointerdown→begin / pointerup→commit wrapper (same as the Divider panel — no
+    // per-handler begin/commit). Called from syncPageOutlineUi (collage enter / undo-redo / restore) so
+    // the palette constants — declared later in this script — are always defined by call time.
+    function renderPageOutlinePalette() {
+      var host = document.getElementById('pageoutline-swatches');
+      if (!host) return;
+      try {
+        renderTextColorPalette(host,
+          function () { return String((collagePageOutline && collagePageOutline.color) || '#FEC242').toLowerCase(); },
+          function (hex) { if (!hex) return; collagePageOutline.color = hex; try { renderCarouselGuides(); } catch (_) {} },
+          {});
+      } catch (_) {}
     }
     // v3.1 (Terry) — PAGE OUTLINES: reflect collagePageOutline into the toggle + colour swatch ring
     // + custom picker + weight slider/readout, then repaint the page frames. Called on collage
     // enter, undo/redo, and project/carousel-page restore (so the controls always show the truth).
     function syncPageOutlineUi() {
-      buildPageOutlineSwatches();   // DEV-0008 — ensure the full shared palette is present before ringing
+      renderPageOutlinePalette();   // DEV-0008 — (re)build the full shared palette; it rings the active colour itself
       var po = collagePageOutline || { on: true, color: '#FEC242', weight: 2 };
       var tog = document.getElementById('toggle-page-outline');
       if (tog) tog.checked = !!po.on;
@@ -23601,16 +23568,6 @@
       if (sr) sr.style.display = po.on ? '' : 'none';
       var wr = document.getElementById('pageoutline-weight-row');
       if (wr) wr.style.display = po.on ? '' : 'none';
-      var col = po.color || '#FEC242';
-      var swRow = document.getElementById('pageoutline-swatches');
-      if (swRow) {
-        var c = String(col).toLowerCase();
-        swRow.querySelectorAll('.frame-swatch').forEach(function (sw) {
-          sw.classList.toggle('active', String(sw.getAttribute('data-color') || '').toLowerCase() === c);
-        });
-      }
-      var cust = document.getElementById('pageoutline-custom');
-      if (cust && /^#[0-9a-fA-F]{3,6}$/.test(String(col))) cust.value = col;
       var wSl = document.getElementById('slider-pageoutline-weight');
       var wVal = document.getElementById('val-pageoutline-weight');
       var wt = Math.max(1, Math.min(8, po.weight || 2));
