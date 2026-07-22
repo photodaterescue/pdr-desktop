@@ -23557,10 +23557,43 @@
       if (gv) gv.textContent = String(collageGrain || 0);
       applyCollageTreatments();
     }
+    // DEV-0008 (v3.1) — the Page Outline colour picker gets the COMPLETE shared Collages palette,
+    // not the old hand-maintained six swatches (Gold/White/Black/Cream/Navy/Blush). We generate one
+    // .frame-swatch per colour from the SAME source-of-truth constants the text picker uses —
+    // TEXT_COLOR_DEFAULTS (quick colours) + COLOR_COLLECTIONS (the 12 named collections) — so the two
+    // palettes never drift. The existing #pageoutline-swatches wiring (click delegation, active ring,
+    // custom "+" picker, weight slider) is data-color driven and target-agnostic, so it keeps working
+    // for every generated swatch untouched. Idempotent: builds once, guarded by dataset.fullPalette.
+    // Called lazily from syncPageOutlineUi (runs on collage enter / undo-redo / restore) so the
+    // palette constants — declared later in this script — are always defined by call time.
+    function buildPageOutlineSwatches() {
+      var row = document.getElementById('pageoutline-swatches');
+      if (!row || row.dataset.fullPalette === '1') return;
+      // Drop the static starter swatches; keep the "+" add button and the hidden custom input.
+      row.querySelectorAll('.frame-swatch').forEach(function (sw) { try { sw.remove(); } catch (_) {} });
+      var seen = {};
+      var addSwatch = function (hex, name) {
+        if (!hex) return;
+        var key = String(hex).toLowerCase();
+        if (seen[key]) return;
+        seen[key] = 1;
+        var b = document.createElement('button');
+        b.type = 'button';
+        b.className = 'frame-swatch';
+        b.setAttribute('data-color', hex);
+        b.style.background = hex;
+        if (name) b.setAttribute('data-pdr-tooltip', name);
+        row.appendChild(b);
+      };
+      try { TEXT_COLOR_DEFAULTS.forEach(function (p) { addSwatch(p[0], p[1]); }); } catch (_) {}
+      try { COLOR_COLLECTIONS.forEach(function (c) { (c.colors || []).forEach(function (p) { addSwatch(p[0], p[1]); }); }); } catch (_) {}
+      row.dataset.fullPalette = '1';
+    }
     // v3.1 (Terry) — PAGE OUTLINES: reflect collagePageOutline into the toggle + colour swatch ring
     // + custom picker + weight slider/readout, then repaint the page frames. Called on collage
     // enter, undo/redo, and project/carousel-page restore (so the controls always show the truth).
     function syncPageOutlineUi() {
+      buildPageOutlineSwatches();   // DEV-0008 — ensure the full shared palette is present before ringing
       var po = collagePageOutline || { on: true, color: '#FEC242', weight: 2 };
       var tog = document.getElementById('toggle-page-outline');
       if (tog) tog.checked = !!po.on;
@@ -25544,6 +25577,13 @@
         else if (k === 'escape') {
           // Only consume Esc when a real pane is selected → never blocks exit-fullscreen.
           if (selectedItemsForOp().length || (collageSelected && !collageSelected.isBg)) { e.preventDefault(); clearCollageSelection(); }
+        }
+        else if (k === 'f2') {
+          // DEV-0006 (v3.1) — Excel-style: F2 on the SELECTED text box enters in-canvas edit with the
+          // caret at the END (enterTextEdit selectAll=false). The _isText guard above means F2 only
+          // fires when NOT already typing in a field/editable. Mirror the double-click guards (the
+          // el 'dblclick' handler): emoji layers have no text to edit, locked layers are frozen.
+          if (selectedText && !selectedText.isEmoji && !selectedText.locked) { e.preventDefault(); enterTextEdit(selectedText, false); }
         }
         else if (!e.ctrlKey && !e.metaKey && !e.altKey && (k === 'arrowleft' || k === 'arrowright' || k === 'arrowup' || k === 'arrowdown')) {
           if (selectedItemsForOp().length) { e.preventDefault(); nudgeCollageSelection(k, e.shiftKey); }
