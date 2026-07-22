@@ -11,8 +11,10 @@ import {
   removeRunByReportId,
   getRunByReportId,
   findExistingFilePaths,
+  getCoverageKeysByNameSize,
   type IndexedFile,
 } from './search-database.js';
+import { selectGenuinelyNewFiles, type WalkedCandidate } from './library-refresh-coverage.js';
 import type { FixReport, FileChange } from './report-storage.js';
 import { initGeocoder, reverseGeocode } from './reverse-geocoder.js';
 import { isScannerDevice } from './scanner-detection.cjs';
@@ -650,8 +652,24 @@ export async function rebuildIndexFromLibraries(
         // per-batch existing-paths recheck in flushBatch below stays as
         // a defensive belt-and-braces (cheap; covers a path already
         // saved by an earlier batch of this same resumable run).
+        // DEV-0005 fix — a walked file is only "new" if it is covered NEITHER by
+        // an exact file_path (findExistingFilePaths) NOR by (filename, size)
+        // anywhere in the index (getCoverageKeysByNameSize). Without the second
+        // check a library MOVED to a new drive presents all-new paths, so the
+        // whole library was EXIF-re-read and re-inserted under new paths (then
+        // merged back by consolidateIndexedFilesByFilenameAndSize at startup) —
+        // the "banner says 45 missing but Refresh reads thousands" defect. This
+        // adopts the SAME coverage definition the Dashboard banner uses.
         const knownExisting = findExistingFilePaths(walked);
-        const files = walked.filter(p => !knownExisting.has(p));
+        const coveredByNameSize = getCoverageKeysByNameSize();
+        const candidates: WalkedCandidate[] = walked
+          .filter(p => !knownExisting.has(p)) // skip exact-path matches without statting
+          .map(p => {
+            let size = -1;
+            try { size = fs.statSync(p).size; } catch { /* unreadable → treat as new */ }
+            return { path: p, filename: path.basename(p), size };
+          });
+        const files = selectGenuinelyNewFiles(candidates, knownExisting, coveredByNameSize).map(c => c.path);
         const total = files.length;
         const preFiltered = walked.length - files.length;
         if (preFiltered > 0) {

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import Database from 'better-sqlite3';
+import { coverageKey } from './library-refresh-coverage.js';
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -1752,6 +1753,21 @@ export function findExistingFilePaths(filePaths: string[]): Set<string> {
     for (const r of rows) existing.add(r.file_path);
   }
   return existing;
+}
+
+// DEV-0005 — coverage set shared with the Dashboard "unindexed libraries"
+// banner: every indexed file keyed by (filename, size_bytes). The library
+// Refresh pre-filter uses this so a MOVED library (identical files under new
+// paths) is recognised as already-covered instead of being re-read wholesale.
+// This is the SAME definition the banner uses in library:countOnDiskFiles.
+export function getCoverageKeysByNameSize(): Set<string> {
+  const database = getDb();
+  const rows = database
+    .prepare(`SELECT filename, size_bytes FROM indexed_files WHERE filename != '' AND size_bytes > 0`)
+    .all() as { filename: string; size_bytes: number }[];
+  const set = new Set<string>();
+  for (const r of rows) set.add(coverageKey(r.filename, r.size_bytes));
+  return set;
 }
 
 // ─── File insertion (batch) ──────────────────────────────────────────────────
