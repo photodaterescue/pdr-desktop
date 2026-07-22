@@ -23552,7 +23552,21 @@
       try {
         renderTextColorPalette(host,
           function () { return String((collagePageOutline && collagePageOutline.color) || '#FEC242').toLowerCase(); },
-          function (hex) { if (!hex) return; collagePageOutline.color = hex; try { renderCarouselGuides(); } catch (_) {} },
+          // v3.1 (Terry) — onPick mirrors the BACKGROUND target's proven pattern so every pick
+          // (a swatch, a saved slot, OR the custom "+" native picker whose input/change events fire
+          // OUTSIDE the panel's pointerdown→begin/pointerup→commit window) is exactly ONE clean undo
+          // step AND autosaves: beginCollageChange()/commitCollageChange() wrap the mutation, and
+          // because commit nulls collagePendingSnap the panel-wide wrapper's trailing commit no-ops
+          // (no double entry). syncTextColorPaletteRings() then re-rings the active swatch + refreshes
+          // the "current colour" readout so neither goes stale after a pick.
+          function (hex) {
+            if (!hex) return;
+            beginCollageChange();
+            collagePageOutline.color = hex;
+            try { renderCarouselGuides(); } catch (_) {}
+            commitCollageChange();
+            syncTextColorPaletteRings();
+          },
           {});
       } catch (_) {}
     }

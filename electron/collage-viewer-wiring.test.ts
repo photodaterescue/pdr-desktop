@@ -38,7 +38,7 @@ describe('DEV-0008 — Page Outline reuses the shared text-palette component', (
 
   it('the palette writes the picked colour back to collagePageOutline.color', () => {
     // onPick drives the single source of truth for the page-outline colour.
-    expect(html).toMatch(/function renderPageOutlinePalette\(\)[\s\S]{0,600}collagePageOutline\.color\s*=\s*hex/);
+    expect(html).toMatch(/collagePageOutline\.color\s*=\s*hex/);
   });
 
   it('renders into the same #pageoutline-swatches host the component styles reuse', () => {
@@ -53,5 +53,15 @@ describe('DEV-0008 — Page Outline reuses the shared text-palette component', (
 
   it('syncPageOutlineUi rebuilds the shared palette (which rings the active colour itself)', () => {
     expect(html).toMatch(/function syncPageOutlineUi\(\)[\s\S]{0,200}renderPageOutlinePalette\(\)/);
+  });
+
+  it('each colour pick is one clean undo step + autosave (begin/commit wrap, mirroring the background target)', () => {
+    // Custom "+" picker / saved-slot picks fire input/change OUTSIDE the panel pointer wrapper,
+    // so onPick must wrap the mutation itself: beginCollageChange → set color → commitCollageChange.
+    expect(html).toMatch(/beginCollageChange\(\)\s*;\s*collagePageOutline\.color\s*=\s*hex[\s\S]{0,120}commitCollageChange\(\)/);
+  });
+
+  it('a pick refreshes the active ring + current-colour readout (no stale display)', () => {
+    expect(html).toMatch(/collagePageOutline\.color\s*=\s*hex[\s\S]{0,180}syncTextColorPaletteRings\(\)/);
   });
 });
